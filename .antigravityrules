@@ -1,0 +1,26 @@
+# Antigravity Project Rules — automation_cskh
+
+Đây là project production. File quy tắc đầy đủ là `Agent.md`.
+
+Trước khi code hoặc sửa code:
+1. Đọc `Agent.md`.
+2. Đọc `docs/README.md`.
+3. Đọc `docs/STATUS.md` và phase hiện tại trong `docs/phases/`.
+4. Đọc `docs/OPEN_QUESTIONS.md`.
+5. Nếu task có business logic, đọc `docs/product/business-rules.md`.
+6. Nếu task có API, đọc `docs/api/openapi.yaml` + module doc tương ứng.
+
+Quy tắc bắt buộc:
+- Không tự đổi requirement, data model, permission, business rule hoặc API contract đã chốt.
+- Không tự xử lý câu hỏi có trạng thái `WAITING_USER`; phải hỏi user nếu task phụ thuộc câu hỏi đó.
+- Backend dùng Modular Monolith feature-first: Route → Controller → Service → Repository → Prisma.
+- Frontend dùng feature-first + design system/component dùng chung.
+- `User.roles` là JSON array MySQL; không tạo `UserRole`.
+- `Attendance` gắn `EnrollmentClass + ClassSession`, không gắn trực tiếp Student/Enrollment.
+- API theo contract-first; frontend không tự đoán response shape.
+- Sau mỗi phase: test/typecheck/lint/build, cập nhật docs tracking, báo cáo và DỪNG chờ user duyệt.
+
+Skill project-local:
+- Sửa Prisma/schema/model: dùng `.agents/skills/prisma-schema-guard/SKILL.md`.
+- Tạo/sửa backend API module: dùng `.agents/skills/api-module-scaffold/SKILL.md`.
+- Tạo/sửa frontend UI: dùng `.agents/skills/product-frontend/SKILL.md`.

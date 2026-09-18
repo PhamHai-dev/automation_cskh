@@ -1,0 +1,631 @@
+openapi: 3.1.0
+info:
+  title: Automation CSKH API
+  version: 0.1.0
+  description: |
+    API contract cho MVP automation_cskh. Scope chính: Sheet 1.Chăm sóc và Sheet 3.Chấm buổi.
+    File này phải được cập nhật trước hoặc cùng task khi endpoint contract thay đổi.
+servers:
+  - url: /api/v1
+    description: Versioned business API
+
+tags:
+  - name: Auth
+  - name: Users
+  - name: CS Groups
+  - name: Students
+  - name: Enrollments
+  - name: Packages
+  - name: Teachers
+  - name: Classes
+  - name: Attendance
+  - name: Care
+  - name: Imports
+  - name: Dashboard
+  - name: Zalo
+
+paths:
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Đăng nhập bằng email và password
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Đăng nhập thành công
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Rotate refresh token và cấp access token mới
+      operationId: refreshSession
+      responses:
+        '200':
+          description: Refresh thành công
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /auth/logout:
+    post:
+      tags: [Auth]
+      summary: Revoke session hiện tại
+      operationId: logout
+      responses:
+        '204': { description: Đăng xuất thành công }
+  /auth/me:
+    get:
+      tags: [Auth]
+      summary: Current user
+      operationId: getCurrentUser
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Current user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /settings/users:
+    get:
+      tags: [Users]
+      summary: List users cho Admin Settings
+      operationId: listUsers
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Search'
+      responses:
+        '200':
+          description: Danh sách users
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserListResponse'
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Users]
+      summary: Admin tạo tài khoản nội bộ
+      operationId: createUser
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateUserRequest'
+      responses:
+        '201':
+          description: Tạo user thành công
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /students:
+    get:
+      tags: [Students]
+      summary: List/search students theo data scope
+      operationId: listStudents
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Search'
+      responses:
+        '200':
+          description: Student list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StudentListResponse'
+    post:
+      tags: [Students]
+      summary: Tạo Student
+      operationId: createStudent
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateStudentRequest'
+      responses:
+        '201':
+          description: Student created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StudentResponse'
+  /students/{studentId}:
+    parameters:
+      - $ref: '#/components/parameters/StudentId'
+    get:
+      tags: [Students]
+      summary: Chi tiết Student theo scope
+      operationId: getStudent
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Student detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StudentResponse'
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [Students]
+      summary: Cập nhật Student
+      operationId: updateStudent
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateStudentRequest'
+      responses:
+        '200':
+          description: Updated student
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StudentResponse'
+
+  /enrollments:
+    get:
+      tags: [Enrollments]
+      summary: List Enrollments theo data scope
+      operationId: listEnrollments
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Search'
+      responses:
+        '200':
+          description: Enrollment list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnrollmentListResponse'
+    post:
+      tags: [Enrollments]
+      summary: Tạo Enrollment
+      operationId: createEnrollment
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateEnrollmentRequest'
+      responses:
+        '201':
+          description: Enrollment created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnrollmentResponse'
+
+  /classes/{classId}/sessions:
+    parameters:
+      - $ref: '#/components/parameters/ClassId'
+    get:
+      tags: [Attendance]
+      summary: List ClassSession
+      operationId: listClassSessions
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Session list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClassSessionListResponse'
+    post:
+      tags: [Attendance]
+      summary: Tạo ClassSession
+      operationId: createClassSession
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateClassSessionRequest'
+      responses:
+        '201':
+          description: Session created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClassSessionResponse'
+
+  /classes/{classId}/sessions/{sessionId}/attendance:
+    parameters:
+      - $ref: '#/components/parameters/ClassId'
+      - $ref: '#/components/parameters/SessionId'
+    get:
+      tags: [Attendance]
+      summary: Attendance sheet của một session
+      operationId: getSessionAttendance
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Attendance rows
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttendanceListResponse'
+    put:
+      tags: [Attendance]
+      summary: Bulk upsert Attendance cho session
+      operationId: bulkUpsertAttendance
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BulkAttendanceRequest'
+      responses:
+        '200':
+          description: Attendance updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttendanceListResponse'
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /imports/upload:
+    post:
+      tags: [Imports]
+      summary: Upload workbook để chuẩn bị preview/mapping
+      operationId: uploadImport
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '201':
+          description: Import draft created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImportResponse'
+
+  /dashboard/summary:
+    get:
+      tags: [Dashboard]
+      summary: KPI summary theo data scope/filter
+      operationId: getDashboardSummary
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Dashboard summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardSummaryResponse'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    Page:
+      name: page
+      in: query
+      schema: { type: integer, minimum: 1, default: 1 }
+    PageSize:
+      name: pageSize
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+    Search:
+      name: search
+      in: query
+      schema: { type: string }
+    StudentId:
+      name: studentId
+      in: path
+      required: true
+      schema: { type: string }
+    ClassId:
+      name: classId
+      in: path
+      required: true
+      schema: { type: string }
+    SessionId:
+      name: sessionId
+      in: path
+      required: true
+      schema: { type: string }
+
+  responses:
+    Unauthorized:
+      description: Chưa đăng nhập hoặc session/token invalid
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    Forbidden:
+      description: Không có permission/data scope
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    NotFound:
+      description: Không tìm thấy resource trong scope
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    Conflict:
+      description: Conflict/duplicate/business invariant
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  schemas:
+    Role:
+      type: string
+      enum: [ADMIN, MANAGE, CS, TEACHER]
+    PaginationMeta:
+      type: object
+      required: [page, pageSize, total, totalPages]
+      properties:
+        page: { type: integer }
+        pageSize: { type: integer }
+        total: { type: integer }
+        totalPages: { type: integer }
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: { type: string }
+            message: { type: string }
+            details: {}
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string, minLength: 1 }
+    User:
+      type: object
+      required: [id, name, email, roles, active]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        email: { type: string, format: email }
+        phone: { type: [string, 'null'] }
+        roles:
+          type: array
+          items: { $ref: '#/components/schemas/Role' }
+        active: { type: boolean }
+    AuthResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [accessToken, user]
+          properties:
+            accessToken: { type: string }
+            user: { $ref: '#/components/schemas/User' }
+    UserResponse:
+      type: object
+      required: [data]
+      properties:
+        data: { $ref: '#/components/schemas/User' }
+    UserListResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/User' }
+        meta: { $ref: '#/components/schemas/PaginationMeta' }
+    CreateUserRequest:
+      type: object
+      required: [name, email, password, roles]
+      properties:
+        name: { type: string }
+        email: { type: string, format: email }
+        phone: { type: string }
+        password: { type: string }
+        roles:
+          type: array
+          minItems: 1
+          items: { $ref: '#/components/schemas/Role' }
+        active: { type: boolean, default: true }
+
+    Student:
+      type: object
+      required: [id, fullName]
+      properties:
+        id: { type: string }
+        fullName: { type: string }
+        phone: { type: [string, 'null'] }
+        email: { type: [string, 'null'], format: email }
+        zaloUid: { type: [string, 'null'] }
+        dateOfBirth: { type: [string, 'null'], format: date }
+        note: { type: [string, 'null'] }
+    CreateStudentRequest:
+      type: object
+      required: [fullName]
+      properties:
+        fullName: { type: string }
+        phone: { type: string }
+        email: { type: string, format: email }
+        zaloUid: { type: string }
+        dateOfBirth: { type: string, format: date }
+        note: { type: string }
+    UpdateStudentRequest:
+      allOf:
+        - $ref: '#/components/schemas/CreateStudentRequest'
+    StudentResponse:
+      type: object
+      required: [data]
+      properties:
+        data: { $ref: '#/components/schemas/Student' }
+    StudentListResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/Student' }
+        meta: { $ref: '#/components/schemas/PaginationMeta' }
+
+    Enrollment:
+      type: object
+      required: [id, studentId, totalSessions, status]
+      properties:
+        id: { type: string }
+        studentId: { type: string }
+        packageId: { type: [string, 'null'] }
+        csId: { type: [string, 'null'] }
+        totalSessions: { type: integer, minimum: 0 }
+        startDate: { type: [string, 'null'], format: date }
+        endDate: { type: [string, 'null'], format: date }
+        status:
+          type: string
+          enum: [not_started, studying, paused, finished, cancelled]
+        autoMessageEnabled: { type: boolean }
+    CreateEnrollmentRequest:
+      type: object
+      required: [studentId, totalSessions]
+      properties:
+        studentId: { type: string }
+        packageId: { type: string }
+        csId: { type: string }
+        totalSessions: { type: integer, minimum: 0 }
+        startDate: { type: string, format: date }
+        status: { type: string }
+        autoMessageEnabled: { type: boolean, default: true }
+    EnrollmentResponse:
+      type: object
+      required: [data]
+      properties:
+        data: { $ref: '#/components/schemas/Enrollment' }
+    EnrollmentListResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/Enrollment' }
+        meta: { $ref: '#/components/schemas/PaginationMeta' }
+
+    ClassSession:
+      type: object
+      required: [id, classId, sessionNumber, sessionDate, status]
+      properties:
+        id: { type: string }
+        classId: { type: string }
+        sessionNumber: { type: integer, minimum: 1 }
+        sessionDate: { type: string, format: date }
+        startTime: { type: [string, 'null'] }
+        endTime: { type: [string, 'null'] }
+        status: { type: string, enum: [scheduled, completed, cancelled] }
+    CreateClassSessionRequest:
+      type: object
+      required: [sessionNumber, sessionDate]
+      properties:
+        sessionNumber: { type: integer, minimum: 1 }
+        sessionDate: { type: string, format: date }
+        startTime: { type: string }
+        endTime: { type: string }
+        teacherId: { type: string }
+    ClassSessionResponse:
+      type: object
+      required: [data]
+      properties:
+        data: { $ref: '#/components/schemas/ClassSession' }
+    ClassSessionListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/ClassSession' }
+
+    AttendanceStatus:
+      type: string
+      enum: [attended, absent_approved_A, leave_B, absent_unapproved_C, teacher_absent_D, tech_error_E]
+    Attendance:
+      type: object
+      required: [id, enrollmentClassId, classSessionId, status]
+      properties:
+        id: { type: string }
+        enrollmentClassId: { type: string }
+        classSessionId: { type: string }
+        status: { $ref: '#/components/schemas/AttendanceStatus' }
+        source: { type: string, enum: [manual, excel_import, teacher_upload] }
+    BulkAttendanceRequest:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [enrollmentClassId, status]
+            properties:
+              enrollmentClassId: { type: string }
+              status: { $ref: '#/components/schemas/AttendanceStatus' }
+    AttendanceListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/Attendance' }
+
+    ImportResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [id, status]
+          properties:
+            id: { type: string }
+            status: { type: string }
+    DashboardSummaryResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          additionalProperties: true
