@@ -32,7 +32,7 @@ export class AuthService {
     const accessToken = jwt.sign(
       { id: user.id, roles: user.roles },
       env.JWT_SECRET,
-      { expiresIn: env.JWT_ACCESS_EXPIRES_IN }
+      { expiresIn: env.JWT_ACCESS_EXPIRES_IN as any }
     );
 
     const refreshTokenString = crypto.randomUUID() + crypto.randomUUID();
@@ -96,7 +96,7 @@ export class AuthService {
     const accessToken = jwt.sign(
       { id: validUser.id, roles: validUser.roles },
       env.JWT_SECRET,
-      { expiresIn: env.JWT_ACCESS_EXPIRES_IN }
+      { expiresIn: env.JWT_ACCESS_EXPIRES_IN as any }
     );
 
     await prisma.authSession.update({
