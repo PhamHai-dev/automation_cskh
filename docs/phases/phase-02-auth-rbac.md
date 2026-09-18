@@ -1,8 +1,8 @@
 # Phase 2 — Auth/RBAC + Admin User Management
 
-- Status: NOT_STARTED
-- Started at:
-- Completed at:
+- Status: DONE
+- Started at: 2026-09-18
+- Completed at: 2026-09-18
 - Dependencies: Phase 1 DONE
 - Open questions: Q-005 phải chốt nếu implementation đa role ảnh hưởng endpoint scope.
 

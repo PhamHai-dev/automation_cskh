@@ -6,15 +6,19 @@ const prisma = new PrismaClient();
 async function main() {
   console.log('Start seeding...');
 
+  const bcrypt = require('bcrypt');
+  const password_hash = bcrypt.hashSync('password123', 10);
+
   // 1. Create ADMIN User
   const admin = await prisma.user.upsert({
-    where: { email: 'admin@automation_cskh.local' },
-    update: {},
+    where: { email: 'admin@gmail.com' },
+    update: {
+      password_hash: password_hash
+    },
     create: {
       name: 'Super Admin',
-      email: 'admin@automation_cskh.local',
-      // password: "password123" (should be hashed, using a dummy hash here for seed)
-      password_hash: '$2b$10$dummyhashedpasswordforsimplicity000000000000000000',
+      email: 'admin@gmail.com',
+      password_hash: password_hash,
       roles: ['ADMIN'],
       active: true,
     },
@@ -24,11 +28,13 @@ async function main() {
   // 2. Create CS User (Optional for testing)
   const cs = await prisma.user.upsert({
     where: { email: 'cs@automation_cskh.local' },
-    update: {},
+    update: {
+      password_hash: password_hash
+    },
     create: {
       name: 'CS Manager',
       email: 'cs@automation_cskh.local',
-      password_hash: '$2b$10$dummyhashedpasswordforsimplicity000000000000000000',
+      password_hash: password_hash,
       roles: ['CS'],
       active: true,
     },
