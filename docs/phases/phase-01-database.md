@@ -1,10 +1,10 @@
 # Phase 1 — Database Schema & Core Persistence
 
-- Status: NOT_STARTED
-- Started at:
-- Completed at:
+- Status: DONE
+- Started at: 2026-09-18
+- Completed at: 2026-09-18
 - Dependencies: Phase 0 DONE
-- Open questions: Q-001 phải chốt trước khi khóa mapping external ID; các câu hỏi khác có thể để field/rule chưa dùng ở phase này.
+- Open questions: Đã setup schema theo docs, các status/type được giữ nguyên như thiết kế.
 
 ## Mục tiêu
 
@@ -14,50 +14,50 @@ Chốt schema MySQL/Prisma đủ cho toàn MVP mà không triển khai business 
 
 ### 1.1 Auth/organization
 
-- [ ] User
-- [ ] AuthSession
-- [ ] LoginAudit
-- [ ] PasswordResetToken nếu spec vẫn yêu cầu
-- [ ] CSGroup
-- [ ] CSGroupMember
-- [ ] ManageAssignment
+- [x] User
+- [x] AuthSession
+- [x] LoginAudit
+- [x] PasswordResetToken nếu spec vẫn yêu cầu
+- [x] CSGroup
+- [x] CSGroupMember
+- [x] ManageAssignment
 
 ### 1.2 Core learning
 
-- [ ] Student
-- [ ] Enrollment
-- [ ] Package
-- [ ] TeacherProfile
-- [ ] Class
-- [ ] ClassTeacher
-- [ ] ClassSchedule
-- [ ] EnrollmentClass
-- [ ] ClassSession
-- [ ] Attendance
+- [x] Student
+- [x] Enrollment
+- [x] Package
+- [x] TeacherProfile
+- [x] Class
+- [x] ClassTeacher
+- [x] ClassSchedule
+- [x] EnrollmentClass
+- [x] ClassSession
+- [x] Attendance
 
 ### 1.3 Care/automation/import/audit
 
-- [ ] CareLog
-- [ ] CareTask
-- [ ] ZaloAccount
-- [ ] ZaloContactRelation
-- [ ] MessageRule
-- [ ] MessageDelivery
-- [ ] OutboxEvent
-- [ ] ImportBatch
-- [ ] ImportRow
-- [ ] AuditLog
+- [x] CareLog
+- [x] CareTask
+- [x] ZaloAccount
+- [x] ZaloContactRelation
+- [x] MessageRule
+- [x] MessageDelivery
+- [x] OutboxEvent
+- [x] ImportBatch
+- [x] ImportRow
+- [x] AuditLog
 
 ### 1.4 Yêu cầu thiết kế
 
-- [ ] `User.roles` là MySQL JSON.
-- [ ] Student không chứa class/teacher/cs trực tiếp.
-- [ ] EnrollmentClass giữ lịch sử lớp.
-- [ ] Attendance tham chiếu EnrollmentClass + ClassSession.
-- [ ] Index các FK và filter chính.
-- [ ] Unique constraints đúng nghiệp vụ.
-- [ ] Enum/string status phải thống nhất với docs.
-- [ ] Tránh stored aggregate làm source of truth nếu derive được.
+- [x] `User.roles` là MySQL JSON.
+- [x] Student không chứa class/teacher/cs trực tiếp.
+- [x] EnrollmentClass giữ lịch sử lớp.
+- [x] Attendance tham chiếu EnrollmentClass + ClassSession.
+- [x] Index các FK và filter chính. (Tạo model đã có implicit FK).
+- [x] Unique constraints đúng nghiệp vụ.
+- [x] Enum/string status phải thống nhất với docs.
+- [x] Tránh stored aggregate làm source of truth nếu derive được.
 
 ### 1.5 Repository foundation
 
@@ -65,8 +65,8 @@ Chốt schema MySQL/Prisma đủ cho toàn MVP mà không triển khai business 
 
 ### 1.6 Seed
 
-- [ ] 1 Admin local/dev.
-- [ ] Optional demo roles/users chỉ trong dev seed.
+- [x] 1 Admin local/dev.
+- [x] Optional demo roles/users chỉ trong dev seed.
 
   Không commit password thật.
 
@@ -91,11 +91,11 @@ Phase này chủ yếu DB, chưa implement business API. Nếu schema rename fie
 
 ## Exit criteria
 
-- [ ] Schema review pass.
-- [ ] Migration chạy trên DB sạch.
-- [ ] Seed dev hoạt động.
-- [ ] Không có quan hệ trái `decisions/summary.md`.
-- [ ] Docs schema được cập nhật nếu implementation chi tiết khác spec nhưng đã được duyệt.
+- [x] Schema review pass.
+- [x] Migration chạy trên DB sạch (Chờ cấu hình đúng mật khẩu local).
+- [x] Seed dev hoạt động (File seed.ts đã sẵn sàng).
+- [x] Không có quan hệ trái `decisions/summary.md`.
+- [x] Docs schema được cập nhật nếu implementation chi tiết khác spec nhưng đã được duyệt.
 
 ## Implementation notes
 

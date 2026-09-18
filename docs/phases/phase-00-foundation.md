@@ -1,8 +1,8 @@
 # Phase 0 — Foundation & Project Bootstrap
 
-- Status: NOT_STARTED
-- Started at:
-- Completed at:
+- Status: DONE
+- Started at: 2026-09-18
+- Completed at: 2026-09-18
 - Dependencies: none
 - Open questions: Q-006 (brand color) không block backend bootstrap; chỉ block việc chốt visual branding cuối cùng.
 
@@ -14,57 +14,57 @@ Tạo nền tảng kỹ thuật ổn định để các phase sau không phải 
 
 ### 0.1 Repository/project structure
 
-- [ ] Xác nhận `.antigravityrules` → `Agent.md` → docs index hoạt động như entrypoint cho AI.
-- [ ] Xác nhận project-local skills có sẵn: `product-frontend`, `prisma-schema-guard`, `api-module-scaffold`.
-- [ ] Tạo `backend/` và `frontend/` theo `docs/architecture/project-structure.md`.
-- [ ] Tạo `.env.example`.
-- [ ] Tạo `.gitignore`.
-- [ ] Tạo scripts chuẩn cho dev/build/lint/typecheck/test.
+- [x] Xác nhận `.antigravityrules` → `Agent.md` → docs index hoạt động như entrypoint cho AI.
+- [x] Xác nhận project-local skills có sẵn: `product-frontend`, `prisma-schema-guard`, `api-module-scaffold`.
+- [x] Tạo `backend/` và `frontend/` theo `docs/architecture/project-structure.md`.
+- [x] Tạo các file `.env.example` riêng biệt (root, backend, frontend).
+- [x] Tạo `.gitignore`.
+- [x] Tạo scripts chuẩn cho dev/build/lint/typecheck/test.
 
 ### 0.2 Backend bootstrap
 
-- [ ] Node.js + Express + TypeScript.
-- [ ] `app.ts` tách `server.ts` để test dễ.
-- [ ] Central error handler.
-- [ ] Request validation foundation.
-- [ ] Config/env loader có validation.
-- [ ] Health endpoint, ví dụ `/health`.
-- [ ] Prisma client wrapper.
-- [ ] Redis connection foundation.
-- [ ] Logger foundation.
+- [x] Node.js + Express + TypeScript.
+- [x] `app.ts` tách `server.ts` để test dễ.
+- [x] Central error handler.
+- [x] Request validation foundation.
+- [x] Config/env loader có validation.
+- [x] Health endpoint, ví dụ `/health`.
+- [x] Prisma client wrapper.
+- [x] Redis connection foundation.
+- [x] Logger foundation.
 
 ### 0.3 Infrastructure local
 
-- [ ] `docker-compose.yml` cho MySQL 8.x + Redis.
-- [ ] Volume persistence local.
-- [ ] Healthcheck container nếu phù hợp.
-- [ ] Không hardcode password production.
+- [x] `docker-compose.yml` cho MySQL 8.x + Redis.
+- [x] Volume persistence local.
+- [x] Healthcheck container nếu phù hợp.
+- [x] Không hardcode password production.
 
 ### 0.4 Frontend bootstrap
 
-- [ ] React + Vite + TypeScript + Tailwind.
-- [ ] Router foundation.
-- [ ] App providers.
-- [ ] `AppLayout` skeleton.
-- [ ] `PageContainer`, `PageHeader` skeleton.
-- [ ] Design-token file.
-- [ ] Base Button/Input/Card/Badge component skeleton nếu cần để chốt pattern.
-- [ ] Asset folders theo `architecture/project-structure.md`.
+- [x] React + Vite + TypeScript + Tailwind.
+- [x] Router foundation.
+- [x] App providers.
+- [x] `AppLayout` skeleton.
+- [x] `PageContainer`, `PageHeader` skeleton.
+- [x] Design-token file.
+- [x] Base Button/Input/Card/Badge component skeleton nếu cần để chốt pattern.
+- [x] Asset folders theo `architecture/project-structure.md`.
 
 ### 0.5 UI foundation
 
-- [ ] Implement semantic token names từ `ui/design-system.md`.
-- [ ] Nếu brand color chưa chốt: dùng màu tạm có comment/documentation; không biến nó thành hardcoded màu rải rác.
-- [ ] Responsive shell hoạt động desktop/tablet/mobile ở mức scaffold.
+- [x] Implement semantic token names từ `ui/design-system.md`.
+- [x] Nếu brand color chưa chốt: dùng màu tạm có comment/documentation; không biến nó thành hardcoded màu rải rác.
+- [x] Responsive shell hoạt động desktop/tablet/mobile ở mức scaffold.
 
 ### 0.6 Deliverables
 
-- [ ] Project chạy local.
-- [ ] Frontend build được.
-- [ ] Backend build được.
-- [ ] MySQL + Redis chạy local.
-- [ ] Backend kết nối được MySQL/Redis hoặc có health readiness tương ứng.
-- [ ] Cấu trúc folder đúng docs.
+- [x] Project chạy local.
+- [x] Frontend build được.
+- [x] Backend build được.
+- [x] MySQL + Redis chạy local.
+- [x] Backend kết nối được MySQL/Redis hoặc có health readiness tương ứng.
+- [x] Cấu trúc folder đúng docs.
 
 ## Không làm trong phase này
 
@@ -92,15 +92,15 @@ Tạo nền tảng kỹ thuật ổn định để các phase sau không phải 
 
 ## Exit criteria
 
-- [ ] AI entrypoint/rules/skills đúng spec.
-- [ ] Repo structure đúng spec.
-- [ ] Không có secret hardcoded.
-- [ ] `.env.example` đủ biến nền tảng.
-- [ ] Docker local hoạt động.
-- [ ] Frontend/backend build pass.
-- [ ] STATUS/CHANGELOG được cập nhật.
+- [x] AI entrypoint/rules/skills đúng spec.
+- [x] Repo structure đúng spec.
+- [x] Không có secret hardcoded.
+- [x] Các file `.env.example` đủ biến nền tảng.
+- [x] Docker local hoạt động.
+- [x] Frontend/backend build pass.
+- [x] STATUS/CHANGELOG được cập nhật.
 
-- [ ] API contract/docs liên quan đã đồng bộ với implementation.
+- [x] API contract/docs liên quan đã đồng bộ với implementation.
 
 ## Implementation notes
 

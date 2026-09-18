@@ -11,21 +11,21 @@ rule nào còn chờ user xác nhận và nơi chứa source chi tiết.
 - Không được chuyển trạng thái `CHƯA CHỐT → CHỐT` chỉ dựa trên suy luận của AI.
 - Khi user chốt rule mới, cập nhật đồng thời file này + `OPEN_QUESTIONS.md` + spec/phase liên quan.
 
-## 2. Attendance status — CHƯA CHỐT
+## 2. Attendance status — CHỐT MỘT PHẦN
 
 Nguồn schema: `architecture/data-model-core.md`.
-Câu hỏi tracking: `OPEN_QUESTIONS.md` — Q-002.
+Quyết định tracking: `OPEN_QUESTIONS.md` — Q-002 (RESOLVED).
 
-| Attendance status | Có tiêu thụ/trừ buổi? | Tính completed? | Trigger message “hoàn thành buổi N”? |
-| --- | --- | --- | --- |
-| `attended` | TBD | TBD | TBD |
-| `absent_approved_A` | TBD | TBD | TBD |
-| `leave_B` | TBD | TBD | TBD |
-| `absent_unapproved_C` | TBD | TBD | TBD |
-| `teacher_absent_D` | TBD | TBD | TBD |
-| `tech_error_E` | TBD | TBD | TBD |
+| Attendance status | Tên hiển thị / ý nghĩa | Có tiêu thụ/trừ buổi? | Tính completed? | Trigger message “hoàn thành buổi N”? |
+| --- | --- | --- | --- | --- |
+| `attended` | Có mặt | TBD | TBD | TBD |
+| `absent_approved_A` | Nghỉ có phép | Có | Không | Không |
+| `leave_B` | Bảo lưu | Có | Không | Không |
+| `absent_unapproved_C` | Nghỉ sai quy định | Có | Không | Không |
+| `teacher_absent_D` | GV xin nghỉ | Có | Không | Không |
+| `tech_error_E` | Lỗi kỹ thuật | Có | Không | Không |
 
-AI không được tự suy ra từ tên A/B/C/D/E.
+Rule của `attended` chưa nằm trong quyết định Q-002; chỉ A/B/C/D/E được chốt ở đây.
 
 ## 3. Source of truth cho số buổi — CHỐT NGUYÊN TẮC
 
@@ -65,27 +65,11 @@ UNIQUE(enrollment_class_id, class_session_id)
 
 `Attendance` không duplicate ngày/giờ buổi học; ngày/giờ thuộc `ClassSession`.
 
-## 6. ID từ Sheet 1/3 — CHƯA CHỐT
+## 6. ID từ Sheet 1/3 — CHỐT
 
-Câu hỏi tracking: Q-001.
+Quyết định tracking: Q-001 (RESOLVED).
 
-Cần user xác nhận ID nguồn là:
-- ID cố định của `Student`, hay
-- ID của một `Enrollment`.
-
-Không hard-code mapping production trước khi chốt.
-
-## 7. ClassSession / session_number — CHƯA CHỐT
-
-Câu hỏi tracking: Q-003.
-
-Cần chốt nguồn và cách đánh số khi:
-- import từ learning system;
-- giáo viên tạo/nhập buổi Zoom;
-- học viên chuyển lớp/đi tiếp level;
-- buổi bị hủy hoặc sửa lịch.
-
-Không tự giả định session_number global theo Enrollment hay global theo Student.
+`ID` từ Sheet 1/3 là external ID cố định, bất biến của `Student`; dùng xuyên các Enrollment. Schema/import phải map ID nguồn vào Student, không dùng nó làm định danh riêng của Enrollment.
 
 ## 8. Quyền sửa dữ liệu import/attendance cũ — CHƯA CHỐT
 
@@ -131,17 +115,23 @@ Khi automation được triển khai production:
 
 Chi tiết xem `architecture/system.md`, `architecture/data-model-zalo-care.md`, phase 08.
 
-## 12. Zalo contact/friend policy — CHƯA CHỐT
+## 12. Zalo contact/friend policy — CHỐT
 
-Câu hỏi tracking: Q-007.
+Quyết định tracking: Q-007 (RESOLVED).
 
-Không tự quyết khi student chưa friend/contact với ZaloAccount:
-- skip + cảnh báo;
-- cho phép gửi theo cấu hình;
-- yêu cầu kết bạn trước;
-- policy khác.
+Khi Student chưa có `ZaloContactRelation` hợp lệ với `ZaloAccount` của CS:
+- không gửi message;
+- tạo `MessageDelivery` trạng thái `skipped` kèm lý do rõ ràng;
+- hiển thị cảnh báo cho CS;
+- không tự retry cho đến khi relation được xác nhận.
 
-Technical spike phải xác nhận khả năng thật của version `zca-js` được pin.
+Technical spike vẫn phải xác nhận khả năng thật của version `zca-js` được pin.
+
+## 13. UI brand — CHỐT
+
+Quyết định tracking: Q-006 (RESOLVED).
+
+Dùng primary `#2563EB` và accent `#14B8A6` qua semantic token tập trung. Không hardcode màu brand rải rác trong component.
 
 ## 13. UI/business behavior
 

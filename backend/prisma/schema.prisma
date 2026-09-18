@@ -1,0 +1,686 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// -----------------------------------------------------------------------------
+// 1. Auth & Organization
+// -----------------------------------------------------------------------------
+
+model User {
+  id            Int       @id @default(autoincrement())
+  name          String?
+  email         String    @unique
+  phone         String?
+  password_hash String
+  roles         Json // MySQL JSON, e.g., ["CS"], ["MANAGE", "TEACHER"]
+  active        Boolean   @default(true)
+  last_login_at DateTime?
+  created_by_id Int?
+  created_at    DateTime  @default(now())
+  updated_at    DateTime  @updatedAt
+
+  created_by    User?  @relation("UserCreator", fields: [created_by_id], references: [id])
+  created_users User[] @relation("UserCreator")
+
+  auth_sessions          AuthSession[]
+  password_reset_tokens  PasswordResetToken[]
+  login_audits           LoginAudit[]
+  cs_group_members       CSGroupMember[]
+  manage_assignments     ManageAssignment[]
+  teacher_profile        TeacherProfile?
+  class_teachers         ClassTeacher[]
+  created_class_sessions ClassSession[]       @relation("SessionCreator")
+  created_attendances    Attendance[]         @relation("AttendanceCreator")
+  enrollments_as_cs      Enrollment[]         @relation("EnrollmentCS")
+  zalo_account           ZaloAccount?
+  created_message_rules  MessageRule[]        @relation("MessageRuleCreator")
+  care_logs              CareLog[]            @relation("CareLogCS")
+  care_tasks_assigned    CareTask[]           @relation("CareTaskAssignee")
+  import_batches         ImportBatch[]        @relation("ImportBatchUploader")
+  audit_logs             AuditLog[]           @relation("AuditLogUser")
+
+  @@map("users")
+}
+
+model AuthSession {
+  id                 Int       @id @default(autoincrement())
+  user_id            Int
+  refresh_token_hash String
+  device_name        String?
+  ip_address         String?
+  user_agent         String?
+  expires_at         DateTime
+  revoked_at         DateTime?
+  last_used_at       DateTime?
+  created_at         DateTime  @default(now())
+
+  user User @relation(fields: [user_id], references: [id])
+
+  @@map("auth_sessions")
+}
+
+model PasswordResetToken {
+  id         Int       @id @default(autoincrement())
+  user_id    Int
+  token_hash String
+  expires_at DateTime
+  used_at    DateTime?
+  created_at DateTime  @default(now())
+
+  user User @relation(fields: [user_id], references: [id])
+
+  @@map("password_reset_tokens")
+}
+
+enum LoginStatus {
+  SUCCESS
+  FAILED
+  LOCKED
+  DISABLED
+}
+
+model LoginAudit {
+  id              Int         @id @default(autoincrement())
+  user_id         Int?
+  email_attempted String
+  status          LoginStatus
+  reason          String?
+  ip_address      String?
+  user_agent      String?
+  created_at      DateTime    @default(now())
+
+  user User? @relation(fields: [user_id], references: [id])
+
+  @@map("login_audits")
+}
+
+model CSGroup {
+  id         Int      @id @default(autoincrement())
+  group_name String
+  active     Boolean  @default(true)
+  created_at DateTime @default(now())
+
+  members     CSGroupMember[]
+  assignments ManageAssignment[]
+
+  @@map("cs_groups")
+}
+
+model CSGroupMember {
+  id          Int @id @default(autoincrement())
+  cs_group_id Int
+  user_id     Int
+
+  cs_group CSGroup @relation(fields: [cs_group_id], references: [id])
+  user     User    @relation(fields: [user_id], references: [id])
+
+  @@unique([cs_group_id, user_id])
+  @@map("cs_group_members")
+}
+
+model ManageAssignment {
+  id             Int @id @default(autoincrement())
+  manage_user_id Int
+  cs_group_id    Int
+
+  manage_user User    @relation(fields: [manage_user_id], references: [id])
+  cs_group    CSGroup @relation(fields: [cs_group_id], references: [id])
+
+  @@unique([manage_user_id, cs_group_id])
+  @@map("manage_assignments")
+}
+
+// -----------------------------------------------------------------------------
+// 2. Core Learning
+// -----------------------------------------------------------------------------
+
+model Student {
+  id            Int       @id @default(autoincrement())
+  full_name     String
+  gender        String?
+  phone         String?
+  email         String?
+  date_of_birth DateTime? @db.Date
+  occupation    String?
+  zalo_uid      String?
+  note          String?   @db.Text
+  created_at    DateTime  @default(now())
+  updated_at    DateTime  @updatedAt
+
+  enrollments            Enrollment[]
+  zalo_contact_relations ZaloContactRelation[]
+
+  @@map("students")
+}
+
+model Package {
+  id                     Int      @id @default(autoincrement())
+  code                   String   @unique
+  name                   String?
+  default_total_sessions Int?
+  description            String?  @db.Text
+  active                 Boolean  @default(true)
+  created_at             DateTime @default(now())
+  updated_at             DateTime @updatedAt
+
+  enrollments   Enrollment[]
+  message_rules MessageRule[]
+
+  @@map("packages")
+}
+
+enum EnrollmentStatus {
+  NOT_STARTED
+  STUDYING
+  PAUSED
+  FINISHED
+  CANCELLED
+}
+
+model Enrollment {
+  id                          Int              @id @default(autoincrement())
+  external_id                 String?
+  student_id                  Int
+  package_id                  Int?
+  cs_id                       Int
+  paid_at                     DateTime?
+  sale_name                   String?
+  student_source_status       String?
+  course_content              String?
+  payment_status              String?
+  course_teacher_type         String?
+  level                       String?
+  total_sessions              Int
+  class_model                 String?
+  sales_note                  String?          @db.Text
+  start_date                  DateTime?        @db.Date
+  end_date                    DateTime?        @db.Date
+  status                      EnrollmentStatus @default(NOT_STARTED)
+  auto_message_enabled        Boolean          @default(true)
+  external_remaining_sessions Int?
+  external_synced_at          DateTime?
+  handed_over_at              DateTime?
+  account_created_at          DateTime?
+  created_at                  DateTime         @default(now())
+  updated_at                  DateTime         @updatedAt
+
+  student Student  @relation(fields: [student_id], references: [id])
+  package Package? @relation(fields: [package_id], references: [id])
+  cs      User     @relation("EnrollmentCS", fields: [cs_id], references: [id])
+
+  enrollment_classes EnrollmentClass[]
+  message_rules      MessageRule[]
+  message_deliveries MessageDelivery[]
+  care_logs          CareLog[]
+  care_tasks         CareTask[]
+
+  @@map("enrollments")
+}
+
+enum TeacherType {
+  VIETNAMESE
+  JAPANESE
+  OTHER
+}
+
+model TeacherProfile {
+  id           Int          @id @default(autoincrement())
+  user_id      Int          @unique
+  teacher_code String?      @unique
+  teacher_type TeacherType?
+  active       Boolean      @default(true)
+  created_at   DateTime     @default(now())
+  updated_at   DateTime     @updatedAt
+
+  user User @relation(fields: [user_id], references: [id])
+
+  @@map("teacher_profiles")
+}
+
+enum ClassModelType {
+  ONE_TO_ONE
+  GROUP
+}
+
+enum AttendanceSourceType {
+  LEARNING_SYSTEM
+  ZOOM
+}
+
+model Class {
+  id                Int                  @id @default(autoincrement())
+  class_code        String?
+  class_name        String
+  level             String?
+  model_type        ClassModelType
+  attendance_source AttendanceSourceType
+  active            Boolean              @default(true)
+  created_at        DateTime             @default(now())
+  updated_at        DateTime             @updatedAt
+
+  class_teachers     ClassTeacher[]
+  enrollment_classes EnrollmentClass[]
+  class_schedules    ClassSchedule[]
+  class_sessions     ClassSession[]
+
+  @@map("classes")
+}
+
+enum ClassTeacherRole {
+  MAIN
+  ASSISTANT
+  SUBSTITUTE
+}
+
+model ClassTeacher {
+  id         Int              @id @default(autoincrement())
+  class_id   Int
+  teacher_id Int
+  role       ClassTeacherRole
+  start_date DateTime?        @db.Date
+  end_date   DateTime?        @db.Date
+  active     Boolean          @default(true)
+  created_at DateTime         @default(now())
+  updated_at DateTime         @updatedAt
+
+  class   Class @relation(fields: [class_id], references: [id])
+  teacher User  @relation(fields: [teacher_id], references: [id])
+
+  @@map("class_teachers")
+}
+
+enum EnrollmentClassStatus {
+  PLANNED
+  ACTIVE
+  COMPLETED
+  TRANSFERRED
+  CANCELLED
+}
+
+model EnrollmentClass {
+  id            Int                   @id @default(autoincrement())
+  enrollment_id Int
+  class_id      Int
+  sequence_no   Int
+  start_date    DateTime?             @db.Date
+  end_date      DateTime?             @db.Date
+  status        EnrollmentClassStatus @default(PLANNED)
+  created_at    DateTime              @default(now())
+  updated_at    DateTime              @updatedAt
+
+  enrollment Enrollment   @relation(fields: [enrollment_id], references: [id])
+  class      Class        @relation(fields: [class_id], references: [id])
+  attendance Attendance[]
+
+  @@unique([enrollment_id, class_id, sequence_no])
+  @@map("enrollment_classes")
+}
+
+model ClassSchedule {
+  id               Int       @id @default(autoincrement())
+  class_id         Int
+  schedule_pattern String
+  start_time       String? // e.g., "19:00"
+  duration_minutes Int?
+  valid_from       DateTime? @db.Date
+  valid_to         DateTime? @db.Date
+  active           Boolean   @default(true)
+  created_at       DateTime  @default(now())
+  updated_at       DateTime  @updatedAt
+
+  class Class @relation(fields: [class_id], references: [id])
+
+  @@map("class_schedules")
+}
+
+enum ClassSessionStatus {
+  SCHEDULED
+  COMPLETED
+  CANCELLED
+}
+
+model ClassSession {
+  id             Int                @id @default(autoincrement())
+  class_id       Int
+  session_number Int
+  session_date   DateTime           @db.Date
+  start_time     String?
+  end_time       String?
+  teacher_id     Int?
+  status         ClassSessionStatus @default(SCHEDULED)
+  created_by_id  Int
+  created_at     DateTime           @default(now())
+  updated_at     DateTime           @updatedAt
+
+  class      Class        @relation(fields: [class_id], references: [id])
+  created_by User         @relation("SessionCreator", fields: [created_by_id], references: [id])
+  attendance Attendance[]
+
+  @@unique([class_id, session_number])
+  @@map("class_sessions")
+}
+
+// -----------------------------------------------------------------------------
+// 3. Attendance
+// -----------------------------------------------------------------------------
+
+enum AttendanceStatus {
+  ATTENDED
+  ABSENT_APPROVED_A
+  LEAVE_B
+  ABSENT_UNAPPROVED_C
+  TEACHER_ABSENT_D
+  TECH_ERROR_E
+}
+
+enum AttendanceSource {
+  MANUAL
+  EXCEL_IMPORT
+  TEACHER_UPLOAD
+}
+
+model Attendance {
+  id                  Int              @id @default(autoincrement())
+  enrollment_class_id Int
+  class_session_id    Int
+  status              AttendanceStatus
+  source              AttendanceSource
+  created_by_id       Int
+  created_at          DateTime         @default(now())
+  updated_at          DateTime         @updatedAt
+
+  enrollment_class   EnrollmentClass   @relation(fields: [enrollment_class_id], references: [id])
+  class_session      ClassSession      @relation(fields: [class_session_id], references: [id])
+  created_by         User              @relation("AttendanceCreator", fields: [created_by_id], references: [id])
+  message_deliveries MessageDelivery[]
+
+  @@unique([enrollment_class_id, class_session_id])
+  @@map("attendances")
+}
+
+// -----------------------------------------------------------------------------
+// 4. Care, Automation, Import, Audit
+// -----------------------------------------------------------------------------
+
+enum ZaloAccountStatus {
+  NOT_LOGGED_IN
+  ACTIVE
+  EXPIRED
+  BANNED
+  DISABLED
+}
+
+model ZaloAccount {
+  id                     Int               @id @default(autoincrement())
+  cs_id                  Int               @unique
+  zalo_phone             String?
+  encrypted_session_data String?           @db.Text
+  status                 ZaloAccountStatus @default(NOT_LOGGED_IN)
+  last_login_at          DateTime?
+  last_active_at         DateTime?
+  created_at             DateTime          @default(now())
+  updated_at             DateTime          @updatedAt
+
+  cs                     User                  @relation(fields: [cs_id], references: [id])
+  zalo_contact_relations ZaloContactRelation[]
+  message_deliveries     MessageDelivery[]
+
+  @@map("zalo_accounts")
+}
+
+enum ZaloContactRelationStatus {
+  FRIEND
+  STRANGER
+  UNKNOWN
+  BLOCKED
+}
+
+model ZaloContactRelation {
+  id              Int                       @id @default(autoincrement())
+  student_id      Int
+  zalo_account_id Int
+  relation_status ZaloContactRelationStatus @default(UNKNOWN)
+  last_checked_at DateTime?
+  created_at      DateTime                  @default(now())
+  updated_at      DateTime                  @updatedAt
+
+  student      Student     @relation(fields: [student_id], references: [id])
+  zalo_account ZaloAccount @relation(fields: [zalo_account_id], references: [id])
+
+  @@unique([student_id, zalo_account_id])
+  @@map("zalo_contact_relations")
+}
+
+enum MessageRuleChannel {
+  ZALO_PERSONAL
+}
+
+model MessageRule {
+  id                     Int                @id @default(autoincrement())
+  package_id             Int?
+  enrollment_id          Int?
+  trigger_session_number Int
+  delay_minutes          Int
+  require_approval       Boolean            @default(false)
+  channel                MessageRuleChannel @default(ZALO_PERSONAL)
+  message_content        String             @db.Text
+  message_variables      Json
+  version                Int                @default(1)
+  active                 Boolean            @default(true)
+  created_by_id          Int
+  created_at             DateTime           @default(now())
+  updated_at             DateTime           @updatedAt
+
+  package            Package?          @relation(fields: [package_id], references: [id])
+  enrollment         Enrollment?       @relation(fields: [enrollment_id], references: [id])
+  created_by         User              @relation("MessageRuleCreator", fields: [created_by_id], references: [id])
+  message_deliveries MessageDelivery[]
+
+  @@map("message_rules")
+}
+
+enum MessageDeliveryStatus {
+  SCHEDULED
+  WAITING_APPROVAL
+  QUEUED
+  SENDING
+  SENT
+  FAILED
+  CANCELLED
+  SKIPPED_NOT_FRIEND
+  SKIPPED_SESSION_EXPIRED
+  SKIPPED_DISABLED
+}
+
+model MessageDelivery {
+  id                  Int                   @id @default(autoincrement())
+  enrollment_id       Int
+  attendance_id       Int
+  message_rule_id     Int
+  zalo_account_id     Int
+  scheduled_at        DateTime
+  sent_at             DateTime?
+  status              MessageDeliveryStatus @default(SCHEDULED)
+  template_version    Int
+  rendered_content    String                @db.Text
+  variables_snapshot  Json
+  retry_count         Int                   @default(0)
+  provider_message_id String?
+  error_message       String?               @db.Text
+  queue_job_id        String?
+  created_at          DateTime              @default(now())
+  updated_at          DateTime              @updatedAt
+
+  enrollment   Enrollment  @relation(fields: [enrollment_id], references: [id])
+  attendance   Attendance  @relation(fields: [attendance_id], references: [id])
+  message_rule MessageRule @relation(fields: [message_rule_id], references: [id])
+  zalo_account ZaloAccount @relation(fields: [zalo_account_id], references: [id])
+
+  @@unique([attendance_id, message_rule_id])
+  @@map("message_deliveries")
+}
+
+enum OutboxEventStatus {
+  PENDING
+  PUBLISHED
+  FAILED
+}
+
+model OutboxEvent {
+  id             Int               @id @default(autoincrement())
+  event_type     String
+  aggregate_type String
+  aggregate_id   String
+  payload        Json
+  status         OutboxEventStatus @default(PENDING)
+  retry_count    Int               @default(0)
+  published_at   DateTime?
+  created_at     DateTime          @default(now())
+  updated_at     DateTime          @updatedAt
+
+  @@map("outbox_events")
+}
+
+enum CareLogOutcome {
+  POSITIVE
+  NEED_SUPPORT_SYSTEM
+  TEMP_PAUSE
+  NEED_CURRICULUM_SUPPORT
+  NEED_STUDENT_WEAKNESS_FIX
+  NEED_TEACHER_SUPPORT
+  NEGATIVE_WANTS_TO_STOP
+  NO_RESPONSE
+}
+
+model CareLog {
+  id                   Int             @id @default(autoincrement())
+  enrollment_id        Int
+  cs_id                Int
+  after_session_number Int?
+  outcome              CareLogOutcome?
+  content              String?         @db.Text
+  created_by_id        Int
+  created_at           DateTime        @default(now())
+  updated_at           DateTime        @updatedAt
+
+  enrollment Enrollment @relation(fields: [enrollment_id], references: [id])
+  cs         User       @relation("CareLogCS", fields: [cs_id], references: [id])
+  // created_by should be technically mapped, but cs is sufficient for now based on docs
+
+  @@map("care_logs")
+}
+
+enum CareTaskType {
+  CALLBACK
+  HOT_ISSUE
+  FOLLOW_UP
+}
+
+enum CareTaskPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+enum CareTaskStatus {
+  PENDING
+  DONE
+  CANCELLED
+}
+
+model CareTask {
+  id             Int              @id @default(autoincrement())
+  enrollment_id  Int
+  assigned_to_id Int
+  type           CareTaskType
+  title          String?
+  note           String?          @db.Text
+  due_at         DateTime?
+  priority       CareTaskPriority @default(NORMAL)
+  status         CareTaskStatus   @default(PENDING)
+  completed_at   DateTime?
+  created_at     DateTime         @default(now())
+  updated_at     DateTime         @updatedAt
+
+  enrollment  Enrollment @relation(fields: [enrollment_id], references: [id])
+  assigned_to User       @relation("CareTaskAssignee", fields: [assigned_to_id], references: [id])
+
+  @@map("care_tasks")
+}
+
+enum ImportType {
+  STUDENT_ENROLLMENT
+  ATTENDANCE
+  TEACHER_ATTENDANCE
+}
+
+enum ImportBatchStatus {
+  PREVIEW
+  PROCESSING
+  COMPLETED
+  PARTIAL_FAILED
+  FAILED
+  ROLLED_BACK
+}
+
+model ImportBatch {
+  id             Int               @id @default(autoincrement())
+  uploaded_by_id Int
+  file_name      String
+  import_type    ImportType
+  total_rows     Int               @default(0)
+  success_rows   Int               @default(0)
+  failed_rows    Int               @default(0)
+  status         ImportBatchStatus @default(PREVIEW)
+  created_at     DateTime          @default(now())
+  completed_at   DateTime?
+
+  uploaded_by User        @relation("ImportBatchUploader", fields: [uploaded_by_id], references: [id])
+  import_rows ImportRow[]
+
+  @@map("import_batches")
+}
+
+enum ImportRowStatus {
+  PENDING
+  SUCCESS
+  FAILED
+}
+
+model ImportRow {
+  id              Int             @id @default(autoincrement())
+  import_batch_id Int
+  row_number      Int
+  raw_data        Json
+  status          ImportRowStatus @default(PENDING)
+  error_message   String?         @db.Text
+  entity_type     String?
+  entity_id       String?
+  created_at      DateTime        @default(now())
+
+  import_batch ImportBatch @relation(fields: [import_batch_id], references: [id])
+
+  @@map("import_rows")
+}
+
+model AuditLog {
+  id          Int      @id @default(autoincrement())
+  user_id     Int
+  action      String
+  entity_type String
+  entity_id   String
+  before_data Json?
+  after_data  Json?
+  ip_address  String?
+  created_at  DateTime @default(now())
+
+  user User @relation("AuditLogUser", fields: [user_id], references: [id])
+
+  @@map("audit_logs")
+}

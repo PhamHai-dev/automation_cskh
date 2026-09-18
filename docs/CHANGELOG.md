@@ -1,5 +1,22 @@
 # Project Changelog
 
+## 2026-09-18 — Phase 1: Database Schema Complete
+
+- Implement toàn bộ cấu trúc Schema theo `data-model-core.md` và `data-model-zalo-care.md`.
+- Khai báo 22 Model hoàn chỉnh (Auth, Learning, Attendance, Care/Automation, v.v.).
+- Ràng buộc cấu trúc theo đúng nghiệp vụ (Ví dụ: `@@unique([enrollment_class_id, class_session_id])` cho `Attendance`).
+- Khởi tạo script seed (`seed.ts`) để tạo `ADMIN` mặc định.
+- Vượt qua `npx prisma validate` thành công.
+
+## 2026-09-18 — Phase 0: Foundation & Bootstrap Complete
+
+- Khởi tạo thư mục và cấu trúc project chuẩn theo kiến trúc Modular Monolith (Backend) và Feature-first (Frontend).
+- Tách biệt cấu hình môi trường `.env` thành 3 phần rõ ràng: Root (cho Docker infra), Backend và Frontend.
+- Thiết lập Backend: Node.js, Express, TypeScript, Zod environment validation, Prisma client, Central Error Handler.
+- Thiết lập Frontend: React (Vite), Tailwind CSS, React Router, cấu hình Design Token (tokens.css, globals.css).
+- Khởi tạo file Docker Compose cho MySQL và Redis.
+- Khởi tạo OpenAPI contract tại `docs/api/openapi.yaml` với `/health` endpoint.
+
 ## 2026-09-18 — Documentation baseline
 
 - Chuẩn hóa tài liệu để AI coding agent làm theo phase.

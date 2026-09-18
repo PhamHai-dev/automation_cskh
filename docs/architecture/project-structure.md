@@ -43,6 +43,7 @@ automation_cskh/
 
 ```text
 backend/
+├── .env.example
 ├── prisma/
 │   ├── schema.prisma
 │   ├── migrations/
@@ -112,6 +113,7 @@ Luồng bắt buộc:
 
 ```text
 frontend/
+├── .env.example
 ├── public/
 │   ├── images/
 │   │   ├── logos/

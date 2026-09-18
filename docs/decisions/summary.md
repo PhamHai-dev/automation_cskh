@@ -20,3 +20,11 @@
 15. **UI consistency:** màu, spacing, radius, typography, table, button, card, modal và responsive phải đi qua design system/token/component chung; không style ad-hoc theo từng page.
 16. **Asset organization:** ảnh public đặt trong `frontend/public/images`, ảnh import trong React đặt ở `frontend/src/assets`; không lưu ảnh rải rác trong page.
 17. **Kỷ luật triển khai:** AI làm một phase tại một thời điểm; sau mỗi phase phải test, cập nhật phase/STATUS/CHANGELOG/OPEN_QUESTIONS và dừng chờ user xác nhận.
+18. **External student ID:** cột `ID` từ Sheet 1/3 là external ID cố định của `Student`, dùng xuyên nhiều Enrollment.
+19. **Attendance A–E:** A (nghỉ có phép), B (bảo lưu), C (nghỉ sai quy định), D (GV xin nghỉ), E (lỗi kỹ thuật) đều trừ buổi; không tính completed và không trigger message.
+20. **Session numbering:** `session_number` liên tục theo Enrollment và không reset khi chuyển lớp.
+21. **Import correction:** Admin sửa mọi dữ liệu import; Manage sửa trong scope; CS không sửa trực tiếp; MVP không khóa ngày/kỳ và mọi thay đổi phải audit.
+22. **Multi-role:** endpoint phù hợp dùng union data scope của các role; quyền ghi vẫn kiểm tra role thực hiện action.
+23. **UI brand:** primary `#2563EB`, accent `#14B8A6`, chỉ dùng qua semantic token tập trung.
+24. **Zalo relation:** không có relation hợp lệ thì delivery `skipped`, có lý do/cảnh báo CS và không tự retry.
+25. **Message rule precedence:** rule riêng Enrollment override default Package khi cùng session number; chỉ tạo một delivery.
