@@ -5,6 +5,13 @@ import cookieParser from 'cookie-parser';
 import { errorMiddleware } from './middlewares/error.middleware';
 import { authRouter } from './modules/auth/auth.routes';
 import { usersRouter } from './modules/users/users.routes';
+import { packagesRouter } from './modules/packages/packages.routes';
+import { teachersRouter } from './modules/teachers/teachers.routes';
+import { studentsRouter } from './modules/students/students.routes';
+import { classesRouter } from './modules/classes/classes.routes';
+import { enrollmentsRouter } from './modules/enrollments/enrollments.routes';
+import { classSessionsRouter } from './modules/class-sessions/class-sessions.routes';
+import { attendanceRouter } from './modules/attendance/attendance.routes';
 
 const app: Express = express();
 
@@ -26,6 +33,13 @@ app.get('/health', (req: Request, res: Response) => {
 // Routes
 app.use('/api/v1/auth', authRouter);
 app.use('/api/v1/settings/users', usersRouter);
+app.use('/api/v1/packages', packagesRouter);
+app.use('/api/v1/teachers', teachersRouter);
+app.use('/api/v1/students', studentsRouter);
+app.use('/api/v1/classes', classesRouter);
+app.use('/api/v1/enrollments', enrollmentsRouter);
+app.use('/api/v1/classes/:classId/sessions', classSessionsRouter);
+app.use('/api/v1/classes/:classId/sessions/:sessionId/attendance', attendanceRouter);
 
 // Error handling
 app.use(errorMiddleware);

@@ -261,3 +261,153 @@ components:
         updated_at:
           type: string
           format: date-time
+
+    Package:
+      type: object
+      properties:
+        id:
+          type: integer
+        code:
+          type: string
+        name:
+          type: string
+        default_total_sessions:
+          type: integer
+        active:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+
+    Student:
+      type: object
+      properties:
+        id:
+          type: integer
+        full_name:
+          type: string
+        phone:
+          type: string
+        email:
+          type: string
+        zalo_uid:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    Enrollment:
+      type: object
+      properties:
+        id:
+          type: integer
+        student_id:
+          type: integer
+        package_id:
+          type: integer
+        cs_id:
+          type: integer
+        status:
+          type: string
+          enum: [NOT_STARTED, STUDYING, PAUSED, FINISHED, CANCELLED]
+        total_sessions:
+          type: integer
+        start_date:
+          type: string
+          format: date
+        end_date:
+          type: string
+          format: date
+        created_at:
+          type: string
+          format: date-time
+
+    Class:
+      type: object
+      properties:
+        id:
+          type: integer
+        class_code:
+          type: string
+        class_name:
+          type: string
+        model_type:
+          type: string
+          enum: [ONE_TO_ONE, GROUP]
+        attendance_source:
+          type: string
+          enum: [LEARNING_SYSTEM, ZOOM]
+        active:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+
+    TeacherProfile:
+      type: object
+      properties:
+        id:
+          type: integer
+        user_id:
+          type: integer
+        teacher_code:
+          type: string
+        teacher_type:
+          type: string
+          enum: [VIETNAMESE, JAPANESE, OTHER]
+        active:
+          type: boolean
+
+    ClassSession:
+      type: object
+      properties:
+        id:
+          type: integer
+        class_id:
+          type: integer
+        session_number:
+          type: integer
+        session_date:
+          type: string
+          format: date
+        start_time:
+          type: string
+        end_time:
+          type: string
+        teacher_id:
+          type: integer
+        status:
+          type: string
+          enum: [SCHEDULED, COMPLETED, CANCELLED]
+        created_by_id:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    Attendance:
+      type: object
+      properties:
+        id:
+          type: integer
+        enrollment_class_id:
+          type: integer
+        class_session_id:
+          type: integer
+        status:
+          type: string
+          enum: [ATTENDED, ABSENT_APPROVED_A, LEAVE_B, ABSENT_UNAPPROVED_C, TEACHER_ABSENT_D, TECH_ERROR_E]
+        source:
+          type: string
+          enum: [MANUAL, EXCEL_IMPORT, TEACHER_UPLOAD]
+        created_by_id:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time

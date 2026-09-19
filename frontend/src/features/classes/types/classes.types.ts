@@ -1,0 +1,128 @@
+import { Teacher } from '../../teachers/types/teachers.types';
+
+export interface ClassTeacher {
+  id: number;
+  class_id: number;
+  teacher_id: number;
+  role: 'MAIN' | 'ASSISTANT' | 'SUBSTITUTE';
+  start_date: string | null;
+  end_date: string | null;
+  teacher?: Teacher;
+}
+
+export interface Class {
+  id: number;
+  class_code?: string;
+  class_name: string;
+  level?: string;
+  model_type: 'ONE_TO_ONE' | 'GROUP';
+  attendance_source: 'LEARNING_SYSTEM' | 'ZOOM';
+  active: boolean;
+  class_teachers?: ClassTeacher[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateClassDTO {
+  class_code?: string;
+  class_name: string;
+  level?: string;
+  model_type: 'ONE_TO_ONE' | 'GROUP';
+  attendance_source: 'LEARNING_SYSTEM' | 'ZOOM';
+}
+
+export interface UpdateClassDTO extends Partial<CreateClassDTO> {
+  active?: boolean;
+}
+
+export interface AssignTeacherDTO {
+  teacher_id: number;
+  role: 'MAIN' | 'ASSISTANT' | 'SUBSTITUTE';
+  start_date?: string;
+  end_date?: string;
+}
+
+// ---- ClassSession ----
+
+export type ClassSessionStatus = 'SCHEDULED' | 'COMPLETED' | 'CANCELLED';
+
+export interface ClassSession {
+  id: number;
+  class_id: number;
+  session_number: number;
+  session_date: string;
+  start_time?: string;
+  end_time?: string;
+  teacher_id?: number;
+  status: ClassSessionStatus;
+  created_by_id: number;
+  created_by?: { id: number; name: string; email: string };
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateClassSessionDTO {
+  session_number: number;
+  session_date: string;
+  start_time?: string;
+  end_time?: string;
+  teacher_id?: number;
+}
+
+export interface UpdateClassSessionDTO extends Partial<CreateClassSessionDTO> {
+  status?: ClassSessionStatus;
+}
+
+// ---- Attendance ----
+
+export type AttendanceStatus = 'ATTENDED' | 'ABSENT_APPROVED_A' | 'LEAVE_B' | 'ABSENT_UNAPPROVED_C' | 'TEACHER_ABSENT_D' | 'TECH_ERROR_E';
+
+export type AttendanceSource = 'MANUAL' | 'EXCEL_IMPORT' | 'TEACHER_UPLOAD';
+
+export interface Attendance {
+  id: number;
+  enrollment_class_id: number;
+  class_session_id: number;
+  status: AttendanceStatus;
+  source: AttendanceSource;
+  created_by_id: number;
+  created_by?: { id: number; name: string; email: string };
+  enrollment_class?: {
+    id: number;
+    enrollment?: {
+      id: number;
+      student?: { id: number; full_name: string; phone: string };
+      cs?: { id: number; name: string; email: string };
+    };
+  };
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MarkAttendanceDTO {
+  enrollment_class_id: number;
+  status: AttendanceStatus;
+}
+
+export interface BulkMarkAttendanceDTO {
+  items: MarkAttendanceDTO[];
+}
+
+export interface UpdateAttendanceDTO {
+  status?: AttendanceStatus;
+}
+
+export const ATTENDANCE_STATUS_LABELS: Record<AttendanceStatus, string> = {
+  ATTENDED: 'Có mặt',
+  ABSENT_APPROVED_A: 'Nghỉ phép (A)',
+  LEAVE_B: 'Bảo lưu (B)',
+  ABSENT_UNAPPROVED_C: 'Nghỉ sai (C)',
+  TEACHER_ABSENT_D: 'GV nghỉ (D)',
+  TECH_ERROR_E: 'Lỗi kỹ thuật (E)',
+};
+
+export const SESSION_STATUS_LABELS: Record<ClassSessionStatus, string> = {
+  SCHEDULED: 'Chưa diễn ra',
+  COMPLETED: 'Đã hoàn thành',
+  CANCELLED: 'Đã hủy',
+};

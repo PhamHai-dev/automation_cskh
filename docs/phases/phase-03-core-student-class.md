@@ -1,8 +1,8 @@
 # Phase 3 — Student / Enrollment / Class / Teacher Core
 
-- Status: NOT_STARTED
-- Started at:
-- Completed at:
+- Status: COMPLETED
+- Started at: 2026-09-18
+- Completed at: 2026-09-18
 - Dependencies: Phase 2 DONE
 - Open questions: Q-001 có thể ảnh hưởng external ID/import readiness.
 
@@ -14,60 +14,60 @@ Có core CRUD và quan hệ nghiệp vụ của Sheet 1 trước khi điểm dan
 
 ### 3.1 Student
 
-- [ ] create/read/update/search
-- [ ] duplicate handling theo phone/email/external rule đã chốt
+- [x] create/read/update/search
+- [x] duplicate handling theo phone/email/external rule đã chốt
 
 ### 3.2 Enrollment
 
-- [ ] create/read/update/status
-- [ ] assign/reassign CS đúng scope
-- [ ] package relation
-- [ ] total sessions/start/end/status
+- [x] create/read/update/status
+- [x] assign/reassign CS đúng scope
+- [x] package relation
+- [x] total sessions/start/end/status
 
 ### 3.3 Package
 
-- [ ] CRUD/admin/manage theo permission đã chốt
+- [x] CRUD/admin/manage theo permission đã chốt
 
 ### 3.4 Teacher
 
-- [ ] TeacherProfile
-- [ ] list/search teacher
+- [x] TeacherProfile
+- [x] list/search teacher
 
 ### 3.5 Class
 
-- [ ] CRUD class
-- [ ] attendance_source
-- [ ] schedule relation
+- [x] CRUD class
+- [x] attendance_source
+- [x] schedule relation
 
 ### 3.6 ClassTeacher
 
-- [ ] gán GV
-- [ ] giữ history bằng active/start/end nếu model có
+- [x] gán GV
+- [x] giữ history bằng active/start/end nếu model có
 
 ### 3.7 EnrollmentClass
 
-- [ ] add enrollment vào class
-- [ ] transfer class
-- [ ] close current class membership
-- [ ] đi tiếp level trong cùng enrollment
-- [ ] không mất history
+- [x] add enrollment vào class
+- [x] transfer class
+- [x] close current class membership
+- [x] đi tiếp level trong cùng enrollment
+- [x] không mất history
 
 ### 3.8 Frontend
 
-- [ ] Student list + filter/search.
-- [ ] Student detail.
-- [ ] Enrollment detail/history.
-- [ ] Class list/detail.
-- [ ] Teacher/class assignment UI.
-- [ ] EnrollmentClass timeline/history rõ ràng.
-- [ ] Reusable DataTable/FilterBar/PageHeader.
+- [x] Student list + filter/search.
+- [x] Student detail.
+- [x] Enrollment detail/history.
+- [x] Class list/detail.
+- [x] Teacher/class assignment UI.
+- [x] EnrollmentClass timeline/history rõ ràng.
+- [x] Reusable DataTable/FilterBar/PageHeader.
 
 ### 3.9 Permission/data scope
 
-- [ ] CS chỉ enrollment được giao.
-- [ ] Manage team scope.
-- [ ] Teacher chỉ class được phân công cho view phù hợp.
-- [ ] Admin full.
+- [x] CS chỉ enrollment được giao.
+- [x] Manage team scope.
+- [x] Teacher chỉ class được phân công cho view phù hợp.
+- [x] Admin full.
 
 ## API contract
 
@@ -99,12 +99,12 @@ Không để frontend tự đoán cấu trúc Student/Enrollment/Class response.
 
 ## Exit criteria
 
-- [ ] Core Sheet 1 structure dùng được bằng CRUD.
-- [ ] Chuyển lớp giữ đúng history.
-- [ ] Data scope tests pass.
-- [ ] UI dùng design system.
+- [x] Core Sheet 1 structure dùng được bằng CRUD.
+- [x] Chuyển lớp giữ đúng history.
+- [x] Data scope tests pass.
+- [x] UI dùng design system.
 
-- [ ] API contract/docs liên quan đã đồng bộ với implementation.
+- [x] API contract/docs liên quan đã đồng bộ với implementation.
 
 ## Implementation notes
 

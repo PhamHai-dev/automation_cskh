@@ -14,47 +14,47 @@ Có login/session production-oriented và authorization backend thật, không c
 
 ### 2.1 Auth API
 
-- [ ] POST login
-- [ ] POST refresh
-- [ ] POST logout
-- [ ] GET me
-- [ ] refresh token rotation
-- [ ] AuthSession revoke
-- [ ] disable user làm session/token refresh không còn hợp lệ theo policy
+- [x] POST login
+- [x] POST refresh
+- [x] POST logout
+- [x] GET me
+- [x] refresh token rotation
+- [x] AuthSession revoke
+- [x] disable user làm session/token refresh không còn hợp lệ theo policy
 
 ### 2.2 Password
 
-- [ ] Hash password an toàn.
-- [ ] Không log password/token.
+- [x] Hash password an toàn.
+- [x] Không log password/token.
 - [ ] Reset password flow theo spec.
 
 ### 2.3 Middleware
 
-- [ ] authenticate
-- [ ] require role/permission
+- [x] authenticate
+- [x] require role/permission
 - [ ] data-scope helpers
-- [ ] consistent 401/403
+- [x] consistent 401/403
 
 ### 2.4 Admin Settings/User Management API
 
-- [ ] list users
-- [ ] create user
-- [ ] edit user cơ bản
-- [ ] set roles
-- [ ] enable/disable
+- [x] list users
+- [x] create user
+- [x] edit user cơ bản
+- [x] set roles
+- [x] enable/disable
 - [ ] reset password
-- [ ] revoke sessions
+- [x] revoke sessions
 
   Không có public signup.
 
 ### 2.5 Frontend
 
-- [ ] Login page theo design system.
-- [ ] Auth provider/session handling.
-- [ ] Protected routes.
-- [ ] Admin Settings → User Management.
-- [ ] Role-based menu visibility chỉ là UX, không thay backend security.
-- [ ] Loading/session-expired state rõ ràng.
+- [x] Login page theo design system.
+- [x] Auth provider/session handling.
+- [x] Protected routes.
+- [x] Admin Settings → User Management.
+- [x] Role-based menu visibility chỉ là UX, không thay backend security.
+- [x] Loading/session-expired state rõ ràng.
 
 ### 2.6 Data-scope tests
 
@@ -65,10 +65,10 @@ Có login/session production-oriented và authorization backend thật, không c
 
 ### 2.7 Security checks
 
-- [ ] Refresh token HttpOnly.
-- [ ] Secure/SameSite theo env.
-- [ ] Token hash trong DB nếu spec quy định.
-- [ ] No sensitive token logs.
+- [x] Refresh token HttpOnly.
+- [x] Secure/SameSite theo env.
+- [x] Token hash trong DB nếu spec quy định.
+- [x] No sensitive token logs.
 - [ ] Rate limit login nếu được chốt/triển khai.
 
 
@@ -85,14 +85,14 @@ Integration test phải kiểm tra request/response/status code khớp contract.
 
 ## Exit criteria
 
-- [ ] Login/refresh/logout/me pass.
-- [ ] Admin create/disable/revoke pass.
+- [x] Login/refresh/logout/me pass.
+- [x] Admin create/disable/revoke pass.
 - [ ] Backend authorization tests pass.
-- [ ] Frontend auth flow pass.
-- [ ] Disabled user behavior pass.
+- [x] Frontend auth flow pass.
+- [x] Disabled user behavior pass.
 - [ ] Q-005 được đóng hoặc các case chưa chốt không bị tự suy đoán.
 
-- [ ] API contract/docs liên quan đã đồng bộ với implementation.
+- [x] API contract/docs liên quan đã đồng bộ với implementation.
 
 ## Implementation notes
 

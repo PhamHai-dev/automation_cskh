@@ -2,7 +2,7 @@
 
 Base: `/api/v1/classes`
 
-## Endpoints dự kiến
+## Endpoints
 
 - `GET /api/v1/classes`
 - `POST /api/v1/classes`
@@ -17,3 +17,26 @@ Base: `/api/v1/classes`
 
 - TEACHER chỉ xem/làm việc với lớp được gán theo endpoint rule.
 - CS/MANAGE/ADMIN theo data scope nghiệp vụ.
+
+---
+
+# ClassSession API
+
+Base: `/api/v1/classes/{classId}/sessions`
+
+`ClassSession` = một buổi học cụ thể của lớp.
+
+## Endpoints
+
+- `GET /api/v1/classes/{classId}/sessions`
+- `POST /api/v1/classes/{classId}/sessions`
+- `GET /api/v1/classes/{classId}/sessions/{sessionId}`
+- `PATCH /api/v1/classes/{classId}/sessions/{sessionId}`
+- `POST /api/v1/classes/{classId}/sessions/{sessionId}/cancel`
+
+## Quy tắc
+
+- `session_number` unique trong 1 `class_id`.
+- TEACHER chỉ sửa buổi học của lớp mình được phân công.
+- CS/MANAGE/ADMIN theo data scope nghiệp vụ.
+- Source rule: `LEARNING_SYSTEM` do CS nhập, `ZOOM` do Teacher upload.

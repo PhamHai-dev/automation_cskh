@@ -1,25 +1,36 @@
-# ClassSession + Attendance API
+﻿# Attendance API
 
-## ClassSession
+Base: `/api/v1/classes/{classId}/sessions/{sessionId}/attendance`
 
-Base: `/api/v1/classes/{classId}/sessions`
+`Attendance` = trạng thái điểm danh của 1 học viên (EnrollmentClass) trong 1 buổi học (ClassSession).
 
-- `GET /api/v1/classes/{classId}/sessions`
-- `POST /api/v1/classes/{classId}/sessions`
-- `GET /api/v1/classes/{classId}/sessions/{sessionId}`
-- `PATCH /api/v1/classes/{classId}/sessions/{sessionId}`
-- `POST /api/v1/classes/{classId}/sessions/{sessionId}/cancel`
-
-## Attendance
+## Endpoints
 
 - `GET /api/v1/classes/{classId}/sessions/{sessionId}/attendance`
-- `PUT /api/v1/classes/{classId}/sessions/{sessionId}/attendance/{enrollmentClassId}`
-- `PUT /api/v1/classes/{classId}/sessions/{sessionId}/attendance` — bulk upsert theo contract cụ thể.
+- `POST /api/v1/classes/{classId}/sessions/{sessionId}/attendance`
+- `POST /api/v1/classes/{classId}/sessions/{sessionId}/attendance/bulk`
+- `PATCH /api/v1/classes/{classId}/sessions/{sessionId}/attendance/{attendanceId}`
+- `GET /api/v1/classes/{classId}/sessions/{sessionId}/attendance/summary`
+
+## Status
+
+| Code | Ý nghĩa | Trừ buổi? |
+| --- | --- | --- |
+| `ATTENDED` | Có mặt | Không |
+| `ABSENT_APPROVED_A` | Nghỉ có phép | Có |
+| `LEAVE_B` | Bảo lưu | Có |
+| `ABSENT_UNAPPROVED_C` | Nghỉ sai quy định | Có |
+| `TEACHER_ABSENT_D` | GV xin nghỉ | Có |
+| `TECH_ERROR_E` | Lỗi kỹ thuật | Có |
+
+## Source
+
+- `MANUAL` nhập tay.
+- `EXCEL_IMPORT` nhập từ Excel.
+- `TEACHER_UPLOAD` GV upload.
 
 ## Quy tắc
 
-- Attendance = `EnrollmentClass + ClassSession`.
-- Unique `(enrollment_class_id, class_session_id)`.
-- Không duplicate session date/time trong Attendance.
-- A/B/C/D/E chưa chốt business rule thì không tự suy đoán consume/completed/trigger.
-- Source/role authorization theo `attendance_source` và docs phase 4.
+- Mỗi cặp `(enrollment_class_id, class_session_id)` chỉ có 1 attendance.
+- Cross-class attendance bị chặn.
+- Source/role theo `auth-rbac.md` + phase 4 plan.
