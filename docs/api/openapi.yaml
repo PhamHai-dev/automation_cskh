@@ -235,6 +235,180 @@ paths:
         '200':
           description: Sessions revoked
 
+  /api/v1/imports/upload:
+    post:
+      summary: Upload excel file and create draft import batch
+      tags:
+        - Imports
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, import_type]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                import_type:
+                  type: string
+                  enum: [STUDENT_ENROLLMENT, ATTENDANCE]
+      responses:
+        '200':
+          description: File uploaded and draft batch created
+        '400':
+          description: Invalid file format
+
+  /api/v1/imports/{importId}/preview:
+    get:
+      summary: Preview sheets, initial rows and suggested column mapping
+      tags:
+        - Imports
+      parameters:
+        - name: importId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Preview data with sheets and sample rows
+
+  /api/v1/imports/{importId}/mapping:
+    post:
+      summary: Save column mapping configuration
+      tags:
+        - Imports
+      parameters:
+        - name: importId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                sheetName:
+                  type: string
+                columnMapping:
+                  type: object
+      responses:
+        '200':
+          description: Mapping saved successfully
+
+  /api/v1/imports/{importId}/validate:
+    post:
+      summary: Validate import rows against database and return report
+      tags:
+        - Imports
+      parameters:
+        - name: importId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Validation report with valid/invalid counts and errors
+
+  /api/v1/imports/{importId}/confirm:
+    post:
+      summary: Execute import in batch-safe mode
+      tags:
+        - Imports
+      parameters:
+        - name: importId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Import completed with batch summary
+
+  /api/v1/imports/{importId}:
+    get:
+      summary: Get import batch status and summary
+      tags:
+        - Imports
+      parameters:
+        - name: importId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Batch summary
+
+  /api/v1/imports/{importId}/errors:
+    get:
+      summary: Get error rows or download error excel
+      tags:
+        - Imports
+      parameters:
+        - name: importId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: download
+          in: query
+          required: false
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: Error details or Excel file stream
+
+  /api/v1/imports/batches:
+    get:
+      summary: List all previous import batches
+      tags:
+        - Imports
+      responses:
+        '200':
+          description: List of import batches
+
+  /api/v1/imports/template/{type}:
+    get:
+      summary: Download excel template for Sheet 1 or Sheet 3
+      tags:
+        - Imports
+      parameters:
+        - name: type
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [student_enrollment, attendance]
+      responses:
+        '200':
+          description: Excel template file
+
+  /api/v1/imports/export/students:
+    get:
+      summary: Export student and enrollment data to Excel for cross-checking
+      tags:
+        - Imports
+      responses:
+        '200':
+          description: Excel file
+
+  /api/v1/imports/export/attendance:
+    get:
+      summary: Export attendance data to Excel for cross-checking
+      tags:
+        - Imports
+      responses:
+        '200':
+          description: Excel file
+
 components:
   schemas:
     User:
@@ -411,3 +585,56 @@ components:
         updated_at:
           type: string
           format: date-time
+
+    ImportBatch:
+      type: object
+      properties:
+        id:
+          type: integer
+        uploaded_by_id:
+          type: integer
+        file_name:
+          type: string
+        import_type:
+          type: string
+          enum: [STUDENT_ENROLLMENT, ATTENDANCE, TEACHER_ATTENDANCE]
+        total_rows:
+          type: integer
+        success_rows:
+          type: integer
+        failed_rows:
+          type: integer
+        status:
+          type: string
+          enum: [PREVIEW, PROCESSING, COMPLETED, PARTIAL_FAILED, FAILED, ROLLED_BACK]
+        created_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+
+    ImportRow:
+      type: object
+      properties:
+        id:
+          type: integer
+        import_batch_id:
+          type: integer
+        row_number:
+          type: integer
+        raw_data:
+          type: object
+        status:
+          type: string
+          enum: [PENDING, SUCCESS, FAILED]
+        error_message:
+          type: string
+        entity_type:
+          type: string
+        entity_id:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+

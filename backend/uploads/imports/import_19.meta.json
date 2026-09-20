@@ -1,0 +1,286 @@
+{
+  "importId": 19,
+  "fileName": "cham_soc_hoc_vien.xlsx",
+  "filePath": "E:\\automation_cskh\\backend\\uploads\\imports\\import_19.xlsx",
+  "importType": "STUDENT_ENROLLMENT",
+  "selectedSheet": "1.Chăm sóc",
+  "headerRowIdx": 3,
+  "columnMapping": {
+    "external_id": "A",
+    "paid_at": "B",
+    "sale_name": "C",
+    "status": "V",
+    "full_name": "E",
+    "gender": "F",
+    "phone": "G",
+    "email": "H",
+    "course_content": "BC",
+    "payment_status": "J",
+    "package_code": "K",
+    "level": "M",
+    "total_sessions": "N",
+    "class_model": "S",
+    "sales_note": "P",
+    "date_of_birth": "Q",
+    "occupation": "R",
+    "remaining_sessions": "T",
+    "start_date": "U",
+    "end_date": "W",
+    "class_name": "AH"
+  },
+  "headers": [
+    {
+      "col": "A",
+      "title": "ID"
+    },
+    {
+      "col": "B",
+      "title": "Ngày nộp học phí"
+    },
+    {
+      "col": "C",
+      "title": "Sale"
+    },
+    {
+      "col": "D",
+      "title": "Trạng thái HV"
+    },
+    {
+      "col": "E",
+      "title": "Họ tên HV"
+    },
+    {
+      "col": "F",
+      "title": "Giới tính"
+    },
+    {
+      "col": "G",
+      "title": "SĐT"
+    },
+    {
+      "col": "H",
+      "title": "Email"
+    },
+    {
+      "col": "I",
+      "title": "Nội dung khoá"
+    },
+    {
+      "col": "J",
+      "title": "Trạng thái thanh toán"
+    },
+    {
+      "col": "K",
+      "title": "Gói học"
+    },
+    {
+      "col": "L",
+      "title": "Khoá học"
+    },
+    {
+      "col": "M",
+      "title": "Trình độ"
+    },
+    {
+      "col": "N",
+      "title": "Tổng số buổi"
+    },
+    {
+      "col": "O",
+      "title": "Mô hình lớp"
+    },
+    {
+      "col": "P",
+      "title": "Ghi chú sale"
+    },
+    {
+      "col": "Q",
+      "title": "DOB"
+    },
+    {
+      "col": "R",
+      "title": "Nghề nghiệp"
+    },
+    {
+      "col": "S",
+      "title": "Mô hình"
+    },
+    {
+      "col": "T",
+      "title": "Số buổi còn lại"
+    },
+    {
+      "col": "U",
+      "title": "Ngày bắt đầu học"
+    },
+    {
+      "col": "V",
+      "title": "Trạng thái"
+    },
+    {
+      "col": "W",
+      "title": "Ngày kết thúc/Bảo lưu"
+    },
+    {
+      "col": "X",
+      "title": "Giờ học (1)"
+    },
+    {
+      "col": "Y",
+      "title": "Lịch học (1)"
+    },
+    {
+      "col": "Z",
+      "title": "Thời lượng buổi học (1)"
+    },
+    {
+      "col": "AA",
+      "title": "Giờ học (2)"
+    },
+    {
+      "col": "AB",
+      "title": "Lịch học (2)"
+    },
+    {
+      "col": "AC",
+      "title": "Thời lượng buổi học (2)"
+    },
+    {
+      "col": "AD",
+      "title": "Vòng lặp"
+    },
+    {
+      "col": "AE",
+      "title": "Ngày học"
+    },
+    {
+      "col": "AF",
+      "title": "Giáo viên"
+    },
+    {
+      "col": "AG",
+      "title": "Mã GV"
+    },
+    {
+      "col": "AH",
+      "title": "Tên lớp"
+    },
+    {
+      "col": "AI",
+      "title": "Tổng số buổi đã học năm trước"
+    },
+    {
+      "col": "AJ",
+      "title": "Tổng số buổi đã học 2026"
+    },
+    {
+      "col": "AK",
+      "title": "Báo cáo học tập"
+    },
+    {
+      "col": "AL",
+      "title": "Thông tin trao đổi với HV"
+    },
+    {
+      "col": "AM",
+      "title": "Lịch hẹn gọi"
+    },
+    {
+      "col": "AN",
+      "title": "Điểm nóng"
+    },
+    {
+      "col": "AO",
+      "title": "Nội dung chăm sóc sau buổi 1"
+    },
+    {
+      "col": "AP",
+      "title": "Nội dung chăm sóc sau buổi 3"
+    },
+    {
+      "col": "AQ",
+      "title": "Nội dung chăm sóc sau buổi 10"
+    },
+    {
+      "col": "AR",
+      "title": "Nội dung chăm sóc sau buổi 15"
+    },
+    {
+      "col": "AS",
+      "title": "Nội dung chăm sóc sau buổi 20"
+    },
+    {
+      "col": "AT",
+      "title": "Nội dung chăm sóc sau buổi 25"
+    },
+    {
+      "col": "AU",
+      "title": "Nội dung chăm sóc sau buổi 29"
+    },
+    {
+      "col": "AV",
+      "title": "Nội dung chăm sóc sau buổi 30"
+    },
+    {
+      "col": "AW",
+      "title": "Nội dung chăm sóc sau buổi 35"
+    },
+    {
+      "col": "AX",
+      "title": "Nội dung chăm sóc sau buổi 45"
+    },
+    {
+      "col": "AY",
+      "title": "Nội dung chăm sóc sau buổi 55"
+    },
+    {
+      "col": "AZ",
+      "title": "Nội dung chăm sóc sau buổi 59"
+    },
+    {
+      "col": "BA",
+      "title": "Nội dung chăm sóc sau buổi 60"
+    },
+    {
+      "col": "BB",
+      "title": "Nội dung chăm sóc sau buổi 89"
+    },
+    {
+      "col": "BC",
+      "title": "Nội dung chăm sóc sau buổi 90"
+    },
+    {
+      "col": "BD",
+      "title": "Chăm sóc sau kết thúc"
+    },
+    {
+      "col": "BE",
+      "title": "[object Object]"
+    },
+    {
+      "col": "BF",
+      "title": "Ngày bàn giao"
+    },
+    {
+      "col": "BG",
+      "title": "Tháng nộp học phí"
+    },
+    {
+      "col": "BH",
+      "title": "Ngày tạo tài khoản"
+    }
+  ],
+  "validationReport": {
+    "totalRows": 12,
+    "validRows": 11,
+    "invalidRows": 1,
+    "errors": [
+      {
+        "rowNumber": 15,
+        "field": "full_name",
+        "message": "Họ tên học viên là bắt buộc"
+      }
+    ],
+    "warnings": []
+  }
+}

@@ -12,6 +12,7 @@ import { classesRouter } from './modules/classes/classes.routes';
 import { enrollmentsRouter } from './modules/enrollments/enrollments.routes';
 import { classSessionsRouter } from './modules/class-sessions/class-sessions.routes';
 import { attendanceRouter } from './modules/attendance/attendance.routes';
+import { importsRouter } from './modules/imports/imports.routes';
 
 const app: Express = express();
 
@@ -40,6 +41,7 @@ app.use('/api/v1/classes', classesRouter);
 app.use('/api/v1/enrollments', enrollmentsRouter);
 app.use('/api/v1/classes/:classId/sessions', classSessionsRouter);
 app.use('/api/v1/classes/:classId/sessions/:sessionId/attendance', attendanceRouter);
+app.use('/api/v1/imports', importsRouter);
 
 // Error handling
 app.use(errorMiddleware);

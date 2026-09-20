@@ -1,0 +1,114 @@
+{
+  "importId": 2,
+  "fileName": "invalid_sheet1.xlsx",
+  "filePath": "E:\\automation_cskh\\backend\\uploads\\imports\\import_2.xlsx",
+  "importType": "STUDENT_ENROLLMENT",
+  "selectedSheet": "1.Chăm sóc",
+  "headerRowIdx": 3,
+  "columnMapping": {
+    "external_id": "A",
+    "paid_at": "B",
+    "sale_name": "C",
+    "status": "N",
+    "full_name": "E",
+    "gender": "F",
+    "phone": "G",
+    "email": "H",
+    "package_code": "I",
+    "level": "J",
+    "total_sessions": "K",
+    "remaining_sessions": "L",
+    "start_date": "M",
+    "end_date": "O",
+    "class_name": "P"
+  },
+  "headers": [
+    {
+      "col": "A",
+      "title": "ID"
+    },
+    {
+      "col": "B",
+      "title": "Ngày nộp học phí"
+    },
+    {
+      "col": "C",
+      "title": "Sale"
+    },
+    {
+      "col": "D",
+      "title": "Trạng thái HV"
+    },
+    {
+      "col": "E",
+      "title": "Họ tên HV"
+    },
+    {
+      "col": "F",
+      "title": "Giới tính"
+    },
+    {
+      "col": "G",
+      "title": "SĐT"
+    },
+    {
+      "col": "H",
+      "title": "Email"
+    },
+    {
+      "col": "I",
+      "title": "Gói học"
+    },
+    {
+      "col": "J",
+      "title": "Trình độ"
+    },
+    {
+      "col": "K",
+      "title": "Tổng số buổi"
+    },
+    {
+      "col": "L",
+      "title": "Số buổi còn lại"
+    },
+    {
+      "col": "M",
+      "title": "Ngày bắt đầu học"
+    },
+    {
+      "col": "N",
+      "title": "Trạng thái"
+    },
+    {
+      "col": "O",
+      "title": "Ngày kết thúc/Bảo lưu"
+    },
+    {
+      "col": "P",
+      "title": "Tên lớp"
+    }
+  ],
+  "validationReport": {
+    "totalRows": 3,
+    "validRows": 1,
+    "invalidRows": 2,
+    "errors": [
+      {
+        "rowNumber": 5,
+        "field": "external_id",
+        "message": "Trùng lặp ID học viên [HV_DUP_001] trong file Excel"
+      },
+      {
+        "rowNumber": 6,
+        "field": "full_name",
+        "message": "Họ tên học viên là bắt buộc"
+      },
+      {
+        "rowNumber": 6,
+        "field": "total_sessions",
+        "message": "Tổng số buổi phải là số nguyên: KHONG_PHAI_SO"
+      }
+    ],
+    "warnings": []
+  }
+}

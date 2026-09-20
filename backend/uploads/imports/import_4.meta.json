@@ -1,0 +1,53 @@
+{
+  "importId": 4,
+  "fileName": "invalid_sheet3.xlsx",
+  "filePath": "E:\\automation_cskh\\backend\\uploads\\imports\\import_4.xlsx",
+  "importType": "ATTENDANCE",
+  "selectedSheet": "3.Chấm buổi",
+  "headerRowIdx": 2,
+  "columnMapping": {
+    "external_id": "A",
+    "full_name": "B",
+    "package_code": "C",
+    "class_name": "D"
+  },
+  "headers": [
+    {
+      "col": "A",
+      "title": "ID"
+    },
+    {
+      "col": "B",
+      "title": "Họ tên HV"
+    },
+    {
+      "col": "C",
+      "title": "Gói học"
+    },
+    {
+      "col": "D",
+      "title": "Tên lớp"
+    },
+    {
+      "col": "E",
+      "title": "2026-01-20"
+    },
+    {
+      "col": "F",
+      "title": "2026-01-22"
+    }
+  ],
+  "validationReport": {
+    "totalRows": 1,
+    "validRows": 0,
+    "invalidRows": 1,
+    "errors": [
+      {
+        "rowNumber": 3,
+        "field": "Cột F",
+        "message": "Giá trị điểm danh không hợp lệ: \"TEXT_BAT_THUONG\" tại ngày 2026-01-22"
+      }
+    ],
+    "warnings": []
+  }
+}

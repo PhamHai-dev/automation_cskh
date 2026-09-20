@@ -1,5 +1,24 @@
 # Project Changelog
 
+## 2026-09-20 — Phase 5: Excel Import/Export Sheet 1 + Sheet 3 Complete
+
+- **Database:** Bổ sung trường `external_id String? @unique` vào model `Student` trong Prisma schema theo quyết định Q-001 để ánh xạ chính xác định danh bất biến giữa Sheet 1, Sheet 3 và Database.
+- **Contract-First API:** Cập nhật `docs/api/openapi.yaml` và `docs/api/imports.md` cho toàn bộ các endpoint của `/api/v1/imports` (upload, preview, mapping, validate, confirm, errors, batches, templates, exports).
+- **Backend Module (`backend/src/modules/imports/`):**
+  - Tích hợp `exceljs` và `multer` cho quy trình xử lý file Excel an toàn.
+  - Xây dựng thuật toán nhận diện tự động cột (auto-mapping) cho Sheet `1.Chăm sóc` và Sheet `3.Chấm buổi`.
+  - Bộ kiểm tra (validation engine) phát hiện trùng lặp ID, sai format ngày/giờ, số buổi không hợp lệ, mã điểm danh bất thường, không silent-fix.
+  - Chiến lược thực thi theo lô (batch-safe) cách ly từng dòng: dòng hợp lệ được import vào DB, dòng lỗi ghi nhận vào `ImportRow` trạng thái `FAILED`.
+  - Hỗ trợ tải báo cáo lỗi Excel chi tiết (`GET /api/v1/imports/:importId/errors?download=true`), tải template mẫu và xuất dữ liệu đối soát học viên/điểm danh.
+  - Phân quyền: Chỉ `ADMIN` và `MANAGE` được upload/import (theo Q-004); `CS` chỉ xem/tải template.
+  - Ghi nhận `AuditLog` cho mọi đợt import thực hiện.
+  - Bộ integration test 14/14 tests passed (100% pass toàn bộ 34 tests trong hệ thống).
+- **Frontend Feature (`frontend/src/features/imports/`):**
+  - Wizard 4 bước trực quan: Chọn loại & Upload file -> Xem trước & Ánh xạ cột -> Báo cáo kiểm tra -> Kết quả & Tải lỗi.
+  - Bảng lịch sử các đợt import (`ImportHistoryTable`) hiển thị trạng thái, số dòng thành công/thất bại và tải log lỗi.
+  - Tính năng xuất dữ liệu đối soát trực tiếp trên giao diện.
+  - Tuân thủ design token, responsive desktop/tablet/mobile, build thành công bundle production.
+
 ## 2026-09-18 — Phase 1: Database Schema Complete
 
 - Implement toàn bộ cấu trúc Schema theo `data-model-core.md` và `data-model-zalo-care.md`.

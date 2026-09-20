@@ -1,0 +1,22 @@
+{
+  "importId": 17,
+  "fileName": "cham_soc_hoc_vien.xlsx",
+  "filePath": "E:\\automation_cskh\\backend\\uploads\\imports\\import_17.xlsx",
+  "importType": "STUDENT_ENROLLMENT",
+  "selectedSheet": "CVHT01.Báo cáo",
+  "headerRowIdx": 1,
+  "columnMapping": {},
+  "headers": [
+    {
+      "col": "A",
+      "title": "Ngày bàn giao"
+    }
+  ],
+  "validationReport": {
+    "totalRows": 0,
+    "validRows": 0,
+    "invalidRows": 0,
+    "errors": [],
+    "warnings": []
+  }
+}

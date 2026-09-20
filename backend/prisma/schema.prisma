@@ -141,6 +141,7 @@ model ManageAssignment {
 
 model Student {
   id            Int       @id @default(autoincrement())
+  external_id   String?   @unique
   full_name     String
   gender        String?
   phone         String?
