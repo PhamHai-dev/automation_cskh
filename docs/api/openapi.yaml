@@ -409,6 +409,333 @@ paths:
         '200':
           description: Excel file
 
+  /api/v1/enrollments/{enrollmentId}/care-logs:
+    get:
+      summary: Get care log history for an enrollment
+      tags:
+        - Care
+      parameters:
+        - name: enrollmentId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: List of care logs
+    post:
+      summary: Create new care log for an enrollment
+      tags:
+        - Care
+      parameters:
+        - name: enrollmentId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [after_session_number, outcome]
+              properties:
+                after_session_number:
+                  type: integer
+                outcome:
+                  type: string
+                content:
+                  type: string
+      responses:
+        '201':
+          description: Care log created
+
+  /api/v1/care-tasks:
+    get:
+      summary: List care tasks with filters
+      tags:
+        - Care
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: priority
+          in: query
+          schema:
+            type: string
+        - name: type
+          in: query
+          schema:
+            type: string
+        - name: assigned_to_id
+          in: query
+          schema:
+            type: integer
+        - name: enrollment_id
+          in: query
+          schema:
+            type: integer
+        - name: due_filter
+          in: query
+          schema:
+            type: string
+            enum: [overdue, today, this_week, all]
+      responses:
+        '200':
+          description: Care tasks list
+    post:
+      summary: Create new care task
+      tags:
+        - Care
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [enrollment_id, type]
+              properties:
+                enrollment_id:
+                  type: integer
+                assigned_to_id:
+                  type: integer
+                type:
+                  type: string
+                title:
+                  type: string
+                note:
+                  type: string
+                due_at:
+                  type: string
+                  format: date-time
+                priority:
+                  type: string
+      responses:
+        '201':
+          description: Care task created
+
+  /api/v1/care-tasks/{taskId}:
+    get:
+      summary: Get care task by ID
+      tags:
+        - Care
+      parameters:
+        - name: taskId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Care task details
+    patch:
+      summary: Update care task
+      tags:
+        - Care
+      parameters:
+        - name: taskId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Care task updated
+
+  /api/v1/care-tasks/{taskId}/complete:
+    post:
+      summary: Mark care task as completed
+      tags:
+        - Care
+      parameters:
+        - name: taskId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Care task completed
+
+  /api/v1/care-tasks/{taskId}/cancel:
+    post:
+      summary: Cancel care task
+      tags:
+        - Care
+      parameters:
+        - name: taskId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Care task cancelled
+
+  /api/v1/dashboard/summary:
+    get:
+      summary: Get enrollment summary stats and percentages
+      tags:
+        - Dashboard
+      parameters:
+        - name: date_from
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: date_to
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: cs_id
+          in: query
+          schema:
+            type: integer
+        - name: package_id
+          in: query
+          schema:
+            type: integer
+        - name: class_id
+          in: query
+          schema:
+            type: integer
+        - name: status
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Summary statistics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/EnrollmentSummaryStats'
+                  meta:
+                    type: object
+                    nullable: true
+
+  /api/v1/dashboard/attendance:
+    get:
+      summary: Get attendance metrics and breakdown
+      tags:
+        - Dashboard
+      parameters:
+        - name: date_from
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: date_to
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: cs_id
+          in: query
+          schema:
+            type: integer
+        - name: package_id
+          in: query
+          schema:
+            type: integer
+        - name: class_id
+          in: query
+          schema:
+            type: integer
+        - name: status
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Attendance metrics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/AttendanceStats'
+                  meta:
+                    type: object
+                    nullable: true
+
+  /api/v1/dashboard/care-pivot:
+    get:
+      summary: Get care logs outcome pivot matrix by session number
+      tags:
+        - Dashboard
+      parameters:
+        - name: date_from
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: date_to
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: cs_id
+          in: query
+          schema:
+            type: integer
+        - name: package_id
+          in: query
+          schema:
+            type: integer
+        - name: class_id
+          in: query
+          schema:
+            type: integer
+        - name: status
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Care outcome pivot matrix
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/CarePivotMatrix'
+                  meta:
+                    type: object
+                    nullable: true
+
+  /api/v1/dashboard/tasks-overview:
+    get:
+      summary: Get care tasks overview counts (overdue, due today, urgent)
+      tags:
+        - Dashboard
+      parameters:
+        - name: cs_id
+          in: query
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Care tasks overview
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/TasksOverviewStats'
+                  meta:
+                    type: object
+                    nullable: true
+
 components:
   schemas:
     User:
@@ -637,4 +964,131 @@ components:
         created_at:
           type: string
           format: date-time
+
+    CareLog:
+      type: object
+      properties:
+        id:
+          type: integer
+        enrollment_id:
+          type: integer
+        cs_id:
+          type: integer
+        after_session_number:
+          type: integer
+        outcome:
+          type: string
+          enum: [POSITIVE, NEED_SUPPORT_SYSTEM, TEMP_PAUSE, NEED_CURRICULUM_SUPPORT, NEED_STUDENT_WEAKNESS_FIX, NEED_TEACHER_SUPPORT, NEGATIVE_WANTS_TO_STOP, NO_RESPONSE]
+        content:
+          type: string
+        created_by_id:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CareTask:
+      type: object
+      properties:
+        id:
+          type: integer
+        enrollment_id:
+          type: integer
+        assigned_to_id:
+          type: integer
+        type:
+          type: string
+          enum: [CALLBACK, HOT_ISSUE, FOLLOW_UP]
+        title:
+          type: string
+        note:
+          type: string
+        due_at:
+          type: string
+          format: date-time
+        priority:
+          type: string
+          enum: [LOW, NORMAL, HIGH, URGENT]
+        status:
+          type: string
+          enum: [PENDING, DONE, CANCELLED]
+        completed_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    EnrollmentSummaryStats:
+      type: object
+      properties:
+        total_enrollments:
+          type: integer
+        unique_students:
+          type: integer
+        status_breakdown:
+          type: object
+          additionalProperties:
+            type: integer
+        status_percentage:
+          type: object
+          additionalProperties:
+            type: number
+
+    AttendanceStats:
+      type: object
+      properties:
+        total_sessions:
+          type: integer
+        total_attendances:
+          type: integer
+        attendance_rate:
+          type: number
+        breakdown:
+          type: object
+          additionalProperties:
+            type: integer
+
+    CarePivotMatrix:
+      type: object
+      properties:
+        session_numbers:
+          type: array
+          items:
+            type: integer
+        outcomes:
+          type: array
+          items:
+            type: string
+        matrix:
+          type: object
+          additionalProperties:
+            type: object
+            additionalProperties:
+              type: integer
+        total_logs:
+          type: integer
+
+    TasksOverviewStats:
+      type: object
+      properties:
+        pending_total:
+          type: integer
+        overdue:
+          type: integer
+        due_today:
+          type: integer
+        due_this_week:
+          type: integer
+        urgent_hot_issues:
+          type: integer
+        completed_recent:
+          type: integer
+
 

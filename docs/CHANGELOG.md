@@ -1,5 +1,63 @@
 # Project Changelog
 
+## 2026-09-20 — Web & Docs: Đồng bộ Route Tiếng Anh Chuẩn & Toàn diện Giao diện Tiếng Việt
+
+- **Chuẩn hóa URL Routing Tiếng Anh (Chỉ đường dẫn URL là tiếng Anh):**
+  - Chuyển đổi toàn bộ route chính thức sang định dạng tiếng Anh chuẩn mực (RESTful / kebab-case):
+    - `/login`: Đăng nhập hệ thống (hỗ trợ alias redirect từ `/dang-nhap`)
+    - `/dashboard`: Báo cáo tổng quan & thống kê (hỗ trợ alias redirect từ `/tong-quan`)
+    - `/care`: Chăm sóc học viên & Nhiệm vụ CS (hỗ trợ alias redirect từ `/cham-soc`)
+    - `/enrollments`: Quản lý hợp đồng & ghi danh (hỗ trợ alias redirect từ `/ghi-danh`)
+    - `/classes`: Quản lý danh sách lớp học (hỗ trợ alias redirect từ `/lop-hoc`)
+    - `/classes/:classId/sessions`: Danh sách buổi học (hỗ trợ alias redirect từ `/lop-hoc/:classId/buoi-hoc`)
+    - `/classes/:classId/sessions/:sessionId/attendance`: Phiếu điểm danh (hỗ trợ alias redirect từ `/lop-hoc/.../diem-danh`)
+    - `/students`: Quản lý học viên & phụ huynh (hỗ trợ alias redirect từ `/hoc-vien`)
+    - `/packages`: Quản lý gói học (hỗ trợ alias redirect từ `/goi-hoc`)
+    - `/teachers`: Quản lý giáo viên (hỗ trợ alias redirect từ `/giao-vien`)
+    - `/imports`: Nhập & xuất dữ liệu Excel (hỗ trợ alias redirect từ `/nhap-xuat-excel`)
+    - `/settings/users`: Quản lý người dùng & phân quyền (hỗ trợ alias redirect từ `/cai-dat/nguoi-dung`)
+  - Duy trì các alias redirect từ route tiếng Việt cũ để tránh lỗi liên kết bookmark.
+- **Việt hóa Toàn diện Giao diện Web:**
+  - `LoginPage`: Tiêu đề, nhãn email/mật khẩu, nút đăng nhập và thông báo lỗi tiếng Việt.
+  - `UsersPage`: Tiêu đề "Quản lý Người dùng & Phân quyền", tiêu đề cột, badge vai trò tiếng Việt (`Quản trị viên`, `Quản lý nhóm`, `Nhân viên CSKH`, `Giáo viên`), trạng thái và các modal thao tác.
+  - `PackagesPage`: Việt hóa toàn bộ bảng danh mục gói học, số buổi định mức, trạng thái và modal thêm/sửa gói.
+  - `TeachersPage`: Việt hóa bảng giáo viên, phân loại giảng viên (`Giáo viên Việt`, `Giáo viên Bản ngữ`), trạng thái và form thông tin.
+  - `StudentsPage`: Việt hóa bảng học viên, giới tính, thông tin liên lạc, mã định danh và modal thêm/sửa học viên.
+  - `ClassesPage`: Việt hóa bảng lớp học, hình thức đào tạo (`1 kèm 1`, `Lớp nhóm`), nguồn điểm danh và modal tạo lớp.
+  - `ClassSessionsPage`: Việt hóa danh sách buổi học, trạng thái (`Đã lên lịch`, `Đã hoàn thành`, `Đã hủy`) và điều hướng điểm danh.
+  - `AttendanceSheetPage`: Việt hóa phiếu điểm danh buổi học, nút đánh dấu có mặt, lưu điểm danh.
+  - `EnrollmentsPage`: Việt hóa bảng ghi danh, trạng thái học tập (`Chưa học`, `Đang học`, `Tạm dừng / Bảo lưu`, `Hoàn thành`, `Đã hủy`).
+  - `DataTable`: Thông báo rỗng "Không có dữ liệu hiển thị".
+  - `ProtectedRoute`: Thông báo "Đang tải phiên đăng nhập...".
+- **Cập nhật Tài liệu Dự án:**
+  - `docs/architecture/frontend.md`: Bổ sung quy định chuẩn hóa URL route tiếng Việt.
+  - `docs/ui/design-system.md`: Bổ sung mục 15 — Quy ước Ngôn ngữ & Thuật ngữ Tiếng Việt (UI Glossary & Localization) ánh xạ đầy đủ Role, Status, Action.
+- **Xác minh Kỹ thuật:**
+  - Frontend production build thành công 100% không lỗi (`tsc -b && vite build`).
+
+## 2026-09-20 — Phase 6: CareLog / CareTask + Dashboard Complete
+
+- **API Contract:** Đồng bộ đầy đủ `docs/api/care.md`, `docs/api/dashboard.md` và `docs/api/openapi.yaml` cho các endpoint CareLog, CareTask và Dashboard (Summary, Attendance, Care Pivot, Tasks Overview).
+- **Backend Module Care (`backend/src/modules/care/`):**
+  - Quản lý nhật ký chăm sóc `CareLog` theo Enrollment, mốc buổi (`after_session_number`), kết quả (`outcome`), ghi chú (`content`); lưu lịch sử liên tục, không bị ghi đè.
+  - Quản lý nhiệm vụ chăm sóc `CareTask`: hẹn gọi lại (`CALLBACK`), điểm nóng/khiếu nại (`HOT_ISSUE`), theo dõi (`FOLLOW_UP`), mức độ ưu tiên (`URGENT`, `HIGH`, `NORMAL`, `LOW`), hạn hoàn thành (`due_at`), trạng thái (`PENDING`, `DONE`, `CANCELLED`).
+  - Phân quyền theo data scope: `ADMIN` toàn hệ thống, `MANAGE` trong nhóm CS được gán, `CS` chỉ xem học viên & task của mình; `TEACHER` không được xem ghi chú nội bộ CS.
+- **Backend Module Dashboard (`backend/src/modules/dashboard/`):**
+  - Truy vấn số liệu source-of-truth trực tiếp từ database bằng Prisma aggregations (`COUNT(DISTINCT student_id)`, group by enrollment status, attendance breakdown).
+  - Ma trận Pivot Care: Thống kê số lượng theo Mốc buổi học × Kết quả phản hồi chăm sóc.
+  - Tổng quan nhiệm vụ: Đếm số lượng task quá hạn (overdue), đến hạn hôm nay, trong tuần, khẩn cấp/điểm nóng.
+  - Hỗ trợ bộ lọc linh hoạt: CS phụ trách, gói học, lớp học, khoảng thời gian.
+- **Kiểm thử tự động Backend:**
+  - Viết đầy đủ Integration Tests cho module `care` (10 tests) và `dashboard` (6 tests).
+  - Vượt qua 100% test suite backend: **50/50 tests passed**.
+- **Frontend Features (`frontend/src/features/care/` & `frontend/src/features/dashboard/`):**
+  - `CarePage`: Gồm 2 tabs trực quan: Nhiệm vụ CS (Care Tasks) và Lịch sử Chăm sóc (Care Logs Timeline).
+  - `CareLogTimeline`: Hiển thị tiến trình phản hồi qua các mốc buổi học với badge outcome chuẩn màu semantic, modal thêm nhật ký phản hồi nhanh.
+  - `CareTaskList` & `CareTaskModal`: Danh sách nhiệm vụ với bộ lọc thông minh (quá hạn, hôm nay, mức ưu tiên) và thao tác nhanh (Hoàn thành, Hủy, Sửa).
+  - `DashboardPage`: Tổng hợp các KPI StatCard, biểu đồ chuyên cần `AttendanceChart`, ma trận `CarePivotTable` và widget `TasksOverviewWidget`.
+  - Tích hợp điều hướng trên Trang chủ và Router `App.tsx`.
+  - Build production frontend thành công 100% không lỗi (`tsc -b && vite build`).
+
 ## 2026-09-20 — Phase 5: Excel Import/Export Sheet 1 + Sheet 3 Complete
 
 - **Database:** Bổ sung trường `external_id String? @unique` vào model `Student` trong Prisma schema theo quyết định Q-001 để ánh xạ chính xác định danh bất biến giữa Sheet 1, Sheet 3 và Database.

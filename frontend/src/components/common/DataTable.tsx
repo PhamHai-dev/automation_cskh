@@ -20,7 +20,7 @@ export function DataTable<T>({
   columns, 
   data, 
   isLoading = false, 
-  emptyMessage = 'No data available',
+  emptyMessage = 'Không có dữ liệu hiển thị',
   onRowClick
 }: DataTableProps<T>) {
   

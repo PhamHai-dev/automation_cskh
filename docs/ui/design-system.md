@@ -279,3 +279,47 @@ Mỗi page/data feature phải xử lý khi phù hợp:
 - Table có overflow đúng không?
 - Form mobile có về 1 cột không?
 - Action/permission có đúng role/data scope không?
+
+## 15. Quy ước Ngôn ngữ & Thuật ngữ Tiếng Việt (UI Glossary & Localization)
+
+- **Quy tắc URL Routing vs UI Content:**
+  - **Đường dẫn URL (Routes):** Sử dụng **tiếng Anh** chuẩn mực kebab-case (VD: `/login`, `/dashboard`, `/care`, `/enrollments`, `/classes`, `/students`, `/packages`, `/teachers`, `/imports`, `/settings/users`) để tương thích tiêu chuẩn web và đồng bộ với RESTful convention.
+  - **Nội dung giao diện (UI content, nhãn, bảng, modal, thông báo):** Chuẩn hóa 100% bằng **Tiếng Việt** để tối ưu trải nghiệm vận hành của đội ngũ CSKH và Giáo viên.
+
+### Bảng đối chiếu Thuật ngữ & Trạng thái (Glossary)
+
+| Tiếng Anh / Mã Code | Thuật ngữ Tiếng Việt chuẩn trên UI |
+| :--- | :--- |
+| **Vai trò (Roles)** | |
+| `ADMIN` | Quản trị viên |
+| `MANAGE` | Quản lý nhóm CS |
+| `CS` | Nhân viên CSKH |
+| `TEACHER` | Giáo viên |
+| **Trạng thái Ghi danh (Enrollment Status)** | |
+| `NOT_STARTED` | Chưa học |
+| `STUDYING` | Đang học |
+| `PAUSED` | Tạm dừng / Bảo lưu |
+| `FINISHED` | Hoàn thành |
+| `CANCELLED` | Đã hủy |
+| **Điểm danh (Attendance Status)** | |
+| `ATTENDED` | Có mặt |
+| `ABSENT_APPROVED_A` | Nghỉ phép (A) |
+| `LEAVE_B` | Bảo lưu (B) |
+| `ABSENT_UNAPPROVED_C` | Nghỉ sai / Không phép (C) |
+| `TEACHER_ABSENT_D` | Giáo viên nghỉ (D) |
+| `TECH_ERROR_E` | Lỗi kỹ thuật (E) |
+| **Nhiệm vụ Chăm sóc (Care Task)** | |
+| `CALLBACK` | Hẹn gọi lại |
+| `HOT_ISSUE` | Điểm nóng / Khiếu nại |
+| `FOLLOW_UP` | Theo dõi tiến độ |
+| `URGENT` / `HIGH` / `NORMAL` / `LOW` | Khẩn cấp / Cao / Bình thường / Thấp |
+| `PENDING` / `DONE` / `CANCELLED` | Đang chờ / Hoàn thành / Đã hủy |
+| **Hành động & Phản hồi chung** | |
+| `Create` / `Add` | Tạo mới / Thêm |
+| `Edit` / `Update` | Chỉnh sửa / Cập nhật |
+| `Delete` / `Cancel` | Xóa / Hủy |
+| `Save` / `Save Changes` | Lưu / Lưu thay đổi |
+| `Active` / `Inactive` | Đang hoạt động / Tạm ngừng |
+| `No data available` | Không có dữ liệu hiển thị |
+| `Loading...` | Đang tải dữ liệu... |
+

@@ -509,7 +509,7 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ onImportComplete }) 
             <p className="text-sm text-gray-600 mt-1">
               Trạng thái đợt import:{' '}
               <Badge variant={importResult.failed_rows === 0 ? 'success' : 'warning'}>
-                {importResult.status}
+                {importResult.status === 'COMPLETED' ? 'Hoàn thành' : importResult.status === 'PARTIAL_FAILED' ? 'Lỗi một phần' : importResult.status === 'FAILED' ? 'Thất bại' : importResult.status}
               </Badge>
             </p>
           </div>

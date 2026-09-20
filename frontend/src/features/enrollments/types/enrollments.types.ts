@@ -8,6 +8,7 @@ export interface Enrollment {
   package_id?: number;
   cs_id: number;
   total_sessions: number;
+  completed_sessions?: number;
   start_date?: string;
   end_date?: string;
   status: 'NOT_STARTED' | 'STUDYING' | 'PAUSED' | 'FINISHED' | 'CANCELLED';
@@ -15,6 +16,11 @@ export interface Enrollment {
   updated_at: string;
   student?: Student;
   package?: Package;
+  cs?: {
+    id: number;
+    name: string;
+    email: string;
+  };
 }
 
 export interface CreateEnrollmentDTO {
