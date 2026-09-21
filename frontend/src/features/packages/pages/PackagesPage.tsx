@@ -1,18 +1,23 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { packagesApi } from '../api/packages.api';
 import { Package, CreatePackageDTO, UpdatePackageDTO } from '../types/packages.types';
 import { PageContainer } from '../../../components/common/PageContainer';
 import { PageHeader } from '../../../components/common/PageHeader';
 import { DataTable, Column } from '../../../components/common/DataTable';
+import { FilterBar } from '../../../components/common/FilterBar';
 import { Button } from '../../../components/ui/Button';
 import { Badge } from '../../../components/ui/Badge';
 import { Input } from '../../../components/ui/Input';
-import { Edit, Plus } from 'lucide-react';
+import { Textarea } from '../../../components/ui/Textarea';
+import { Modal } from '../../../components/ui/Modal';
+import { useToast } from '../../../components/ui/Toast';
+import { Edit, Plus, Search } from 'lucide-react';
 
-export const PackagesPage = () => {
+export const PackagesPage: React.FC = () => {
+  const toast = useToast();
   const [packages, setPackages] = useState<Package[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const [searchTerm, setSearchTerm] = useState('');
 
   // Modal states
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -29,10 +34,11 @@ export const PackagesPage = () => {
 
   const fetchPackages = async () => {
     try {
+      setLoading(true);
       const data = await packagesApi.list();
       setPackages(data);
     } catch (err: any) {
-      setError(err.response?.data?.error?.message || 'Không thể tải danh sách gói học');
+      toast.error(err.response?.data?.error?.message || 'Không thể tải danh sách gói học');
     } finally {
       setLoading(false);
     }
@@ -75,6 +81,7 @@ export const PackagesPage = () => {
           active: formData.active,
         };
         await packagesApi.update(editingPackage.id, payload);
+        toast.success('Cập nhật gói học thành công!');
       } else {
         const payload: CreatePackageDTO = {
           code: formData.code,
@@ -83,17 +90,26 @@ export const PackagesPage = () => {
           description: formData.description,
         };
         await packagesApi.create(payload);
+        toast.success('Tạo gói học mới thành công!');
       }
       closeModal();
       fetchPackages();
     } catch (err: any) {
-      alert(err.response?.data?.error?.message || 'Thao tác không thành công');
+      toast.error(err.response?.data?.error?.message || 'Thao tác không thành công');
     }
   };
 
+  const filteredPackages = useMemo(() => {
+    if (!searchTerm.trim()) return packages;
+    const term = searchTerm.toLowerCase();
+    return packages.filter(
+      (p) => p.code.toLowerCase().includes(term) || (p.name && p.name.toLowerCase().includes(term))
+    );
+  }, [packages, searchTerm]);
+
   const columns: Column<Package>[] = [
-    { header: 'Mã gói', accessorKey: 'code', className: 'font-semibold text-gray-900' },
-    { header: 'Tên gói học', accessorKey: 'name' },
+    { header: 'Mã gói', accessorKey: 'code', className: 'font-bold text-slate-900 text-xs' },
+    { header: 'Tên gói học', accessorKey: 'name', cell: (item) => <span className="font-semibold text-xs text-slate-800">{item.name || '—'}</span> },
     {
       header: 'Số buổi định mức',
       cell: (item) => (item.default_total_sessions ? `${item.default_total_sessions} buổi` : '—'),
@@ -120,7 +136,7 @@ export const PackagesPage = () => {
             }}
             title="Chỉnh sửa"
           >
-            <Edit className="w-4 h-4" />
+            <Edit className="w-4 h-4 text-slate-500 hover:text-blue-600" />
           </Button>
         </div>
       ),
@@ -131,92 +147,106 @@ export const PackagesPage = () => {
     <PageContainer>
       <PageHeader
         title="Quản lý Gói học"
-        description="Cấu hình danh mục các gói học, số buổi học định mức và trạng thái áp dụng"
+        description="Cấu hình danh mục các gói học, số buổi học định mức và trạng thái áp dụng cho học viên"
         actions={
-          <Button onClick={() => openModal()} variant="primary" className="flex items-center gap-2">
+          <Button onClick={() => openModal()} variant="primary" size="sm" className="flex items-center gap-1.5">
             <Plus className="w-4 h-4" />
             Thêm gói học mới
           </Button>
         }
       />
 
-      {error && <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-xl mb-6 text-sm">{error}</div>}
-
-      <DataTable columns={columns} data={packages} isLoading={loading} emptyMessage="Chưa có gói học nào trong hệ thống." />
-
-      {/* Modal Thêm/Sửa */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-            <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
-              <h3 className="text-base font-bold text-gray-900">{editingPackage ? 'Chỉnh sửa Gói học' : 'Thêm Gói học Mới'}</h3>
-              <button onClick={closeModal} className="text-gray-400 hover:text-gray-600 text-lg leading-none">
-                &times;
-              </button>
-            </div>
-
-            <form onSubmit={handleSubmit} className="p-6 space-y-4">
-              <Input
-                label="Mã gói học (Code) *"
-                required
-                disabled={!!editingPackage}
-                value={formData.code}
-                onChange={(e) => setFormData({ ...formData, code: e.target.value })}
-                placeholder="VD: PKG_10_BUOI, PKG_20_BUOI..."
-              />
-              <Input
-                label="Tên gói học"
-                value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                placeholder="VD: Gói Giao tiếp cơ bản 10 buổi..."
-              />
-              <Input
-                label="Số buổi học định mức"
-                type="number"
-                min={1}
-                value={formData.default_total_sessions}
-                onChange={(e) => setFormData({ ...formData, default_total_sessions: e.target.value })}
-                placeholder="VD: 10, 20, 30..."
-              />
-              <div>
-                <label className="block text-xs font-medium text-gray-700 uppercase tracking-wider mb-1">
-                  Mô tả / Ghi chú
-                </label>
-                <textarea
-                  className="flex min-h-[80px] w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  value={formData.description}
-                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  placeholder="Mô tả nội dung chương trình học..."
-                />
-              </div>
-
-              {editingPackage && (
-                <div className="flex items-center pt-2">
-                  <input
-                    id="package-active"
-                    type="checkbox"
-                    className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                    checked={formData.active}
-                    onChange={(e) => setFormData({ ...formData, active: e.target.checked })}
-                  />
-                  <label htmlFor="package-active" className="ml-2 block text-xs font-medium text-gray-700">
-                    Đang hoạt động (Áp dụng cho ghi danh mới)
-                  </label>
-                </div>
-              )}
-
-              <div className="mt-6 flex justify-end gap-2 pt-4 border-t border-gray-100">
-                <Button variant="outline" type="button" onClick={closeModal}>
-                  Hủy
-                </Button>
-                <Button variant="primary" type="submit">
-                  {editingPackage ? 'Lưu thay đổi' : 'Tạo gói học'}
-                </Button>
-              </div>
-            </form>
+      <FilterBar
+        title="Tìm kiếm gói học"
+        activeCount={searchTerm ? 1 : 0}
+        onClear={() => setSearchTerm('')}
+      >
+        <div className="max-w-md">
+          <label className="block text-[11px] font-semibold text-slate-500 mb-1">Tìm theo Mã hoặc Tên gói</label>
+          <div className="relative">
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Nhập mã gói hoặc tên gói..."
+              className="w-full pl-9 pr-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2" />
           </div>
         </div>
-      )}
+      </FilterBar>
+
+      <DataTable
+        columns={columns}
+        data={filteredPackages}
+        isLoading={loading}
+        emptyMessage="Chưa có gói học nào trong hệ thống."
+      />
+
+      {/* Modal Thêm/Sửa */}
+      <Modal
+        isOpen={isModalOpen}
+        onClose={closeModal}
+        title={editingPackage ? 'Chỉnh sửa Gói học' : 'Thêm Gói học Mới'}
+        size="md"
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" size="sm" type="button" onClick={closeModal}>
+              Hủy
+            </Button>
+            <Button variant="primary" size="sm" form="package-form" type="submit">
+              {editingPackage ? 'Lưu thay đổi' : 'Tạo gói học'}
+            </Button>
+          </div>
+        }
+      >
+        <form id="package-form" onSubmit={handleSubmit} className="space-y-4">
+          <Input
+            label="Mã gói học (Code) *"
+            required
+            disabled={!!editingPackage}
+            value={formData.code}
+            onChange={(e) => setFormData({ ...formData, code: e.target.value })}
+            placeholder="VD: PKG_10_BUOI, PKG_20_BUOI..."
+          />
+          <Input
+            label="Tên gói học"
+            value={formData.name}
+            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+            placeholder="VD: Gói Giao tiếp cơ bản 10 buổi..."
+          />
+          <Input
+            label="Số buổi học định mức"
+            type="number"
+            min={1}
+            value={formData.default_total_sessions}
+            onChange={(e) => setFormData({ ...formData, default_total_sessions: e.target.value })}
+            placeholder="VD: 10, 20, 30..."
+          />
+          <Textarea
+            label="Mô tả / Ghi chú"
+            value={formData.description}
+            onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+            placeholder="Mô tả nội dung chương trình học..."
+            rows={3}
+          />
+
+          {editingPackage && (
+            <div className="flex items-center pt-2">
+              <input
+                id="package-active"
+                type="checkbox"
+                className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                checked={formData.active}
+                onChange={(e) => setFormData({ ...formData, active: e.target.checked })}
+              />
+              <label htmlFor="package-active" className="ml-2 block text-xs font-semibold text-slate-700">
+                Đang hoạt động (Áp dụng cho ghi danh mới)
+              </label>
+            </div>
+          )}
+        </form>
+      </Modal>
     </PageContainer>
   );
 };

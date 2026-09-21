@@ -2,8 +2,8 @@ import { apiClient } from '../../../api/client';
 import { Enrollment, CreateEnrollmentDTO, UpdateEnrollmentDTO } from '../types/enrollments.types';
 
 export const enrollmentsApi = {
-  list: async (): Promise<Enrollment[]> => {
-    const res = await apiClient.get('/enrollments');
+  list: async (params?: { sale?: string }): Promise<Enrollment[]> => {
+    const res = await apiClient.get('/enrollments', { params });
     return res.data.data;
   },
 

@@ -6,6 +6,8 @@ import { prisma } from '../prisma/client';
 export interface AuthUser {
   id: number;
   roles: string[];
+  name?: string | null;
+  email?: string | null;
 }
 
 declare global {
@@ -35,7 +37,12 @@ export const authenticate = async (req: Request, res: Response, next: NextFuncti
       return res.status(403).json({ message: 'Forbidden: Account is disabled' });
     }
 
-    req.user = { id: user.id, roles: user.roles as string[] };
+    req.user = {
+      id: user.id,
+      roles: user.roles as string[],
+      name: user.name,
+      email: user.email,
+    };
     next();
   } catch (error) {
     return res.status(401).json({ message: 'Unauthorized: Invalid token' });

@@ -50,21 +50,31 @@ Không chỉ ẩn button ở frontend; backend là nơi quyết định quyền 
 
 ---
 
-### Module 1 — Danh sách học viên + hành trình lớp + điểm danh `learning_system`
+### Module 1 — Quản lý Học viên & Điểm danh (`learning_system`)
 
-> UI có thể vẫn gọi là “Danh sách học viên”, nhưng backend tách `Student` (con người), `Enrollment` (gói/lần học) và `EnrollmentClass` (lớp đã/đang học).
+> Hệ thống phân định rõ: `Student` (con người), `Enrollment` (gói/lần học) và `EnrollmentClass` (lớp đã/đang học). Đồng thời, **Sale và nhân viên CSKH là cùng 1 vai trò** (`CS`); cột Sale trong Sheet 1 ánh xạ trực tiếp đến tài khoản đăng nhập của nhân viên.
 
-**Màn hình danh sách chính:**
+#### 1.1. Tab Danh sách học viên (`/students`) — Chuẩn Cấu trúc Sheet 1 (`1.Chăm sóc`)
 
-- **CS**: chỉ thấy Enrollment có `cs_id = currentUser.id`.
-- **Manage**: thấy Enrollment của CS thuộc các CSGroup mình quản lý.
-- **Admin**: thấy toàn bộ.
-- **GV**: chỉ thấy EnrollmentClass/Class mình được gán qua `ClassTeacher`.
-- Cột chính lấy theo Sheet 1: ID, họ tên, SĐT/email, gói học, khóa học/GV Việt-Nhật, trình độ, tổng buổi, số buổi còn lại, ngày bắt đầu, trạng thái, lớp hiện tại, GV hiện tại, CS phụ trách.
-- Có thể mở chi tiết để xem **lịch sử các EnrollmentClass** theo thứ tự: lớp nào trước, lớp nào hiện tại, ngày bắt đầu/kết thúc/chuyển lớp.
-- Filter: trạng thái, CS, GV, lớp, package, level, nhóm CS; search tên/ID/phone/email.
+- **Cấu trúc 28 cột dữ liệu:** Hiển thị đầy đủ 28 trường thông tin theo đúng định dạng Sheet 1: *ID (Mã HV), Ngày nộp HP, Sale phụ trách, Trạng thái HV, Họ tên HV, Giới tính, SĐT, Email, Nội dung khoá, Trạng thái TT, Gói học, Trình độ, Tổng buổi, Mô hình lớp, Ghi chú Sale, Ngày sinh, Nghề nghiệp, Số buổi còn lại, Ngày BĐ, Trạng thái học, Ngày KT/Bảo lưu, Giờ học, Lịch học, Thời lượng, GV & Mã GV, Tên lớp, Tổng buổi đã học*.
+- **Phân quyền dữ liệu (Data Scope):**
+  - **CS (Sale):** Tự động khóa bộ lọc và chỉ hiển thị học viên do tài khoản của mình phụ trách.
+  - **Admin / Manage:** Xem toàn bộ học viên và có bộ lọc chọn theo từng Sale.
+- **Cảnh báo Nợ buổi âm:** Tự động phát hiện và làm nổi bật các trường hợp số buổi còn lại mang giá trị âm (`< 0`) bằng huy hiệu màu đỏ đậm (`bg-red-100 text-red-800 border-red-300 font-extrabold`), giúp phát hiện học viên học quá số buổi đã thanh toán.
+- **Chi tiết hồ sơ học viên:** Modal xem chi tiết trọn vẹn 28 trường dữ liệu.
 
-**Quản lý lớp của Enrollment:**
+#### 1.2. Tab Quản lý ghi danh (`/enrollments`) — Ma trận Điểm danh theo Sale
+
+- **Chế độ Ma trận Điểm danh theo Ngày (Matrix View):**
+  - Hiển thị theo Thứ & Ngày trong lịch thực tế (bỏ số thứ tự buổi), mặc định hiển thị **Tháng hiện tại**, hỗ trợ chuyển nhanh theo **Tuần / Tháng / Năm**.
+  - Tự động lọc danh sách học viên theo cột `Sale` khớp với tài khoản CS đang đăng nhập.
+  - 11 cột thông tin học viên & lớp học cố định bên trái; loại bỏ cột *"Chỉ số chuyên cần ĐH % và BT %"*.
+  - Điểm danh trực tiếp qua click ô: `X` (Có mặt), `A` (Nghỉ phép), `B` (Bảo lưu), `C` (Nghỉ không phép), `D` (GV nghỉ), `E` (Lỗi kỹ thuật).
+- **Chế độ Bảng Ghi danh (Table View):**
+  - Cung cấp bảng danh sách hợp đồng/lần đăng ký học với các cột nghiệp vụ, trạng thái học tập và cảnh báo nợ âm.
+- **Nút chuyển đổi linh hoạt:** Chuyển đổi giữa 2 chế độ xem chỉ bằng 1 click.
+
+#### 1.3. Quản lý lớp của Enrollment:
 
 - Thêm Enrollment vào một Class bằng cách tạo `EnrollmentClass`.
 - Nếu chuyển lớp giữa chừng: đóng record hiện tại (`status = transferred`, `end_date`) rồi tạo record mới `active`.
@@ -88,11 +98,21 @@ Không chỉ ẩn button ở frontend; backend là nơi quyết định quyền 
 6. Map GV/Mã GV vào `TeacherProfile` + `ClassTeacher` theo dữ liệu có thể xác định.
 7. Tạo `ImportBatch` + `ImportRow`, log lỗi từng dòng.
 
-**Import Sheet 3 / Attendance:**
+**Import Sheet 3 / Attendance & Chấm buổi:**
 
-- Các cột ngày được chuyển thành `ClassSession`.
-- Các giá trị `đã học / A / B / C / D / E` được chuyển thành `Attendance.status`.
-- Các cột tổng (`Tổng số buổi đã học`, nghỉ A/C/D...) chỉ dùng để đối chiếu, không phải source of truth mới.
+- **TH1 — Điền trực tiếp trên Web (Ma trận điểm danh theo Ngày):**
+  - Giao diện Ma trận điểm danh theo lớp (AttendanceMatrixTable): **Lược bỏ số thứ tự buổi**, chuyển sang **liệt kê trực tiếp theo các ngày theo lịch** (Thứ & Ngày trong tháng, ví dụ: `T2 01/09`, `T3 02/09`...).
+  - **Bộ lọc thời gian ma trận:**
+    - Mặc định: Hiển thị toàn bộ các ngày của **tháng hiện tại**.
+    - Bổ sung bộ lọc chuyển đổi linh hoạt: **Theo tuần** (7 ngày trong tuần), **Theo tháng** (chọn tháng bất kỳ), **Theo năm** (hoặc chọn khoảng ngày tùy chỉnh).
+  - Người dùng (CSKH / Giáo viên) có thể tích chọn / click trực tiếp vào ô ngày học của học viên để đổi nhanh trạng thái (`Có mặt X/Đ`, `Nghỉ phép A`, `Bảo lưu B`, `Nghỉ sai QĐ C`, `GV nghỉ D`, `Lỗi kỹ thuật E`).
+- **TH2 — Upload file Excel (Sheet 3):**
+  - Hệ thống **lọc theo ngày từ file Excel** để đối chiếu và điền điểm danh vào đúng các ngày tương ứng trong hệ thống.
+  - Các giá trị `đã học / A / B / C / D / E` được chuyển thành `Attendance.status`.
+  - **Quy tắc đối soát học viên:**
+    1. Nếu `Họ tên và Lớp` khớp với học viên đã tồn tại trong database (thuộc CS/lớp đó): Hệ thống tự động ghi nhận/cập nhật điểm danh theo ngày mà **không hỏi lại**.
+    2. Nếu phát hiện **học viên mới** từ file (chưa có trong database hoặc chưa gắn vào lớp học): Hệ thống bắt buộc hiển thị bước xác nhận (Confirmation step): *"Phát hiện học viên mới từ file: [Tên HV - Mã HV - Lớp]. Bạn có muốn thêm học viên này vào hệ thống và lớp học không?"*. Chỉ khi người dùng bấm xác nhận đồng ý thì mới tạo mới học viên và import điểm danh.
+  - Các cột tổng (`Tổng số buổi đã học`, số buổi còn lại, nghỉ A/C/D/E...) hiển thị đối soát và cảnh báo màu đỏ nếu số buổi còn lại là số âm.
 
 ---
 

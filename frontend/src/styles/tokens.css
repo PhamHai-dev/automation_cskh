@@ -1,15 +1,24 @@
 :root {
-  /* Brand Colors (Temporary, waiting for Q-006) */
-  --color-primary: #3b82f6;
-  --color-primary-hover: #2563eb;
+  /* Brand Colors (Q-006: Primary #2563EB, Accent #14B8A6) */
+  --color-primary: #2563eb;
+  --color-primary-hover: #1d4ed8;
+  --color-primary-active: #1e40af;
   --color-primary-soft: #eff6ff;
+  --color-primary-border: #bfdbfe;
+  
+  --color-accent: #14b8a6;
+  --color-accent-hover: #0d9488;
+  --color-accent-active: #0f766e;
+  --color-accent-soft: #f0fdfa;
+  --color-accent-border: #99f6e4;
   
   /* Backgrounds & Surfaces */
   --color-background: #f8fafc;
   --color-surface: #ffffff;
   --color-surface-muted: #f1f5f9;
+  --color-surface-subtle: #f8fafc;
   
-  /* Typography */
+  /* Typography (Slate Palette) */
   --color-text-primary: #0f172a;
   --color-text-secondary: #475569;
   --color-text-muted: #94a3b8;
@@ -17,10 +26,35 @@
   /* Borders */
   --color-border: #e2e8f0;
   --color-border-strong: #cbd5e1;
+  --color-border-subtle: #f1f5f9;
   
   /* Status Colors */
-  --color-success: #22c55e;
+  --color-success: #10b981;
+  --color-success-soft: #ecfdf5;
+  --color-success-border: #a7f3d0;
+  
   --color-warning: #f59e0b;
+  --color-warning-soft: #fffbeb;
+  --color-warning-border: #fde68a;
+  
   --color-danger: #ef4444;
+  --color-danger-soft: #fef2f2;
+  --color-danger-border: #fecaca;
+  
   --color-info: #0ea5e9;
+  --color-info-soft: #f0f9ff;
+  --color-info-border: #bae6fd;
+  
+  /* Debt / Warning Badge Colors */
+  --color-debt-text: #b91c1c;
+  --color-debt-bg: #fef2f2;
+  --color-debt-border: #fca5a5;
+  
+  /* Radius */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-2xl: 20px;
+  --radius-full: 9999px;
 }

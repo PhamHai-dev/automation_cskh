@@ -17,9 +17,9 @@ export class EnrollmentsService {
     this.repository = new EnrollmentsRepository();
   }
 
-  async getEnrollmentsForUser(userId: number, roles: string[]) {
+  async getEnrollmentsForUser(userId: number, roles: string[], saleIdentifier?: string) {
     if (roles.includes('ADMIN')) {
-      return this.repository.findAll();
+      return this.repository.findAll(saleIdentifier);
     } else if (roles.includes('MANAGE')) {
       // Find all CS groups this MANAGE user is assigned to
       const assignments = await prisma.manageAssignment.findMany({
@@ -41,7 +41,7 @@ export class EnrollmentsService {
       return this.repository.findAllByCSIds(Array.from(csIds));
     } else {
       // CS
-      return this.repository.findAllByCS(userId);
+      return this.repository.findAllByCS(userId, saleIdentifier);
     }
   }
 

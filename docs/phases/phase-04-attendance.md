@@ -42,7 +42,13 @@
 
 - [x] ClassSession list/calendar/table mức cần thiết.
 - [x] Attendance sheet-like UI cho một session.
-- [x] Bulk marking.
+- [x] Ma trận Điểm danh theo Lịch Ngày (Attendance Matrix by Calendar Dates):
+  - Hiển thị theo Thứ & Ngày trong lịch (bỏ số thứ tự buổi 1, 2...).
+  - Mặc định Tháng hiện tại, bộ lọc chuyển đổi nhanh Tuần / Tháng / Năm.
+  - 11 cột thông tin học viên & lớp học cố định bên trái (loại bỏ cột *"Chỉ số chuyên cần ĐH % và BT %"*).
+  - Cố định 3 cột định danh (`#`, `Mã HV`, `Họ và tên`) nền đục kèm đổ bóng nhẹ chống đè chữ khi cuộn ngang.
+- [x] Ma trận Điểm danh lọc theo Sale tại Tab Quản lý Ghi danh (`/enrollments`).
+- [x] Bulk marking trực tiếp qua click ô ngày: `X` (Có mặt), `A` (Nghỉ phép), `B` (Bảo lưu), `C` (Nghỉ không phép), `D` (GV nghỉ), `E` (Lỗi kỹ thuật).
 - [x] Status legend A/B/C/D/E.
 - [x] Read-only state theo role/source.
 - [x] Confirmation khi sửa dữ liệu cũ nếu policy quy định.
@@ -78,6 +84,10 @@
 - Integration tests pass: 13/13
 
 ## Changes from original plan
+
+1. **Ma trận Điểm danh theo Ngày thay vì số thứ tự Buổi:** Chuyển đổi từ cột Buổi 1, 2, 3... sang Thứ & Ngày thực tế của tháng để khớp chính xác dữ liệu thực tế tại Sheet 3 (`3.Chấm buổi`).
+2. **Loại bỏ cột Chỉ số chuyên cần:** Bỏ cột *"Chỉ số chuyên cần ĐH % và BT %"* trên ma trận điểm danh theo yêu cầu người dùng.
+3. **Ma trận lọc theo Sale:** Áp dụng ma trận điểm danh vào Tab Quản lý Ghi danh (`/enrollments`) để nhân viên CSKH/Sale quản lý điểm danh học viên do mình phụ trách theo thời gian thực.
 
 ## Agent notes
 

@@ -1,11 +1,10 @@
 import { apiClient } from '../../../api/client';
-import { ImportType, UploadResponse, SheetPreviewData, ValidationReport, ImportBatchSummary, ImportRowItem } from '../types/imports.types';
+import { UploadResponse, SheetPreviewData, ValidationReport, ImportBatchSummary, ImportRowItem } from '../types/imports.types';
 
 export const importsApi = {
-  upload: async (file: File, importType: ImportType): Promise<UploadResponse> => {
+  upload: async (file: File): Promise<UploadResponse> => {
     const formData = new FormData();
     formData.append('file', file);
-    formData.append('import_type', importType);
 
     const res = await apiClient.post('/imports/upload', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
@@ -22,7 +21,7 @@ export const importsApi = {
 
   saveMapping: async (
     importId: number,
-    data: { sheetName?: string; headerRowIndex?: number; columnMapping: Record<string, string> }
+    data: { sheet: 'studentEnrollment' | 'attendance'; headerRowIndex?: number; columnMapping: Record<string, string> }
   ): Promise<{ success: boolean; columnMapping: Record<string, string> }> => {
     const res = await apiClient.post(`/imports/${importId}/mapping`, data);
     return res.data;
@@ -109,5 +108,18 @@ export const importsApi = {
     link.click();
     link.remove();
     window.URL.revokeObjectURL(url);
+  },
+
+  listCreateRequests: async (status = 'PENDING', page = 1, pageSize = 20) => {
+    const res = await apiClient.get('/imports/create-requests', { params: { status, page, pageSize } });
+    return res.data;
+  },
+  approveCreateRequest: async (id: number, version: number, assignedCsId?: number) => {
+    const res = await apiClient.post(`/imports/create-requests/${id}/approve`, { version, assignedCsId });
+    return res.data;
+  },
+  rejectCreateRequest: async (id: number, version: number, reason: string) => {
+    const res = await apiClient.post(`/imports/create-requests/${id}/reject`, { version, reason });
+    return res.data;
   },
 };

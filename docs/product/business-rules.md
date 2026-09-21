@@ -133,12 +133,45 @@ Quyết định tracking: Q-006 (RESOLVED).
 
 Dùng primary `#2563EB` và accent `#14B8A6` qua semantic token tập trung. Không hardcode màu brand rải rác trong component.
 
-## 13. UI/business behavior
+## 14. UI/business behavior
 
 UI ẩn/hiện theo role chỉ là UX. Bảo mật luôn nằm ở backend Permission + Data Scope.
 Không biến trạng thái/loading/error/empty UI thành thay đổi business rule.
 
-## 14. Checklist khi business rule thay đổi
+## 15. Sale & CSKH role — CHỐT
+
+Quyết định tracking: Q-009 (RESOLVED).
+
+- **Đồng nhất vai trò:** Sale và nhân viên chăm sóc khách hàng là cùng 1 vai trò, sử dụng role hệ thống `CS`.
+- **Ánh xạ cột Sale Sheet 1:** Giá trị trong cột `Sale` của Sheet 1 chính là tên tài khoản đăng nhập (Email) mà Admin tạo trong hệ thống.
+- **Data Scope:** Người dùng có role `CS` chỉ xem và tương tác với các học viên có `Sale` khớp với tài khoản đăng nhập của mình. `ADMIN` và `MANAGE` có quyền xem toàn bộ học viên và có bộ chọn lọc theo từng Sale.
+
+## 16. Ma trận Điểm danh theo Lịch Ngày & Tab Ghi danh — CHỐT
+
+Quyết định tracking: Q-010 (RESOLVED).
+
+- **Hiển thị theo ngày lịch:** Loại bỏ số thứ tự buổi học trừu tượng (Buổi 1, Buổi 2...), hiển thị trực tiếp theo **Thứ & Ngày trong lịch** (VD: `T2 01/09`, `T4 03/09`...).
+- **Bộ lọc thời gian:** Mặc định xem **Tháng hiện tại**, hỗ trợ chuyển nhanh theo **Tuần**, **Tháng**, **Năm/Tùy chỉnh**.
+- **Cột thông tin cố định bên trái (11 cột):** STT, Mã HV, Họ và tên, Ngày bắt đầu học, Trạng thái, Ngày kết thúc/Bảo lưu, Giờ học, Lịch học, Thời lượng, GV & Mã GV, Tên lớp.
+- **Loại bỏ:** Cột *"Chỉ số chuyên cần ĐH % và BT %"* không sử dụng.
+- **Tab Quản lý Ghi danh (`/enrollments`):** Tổ chức theo dạng Ma trận Điểm danh theo Sale, tự động lọc học viên theo Sale phụ trách.
+
+## 17. Danh sách Học viên Sheet 1 & Cảnh báo Nợ buổi âm — CHỐT
+
+Quyết định tracking: Q-012 (RESOLVED).
+
+- **Cấu trúc bảng chuẩn Sheet 1:** Trang Danh sách học viên (`/students`) hiển thị đầy đủ 28 cột dữ liệu nghiệp vụ của Sheet `1.Chăm sóc`.
+- **Cảnh báo nợ âm:** Các học viên có `Số buổi còn lại < 0` (ví dụ: `-1`, `-2`, `-30`...) phải được làm nổi bật bằng huy hiệu cảnh báo nợ màu đỏ đậm (`bg-red-100 text-red-800 border-red-300 font-extrabold`).
+- **Data scope:** Tự động lọc học viên theo Sale phụ trách khi đăng nhập tài khoản `CS`.
+
+## 18. Đối soát Học viên khi Import Sheet 3 — CHỐT
+
+Quyết định tracking: Q-011 (RESOLVED).
+
+- **Học viên cũ:** Nếu học viên từ file khớp với học viên đã có trong cơ sở dữ liệu, hệ thống tự động đồng bộ điểm danh theo ngày mà **không hỏi lại**.
+- **Học viên mới:** Nếu phát hiện học viên từ file chưa từng có trong hệ thống, bắt buộc hiển thị hộp thoại xác nhận (Confirm modal) hỏi người dùng có muốn tự động tạo mới học viên và ghi danh vào lớp hay không.
+
+## 19. Checklist khi business rule thay đổi
 
 Khi user chốt hoặc thay đổi business rule:
 1. Cập nhật file này.

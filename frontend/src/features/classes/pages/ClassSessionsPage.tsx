@@ -8,8 +8,11 @@ import { PageHeader } from '../../../components/common/PageHeader';
 import { DataTable, Column } from '../../../components/common/DataTable';
 import { Button } from '../../../components/ui/Button';
 import { Input } from '../../../components/ui/Input';
+import { Select } from '../../../components/ui/Select';
 import { Badge } from '../../../components/ui/Badge';
-import { Edit, ArrowLeft, ClipboardCheck, Plus } from 'lucide-react';
+import { Modal } from '../../../components/ui/Modal';
+import { useToast } from '../../../components/ui/Toast';
+import { Edit, ClipboardCheck, Plus, AlertTriangle } from 'lucide-react';
 
 const SESSION_STATUS_VN: Record<string, { label: string; variant: 'info' | 'success' | 'danger' | 'warning' | 'neutral' }> = {
   SCHEDULED: { label: 'Đã lên lịch', variant: 'info' },
@@ -22,7 +25,8 @@ const StatusBadge = ({ status }: { status: ClassSession['status'] }) => {
   return <Badge variant={cfg.variant}>{cfg.label}</Badge>;
 };
 
-export const ClassSessionsPage = () => {
+export const ClassSessionsPage: React.FC = () => {
+  const toast = useToast();
   const { classId } = useParams<{ classId: string }>();
   const navigate = useNavigate();
   const clsId = parseInt(classId || '0', 10);
@@ -30,11 +34,11 @@ export const ClassSessionsPage = () => {
   const [cls, setCls] = useState<Class | null>(null);
   const [sessions, setSessions] = useState<ClassSession[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
 
   // Modal states
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingSession, setEditingSession] = useState<ClassSession | null>(null);
+  const [cancellingSession, setCancellingSession] = useState<ClassSession | null>(null);
 
   // Form states
   const [formData, setFormData] = useState({
@@ -55,7 +59,7 @@ export const ClassSessionsPage = () => {
       setCls(clsData);
       setSessions(sessionsData);
     } catch (err: any) {
-      setError(err.response?.data?.error?.message || 'Không thể tải danh sách buổi học');
+      toast.error(err.response?.data?.error?.message || 'Không thể tải danh sách buổi học');
     } finally {
       setLoading(false);
     }
@@ -113,31 +117,39 @@ export const ClassSessionsPage = () => {
           status: formData.status,
         };
         await classSessionsApi.update(clsId, editingSession.id, updatePayload);
+        toast.success('Cập nhật buổi học thành công!');
       } else {
         await classSessionsApi.create(clsId, payload);
+        toast.success('Tạo buổi học mới thành công!');
       }
       closeModal();
       fetchData();
     } catch (err: any) {
-      alert(err.response?.data?.error?.message || 'Thao tác không thành công');
+      toast.error(err.response?.data?.error?.message || 'Thao tác không thành công');
     }
   };
 
-  const handleCancel = async (session: ClassSession) => {
-    if (!window.confirm(`Bạn có chắc chắn muốn hủy buổi học số ${session.session_number}?`)) return;
+  const handleConfirmCancel = async () => {
+    if (!cancellingSession) return;
     try {
-      await classSessionsApi.cancel(clsId, session.id);
+      await classSessionsApi.cancel(clsId, cancellingSession.id);
+      toast.success(`Đã hủy buổi học số ${cancellingSession.session_number}`);
+      setCancellingSession(null);
       fetchData();
     } catch (err: any) {
-      alert(err.response?.data?.error?.message || 'Hủy buổi học không thành công');
+      toast.error(err.response?.data?.error?.message || 'Hủy buổi học không thành công');
     }
   };
 
   const columns: Column<ClassSession>[] = [
-    { header: 'Buổi số', accessorKey: 'session_number', className: 'w-20 font-semibold' },
+    { header: 'Buổi số', accessorKey: 'session_number', className: 'w-20 font-bold text-slate-900 text-xs' },
     {
       header: 'Ngày học',
-      cell: (item) => new Date(item.session_date).toLocaleDateString('vi-VN'),
+      cell: (item) => (
+        <span className="font-semibold text-slate-800 text-xs">
+          {new Date(item.session_date).toLocaleDateString('vi-VN')}
+        </span>
+      ),
     },
     {
       header: 'Khung giờ',
@@ -175,7 +187,7 @@ export const ClassSessionsPage = () => {
             }}
             title="Chỉnh sửa buổi học"
           >
-            <Edit className="w-4 h-4" />
+            <Edit className="w-4 h-4 text-slate-500 hover:text-blue-600" />
           </Button>
           {item.status === 'SCHEDULED' && (
             <Button
@@ -183,7 +195,7 @@ export const ClassSessionsPage = () => {
               size="sm"
               onClick={(e) => {
                 e.stopPropagation();
-                handleCancel(item);
+                setCancellingSession(item);
               }}
               className="text-rose-600 hover:bg-rose-50"
               title="Hủy buổi học"
@@ -198,28 +210,17 @@ export const ClassSessionsPage = () => {
 
   return (
     <PageContainer>
-      <div className="mb-4">
-        <button
-          onClick={() => navigate('/classes')}
-          className="inline-flex items-center text-xs font-semibold text-gray-500 hover:text-blue-600 transition"
-        >
-          <ArrowLeft className="w-3.5 h-3.5 mr-1" />
-          Quay lại danh sách lớp học
-        </button>
-      </div>
-
       <PageHeader
         title={`Buổi học: ${cls?.class_name || `Lớp #${clsId}`}`}
         description={`Quản lý toàn bộ lịch học và phiếu điểm danh chuyên cần của lớp (${cls?.class_code || ''})`}
+        backUrl="/classes"
         actions={
-          <Button onClick={() => openModal()} variant="primary" className="flex items-center gap-2">
+          <Button onClick={() => openModal()} variant="primary" size="sm" className="flex items-center gap-1.5">
             <Plus className="w-4 h-4" />
             Thêm buổi học mới
           </Button>
         }
       />
-
-      {error && <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-xl mb-6 text-sm">{error}</div>}
 
       <DataTable
         columns={columns}
@@ -229,81 +230,99 @@ export const ClassSessionsPage = () => {
       />
 
       {/* Modal Thêm/Sửa */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 overflow-y-auto">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden my-8 animate-in fade-in zoom-in-95 duration-150">
-            <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
-              <h3 className="text-base font-bold text-gray-900">
-                {editingSession ? 'Chỉnh sửa Buổi học' : 'Tạo Buổi học Mới'}
-              </h3>
-              <button onClick={closeModal} className="text-gray-400 hover:text-gray-600 text-lg leading-none">
-                &times;
-              </button>
-            </div>
-
-            <form onSubmit={handleSubmit} className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
-              <div className="grid grid-cols-2 gap-4">
-                <Input
-                  label="Buổi học số *"
-                  type="number"
-                  min={1}
-                  required
-                  value={formData.session_number}
-                  onChange={(e) => setFormData({ ...formData, session_number: e.target.value })}
-                />
-                <Input
-                  label="Ngày diễn ra *"
-                  type="date"
-                  required
-                  value={formData.session_date}
-                  onChange={(e) => setFormData({ ...formData, session_date: e.target.value })}
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <Input
-                  label="Giờ bắt đầu"
-                  type="time"
-                  value={formData.start_time}
-                  onChange={(e) => setFormData({ ...formData, start_time: e.target.value })}
-                />
-                <Input
-                  label="Giờ kết thúc"
-                  type="time"
-                  value={formData.end_time}
-                  onChange={(e) => setFormData({ ...formData, end_time: e.target.value })}
-                />
-              </div>
-
-              {editingSession && (
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 uppercase tracking-wider mb-1">
-                    Trạng thái buổi học
-                  </label>
-                  <select
-                    className="flex h-10 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    value={formData.status}
-                    onChange={(e) => setFormData({ ...formData, status: e.target.value as any })}
-                  >
-                    <option value="SCHEDULED">Đã lên lịch</option>
-                    <option value="COMPLETED">Đã hoàn thành</option>
-                    <option value="CANCELLED">Đã hủy</option>
-                  </select>
-                </div>
-              )}
-
-              <div className="mt-6 flex justify-end gap-2 pt-4 border-t border-gray-100">
-                <Button variant="outline" type="button" onClick={closeModal}>
-                  Hủy
-                </Button>
-                <Button variant="primary" type="submit">
-                  {editingSession ? 'Lưu thay đổi' : 'Tạo buổi học'}
-                </Button>
-              </div>
-            </form>
+      <Modal
+        isOpen={isModalOpen}
+        onClose={closeModal}
+        title={editingSession ? 'Chỉnh sửa Buổi học' : 'Tạo Buổi học Mới'}
+        size="md"
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" size="sm" type="button" onClick={closeModal}>
+              Hủy
+            </Button>
+            <Button variant="primary" size="sm" form="session-form" type="submit">
+              {editingSession ? 'Lưu thay đổi' : 'Tạo buổi học'}
+            </Button>
           </div>
+        }
+      >
+        <form id="session-form" onSubmit={handleSubmit} className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <Input
+              label="Buổi học số *"
+              type="number"
+              min={1}
+              required
+              value={formData.session_number}
+              onChange={(e) => setFormData({ ...formData, session_number: e.target.value })}
+            />
+            <Input
+              label="Ngày diễn ra *"
+              type="date"
+              required
+              value={formData.session_date}
+              onChange={(e) => setFormData({ ...formData, session_date: e.target.value })}
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <Input
+              label="Giờ bắt đầu"
+              type="time"
+              value={formData.start_time}
+              onChange={(e) => setFormData({ ...formData, start_time: e.target.value })}
+            />
+            <Input
+              label="Giờ kết thúc"
+              type="time"
+              value={formData.end_time}
+              onChange={(e) => setFormData({ ...formData, end_time: e.target.value })}
+            />
+          </div>
+
+          {editingSession && (
+            <Select
+              label="Trạng thái buổi học"
+              value={formData.status}
+              onChange={(e) => setFormData({ ...formData, status: e.target.value as any })}
+              options={[
+                { value: 'SCHEDULED', label: 'Đã lên lịch' },
+                { value: 'COMPLETED', label: 'Đã hoàn thành' },
+                { value: 'CANCELLED', label: 'Đã hủy' },
+              ]}
+            />
+          )}
+        </form>
+      </Modal>
+
+      {/* Cancel Confirmation Modal */}
+      <Modal
+        isOpen={cancellingSession !== null}
+        onClose={() => setCancellingSession(null)}
+        title="Xác nhận hủy buổi học"
+        size="sm"
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" size="sm" onClick={() => setCancellingSession(null)}>
+              Đóng
+            </Button>
+            <Button variant="danger" size="sm" onClick={handleConfirmCancel}>
+              Xác nhận hủy buổi
+            </Button>
+          </div>
+        }
+      >
+        <div className="flex items-start space-x-3 text-xs text-slate-700">
+          <AlertTriangle className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" />
+          <p>
+            Bạn có chắc chắn muốn hủy buổi học số <strong>{cancellingSession?.session_number}</strong> vào ngày{' '}
+            <strong>
+              {cancellingSession ? new Date(cancellingSession.session_date).toLocaleDateString('vi-VN') : ''}
+            </strong>
+            ?
+          </p>
         </div>
-      )}
+      </Modal>
     </PageContainer>
   );
 };

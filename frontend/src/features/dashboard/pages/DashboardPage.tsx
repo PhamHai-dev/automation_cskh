@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { PageContainer } from '../../../components/common/PageContainer';
 import { PageHeader } from '../../../components/common/PageHeader';
+import { FilterBar } from '../../../components/common/FilterBar';
 import { StatCard } from '../components/StatCard';
 import { AttendanceChart } from '../components/AttendanceChart';
 import { CarePivotTable } from '../components/CarePivotTable';
@@ -13,15 +14,15 @@ import {
   CarePivotMatrix,
   TasksOverview,
 } from '../types/dashboard.types';
-import { Users, GraduationCap, CheckCircle, AlertCircle, Filter, RefreshCw } from 'lucide-react';
+import { Users, GraduationCap, CheckCircle, AlertCircle, RefreshCw } from 'lucide-react';
 import { Button } from '../../../components/ui/Button';
 
-const STATUS_LABELS: Record<string, { label: string; color: string }> = {
-  NOT_STARTED: { label: 'Chưa học', color: 'bg-gray-400' },
-  STUDYING: { label: 'Đang học', color: 'bg-blue-600' },
-  PAUSED: { label: 'Bảo lưu / Tạm dừng', color: 'bg-amber-500' },
-  FINISHED: { label: 'Hoàn thành', color: 'bg-emerald-600' },
-  CANCELLED: { label: 'Đã hủy', color: 'bg-rose-500' },
+const STATUS_LABELS: Record<string, { label: string; color: string; bgSoft: string; textColor: string }> = {
+  NOT_STARTED: { label: 'Chưa học', color: 'bg-slate-400', bgSoft: 'bg-slate-100', textColor: 'text-slate-700' },
+  STUDYING: { label: 'Đang học', color: 'bg-blue-600', bgSoft: 'bg-blue-50', textColor: 'text-blue-700' },
+  PAUSED: { label: 'Bảo lưu / Tạm dừng', color: 'bg-amber-500', bgSoft: 'bg-amber-50', textColor: 'text-amber-700' },
+  FINISHED: { label: 'Hoàn thành', color: 'bg-emerald-600', bgSoft: 'bg-emerald-50', textColor: 'text-emerald-700' },
+  CANCELLED: { label: 'Đã hủy', color: 'bg-rose-500', bgSoft: 'bg-rose-50', textColor: 'text-rose-700' },
 };
 
 export const DashboardPage: React.FC = () => {
@@ -57,6 +58,8 @@ export const DashboardPage: React.FC = () => {
     loadData();
   }, [filters]);
 
+  const activeFiltersCount = Object.values(filters).filter(Boolean).length;
+
   return (
     <PageContainer>
       <PageHeader
@@ -77,39 +80,38 @@ export const DashboardPage: React.FC = () => {
       />
 
       {/* Filter Bar */}
-      <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm mb-6 space-y-3">
-        <div className="flex items-center gap-2 text-xs font-semibold text-gray-700 uppercase tracking-wider">
-          <Filter className="w-4 h-4 text-gray-500" />
-          <span>Bộ lọc dữ liệu</span>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+      <FilterBar
+        title="Bộ lọc dữ liệu Dashboard"
+        activeCount={activeFiltersCount}
+        onClear={() => setFilters({})}
+      >
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           <div>
-            <label className="block text-[11px] font-medium text-gray-500 mb-1">Từ ngày</label>
+            <label className="block text-[11px] font-semibold text-slate-500 mb-1">Từ ngày</label>
             <input
               type="date"
               value={filters.date_from || ''}
               onChange={(e) => setFilters({ ...filters, date_from: e.target.value || undefined })}
-              className="w-full px-3 py-1.5 border border-gray-300 rounded-lg text-xs bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
 
           <div>
-            <label className="block text-[11px] font-medium text-gray-500 mb-1">Đến ngày</label>
+            <label className="block text-[11px] font-semibold text-slate-500 mb-1">Đến ngày</label>
             <input
               type="date"
               value={filters.date_to || ''}
               onChange={(e) => setFilters({ ...filters, date_to: e.target.value || undefined })}
-              className="w-full px-3 py-1.5 border border-gray-300 rounded-lg text-xs bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
 
           <div>
-            <label className="block text-[11px] font-medium text-gray-500 mb-1">Trạng thái Ghi danh</label>
+            <label className="block text-[11px] font-semibold text-slate-500 mb-1">Trạng thái Ghi danh</label>
             <select
               value={filters.status || ''}
               onChange={(e) => setFilters({ ...filters, status: e.target.value || undefined })}
-              className="w-full px-3 py-1.5 border border-gray-300 rounded-lg text-xs bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               <option value="">Tất cả trạng thái</option>
               <option value="STUDYING">Đang học</option>
@@ -119,17 +121,8 @@ export const DashboardPage: React.FC = () => {
               <option value="CANCELLED">Đã hủy</option>
             </select>
           </div>
-
-          <div className="flex items-end">
-            <button
-              onClick={() => setFilters({})}
-              className="w-full px-3 py-1.5 text-xs text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg font-medium transition"
-            >
-              Xóa tất cả lọc
-            </button>
-          </div>
         </div>
-      </div>
+      </FilterBar>
 
       {/* KPI Cards Row */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
@@ -180,13 +173,13 @@ export const DashboardPage: React.FC = () => {
 
       {/* Row 4: Status Breakdown Card */}
       {summary && (
-        <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm space-y-4">
-          <h4 className="font-semibold text-gray-900 text-base">Phân bổ Trạng thái Ghi danh (Enrollment Status)</h4>
-          
+        <div className="bg-white rounded-2xl border border-slate-200/80 p-6 shadow-soft space-y-4">
+          <h4 className="font-bold text-slate-900 text-sm">Phân bổ Trạng thái Ghi danh (Enrollment Status)</h4>
+
           {/* Visual Bar */}
-          <div className="w-full bg-gray-100 rounded-full h-3 flex overflow-hidden">
+          <div className="w-full bg-slate-100 rounded-full h-3 flex overflow-hidden">
             {Object.entries(summary.status_breakdown || {}).map(([st, count]) => {
-              const cfg = STATUS_LABELS[st] || { color: 'bg-gray-400', label: st };
+              const cfg = STATUS_LABELS[st] || { color: 'bg-slate-400', label: st };
               const pct = summary.total_enrollments > 0 ? (count / summary.total_enrollments) * 100 : 0;
               if (pct === 0) return null;
               return (
@@ -206,11 +199,11 @@ export const DashboardPage: React.FC = () => {
               const pct = summary.status_percentage[stKey] || 0;
 
               return (
-                <div key={stKey} className="p-3 bg-gray-50 rounded-lg border border-gray-100 space-y-1">
-                  <div className="text-xs font-medium text-gray-600 truncate">{cfg.label}</div>
+                <div key={stKey} className={`p-3 rounded-xl border border-slate-200/60 ${cfg.bgSoft} space-y-1`}>
+                  <div className={`text-xs font-semibold ${cfg.textColor} truncate`}>{cfg.label}</div>
                   <div className="flex items-baseline justify-between">
-                    <span className="font-bold text-gray-900 text-base">{count}</span>
-                    <span className="text-xs text-gray-500">{pct}%</span>
+                    <span className="font-extrabold text-slate-900 text-lg">{count}</span>
+                    <span className="text-xs font-bold text-slate-500">{pct}%</span>
                   </div>
                 </div>
               );

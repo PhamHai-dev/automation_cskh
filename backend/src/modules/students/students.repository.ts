@@ -4,7 +4,37 @@ import { CreateStudentDTO, UpdateStudentDTO } from './students.types';
 export class StudentsRepository {
   async findAll() {
     return prisma.student.findMany({
-      orderBy: { created_at: 'desc' }
+      include: {
+        enrollments: {
+          include: {
+            package: true,
+            cs: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+              },
+            },
+            enrollment_classes: {
+              include: {
+                class: {
+                  include: {
+                    class_teachers: {
+                      include: {
+                        teacher: true,
+                      },
+                    },
+                    class_schedules: true,
+                  },
+                },
+                attendance: true,
+              },
+            },
+          },
+          orderBy: { created_at: 'desc' },
+        },
+      },
+      orderBy: { id: 'asc' },
     });
   }
 

@@ -19,6 +19,8 @@ export interface Class {
   attendance_source: 'LEARNING_SYSTEM' | 'ZOOM';
   active: boolean;
   class_teachers?: ClassTeacher[];
+  enrollment_classes?: any[];
+  class_schedules?: any[];
   created_at: string;
   updated_at: string;
 }

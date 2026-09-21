@@ -1,3 +1,5 @@
+import { Enrollment } from '../../enrollments/types/enrollments.types';
+
 export interface Student {
   id: number;
   external_id?: string | null;
@@ -12,6 +14,7 @@ export interface Student {
   occupation?: string | null;
   zalo_uid?: string | null;
   note?: string | null;
+  enrollments?: Enrollment[];
   created_at: string;
   updated_at: string;
 }

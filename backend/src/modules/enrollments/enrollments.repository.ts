@@ -1,27 +1,83 @@
 import { prisma } from '../../prisma/client';
 import { CreateEnrollmentDTO, UpdateEnrollmentDTO, TransferClassDTO } from './enrollments.types';
 
+const ENROLLMENT_INCLUDES = {
+  student: true,
+  package: true,
+  cs: {
+    select: {
+      id: true,
+      name: true,
+      email: true,
+    },
+  },
+  enrollment_classes: {
+    include: {
+      class: {
+        include: {
+          class_teachers: {
+            include: {
+              teacher: true,
+            },
+          },
+          class_schedules: true,
+          class_sessions: {
+            include: {
+              attendance: true,
+            },
+          },
+        },
+      },
+      attendance: {
+        include: {
+          class_session: true,
+        },
+      },
+    },
+  },
+};
+
 export class EnrollmentsRepository {
-  async findAllByCS(csId: number) {
+  async findAllByCS(csId: number, saleIdentifier?: string) {
     return prisma.enrollment.findMany({
-      where: { cs_id: csId },
-      include: { student: true, package: true },
-      orderBy: { created_at: 'desc' }
+      where: {
+        OR: [
+          { cs_id: csId },
+          ...(saleIdentifier
+            ? [
+                { sale_name: { equals: saleIdentifier } },
+                { cs: { name: { equals: saleIdentifier } } },
+                { cs: { email: { equals: saleIdentifier } } },
+              ]
+            : []),
+        ],
+      },
+      include: ENROLLMENT_INCLUDES,
+      orderBy: { created_at: 'desc' },
     });
   }
 
   async findAllByCSIds(csIds: number[]) {
     return prisma.enrollment.findMany({
       where: { cs_id: { in: csIds } },
-      include: { student: true, package: true },
-      orderBy: { created_at: 'desc' }
+      include: ENROLLMENT_INCLUDES,
+      orderBy: { created_at: 'desc' },
     });
   }
 
-  async findAll() {
+  async findAll(saleIdentifier?: string) {
     return prisma.enrollment.findMany({
-      include: { student: true, package: true },
-      orderBy: { created_at: 'desc' }
+      where: saleIdentifier
+        ? {
+            OR: [
+              { sale_name: { equals: saleIdentifier } },
+              { cs: { name: { equals: saleIdentifier } } },
+              { cs: { email: { equals: saleIdentifier } } },
+            ],
+          }
+        : undefined,
+      include: ENROLLMENT_INCLUDES,
+      orderBy: { created_at: 'desc' },
     });
   }
 

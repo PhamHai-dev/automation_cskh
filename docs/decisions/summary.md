@@ -28,3 +28,9 @@
 23. **UI brand:** primary `#2563EB`, accent `#14B8A6`, chỉ dùng qua semantic token tập trung.
 24. **Zalo relation:** không có relation hợp lệ thì delivery `skipped`, có lý do/cảnh báo CS và không tự retry.
 25. **Message rule precedence:** rule riêng Enrollment override default Package khi cùng session number; chỉ tạo một delivery.
+26. **Đồng nhất Sale và CSKH:** Sale và nhân viên CSKH là cùng một vai trò (`CS`). Cột `Sale` trong Sheet 1 ánh xạ trực tiếp đến tài khoản đăng nhập (Email) mà Admin tạo trong hệ thống.
+27. **Ma trận Điểm danh theo Lịch Ngày:** Bỏ số thứ tự buổi, hiển thị Thứ và Ngày theo lịch thực tế; mặc định xem theo Tháng hiện tại, hỗ trợ lọc theo Tuần/Tháng/Năm. Cố định 11 cột thông tin học viên & lớp học bên trái, loại bỏ cột "Chỉ số chuyên cần ĐH % và BT %".
+28. **Tab Quản lý Ghi danh theo Sale:** Tab Quản lý ghi danh (`/enrollments`) được tổ chức dạng Ma trận điểm danh theo ngày, tự động lọc học viên theo tài khoản Sale của người đang đăng nhập (với vai trò `CS`), hoặc cung cấp bộ chọn Sale cho `ADMIN`/`MANAGE`.
+29. **Danh sách Học viên chuẩn Sheet 1:** Tab Danh sách học viên (`/students`) hiển thị đầy đủ 28 cột của Sheet `1.Chăm sóc`, highlight badge đỏ cho số buổi nợ âm, tự động lọc theo Sale phụ trách.
+30. **Cơ chế đối soát Import Sheet 3:** Học viên đã khớp trong cơ sở dữ liệu thì tự động đồng bộ điểm danh theo ngày mà không hỏi lại; học viên mới xuất hiện trong file thì hiển thị hộp thoại xác nhận có muốn thêm vào hệ thống hay không.
+31. **Bộ tài khoản kiểm thử chuẩn hóa:** Tạo sẵn 5 tài khoản test với mật khẩu chung `123456`: `admin@gmail.com` (ADMIN), `cskh1@gmail.com` (CS), `cskh2@gmail.com` (CS), `cskh3@gmail.com` (CS), `teacher@gmail.com` (TEACHER) và phân bổ dữ liệu học viên cho các Sale.

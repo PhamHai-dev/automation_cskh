@@ -21,7 +21,11 @@ export class ClassesRepository {
           include: { teacher: true }
         },
         enrollment_classes: {
-          include: { enrollment: true }
+          include: {
+            enrollment: {
+              include: { student: true }
+            }
+          }
         }
       }
     });

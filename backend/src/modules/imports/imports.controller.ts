@@ -67,8 +67,9 @@ export class ImportsController {
       const importId = parseInt(req.params.importId, 10);
       const userId = (req as any).user?.id || 1;
       const skipErrors = req.body.skipErrors !== false;
+      const createMissingStudents = req.body.createMissingStudents === true;
 
-      const summary = await this.service.confirmImport(importId, userId, skipErrors);
+      const summary = await this.service.confirmImport(importId, userId, skipErrors, createMissingStudents);
       res.status(200).json(summary);
     } catch (err) {
       next(err);

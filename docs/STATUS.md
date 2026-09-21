@@ -2,7 +2,7 @@
 
 - Current phase: Phase 7 — Zalo technical spike
 - Status: READY
-- Last updated: 2026-09-20
+- Last updated: 2026-09-21
 - Next phase: Phase 7 — Zalo technical spike
 
 ## Blockers hiện tại
@@ -24,9 +24,15 @@ Không có blocker kỹ thuật cho Phase 7.
 | 8 | Zalo automation production | NOT_STARTED |
 | 9 | Hardening + production | NOT_STARTED |
 
+## Cập nhật Giao diện & Dữ liệu Nghiệp vụ Thực tế (2026-09-21)
+
+- **Đồng nhất vai trò Sale & CSKH**: Sale và nhân viên chăm sóc khách hàng là 1 (vai trò hệ thống `CS`). Cột `Sale` trong Sheet 1 ánh xạ vào tài khoản đăng nhập của nhân viên.
+- **Ma trận Điểm danh theo Lịch Ngày (`/enrollments`)**: Hiển thị trực tiếp Thứ & Ngày theo tháng/tuần/năm (bỏ số thứ tự buổi), 11 cột cố định bên trái, bỏ cột chỉ số chuyên cần ĐH/BT, lọc học viên theo Sale phụ trách.
+- **Danh sách Học viên Chuẩn Sheet 1 (`/students`)**: Cấu trúc bảng đầy đủ 28 trường dữ liệu của Sheet `1.Chăm sóc`, highlight badge đỏ cảnh báo nợ buổi âm (`-1`, `-2`...), modal xem chi tiết toàn diện.
+- **Chuẩn hóa 5 tài khoản test**: Tạo lại cơ sở dữ liệu với 5 tài khoản test (`admin@gmail.com`, `cskh1@gmail.com`, `cskh2@gmail.com`, `cskh3@gmail.com`, `teacher@gmail.com`) có mật khẩu chung `123456`, gắn 13 học viên thực tế phân bổ cho 3 Sale.
+- **Xác thực toàn diện**: 50/50 tests backend passed, frontend & backend build 0 lỗi, kiểm thử browser subagent thành công.
+
 ## Documentation readiness
 
-- API contract documentation: READY (`docs/api/openapi.yaml`, `docs/api/care.md`, `docs/api/dashboard.md`).
-- Phase 6 đã hoàn thành: CareLog (nhật ký không ghi đè), CareTask (quản lý hẹn gọi/điểm nóng, trạng thái PENDING/DONE/CANCELLED), Dashboard tổng hợp source-of-truth, Care Pivot Matrix, thống kê chuyên cần, bộ lọc theo CS/thời gian/gói học.
-- 50/50 unit/integration tests backend passed, frontend build production thành công.
+- API contract documentation: READY (`docs/api/openapi.yaml`, `docs/api/care.md`, `docs/api/dashboard.md`, `docs/api/imports.md`).
 - Sẵn sàng chuyển tiếp sang Phase 7 (Zalo technical spike).

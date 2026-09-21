@@ -1,8 +1,11 @@
 import React from 'react';
 
-export const PageContainer: React.FC<{ children: React.ReactNode; className?: string }> = ({ children, className = '' }) => {
+export const PageContainer: React.FC<{ children: React.ReactNode; className?: string }> = ({
+  children,
+  className = '',
+}) => {
   return (
-    <div className={`mx-auto max-w-7xl w-full px-4 sm:px-5 lg:px-6 py-6 ${className}`}>
+    <div className={`mx-auto max-w-[1600px] w-full px-4 sm:px-6 lg:px-8 py-5 sm:py-7 ${className}`}>
       {children}
     </div>
   );

@@ -119,6 +119,32 @@ export class ImportsRepository {
     });
   }
 
+  async findStudentByExternalIdOrName(externalId?: string, fullName?: string) {
+    const conditions: any[] = [];
+    if (externalId && externalId.trim()) {
+      conditions.push({ external_id: externalId.trim() });
+    }
+    if (fullName && fullName.trim()) {
+      conditions.push({ full_name: fullName.trim() });
+    }
+    if (conditions.length === 0) return null;
+
+    return this.db.student.findFirst({
+      where: {
+        OR: conditions,
+      },
+      include: {
+        enrollments: {
+          include: {
+            enrollment_classes: {
+              include: { class: true },
+            },
+          },
+        },
+      },
+    });
+  }
+
   async findStudentByPhoneOrEmail(phone?: string, email?: string) {
     if (!phone && !email) return null;
     return this.db.student.findFirst({

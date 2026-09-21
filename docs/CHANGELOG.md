@@ -1,5 +1,48 @@
 # Project Changelog
 
+## 2026-09-21 — Ma trận Điểm danh Lịch Ngày, Cấu trúc Tab CSKH/Sale, Chuẩn hóa 5 Tài khoản Test & Tối ưu Giao diện
+
+- **Ma trận Điểm danh theo Lịch Ngày (Attendance Matrix by Calendar Dates):**
+  - Loại bỏ số thứ tự buổi học trừu tượng (Buổi 1, Buổi 2...), chuyển sang hiển thị trực tiếp theo **Thứ & Ngày trong lịch** (VD: `T2 01/09`, `T4 03/09`...) khớp chính xác với Sheet 3 (`3.Chấm buổi`).
+  - Bổ sung bộ lọc thời gian đa dạng: Mặc định hiển thị **Tháng hiện tại**, chuyển đổi nhanh xem theo **Tuần**, **Tháng**, hoặc **Tất cả / Khoảng ngày tùy chỉnh**.
+  - Cố định 11 cột thông tin học viên & lớp học bên trái: STT, Mã HV, Họ và tên, Ngày bắt đầu học, Trạng thái, Ngày kết thúc/Bảo lưu, Giờ học, Lịch học, Thời lượng, GV & Mã GV, Tên lớp.
+  - Loại bỏ cột *"Chỉ số chuyên cần ĐH % và BT %"* theo yêu cầu người dùng.
+  - Khắc phục triệt để hiện tượng chữ bị đè khi cuộn ngang bằng cách cố định 3 cột nhận diện (`#`, `Mã HV`, `Họ và tên`) với nền đục (`bg-white`/`bg-slate-50`) và viền đổ bóng nhẹ (`shadow-sm`).
+  - Hỗ trợ điểm danh trực tiếp qua click ô: `X` (Có mặt - Xanh lá), `A` (Nghỉ phép - Vàng), `B` (Bảo lưu - Xanh dương), `C` (Nghỉ không phép - Đỏ), `D` (GV nghỉ - Tím), `E` (Lỗi kỹ thuật - Xám).
+
+- **Tái Cấu Trúc Tab & Nghiệp vụ cho Nhân viên Chăm sóc Khách hàng (Sale & CSKH là 1):**
+  - **Đồng nhất vai trò:** Xác nhận nghiệp vụ *"Sale với nhân viên chăm sóc khách hàng là 1"*, sử dụng vai trò hệ thống `CS`. Cột `Sale` trong Sheet 1 ánh xạ trực tiếp với tài khoản đăng nhập (Email/Username) mà Admin tạo.
+  - **Tab Quản lý ghi danh (`/enrollments`) ➔ Ma trận Điểm danh theo Sale:**
+    - Tự động lọc học viên theo tài khoản Sale của người đang đăng nhập nếu là vai trò `CS`.
+    - Cung cấp dropdown chọn Sale nếu tài khoản có vai trò `ADMIN` hoặc `MANAGE`.
+    - Hỗ trợ chuyển đổi linh hoạt giữa chế độ **Ma trận Điểm danh (Matrix View)** và **Bảng Ghi danh (Table View)**.
+  - **Tab Danh sách học viên (`/students`) ➔ Chuẩn Cấu Trúc Sheet 1 (`1.Chăm sóc`):**
+    - Hiển thị đầy đủ 28 cột dữ liệu nghiệp vụ của Sheet 1.
+    - Nổi bật cảnh báo **Nợ buổi âm** (ví dụ `-1`, `-2` buổi) bằng huy hiệu đỏ đậm (`bg-red-100 text-red-800 border-red-300 font-extrabold`).
+    - Tự động lọc danh sách học viên theo Sale phụ trách nếu tài khoản đăng nhập là `CS`.
+    - Tích hợp Modal xem chi tiết trọn vẹn 28 trường hồ sơ học viên.
+  - **Sidebar CSKH:**
+    - Tinh gọn và sắp xếp lại thứ tự menu cho CSKH: Báo cáo Thống kê (`/dashboard`) ➔ Quản lý Ghi danh (`/enrollments`) ➔ Danh sách Học viên (`/students`) ➔ Nhiệm vụ & Chăm sóc (`/care`).
+
+- **Xóa & Tái Thiết Lập Toàn Bộ Dữ Liệu Test (5 Tài khoản Chuẩn Hóa):**
+  - Đặt lại toàn bộ cơ sở dữ liệu và khởi tạo đúng 5 tài khoản test với mật khẩu chung `123456`:
+    1. `admin@gmail.com` (Quản trị viên, `ADMIN` - toàn quyền quản lý).
+    2. `cskh1@gmail.com` (CSKH 1 / Sale 1, `CS` - phụ trách 4 học viên: `HV_001` -> `HV_004`).
+    3. `cskh2@gmail.com` (CSKH 2 / Sale 2, `CS` - phụ trách 4 học viên: `HV_005` -> `HV_008`, có nợ âm).
+    4. `cskh3@gmail.com` (CSKH 3 / Sale 3, `CS` - phụ trách 5 học viên: `HV_101` -> `HV_105`, có nợ âm).
+    5. `teacher@gmail.com` (Sensei Tanaka Kenji, `TEACHER` - giáo viên lớp N5 và N4).
+  - Phân bổ học viên và tạo sẵn dữ liệu điểm danh thực tế tháng 9/2026 cho 2 lớp học (Lớp N5-K01 và Lớp N4-K02).
+  - Cập nhật các nút đăng nhập thử nghiệm nhanh tại trang Đăng nhập (`LoginPage.tsx`).
+
+- **Cải Thiện Giao Diện & Trải Nghiệm Người Dùng (UI/UX):**
+  - Sửa lỗi tương phản màu chữ trong ô nhập email/password trên nền tối của trang Đăng nhập (`text-slate-900` trên nền trắng có viền rõ ràng).
+  - Thay thế toàn bộ `alert()` / `window.confirm()` bằng hệ thống Toast thông báo hiện đại (`useToast`) và Modal chuẩn hóa có hiệu ứng làm mờ nền (backdrop blur).
+  - Kiểm thử giao diện và xác minh luồng đăng nhập thực tế bằng subagent trình duyệt trên môi trường đang chạy.
+
+- **Quy Tắc Import Excel Sheet 3:**
+  - Đối soát học viên cũ: Tự động đồng bộ điểm danh theo ngày mà không hỏi lại.
+  - Học viên mới từ file: Hiển thị hộp thoại xác nhận hỏi người dùng có muốn tự động tạo mới học viên và ghi danh vào lớp hay không.
+
 ## 2026-09-20 — Web & Docs: Đồng bộ Route Tiếng Anh Chuẩn & Toàn diện Giao diện Tiếng Việt
 
 - **Chuẩn hóa URL Routing Tiếng Anh (Chỉ đường dẫn URL là tiếng Anh):**

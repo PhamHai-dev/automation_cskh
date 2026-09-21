@@ -17,5 +17,6 @@ export const saveMappingSchema = z.object({
 export const confirmImportSchema = z.object({
   body: z.object({
     skipErrors: z.boolean().optional().default(true),
+    createMissingStudents: z.boolean().optional().default(false),
   }).optional(),
 });

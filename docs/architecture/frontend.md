@@ -54,18 +54,20 @@ Nếu dùng query library, query key, invalidate strategy và error mapping ph�
   - `/login`: Đăng nhập hệ thống (hỗ trợ alias redirect từ `/dang-nhap`).
   - `/dashboard`: Báo cáo tổng quan & thống kê (hỗ trợ alias redirect từ `/tong-quan`).
   - `/care`: Chăm sóc học viên & Nhiệm vụ CS (hỗ trợ alias redirect từ `/cham-soc`).
-  - `/enrollments`: Quản lý hợp đồng & tiến độ ghi danh (hỗ trợ alias redirect từ `/ghi-danh`).
+  - `/enrollments`: Quản lý ghi danh & Ma trận Điểm danh theo Ngày lọc theo Sale (hỗ trợ alias redirect từ `/ghi-danh`).
   - `/classes`: Quản lý danh sách lớp học (hỗ trợ alias redirect từ `/lop-hoc`).
   - `/classes/:classId/sessions`: Danh sách buổi học trong lớp (hỗ trợ alias redirect từ `/lop-hoc/:classId/buoi-hoc`).
   - `/classes/:classId/sessions/:sessionId/attendance`: Bảng điểm danh buổi học (hỗ trợ alias redirect từ `/lop-hoc/:classId/buoi-hoc/:sessionId/diem-danh`).
-  - `/students`: Quản lý danh sách học viên & phụ huynh (hỗ trợ alias redirect từ `/hoc-vien`).
+  - `/students`: Quản lý danh sách học viên chuẩn 28 cột Sheet 1 & lọc theo Sale (hỗ trợ alias redirect từ `/hoc-vien`).
   - `/packages`: Quản lý gói học & số buổi định mức (hỗ trợ alias redirect từ `/goi-hoc`).
   - `/teachers`: Quản lý giảng viên Việt & Bản ngữ (hỗ trợ alias redirect từ `/giao-vien`).
   - `/imports`: Nhập & Xuất Excel Sheet 1 & 3 (hỗ trợ alias redirect từ `/nhap-xuat-excel`).
   - `/settings/users`: Quản lý tài khoản & phân quyền (hỗ trợ alias redirect từ `/cai-dat/nguoi-dung`).
 - **Giao diện người dùng (UI text, nhãn, dữ liệu, bảng, modal, thông báo lỗi):** Giữ nguyên chuẩn hóa 100% bằng **Tiếng Việt**.
+- **Cấu trúc Menu theo vai trò (Role-based Navigation):**
+  - Vai trò `CS` (Sale / CSKH): Thứ tự menu tinh gọn tối ưu quy trình làm việc hàng ngày: **Báo cáo Thống kê** (`/dashboard`) ➔ **Quản lý Ghi danh** (`/enrollments`) ➔ **Danh sách Học viên** (`/students`) ➔ **Nhiệm vụ & Chăm sóc** (`/care`).
+  - Dữ liệu tại `/enrollments` và `/students` tự động khóa theo tài khoản Sale đang đăng nhập.
 - Route guard chỉ để tối ưu UX; backend vẫn là nơi kiểm tra và enforce quyền (permission) cuối cùng.
-- Menu và hành động hiển thị theo vai trò (Role-based UI).
 - Trang thông báo lỗi 401/403/404 bằng tiếng Việt rõ ràng.
 
 ## 6. State management
