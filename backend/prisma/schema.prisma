@@ -41,8 +41,11 @@ model User {
   created_message_rules  MessageRule[]        @relation("MessageRuleCreator")
   care_logs              CareLog[]            @relation("CareLogCS")
   care_tasks_assigned    CareTask[]           @relation("CareTaskAssignee")
-  import_batches         ImportBatch[]        @relation("ImportBatchUploader")
-  audit_logs             AuditLog[]           @relation("AuditLogUser")
+  import_batches                   ImportBatch[]         @relation("ImportBatchUploader")
+  audit_logs                       AuditLog[]            @relation("AuditLogUser")
+  requested_import_create_requests ImportCreateRequest[] @relation("ImportCreateRequestRequester")
+  reviewed_import_create_requests  ImportCreateRequest[] @relation("ImportCreateRequestReviewer")
+  assigned_import_create_requests  ImportCreateRequest[] @relation("ImportCreateRequestAssignee")
 
   @@map("users")
 }
@@ -190,6 +193,7 @@ model Enrollment {
   package_id                  Int?
   cs_id                       Int
   paid_at                     DateTime?
+  sale_id                     Int?
   sale_name                   String?
   student_source_status       String?
   course_content              String?
@@ -213,6 +217,7 @@ model Enrollment {
   student Student  @relation(fields: [student_id], references: [id])
   package Package? @relation(fields: [package_id], references: [id])
   cs      User     @relation("EnrollmentCS", fields: [cs_id], references: [id])
+  sale    Sale?    @relation(fields: [sale_id], references: [id])
 
   enrollment_classes EnrollmentClass[]
   message_rules      MessageRule[]
@@ -390,6 +395,7 @@ model Attendance {
   enrollment_class_id Int
   class_session_id    Int
   status              AttendanceStatus
+  session_count       Float            @default(1)
   source              AttendanceSource
   created_by_id       Int
   created_at          DateTime         @default(now())
@@ -616,6 +622,7 @@ model CareTask {
 }
 
 enum ImportType {
+  WORKBOOK
   STUDENT_ENROLLMENT
   ATTENDANCE
   TEACHER_ATTENDANCE
@@ -642,8 +649,9 @@ model ImportBatch {
   created_at     DateTime          @default(now())
   completed_at   DateTime?
 
-  uploaded_by User        @relation("ImportBatchUploader", fields: [uploaded_by_id], references: [id])
-  import_rows ImportRow[]
+  uploaded_by            User                  @relation("ImportBatchUploader", fields: [uploaded_by_id], references: [id])
+  import_rows            ImportRow[]
+  import_create_requests ImportCreateRequest[]
 
   @@map("import_batches")
 }
@@ -685,4 +693,55 @@ model AuditLog {
 
   @@map("audit_logs")
 }
+
+model Sale {
+  id          Int          @id @default(autoincrement())
+  code        String       @unique
+  name        String
+  phone       String?
+  email       String?
+  active      Boolean      @default(true)
+  created_at  DateTime     @default(now())
+  updated_at  DateTime     @updatedAt
+
+  enrollments Enrollment[]
+
+  @@map("sales")
+}
+
+enum ImportCreateRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CONFLICT
+}
+
+model ImportCreateRequest {
+  id              Int                       @id @default(autoincrement())
+  import_batch_id Int
+  requested_by_id Int
+  reviewed_by_id  Int?
+  assigned_cs_id  Int?
+  external_id     String
+  package_code    String
+  snapshot        Json
+  baseline        Json?
+  version         Int                       @default(1)
+  status          ImportCreateRequestStatus @default(PENDING)
+  review_reason   String?                   @db.Text
+  reviewed_at     DateTime?
+  created_at      DateTime                  @default(now())
+  updated_at      DateTime                  @updatedAt
+
+  import_batch ImportBatch @relation(fields: [import_batch_id], references: [id])
+  requested_by User        @relation("ImportCreateRequestRequester", fields: [requested_by_id], references: [id])
+  reviewed_by  User?       @relation("ImportCreateRequestReviewer", fields: [reviewed_by_id], references: [id])
+  assigned_cs  User?       @relation("ImportCreateRequestAssignee", fields: [assigned_cs_id], references: [id])
+
+  @@unique([import_batch_id, external_id, package_code])
+  @@index([external_id, package_code])
+  @@index([status, created_at])
+  @@index([requested_by_id, status])
+  @@index([assigned_cs_id, status])
+  @@map("import_create_requests")
 }

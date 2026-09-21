@@ -249,12 +249,27 @@ export class ImportsRepository {
     return cs;
   }
 
+  async findOrCreateSale(code: string, name?: string) {
+    const trimmedCode = code.trim();
+    if (!trimmedCode) return null;
+    const existing = await this.db.sale.findUnique({ where: { code: trimmedCode } });
+    if (existing) return existing;
+    return this.db.sale.create({
+      data: {
+        code: trimmedCode,
+        name: (name && name.trim()) || trimmedCode,
+        active: true,
+      },
+    });
+  }
+
   async createEnrollment(data: {
     external_id?: string;
     student_id: number;
     package_id?: number | null;
     cs_id: number;
     paid_at?: Date | null;
+    sale_id?: number | null;
     sale_name?: string | null;
     student_source_status?: string | null;
     course_content?: string | null;
@@ -276,6 +291,7 @@ export class ImportsRepository {
         package_id: data.package_id,
         cs_id: data.cs_id,
         paid_at: data.paid_at,
+        sale_id: data.sale_id,
         sale_name: data.sale_name,
         student_source_status: data.student_source_status,
         course_content: data.course_content,
@@ -437,10 +453,33 @@ export class ImportsRepository {
     });
   }
 
-  async getAllStudentsWithEnrollments() {
+  async getTeacherAssignedClassIds(teacherUserId: number): Promise<number[]> {
+    const records = await this.db.classTeacher.findMany({
+      where: { teacher_id: teacherUserId, active: true },
+      select: { class_id: true },
+    });
+    return records.map((r) => r.class_id);
+  }
+
+  async getTeacherAssignedClassNames(teacherUserId: number): Promise<string[]> {
+    const records = await this.db.classTeacher.findMany({
+      where: { teacher_id: teacherUserId, active: true },
+      include: { class: true },
+    });
+    const names = new Set<string>();
+    records.forEach((r) => {
+      if (r.class.class_name) names.add(r.class.class_name.toLowerCase().trim());
+      if (r.class.class_code) names.add(r.class.class_code.toLowerCase().trim());
+    });
+    return Array.from(names);
+  }
+
+  async getAllStudentsWithEnrollments(filter?: { cs_id?: number }) {
     return this.db.student.findMany({
+      where: filter?.cs_id ? { enrollments: { some: { cs_id: filter.cs_id } } } : undefined,
       include: {
         enrollments: {
+          where: filter?.cs_id ? { cs_id: filter.cs_id } : undefined,
           include: {
             package: true,
             cs: { select: { id: true, name: true, email: true } },
@@ -454,8 +493,12 @@ export class ImportsRepository {
     });
   }
 
-  async getAllAttendances() {
+  async getAllAttendances(filter?: { classIds?: number[]; cs_id?: number }) {
     return this.db.attendance.findMany({
+      where: {
+        ...(filter?.classIds ? { enrollment_class: { class_id: { in: filter.classIds } } } : {}),
+        ...(filter?.cs_id ? { enrollment_class: { enrollment: { cs_id: filter.cs_id } } } : {}),
+      },
       include: {
         enrollment_class: {
           include: {

@@ -32,7 +32,7 @@ export class AttendanceService {
       throw new Error('Attendance already exists for this enrollment class and session');
     }
 
-    const result = await this.repository.mark(data.enrollment_class_id, sessionId, data.status, 'MANUAL', userId);
+    const result = await this.repository.mark(data.enrollment_class_id, sessionId, data.status, 'MANUAL', userId, data.session_count || 1);
     await this.logAudit(userId, 'CREATE', 'Attendance', String(result.id), null, result);
     return result;
   }

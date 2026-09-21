@@ -4,7 +4,7 @@ import ExcelJS from 'exceljs';
 import { ImportBatchStatus, ImportRowStatus, ImportType, AttendanceStatus, AttendanceSource, EnrollmentStatus, EnrollmentClassStatus, ImportCreateRequestStatus, Prisma } from '@prisma/client';
 import { prisma } from '../../prisma/client';
 import { ImportsRepository } from './imports.repository';
-import { SheetPreviewData, UploadResponse, ValidationReport, ValidationErrorItem, ValidationWarningItem, SaveMappingDTO, ImportBatchSummary, RequestActor, ReconcileItem, LogicalSheet } from './imports.types';
+import { SheetPreviewData, UploadResponse, ValidationReport, ValidationErrorItem, ValidationWarningItem, SaveMappingDTO, ImportBatchSummary, RequestActor, ReconcileItem, ReconcileClassification, LogicalSheet } from './imports.types';
 import { AppError } from '../../middlewares/error.middleware';
 
 export class ImportsService {
@@ -132,7 +132,7 @@ export class ImportsService {
         suggestedMapping['date_of_birth'] = colLetter;
       } else if (lower.includes('nghề nghiệp')) {
         suggestedMapping['occupation'] = colLetter;
-      } else if (lower.includes('gói học')) {
+      } else if (lower.includes('gói học') || lower === 'gói' || lower.includes('mã gói') || lower.startsWith('gói')) {
         suggestedMapping['package_code'] = colLetter;
       } else if (lower.includes('trình độ')) {
         suggestedMapping['level'] = colLetter;
@@ -144,7 +144,7 @@ export class ImportsService {
         suggestedMapping['start_date'] = colLetter;
       } else if (lower.includes('ngày kết thúc') || lower.includes('kết thúc/bảo lưu')) {
         suggestedMapping['end_date'] = colLetter;
-      } else if (lower === 'trạng thái' || lower === 'trạng thái hv') {
+      } else if (lower.includes('trạng thái') || lower.includes('tình trạng')) {
         suggestedMapping['status'] = colLetter;
       } else if (lower.includes('mô hình')) {
         suggestedMapping['class_model'] = colLetter;
@@ -158,7 +158,7 @@ export class ImportsService {
         suggestedMapping['sales_note'] = colLetter;
       } else if (lower.includes('ngày nộp học phí')) {
         suggestedMapping['paid_at'] = colLetter;
-      } else if (lower.includes('tên lớp')) {
+      } else if (lower.includes('tên lớp') || lower === 'lớp' || lower.includes('lớp học') || lower.startsWith('lớp')) {
         suggestedMapping['class_name'] = colLetter;
       }
     });
@@ -222,17 +222,19 @@ export class ImportsService {
 
   private attendanceStatus(value: string): AttendanceStatus | null {
     const code = value.trim().toUpperCase();
-    if (['1', '1.0', '2', '2.0', '3', '3.0', 'X', 'ĐÃ HỌC'].includes(code)) return AttendanceStatus.ATTENDED;
     if (code === 'A') return AttendanceStatus.ABSENT_APPROVED_A;
     if (code === 'B') return AttendanceStatus.LEAVE_B;
     if (code === 'C') return AttendanceStatus.ABSENT_UNAPPROVED_C;
     if (code === 'D') return AttendanceStatus.TEACHER_ABSENT_D;
     if (code === 'E') return AttendanceStatus.TECH_ERROR_E;
+    const num = Number(code);
+    if (!isNaN(num) && num > 0) return AttendanceStatus.ATTENDED;
+    if (['X', 'ĐÃ HỌC'].includes(code)) return AttendanceStatus.ATTENDED;
     return null;
   }
 
   // Upload file and initialize draft batch
-  async uploadFile(actor: RequestActor, file: Express.Multer.File, importType: ImportType): Promise<UploadResponse> {
+  async uploadFile(actor: RequestActor, file: Express.Multer.File, importType: ImportType, assignedCsId?: number): Promise<UploadResponse> {
     if (!file) {
       throw new AppError(400, 'Không tìm thấy file upload');
     }
@@ -250,22 +252,60 @@ export class ImportsService {
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.readFile(targetPath);
 
-    if (importType === ImportType.WORKBOOK) {
-      const studentSheet = workbook.worksheets.find((ws) => ws.name.toLowerCase().includes('chăm sóc') || ws.name.startsWith('1.'));
-      const attendanceSheet = workbook.worksheets.find((ws) => ws.name.toLowerCase().includes('chấm buổi') || ws.name.startsWith('3.'));
-      if (!studentSheet || !attendanceSheet) throw new AppError(400, 'Workbook bắt buộc có đủ sheet 1.Chăm sóc và 3.Chấm buổi');
-      const sheets = {
-        studentEnrollment: this.buildPreview(studentSheet, 'studentEnrollment'),
-        attendance: this.buildPreview(attendanceSheet, 'attendance'),
-      };
+    const studentSheet = workbook.worksheets.find((ws) => ws.name.toLowerCase().includes('chăm sóc') || ws.name.startsWith('1.'));
+    const attendanceSheet = workbook.worksheets.find((ws) => ws.name.toLowerCase().includes('chấm buổi') || ws.name.startsWith('3.'));
+
+    const isExplicitSingle = importType === ImportType.STUDENT_ENROLLMENT || importType === ImportType.ATTENDANCE;
+    const isWorkbook = !isExplicitSingle && (importType === ImportType.WORKBOOK || (!!studentSheet && !!attendanceSheet));
+
+    const effectiveAssignedCsId = actor.roles.includes('CS') && !actor.roles.includes('ADMIN') && !actor.roles.includes('MANAGE')
+      ? actor.id
+      : assignedCsId;
+
+    if (isWorkbook && (studentSheet || attendanceSheet)) {
+      const sheets: any = {};
+      let totalRows = 0;
+      const metaSheets: any = {};
+      if (studentSheet) {
+        sheets.studentEnrollment = this.buildPreview(studentSheet, 'studentEnrollment');
+        totalRows += sheets.studentEnrollment.totalRows;
+        metaSheets.studentEnrollment = {
+          sheetName: studentSheet.name,
+          headerRowIdx: sheets.studentEnrollment.headerRowIndex,
+          columnMapping: sheets.studentEnrollment.suggestedMapping,
+        };
+      }
+      if (attendanceSheet) {
+        sheets.attendance = this.buildPreview(attendanceSheet, 'attendance');
+        totalRows += sheets.attendance.totalRows;
+        metaSheets.attendance = {
+          sheetName: attendanceSheet.name,
+          headerRowIdx: sheets.attendance.headerRowIndex,
+          columnMapping: sheets.attendance.suggestedMapping,
+        };
+      }
       this.saveMeta(batch.id, {
-        importId: batch.id, fileName: file.originalname, filePath: targetPath, importType, sheets: {
-          studentEnrollment: { sheetName: studentSheet.name, headerRowIdx: sheets.studentEnrollment.headerRowIndex, columnMapping: sheets.studentEnrollment.suggestedMapping },
-          attendance: { sheetName: attendanceSheet.name, headerRowIdx: sheets.attendance.headerRowIndex, columnMapping: sheets.attendance.suggestedMapping },
-        }
+        importId: batch.id,
+        fileName: file.originalname,
+        filePath: targetPath,
+        importType: ImportType.WORKBOOK,
+        sheets: metaSheets,
+        assignedCsId: effectiveAssignedCsId,
       });
-      await this.repo.updateBatch(batch.id, { total_rows: sheets.studentEnrollment.totalRows + sheets.attendance.totalRows });
-      return { importId: batch.id, fileName: file.originalname, importType, sheets };
+      await this.repo.updateBatch(batch.id, { total_rows: totalRows, import_type: ImportType.WORKBOOK });
+      const sheetList = workbook.worksheets.map((s) => s.name);
+      const selectedSheetName = studentSheet?.name || attendanceSheet?.name || sheetList[0];
+      const preview = sheets.studentEnrollment || sheets.attendance;
+      return {
+        importId: batch.id,
+        fileName: file.originalname,
+        importType: ImportType.WORKBOOK,
+        sheets,
+        selectedSheet: selectedSheetName,
+        preview,
+        totalRows,
+        assignedCsId: effectiveAssignedCsId,
+      };
     }
 
     const sheetNames = workbook.worksheets.map((s) => s.name);
@@ -322,6 +362,7 @@ export class ImportsService {
       headerRowIdx,
       columnMapping: suggestedMapping,
       headers,
+      assignedCsId: effectiveAssignedCsId,
     };
     this.saveMeta(batch.id, meta);
 
@@ -342,6 +383,7 @@ export class ImportsService {
         totalRows,
         suggestedMapping,
       },
+      assignedCsId: effectiveAssignedCsId,
     };
   }
 
@@ -354,7 +396,20 @@ export class ImportsService {
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.readFile(meta.filePath);
     if (meta.importType === ImportType.WORKBOOK) {
-      const logical = (sheetName || 'studentEnrollment') as LogicalSheet;
+      let logical: LogicalSheet | undefined;
+      if (sheetName === 'studentEnrollment' || sheetName === 'attendance') {
+        logical = sheetName;
+      } else if (sheetName) {
+        if (meta.sheets?.studentEnrollment?.sheetName === sheetName || sheetName.includes('chăm sóc') || sheetName.startsWith('1.')) {
+          logical = 'studentEnrollment';
+        } else if (meta.sheets?.attendance?.sheetName === sheetName || sheetName.includes('chấm buổi') || sheetName.startsWith('3.')) {
+          logical = 'attendance';
+        }
+      }
+      if (!logical) {
+        logical = meta.sheets?.studentEnrollment ? 'studentEnrollment' : 'attendance';
+      }
+
       const sheetMeta = meta.sheets?.[logical];
       if (!sheetMeta) throw new AppError(400, 'Sheet logic không hợp lệ');
       const ws = workbook.getWorksheet(sheetMeta.sheetName);
@@ -415,13 +470,26 @@ export class ImportsService {
     if (!meta) throw new AppError(404, 'Không tìm thấy thông tin import batch');
 
     await this.assertBatchAccess(importId, actor, true);
+    if (dto.assignedCsId !== undefined) {
+      meta.assignedCsId = dto.assignedCsId;
+    }
     if (meta.importType === ImportType.WORKBOOK) {
-      if (!dto.sheet || !meta.sheets?.[dto.sheet]) throw new AppError(400, 'sheet phải là studentEnrollment hoặc attendance');
-      if (!dto.columnMapping.external_id || !dto.columnMapping.package_code) throw new AppError(400, 'ID và Gói học là mapping bắt buộc');
-      meta.sheets[dto.sheet].headerRowIdx = dto.headerRowIndex || meta.sheets[dto.sheet].headerRowIdx;
-      meta.sheets[dto.sheet].columnMapping = { ...meta.sheets[dto.sheet].columnMapping, ...dto.columnMapping };
+      let sheetKey: LogicalSheet | undefined = dto.sheet;
+      if (!sheetKey && dto.sheetName) {
+        if (dto.sheetName.includes('chăm sóc') || dto.sheetName.startsWith('1.')) {
+          sheetKey = 'studentEnrollment';
+        } else if (dto.sheetName.includes('chấm buổi') || dto.sheetName.startsWith('3.')) {
+          sheetKey = 'attendance';
+        }
+      }
+      if (!sheetKey) {
+        sheetKey = meta.sheets?.studentEnrollment ? 'studentEnrollment' : 'attendance';
+      }
+      if (!meta.sheets?.[sheetKey]) throw new AppError(400, 'sheet phải là studentEnrollment hoặc attendance');
+      meta.sheets[sheetKey].headerRowIdx = dto.headerRowIndex || meta.sheets[sheetKey].headerRowIdx;
+      meta.sheets[sheetKey].columnMapping = { ...meta.sheets[sheetKey].columnMapping, ...dto.columnMapping };
       this.saveMeta(importId, meta);
-      return { success: true, columnMapping: meta.sheets[dto.sheet].columnMapping };
+      return { success: true, columnMapping: meta.sheets[sheetKey].columnMapping, assignedCsId: meta.assignedCsId };
     }
 
     if (dto.sheetName) meta.selectedSheet = dto.sheetName;
@@ -429,16 +497,20 @@ export class ImportsService {
     meta.columnMapping = { ...meta.columnMapping, ...dto.columnMapping };
 
     this.saveMeta(importId, meta);
-    return { success: true, columnMapping: meta.columnMapping };
+    return { success: true, columnMapping: meta.columnMapping, assignedCsId: meta.assignedCsId };
   }
 
   // Validate import rows
-  async validate(importId: number, actor?: RequestActor): Promise<ValidationReport> {
+  async validate(importId: number, actor?: RequestActor, assignedCsId?: number): Promise<ValidationReport> {
     const meta = this.loadMeta(importId);
     if (!meta) throw new AppError(404, 'Không tìm thấy thông tin import batch');
 
     await this.assertBatchAccess(importId, actor, true);
-    if (meta.importType === ImportType.WORKBOOK) return this.validateWorkbook(importId, meta);
+    if (assignedCsId !== undefined) {
+      meta.assignedCsId = assignedCsId;
+      this.saveMeta(importId, meta);
+    }
+    if (meta.importType === ImportType.WORKBOOK) return this.validateWorkbook(importId, meta, actor, assignedCsId);
 
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.readFile(meta.filePath);
@@ -597,15 +669,15 @@ export class ImportsService {
     return report;
   }
 
-  private async validateWorkbook(importId: number, meta: any): Promise<ValidationReport> {
+  private async validateWorkbook(importId: number, meta: any, actor?: RequestActor, assignedCsId?: number): Promise<ValidationReport> {
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.readFile(meta.filePath);
-    const s1 = meta.sheets.studentEnrollment;
-    const s3 = meta.sheets.attendance;
-    const ws1 = workbook.getWorksheet(s1.sheetName)!;
-    const ws3 = workbook.getWorksheet(s3.sheetName)!;
-    const rows1 = this.readSheetRows(ws1, s1.headerRowIdx, s1.columnMapping);
-    const rows3 = this.readSheetRows(ws3, s3.headerRowIdx, s3.columnMapping);
+    const s1 = meta.sheets?.studentEnrollment;
+    const s3 = meta.sheets?.attendance;
+    const ws1 = s1?.sheetName ? workbook.getWorksheet(s1.sheetName) : null;
+    const ws3 = s3?.sheetName ? workbook.getWorksheet(s3.sheetName) : null;
+    const rows1 = ws1 && s1 ? this.readSheetRows(ws1, s1.headerRowIdx, s1.columnMapping) : [];
+    const rows3 = ws3 && s3 ? this.readSheetRows(ws3, s3.headerRowIdx, s3.columnMapping) : [];
     const byKey1 = new Map<string, typeof rows1[number]>();
     const byKey3 = new Map<string, typeof rows3[number]>();
     const duplicateKeys = new Set<string>();
@@ -613,92 +685,473 @@ export class ImportsService {
       const key = `${row.values.external_id}::${row.values.package_code}`;
       if (map.has(key)) duplicateKeys.add(key); else map.set(key, row);
     };
-    rows1.forEach((row) => add(byKey1, row)); rows3.forEach((row) => add(byKey3, row));
+    rows1.forEach((row) => add(byKey1, row));
+    rows3.forEach((row) => add(byKey3, row));
     const keys = new Set([...byKey1.keys(), ...byKey3.keys()]);
     const items: ReconcileItem[] = [];
+
+    // Scope checking setup
+    const isCS = Boolean(actor?.roles?.includes('CS') && !actor?.roles?.includes('ADMIN') && !actor?.roles?.includes('MANAGE'));
+    const isTeacher = Boolean(actor?.roles?.includes('TEACHER') && !actor?.roles?.includes('ADMIN') && !actor?.roles?.includes('MANAGE'));
+    const targetCsId = isCS && actor ? actor.id : (assignedCsId || meta.assignedCsId || actor?.id);
+    let teacherClassNames: string[] = [];
+    if (isTeacher && actor) {
+      teacherClassNames = await this.repo.getTeacherAssignedClassNames(actor.id);
+    }
+
     for (const key of keys) {
-      const one = byKey1.get(key); const three = byKey3.get(key);
+      const one = byKey1.get(key);
+      const three = byKey3.get(key);
       const source = one || three;
       if (!source) continue;
-      const externalId = source.values.external_id; const packageCode = source.values.package_code;
-      const errors: string[] = []; const warnings: string[] = [];
+      const externalId = source.values.external_id;
+      const packageCode = source.values.package_code;
+      const errors: string[] = [];
+      const warnings: string[] = [];
       if (!externalId || !packageCode) errors.push('ID và Gói học là bắt buộc');
-      if (!one) errors.push('Thiếu khóa tương ứng ở Sheet 1');
       if (duplicateKeys.has(key)) errors.push('Trùng ID + Gói học trong cùng sheet');
-      if (one && three && one.values.full_name && three.values.full_name && one.values.full_name !== three.values.full_name) warnings.push('Họ tên giữa hai sheet khác nhau; ưu tiên Sheet 1');
-      const student = externalId ? await prisma.student.findUnique({ where: { external_id: externalId }, include: { enrollments: { where: { package: { code: packageCode } }, include: { package: true, enrollment_classes: { include: { class: true } } }, orderBy: { created_at: 'desc' } } } }) : null;
+      if (one && three && one.values.full_name && three.values.full_name && one.values.full_name !== three.values.full_name) {
+        warnings.push('Họ tên giữa hai sheet khác nhau; ưu tiên Sheet 1');
+      }
+
+      // Check Teacher Scope for Sheet 3
+      let isOutOfScope = false;
+      if (isTeacher && actor) {
+        if (!three) {
+          isOutOfScope = true;
+          warnings.push('Bỏ qua: Giáo viên không có quyền quản lý hồ sơ học viên ở Sheet 1');
+        } else {
+          const className = (three.values.class_name || '').toLowerCase().trim();
+          const matchesClass = Boolean(
+            className && teacherClassNames.some((tc) => tc && (className.includes(tc) || tc.includes(className)))
+          );
+          if (!matchesClass) {
+            isOutOfScope = true;
+            warnings.push(`Bỏ qua: Lớp học [${three.values.class_name || 'không tên'}] không thuộc phân công giảng dạy của GV`);
+          }
+        }
+      }
+
+      const student = externalId ? await prisma.student.findUnique({
+        where: { external_id: externalId },
+        include: {
+          enrollments: {
+            where: { package: { code: packageCode } },
+            include: { package: true, cs: true, enrollment_classes: { include: { class: true } } },
+            orderBy: { created_at: 'desc' },
+          },
+        },
+      }) : null;
       const pkg = packageCode ? await prisma.package.findUnique({ where: { code: packageCode } }) : null;
       const enrollment = student?.enrollments[0];
       if (student && student.enrollments.length > 1) errors.push('Có nhiều ghi danh cùng ID + Gói học');
-      const snapshot: Record<string, unknown> = { ...(one?.values || {}), class_name: three?.values.class_name || one?.values.class_name || '', attendance: [] };
-      const header = ws3.getRow(s3.headerRowIdx);
-      const attendance: any[] = [];
-      if (three) header.eachCell((cell, col) => { const date = this.parseExcelDate(cell.value); if (date) attendance.push({ date: date.toISOString(), value: this.cellText(ws3.getRow(three.rowNumber).getCell(col)) }); });
-      snapshot.attendance = attendance;
+
+      const snapshot: Record<string, unknown> = {
+        ...(one?.values || {}),
+        class_name: three?.values.class_name || one?.values.class_name || '',
+        attendance: [],
+      };
+
+      if (three && ws3 && s3) {
+        const header = ws3.getRow(s3.headerRowIdx);
+        const attendance: any[] = [];
+        header.eachCell((cell, col) => {
+          const date = this.parseExcelDate(cell.value);
+          if (date) {
+            attendance.push({
+              date: date.toISOString(),
+              value: this.cellText(ws3.getRow(three.rowNumber).getCell(col)),
+            });
+          }
+        });
+        snapshot.attendance = attendance;
+      }
+
       const diffs: any[] = [];
-      const compare = (entity: string, field: string, before: unknown, after: unknown) => { if ((before ?? '') !== (after ?? '')) diffs.push({ entity, field, before, after: after === '' ? null : after, action: after === '' ? 'NULLIFY' : 'UPDATE' }); };
-      if (student) { compare('Student', 'full_name', student.full_name, snapshot.full_name); compare('Student', 'phone', student.phone, snapshot.phone); compare('Student', 'email', student.email, snapshot.email); }
-      if (enrollment) { compare('Enrollment', 'total_sessions', enrollment.total_sessions, Number(snapshot.total_sessions) || 0); compare('Enrollment', 'external_remaining_sessions', enrollment.external_remaining_sessions, snapshot.remaining_sessions === '' ? null : Number(snapshot.remaining_sessions)); }
-      let classification: any = errors.length ? 'INVALID' : (!student || !enrollment || !pkg) ? 'REQUEST_CREATE' : 'UPDATE';
-      if (student && !enrollment) classification = 'REQUEST_CREATE';
-      items.push({ key, externalId, packageCode, classification, sheet1Row: one?.rowNumber, sheet3Row: three?.rowNumber, snapshot, baseline: student ? { studentId: student.id, studentUpdatedAt: student.updated_at.toISOString(), enrollmentId: enrollment?.id, enrollmentUpdatedAt: enrollment?.updated_at.toISOString() } : undefined, diffs, attendanceDiffs: attendance.map((a) => ({ entity: 'Attendance', field: a.date.slice(0, 10), before: null, after: a.value || null, action: a.value ? 'UPSERT' : 'SOFT_DELETE' })), warnings, errors });
+      const compare = (entity: string, field: string, before: unknown, after: unknown) => {
+        if ((before ?? '') !== (after ?? '')) {
+          diffs.push({ entity, field, before, after: after === '' ? null : after, action: after === '' ? 'NULLIFY' : 'UPDATE' });
+        }
+      };
+      if (student) {
+        compare('Student', 'full_name', student.full_name, snapshot.full_name);
+        compare('Student', 'phone', student.phone, snapshot.phone);
+        compare('Student', 'email', student.email, snapshot.email);
+      }
+      if (enrollment) {
+        compare('Enrollment', 'total_sessions', enrollment.total_sessions, Number(snapshot.total_sessions) || 0);
+        compare('Enrollment', 'external_remaining_sessions', enrollment.external_remaining_sessions, snapshot.remaining_sessions === '' ? null : Number(snapshot.remaining_sessions));
+      }
+
+      let classification: ReconcileClassification;
+      if (isOutOfScope) {
+        classification = 'SKIPPED_SCOPE';
+      } else if (errors.length) {
+        classification = 'INVALID';
+      } else if (student && enrollment) {
+        if (isCS && actor && enrollment.cs_id && enrollment.cs_id !== actor.id) {
+          classification = 'REQUEST_TRANSFER';
+          warnings.push(`Học viên hiện thuộc CS [${enrollment.cs?.name || enrollment.cs_id}]. Yêu cầu điều chuyển CSKH sẽ được gửi tới Quản lý/Admin phê duyệt.`);
+        } else {
+          classification = 'UPDATE';
+        }
+      } else if (one) {
+        // Not in DB yet, but has Sheet 1 -> Create directly per Q-013!
+        classification = 'CREATE';
+      } else {
+        // Not in DB and NOT in Sheet 1 (only in Sheet 3) -> Cannot attend unknown student per Q-013
+        classification = 'INVALID';
+        errors.push('Học viên chưa có hồ sơ tại Sheet 1 và chưa tồn tại trong hệ thống, không thể ghi nhận điểm danh');
+      }
+
+      items.push({
+        key,
+        externalId,
+        packageCode,
+        classification,
+        sheet1Row: one?.rowNumber,
+        sheet3Row: three?.rowNumber,
+        snapshot,
+        baseline: student ? {
+          studentId: student.id,
+          studentUpdatedAt: student.updated_at.toISOString(),
+          enrollmentId: enrollment?.id,
+          enrollmentUpdatedAt: enrollment?.updated_at.toISOString(),
+        } : undefined,
+        diffs,
+        attendanceDiffs: ((snapshot.attendance as any[]) || []).map((a) => ({
+          entity: 'Attendance',
+          field: a.date.slice(0, 10),
+          before: null,
+          after: a.value || null,
+          action: 'UPSERT',
+        })),
+        warnings,
+        errors,
+      });
     }
-    const summary = { totalKeys: items.length, willUpdate: items.filter(i => i.classification === 'UPDATE').length, willRequestCreate: items.filter(i => i.classification === 'REQUEST_CREATE').length, conflict: items.filter(i => i.classification === 'CONFLICT').length, invalid: items.filter(i => i.classification === 'INVALID').length };
-    const report: ValidationReport = { summary, items };
-    meta.validationReport = report; this.saveMeta(importId, meta); return report;
+
+    const summary = {
+      totalKeys: items.length,
+      willUpdate: items.filter(i => i.classification === 'UPDATE').length,
+      willCreate: items.filter(i => i.classification === 'CREATE').length,
+      willTransfer: items.filter(i => i.classification === 'REQUEST_TRANSFER').length,
+      willRequestCreate: 0,
+      skippedOutOfScope: items.filter(i => i.classification === 'SKIPPED_SCOPE').length,
+      conflict: items.filter(i => i.classification === 'CONFLICT').length,
+      invalid: items.filter(i => i.classification === 'INVALID').length,
+      assignedCsId: targetCsId,
+    };
+    const report: ValidationReport = {
+      summary,
+      items,
+      totalRows: items.length,
+      validRows: summary.willUpdate + summary.willCreate + summary.willTransfer,
+      invalidRows: summary.invalid + summary.conflict,
+      errors: items.filter((i) => i.errors && i.errors.length > 0).flatMap((i) => i.errors.map((err) => ({
+        rowNumber: i.sheet1Row || i.sheet3Row || 0,
+        message: err,
+      }))),
+      warnings: items.filter((i) => i.warnings && i.warnings.length > 0).flatMap((i) => i.warnings.map((warn) => ({
+        rowNumber: i.sheet1Row || i.sheet3Row || 0,
+        message: warn,
+      }))),
+    };
+    meta.validationReport = report;
+    this.saveMeta(importId, meta);
+    return report;
   }
 
   private async applyAttendance(tx: Prisma.TransactionClient, enrollmentClassId: number, classId: number, entries: any[], userId: number) {
     for (const entry of entries || []) {
-      const date = new Date(entry.date); if (isNaN(date.getTime())) continue;
-      let session = await tx.classSession.findFirst({ where: { class_id: classId, session_date: date } });
-      if (!session && entry.value) {
-        const last = await tx.classSession.findFirst({ where: { class_id: classId }, orderBy: { session_number: 'desc' } });
-        session = await tx.classSession.create({ data: { class_id: classId, session_number: (last?.session_number || 0) + 1, session_date: date, created_by_id: userId } });
-      }
-      if (!session) continue;
+      const date = new Date(entry.date);
+      if (isNaN(date.getTime())) continue;
       const status = this.attendanceStatus(entry.value || '');
-      if (status) await tx.attendance.upsert({ where: { enrollment_class_id_class_session_id: { enrollment_class_id: enrollmentClassId, class_session_id: session.id } }, update: { status, source: AttendanceSource.EXCEL_IMPORT, deleted_at: null, deleted_by_id: null }, create: { enrollment_class_id: enrollmentClassId, class_session_id: session.id, status, source: AttendanceSource.EXCEL_IMPORT, created_by_id: userId } });
-      else await tx.attendance.updateMany({ where: { enrollment_class_id: enrollmentClassId, class_session_id: session.id, deleted_at: null }, data: { deleted_at: new Date(), deleted_by_id: userId } });
+      if (status) {
+        let session = await tx.classSession.findFirst({ where: { class_id: classId, session_date: date } });
+        if (!session) {
+          const last = await tx.classSession.findFirst({ where: { class_id: classId }, orderBy: { session_number: 'desc' } });
+          session = await tx.classSession.create({
+            data: {
+              class_id: classId,
+              session_number: (last?.session_number || 0) + 1,
+              session_date: date,
+              created_by_id: userId,
+            },
+          });
+        }
+        await tx.attendance.upsert({
+          where: { enrollment_class_id_class_session_id: { enrollment_class_id: enrollmentClassId, class_session_id: session.id } },
+          update: { status, source: AttendanceSource.EXCEL_IMPORT },
+          create: { enrollment_class_id: enrollmentClassId, class_session_id: session.id, status, source: AttendanceSource.EXCEL_IMPORT, created_by_id: userId },
+        });
+      }
+      // Note: Empty value in Excel does NOT wipe existing attendance (keeps old record per Q-013)
     }
   }
 
-  private async confirmWorkbook(importId: number, actor: RequestActor, skipErrors: boolean, meta: any) {
-    const report: ValidationReport = meta.validationReport || await this.validateWorkbook(importId, meta);
+  private async confirmWorkbook(importId: number, actor: RequestActor, skipErrors: boolean, meta: any, assignedCsId?: number) {
+    const report: ValidationReport = meta.validationReport || await this.validateWorkbook(importId, meta, actor, assignedCsId);
     const items = report.items || [];
-    if (!skipErrors && items.some(i => i.classification === 'INVALID' || i.classification === 'CONFLICT')) throw new AppError(400, 'Còn khóa lỗi hoặc conflict');
-    await this.repo.updateBatch(importId, { status: ImportBatchStatus.PROCESSING }); await this.repo.clearPendingImportRows(importId);
-    let successRows = 0, failedRows = 0;
-    for (const item of items) {
-      if (item.classification === 'INVALID' || item.classification === 'CONFLICT') { failedRows++; continue; }
-      try {
-        if (item.classification === 'REQUEST_CREATE') {
-          await prisma.importCreateRequest.upsert({ where: { import_batch_id_external_id_package_code: { import_batch_id: importId, external_id: item.externalId, package_code: item.packageCode } }, update: { snapshot: item.snapshot as Prisma.InputJsonValue, baseline: item.baseline as Prisma.InputJsonValue | undefined, requested_by_id: actor.id, assigned_cs_id: actor.id, status: ImportCreateRequestStatus.PENDING, version: { increment: 1 } }, create: { import_batch_id: importId, external_id: item.externalId, package_code: item.packageCode, requested_by_id: actor.id, assigned_cs_id: actor.id, snapshot: item.snapshot as Prisma.InputJsonValue, baseline: item.baseline as Prisma.InputJsonValue | undefined } });
-        } else await prisma.$transaction(async (tx) => {
-          const student = await tx.student.findUnique({ where: { external_id: item.externalId } }); if (!student) throw new Error('Student không còn tồn tại');
-          const pkg = await tx.package.findUnique({ where: { code: item.packageCode } }); if (!pkg) throw new Error('Gói học không tồn tại');
-          const enrollment = await tx.enrollment.findFirst({ where: { student_id: student.id, package_id: pkg.id }, include: { enrollment_classes: { include: { class: true }, orderBy: { sequence_no: 'desc' } } }, orderBy: { created_at: 'desc' } }); if (!enrollment) throw new Error('Ghi danh không tồn tại');
-          const snap: any = item.snapshot;
-          await tx.student.update({ where: { id: student.id }, data: { full_name: snap.full_name || student.full_name, phone: snap.phone || null, email: snap.email || null, gender: snap.gender || null, occupation: snap.occupation || null } });
-          await tx.enrollment.update({ where: { id: enrollment.id }, data: { total_sessions: Number(snap.total_sessions) || enrollment.total_sessions, external_remaining_sessions: snap.remaining_sessions === '' ? null : Number(snap.remaining_sessions), level: snap.level || null, status: this.statusFromText(snap.status), start_date: this.parseExcelDate(snap.start_date), end_date: this.parseExcelDate(snap.end_date), external_synced_at: new Date() } });
-          let ec = enrollment.enrollment_classes[0];
-          if (snap.class_name && (!ec || ec.class.class_name !== snap.class_name)) { let cls = await tx.class.findFirst({ where: { OR: [{ class_name: snap.class_name }, { class_code: snap.class_name }] } }); if (!cls) cls = await tx.class.create({ data: { class_name: snap.class_name, class_code: snap.class_name, model_type: 'ONE_TO_ONE', attendance_source: 'LEARNING_SYSTEM' } }); ec = await tx.enrollmentClass.create({ data: { enrollment_id: enrollment.id, class_id: cls.id, sequence_no: (ec?.sequence_no || 0) + 1, status: EnrollmentClassStatus.ACTIVE }, include: { class: true } }); }
-          if (ec) await this.applyAttendance(tx, ec.id, ec.class_id, snap.attendance, actor.id);
-        });
-        successRows++;
-      } catch (error: any) { failedRows++; await this.repo.createImportRows([{ import_batch_id: importId, row_number: item.sheet1Row || item.sheet3Row || 0, raw_data: item.snapshot, status: ImportRowStatus.FAILED, error_message: error.message }]); }
+    if (!skipErrors && items.some(i => i.classification === 'INVALID' || i.classification === 'CONFLICT')) {
+      throw new AppError(400, 'Còn khóa lỗi hoặc conflict');
     }
+    await this.repo.updateBatch(importId, { status: ImportBatchStatus.PROCESSING });
+    await this.repo.clearPendingImportRows(importId);
+    let successRows = 0, failedRows = 0;
+
+    const isCS = Boolean(actor?.roles?.includes('CS') && !actor?.roles?.includes('ADMIN') && !actor?.roles?.includes('MANAGE'));
+    const targetCsId = isCS ? actor.id : (assignedCsId || meta.assignedCsId || actor.id);
+
+    for (const item of items) {
+      if (item.classification === 'SKIPPED_SCOPE') {
+        continue;
+      }
+      if (item.classification === 'INVALID' || item.classification === 'CONFLICT') {
+        failedRows++;
+        await this.repo.createImportRows([{
+          import_batch_id: importId,
+          row_number: item.sheet1Row || item.sheet3Row || 0,
+          raw_data: item.snapshot,
+          status: ImportRowStatus.FAILED,
+          error_message: item.errors.join('; ') || 'Dữ liệu không hợp lệ',
+        }]);
+        continue;
+      }
+
+      if (item.classification === 'REQUEST_TRANSFER') {
+        try {
+          await prisma.importCreateRequest.upsert({
+            where: {
+              import_batch_id_external_id_package_code: {
+                import_batch_id: importId,
+                external_id: item.externalId,
+                package_code: item.packageCode,
+              },
+            },
+            update: {
+              snapshot: item.snapshot as Prisma.InputJsonValue,
+              assigned_cs_id: actor.id,
+              status: ImportCreateRequestStatus.PENDING,
+            },
+            create: {
+              import_batch_id: importId,
+              external_id: item.externalId,
+              package_code: item.packageCode,
+              requested_by_id: actor.id,
+              assigned_cs_id: actor.id,
+              snapshot: item.snapshot as Prisma.InputJsonValue,
+              status: ImportCreateRequestStatus.PENDING,
+            },
+          });
+          successRows++;
+          await this.repo.createImportRows([{
+            import_batch_id: importId,
+            row_number: item.sheet1Row || item.sheet3Row || 0,
+            raw_data: item.snapshot,
+            status: ImportRowStatus.SUCCESS,
+            entity_type: 'TransferRequest',
+            entity_id: item.key,
+          }]);
+        } catch (err: any) {
+          failedRows++;
+          await this.repo.createImportRows([{
+            import_batch_id: importId,
+            row_number: item.sheet1Row || item.sheet3Row || 0,
+            raw_data: item.snapshot,
+            status: ImportRowStatus.FAILED,
+            error_message: err.message || 'Lỗi gửi yêu cầu điều chuyển',
+          }]);
+        }
+        continue;
+      }
+
+      try {
+        await prisma.$transaction(async (tx) => {
+          const snap: any = item.snapshot;
+
+          // 1. Student
+          let student = await tx.student.findUnique({ where: { external_id: item.externalId } });
+          if (!student) {
+            student = await tx.student.create({
+              data: {
+                external_id: item.externalId,
+                full_name: snap.full_name || 'Học viên ' + item.externalId,
+                phone: snap.phone ? String(snap.phone).trim() : null,
+                email: snap.email ? String(snap.email).trim() : null,
+                gender: snap.gender ? String(snap.gender).trim() : null,
+                occupation: snap.occupation ? String(snap.occupation).trim() : null,
+                date_of_birth: this.parseExcelDate(snap.date_of_birth),
+              },
+            });
+          } else {
+            // Overwrite student: blank cell sets to null per Decision 4
+            await tx.student.update({
+              where: { id: student.id },
+              data: {
+                full_name: snap.full_name || student.full_name,
+                phone: snap.phone !== undefined ? (snap.phone ? String(snap.phone).trim() : null) : student.phone,
+                email: snap.email !== undefined ? (snap.email ? String(snap.email).trim() : null) : student.email,
+                gender: snap.gender !== undefined ? (snap.gender ? String(snap.gender).trim() : null) : student.gender,
+                occupation: snap.occupation !== undefined ? (snap.occupation ? String(snap.occupation).trim() : null) : student.occupation,
+                date_of_birth: snap.date_of_birth !== undefined ? this.parseExcelDate(snap.date_of_birth) : student.date_of_birth,
+              },
+            });
+          }
+
+          // 2. Package
+          let pkg = await tx.package.findUnique({ where: { code: item.packageCode } });
+          if (!pkg) {
+            pkg = await tx.package.create({
+              data: {
+                code: item.packageCode,
+                name: `Gói ${item.packageCode}`,
+                default_total_sessions: Number(snap.total_sessions) || 30,
+                active: true,
+              },
+            });
+          }
+
+          // 3. Sale record (independent from CS)
+          let saleRecord = null;
+          if (snap.sale_name && String(snap.sale_name).trim()) {
+            saleRecord = await this.repo.findOrCreateSale(String(snap.sale_name).trim());
+          }
+          const saleId = saleRecord ? saleRecord.id : null;
+          const saleName = snap.sale_name ? String(snap.sale_name).trim() : null;
+
+          // 4. CS ID assignment
+          const finalCsId = targetCsId;
+
+          // 5. Enrollment
+          let enrollment = await tx.enrollment.findFirst({
+            where: { student_id: student.id, package_id: pkg.id },
+            include: { enrollment_classes: { include: { class: true }, orderBy: { sequence_no: 'desc' } } },
+            orderBy: { created_at: 'desc' },
+          });
+
+          if (!enrollment) {
+            enrollment = await tx.enrollment.create({
+              data: {
+                external_id: item.externalId,
+                student_id: student.id,
+                package_id: pkg.id,
+                cs_id: finalCsId,
+                paid_at: this.parseExcelDate(snap.paid_at),
+                sale_id: saleId,
+                sale_name: saleName,
+                student_source_status: snap.student_source_status || null,
+                course_content: snap.course_content || null,
+                payment_status: snap.payment_status || null,
+                course_teacher_type: snap.course_teacher_type || null,
+                level: snap.level || null,
+                total_sessions: Number(snap.total_sessions) || 30,
+                class_model: snap.class_model || null,
+                sales_note: snap.sales_note || null,
+                start_date: this.parseExcelDate(snap.start_date),
+                end_date: this.parseExcelDate(snap.end_date),
+                status: this.statusFromText(snap.status),
+                external_remaining_sessions: snap.remaining_sessions !== undefined && snap.remaining_sessions !== '' ? Number(snap.remaining_sessions) : null,
+                external_synced_at: new Date(),
+              },
+              include: { enrollment_classes: { include: { class: true } } },
+            });
+          } else {
+            // Overwrite enrollment: blank cell sets to null per Decision 4
+            const updateData: any = {
+              total_sessions: Number(snap.total_sessions) || enrollment.total_sessions,
+              external_remaining_sessions: snap.remaining_sessions !== undefined && snap.remaining_sessions !== '' ? Number(snap.remaining_sessions) : null,
+              level: snap.level !== undefined ? (snap.level || null) : enrollment.level,
+              status: snap.status ? this.statusFromText(snap.status) : enrollment.status,
+              start_date: snap.start_date !== undefined ? this.parseExcelDate(snap.start_date) : enrollment.start_date,
+              end_date: snap.end_date !== undefined ? this.parseExcelDate(snap.end_date) : enrollment.end_date,
+              paid_at: snap.paid_at !== undefined ? this.parseExcelDate(snap.paid_at) : enrollment.paid_at,
+              sale_id: snap.sale_name !== undefined ? saleId : enrollment.sale_id,
+              sale_name: snap.sale_name !== undefined ? saleName : enrollment.sale_name,
+              sales_note: snap.sales_note !== undefined ? (snap.sales_note || null) : enrollment.sales_note,
+              external_synced_at: new Date(),
+            };
+            if (!isCS && (assignedCsId || meta.assignedCsId)) {
+              updateData.cs_id = targetCsId;
+            }
+            await tx.enrollment.update({
+              where: { id: enrollment.id },
+              data: updateData,
+            });
+          }
+
+          // 6. Class & EnrollmentClass
+          let ec = enrollment.enrollment_classes?.[0];
+          const className = snap.class_name || `Lớp ${student.full_name}`;
+          if (!ec || (snap.class_name && ec.class.class_name !== snap.class_name)) {
+            let cls = await tx.class.findFirst({
+              where: { OR: [{ class_name: className }, { class_code: className }] },
+            });
+            if (!cls) {
+              cls = await tx.class.create({
+                data: {
+                  class_name: className,
+                  class_code: className,
+                  model_type: 'ONE_TO_ONE',
+                  attendance_source: 'LEARNING_SYSTEM',
+                },
+              });
+            }
+            ec = await tx.enrollmentClass.create({
+              data: {
+                enrollment_id: enrollment.id,
+                class_id: cls.id,
+                sequence_no: (ec?.sequence_no || 0) + 1,
+                status: EnrollmentClassStatus.ACTIVE,
+              },
+              include: { class: true },
+            });
+          }
+
+          // 7. Attendance from Sheet 3
+          if (ec && snap.attendance?.length) {
+            await this.applyAttendance(tx, ec.id, ec.class_id, snap.attendance, actor.id);
+          }
+        });
+
+        successRows++;
+        await this.repo.createImportRows([{
+          import_batch_id: importId,
+          row_number: item.sheet1Row || item.sheet3Row || 0,
+          raw_data: item.snapshot,
+          status: ImportRowStatus.SUCCESS,
+          entity_type: item.classification === 'CREATE' ? 'EnrollmentCreate' : 'EnrollmentUpdate',
+          entity_id: item.key,
+        }]);
+      } catch (error: any) {
+        failedRows++;
+        await this.repo.createImportRows([{
+          import_batch_id: importId,
+          row_number: item.sheet1Row || item.sheet3Row || 0,
+          raw_data: item.snapshot,
+          status: ImportRowStatus.FAILED,
+          error_message: error.message || 'Lỗi xử lý dòng',
+        }]);
+      }
+    }
+
     const status = failedRows ? (successRows ? ImportBatchStatus.PARTIAL_FAILED : ImportBatchStatus.FAILED) : ImportBatchStatus.COMPLETED;
-    return this.repo.updateBatch(importId, { status, total_rows: items.length, success_rows: successRows, failed_rows: failedRows, completed_at: new Date() });
+    return this.repo.updateBatch(importId, {
+      status,
+      total_rows: items.length,
+      success_rows: successRows,
+      failed_rows: failedRows,
+      completed_at: new Date(),
+    });
   }
 
   // Execute import
-  async confirmImport(importId: number, actor: RequestActor, skipErrors = true, createMissingStudents = false) {
+  async confirmImport(importId: number, actor: RequestActor, skipErrors = true, createMissingStudents = false, assignedCsId?: number) {
     const meta = this.loadMeta(importId);
     if (!meta) throw new AppError(404, 'Không tìm thấy thông tin import batch');
 
     await this.assertBatchAccess(importId, actor, true);
-    if (meta.importType === ImportType.WORKBOOK) return this.confirmWorkbook(importId, actor, skipErrors, meta);
+    if (meta.importType === ImportType.WORKBOOK) return this.confirmWorkbook(importId, actor, skipErrors, meta, assignedCsId);
 
     const batch = await this.repo.findBatchById(importId);
     if (!batch) throw new AppError(404, 'Không tìm thấy import batch trong cơ sở dữ liệu');
@@ -720,6 +1173,8 @@ export class ImportsService {
     const defaultCS = await this.repo.findDefaultCSUser();
     const userId = actor.id;
     const fallbackCSId = defaultCS ? defaultCS.id : userId;
+    const isCS = Boolean(actor?.roles?.includes('CS') && !actor?.roles?.includes('ADMIN') && !actor?.roles?.includes('MANAGE'));
+    const finalCSId = isCS ? actor.id : (assignedCsId || meta.assignedCsId || fallbackCSId);
 
     if (meta.importType === ImportType.STUDENT_ENROLLMENT) {
       // Process rows
@@ -804,13 +1259,21 @@ export class ImportsService {
           const remainingSessions = isNaN(remainingSessionsRaw) ? null : remainingSessionsRaw;
 
           // 4. Create Enrollment
+          const saleRaw = getColVal('sale_name');
+          let saleId: number | null = null;
+          if (saleRaw && saleRaw.trim()) {
+            const saleRec = await this.repo.findOrCreateSale(saleRaw.trim());
+            saleId = saleRec ? saleRec.id : null;
+          }
+
           const enrollment = await this.repo.createEnrollment({
             external_id: extId || undefined,
             student_id: student.id,
             package_id: pkg.id,
-            cs_id: fallbackCSId,
+            cs_id: finalCSId,
             paid_at: paidAt,
-            sale_name: getColVal('sale_name'),
+            sale_id: saleId,
+            sale_name: saleRaw,
             student_source_status: getColVal('student_source_status'),
             course_content: getColVal('course_content'),
             payment_status: getColVal('payment_status'),
@@ -954,7 +1417,8 @@ export class ImportsService {
               const strVal = String(val).trim().toUpperCase();
               let attStatus: AttendanceStatus | null = null;
 
-              if (['1', '1.0', '2', '2.0', '3', '3.0', 'X', 'ĐÃ HỌC'].includes(strVal)) {
+              const num = Number(strVal);
+              if ((!isNaN(num) && num > 0) || ['X', 'ĐÃ HỌC'].includes(strVal)) {
                 attStatus = AttendanceStatus.ATTENDED;
               } else if (strVal === 'A') {
                 attStatus = AttendanceStatus.ABSENT_APPROVED_A;
@@ -1118,7 +1582,8 @@ export class ImportsService {
 
   // Export current students & enrollments
   async exportStudents(actor?: RequestActor): Promise<ExcelJS.Buffer> {
-    const students = await this.repo.getAllStudentsWithEnrollments();
+    const isCS = actor?.roles.includes('CS') && !actor?.roles.includes('ADMIN') && !actor?.roles.includes('MANAGE');
+    const students = await this.repo.getAllStudentsWithEnrollments(isCS && actor ? { cs_id: actor.id } : undefined);
     const workbook = new ExcelJS.Workbook();
     const ws = workbook.addWorksheet('Danh sách học viên');
 
@@ -1168,7 +1633,16 @@ export class ImportsService {
 
   // Export current attendance
   async exportAttendance(actor?: RequestActor): Promise<ExcelJS.Buffer> {
-    const attendances = await this.repo.getAllAttendances();
+    const isCS = actor?.roles.includes('CS') && !actor?.roles.includes('ADMIN') && !actor?.roles.includes('MANAGE');
+    const isTeacher = actor?.roles.includes('TEACHER') && !actor?.roles.includes('ADMIN') && !actor?.roles.includes('MANAGE');
+    let classIds: number[] | undefined = undefined;
+    if (isTeacher && actor) {
+      classIds = await this.repo.getTeacherAssignedClassIds(actor.id);
+    }
+    const attendances = await this.repo.getAllAttendances({
+      classIds,
+      cs_id: isCS && actor ? actor.id : undefined,
+    });
     const workbook = new ExcelJS.Workbook();
     const ws = workbook.addWorksheet('Danh sách điểm danh');
 
@@ -1258,32 +1732,99 @@ export class ImportsService {
     this.ensureReviewer(actor);
     const before = await this.getCreateRequest(id, actor);
     if (before.status !== ImportCreateRequestStatus.PENDING || before.version !== dto.version) throw new AppError(409, 'Yêu cầu đã thay đổi, vui lòng tải lại');
-    const existing = await prisma.student.findUnique({ where: { external_id: before.external_id } });
-    if (existing) {
-      await prisma.importCreateRequest.update({ where: { id }, data: { status: ImportCreateRequestStatus.CONFLICT, review_reason: 'Student đã tồn tại', reviewed_by_id: actor.id, reviewed_at: new Date(), version: { increment: 1 } } });
-      throw new AppError(409, 'Dữ liệu nền đã thay đổi');
-    }
+
     const snapshot: any = before.snapshot;
     const pkg = await prisma.package.findUnique({ where: { code: before.package_code } });
     const csId = dto.assignedCsId || before.assigned_cs_id;
     if (!pkg || !csId) throw new AppError(409, 'Gói học hoặc CS phụ trách chưa hợp lệ');
-    return prisma.$transaction(async (tx) => {
-      const student = await tx.student.create({
-        data: {
-          external_id: before.external_id,
-          full_name: snapshot.full_name || before.external_id,
-          phone: snapshot.phone || null,
-          email: snapshot.email || null,
-          gender: snapshot.gender || null,
-          occupation: snapshot.occupation || null,
+
+    // Check if Sale exists
+    let saleRecord = null;
+    if (snapshot?.sale_name && String(snapshot.sale_name).trim()) {
+      saleRecord = await this.repo.findOrCreateSale(String(snapshot.sale_name).trim());
+    }
+    const saleId = saleRecord ? saleRecord.id : null;
+    const saleName = snapshot?.sale_name ? String(snapshot.sale_name).trim() : null;
+
+    const existing = await prisma.student.findUnique({
+      where: { external_id: before.external_id },
+      include: {
+        enrollments: {
+          where: { package_id: pkg.id },
+          include: { enrollment_classes: { include: { class: true } } },
         },
+      },
+    });
+
+    if (existing && existing.enrollments.length > 0) {
+      // Approved transfer of existing enrollment
+      const enrollment = existing.enrollments[0];
+      return prisma.$transaction(async (tx) => {
+        const updateData: any = {
+          cs_id: csId,
+          external_synced_at: new Date(),
+        };
+        if (saleId) {
+          updateData.sale_id = saleId;
+          updateData.sale_name = saleName;
+        }
+        const updatedEnrollment = await tx.enrollment.update({
+          where: { id: enrollment.id },
+          data: updateData,
+        });
+
+        const request = await tx.importCreateRequest.update({
+          where: { id },
+          data: {
+            status: ImportCreateRequestStatus.APPROVED,
+            assigned_cs_id: csId,
+            reviewed_by_id: actor.id,
+            reviewed_at: new Date(),
+            version: { increment: 1 },
+          },
+        });
+
+        await tx.auditLog.create({
+          data: {
+            user_id: actor.id,
+            action: 'IMPORT_REQUEST_APPROVED_TRANSFER',
+            entity_type: 'ImportCreateRequest',
+            entity_id: String(id),
+            before_data: before as any,
+            after_data: request as any,
+          },
+        });
+
+        return { student: existing, enrollment: updatedEnrollment, request };
       });
+    }
+
+    return prisma.$transaction(async (tx) => {
+      let studentId = existing?.id;
+      let student = existing as any;
+      if (!studentId) {
+        const created = await tx.student.create({
+          data: {
+            external_id: before.external_id,
+            full_name: snapshot.full_name || before.external_id,
+            phone: snapshot.phone || null,
+            email: snapshot.email || null,
+            gender: snapshot.gender || null,
+            occupation: snapshot.occupation || null,
+          },
+        });
+        studentId = created.id;
+        student = created;
+      }
+
       const enrollment = await tx.enrollment.create({
         data: {
           external_id: before.external_id,
-          student_id: student.id,
+          student_id: studentId,
           package_id: pkg.id,
           cs_id: csId,
+          sale_id: saleId,
+          sale_name: saleName,
           total_sessions: Number(snapshot.total_sessions) || pkg.default_total_sessions || 0,
           external_remaining_sessions: snapshot.remaining_sessions === '' ? null : Number(snapshot.remaining_sessions),
           level: snapshot.level || null,
@@ -1293,6 +1834,7 @@ export class ImportsService {
           external_synced_at: new Date(),
         },
       });
+
       let enrollmentClass = null;
       if (snapshot.class_name) {
         let cls = await tx.class.findFirst({ where: { OR: [{ class_name: snapshot.class_name }, { class_code: snapshot.class_name }] } });
@@ -1300,6 +1842,7 @@ export class ImportsService {
         enrollmentClass = await tx.enrollmentClass.create({ data: { enrollment_id: enrollment.id, class_id: cls.id, sequence_no: 1, start_date: this.parseExcelDate(snapshot.start_date), end_date: this.parseExcelDate(snapshot.end_date), status: EnrollmentClassStatus.ACTIVE } });
         await this.applyAttendance(tx, enrollmentClass.id, cls.id, snapshot.attendance || [], actor.id);
       }
+
       const request = await tx.importCreateRequest.update({ where: { id }, data: { status: ImportCreateRequestStatus.APPROVED, assigned_cs_id: csId, reviewed_by_id: actor.id, reviewed_at: new Date(), version: { increment: 1 } } });
       await tx.auditLog.create({ data: { user_id: actor.id, action: 'IMPORT_REQUEST_APPROVED', entity_type: 'ImportCreateRequest', entity_id: String(id), before_data: before as any, after_data: request as any } });
       return { student, enrollment, enrollmentClass, request };

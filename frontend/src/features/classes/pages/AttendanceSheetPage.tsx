@@ -18,24 +18,81 @@ import {
   CalendarDays,
   CheckSquare,
   Save,
+  Check,
 } from 'lucide-react';
 
 const STATUS_OPTIONS: {
   value: AttendanceStatus;
   label: string;
+  short: string;
   variant: 'success' | 'info' | 'warning' | 'danger' | 'neutral';
+  bg: string;
+  text: string;
+  border: string;
 }[] = [
-  { value: 'ATTENDED', label: '✓ Có mặt', variant: 'success' },
-  { value: 'ABSENT_APPROVED_A', label: 'Nghỉ phép (A)', variant: 'warning' },
-  { value: 'LEAVE_B', label: 'Bảo lưu (B)', variant: 'info' },
-  { value: 'ABSENT_UNAPPROVED_C', label: 'Nghỉ không phép (C)', variant: 'danger' },
-  { value: 'TEACHER_ABSENT_D', label: 'Giáo viên nghỉ (D)', variant: 'danger' },
-  { value: 'TECH_ERROR_E', label: 'Lỗi kỹ thuật (E)', variant: 'neutral' },
+  {
+    value: 'ATTENDED',
+    label: 'Có mặt (Điền số)',
+    short: '1',
+    variant: 'success',
+    bg: 'bg-emerald-100 hover:bg-emerald-200',
+    text: 'text-emerald-800 font-extrabold',
+    border: 'border-emerald-300',
+  },
+  {
+    value: 'ABSENT_APPROVED_A',
+    label: 'Nghỉ phép (A)',
+    short: 'A',
+    variant: 'warning',
+    bg: 'bg-amber-100 hover:bg-amber-200',
+    text: 'text-amber-800 font-extrabold',
+    border: 'border-amber-300',
+  },
+  {
+    value: 'LEAVE_B',
+    label: 'Bảo lưu (B)',
+    short: 'B',
+    variant: 'info',
+    bg: 'bg-blue-100 hover:bg-blue-200',
+    text: 'text-blue-800 font-extrabold',
+    border: 'border-blue-300',
+  },
+  {
+    value: 'ABSENT_UNAPPROVED_C',
+    label: 'Nghỉ không phép (C)',
+    short: 'C',
+    variant: 'danger',
+    bg: 'bg-rose-100 hover:bg-rose-200',
+    text: 'text-rose-800 font-extrabold',
+    border: 'border-rose-300',
+  },
+  {
+    value: 'TEACHER_ABSENT_D',
+    label: 'Giáo viên nghỉ (D)',
+    short: 'D',
+    variant: 'danger',
+    bg: 'bg-red-200 hover:bg-red-300',
+    text: 'text-red-900 font-extrabold',
+    border: 'border-red-400',
+  },
+  {
+    value: 'TECH_ERROR_E',
+    label: 'Lỗi kỹ thuật (E)',
+    short: 'E',
+    variant: 'neutral',
+    bg: 'bg-slate-200 hover:bg-slate-300',
+    text: 'text-slate-800 font-extrabold',
+    border: 'border-slate-400',
+  },
 ];
 
 const StatusBadgeInline = ({ status }: { status: AttendanceStatus }) => {
   const opt = STATUS_OPTIONS.find((o) => o.value === status) || STATUS_OPTIONS[0];
-  return <Badge variant={opt.variant}>{opt.label}</Badge>;
+  return (
+    <Badge variant={opt.variant}>
+      {opt.value === 'ATTENDED' ? 'Có mặt (1 buổi)' : opt.label}
+    </Badge>
+  );
 };
 
 export const AttendanceSheetPage = () => {
@@ -57,6 +114,7 @@ export const AttendanceSheetPage = () => {
 
   // Track local changes for single session view
   const [edits, setEdits] = useState<Record<number, AttendanceStatus>>({});
+  const [editCounts, setEditCounts] = useState<Record<number, number>>({});
 
   const fetchData = async () => {
     try {
@@ -73,7 +131,6 @@ export const AttendanceSheetPage = () => {
       setAttendances(attendData);
       setAllSessions(sessionsList);
 
-      // Fetch attendances for recent sessions to build full matrix
       const recentSessions = sessionsList.slice(0, 15);
       const allAtts = await Promise.all(
         recentSessions.map((s) =>
@@ -96,7 +153,6 @@ export const AttendanceSheetPage = () => {
   const matrixStudents: StudentRow[] = useMemo(() => {
     const studentMap = new Map<number, StudentRow>();
 
-    // 1. Direct enrolled students from class
     if (cls?.enrollment_classes) {
       cls.enrollment_classes.forEach((ec: any) => {
         const student = ec.enrollment?.student;
@@ -121,7 +177,6 @@ export const AttendanceSheetPage = () => {
       });
     }
 
-    // 2. Also from attendances (in case there are historical records)
     const sourceAtts = allAttendances.length > 0 ? allAttendances : attendances;
     sourceAtts.forEach((att) => {
       const ecId = att.enrollment_class_id;
@@ -151,16 +206,42 @@ export const AttendanceSheetPage = () => {
     return Array.from(studentMap.values());
   }, [allAttendances, attendances, cls]);
 
-  const handleStatusChange = (enrollmentClassId: number, status: AttendanceStatus) => {
+  // Handle single student attendance toggle
+  const handleToggleAttended = (enrollmentClassId: number, checked: boolean) => {
+    if (checked) {
+      setEdits((prev) => ({ ...prev, [enrollmentClassId]: 'ATTENDED' }));
+      setEditCounts((prev) => ({ ...prev, [enrollmentClassId]: prev[enrollmentClassId] || 1 }));
+    } else {
+      setEdits((prev) => {
+        const next = { ...prev };
+        delete next[enrollmentClassId];
+        return next;
+      });
+    }
+  };
+
+  // Change session count for attended
+  const handleCountChange = (enrollmentClassId: number, countVal: number) => {
+    setEditCounts((prev) => ({ ...prev, [enrollmentClassId]: countVal }));
+    setEdits((prev) => ({ ...prev, [enrollmentClassId]: 'ATTENDED' }));
+  };
+
+  // Handle absent status change
+  const handleAbsentSelect = (enrollmentClassId: number, status: AttendanceStatus) => {
     setEdits((prev) => ({ ...prev, [enrollmentClassId]: status }));
   };
 
+  // Save session edits
   const handleSaveSession = async () => {
     if (!sessId) return;
-    const records = Object.entries(edits).map(([ecId, status]) => ({
-      enrollment_class_id: parseInt(ecId, 10),
-      status,
-    }));
+    const records = Object.entries(edits).map(([ecId, status]) => {
+      const ecIdNum = parseInt(ecId, 10);
+      return {
+        enrollment_class_id: ecIdNum,
+        status,
+        session_count: status === 'ATTENDED' ? (editCounts[ecIdNum] || 1) : 1,
+      };
+    });
 
     if (records.length === 0) return;
 
@@ -177,13 +258,34 @@ export const AttendanceSheetPage = () => {
     }
   };
 
+  // Mark all attended
   const handleMarkAllAttended = () => {
     const newEdits: Record<number, AttendanceStatus> = {};
+    const newCounts: Record<number, number> = {};
     attendances.forEach((att) => {
       newEdits[att.enrollment_class_id] = 'ATTENDED';
+      newCounts[att.enrollment_class_id] = 1;
     });
     setEdits(newEdits);
-    toast.info('Đã đánh dấu tất cả có mặt. Bấm Lưu thay đổi để xác nhận.');
+    setEditCounts(newCounts);
+    toast.info('Đã tích chọn Có mặt (1 buổi) cho tất cả học viên. Bấm Lưu thay đổi để xác nhận.');
+  };
+
+  // Toggle all attended checkbox
+  const isAllAttended =
+    attendances.length > 0 &&
+    attendances.every((att) => {
+      const current = edits[att.enrollment_class_id] || att.status;
+      return current === 'ATTENDED';
+    });
+
+  const handleToggleAll = () => {
+    if (isAllAttended) {
+      setEdits({});
+      toast.info('Đã bỏ chọn tất cả');
+    } else {
+      handleMarkAllAttended();
+    }
   };
 
   const hasChanges = Object.keys(edits).length > 0;
@@ -243,7 +345,7 @@ export const AttendanceSheetPage = () => {
           <CalendarDays className="w-4 h-4" />
           <span>Ma trận Điểm danh theo Ngày</span>
           <span className="px-2 py-0.5 rounded-full text-[10px] bg-primary-soft text-primary font-bold">
-            Chuẩn mới
+            Chuẩn mới (Có ô tích chọn)
           </span>
         </button>
 
@@ -291,13 +393,28 @@ export const AttendanceSheetPage = () => {
                     <th className="px-5 py-3.5">Học viên</th>
                     <th className="px-5 py-3.5">Gói học</th>
                     <th className="px-5 py-3.5">Trạng thái hiện tại</th>
-                    <th className="px-5 py-3.5">Cập nhật điểm danh</th>
+                    {/* Checkbox column for Có mặt */}
+                    <th className="px-5 py-3.5 min-w-[220px]">
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={isAllAttended}
+                          onChange={handleToggleAll}
+                          className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 border-slate-300 cursor-pointer accent-emerald-600"
+                          title="Tích chọn tất cả có mặt"
+                        />
+                        <span>CÓ MẶT (ĐIỀN SỐ BUỔI)</span>
+                      </div>
+                    </th>
+                    <th className="px-5 py-3.5 min-w-[260px]">LÝ DO VẮNG / NGHỈ</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/60">
                   {attendances.map((att) => {
                     const currentStatus = edits[att.enrollment_class_id] || att.status;
                     const isEdited = edits[att.enrollment_class_id] !== undefined;
+                    const isAttended = currentStatus === 'ATTENDED';
+                    const currentCount = editCounts[att.enrollment_class_id] || 1;
 
                     return (
                       <tr
@@ -324,27 +441,106 @@ export const AttendanceSheetPage = () => {
                           <StatusBadgeInline status={att.status} />
                         </td>
 
+                        {/* Interactive Checkbox & Number Input */}
                         <td className="px-5 py-3.5">
-                          <select
-                            value={currentStatus}
-                            onChange={(e) =>
-                              handleStatusChange(
-                                att.enrollment_class_id,
-                                e.target.value as AttendanceStatus
-                              )
-                            }
-                            className={`text-xs font-medium rounded-xl border px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-primary/20 ${
-                              isEdited
-                                ? 'border-amber-400 bg-amber-50/50 font-bold text-amber-900 ring-1 ring-amber-400'
-                                : 'border-border bg-surface text-text-primary'
-                            }`}
-                          >
-                            {STATUS_OPTIONS.map((opt) => (
-                              <option key={opt.value} value={opt.value}>
-                                {opt.label}
-                              </option>
-                            ))}
-                          </select>
+                          <div className="flex items-center gap-2">
+                            <label className="flex items-center gap-1.5 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={isAttended}
+                                onChange={(e) =>
+                                  handleToggleAttended(
+                                    att.enrollment_class_id,
+                                    e.target.checked
+                                  )
+                                }
+                                className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 border-slate-300 cursor-pointer accent-emerald-600"
+                              />
+                              <span
+                                className={`text-xs font-bold ${
+                                  isAttended ? 'text-emerald-700' : 'text-text-muted'
+                                }`}
+                              >
+                                Có mặt
+                              </span>
+                            </label>
+
+                            {/* Number input for session count */}
+                            <div className="flex items-center gap-1 ml-1">
+                              <input
+                                type="number"
+                                min="0.5"
+                                max="10"
+                                step="0.5"
+                                value={currentCount}
+                                disabled={!isAttended}
+                                onChange={(e) =>
+                                  handleCountChange(
+                                    att.enrollment_class_id,
+                                    Number(e.target.value) || 1
+                                  )
+                                }
+                                className={`w-14 text-center text-xs font-extrabold rounded-lg border py-1 focus:outline-none focus:ring-1 ${
+                                  isAttended
+                                    ? 'bg-emerald-50 border-emerald-300 text-emerald-800 focus:ring-emerald-500'
+                                    : 'bg-slate-100 border-border text-slate-400 cursor-not-allowed'
+                                }`}
+                              />
+                              <span className="text-[11px] text-text-muted">buổi</span>
+                            </div>
+
+                            {/* Quick 1, 2, 3 preset buttons */}
+                            {isAttended && (
+                              <div className="flex items-center gap-1 ml-1">
+                                {[1, 2, 3].map((num) => (
+                                  <button
+                                    key={num}
+                                    type="button"
+                                    onClick={() =>
+                                      handleCountChange(att.enrollment_class_id, num)
+                                    }
+                                    className={`w-5 h-5 rounded text-[10px] font-extrabold border ${
+                                      currentCount === num
+                                        ? 'bg-emerald-600 text-white border-emerald-600'
+                                        : 'bg-white text-emerald-800 border-emerald-300 hover:bg-emerald-50'
+                                    }`}
+                                  >
+                                    {num}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </td>
+
+                        {/* Absent status badges */}
+                        <td className="px-5 py-3.5">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            {STATUS_OPTIONS.filter((o) => o.value !== 'ATTENDED').map((opt) => {
+                              const isSelected = currentStatus === opt.value;
+                              return (
+                                <button
+                                  key={opt.value}
+                                  type="button"
+                                  onClick={() =>
+                                    handleAbsentSelect(
+                                      att.enrollment_class_id,
+                                      opt.value
+                                    )
+                                  }
+                                  className={`px-2 py-1 rounded-lg text-xs font-semibold border transition-all flex items-center gap-1 ${
+                                    isSelected
+                                      ? `${opt.bg} ${opt.text} ${opt.border} ring-2 ring-primary/40`
+                                      : 'bg-surface-muted text-text-muted border-border/60 hover:text-text-primary hover:bg-slate-100'
+                                  }`}
+                                  title={opt.label}
+                                >
+                                  <span>{opt.short}</span>
+                                  {isSelected && <Check className="w-3 h-3" />}
+                                </button>
+                              );
+                            })}
+                          </div>
                         </td>
                       </tr>
                     );

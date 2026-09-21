@@ -16,6 +16,7 @@ AI không được tự quyết các mục `WAITING_USER` nếu quyết định 
 | Q-010 | RESOLVED | Ma trận Điểm danh Lịch Ngày | Bỏ số thứ tự buổi, hiển thị Thứ + Ngày thực tế, mặc định Tháng hiện tại, lọc Tuần/Tháng/Năm, bỏ cột chỉ số chuyên cần ĐH/BT, cố định 11 cột thông tin bên trái. | 4, frontend |
 | Q-011 | RESOLVED | Đối soát Import Sheet 3 | Học viên cũ khớp hệ thống tự động đồng bộ không hỏi lại; học viên mới xuất hiện trong file thì hiển thị hộp thoại xác nhận tạo mới vào hệ thống. | 5, frontend |
 | Q-012 | RESOLVED | Bảng Học viên Sheet 1 | Chuẩn hóa 28 cột theo cấu trúc Sheet 1, highlight badge đỏ cảnh báo nợ buổi âm, tự động lọc học viên theo Sale phụ trách nếu role là `CS`. | 3, frontend |
+| Q-013 | RESOLVED | Nhập/Xuất Excel Tất cả Vai trò | Mở quyền Nhập/Xuất Excel cho ADMIN, MANAGE, CS, TEACHER. CS chỉ import/ghi đè học viên của mình (khớp cột Sale); Teacher chỉ import điểm danh lớp mình dạy; các dòng ngoài quyền tự động bỏ qua. Sheet 1 kiểm tra (ID, Gói học): có thì ghi đè (ô trống xóa trắng), chưa có thì thêm mới trực tiếp. Sheet 3 kiểm tra (ID, Gói học): có thì ghi đè điểm danh (ô trống giữ nguyên điểm danh cũ); chưa có thì bỏ qua. | 5, frontend |
 
 ## Cách đóng câu hỏi
 

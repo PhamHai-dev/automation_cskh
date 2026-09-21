@@ -107,7 +107,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           name: 'Nhập & Xuất Excel',
           path: '/imports',
           icon: <FileSpreadsheet className="w-5 h-5 shrink-0" />,
-          allowedRoles: ['ADMIN', 'MANAGE'],
+          allowedRoles: ['ADMIN', 'MANAGE', 'CS', 'TEACHER'],
         },
         {
           name: 'Quản trị Người dùng',

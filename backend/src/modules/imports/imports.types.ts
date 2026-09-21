@@ -1,7 +1,7 @@
 import { ImportBatchStatus, ImportType } from '@prisma/client';
 
 export type LogicalSheet = 'studentEnrollment' | 'attendance';
-export type ReconcileClassification = 'UPDATE' | 'REQUEST_CREATE' | 'CONFLICT' | 'INVALID';
+export type ReconcileClassification = 'UPDATE' | 'CREATE' | 'REQUEST_TRANSFER' | 'REQUEST_CREATE' | 'CONFLICT' | 'INVALID' | 'SKIPPED_SCOPE';
 
 export interface SheetPreviewData {
   sheet?: LogicalSheet;
@@ -17,10 +17,11 @@ export interface UploadResponse {
   importId: number;
   fileName: string;
   importType: ImportType;
-  sheets: Record<LogicalSheet, SheetPreviewData> | string[];
+  sheets: Partial<Record<LogicalSheet, SheetPreviewData>> | string[];
   selectedSheet?: string;
   totalRows?: number;
   preview?: SheetPreviewData;
+  assignedCsId?: number;
 }
 
 export interface SaveMappingDTO {
@@ -28,6 +29,7 @@ export interface SaveMappingDTO {
   sheetName?: string;
   headerRowIndex?: number;
   columnMapping: Record<string, string>;
+  assignedCsId?: number;
 }
 
 export interface ValidationErrorItem {
@@ -70,7 +72,10 @@ export interface ValidationReport {
   summary?: {
     totalKeys: number;
     willUpdate: number;
-    willRequestCreate: number;
+    willCreate: number;
+    willTransfer?: number;
+    willRequestCreate?: number;
+    skippedOutOfScope?: number;
     conflict: number;
     invalid: number;
   };
@@ -100,4 +105,6 @@ export interface ImportBatchSummary {
 export interface RequestActor {
   id: number;
   roles: string[];
+  email?: string | null;
+  name?: string | null;
 }

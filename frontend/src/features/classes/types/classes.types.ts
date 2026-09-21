@@ -86,6 +86,7 @@ export interface Attendance {
   enrollment_class_id: number;
   class_session_id: number;
   status: AttendanceStatus;
+  session_count?: number;
   source: AttendanceSource;
   created_by_id: number;
   created_by?: { id: number; name: string; email: string };
@@ -98,6 +99,7 @@ export interface Attendance {
       cs?: { id: number; name: string; email: string };
     };
   };
+  class_session?: ClassSession;
   created_at: string;
   updated_at: string;
 }
@@ -105,6 +107,7 @@ export interface Attendance {
 export interface MarkAttendanceDTO {
   enrollment_class_id: number;
   status: AttendanceStatus;
+  session_count?: number;
 }
 
 export interface BulkMarkAttendanceDTO {
@@ -113,6 +116,7 @@ export interface BulkMarkAttendanceDTO {
 
 export interface UpdateAttendanceDTO {
   status?: AttendanceStatus;
+  session_count?: number;
 }
 
 export const ATTENDANCE_STATUS_LABELS: Record<AttendanceStatus, string> = {

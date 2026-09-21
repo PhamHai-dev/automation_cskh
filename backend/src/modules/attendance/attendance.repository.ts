@@ -42,13 +42,25 @@ export class AttendanceRepository {
     });
   }
 
-  async mark(enrollmentClassId: number, classSessionId: number, status: string, source: string, userId: number) {
+  async mark(enrollmentClassId: number, classSessionId: number, status: string, source: string, userId: number, sessionCount: number = 1) {
     return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-      const attendance = await tx.attendance.create({
-        data: {
+      const attendance = await tx.attendance.upsert({
+        where: {
+          enrollment_class_id_class_session_id: {
+            enrollment_class_id: enrollmentClassId,
+            class_session_id: classSessionId,
+          },
+        },
+        update: {
+          status: status as any,
+          session_count: sessionCount,
+          source: source as any,
+        },
+        create: {
           enrollment_class_id: enrollmentClassId,
           class_session_id: classSessionId,
           status: status as any,
+          session_count: sessionCount,
           source: source as any,
           created_by_id: userId,
         },
@@ -57,15 +69,27 @@ export class AttendanceRepository {
     });
   }
 
-  async bulkMark(items: Array<{ enrollment_class_id: number; status: string }>, classSessionId: number, source: string, userId: number) {
+  async bulkMark(items: Array<{ enrollment_class_id: number; status: string; session_count?: number }>, classSessionId: number, source: string, userId: number) {
     return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       const results = [];
       for (const item of items) {
-        const attendance = await tx.attendance.create({
-          data: {
+        const attendance = await tx.attendance.upsert({
+          where: {
+            enrollment_class_id_class_session_id: {
+              enrollment_class_id: item.enrollment_class_id,
+              class_session_id: classSessionId,
+            },
+          },
+          update: {
+            status: item.status as any,
+            session_count: item.session_count ?? 1,
+            source: source as any,
+          },
+          create: {
             enrollment_class_id: item.enrollment_class_id,
             class_session_id: classSessionId,
             status: item.status as any,
+            session_count: item.session_count ?? 1,
             source: source as any,
             created_by_id: userId,
           },
@@ -82,6 +106,7 @@ export class AttendanceRepository {
         where: { id: attendanceId },
         data: {
           status: data.status as any,
+          ...(data.session_count !== undefined ? { session_count: data.session_count } : {}),
         },
       });
       return attendance;

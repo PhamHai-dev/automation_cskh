@@ -1,4 +1,4 @@
-export type ImportType = 'WORKBOOK';
+export type ImportType = 'WORKBOOK' | 'STUDENT_ENROLLMENT' | 'ATTENDANCE';
 export type LogicalSheet = 'studentEnrollment' | 'attendance';
 export type ImportBatchStatus = 'PREVIEW' | 'PROCESSING' | 'COMPLETED' | 'PARTIAL_FAILED' | 'FAILED' | 'ROLLED_BACK';
 
@@ -11,16 +11,35 @@ export interface SheetPreviewData {
   totalRows: number;
   suggestedMapping: Record<string, string>;
 }
-export interface UploadResponse { importId: number; fileName: string; importType: ImportType; sheets: Record<LogicalSheet, SheetPreviewData> }
+export interface UploadResponse {
+  importId: number;
+  fileName: string;
+  importType: ImportType;
+  sheets: Partial<Record<LogicalSheet, SheetPreviewData>>;
+  selectedSheet?: string;
+  preview?: SheetPreviewData;
+  totalRows?: number;
+  assignedCsId?: number;
+}
 export interface FieldDiff { entity: string; field: string; before: unknown; after: unknown; action: string }
 export interface ReconcileItem {
   key: string; externalId: string; packageCode: string;
-  classification: 'UPDATE' | 'REQUEST_CREATE' | 'CONFLICT' | 'INVALID';
+  classification: 'UPDATE' | 'CREATE' | 'REQUEST_CREATE' | 'REQUEST_TRANSFER' | 'CONFLICT' | 'INVALID' | 'SKIPPED_SCOPE';
   sheet1Row?: number; sheet3Row?: number; diffs: FieldDiff[]; attendanceDiffs: FieldDiff[];
   warnings: string[]; errors: string[];
 }
 export interface ValidationReport {
-  summary: { totalKeys: number; willUpdate: number; willRequestCreate: number; conflict: number; invalid: number };
+  summary: {
+    totalKeys: number;
+    willUpdate: number;
+    willCreate?: number;
+    willTransfer?: number;
+    willRequestCreate?: number;
+    skippedOutOfScope?: number;
+    conflict: number;
+    invalid: number;
+    assignedCsId?: number;
+  };
   items: ReconcileItem[];
 }
 export interface ImportBatchSummary {

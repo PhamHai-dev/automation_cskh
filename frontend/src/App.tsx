@@ -47,9 +47,6 @@ function App() {
 
               <Route path="/teachers" element={<TeachersPage />} />
               <Route path="/giao-vien" element={<Navigate to="/teachers" replace />} />
-
-              <Route path="/imports" element={<ImportsPage />} />
-              <Route path="/nhap-xuat-excel" element={<Navigate to="/imports" replace />} />
             </Route>
 
             {/* Core Staff: Admin, Manage, CS */}
@@ -67,8 +64,11 @@ function App() {
               <Route path="/ghi-danh" element={<Navigate to="/enrollments" replace />} />
             </Route>
 
-            {/* Classes & Attendance: Admin, Manage, CS, Teacher */}
+            {/* Classes, Attendance, Imports/Exports: Admin, Manage, CS, Teacher */}
             <Route element={<ProtectedRoute allowedRoles={['ADMIN', 'MANAGE', 'CS', 'TEACHER']} />}>
+              <Route path="/imports" element={<ImportsPage />} />
+              <Route path="/nhap-xuat-excel" element={<Navigate to="/imports" replace />} />
+
               <Route path="/classes" element={<ClassesPage />} />
               <Route path="/lop-hoc" element={<Navigate to="/classes" replace />} />
 

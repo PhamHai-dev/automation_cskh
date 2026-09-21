@@ -5,10 +5,12 @@ import { authenticate, requireRoles } from '../../middlewares/auth.middleware';
 const usersRouter = Router();
 const usersController = new UsersController();
 
+// List users for ADMIN and MANAGE
+usersRouter.get('/', authenticate, requireRoles(['ADMIN', 'MANAGE']), usersController.list);
+
 // Admin only routes
 usersRouter.use(authenticate, requireRoles(['ADMIN']));
 
-usersRouter.get('/', usersController.list);
 usersRouter.post('/', usersController.create);
 usersRouter.get('/:id', usersController.get);
 usersRouter.patch('/:id', usersController.update);

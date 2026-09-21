@@ -34,3 +34,19 @@
 29. **Danh sách Học viên chuẩn Sheet 1:** Tab Danh sách học viên (`/students`) hiển thị đầy đủ 28 cột của Sheet `1.Chăm sóc`, highlight badge đỏ cho số buổi nợ âm, tự động lọc theo Sale phụ trách.
 30. **Cơ chế đối soát Import Sheet 3:** Học viên đã khớp trong cơ sở dữ liệu thì tự động đồng bộ điểm danh theo ngày mà không hỏi lại; học viên mới xuất hiện trong file thì hiển thị hộp thoại xác nhận có muốn thêm vào hệ thống hay không.
 31. **Bộ tài khoản kiểm thử chuẩn hóa:** Tạo sẵn 5 tài khoản test với mật khẩu chung `123456`: `admin@gmail.com` (ADMIN), `cskh1@gmail.com` (CS), `cskh2@gmail.com` (CS), `cskh3@gmail.com` (CS), `teacher@gmail.com` (TEACHER) và phân bổ dữ liệu học viên cho các Sale.
+32. **Mở rộng Nhập & Xuất Excel cho tất cả các vai trò & Tách biệt Sale với CSKH:**
+    - **Tách biệt Sale và CSKH (Cập nhật Quyết định 26):** Cột `Sale` trong Sheet 1 không phải là tài khoản CSKH (`cs_id`), mà là trường dữ liệu nhân viên kinh doanh độc lập. Hệ thống bổ sung bảng `Sale` (`sales`) liên kết với `Enrollment.sale_id`. Cột `Sale` trong Excel tự động tạo mới / liên kết bản ghi `Sale`.
+    - **Gán CSKH khi import:**
+      - **CSKH (`CS` role) upload:** Học viên mới tự động gán vào tài khoản CS đó (`cs_id = actor.id`). Học viên cũ đã thuộc CS này (`enrollment.cs_id === actor.id`) được ghi đè cập nhật bình thường. Học viên cũ đang thuộc CS khác (`enrollment.cs_id !== actor.id`) không được ghi đè trực tiếp mà được gắn nhãn `REQUEST_TRANSFER`, tự động tạo yêu cầu chuyển CS trong hàng đợi phê duyệt để Admin/Manage duyệt.
+      - **Quản trị viên / Quản lý (`ADMIN`, `MANAGE`) upload:** Giao diện có bộ chọn tài khoản CSKH phụ trách; cả học viên mới và học viên cũ được gán cho CSKH được chọn.
+    - **Data Scope vai trò:** Cả 4 vai trò (`ADMIN`, `MANAGE`, `CS`, `TEACHER`) đều có quyền sử dụng tính năng Nhập/Xuất Excel; `TEACHER` chỉ import điểm danh Sheet 3 cho các lớp mình phụ trách giảng dạy (`ClassTeacher`).
+    - **Sheet 1 (`1.Chăm sóc`):** Kiểm tra theo cặp `(ID, Gói học)`; nếu đã có thì ghi đè (ô trống trên Excel xóa trắng trong DB để đồng bộ tuyệt đối; giữ nguyên lịch sử chăm sóc CareLog/CareTask); nếu chưa có thì thêm mới trực tiếp vào Database.
+    - **Sheet 3 (`3.Chấm buổi`):** Kiểm tra theo cặp `(ID, Gói học)`; nếu đã có thì ghi đè điểm danh theo ngày (ô ngày trống trên Excel giữ nguyên điểm danh cũ); nếu chưa có thì bỏ qua dòng đó và ghi cảnh báo lỗi.
+    - **Định dạng file:** Tối ưu cho file có cả 2 sheet, đồng thời hỗ trợ linh hoạt nếu file chỉ có riêng Sheet 1 hoặc riêng Sheet 3.
+33. **Nâng cấp Điểm danh: Ô Tích Chọn (Checkbox) & Điền Số Buổi thay vì dấu X:**
+    - **Loại bỏ chữ X:** Trạng thái "Có mặt" (`ATTENDED`) hiển thị và cho phép nhập số buổi học (mặc định là `1`, có thể điền `2`, `3`... số buổi/ca học) trên nền xanh lá (`bg-emerald-100 text-emerald-800`), không dùng ký hiệu chữ `X`.
+    - **Ô tích chọn (Checkbox) & Thao tác hàng loạt:**
+      - Thêm cột Checkbox chọn học viên (Row Checkbox) và Checkbox "Chọn tất cả" ở header ma trận. Khi tích chọn nhiều học viên, thanh thao tác hàng loạt cho phép chọn ngày và điểm danh đồng loạt (nhập số buổi có mặt hoặc chọn lý do vắng).
+      - Thêm Checkbox tại Header mỗi ngày để tích chọn / bỏ chọn cả lớp có mặt (1 buổi) chỉ với 1 click.
+      - Tại Phiếu Điểm danh buổi học: Chuyển đổi thành ô tích chọn `[✓] Có mặt` kèm ô điền số buổi và nút chọn nhanh `1`, `2`, `3`.
+    - **Đối soát Import Excel Sheet 3:** Nhận diện mọi số dương (> 0) là trạng thái Có mặt (`ATTENDED`).

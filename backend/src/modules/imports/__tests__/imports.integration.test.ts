@@ -86,13 +86,13 @@ describe('Imports API Integration', () => {
       where: { code: { in: ['PKG_TEST_A', 'PKG_TEST_B'] } },
     });
     await prisma.importRow.deleteMany({
-      where: { import_batch: { uploaded_by_id: adminId } },
+      where: { import_batch: { uploaded_by_id: { in: [adminId, csId] } } },
     });
     await prisma.importBatch.deleteMany({
-      where: { uploaded_by_id: adminId },
+      where: { uploaded_by_id: { in: [adminId, csId] } },
     });
     await prisma.auditLog.deleteMany({
-      where: { user_id: adminId },
+      where: { user_id: { in: [adminId, csId] } },
     });
     await prisma.user.delete({ where: { id: csId } });
     await prisma.user.delete({ where: { id: adminId } });
@@ -100,14 +100,22 @@ describe('Imports API Integration', () => {
   });
 
   describe('Permissions', () => {
-    it('should reject CS role when uploading file (403)', async () => {
+    it('should allow CS role to upload file (200) under Q-013', async () => {
       const res = await request(app)
         .post('/api/v1/imports/upload')
         .set('Authorization', `Bearer ${csToken}`)
         .attach('file', validSheet1Path)
         .field('import_type', 'STUDENT_ENROLLMENT');
 
-      expect(res.status).toBe(403);
+      expect(res.status).toBe(200);
+      expect(res.body.importId).toBeDefined();
+    });
+
+    it('should reject unauthenticated requests (401)', async () => {
+      const res = await request(app)
+        .get('/api/v1/imports/batches');
+
+      expect(res.status).toBe(401);
     });
 
     it('should allow CS to access templates and exports (200)', async () => {

@@ -16,13 +16,21 @@ export class ImportsController {
         throw new AppError(400, 'Vui lòng chọn file Excel để upload');
       }
 
-      const importType = req.body.import_type as ImportType;
-      if (!importType || !['STUDENT_ENROLLMENT', 'ATTENDANCE', 'TEACHER_ATTENDANCE'].includes(importType)) {
-        throw new AppError(400, 'import_type không hợp lệ. Cho phép: STUDENT_ENROLLMENT, ATTENDANCE');
+      let importType = req.body.import_type as ImportType | undefined;
+      if (!importType) {
+        importType = ImportType.WORKBOOK;
       }
 
-      const userId = (req as any).user?.id || 1;
-      const result = await this.service.uploadFile(userId, req.file, importType);
+      const user = (req as any).user;
+      const actor = {
+        id: user?.id || 1,
+        roles: (user?.roles as string[]) || ['ADMIN'],
+        email: user?.email,
+        name: user?.name,
+      };
+
+      const assignedCsId = req.body.assigned_cs_id ? parseInt(req.body.assigned_cs_id, 10) : undefined;
+      const result = await this.service.uploadFile(actor, req.file, importType, assignedCsId);
       res.status(200).json(result);
     } catch (err) {
       next(err);
@@ -34,8 +42,15 @@ export class ImportsController {
       const importId = parseInt(req.params.importId, 10);
       const sheetName = req.query.sheetName as string | undefined;
       const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 10;
+      const user = (req as any).user;
+      const actor = {
+        id: user?.id || 1,
+        roles: (user?.roles as string[]) || ['ADMIN'],
+        email: user?.email,
+        name: user?.name,
+      };
 
-      const result = await this.service.getPreview(importId, sheetName, limit);
+      const result = await this.service.getPreview(importId, sheetName, limit, actor);
       res.status(200).json(result);
     } catch (err) {
       next(err);
@@ -45,7 +60,14 @@ export class ImportsController {
   saveMapping = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const importId = parseInt(req.params.importId, 10);
-      const result = await this.service.saveMapping(importId, req.body);
+      const user = (req as any).user;
+      const actor = {
+        id: user?.id || 1,
+        roles: (user?.roles as string[]) || ['ADMIN'],
+        email: user?.email,
+        name: user?.name,
+      };
+      const result = await this.service.saveMapping(importId, req.body, actor);
       res.status(200).json(result);
     } catch (err) {
       next(err);
@@ -55,7 +77,16 @@ export class ImportsController {
   validate = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const importId = parseInt(req.params.importId, 10);
-      const report = await this.service.validate(importId);
+      const user = (req as any).user;
+      const actor = {
+        id: user?.id || 1,
+        roles: (user?.roles as string[]) || ['ADMIN'],
+        email: user?.email,
+        name: user?.name,
+      };
+
+      const assignedCsId = req.body.assigned_cs_id ? parseInt(req.body.assigned_cs_id, 10) : undefined;
+      const report = await this.service.validate(importId, actor, assignedCsId);
       res.status(200).json(report);
     } catch (err) {
       next(err);
@@ -65,11 +96,18 @@ export class ImportsController {
   confirm = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const importId = parseInt(req.params.importId, 10);
-      const userId = (req as any).user?.id || 1;
+      const user = (req as any).user;
+      const actor = {
+        id: user?.id || 1,
+        roles: (user?.roles as string[]) || ['ADMIN'],
+        email: user?.email,
+        name: user?.name,
+      };
       const skipErrors = req.body.skipErrors !== false;
-      const createMissingStudents = req.body.createMissingStudents === true;
+      const createMissingStudents = req.body.createMissingStudents !== false;
+      const assignedCsId = req.body.assigned_cs_id ? parseInt(req.body.assigned_cs_id, 10) : undefined;
 
-      const summary = await this.service.confirmImport(importId, userId, skipErrors, createMissingStudents);
+      const summary = await this.service.confirmImport(importId, actor, skipErrors, createMissingStudents, assignedCsId);
       res.status(200).json(summary);
     } catch (err) {
       next(err);
@@ -128,7 +166,14 @@ export class ImportsController {
 
   exportStudents = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const buffer = await this.service.exportStudents();
+      const user = (req as any).user;
+      const actor = {
+        id: user?.id || 1,
+        roles: (user?.roles as string[]) || ['ADMIN'],
+        email: user?.email,
+        name: user?.name,
+      };
+      const buffer = await this.service.exportStudents(actor);
       res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
       res.setHeader('Content-Disposition', 'attachment; filename="students_enrollments_export.xlsx"');
       res.send(buffer);
@@ -139,10 +184,95 @@ export class ImportsController {
 
   exportAttendance = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const buffer = await this.service.exportAttendance();
+      const user = (req as any).user;
+      const actor = {
+        id: user?.id || 1,
+        roles: (user?.roles as string[]) || ['ADMIN'],
+        email: user?.email,
+        name: user?.name,
+      };
+      const buffer = await this.service.exportAttendance(actor);
       res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
       res.setHeader('Content-Disposition', 'attachment; filename="attendance_export.xlsx"');
       res.send(buffer);
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  listCreateRequests = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const user = (req as any).user;
+      const actor = {
+        id: user?.id || 1,
+        roles: (user?.roles as string[]) || ['ADMIN'],
+        email: user?.email,
+        name: user?.name,
+      };
+      const status = req.query.status as any;
+      const page = req.query.page ? parseInt(req.query.page as string, 10) : 1;
+      const pageSize = req.query.pageSize ? parseInt(req.query.pageSize as string, 10) : 20;
+      const result = await this.service.listCreateRequests(actor, status, page, pageSize);
+      res.status(200).json(result);
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  getCreateRequest = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const user = (req as any).user;
+      const actor = {
+        id: user?.id || 1,
+        roles: (user?.roles as string[]) || ['ADMIN'],
+        email: user?.email,
+        name: user?.name,
+      };
+      const id = parseInt(req.params.id, 10);
+      const result = await this.service.getCreateRequest(id, actor);
+      res.status(200).json(result);
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  approveCreateRequest = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const user = (req as any).user;
+      const actor = {
+        id: user?.id || 1,
+        roles: (user?.roles as string[]) || ['ADMIN'],
+        email: user?.email,
+        name: user?.name,
+      };
+      const id = parseInt(req.params.id, 10);
+      const dto = {
+        version: req.body.version,
+        assignedCsId: req.body.assignedCsId,
+      };
+      const result = await this.service.approveCreateRequest(id, actor, dto);
+      res.status(200).json(result);
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  rejectCreateRequest = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const user = (req as any).user;
+      const actor = {
+        id: user?.id || 1,
+        roles: (user?.roles as string[]) || ['ADMIN'],
+        email: user?.email,
+        name: user?.name,
+      };
+      const id = parseInt(req.params.id, 10);
+      const dto = {
+        version: req.body.version,
+        reason: req.body.reason,
+      };
+      const result = await this.service.rejectCreateRequest(id, actor, dto);
+      res.status(200).json(result);
     } catch (err) {
       next(err);
     }

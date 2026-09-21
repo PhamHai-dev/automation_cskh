@@ -2,9 +2,12 @@ import { apiClient } from '../../../api/client';
 import { UploadResponse, SheetPreviewData, ValidationReport, ImportBatchSummary, ImportRowItem } from '../types/imports.types';
 
 export const importsApi = {
-  upload: async (file: File): Promise<UploadResponse> => {
+  upload: async (file: File, assignedCsId?: number): Promise<UploadResponse> => {
     const formData = new FormData();
     formData.append('file', file);
+    if (assignedCsId) {
+      formData.append('assigned_cs_id', String(assignedCsId));
+    }
 
     const res = await apiClient.post('/imports/upload', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
@@ -21,19 +24,27 @@ export const importsApi = {
 
   saveMapping: async (
     importId: number,
-    data: { sheet: 'studentEnrollment' | 'attendance'; headerRowIndex?: number; columnMapping: Record<string, string> }
-  ): Promise<{ success: boolean; columnMapping: Record<string, string> }> => {
-    const res = await apiClient.post(`/imports/${importId}/mapping`, data);
+    data: { sheet: 'studentEnrollment' | 'attendance'; headerRowIndex?: number; columnMapping: Record<string, string>; assignedCsId?: number }
+  ): Promise<{ success: boolean; columnMapping: Record<string, string>; assignedCsId?: number }> => {
+    const res = await apiClient.post(`/imports/${importId}/mapping`, {
+      ...data,
+      assigned_cs_id: data.assignedCsId,
+    });
     return res.data;
   },
 
-  validate: async (importId: number): Promise<ValidationReport> => {
-    const res = await apiClient.post(`/imports/${importId}/validate`);
+  validate: async (importId: number, assignedCsId?: number): Promise<ValidationReport> => {
+    const res = await apiClient.post(`/imports/${importId}/validate`, {
+      assigned_cs_id: assignedCsId,
+    });
     return res.data;
   },
 
-  confirm: async (importId: number, skipErrors = true): Promise<ImportBatchSummary> => {
-    const res = await apiClient.post(`/imports/${importId}/confirm`, { skipErrors });
+  confirm: async (importId: number, skipErrors = true, assignedCsId?: number): Promise<ImportBatchSummary> => {
+    const res = await apiClient.post(`/imports/${importId}/confirm`, {
+      skipErrors,
+      assigned_cs_id: assignedCsId,
+    });
     return res.data;
   },
 

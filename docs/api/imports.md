@@ -2,7 +2,7 @@
 
 Base URL: `/api/v1/imports`
 
-Quyền truy cập: Bắt buộc đăng nhập (`authenticate`). Thao tác import/sửa đổi yêu cầu quyền `ADMIN` hoặc `MANAGE` (theo Q-004).
+Quyền truy cập: Bắt buộc đăng nhập (`authenticate`). Cho phép tất cả các quyền `ADMIN`, `MANAGE`, `CS`, `TEACHER` theo quyết định Q-013. Áp dụng Data Scope: CS chỉ import/ghi đè học viên của mình; Teacher chỉ import điểm danh lớp mình dạy; các dòng ngoài quyền tự động bỏ qua.
 
 ## 1. Flow quy trình Import chuẩn
 

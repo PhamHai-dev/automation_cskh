@@ -12,7 +12,7 @@ import { Badge } from '../../../components/ui/Badge';
 import { Modal } from '../../../components/ui/Modal';
 import { useToast } from '../../../components/ui/Toast';
 import { useAuth } from '../../../contexts/AuthContext';
-import { AttendanceMatrix, StudentRow } from '../../classes/components/AttendanceMatrix';
+import { AttendanceMatrix, StudentRow, formatSessionDate } from '../../classes/components/AttendanceMatrix';
 import { classSessionsApi, attendanceApi } from '../../classes/api/sessions.api';
 import { ClassSession, Attendance, AttendanceStatus } from '../../classes/types/classes.types';
 import {
@@ -178,9 +178,12 @@ export const EnrollmentsPage: React.FC = () => {
           }
         });
 
-        // Collect attendances
+        // Collect attendances & their class_sessions
         ec.attendance?.forEach((a: any) => {
           attList.push(a);
+          if (a.class_session && !sessMap.has(a.class_session.id)) {
+            sessMap.set(a.class_session.id, a.class_session);
+          }
         });
       });
     });
@@ -192,7 +195,10 @@ export const EnrollmentsPage: React.FC = () => {
   }, [enrollments]);
 
   // Save changes from Attendance Matrix across student classes
-  const handleCustomSaveAll = async (pendingEdits: Record<string, AttendanceStatus>) => {
+  const handleCustomSaveAll = async (
+    pendingEdits: Record<string, AttendanceStatus>,
+    customValues?: Record<string, number>
+  ) => {
     const entries = Object.entries(pendingEdits);
     if (entries.length === 0) return;
 
@@ -218,7 +224,7 @@ export const EnrollmentsPage: React.FC = () => {
     for (const { classId, dateStr, items } of byClassAndDate.values()) {
       const existingSessions = await classSessionsApi.list(classId);
       let session = existingSessions.find(
-        (s) => new Date(s.session_date).toISOString().split('T')[0] === dateStr
+        (s) => formatSessionDate(s.session_date) === dateStr
       );
 
       if (!session) {
@@ -232,6 +238,8 @@ export const EnrollmentsPage: React.FC = () => {
         items: items.map((i) => ({
           enrollment_class_id: i.ecId,
           status: i.status,
+          session_count:
+            i.status === 'ATTENDED' ? (customValues?.[`${i.ecId}_${dateStr}`] ?? 1) : 1,
         })),
       });
     }

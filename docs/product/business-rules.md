@@ -138,21 +138,30 @@ Dùng primary `#2563EB` và accent `#14B8A6` qua semantic token tập trung. Kh�
 UI ẩn/hiện theo role chỉ là UX. Bảo mật luôn nằm ở backend Permission + Data Scope.
 Không biến trạng thái/loading/error/empty UI thành thay đổi business rule.
 
-## 15. Sale & CSKH role — CHỐT
+## 15. Sale & CSKH role — CHỐT (CẬP NHẬT)
 
-Quyết định tracking: Q-009 (RESOLVED).
+Quyết định tracking: Q-009 & Quyết định 32 (RESOLVED).
 
-- **Đồng nhất vai trò:** Sale và nhân viên chăm sóc khách hàng là cùng 1 vai trò, sử dụng role hệ thống `CS`.
-- **Ánh xạ cột Sale Sheet 1:** Giá trị trong cột `Sale` của Sheet 1 chính là tên tài khoản đăng nhập (Email) mà Admin tạo trong hệ thống.
-- **Data Scope:** Người dùng có role `CS` chỉ xem và tương tác với các học viên có `Sale` khớp với tài khoản đăng nhập của mình. `ADMIN` và `MANAGE` có quyền xem toàn bộ học viên và có bộ chọn lọc theo từng Sale.
+- **Tách biệt vai trò:** Cột `Sale` trong Sheet 1 không phải là người chăm sóc khách hàng (`cs_id`), mà là trường nhân viên kinh doanh độc lập. Bảng `Sale` (`sales`) lưu danh mục nhân viên kinh doanh và liên kết với `Enrollment.sale_id`.
+- **Cột Sale Sheet 1:** Giá trị trong cột `Sale` của Sheet 1 là mã định danh sale (`code`). Khi import, hệ thống tự động tìm hoặc tạo mới bản ghi `Sale` (nếu chưa có) và liên kết `sale_id` vào `Enrollment`.
+- **Data Scope:** Người dùng role `CS` quản lý học viên dựa trên `enrollment.cs_id` (tài khoản CSKH được phân công), không phụ thuộc vào cột `Sale`. `ADMIN` và `MANAGE` có quyền xem toàn bộ học viên và có bộ lọc theo CSKH hoặc Sale.
 
-## 16. Ma trận Điểm danh theo Lịch Ngày & Tab Ghi danh — CHỐT
+## 16. Ma trận Điểm danh theo Lịch Ngày, Ô Tích Chọn & Điền Số Buổi — CHỐT
 
-Quyết định tracking: Q-010 (RESOLVED).
+Quyết định tracking: Q-010 & Quyết định 33 (RESOLVED).
 
 - **Hiển thị theo ngày lịch:** Loại bỏ số thứ tự buổi học trừu tượng (Buổi 1, Buổi 2...), hiển thị trực tiếp theo **Thứ & Ngày trong lịch** (VD: `T2 01/09`, `T4 03/09`...).
 - **Bộ lọc thời gian:** Mặc định xem **Tháng hiện tại**, hỗ trợ chuyển nhanh theo **Tuần**, **Tháng**, **Năm/Tùy chỉnh**.
-- **Cột thông tin cố định bên trái (11 cột):** STT, Mã HV, Họ và tên, Ngày bắt đầu học, Trạng thái, Ngày kết thúc/Bảo lưu, Giờ học, Lịch học, Thời lượng, GV & Mã GV, Tên lớp.
+- **Cột thông tin cố định bên trái (12 cột):** Ô tích chọn (Checkbox), STT, Mã HV, Họ và tên, Ngày bắt đầu học, Trạng thái, Ngày kết thúc/Bảo lưu, Giờ học, Lịch học, Thời lượng, GV & Mã GV, Tên lớp.
+- **Ô tích chọn (Checkbox) & Thao tác hàng loạt:**
+  - Bổ sung cột Checkbox chọn học viên (hỗ trợ chọn tất cả / chọn nhiều) để điểm danh hàng loạt qua thanh công cụ nhanh (chọn ngày, điền số buổi có mặt hoặc chọn lý do vắng).
+  - Tại Header cột ngày: Có ô Checkbox để tích chọn / bỏ chọn cả lớp có mặt (1 buổi) trong 1 click.
+  - Tại Phiếu Điểm danh Buổi học: Sử dụng ô tích chọn `[✓] Có mặt` trực quan thay thế dropdown cũ.
+- **Có mặt điền số thay vì dấu X:**
+  - Loại bỏ hoàn toàn ký hiệu chữ `X`. Trạng thái Có mặt hiển thị giá trị số (mặc định là `1`, cho phép điền `2`, `3`... số buổi/ca học) trên nền xanh lá (`bg-emerald-100 text-emerald-800`).
+  - Khi mở popover chỉnh sửa: Cung cấp ô nhập số và các nút chọn nhanh `1 buổi`, `2 buổi`, `3 buổi`.
+  - Các trạng thái vắng giữ nguyên ký hiệu: `A` (Nghỉ phép), `B` (Bảo lưu), `C` (Nghỉ sai QĐ), `D` (GV nghỉ), `E` (Lỗi KT).
+  - Đối soát Sheet 3 từ Excel: Mọi giá trị số dương (> 0) được nhận diện chính xác là Có mặt (`ATTENDED`).
 - **Loại bỏ:** Cột *"Chỉ số chuyên cần ĐH % và BT %"* không sử dụng.
 - **Tab Quản lý Ghi danh (`/enrollments`):** Tổ chức theo dạng Ma trận Điểm danh theo Sale, tự động lọc học viên theo Sale phụ trách.
 
@@ -171,7 +180,35 @@ Quyết định tracking: Q-011 (RESOLVED).
 - **Học viên cũ:** Nếu học viên từ file khớp với học viên đã có trong cơ sở dữ liệu, hệ thống tự động đồng bộ điểm danh theo ngày mà **không hỏi lại**.
 - **Học viên mới:** Nếu phát hiện học viên từ file chưa từng có trong hệ thống, bắt buộc hiển thị hộp thoại xác nhận (Confirm modal) hỏi người dùng có muốn tự động tạo mới học viên và ghi danh vào lớp hay không.
 
-## 19. Checklist khi business rule thay đổi
+## 19. Nhập & Xuất Excel cho Tất Cả Các Vai Trò & Cơ Chế Phân Công CSKH — CHỐT
+
+Quyết định tracking: Q-013 & Quyết định 32 (RESOLVED).
+
+- **Phân quyền truy cập:** Mở quyền tính năng Nhập/Xuất Excel cho `ADMIN`, `MANAGE`, `CS`, `TEACHER`.
+- **Phân công CSKH & Phạm vi dữ liệu (Data Scope):**
+  - `ADMIN` và `MANAGE`:
+    - Giao diện có bộ chọn (dropdown) tài khoản CSKH phụ trách khi upload (`assignedCsId`).
+    - Cả học viên mới và học viên cũ được gán cho tài khoản CSKH được chọn.
+    - Toàn quyền duyệt hoặc từ chối các yêu cầu điều chuyển học viên trong Hàng đợi phê duyệt (`/create-requests`).
+  - `CS`:
+    - **Học viên mới:** Tự động gán cho tài khoản CS đang upload (`cs_id = actor.id`).
+    - **Học viên cũ đã thuộc CS này (`enrollment.cs_id === actor.id`):** Ghi đè cập nhật bình thường.
+    - **Học viên cũ đang thuộc CS khác (`enrollment.cs_id !== actor.id`):** Không được sửa trực tiếp; hệ thống phân loại là `REQUEST_TRANSFER` và tự động tạo yêu cầu phê duyệt chuyển CS (`ImportCreateRequest` trạng thái `PENDING`) vào Hàng đợi để Admin/Manage duyệt.
+  - `TEACHER`:
+    - Chỉ import điểm danh Sheet 3 cho các lớp học mà giáo viên được phân công giảng dạy (`ClassTeacher`); các dòng ngoài lớp phân công hoặc Sheet 1 tự động bỏ qua.
+  - Xuất Excel: Áp dụng data scope tương ứng (CS chỉ xuất học viên do mình chăm sóc, Teacher chỉ xuất lớp mình dạy).
+- **Quy tắc Sheet 1 (`1.Chăm sóc`):**
+  - Khóa đối soát: `(ID, Gói học)`.
+  - Cột `Sale` ánh xạ vào bảng `Sale` (`code`), tự động tạo mới nếu chưa tồn tại.
+  - Nếu đã có và được phép sửa: Ghi đè thông tin Student và Enrollment. Nếu ô trên Excel bị để trống, xóa trắng trường đó trong DB để đồng bộ tuyệt đối theo Excel. Lịch sử chăm sóc (`CareLog`, `CareTask`) giữ nguyên vẹn.
+  - Nếu chưa có: Thêm mới trực tiếp vào Database (`Student`, `Package`, `Enrollment`, `Class`, `EnrollmentClass`) ngay khi xác nhận import, gán `cs_id` theo quy tắc phân công.
+- **Quy tắc Sheet 3 (`3.Chấm buổi`):**
+  - Khóa đối soát: `(ID, Gói học)`.
+  - Nếu đã có: Ghi đè điểm danh các ngày có ký hiệu (`X`, `A`, `B`, `C`, `D`, `E`). Ô ngày để trống trên Excel giữ nguyên điểm danh cũ đã có trong DB.
+  - Nếu chưa có ở Sheet 1 và chưa có trong hệ thống: Bỏ qua dòng điểm danh này và thông báo cảnh báo lỗi.
+- **Định dạng file:** Nhận diện linh hoạt file có cả 2 sheet hoặc chỉ riêng Sheet 1 hoặc chỉ riêng Sheet 3.
+
+## 20. Checklist khi business rule thay đổi
 
 Khi user chốt hoặc thay đổi business rule:
 1. Cập nhật file này.
