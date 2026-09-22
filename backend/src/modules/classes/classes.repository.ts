@@ -19,16 +19,30 @@ export class ClassesRepository {
       where: { id },
       include: {
         class_teachers: {
-          include: { teacher: true }
+          include: {
+            teacher: {
+              include: { teacher_profile: true },
+            },
+          },
         },
+        class_schedules: true,
         enrollment_classes: {
           include: {
             enrollment: {
-              include: { student: true }
-            }
-          }
-        }
-      }
+              include: {
+                student: true,
+                package: true,
+                sale: true,
+              },
+            },
+            attendance: {
+              include: {
+                class_session: true,
+              },
+            },
+          },
+        },
+      },
     });
   }
 

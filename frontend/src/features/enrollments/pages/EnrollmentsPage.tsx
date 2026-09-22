@@ -1,72 +1,31 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { enrollmentsApi } from '../api/enrollments.api';
-import { Enrollment, CreateEnrollmentDTO, UpdateEnrollmentDTO } from '../types/enrollments.types';
+import { Enrollment } from '../types/enrollments.types';
 import { PageContainer } from '../../../components/common/PageContainer';
 import { PageHeader } from '../../../components/common/PageHeader';
-import { DataTable, Column } from '../../../components/common/DataTable';
-import { FilterBar } from '../../../components/common/FilterBar';
-import { Button } from '../../../components/ui/Button';
 import { Input } from '../../../components/ui/Input';
-import { Select } from '../../../components/ui/Select';
-import { Badge } from '../../../components/ui/Badge';
-import { Modal } from '../../../components/ui/Modal';
 import { useToast } from '../../../components/ui/Toast';
 import { useAuth } from '../../../contexts/AuthContext';
-import { AttendanceMatrix, StudentRow, formatSessionDate } from '../../classes/components/AttendanceMatrix';
+import {
+  AttendanceMatrix,
+  StudentRow,
+  formatSessionDate,
+} from '../../classes/components/AttendanceMatrix';
 import { classSessionsApi, attendanceApi } from '../../classes/api/sessions.api';
 import { ClassSession, Attendance, AttendanceStatus } from '../../classes/types/classes.types';
-import {
-  CalendarDays,
-  Table as TableIcon,
-  Search,
-  UserCheck,
-  Plus,
-  Edit,
-  AlertTriangle,
-} from 'lucide-react';
-
-const ENROLLMENT_STATUS_LABELS: Record<
-  string,
-  { label: string; variant: 'info' | 'success' | 'warning' | 'danger' | 'neutral' }
-> = {
-  NOT_STARTED: { label: 'Chưa học', variant: 'neutral' },
-  STUDYING: { label: 'Đang học', variant: 'success' },
-  PAUSED: { label: 'Tạm dừng / Bảo lưu', variant: 'warning' },
-  FINISHED: { label: 'Hoàn thành', variant: 'info' },
-  CANCELLED: { label: 'Đã hủy', variant: 'danger' },
-};
+import { Search, UserCheck } from 'lucide-react';
 
 export const EnrollmentsPage: React.FC = () => {
   const toast = useToast();
   const { user } = useAuth();
-  const isCS = user?.roles.includes('CS') && !user?.roles.includes('ADMIN');
+  const isCS = user?.roles.includes('CS') && !user?.roles.includes('ADMIN') && !user?.roles.includes('MANAGE');
 
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // View mode: 'matrix' (default as requested) or 'table'
-  const [viewMode, setViewMode] = useState<'matrix' | 'table'>('matrix');
-
   // Search & Filter state
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedSale, setSelectedSale] = useState<string>('');
-  const [statusFilter, setStatusFilter] = useState('');
-
-  // Modal states for Create/Edit
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingEnrollment, setEditingEnrollment] = useState<Enrollment | null>(null);
-  const [submitting, setSubmitting] = useState(false);
-
-  const [formData, setFormData] = useState({
-    student_id: '',
-    package_id: '',
-    cs_id: '',
-    total_sessions: '',
-    external_remaining_sessions: '',
-    start_date: '',
-    end_date: '',
-    status: 'NOT_STARTED' as 'NOT_STARTED' | 'STUDYING' | 'PAUSED' | 'FINISHED' | 'CANCELLED',
-  });
 
   const fetchEnrollments = async () => {
     try {
@@ -97,7 +56,7 @@ export const EnrollmentsPage: React.FC = () => {
     return Array.from(set).filter(Boolean);
   }, [enrollments]);
 
-  // Extract StudentRow list for AttendanceMatrix filtered by Sale
+  // Extract rich StudentRow list for AttendanceMatrix with all fields A -> AH
   const matrixStudents: StudentRow[] = useMemo(() => {
     const list: StudentRow[] = [];
 
@@ -109,10 +68,14 @@ export const EnrollmentsPage: React.FC = () => {
       if (searchQuery) {
         const query = searchQuery.toLowerCase();
         const matchName = student.full_name?.toLowerCase().includes(query);
-        const matchCode = student.external_id?.toLowerCase().includes(query) || enr.external_id?.toLowerCase().includes(query);
+        const matchCode =
+          student.external_id?.toLowerCase().includes(query) ||
+          enr.external_id?.toLowerCase().includes(query);
         const matchPhone = student.phone?.includes(query);
         if (!matchName && !matchCode && !matchPhone) return;
       }
+
+      const pkg = enr.package;
 
       // If enrollment has assigned enrollment_classes
       if (enr.enrollment_classes && enr.enrollment_classes.length > 0) {
@@ -127,14 +90,24 @@ export const EnrollmentsPage: React.FC = () => {
             student_id: student.id,
             external_id: student.external_id || enr.external_id || `HV_${student.id}`,
             full_name: student.full_name,
-            status: enr.status,
+            package_name: pkg?.name || pkg?.code || 'Gói học',
+            course_content: enr.course_content || 'Thường',
+            total_sessions: enr.total_sessions || 0,
+            level: enr.level || (cls as any)?.level || 'Thường',
+            email: student.email || '',
+            model_type: (cls as any)?.model_type || enr.class_model || '1:1',
+            remaining_sessions: enr.external_remaining_sessions,
             start_date: enr.start_date,
+            status: enr.status,
             end_date: enr.end_date,
             start_time: schedule?.start_time || '20h00',
             schedule_pattern: schedule?.schedule_pattern || '246',
             duration_minutes: schedule?.duration_minutes || 30,
             teacher_name: teacher?.name || 'Giáo viên',
-            teacher_code: (teacher as any)?.teacher_code || 'GV_01',
+            teacher_code:
+              (teacher as any)?.teacher_profile?.teacher_code ||
+              (teacher as any)?.teacher_code ||
+              'GV_--',
             class_name: cls?.class_name || 'Lớp học',
             sale_name: enr.sale_name || enr.cs?.name || 'Sale',
           });
@@ -142,13 +115,20 @@ export const EnrollmentsPage: React.FC = () => {
       } else {
         // Enrolled but not yet assigned to a class
         list.push({
-          enrollment_class_id: enr.id,
-          class_id: 1,
+          enrollment_class_id: -enr.id,
+          class_id: 0,
           student_id: student.id,
           external_id: student.external_id || enr.external_id || `HV_${student.id}`,
           full_name: student.full_name,
-          status: enr.status,
+          package_name: pkg?.name || pkg?.code || 'Gói học',
+          course_content: enr.course_content || 'Thường',
+          total_sessions: enr.total_sessions || 0,
+          level: enr.level || 'Thường',
+          email: student.email || '',
+          model_type: enr.class_model || '1:1',
+          remaining_sessions: enr.external_remaining_sessions,
           start_date: enr.start_date,
+          status: enr.status,
           end_date: enr.end_date,
           start_time: '20h00',
           schedule_pattern: '246',
@@ -212,7 +192,10 @@ export const EnrollmentsPage: React.FC = () => {
       const [ecIdStr, dateStr] = key.split('_');
       const ecId = parseInt(ecIdStr, 10);
       const student = matrixStudents.find((s) => s.enrollment_class_id === ecId);
-      const classId = student?.class_id || 1;
+      if (!student || student.enrollment_class_id <= 0 || !student.class_id) {
+        return;
+      }
+      const classId = student.class_id;
 
       const groupKey = `${classId}_${dateStr}`;
       if (!byClassAndDate.has(groupKey)) {
@@ -239,7 +222,7 @@ export const EnrollmentsPage: React.FC = () => {
           enrollment_class_id: i.ecId,
           status: i.status,
           session_count:
-            i.status === 'ATTENDED' ? (customValues?.[`${i.ecId}_${dateStr}`] ?? 1) : 1,
+            i.status === 'ATTENDED' ? customValues?.[`${i.ecId}_${dateStr}`] ?? 1 : 1,
         })),
       });
     }
@@ -247,256 +230,16 @@ export const EnrollmentsPage: React.FC = () => {
     await fetchEnrollments();
   };
 
-  // Filtered list for Table view
-  const filteredEnrollments = useMemo(() => {
-    return enrollments.filter((item) => {
-      const matchSearch =
-        !searchQuery ||
-        item.student?.full_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        item.student?.phone?.includes(searchQuery) ||
-        String(item.student_id).includes(searchQuery) ||
-        (item.external_id && item.external_id.toLowerCase().includes(searchQuery.toLowerCase()));
-
-      const matchStatus = !statusFilter || item.status === statusFilter;
-
-      return matchSearch && matchStatus;
-    });
-  }, [enrollments, searchQuery, statusFilter]);
-
-  const openModal = (enrollment?: Enrollment) => {
-    if (enrollment) {
-      setEditingEnrollment(enrollment);
-      setFormData({
-        student_id: String(enrollment.student_id),
-        package_id: enrollment.package_id ? String(enrollment.package_id) : '',
-        cs_id: String(enrollment.cs_id),
-        total_sessions: String(enrollment.total_sessions),
-        external_remaining_sessions:
-          enrollment.external_remaining_sessions !== undefined &&
-          enrollment.external_remaining_sessions !== null
-            ? String(enrollment.external_remaining_sessions)
-            : '',
-        start_date: enrollment.start_date
-          ? new Date(enrollment.start_date).toISOString().split('T')[0]
-          : '',
-        end_date: enrollment.end_date
-          ? new Date(enrollment.end_date).toISOString().split('T')[0]
-          : '',
-        status: enrollment.status,
-      });
-    } else {
-      setEditingEnrollment(null);
-      setFormData({
-        student_id: '',
-        package_id: '',
-        cs_id: user?.id ? String(user.id) : '',
-        total_sessions: '24',
-        external_remaining_sessions: '24',
-        start_date: new Date().toISOString().split('T')[0],
-        end_date: '',
-        status: 'STUDYING',
-      });
-    }
-    setIsModalOpen(true);
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!formData.student_id || !formData.total_sessions) {
-      toast.warning('Vui lòng điền đầy đủ các thông tin bắt buộc.');
-      return;
-    }
-
-    try {
-      setSubmitting(true);
-      if (editingEnrollment) {
-        const updateData: UpdateEnrollmentDTO = {
-          package_id: formData.package_id ? parseInt(formData.package_id) : undefined,
-          total_sessions: parseInt(formData.total_sessions),
-          external_remaining_sessions: formData.external_remaining_sessions
-            ? parseInt(formData.external_remaining_sessions)
-            : undefined,
-          start_date: formData.start_date || undefined,
-          end_date: formData.end_date || undefined,
-          status: formData.status,
-        };
-        await enrollmentsApi.update(editingEnrollment.id, updateData);
-        toast.success('Cập nhật thông tin ghi danh thành công!');
-      } else {
-        const createData: CreateEnrollmentDTO = {
-          student_id: parseInt(formData.student_id),
-          package_id: formData.package_id ? parseInt(formData.package_id) : undefined,
-          cs_id: parseInt(formData.cs_id) || user?.id || 1,
-          total_sessions: parseInt(formData.total_sessions),
-          external_remaining_sessions: formData.external_remaining_sessions
-            ? parseInt(formData.external_remaining_sessions)
-            : undefined,
-          start_date: formData.start_date || undefined,
-          end_date: formData.end_date || undefined,
-        };
-        await enrollmentsApi.create(createData);
-        toast.success('Tạo bản ghi ghi danh thành công!');
-      }
-      setIsModalOpen(false);
-      fetchEnrollments();
-    } catch (err: any) {
-      toast.error(err.response?.data?.error?.message || 'Có lỗi xảy ra khi lưu thông tin ghi danh');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  // Table columns for detailed view
-  const tableColumns: Column<Enrollment>[] = [
-    {
-      header: 'Học viên & Mã ghi danh',
-      cell: (item) => (
-        <div className="flex items-center space-x-3">
-          <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-xs">
-            {item.student?.full_name?.charAt(0).toUpperCase() || 'H'}
-          </div>
-          <div>
-            <div className="font-bold text-slate-900 text-xs">{item.student?.full_name || 'Học viên'}</div>
-            <div className="text-slate-500 font-mono text-[11px]">
-              {item.external_id || `ID: ${item.id}`} • {item.student?.phone || '—'}
-            </div>
-          </div>
-        </div>
-      ),
-    },
-    {
-      header: 'Gói học & Trình độ',
-      cell: (item) => (
-        <div>
-          <div className="font-semibold text-slate-800 text-xs">{item.package?.name || 'Gói cơ bản'}</div>
-          <div className="text-[11px] text-slate-500">
-            {item.level || 'Chuẩn'} • {item.class_model || 'Nhóm'}
-          </div>
-        </div>
-      ),
-    },
-    {
-      header: 'Nhân viên Sale (CSKH)',
-      cell: (item) => (
-        <div className="flex items-center gap-1.5 font-medium text-slate-700">
-          <UserCheck className="w-3.5 h-3.5 text-blue-600" />
-          <span>{item.sale_name || item.cs?.name || item.cs?.email || 'Chưa gán'}</span>
-        </div>
-      ),
-    },
-    {
-      header: 'Số buổi còn lại',
-      cell: (item) => {
-        const rem = item.external_remaining_sessions;
-        if (rem === null || rem === undefined) return <span className="text-slate-400">—</span>;
-        const isDebt = rem < 0;
-
-        return (
-          <div className="flex items-center gap-1.5">
-            <span
-              className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold border ${
-                isDebt
-                  ? 'bg-red-100 text-red-800 border-red-300 font-extrabold shadow-xs'
-                  : rem <= 3
-                  ? 'bg-amber-100 text-amber-800 border-amber-300'
-                  : 'bg-emerald-50 text-emerald-800 border-emerald-200'
-              }`}
-            >
-              {isDebt && <AlertTriangle className="w-3 h-3 mr-1 text-red-600 animate-pulse" />}
-              {rem} buổi
-            </span>
-          </div>
-        );
-      },
-    },
-    {
-      header: 'Trạng thái',
-      cell: (item) => {
-        const conf = ENROLLMENT_STATUS_LABELS[item.status] || ENROLLMENT_STATUS_LABELS.NOT_STARTED;
-        return <Badge variant={conf.variant}>{conf.label}</Badge>;
-      },
-    },
-    {
-      header: 'Thời gian học',
-      cell: (item) => (
-        <div className="text-[11px] text-slate-600">
-          <div>BĐ: {item.start_date ? new Date(item.start_date).toLocaleDateString('vi-VN') : '—'}</div>
-          <div>KT: {item.end_date ? new Date(item.end_date).toLocaleDateString('vi-VN') : '—'}</div>
-        </div>
-      ),
-    },
-    {
-      header: 'Thao tác',
-      className: 'text-right',
-      cell: (item) => (
-        <div className="flex justify-end">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={(e) => {
-              e.stopPropagation();
-              openModal(item);
-            }}
-            title="Chỉnh sửa ghi danh"
-          >
-            <Edit className="w-4 h-4 text-slate-500 hover:text-blue-600" />
-          </Button>
-        </div>
-      ),
-    },
-  ];
-
   return (
     <PageContainer>
-      {/* Page Header */}
       <PageHeader
-        title="Quản lý Ghi danh & Điểm danh"
-        description="Ma trận điểm danh theo ngày cho học viên do nhân viên Chăm sóc khách hàng (Sale) phụ trách."
-        actions={
-          <div className="flex items-center gap-2.5">
-            {/* View Mode Toggle */}
-            <div className="flex p-1 bg-surface-muted rounded-xl border border-border/80 text-xs font-semibold">
-              <button
-                type="button"
-                onClick={() => setViewMode('matrix')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all ${
-                  viewMode === 'matrix'
-                    ? 'bg-surface text-primary shadow-xs'
-                    : 'text-text-muted hover:text-text-primary'
-                }`}
-              >
-                <CalendarDays className="w-4 h-4" />
-                <span>Ma trận Điểm danh</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setViewMode('table')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all ${
-                  viewMode === 'table'
-                    ? 'bg-surface text-primary shadow-xs'
-                    : 'text-text-muted hover:text-text-primary'
-                }`}
-              >
-                <TableIcon className="w-4 h-4" />
-                <span>Chi tiết Ghi danh</span>
-              </button>
-            </div>
-
-            <Button
-              variant="primary"
-              size="md"
-              onClick={() => openModal()}
-              leftIcon={<Plus className="w-4 h-4" />}
-            >
-              Thêm ghi danh
-            </Button>
-          </div>
-        }
+        title="Quản lý Điểm danh & Ghi danh"
+        description="Giao diện điểm danh 3 Tab chuẩn hóa Sheet 3: Điểm danh nhanh, Ma trận chi tiết và Báo cáo thống kê chuyên cần theo Sale."
       />
 
-      {/* Sale Filter & Info Bar */}
-      <div className="mb-5 p-4 bg-surface rounded-2xl border border-border/80 shadow-soft flex flex-wrap items-center justify-between gap-4">
-        {/* Left: Role identification / Sale Selector */}
+      {/* Filter and Search Bar */}
+      <div className="bg-surface rounded-2xl p-4 border border-border/80 shadow-soft flex flex-col sm:flex-row items-center justify-between gap-4">
+        {/* Left: Role / Sale scope filter */}
         <div className="flex items-center gap-3 flex-wrap">
           {isCS ? (
             <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-50 text-blue-900 border border-blue-200/80 rounded-xl text-xs font-bold">
@@ -511,7 +254,7 @@ export const EnrollmentsPage: React.FC = () => {
               <select
                 value={selectedSale}
                 onChange={(e) => setSelectedSale(e.target.value)}
-                className="text-xs font-medium px-3 py-1.5 bg-surface-muted border border-border/80 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 text-text-primary min-w-[180px]"
+                className="text-xs font-semibold px-3 py-1.5 bg-surface-muted border border-border/80 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 text-text-primary min-w-[200px]"
               >
                 <option value="">-- Tất cả nhân viên Sale --</option>
                 {salesList.map((s) => (
@@ -524,7 +267,7 @@ export const EnrollmentsPage: React.FC = () => {
           )}
 
           <div className="text-xs text-text-muted flex items-center gap-1">
-            <span>Tổng cộng:</span>
+            <span>Sĩ số:</span>
             <strong className="text-text-primary font-bold">{matrixStudents.length}</strong>
             <span>học viên</span>
           </div>
@@ -541,9 +284,14 @@ export const EnrollmentsPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Main Content Area: Matrix vs Table */}
-      {viewMode === 'matrix' ? (
-        <div className="space-y-4">
+      {/* Main Content Area: 3-Tab Attendance Management */}
+      <div className="space-y-4">
+        {loading && enrollments.length === 0 ? (
+          <div className="flex items-center justify-center p-12 bg-surface rounded-2xl border border-border/80 text-text-muted">
+            <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin mr-3" />
+            <span>Đang tải dữ liệu điểm danh học viên...</span>
+          </div>
+        ) : (
           <AttendanceMatrix
             students={matrixStudents}
             sessions={allSessions}
@@ -551,120 +299,8 @@ export const EnrollmentsPage: React.FC = () => {
             onRefresh={fetchEnrollments}
             onSaveCustom={handleCustomSaveAll}
           />
-        </div>
-      ) : (
-        <div className="space-y-4">
-          <FilterBar
-            activeCount={(searchQuery ? 1 : 0) + (statusFilter ? 1 : 0)}
-            onClear={() => {
-              setSearchQuery('');
-              setStatusFilter('');
-            }}
-          >
-            <div className="w-full sm:w-48">
-              <Select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-                options={[
-                  { value: '', label: 'Tất cả trạng thái' },
-                  { value: 'STUDYING', label: 'Đang học' },
-                  { value: 'PAUSED', label: 'Bảo lưu / Tạm dừng' },
-                  { value: 'FINISHED', label: 'Hoàn thành' },
-                  { value: 'NOT_STARTED', label: 'Chưa học' },
-                  { value: 'CANCELLED', label: 'Đã hủy' },
-                ]}
-              />
-            </div>
-          </FilterBar>
-
-          <DataTable
-            data={filteredEnrollments}
-            columns={tableColumns}
-            isLoading={loading}
-            emptyMessage="Không tìm thấy bản ghi ghi danh nào phù hợp."
-          />
-        </div>
-      )}
-
-      {/* Create / Edit Modal */}
-      <Modal
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        title={editingEnrollment ? 'Chỉnh sửa Ghi danh' : 'Tạo mới Ghi danh'}
-      >
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Input
-              label="Mã Học viên (ID) *"
-              type="number"
-              value={formData.student_id}
-              onChange={(e) => setFormData({ ...formData, student_id: e.target.value })}
-              required
-              disabled={!!editingEnrollment}
-            />
-
-            <Input
-              label="Mã Gói học (Package ID)"
-              type="number"
-              value={formData.package_id}
-              onChange={(e) => setFormData({ ...formData, package_id: e.target.value })}
-              placeholder="VD: 1, 2..."
-            />
-
-            <Input
-              label="Tổng số buổi *"
-              type="number"
-              value={formData.total_sessions}
-              onChange={(e) => setFormData({ ...formData, total_sessions: e.target.value })}
-              required
-            />
-
-            <Input
-              label="Số buổi còn lại"
-              type="number"
-              value={formData.external_remaining_sessions}
-              onChange={(e) => setFormData({ ...formData, external_remaining_sessions: e.target.value })}
-              placeholder="Có thể nhập số âm nếu nợ buổi: -1, -2..."
-            />
-
-            <Input
-              label="Ngày bắt đầu học"
-              type="date"
-              value={formData.start_date}
-              onChange={(e) => setFormData({ ...formData, start_date: e.target.value })}
-            />
-
-            <Input
-              label="Ngày kết thúc / Bảo lưu"
-              type="date"
-              value={formData.end_date}
-              onChange={(e) => setFormData({ ...formData, end_date: e.target.value })}
-            />
-          </div>
-
-          <Select
-            label="Trạng thái"
-            value={formData.status}
-            onChange={(e) => setFormData({ ...formData, status: e.target.value as any })}
-            options={[
-              { value: 'NOT_STARTED', label: 'Chưa học' },
-              { value: 'STUDYING', label: 'Đang học' },
-              { value: 'PAUSED', label: 'Tạm dừng / Bảo lưu' },
-              { value: 'FINISHED', label: 'Hoàn thành' },
-              { value: 'CANCELLED', label: 'Đã hủy' },
-            ]}
-          />
-
-          <div className="flex justify-end gap-3 pt-4 border-t border-border/80">
-            <Button variant="outline" type="button" onClick={() => setIsModalOpen(false)}>
-              Hủy
-            </Button>
-            <Button variant="primary" type="submit" isLoading={submitting}>
-              {editingEnrollment ? 'Lưu thay đổi' : 'Tạo mới'}
-            </Button>
-          </div>
-        </form>
-      </Modal>
+        )}
+      </div>
     </PageContainer>
   );
 };

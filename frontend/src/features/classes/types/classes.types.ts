@@ -101,7 +101,7 @@ export interface Attendance {
     id: number;
     enrollment?: {
       id: number;
-      student?: { id: number; full_name: string; phone: string; external_id?: string | null };
+      student?: { id: number; full_name: string; phone: string; email?: string | null; external_id?: string | null };
       package?: { id: number; name: string; code: string };
       cs?: { id: number; name: string; email: string };
     };

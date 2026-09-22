@@ -17,7 +17,11 @@ const ENROLLMENT_INCLUDES = {
         include: {
           class_teachers: {
             include: {
-              teacher: true,
+              teacher: {
+                include: {
+                  teacher_profile: true,
+                },
+              },
             },
           },
           class_schedules: true,

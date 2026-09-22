@@ -158,20 +158,31 @@ export const AttendanceSheetPage = () => {
         const student = ec.enrollment?.student;
         const enrollment = ec.enrollment;
         const teacher = cls.class_teachers?.[0]?.teacher;
+        const schedule = cls.class_schedules?.[0];
 
         studentMap.set(ec.id, {
           enrollment_class_id: ec.id,
           student_id: student?.id || ec.id,
           external_id: student?.external_id || `HV_${student?.id || ec.id}`,
           full_name: student?.full_name || `Học viên #${ec.id}`,
+          package_name: enrollment?.package?.name || enrollment?.package?.code || 'Gói học',
+          course_content: enrollment?.course_content || 'Thường',
+          total_sessions: enrollment?.total_sessions || 0,
+          level: enrollment?.level || cls.level || 'Thường',
+          email: student?.email || '',
+          model_type: cls.model_type || enrollment?.class_model || '1:1',
+          remaining_sessions: enrollment?.external_remaining_sessions,
           status: enrollment?.status || 'STUDYING',
           start_date: enrollment?.start_date,
           end_date: enrollment?.end_date,
-          start_time: '20h00',
-          schedule_pattern: '246',
-          duration_minutes: 30,
-          teacher_name: teacher?.name || 'Thầy John',
-          teacher_code: (teacher as any)?.teacher_code || 'GV_01',
+          start_time: schedule?.start_time || '20h00',
+          schedule_pattern: schedule?.schedule_pattern || '246',
+          duration_minutes: schedule?.duration_minutes || 30,
+          teacher_name: teacher?.name || 'Giáo viên',
+          teacher_code:
+            (teacher as any)?.teacher_profile?.teacher_code ||
+            (teacher as any)?.teacher_code ||
+            'GV_01',
           class_name: cls.class_name || 'Lớp học',
         });
       });
@@ -184,20 +195,31 @@ export const AttendanceSheetPage = () => {
         const student = att.enrollment_class?.enrollment?.student;
         const enrollment = att.enrollment_class?.enrollment as any;
         const teacher = cls?.class_teachers?.[0]?.teacher;
+        const schedule = cls?.class_schedules?.[0];
 
         studentMap.set(ecId, {
           enrollment_class_id: ecId,
           student_id: student?.id || ecId,
           external_id: student?.external_id || String(student?.id || ecId),
           full_name: student?.full_name || `Học viên #${ecId}`,
+          package_name: enrollment?.package?.name || enrollment?.package?.code || 'Gói học',
+          course_content: enrollment?.course_content || 'Thường',
+          total_sessions: enrollment?.total_sessions || 0,
+          level: enrollment?.level || cls?.level || 'Thường',
+          email: student?.email || '',
+          model_type: cls?.model_type || enrollment?.class_model || '1:1',
+          remaining_sessions: enrollment?.external_remaining_sessions,
           status: enrollment?.status || 'STUDYING',
           start_date: enrollment?.start_date,
           end_date: enrollment?.end_date,
-          start_time: '20h00',
-          schedule_pattern: '246',
-          duration_minutes: 30,
-          teacher_name: teacher?.name || 'Thầy John',
-          teacher_code: (teacher as any)?.teacher_code || 'GV_01',
+          start_time: schedule?.start_time || '20h00',
+          schedule_pattern: schedule?.schedule_pattern || '246',
+          duration_minutes: schedule?.duration_minutes || 30,
+          teacher_name: teacher?.name || 'Giáo viên',
+          teacher_code:
+            (teacher as any)?.teacher_profile?.teacher_code ||
+            (teacher as any)?.teacher_code ||
+            'GV_01',
           class_name: cls?.class_name || 'Lớp học',
         });
       }
