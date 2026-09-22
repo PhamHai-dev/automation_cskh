@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { studentsApi } from '../api/students.api';
 import { careApi } from '../../care/api/care.api';
-import { Student } from '../types/students.types';
+import { Student, CreateStudentDTO } from '../types/students.types';
 import { PageContainer } from '../../../components/common/PageContainer';
 import { PageHeader } from '../../../components/common/PageHeader';
 import { DataTable, Column } from '../../../components/common/DataTable';
@@ -26,6 +26,11 @@ import {
   PhoneCall,
   Flame,
   CheckCircle2,
+  BookOpen,
+  Calendar,
+  Clock,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 
 const GENDER_LABELS: Record<string, string> = {
@@ -287,12 +292,13 @@ export const StudentsPage: React.FC = () => {
   const [submitting, setSubmitting] = useState(false);
 
   // Form states
-  const [formData, setFormData] = useState({
+  const initialFormData: CreateStudentDTO = {
+    // 1. Hồ sơ & Liên hệ
     external_id: '',
     full_name: '',
+    gender: 'OTHER',
     phone: '',
     email: '',
-    gender: 'OTHER' as 'MALE' | 'FEMALE' | 'OTHER',
     date_of_birth: '',
     parent_name: '',
     parent_phone: '',
@@ -300,7 +306,41 @@ export const StudentsPage: React.FC = () => {
     occupation: '',
     zalo_uid: '',
     note: '',
-  });
+
+    // 2. Khóa học & Tài chính
+    paid_at: '',
+    sale_name: '',
+    student_source_status: 'Học viên chuẩn',
+    course_content: 'Tiếng Nhật Kaiwa',
+    payment_status: 'Đã đóng đủ',
+    level: 'N5',
+    total_sessions: 30,
+    external_remaining_sessions: 30,
+    class_model: 'Nhóm',
+    sales_note: '',
+
+    // 3. Lớp học & Lịch học
+    class_name: '',
+    teacher_name: '',
+    start_date: '',
+    end_date: '',
+    status: 'STUDYING',
+    start_time: '20h00',
+    schedule_pattern: '246',
+    duration_minutes: 30,
+
+    // 4. Báo cáo & CSKH
+    study_report_url: '',
+    exchange_info: '',
+    callback_note: '',
+    hot_issue_note: '',
+    post_course_care: '',
+    handed_over_at: '',
+    account_created_at: '',
+  };
+
+  const [formData, setFormData] = useState<CreateStudentDTO>(initialFormData);
+  const [formModalTab, setFormModalTab] = useState<'profile' | 'course' | 'class' | 'care'>('profile');
 
   const fetchStudents = async () => {
     try {
@@ -483,14 +523,21 @@ export const StudentsPage: React.FC = () => {
   };
 
   const openModal = (student?: Student) => {
+    setFormModalTab('profile');
     if (student) {
+      const enr = student.enrollments?.[0];
+      const ec = enr?.enrollment_classes?.[0];
+      const sched = ec?.class?.class_schedules?.[0];
+      const teacher = ec?.class?.class_teachers?.[0]?.teacher;
+
       setEditingStudent(student);
       setFormData({
+        // 1. Hồ sơ & Liên hệ
         external_id: student.external_id || '',
         full_name: student.full_name,
+        gender: (student.gender as any) || 'OTHER',
         phone: student.phone || '',
         email: student.email || '',
-        gender: (student.gender as any) || 'OTHER',
         date_of_birth: student.date_of_birth
           ? new Date(student.date_of_birth).toISOString().split('T')[0]
           : '',
@@ -500,22 +547,47 @@ export const StudentsPage: React.FC = () => {
         occupation: student.occupation || '',
         zalo_uid: student.zalo_uid || '',
         note: student.note || '',
+
+        // 2. Gói học, Học phí & Tiến độ
+        paid_at: enr?.paid_at ? new Date(enr.paid_at).toISOString().split('T')[0] : '',
+        sale_name: enr?.sale_name || enr?.sale?.name || enr?.cs?.name || '',
+        student_source_status: enr?.student_source_status || 'Học viên chuẩn',
+        course_content: enr?.course_content || enr?.package?.name || 'Tiếng Nhật Kaiwa',
+        payment_status: enr?.payment_status || 'Đã đóng đủ',
+        level: enr?.level || 'N5',
+        total_sessions: enr?.total_sessions ?? 30,
+        external_remaining_sessions: enr?.external_remaining_sessions ?? 30,
+        class_model: enr?.class_model || 'Nhóm',
+        sales_note: enr?.sales_note || '',
+
+        // 3. Lớp học & Lịch học
+        class_name: ec?.class?.class_name || '',
+        teacher_name: teacher?.name || '',
+        start_date: enr?.start_date ? new Date(enr.start_date).toISOString().split('T')[0] : '',
+        end_date: enr?.end_date ? new Date(enr.end_date).toISOString().split('T')[0] : '',
+        status: enr?.status || 'STUDYING',
+        start_time: sched?.start_time || '20h00',
+        schedule_pattern: sched?.schedule_pattern || '246',
+        duration_minutes: sched?.duration_minutes ?? 30,
+
+        // 4. Báo cáo & CSKH
+        study_report_url: enr?.study_report_url || '',
+        exchange_info: enr?.exchange_info || '',
+        callback_note: enr?.callback_note || '',
+        hot_issue_note: enr?.hot_issue_note || '',
+        post_course_care: enr?.post_course_care || '',
+        handed_over_at: enr?.handed_over_at
+          ? new Date(enr.handed_over_at).toISOString().split('T')[0]
+          : '',
+        account_created_at: enr?.account_created_at
+          ? new Date(enr.account_created_at).toISOString().split('T')[0]
+          : '',
       });
     } else {
       setEditingStudent(null);
       setFormData({
-        external_id: '',
-        full_name: '',
-        phone: '',
-        email: '',
-        gender: 'OTHER',
-        date_of_birth: '',
-        parent_name: '',
-        parent_phone: '',
-        school: '',
-        occupation: '',
-        zalo_uid: '',
-        note: '',
+        ...initialFormData,
+        sale_name: user?.name || user?.email || '',
       });
     }
     setIsModalOpen(true);
@@ -525,22 +597,27 @@ export const StudentsPage: React.FC = () => {
     e.preventDefault();
     if (!formData.full_name.trim()) {
       toast.warning('Vui lòng nhập họ và tên học viên.');
+      setFormModalTab('profile');
       return;
     }
 
     try {
       setSubmitting(true);
+      const payload: CreateStudentDTO = {
+        ...formData,
+        date_of_birth: formData.date_of_birth || undefined,
+        paid_at: formData.paid_at || undefined,
+        start_date: formData.start_date || undefined,
+        end_date: formData.end_date || undefined,
+        handed_over_at: formData.handed_over_at || undefined,
+        account_created_at: formData.account_created_at || undefined,
+      };
+
       if (editingStudent) {
-        await studentsApi.update(editingStudent.id, {
-          ...formData,
-          date_of_birth: formData.date_of_birth || undefined,
-        });
-        toast.success('Cập nhật thông tin học viên thành công!');
+        await studentsApi.update(editingStudent.id, payload);
+        toast.success('Cập nhật hồ sơ học viên thành công!');
       } else {
-        await studentsApi.create({
-          ...formData,
-          date_of_birth: formData.date_of_birth || undefined,
-        });
+        await studentsApi.create(payload);
         toast.success('Thêm mới học viên thành công!');
       }
       setIsModalOpen(false);
@@ -1586,126 +1663,594 @@ export const StudentsPage: React.FC = () => {
         <Modal
           isOpen={isModalOpen}
           onClose={() => setIsModalOpen(false)}
-          title={editingStudent ? 'Chỉnh sửa học viên' : 'Thêm học viên mới'}
+          size="2xl"
+          title={
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center font-bold">
+                {editingStudent ? <Edit className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+              </div>
+              <div>
+                <h3 className="font-bold text-slate-900 text-base">
+                  {editingStudent ? `Chỉnh sửa hồ sơ: ${editingStudent.full_name}` : 'Thêm mới học viên'}
+                </h3>
+                <p className="text-xs text-slate-500 font-normal">
+                  Điền đầy đủ thông tin hồ sơ, tài chính, lớp học và ghi chú chăm sóc theo chuẩn Sheet 1
+                </p>
+              </div>
+            </div>
+          }
         >
-          <form onSubmit={handleSubmit} className="space-y-4 text-xs">
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block font-medium text-text-primary mb-1">
-                  Mã học viên (External ID)
-                </label>
-                <Input
-                  placeholder="Ví dụ: 420274574"
-                  value={formData.external_id}
-                  onChange={(e) => setFormData({ ...formData, external_id: e.target.value })}
-                />
-              </div>
-              <div>
-                <label className="block font-medium text-text-primary mb-1">
-                  Họ và tên <span className="text-red-500">*</span>
-                </label>
-                <Input
-                  placeholder="Nguyễn Văn A"
-                  value={formData.full_name}
-                  onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
-                  required
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block font-medium text-text-primary mb-1">Số điện thoại</label>
-                <Input
-                  placeholder="0987654321"
-                  value={formData.phone}
-                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                />
-              </div>
-              <div>
-                <label className="block font-medium text-text-primary mb-1">Email</label>
-                <Input
-                  type="email"
-                  placeholder="email@example.com"
-                  value={formData.email}
-                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block font-medium text-text-primary mb-1">Giới tính</label>
-                <select
-                  value={formData.gender}
-                  onChange={(e) => setFormData({ ...formData, gender: e.target.value as any })}
-                  className="w-full text-xs font-medium px-3 py-2 bg-surface-muted border border-border/80 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 text-text-primary"
-                >
-                  <option value="MALE">Nam</option>
-                  <option value="FEMALE">Nữ</option>
-                  <option value="OTHER">Khác</option>
-                </select>
-              </div>
-              <div>
-                <label className="block font-medium text-text-primary mb-1">Ngày sinh (DOB)</label>
-                <Input
-                  type="date"
-                  value={formData.date_of_birth}
-                  onChange={(e) => setFormData({ ...formData, date_of_birth: e.target.value })}
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block font-medium text-text-primary mb-1">Nghề nghiệp</label>
-                <Input
-                  placeholder="Ví dụ: Kỹ sư, Sinh viên..."
-                  value={formData.occupation}
-                  onChange={(e) => setFormData({ ...formData, occupation: e.target.value })}
-                />
-              </div>
-              <div>
-                <label className="block font-medium text-text-primary mb-1">Trường học</label>
-                <Input
-                  placeholder="Tên trường học"
-                  value={formData.school}
-                  onChange={(e) => setFormData({ ...formData, school: e.target.value })}
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block font-medium text-text-primary mb-1">Họ tên Phụ huynh</label>
-                <Input
-                  placeholder="Họ tên cha/mẹ"
-                  value={formData.parent_name}
-                  onChange={(e) => setFormData({ ...formData, parent_name: e.target.value })}
-                />
-              </div>
-              <div>
-                <label className="block font-medium text-text-primary mb-1">SĐT Phụ huynh</label>
-                <Input
-                  placeholder="0912345678"
-                  value={formData.parent_phone}
-                  onChange={(e) => setFormData({ ...formData, parent_phone: e.target.value })}
-                />
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-2 pt-4 border-t border-border">
-              <Button
+          <form onSubmit={handleSubmit} className="space-y-4">
+            {/* Form Sub-Tabs */}
+            <div className="flex flex-wrap gap-1.5 p-1 bg-slate-100 rounded-xl border border-slate-200/80 text-xs font-semibold">
+              <button
                 type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => setIsModalOpen(false)}
+                onClick={() => setFormModalTab('profile')}
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-lg transition-all ${
+                  formModalTab === 'profile'
+                    ? 'bg-white text-blue-700 shadow-xs font-bold'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
+                }`}
               >
-                Hủy
-              </Button>
-              <Button type="submit" variant="primary" size="sm" isLoading={submitting}>
-                {editingStudent ? 'Cập nhật' : 'Thêm mới'}
-              </Button>
+                <Users className="w-3.5 h-3.5" />
+                <span>1. Hồ sơ & Liên hệ</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setFormModalTab('course')}
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-lg transition-all ${
+                  formModalTab === 'course'
+                    ? 'bg-white text-blue-700 shadow-xs font-bold'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
+                }`}
+              >
+                <BookOpen className="w-3.5 h-3.5" />
+                <span>2. Khóa học & Tài chính</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setFormModalTab('class')}
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-lg transition-all ${
+                  formModalTab === 'class'
+                    ? 'bg-white text-blue-700 shadow-xs font-bold'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
+                }`}
+              >
+                <Calendar className="w-3.5 h-3.5" />
+                <span>3. Lớp học & Lịch học</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setFormModalTab('care')}
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-lg transition-all ${
+                  formModalTab === 'care'
+                    ? 'bg-white text-blue-700 shadow-xs font-bold'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
+                }`}
+              >
+                <MessageSquare className="w-3.5 h-3.5" />
+                <span>4. Báo cáo & CSKH</span>
+              </button>
+            </div>
+
+            {/* TAB 1: HỒ SƠ & LIÊN HỆ */}
+            {formModalTab === 'profile' && (
+              <div className="space-y-4 pt-1 animate-fadeIn text-xs">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block font-medium text-slate-700 mb-1">
+                      Mã học viên (ID Sheet 1)
+                    </label>
+                    <Input
+                      placeholder="Ví dụ: 420274574 hoặc HV_001"
+                      value={formData.external_id || ''}
+                      onChange={(e) => setFormData({ ...formData, external_id: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-medium text-slate-700 mb-1">
+                      Họ và tên <span className="text-red-500">*</span>
+                    </label>
+                    <Input
+                      placeholder="Nguyễn Văn A"
+                      value={formData.full_name}
+                      onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-medium text-slate-700 mb-1">Giới tính</label>
+                    <select
+                      value={formData.gender || 'OTHER'}
+                      onChange={(e) => setFormData({ ...formData, gender: e.target.value })}
+                      className="w-full text-xs px-3 py-2 bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20"
+                    >
+                      <option value="MALE">Nam</option>
+                      <option value="FEMALE">Nữ</option>
+                      <option value="OTHER">Khác</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block font-medium text-slate-700 mb-1">Ngày sinh (DOB)</label>
+                    <Input
+                      type="date"
+                      value={formData.date_of_birth || ''}
+                      onChange={(e) => setFormData({ ...formData, date_of_birth: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-medium text-slate-700 mb-1">Số điện thoại</label>
+                    <Input
+                      placeholder="0987654321"
+                      value={formData.phone || ''}
+                      onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-medium text-slate-700 mb-1">Email</label>
+                    <Input
+                      type="email"
+                      placeholder="email@example.com"
+                      value={formData.email || ''}
+                      onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block font-medium text-slate-700 mb-1">Zalo UID / SĐT Zalo</label>
+                    <Input
+                      placeholder="Số điện thoại hoặc UID Zalo"
+                      value={formData.zalo_uid || ''}
+                      onChange={(e) => setFormData({ ...formData, zalo_uid: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-medium text-slate-700 mb-1">Nghề nghiệp</label>
+                    <Input
+                      placeholder="Ví dụ: Kỹ sư, Sinh viên..."
+                      value={formData.occupation || ''}
+                      onChange={(e) => setFormData({ ...formData, occupation: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-medium text-slate-700 mb-1">Trường học</label>
+                    <Input
+                      placeholder="Tên trường học"
+                      value={formData.school || ''}
+                      onChange={(e) => setFormData({ ...formData, school: e.target.value })}
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block font-medium text-slate-700 mb-1">Họ tên Phụ huynh</label>
+                    <Input
+                      placeholder="Họ tên cha hoặc mẹ"
+                      value={formData.parent_name || ''}
+                      onChange={(e) => setFormData({ ...formData, parent_name: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-medium text-slate-700 mb-1">SĐT Phụ huynh</label>
+                    <Input
+                      placeholder="Số điện thoại phụ huynh"
+                      value={formData.parent_phone || ''}
+                      onChange={(e) => setFormData({ ...formData, parent_phone: e.target.value })}
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block font-medium text-slate-700 mb-1">Ghi chú cá nhân</label>
+                  <textarea
+                    rows={2}
+                    placeholder="Ghi chú thêm về học viên..."
+                    value={formData.note || ''}
+                    onChange={(e) => setFormData({ ...formData, note: e.target.value })}
+                    className="w-full text-xs p-2.5 bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* TAB 2: KHÓA HỌC & TÀI CHÍNH */}
+            {formModalTab === 'course' && (
+              <div className="space-y-4 pt-1 animate-fadeIn text-xs">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block font-medium text-slate-700 mb-1">
+                      Nội dung khóa học
+                    </label>
+                    <Input
+                      placeholder="Ví dụ: Tiếng Nhật Kaiwa, Luyện thi JLPT N5..."
+                      value={formData.course_content || ''}
+                      onChange={(e) => setFormData({ ...formData, course_content: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-medium text-slate-700 mb-1">Trình độ</label>
+                    <select
+                      value={formData.level || 'N5'}
+                      onChange={(e) => setFormData({ ...formData, level: e.target.value })}
+                      className="w-full text-xs px-3 py-2 bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20"
+                    >
+                      <option value="N5">N5 (Sơ cấp 1)</option>
+                      <option value="N4">N4 (Sơ cấp 2)</option>
+                      <option value="N3">N3 (Trung cấp)</option>
+                      <option value="N2">N2 (Trung - Cao cấp)</option>
+                      <option value="N1">N1 (Cao cấp)</option>
+                      <option value="Kaiwa">Giao tiếp Kaiwa</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block font-medium text-slate-700 mb-1">Sale phụ trách</label>
+                    <Input
+                      placeholder="Tên hoặc Email nhân viên Sale/CSKH"
+                      value={formData.sale_name || ''}
+                      onChange={(e) => setFormData({ ...formData, sale_name: e.target.value })}
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block font-medium text-slate-700 mb-1">
+                      Trạng thái học viên
+                    </label>
+                    <Input
+                      placeholder="Ví dụ: Học viên chuẩn, Học thử, Tiềm năng..."
+                      value={formData.student_source_status || ''}
+                      onChange={(e) =>
+                        setFormData({ ...formData, student_source_status: e.target.value })
+                      }
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-medium text-slate-700 mb-1">
+                      Ngày nộp học phí
+                    </label>
+                    <Input
+                      type="date"
+                      value={formData.paid_at || ''}
+                      onChange={(e) => setFormData({ ...formData, paid_at: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-medium text-slate-700 mb-1">
+                      Trạng thái thanh toán
+                    </label>
+                    <select
+                      value={formData.payment_status || 'Đã đóng đủ'}
+                      onChange={(e) => setFormData({ ...formData, payment_status: e.target.value })}
+                      className="w-full text-xs px-3 py-2 bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20"
+                    >
+                      <option value="Đã đóng đủ">Đã đóng đủ</option>
+                      <option value="Đóng 1 phần">Đóng 1 phần</option>
+                      <option value="Chưa đóng">Chưa đóng</option>
+                      <option value="Nợ học phí">Nợ học phí</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block font-medium text-slate-700 mb-1">Tổng số buổi</label>
+                    <Input
+                      type="number"
+                      min={1}
+                      placeholder="30"
+                      value={formData.total_sessions || ''}
+                      onChange={(e) => setFormData({ ...formData, total_sessions: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-medium text-slate-700 mb-1">
+                      Số buổi còn lại (Hỗ trợ âm nợ)
+                    </label>
+                    <Input
+                      type="number"
+                      placeholder="30 (hoặc -1, -2 nếu nợ buổi)"
+                      value={formData.external_remaining_sessions ?? ''}
+                      onChange={(e) =>
+                        setFormData({ ...formData, external_remaining_sessions: e.target.value })
+                      }
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-medium text-slate-700 mb-1">Mô hình lớp</label>
+                    <select
+                      value={formData.class_model || 'Nhóm'}
+                      onChange={(e) => setFormData({ ...formData, class_model: e.target.value })}
+                      className="w-full text-xs px-3 py-2 bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20"
+                    >
+                      <option value="Nhóm">Nhóm</option>
+                      <option value="1:1">1:1 (Kèm 1-1)</option>
+                      <option value="1:2">1:2</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block font-medium text-slate-700 mb-1">Ghi chú sale</label>
+                  <textarea
+                    rows={2}
+                    placeholder="Ghi chú từ bộ phận Sale về học viên này..."
+                    value={formData.sales_note || ''}
+                    onChange={(e) => setFormData({ ...formData, sales_note: e.target.value })}
+                    className="w-full text-xs p-2.5 bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* TAB 3: LỚP HỌC & LỊCH HỌC */}
+            {formModalTab === 'class' && (
+              <div className="space-y-4 pt-1 animate-fadeIn text-xs">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block font-medium text-slate-700 mb-1">Tên lớp học</label>
+                    <Input
+                      placeholder="Ví dụ: Lớp N5 - K01 (246 Sáng)"
+                      value={formData.class_name || ''}
+                      onChange={(e) => setFormData({ ...formData, class_name: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-medium text-slate-700 mb-1">
+                      Giáo viên phụ trách
+                    </label>
+                    <Input
+                      placeholder="Ví dụ: Sensei Tanaka Kenji"
+                      value={formData.teacher_name || ''}
+                      onChange={(e) => setFormData({ ...formData, teacher_name: e.target.value })}
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block font-medium text-slate-700 mb-1">
+                      Ngày bắt đầu học
+                    </label>
+                    <Input
+                      type="date"
+                      value={formData.start_date || ''}
+                      onChange={(e) => setFormData({ ...formData, start_date: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-medium text-slate-700 mb-1">
+                      Ngày kết thúc / bảo lưu
+                    </label>
+                    <Input
+                      type="date"
+                      value={formData.end_date || ''}
+                      onChange={(e) => setFormData({ ...formData, end_date: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-medium text-slate-700 mb-1">Trạng thái gói</label>
+                    <select
+                      value={formData.status || 'STUDYING'}
+                      onChange={(e) => setFormData({ ...formData, status: e.target.value })}
+                      className="w-full text-xs px-3 py-2 bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20"
+                    >
+                      <option value="STUDYING">Đang học (STUDYING)</option>
+                      <option value="NOT_STARTED">Chưa học (NOT_STARTED)</option>
+                      <option value="PAUSED">Bảo lưu / Tạm dừng (PAUSED)</option>
+                      <option value="FINISHED">Hoàn thành (FINISHED)</option>
+                      <option value="CANCELLED">Đã hủy (CANCELLED)</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* 3 Cột chuẩn hóa: Giờ học, Lịch học, Thời lượng */}
+                <div className="p-3.5 bg-blue-50/50 rounded-xl border border-blue-200/80">
+                  <h5 className="font-bold text-blue-900 mb-2.5 flex items-center gap-1.5">
+                    <Clock className="w-4 h-4 text-blue-600" />
+                    <span>Khung thời gian & Lịch học trong tuần</span>
+                  </h5>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                      <label className="block font-medium text-slate-700 mb-1">Giờ học</label>
+                      <Input
+                        placeholder="Ví dụ: 20h00, 19h30..."
+                        value={formData.start_time || ''}
+                        onChange={(e) => setFormData({ ...formData, start_time: e.target.value })}
+                      />
+                    </div>
+                    <div>
+                      <label className="block font-medium text-slate-700 mb-1">
+                        Lịch học (Thứ)
+                      </label>
+                      <Input
+                        placeholder="Ví dụ: 246, 357, Thứ 2-4-6..."
+                        value={formData.schedule_pattern || ''}
+                        onChange={(e) =>
+                          setFormData({ ...formData, schedule_pattern: e.target.value })
+                        }
+                      />
+                    </div>
+                    <div>
+                      <label className="block font-medium text-slate-700 mb-1">
+                        Thời lượng (phút)
+                      </label>
+                      <Input
+                        type="number"
+                        placeholder="Ví dụ: 30, 45, 60..."
+                        value={formData.duration_minutes || ''}
+                        onChange={(e) =>
+                          setFormData({ ...formData, duration_minutes: e.target.value })
+                        }
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* TAB 4: BÁO CÁO & CSKH */}
+            {formModalTab === 'care' && (
+              <div className="space-y-4 pt-1 animate-fadeIn text-xs">
+                <div>
+                  <label className="block font-medium text-slate-700 mb-1 flex items-center gap-1">
+                    <ExternalLink className="w-3.5 h-3.5 text-blue-600" />
+                    <span>Đường dẫn Báo cáo học tập (Google Docs / Google Sheets)</span>
+                  </label>
+                  <Input
+                    type="url"
+                    placeholder="https://docs.google.com/spreadsheets/d/..."
+                    value={formData.study_report_url || ''}
+                    onChange={(e) =>
+                      setFormData({ ...formData, study_report_url: e.target.value })
+                    }
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block font-medium text-slate-700 mb-1 flex items-center gap-1">
+                      <PhoneCall className="w-3.5 h-3.5 text-blue-500" />
+                      <span>Lịch hẹn gọi</span>
+                    </label>
+                    <Input
+                      placeholder="Ví dụ: Hẹn gọi lại vào 15h thứ 6 để chốt lịch..."
+                      value={formData.callback_note || ''}
+                      onChange={(e) => setFormData({ ...formData, callback_note: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-medium text-slate-700 mb-1 flex items-center gap-1">
+                      <Flame className="w-3.5 h-3.5 text-rose-500" />
+                      <span>Điểm nóng / Vấn đề cần lưu ý</span>
+                    </label>
+                    <Input
+                      placeholder="Ví dụ: Phụ huynh muốn đổi lịch, phàn nàn phát âm..."
+                      value={formData.hot_issue_note || ''}
+                      onChange={(e) => setFormData({ ...formData, hot_issue_note: e.target.value })}
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block font-medium text-slate-700 mb-1">Ngày bàn giao</label>
+                    <Input
+                      type="date"
+                      value={formData.handed_over_at || ''}
+                      onChange={(e) =>
+                        setFormData({ ...formData, handed_over_at: e.target.value })
+                      }
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-medium text-slate-700 mb-1">
+                      Ngày tạo tài khoản
+                    </label>
+                    <Input
+                      type="date"
+                      value={formData.account_created_at || ''}
+                      onChange={(e) =>
+                        setFormData({ ...formData, account_created_at: e.target.value })
+                      }
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block font-medium text-slate-700 mb-1">
+                    Thông tin trao đổi với Học viên / Phụ huynh
+                  </label>
+                  <textarea
+                    rows={2}
+                    placeholder="Ghi nhận thông tin phản hồi, nguyện vọng học tập..."
+                    value={formData.exchange_info || ''}
+                    onChange={(e) => setFormData({ ...formData, exchange_info: e.target.value })}
+                    className="w-full text-xs p-2.5 bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-medium text-slate-700 mb-1">
+                    Chăm sóc sau kết thúc khóa học
+                  </label>
+                  <textarea
+                    rows={2}
+                    placeholder="Đánh giá kết quả cuối khóa, phương án tái tục hoặc giới thiệu..."
+                    value={formData.post_course_care || ''}
+                    onChange={(e) => setFormData({ ...formData, post_course_care: e.target.value })}
+                    className="w-full text-xs p-2.5 bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* FORM FOOTER CONTROLS */}
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-slate-200 mt-6">
+              {/* Tab Step Controls */}
+              <div className="flex items-center gap-1.5">
+                {formModalTab !== 'profile' && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      if (formModalTab === 'course') setFormModalTab('profile');
+                      else if (formModalTab === 'class') setFormModalTab('course');
+                      else if (formModalTab === 'care') setFormModalTab('class');
+                    }}
+                  >
+                    <ChevronLeft className="w-3.5 h-3.5 mr-1" />
+                    Quay lại
+                  </Button>
+                )}
+                {formModalTab !== 'care' && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      if (formModalTab === 'profile') setFormModalTab('course');
+                      else if (formModalTab === 'course') setFormModalTab('class');
+                      else if (formModalTab === 'class') setFormModalTab('care');
+                    }}
+                  >
+                    Tiếp theo
+                    <ChevronRight className="w-3.5 h-3.5 ml-1" />
+                  </Button>
+                )}
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setIsModalOpen(false)}
+                >
+                  Hủy bỏ
+                </Button>
+                <Button
+                  type="submit"
+                  variant="primary"
+                  size="sm"
+                  isLoading={submitting}
+                  className="px-5 font-bold shadow-md shadow-blue-500/20"
+                >
+                  <CheckCircle2 className="w-4 h-4 mr-1.5" />
+                  {editingStudent ? 'Cập nhật hồ sơ' : 'Lưu học viên mới'}
+                </Button>
+              </div>
             </div>
           </form>
         </Modal>

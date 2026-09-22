@@ -1,5 +1,20 @@
 # Project Changelog
 
+## 2026-09-22 — Mở Rộng Form Thêm Mới & Chỉnh Sửa Học Viên Đầy Đủ Các Cột Sheet 1 & Chuẩn Hóa Lịch Học
+
+- **Mở Rộng Form Thêm Mới & Chỉnh Sửa Học Viên (`/students`):**
+  - Mở rộng giao diện modal lên kích thước lớn (`size="2xl"`, tối đa `max-w-4xl`) chia làm 4 tab nghiệp vụ chuyên biệt:
+    1. **1. Hồ sơ & Liên hệ:** Mã học viên, Họ và tên, Giới tính, Ngày sinh, Số điện thoại, Email, Zalo UID, Nghề nghiệp, Trường học, Họ tên & SĐT Phụ huynh, Ghi chú cá nhân.
+    2. **2. Khóa học & Tài chính:** Nội dung khóa học, Trình độ (N5..N1, Kaiwa), Sale phụ trách, Trạng thái học viên, Ngày nộp học phí, Trạng thái thanh toán, Tổng số buổi, Số buổi còn lại (hỗ trợ nhập âm nợ), Mô hình lớp, Ghi chú sale.
+    3. **3. Lớp học & Lịch học:** Tên lớp học, Giáo viên phụ trách, Trạng thái gói, Ngày bắt đầu, Ngày kết thúc, cùng 3 trường lịch học chuẩn hóa (**Giờ học**, **Lịch học**, **Thời lượng**).
+    4. **4. Báo cáo & CSKH:** Đường dẫn báo cáo học tập Google Docs/Sheets, Lịch hẹn gọi CSKH, Điểm nóng/Vấn đề gấp, Ngày bàn giao, Ngày tạo tài khoản, Trao đổi với HV/PH, Chăm sóc sau khóa học.
+  - Hỗ trợ thanh điều hướng Bước (Quay lại / Tiếp theo) và tự động nạp đầy đủ dữ liệu khi mở chỉnh sửa học viên có sẵn.
+  - Backend xử lý lưu/cập nhật đồng thời qua Prisma Transaction giữa `Student`, `Enrollment`, `Class`, `ClassSchedule` và `EnrollmentClass`.
+
+- **Chuẩn Hóa Tiêu Đề Cột & Tinh Gọn Cột Lịch Học:**
+  - Quy chuẩn toàn bộ tiêu đề cột: Chỉ viết hoa chữ cái đầu và in đậm (Sentence case + bold).
+  - Tinh gọn 6 cột lịch học phức tạp thành đúng 3 cột: `Giờ học`, `Lịch học`, `Thời lượng`.
+
 ## 2026-09-22 — Chuẩn Hóa Danh Sách Học Viên Theo Đúng Cấu Trúc Sheet 1 Phân Chia 2 Tab (Học Viên & Báo Cáo Học Tập)
 
 - **Cấu Trúc 2 Tab Trên Trang Danh Sách Học Viên (`/students`):**

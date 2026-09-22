@@ -27,7 +27,8 @@ export class StudentsController {
   async create(req: Request, res: Response, next: NextFunction) {
     try {
       const validated = createStudentSchema.parse({ body: req.body });
-      const student = await studentsService.createStudent(validated.body);
+      const currentUserId = (req as any).user?.id;
+      const student = await studentsService.createStudent(validated.body, currentUserId);
       res.status(201).json({ data: student, meta: null });
     } catch (error: any) {
       if (error.name === 'ZodError') {

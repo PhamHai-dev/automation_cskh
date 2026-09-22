@@ -26,29 +26,29 @@ export class StudentsService {
     return student;
   }
 
-  async createStudent(data: CreateStudentDTO) {
+  async createStudent(data: CreateStudentDTO, currentUserId?: number) {
     // Basic duplication check
-    if (data.phone) {
-      const existing = await this.repository.findByPhone(data.phone);
+    if (data.phone && data.phone.trim().length > 0) {
+      const existing = await this.repository.findByPhone(data.phone.trim());
       if (existing) throw new CustomError('Student with this phone already exists', 409);
     }
-    if (data.email) {
-      const existing = await this.repository.findByEmail(data.email);
+    if (data.email && data.email.trim().length > 0) {
+      const existing = await this.repository.findByEmail(data.email.trim());
       if (existing) throw new CustomError('Student with this email already exists', 409);
     }
-    return this.repository.create(data);
+    return this.repository.create(data, currentUserId);
   }
 
   async updateStudent(id: number, data: UpdateStudentDTO) {
     const existing = await this.repository.findById(id);
     if (!existing) throw new CustomError('Student not found', 404);
 
-    if (data.phone && data.phone !== existing.phone) {
-      const duplicatePhone = await this.repository.findByPhone(data.phone);
+    if (data.phone && data.phone.trim().length > 0 && data.phone.trim() !== existing.phone) {
+      const duplicatePhone = await this.repository.findByPhone(data.phone.trim());
       if (duplicatePhone) throw new CustomError('Student with this phone already exists', 409);
     }
-    if (data.email && data.email !== existing.email) {
-      const duplicateEmail = await this.repository.findByEmail(data.email);
+    if (data.email && data.email.trim().length > 0 && data.email.trim() !== existing.email) {
+      const duplicateEmail = await this.repository.findByEmail(data.email.trim());
       if (duplicateEmail) throw new CustomError('Student with this email already exists', 409);
     }
 

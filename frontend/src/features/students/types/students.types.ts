@@ -20,6 +20,7 @@ export interface Student {
 }
 
 export interface CreateStudentDTO {
+  // 1. Personal & Contact (A -> I)
   external_id?: string;
   full_name: string;
   gender?: string;
@@ -32,6 +33,38 @@ export interface CreateStudentDTO {
   occupation?: string;
   zalo_uid?: string;
   note?: string;
+
+  // 2. Enrollment, Course & Finance (J -> U)
+  paid_at?: string;
+  sale_name?: string;
+  student_source_status?: string;
+  course_content?: string;
+  payment_status?: string;
+  level?: string;
+  total_sessions?: number | string;
+  external_remaining_sessions?: number | string;
+  class_model?: string;
+  sales_note?: string;
+
+  // 3. Class & Schedule (V -> AJ)
+  class_name?: string;
+  teacher_name?: string;
+  start_date?: string;
+  end_date?: string;
+  status?: string;
+  start_time?: string;
+  schedule_pattern?: string;
+  duration_minutes?: number | string;
+
+  // 4. Care & Reports (AK -> BH)
+  study_report_url?: string;
+  exchange_info?: string;
+  callback_note?: string;
+  hot_issue_note?: string;
+  post_course_care?: string;
+  handed_over_at?: string;
+  account_created_at?: string;
 }
 
 export interface UpdateStudentDTO extends Partial<CreateStudentDTO> {}
+
