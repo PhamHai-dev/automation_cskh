@@ -30,6 +30,7 @@ import { encryptJson, decryptJson } from '../../shared/crypto/aes-gcm';
 import { withProxy } from './proxy-util';
 import type { ZaloSessionData } from './types/zalo.types';
 import { PoolAccountStatus } from './types/zalo.types';
+import { writeTransition } from './status-log-service';
 
 const log = createLogger('ZaloPool');
 
@@ -104,12 +105,31 @@ class ZaloAccountPool extends EventEmitter {
 
     log.info('loginQR start', { accountId });
 
+    // F5: Reset circuit breaker — user is manually re-login, old breaker shouldn't block.
+    this.disconnectHistory.delete(`dc_${accountId}`);
+
     // Clean up any stale instance
     this.teardownExisting(accountId);
     this.reconnecting.delete(accountId);
 
     const epoch = this.nextEpoch();
-    const zalo = new ZaloClass({ logging: false, selfListen: true });
+    const zalo = new ZaloClass({
+      logging: false,
+      selfListen: true,
+      // F8: image metadata getter for send-image dimensions
+      imageMetadataGetter: async (filePath: string) => {
+        try {
+          const { readFile } = await import('fs/promises');
+          const { imageSize } = await import('image-size');
+          const data = await readFile(filePath);
+          const info = imageSize(data);
+          if (!info.width || !info.height) throw new Error(`Cannot read image size: ${filePath}`);
+          return { width: info.width, height: info.height, size: data.length };
+        } catch {
+          return { width: 0, height: 0, size: 0 };
+        }
+      },
+    });
     this.instances.set(accountId, {
       zalo, api: null, status: 'qr_pending', csId, lastActivity: new Date(), epoch,
     });
@@ -160,6 +180,9 @@ class ZaloAccountPool extends EventEmitter {
         instance.status = 'connected';
         instance.lastActivity = new Date();
 
+        // F6: Write status log transition for uptime tracking
+        writeTransition({ accountId, status: 'connected', reason: 'login' }).catch(() => {});
+
         api.getOwnId().then((ownId: string) => {
           instance.zaloUid = ownId;
           this.updateAccountDB(accountId, 'connected', ownId);
@@ -209,7 +232,22 @@ class ZaloAccountPool extends EventEmitter {
       // Teardown existing + fresh epoch
       this.teardownExisting(accountId);
       const epoch = this.nextEpoch();
-      const zalo = new ZaloClass({ logging: false, selfListen: true });
+      const zalo = new ZaloClass({
+        logging: false,
+        selfListen: true,
+        imageMetadataGetter: async (filePath: string) => {
+          try {
+            const { readFile } = await import('fs/promises');
+            const { imageSize } = await import('image-size');
+            const data = await readFile(filePath);
+            const info = imageSize(data);
+            if (!info.width || !info.height) throw new Error(`Cannot read image size: ${filePath}`);
+            return { width: info.width, height: info.height, size: data.length };
+          } catch {
+            return { width: 0, height: 0, size: 0 };
+          }
+        },
+      });
       this.instances.set(accountId, {
         zalo, api: null, status: 'connecting', csId: 0, lastActivity: new Date(), epoch,
       });
@@ -304,6 +342,8 @@ class ZaloAccountPool extends EventEmitter {
       if (cur) cur.status = 'disconnected';
       this.updateAccountDB(accountId, 'disconnected', null);
       this.emitEvent({ type: 'session:disconnected', accountId });
+      // F6: Write status log transition
+      writeTransition({ accountId, status: 'disconnected', reason: 'disconnect' }).catch(() => {});
 
       // Circuit breaker (ZaloCRM pattern)
       const now = Date.now();
@@ -317,6 +357,8 @@ class ZaloAccountPool extends EventEmitter {
         this.updateAccountDB(accountId, 'qr_pending', null);
         this.disconnectHistory.delete(key);
         this.emitEvent({ type: 'error', accountId, error: 'Session unstable — QR re-login required' });
+        // F6: Write status log for auth_fail
+        writeTransition({ accountId, status: 'qr_pending', reason: 'session_expired' }).catch(() => {});
         return;
       }
 

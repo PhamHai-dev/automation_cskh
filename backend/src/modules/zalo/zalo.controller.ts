@@ -50,8 +50,50 @@ export class ZaloController {
   async removeAccount(req: Request, res: Response, next: NextFunction) {
     try {
       const id = parseInt(req.params.id, 10);
-      const account = await zaloService.removeAccount(id);
+      // Soft-delete: giữ session data để revive
+      const account = await zaloService.removeAccount(id, req.user?.id);
+      res.status(204).json();
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // ─── Lifecycle: Restore / Archived / Purge / Reconnect ───────────────
+
+  async restoreAccount(req: Request, res: Response, next: NextFunction) {
+    try {
+      const id = parseInt(req.params.id, 10);
+      const account = await zaloService.restoreAccount(id);
       res.json({ data: account, meta: null });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async listArchivedAccounts(req: Request, res: Response, next: NextFunction) {
+    try {
+      const accounts = await zaloService.getArchivedAccounts(req.user!.id);
+      res.json({ data: accounts, meta: null });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async purgeEmptyAccount(req: Request, res: Response, next: NextFunction) {
+    try {
+      const id = parseInt(req.params.id, 10);
+      const result = await zaloService.purgeEmptyAccount(id);
+      res.json({ data: result, meta: null });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async reconnectAccount(req: Request, res: Response, next: NextFunction) {
+    try {
+      const id = parseInt(req.params.id, 10);
+      const result = await zaloService.reconnectAccount(id);
+      res.json({ data: result, meta: null });
     } catch (error) {
       next(error);
     }

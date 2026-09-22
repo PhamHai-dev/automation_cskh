@@ -4,12 +4,18 @@ import { createLogger } from './shared/logger/logger';
 import { zaloPool } from './modules/zalo/zalo-pool';
 import { wirePoolEvents } from './modules/zalo/zalo-listener-factory';
 import { closeRedis } from './shared/queue/redis-connection';
+import { setupIo, closeIo } from './shared/realtime/socket-singleton';
+import { registerZaloSocketHandlers } from './modules/zalo/zalo-socket';
 
 const log = createLogger('Server');
 
 const PORT = parseInt(env.PORT, 10);
 
 const server = app.listen(PORT, async () => {
+  // Setup Socket.IO server + register Zalo real-time handlers
+  const io = setupIo(server);
+  registerZaloSocketHandlers(io);
+
   // Wire listener-factory to pool events FIRST (message/friend/group routing).
   // Must run before init(): reconnectAll() emits session:connected synchronously
   // during boot, and a late subscription would miss those events.
@@ -49,6 +55,16 @@ async function shutdown(signal: string): Promise<void> {
     log.info('Zalo pool shut down');
   } catch (err) {
     log.error('Zalo pool shutdown error', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+
+  // Close Socket.IO
+  try {
+    await closeIo();
+    log.info('Socket.IO closed');
+  } catch (err) {
+    log.error('Socket.IO close error', {
       error: err instanceof Error ? err.message : String(err),
     });
   }
