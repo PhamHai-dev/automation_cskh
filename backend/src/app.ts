@@ -15,6 +15,7 @@ import { attendanceRouter } from './modules/attendance/attendance.routes';
 import { importsRouter } from './modules/imports/imports.routes';
 import { careRouter } from './modules/care/care.routes';
 import { dashboardRouter } from './modules/dashboard/dashboard.routes';
+import { zaloRouter } from './modules/zalo/zalo.routes';
 
 const app: Express = express();
 
@@ -46,6 +47,7 @@ app.use('/api/v1/classes/:classId/sessions/:sessionId/attendance', attendanceRou
 app.use('/api/v1/imports', importsRouter);
 app.use('/api/v1', careRouter);
 app.use('/api/v1/dashboard', dashboardRouter);
+app.use('/api/v1/zalo', zaloRouter);
 
 // Error handling
 app.use(errorMiddleware);

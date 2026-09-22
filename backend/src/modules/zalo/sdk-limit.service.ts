@@ -1,0 +1,101 @@
+/**
+ * sdk-limit.service.ts — DB-backed SDK rate limit configuration.
+ *
+ * Ported from ZaloCRM sdk-limit-service.ts → single-org, Int IDs.
+ * Adaptation notes:
+ *   ZaloCRM (multi-tenant): orgId + zaloAccountId nullable (nick override → org default → fallback).
+ *   Here (single-org): zalo_account_id nullable (nick override → global default → fallback).
+ *   No orgId / nickOrgCache needed.
+ *
+ * Resolution priority:
+ *   1. Nick-specific override (where zalo_account_id = nickId)
+ *   2. Global default (where zalo_account_id = null)
+ *   3. Hardcoded fallback (DEFAULT_SDK_LIMITS)
+ */
+
+import { prisma } from '../../prisma/client';
+import { createLogger } from '../../shared/logger/logger';
+import type { OpCategory } from './zalo-operations';
+
+const log = createLogger('SdkLimit');
+
+export interface CategoryLimit {
+  daily: number;
+  burst: number;
+  burstWindowMs: number;
+}
+
+// Fallback constants — last resort if DB has no row for category
+export const DEFAULT_SDK_LIMITS: Record<OpCategory, CategoryLimit> = {
+  message:       { daily: 200,  burst: 20, burstWindowMs: 30_000 },
+  reaction:      { daily: 300,  burst: 10, burstWindowMs: 30_000 },
+  chat_action:   { daily: 500,  burst: 15, burstWindowMs: 30_000 },
+  group_admin:   { daily: 50,   burst: 5,  burstWindowMs: 60_000 },
+  group_read:    { daily: 1000, burst: 20, burstWindowMs: 30_000 },
+  friend_action: { daily: 30,   burst: 8,  burstWindowMs: 60_000 },
+  friend_read:   { daily: 500,  burst: 10, burstWindowMs: 30_000 },
+  profile:       { daily: 10,   burst: 3,  burstWindowMs: 60_000 },
+  query:         { daily: 2000, burst: 30, burstWindowMs: 30_000 },
+  friend_lookup: { daily: 1000, burst: 15, burstWindowMs: 30_000 },
+  contact_sync:  { daily: 100,  burst: 5,  burstWindowMs: 60_000 },
+};
+
+export const ALL_CATEGORIES = Object.keys(DEFAULT_SDK_LIMITS) as OpCategory[];
+
+// ── Cache: 60s TTL ───────────────────────────────────────────────────────────
+interface CacheEntry { limit: CategoryLimit; expiresAt: number; }
+const cache = new Map<string, CacheEntry>();
+const CACHE_TTL_MS = 60_000;
+
+function cacheKey(nickId: number, category: string): string {
+  return `${nickId}:${category}`;
+}
+
+/**
+ * Effective limit for a nick + category: nick override → global default → fallback.
+ */
+export async function getEffectiveLimit(nickId: number, category: OpCategory): Promise<CategoryLimit> {
+  const fallback = DEFAULT_SDK_LIMITS[category] ?? DEFAULT_SDK_LIMITS.message;
+
+  try {
+    const ck = cacheKey(nickId, category);
+    const hit = cache.get(ck);
+    if (hit && hit.expiresAt > Date.now()) return hit.limit;
+
+    // Single query: fetch both nick override and global default for this category
+    const rows = await prisma.sdkLimit.findMany({
+      where: {
+        category,
+        OR: [{ zalo_account_id: nickId }, { zalo_account_id: null }],
+      },
+      select: { zalo_account_id: true, daily_limit: true, burst_limit: true, burst_window_ms: true },
+    });
+
+    const nickRow = rows.find((r) => r.zalo_account_id === nickId);
+    const globalRow = rows.find((r) => r.zalo_account_id === null);
+    const chosen = nickRow ?? globalRow;
+    const limit: CategoryLimit = chosen
+      ? { daily: chosen.daily_limit, burst: chosen.burst_limit, burstWindowMs: chosen.burst_window_ms }
+      : fallback;
+
+    cache.set(ck, { limit, expiresAt: Date.now() + CACHE_TTL_MS });
+    return limit;
+  } catch (err) {
+    log.warn('getEffectiveLimit failed', { nickId, category, error: String(err) });
+    return fallback;
+  }
+}
+
+/**
+ * Invalidate cache for a nick (called when admin edits limits).
+ * If nickId omitted, clears entire cache.
+ */
+export function invalidateLimitCache(nickId?: number): void {
+  if (nickId == null) {
+    cache.clear();
+    return;
+  }
+  for (const k of cache.keys()) {
+    if (k.startsWith(`${nickId}:`)) cache.delete(k);
+  }
+}

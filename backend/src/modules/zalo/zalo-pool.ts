@@ -1,0 +1,558 @@
+/**
+ * ZaloAccountPool — singleton managing live Zalo SDK instances.
+ *
+ * Ported from ZaloCRM zalo-pool.ts → single-org, Int IDs.
+ *
+ * Adaptations from ZaloCRM:
+ *   - No orgId/ownerUserId → uses cs_id (Int), single-org
+ *   - No runSystemQuery (no multi-tenant cross-org sweep)
+ *   - No status-log-service (Chặng 2)
+ *   - No message-sync, friend-sync, webhook, backfill (Chặng 2)
+ *   - No sticky-hold (CRM-specific)
+ *   - encrypted_session_data (AES-GCM) instead of raw ZaloCredentials.cookie
+ *   - zca-js loaded via dynamic import (no createRequire ESM hack needed here)
+ *
+ * Core stability features KEPT from ZaloCRM:
+ *   - Epoch guard (anti-flap: stale listener events ignored)
+ *   - Circuit breaker (5 disconnects in 5min → stop auto-reconnect)
+ *   - teardownExisting (clean old WS/listener before creating new)
+ *   - cleanupStaleGhosts (hourly cron hides ghost qr_pending > 24h)
+ *   - reconnect() eligibility guard (skip archived/ghost/manual-disconnect)
+ *   - reconnect() uid verification (session must match existing zaloUid)
+ *   - in-flight guard (prevent duplicate concurrent reconnects)
+ */
+
+import { EventEmitter } from 'events';
+import { Prisma } from '@prisma/client';
+import { prisma } from '../../prisma/client';
+import { createLogger } from '../../shared/logger/logger';
+import { encryptJson, decryptJson } from '../../shared/crypto/aes-gcm';
+import { withProxy } from './proxy-util';
+import type { ZaloSessionData } from './types/zalo.types';
+import { PoolAccountStatus } from './types/zalo.types';
+
+const log = createLogger('ZaloPool');
+
+// ── zca-js lazy require (CJS) ─────────────────────────────────────────────────
+let ZaloClass: any = null;
+try {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const zca = require('zca-js');
+  ZaloClass = zca.Zalo ?? zca.default?.Zalo ?? null;
+} catch {
+  log.warn('zca-js not available — running in degraded mode (no QR login/reconnect)');
+}
+
+// ── Types ────────────────────────────────────────────────────────────────────
+interface ZaloInstance {
+  zalo: any;
+  api: any;
+  status: 'connected' | 'disconnected' | 'qr_pending' | 'connecting';
+  displayName?: string;
+  zaloUid?: string;
+  csId: number;
+  lastActivity: Date;
+  epoch: number;
+}
+
+export type PoolEvent =
+  | { type: 'qr:generated'; accountId: number; data: { qr: string } }
+  | { type: 'qr:scanned'; accountId: number }
+  | { type: 'qr:expired'; accountId: number }
+  | { type: 'qr:session-dead'; accountId: number }
+  | { type: 'session:connected'; accountId: number }
+  | { type: 'session:disconnected'; accountId: number }
+  | { type: 'session:expired'; accountId: number }
+  | { type: 'error'; accountId: number; error: string };
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+function mapToLogStatus(status: string): 'connected' | 'disconnected' | 'qr_pending' | null {
+  if (status === 'connected') return 'connected';
+  if (status === 'disconnected') return 'disconnected';
+  if (status === 'qr_pending') return 'qr_pending';
+  return null;
+}
+
+// ── Main class ───────────────────────────────────────────────────────────────
+class ZaloAccountPool extends EventEmitter {
+  private instances = new Map<number, ZaloInstance>();
+  private disconnectHistory = new Map<string, number[]>();
+  private reconnecting = new Set<number>();
+  private epochCounter = 0;
+
+  // ── Epoch guard (anti-flap) ──────────────────────────────────────────────
+  private nextEpoch(): number {
+    return ++this.epochCounter;
+  }
+
+  private isCurrentEpoch(accountId: number, epoch: number): boolean {
+    return this.instances.get(accountId)?.epoch === epoch;
+  }
+
+  // ── Teardown existing instance ───────────────────────────────────────────
+  // Dọn listener/WS cũ trước khi tạo instance mới (Fix flap ZaloCRM 2026-06-06)
+  private teardownExisting(accountId: number): void {
+    const prev = this.instances.get(accountId);
+    if (prev?.api?.listener) {
+      try { prev.api.listener.stop(); } catch { /* ignore */ }
+    }
+  }
+
+  // ── QR Login ─────────────────────────────────────────────────────────────
+  async loginQR(accountId: number, csId: number): Promise<{ qrImage: string }> {
+    if (!ZaloClass) throw new Error('zca-js not available');
+
+    log.info('loginQR start', { accountId });
+
+    // Clean up any stale instance
+    this.teardownExisting(accountId);
+    this.reconnecting.delete(accountId);
+
+    const epoch = this.nextEpoch();
+    const zalo = new ZaloClass({ logging: false, selfListen: true });
+    this.instances.set(accountId, {
+      zalo, api: null, status: 'qr_pending', csId, lastActivity: new Date(), epoch,
+    });
+
+    const MAX_QR_RETRY = 3;
+    let qrExpiredCount = 0;
+
+    return new Promise((resolve, reject) => {
+      const isCurrentEpoch = () => this.instances.get(accountId)?.epoch === epoch;
+
+      zalo.loginQR({}, (event: any) => {
+        if (!isCurrentEpoch()) return;
+
+        switch (event.type) {
+          case 0: // QRCodeGenerated
+            log.info('QR code generated', { accountId });
+            this.emitEvent({ type: 'qr:generated', accountId, data: { qr: event.data.image } });
+            break;
+          case 1: // QRCodeExpired
+            qrExpiredCount++;
+            if (qrExpiredCount >= MAX_QR_RETRY) {
+              log.info('QR expired max retries', { accountId });
+              this.emitEvent({ type: 'qr:session-dead', accountId });
+              this.teardownExisting(accountId);
+              reject(new Error('QR expired after max retries'));
+              return;
+            }
+            this.emitEvent({ type: 'qr:expired', accountId });
+            event.actions?.retry();
+            break;
+          case 2: // QRCodeScanned
+            log.info('QR scanned', { accountId });
+            this.emitEvent({ type: 'qr:scanned', accountId });
+            break;
+          case 4: // GotLoginInfo
+            this.saveSession(accountId, event.data);
+            break;
+        }
+      }).then((api: any) => {
+        if (!isCurrentEpoch()) {
+          log.warn('loginQR resolved but epoch changed', { accountId });
+          try { api?.listener?.stop?.(); } catch { /* ignore */ }
+          return;
+        }
+
+        const instance = this.instances.get(accountId)!;
+        instance.api = api;
+        instance.status = 'connected';
+        instance.lastActivity = new Date();
+
+        api.getOwnId().then((ownId: string) => {
+          instance.zaloUid = ownId;
+          this.updateAccountDB(accountId, 'connected', ownId);
+          this.emitEvent({ type: 'session:connected', accountId });
+          log.info('Login completed', { accountId, zaloUid: ownId });
+        }).catch((err: any) => {
+          log.error('getOwnId failed after login', { accountId, error: String(err) });
+          instance.status = 'disconnected';
+          this.emitEvent({ type: 'error', accountId, error: String(err) });
+        });
+      }).catch((err: any) => {
+        const instance = this.instances.get(accountId);
+        if (instance) instance.status = 'disconnected';
+        this.emitEvent({ type: 'error', accountId, error: String(err) });
+        if (isCurrentEpoch()) reject(err);
+      });
+    });
+  }
+
+  // ── Reconnect ────────────────────────────────────────────────────────────
+  // Ported from ZaloCRM reconnect() with eligibility guard, epoch, uid verify.
+  async reconnect(accountId: number, encryptedSession: string | null): Promise<void> {
+    if (!ZaloClass || !encryptedSession) return;
+
+    // Eligibility guard (ZaloCRM FIX 2 nick-ghost)
+    const eligibility = await prisma.zaloAccount.findUnique({
+      where: { id: accountId },
+      select: { zalo_uid: true, archived_at: true, disconnect_reason: true },
+    });
+    if (!eligibility || eligibility.zalo_uid === null || eligibility.archived_at !== null) {
+      log.info('reconnect skip — ghost/archived', { accountId });
+      return;
+    }
+    if (eligibility.disconnect_reason === 'manual') {
+      log.info('reconnect skip — manual disconnect', { accountId });
+      return;
+    }
+
+    // In-flight guard
+    if (this.reconnecting.has(accountId)) {
+      log.info('reconnect skip — already in-flight', { accountId });
+      return;
+    }
+    this.reconnecting.add(accountId);
+
+    try {
+      // Teardown existing + fresh epoch
+      this.teardownExisting(accountId);
+      const epoch = this.nextEpoch();
+      const zalo = new ZaloClass({ logging: false, selfListen: true });
+      this.instances.set(accountId, {
+        zalo, api: null, status: 'connecting', csId: 0, lastActivity: new Date(), epoch,
+      });
+
+      // Decrypt stored session
+      const session = decryptJson<ZaloSessionData>(encryptedSession);
+
+      const api: any = await withProxy(null, () => zalo.login({
+        cookie: session.cookies,
+        imei: session.imei,
+        userAgent: session.userAgent,
+      }));
+
+      const instance = this.instances.get(accountId)!;
+      if (instance.epoch !== epoch) {
+        log.warn('reconnect superseded during login', { accountId });
+        try { api?.listener?.stop?.(); } catch { /* ignore */ }
+        return;
+      }
+
+      instance.api = api;
+      instance.status = 'connected';
+      instance.lastActivity = new Date();
+
+      const ownId: string = await api.getOwnId();
+
+      // UID verification (ZaloCRM FIX #4b)
+      if (eligibility.zalo_uid && ownId && ownId !== eligibility.zalo_uid) {
+        log.error('reconnect uid mismatch', {
+          accountId, expected: eligibility.zalo_uid, got: ownId,
+        });
+        this.teardownExisting(accountId);
+        instance.status = 'disconnected';
+        this.updateAccountDB(accountId, 'qr_pending', null);
+        return;
+      }
+
+      instance.zaloUid = ownId;
+      this.attachListeners(accountId, api, epoch);
+      this.updateAccountDB(accountId, 'connected', ownId);
+      this.emitEvent({ type: 'session:connected', accountId });
+      log.info('Reconnected', { accountId, zaloUid: ownId });
+    } catch (err) {
+      const instance = this.instances.get(accountId);
+      if (instance) instance.status = 'disconnected';
+      this.updateAccountDB(accountId, 'qr_pending', null);
+      this.emitEvent({ type: 'error', accountId, error: String(err) });
+    } finally {
+      this.reconnecting.delete(accountId);
+    }
+  }
+
+  // ── Auto-reconnect (with epoch guard) ────────────────────────────────────
+  private async autoReconnect(accountId: number, expectedEpoch?: number): Promise<void> {
+    const inst = this.instances.get(accountId);
+    if (inst?.status === 'connected') return;
+    if (expectedEpoch !== undefined && inst && inst.epoch !== expectedEpoch) {
+      log.info('autoReconnect skip — superseded', { accountId });
+      return;
+    }
+    if (inst?.status === 'qr_pending') return;
+    if (inst?.status === 'connecting') return;
+
+    try {
+      const account = await prisma.zaloAccount.findUnique({
+        where: { id: accountId },
+        select: { encrypted_session_data: true, proxy_url: true, disconnect_reason: true },
+      });
+      if (account?.disconnect_reason === 'manual') return;
+      if (account?.encrypted_session_data) {
+        log.info('Auto-reconnecting', { accountId });
+        await this.reconnect(accountId, account.encrypted_session_data);
+      }
+    } catch (err) {
+      log.error('Auto-reconnect failed', { accountId, error: String(err) });
+      setTimeout(() => this.autoReconnect(accountId), 120_000);
+    }
+  }
+
+  // ── Listeners ────────────────────────────────────────────────────────────
+  private attachListeners(accountId: number, api: any, epoch: number): void {
+    const listener = api.listener ?? api;
+    if (!listener?.on) return;
+
+    // Disconnect handler with epoch guard + circuit breaker
+    const handleDisconnect = () => {
+      const cur = this.instances.get(accountId);
+      if (cur && cur.epoch !== epoch) {
+        log.info('Ignoring stale closed from superseded listener', { accountId });
+        return;
+      }
+      if (cur) cur.status = 'disconnected';
+      this.updateAccountDB(accountId, 'disconnected', null);
+      this.emitEvent({ type: 'session:disconnected', accountId });
+
+      // Circuit breaker (ZaloCRM pattern)
+      const now = Date.now();
+      const key = `dc_${accountId}`;
+      const history = (this.disconnectHistory.get(key) || []).filter((t) => now - t < 5 * 60_000);
+      history.push(now);
+      this.disconnectHistory.set(key, history);
+
+      if (history.length >= 5) {
+        log.error('Circuit breaker tripped', { accountId, count: history.length });
+        this.updateAccountDB(accountId, 'qr_pending', null);
+        this.disconnectHistory.delete(key);
+        this.emitEvent({ type: 'error', accountId, error: 'Session unstable — QR re-login required' });
+        return;
+      }
+
+      // Normal auto-reconnect after 30s
+      setTimeout(() => this.autoReconnect(accountId, epoch), 30_000);
+    };
+
+    try { listener.on('closed', handleDisconnect); } catch { /* skip */ }
+
+    // Message events (for downstream consumers)
+    const handleMessage = (payload: any) => {
+      const cur = this.instances.get(accountId);
+      if (cur && cur.epoch !== epoch) return;
+      this.emit('message', { accountId, payload });
+    };
+    for (const evt of ['message', 'onMessage', 'newMessage']) {
+      try { listener.on(evt, handleMessage); } catch { /* skip */ }
+    }
+  }
+
+  // ── DB updates ───────────────────────────────────────────────────────────
+  private async updateAccountDB(
+    accountId: number,
+    status: string,
+    zaloUid: string | null,
+  ): Promise<void> {
+    try {
+      // Release zaloUid from archived ghosts (ZaloCRM FIX 0)
+      if (zaloUid !== null) {
+        await prisma.zaloAccount.updateMany({
+          where: {
+            zalo_uid: zaloUid,
+            id: { not: accountId },
+            archived_at: { not: null },
+          },
+          data: { zalo_uid: null },
+        });
+      }
+
+      await prisma.zaloAccount.update({
+        where: { id: accountId },
+        data: {
+          status: status as any,
+          ...(zaloUid !== null ? { zalo_uid: zaloUid } : {}),
+          ...(status === 'connected' ? {
+            last_connected_at: new Date(),
+            disconnect_reason: null,
+            disconnected_at: null,
+            archived_at: null,
+          } : {}),
+          ...(status === 'disconnected' ? {
+            disconnected_at: new Date(),
+          } : {}),
+          ...(status === 'qr_pending' ? {
+            encrypted_session_data: null,
+          } : {}),
+        },
+      });
+    } catch (err) {
+      if ((err as any)?.code === 'P2002') {
+        const target = (err as any)?.meta?.target ?? [];
+        if (Array.isArray(target) && target.some((t: string) => t.includes('zalo_uid'))) {
+          log.warn('Duplicate zalo_uid', { accountId, zaloUid });
+        }
+      } else {
+        log.error('updateAccountDB error', { accountId, error: String(err) });
+      }
+    }
+  }
+
+  // ── Session persistence ──────────────────────────────────────────────────
+  private saveSession(accountId: number, loginData: any): void {
+    try {
+      const sessionData: ZaloSessionData = {
+        cookies: loginData.cookie,
+        imei: loginData.imei,
+        userAgent: loginData.userAgent,
+      };
+      const encrypted = encryptJson(sessionData);
+      prisma.zaloAccount.update({
+        where: { id: accountId },
+        data: {
+          encrypted_session_data: encrypted,
+          status: 'ACTIVE',
+          last_connected_at: new Date(),
+          last_login_at: new Date(),
+        },
+      }).catch((err) => log.error('saveSession error', { accountId, error: String(err) }));
+    } catch (err) {
+      log.error('saveSession encryption failed', { accountId, error: String(err) });
+    }
+  }
+
+  // ── Public API (preserved for zalo.service.ts, zalo-health-check.ts) ────
+  disconnect(accountId: number): void {
+    const instance = this.instances.get(accountId);
+    if (instance?.api?.listener) {
+      try { instance.api.listener.stop(); } catch { /* ignore */ }
+    }
+    this.instances.delete(accountId);
+    log.info('Disconnected', { accountId });
+  }
+
+  getStatus(accountId: number): string {
+    return this.instances.get(accountId)?.status ?? 'disconnected';
+  }
+
+  getApi(accountId: number): any | null {
+    const inst = this.instances.get(accountId);
+    return inst?.status === 'connected' ? inst.api : null;
+  }
+
+  getInstance(accountId: number): ZaloInstance | undefined {
+    return this.instances.get(accountId);
+  }
+
+  getAllStatuses(): Record<number, string> {
+    const statuses: Record<number, string> = {};
+    for (const [id, inst] of this.instances) statuses[id] = inst.status;
+    return statuses;
+  }
+
+  // ── Cleanup stale ghosts (hourly cron) ───────────────────────────────────
+  // Ported from ZaloCRM cleanupStaleGhosts — hides ghost qr_pending > staleMinutes
+  async cleanupStaleGhosts(staleMinutes = 24 * 60): Promise<number> {
+    const cutoff = new Date(Date.now() - staleMinutes * 60_000);
+    try {
+      const ghosts = await prisma.zaloAccount.findMany({
+        where: {
+          zalo_uid: null,
+          archived_at: null,
+          last_connected_at: null,
+          status: { in: ['QR_PENDING', 'NOT_LOGGED_IN'] as any },
+          created_at: { lt: cutoff },
+        },
+        select: { id: true },
+      });
+      if (ghosts.length === 0) return 0;
+      const ids = ghosts.map((g) => g.id);
+      for (const id of ids) {
+        try { this.disconnect(id); } catch { /* best-effort */ }
+      }
+      await prisma.zaloAccount.updateMany({
+        where: { id: { in: ids } },
+        data: { archived_at: new Date(), status: 'NOT_LOGGED_IN', encrypted_session_data: null },
+      });
+      log.info('Cleaned up stale ghosts', { count: ids.length, staleMinutes });
+      return ids.length;
+    } catch (err) {
+      log.error('cleanupStaleGhosts error', { error: String(err) });
+      return 0;
+    }
+  }
+
+  // ── Reconnect all accounts (boot) ────────────────────────────────────────
+  async reconnectAll(): Promise<void> {
+    const accounts = await prisma.zaloAccount.findMany({
+      where: {
+        encrypted_session_data: { not: null },
+        archived_at: null,
+        zalo_uid: { not: null },
+        NOT: { disconnect_reason: 'manual' },
+      },
+      select: { id: true, encrypted_session_data: true, cs_id: true, display_name: true },
+    });
+
+    log.info('Reconnecting accounts on boot', { count: accounts.length });
+    for (const acc of accounts) {
+      try {
+        await this.reconnect(acc.id, acc.encrypted_session_data);
+      } catch (err) {
+        log.error('Boot reconnect failed', { accountId: acc.id, error: String(err) });
+      }
+    }
+  }
+
+  // ── Event emitter ────────────────────────────────────────────────────────
+  private emitEvent(event: PoolEvent): void {
+    this.emit(event.type, event);
+    this.emit('pool:event', event);
+  }
+
+  // ── Adapter methods (backward compat for service/server/listener-factory) ──
+  /** Alias for reconnectAll() — called by server.ts on boot */
+  async init(): Promise<void> {
+    await this.reconnectAll();
+  }
+
+  /** Return IDs of all connected accounts — used by server.ts logging */
+  getActiveAccountIds(): number[] {
+    const ids: number[] = [];
+    for (const [id, inst] of this.instances) {
+      if (inst.status === 'connected') ids.push(id);
+    }
+    return ids;
+  }
+
+  /** Alias for getApi() — used by zalo-listener-factory.ts and service */
+  getAccountClient(accountId: number): any | null {
+    return this.getApi(accountId);
+  }
+
+  /** Return pool status array for zalo.service.getPoolStatus() */
+  getPoolStatus(): Array<{ accountId: number; status: string; csId: number }> {
+    const result: Array<{ accountId: number; status: string; csId: number }> = [];
+    for (const [id, inst] of this.instances) {
+      result.push({ accountId: id, status: inst.status, csId: inst.csId });
+    }
+    return result;
+  }
+
+  /** Alias for loginQR() — used by zalo.service.generateQr() */
+  async generateQr(accountId: number, csId: number): Promise<{ qrDataUrl: string }> {
+    const result = await this.loginQR(accountId, csId);
+    return { qrDataUrl: result.qrImage };
+  }
+
+  /** Complete QR login — store session from QR scan result */
+  async completeQrLogin(accountId: number, sessionData: any): Promise<void> {
+    const inst = this.instances.get(accountId);
+    if (inst) {
+      inst.api = sessionData;
+      inst.status = 'connected';
+      inst.lastActivity = new Date();
+    }
+  }
+
+  // ── Shutdown ─────────────────────────────────────────────────────────────
+  async shutdown(): Promise<void> {
+    for (const [id] of this.instances) {
+      this.disconnect(id);
+    }
+    this.instances.clear();
+    log.info('Pool shut down');
+  }
+}
+
+/** Singleton instance */
+export const zaloPool = new ZaloAccountPool();
