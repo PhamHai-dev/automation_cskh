@@ -204,6 +204,11 @@ model Enrollment {
   total_sessions              Int
   class_model                 String?
   sales_note                  String?          @db.Text
+  study_report_url            String?
+  exchange_info               String?          @db.Text
+  callback_note               String?          @db.Text
+  hot_issue_note              String?          @db.Text
+  post_course_care            String?          @db.Text
   start_date                  DateTime?        @db.Date
   end_date                    DateTime?        @db.Date
   status                      EnrollmentStatus @default(NOT_STARTED)
@@ -707,6 +712,16 @@ model CareTask {
   @@map("care_tasks")
 }
 
+model CareMilestoneConfig {
+  id             Int      @id @default(autoincrement())
+  session_number Int      @unique
+  display_order  Int      @default(0)
+  created_by_id  Int?
+  created_at     DateTime @default(now())
+
+  @@map("care_milestone_configs")
+}
+
 enum ImportType {
   WORKBOOK
   STUDENT_ENROLLMENT
@@ -824,7 +839,7 @@ model ImportCreateRequest {
   reviewed_by  User?       @relation("ImportCreateRequestReviewer", fields: [reviewed_by_id], references: [id])
   assigned_cs  User?       @relation("ImportCreateRequestAssignee", fields: [assigned_cs_id], references: [id])
 
-  @@unique([import_batch_id, external_id, package_code])
+  @@unique([import_batch_id, external_id, package_code], map: "import_create_requests_batch_ext_pkg_key")
   @@index([external_id, package_code])
   @@index([status, created_at])
   @@index([requested_by_id, status])

@@ -32,3 +32,26 @@ export const updateCareTaskSchema = z.object({
     status: z.nativeEnum(CareTaskStatus).optional(),
   }),
 });
+
+export const createMilestoneSchema = z.object({
+  body: z.object({
+    session_number: z.number().int().positive(),
+  }),
+});
+
+export const updateEnrollmentCareSchema = z.object({
+  body: z.object({
+    study_report_url: z.string().nullable().optional(),
+    exchange_info: z.string().nullable().optional(),
+    callback_note: z.string().nullable().optional(),
+    hot_issue_note: z.string().nullable().optional(),
+    post_course_care: z.string().nullable().optional(),
+  }),
+});
+
+export const saveSessionCareLogSchema = z.object({
+  body: z.object({
+    content: z.string(),
+    outcome: z.nativeEnum(CareLogOutcome).optional(),
+  }),
+});

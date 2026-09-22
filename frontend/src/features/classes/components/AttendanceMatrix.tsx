@@ -615,7 +615,7 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
         <table className="w-full text-xs text-left border-collapse">
           {/* Header Row */}
           <thead>
-            <tr className="bg-surface-muted/80 text-text-secondary border-b border-border/80 text-[11px] font-bold uppercase tracking-wider">
+            <tr className="bg-surface-muted/80 text-text-secondary border-b border-border/80 text-[11px] font-bold">
               {/* Checkbox Column */}
               <th className="px-2 py-3 border-r border-border/60 sticky left-0 bg-slate-100 z-20 w-10 min-w-[40px] max-w-[40px] text-center">
                 <input

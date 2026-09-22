@@ -222,4 +222,85 @@ export class CareRepository {
       },
     });
   }
+
+  // --- CareMilestoneConfig Methods ---
+
+  async findMilestones() {
+    const list = await this.db.careMilestoneConfig.findMany({
+      orderBy: { session_number: 'asc' },
+    });
+    if (list.length === 0) {
+      const defaultOne = await this.db.careMilestoneConfig.create({
+        data: { session_number: 1, display_order: 1 },
+      });
+      return [defaultOne];
+    }
+    return list;
+  }
+
+  async createMilestone(sessionNumber: number, userId?: number) {
+    return this.db.careMilestoneConfig.upsert({
+      where: { session_number: sessionNumber },
+      update: {},
+      create: {
+        session_number: sessionNumber,
+        display_order: sessionNumber,
+        created_by_id: userId,
+      },
+    });
+  }
+
+  // --- Session CareLog Upsert ---
+
+  async upsertCareLogBySession(data: {
+    enrollment_id: number;
+    after_session_number: number;
+    content: string;
+    outcome?: CareLogOutcome;
+    userId: number;
+    csId: number;
+  }): Promise<CareLog> {
+    const existing = await this.db.careLog.findFirst({
+      where: {
+        enrollment_id: data.enrollment_id,
+        after_session_number: data.after_session_number,
+      },
+    });
+
+    if (existing) {
+      return this.db.careLog.update({
+        where: { id: existing.id },
+        data: {
+          content: data.content,
+          ...(data.outcome ? { outcome: data.outcome } : {}),
+        },
+        include: {
+          cs: { select: { id: true, name: true, email: true } },
+        },
+      });
+    }
+
+    return this.db.careLog.create({
+      data: {
+        enrollment_id: data.enrollment_id,
+        cs_id: data.csId,
+        after_session_number: data.after_session_number,
+        content: data.content,
+        outcome: data.outcome || CareLogOutcome.POSITIVE,
+        created_by_id: data.userId,
+      },
+      include: {
+        cs: { select: { id: true, name: true, email: true } },
+      },
+    });
+  }
+
+  // --- Update Enrollment Care Fields ---
+
+  async updateEnrollmentCareFields(enrollmentId: number, data: any) {
+    return this.db.enrollment.update({
+      where: { id: enrollmentId },
+      data,
+    });
+  }
 }

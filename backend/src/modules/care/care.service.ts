@@ -1,6 +1,13 @@
 import { CareRepository } from './care.repository';
-import { CreateCareLogDTO, CreateCareTaskDTO, UpdateCareTaskDTO, CareTaskFilterParams } from './care.types';
-import { CareTaskPriority, CareTaskStatus } from '@prisma/client';
+import {
+  CreateCareLogDTO,
+  CreateCareTaskDTO,
+  UpdateCareTaskDTO,
+  CareTaskFilterParams,
+  UpdateEnrollmentCareDTO,
+  SaveSessionCareLogDTO,
+} from './care.types';
+import { CareTaskPriority, CareTaskStatus, CareLogOutcome, CareTaskType } from '@prisma/client';
 import { AppError } from '../../middlewares/error.middleware';
 import { prisma } from '../../prisma/client';
 
@@ -195,5 +202,90 @@ export class CareService {
     return this.repo.updateCareTask(id, {
       status: CareTaskStatus.CANCELLED,
     });
+  }
+
+  // --- CareMilestoneConfig Methods ---
+
+  async getMilestones() {
+    return this.repo.findMilestones();
+  }
+
+  async addMilestone(sessionNumber: number, userId: number) {
+    if (sessionNumber <= 0) {
+      throw new AppError(400, 'Số buổi phải là số nguyên dương');
+    }
+    return this.repo.createMilestone(sessionNumber, userId);
+  }
+
+  // --- Session CareLog Upsert ---
+
+  async saveSessionCareLog(
+    enrollmentId: number,
+    sessionNumber: number,
+    dto: SaveSessionCareLogDTO,
+    userId: number,
+    roles: string[]
+  ) {
+    const enrollment = await this.assertEnrollmentAccess(enrollmentId, userId, roles);
+    return this.repo.upsertCareLogBySession({
+      enrollment_id: enrollmentId,
+      after_session_number: sessionNumber,
+      content: dto.content,
+      outcome: dto.outcome,
+      userId,
+      csId: enrollment.cs_id,
+    });
+  }
+
+  // --- Update Enrollment Care Fields ---
+
+  async updateEnrollmentCare(
+    enrollmentId: number,
+    dto: UpdateEnrollmentCareDTO,
+    userId: number,
+    roles: string[]
+  ) {
+    const enrollment = await this.assertEnrollmentAccess(enrollmentId, userId, roles);
+
+    const updateData: any = {};
+    if (dto.study_report_url !== undefined) updateData.study_report_url = dto.study_report_url;
+    if (dto.exchange_info !== undefined) updateData.exchange_info = dto.exchange_info;
+    if (dto.callback_note !== undefined) updateData.callback_note = dto.callback_note;
+    if (dto.hot_issue_note !== undefined) updateData.hot_issue_note = dto.hot_issue_note;
+    if (dto.post_course_care !== undefined) updateData.post_course_care = dto.post_course_care;
+
+    // Auto-create/sync CareTask if callback_note has content
+    if (dto.callback_note && dto.callback_note.trim().length > 0) {
+      try {
+        await this.repo.createCareTask({
+          enrollment_id: enrollmentId,
+          assigned_to_id: enrollment.cs_id,
+          type: CareTaskType.CALLBACK,
+          title: 'Lịch hẹn gọi: ' + dto.callback_note.trim().substring(0, 50),
+          note: dto.callback_note.trim(),
+          priority: CareTaskPriority.NORMAL,
+        });
+      } catch (err) {
+        console.error('Failed to auto-create CALLBACK task:', err);
+      }
+    }
+
+    // Auto-create/sync CareTask if hot_issue_note has content
+    if (dto.hot_issue_note && dto.hot_issue_note.trim().length > 0) {
+      try {
+        await this.repo.createCareTask({
+          enrollment_id: enrollmentId,
+          assigned_to_id: enrollment.cs_id,
+          type: CareTaskType.HOT_ISSUE,
+          title: 'Điểm nóng: ' + dto.hot_issue_note.trim().substring(0, 50),
+          note: dto.hot_issue_note.trim(),
+          priority: CareTaskPriority.HIGH,
+        });
+      } catch (err) {
+        console.error('Failed to auto-create HOT_ISSUE task:', err);
+      }
+    }
+
+    return this.repo.updateEnrollmentCareFields(enrollmentId, updateData);
   }
 }

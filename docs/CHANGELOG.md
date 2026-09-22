@@ -1,5 +1,29 @@
 # Project Changelog
 
+## 2026-09-22 — Chuẩn Hóa Danh Sách Học Viên Theo Đúng Cấu Trúc Sheet 1 Phân Chia 2 Tab (Học Viên & Báo Cáo Học Tập)
+
+- **Cấu Trúc 2 Tab Trên Trang Danh Sách Học Viên (`/students`):**
+  - **Tab 1 — Hồ sơ Học viên (Cột A ➔ AJ):**
+    - Cột A ➔ I: Định danh & thông tin liên hệ học viên, Sale/CS phụ trách, Trạng thái, Khóa học đăng ký.
+    - Cột J ➔ AJ: Chi tiết học phí, số tiền đã đóng, nợ học phí, gói học, lớp học, giáo viên, lịch học (thứ, giờ, thời lượng), tiến độ số buổi (tổng buổi, đã học, còn lại, nợ buổi highlight cảnh báo âm).
+    - Giữ nguyên giao diện bảng trực quan kèm Modal xem chi tiết 4 nhóm trường nghiệp vụ.
+  - **Tab 2 — Báo cáo Học tập & Chăm sóc (Cột A ➔ I + Cột AK ➔ BH):**
+    - Cột A ➔ I: Cố định bên trái để đối soát không bị lệch hàng khi cuộn ngang.
+    - Cột AK (Báo cáo học tập): Hiển thị nút/link mở trực tiếp file Google Docs/Sheets báo cáo học tập, hỗ trợ click để dán/sửa link nhanh.
+    - Cột AL (Trao đổi với HV/PH): Hỗ trợ chỉnh sửa trực tiếp dạng bảng tính Excel (Inline Edit) — click gõ nội dung, blur hoặc nhấn Enter tự động lưu ngầm vào Database.
+    - Cột AM (Lịch hẹn gọi) & Cột AN (Điểm nóng): Inline edit trực tiếp trên ô + tự động sinh và đồng bộ nhiệm vụ chăm sóc (`CareTask` loại `CALLBACK` hoặc `HOT_ISSUE`) cho CS phụ trách.
+    - Cột Chăm sóc sau buổi: Mặc định hiển thị `CS Buổi 1`. Tích hợp nút **"+ Thêm mốc buổi CS"** cho phép người dùng tự do thêm bất kỳ mốc buổi nào (Buổi 3, Buổi 5, Buổi 10...), tự động lưu cấu hình toàn hệ thống (`care_milestone_configs`) để tất cả tài khoản thấy cùng danh sách cột. Hỗ trợ inline edit nội dung chăm sóc sau buổi trực tiếp vào `CareLog`.
+    - Cột BD ➔ BH: Chăm sóc sau kết thúc (inline edit), Ngày kết thúc, Ngày bàn giao, Tháng nộp HP, Ngày tạo tài khoản.
+- **Backend & Database:**
+  - Cập nhật model `Enrollment` bổ sung các trường: `study_report_url`, `exchange_info`, `callback_note`, `hot_issue_note`, `post_course_care`.
+  - Bổ sung model `CareMilestoneConfig` (`care_milestone_configs`) lưu cấu hình các mốc buổi CSKH tùy biến.
+  - Thêm các API endpoints: `GET /api/v1/milestones`, `POST /api/v1/milestones`, `PUT /api/v1/enrollments/:id/care`, `PUT /api/v1/enrollments/:id/sessions/:session/care-log`.
+  - Cập nhật module Import Excel: Tự động phát hiện và trích xuất link hyperlink (Google Docs/Sheets) cho cột AK, lưu thông tin trao đổi AL, ghi chú mốc buổi AO..BC vào `CareLog` và cột BD vào `Enrollment`.
+- **Kiểm Thử & Xác Nhận:**
+  - 14/14 tests integration module Care vượt qua thành công (100% pass).
+  - Frontend TypeScript build và Vite compile sạch 0 lỗi (`dist` bundle sẵn sàng).
+  - Subagent trình duyệt kiểm thử thực tế luồng tương tác: chuyển tab mượt mà, thêm cột Buổi 3 thành công thời gian thực, chụp screenshot và quay video WebP lưu lại artifact.
+
 ## 2026-09-21 — Ma trận Điểm danh Lịch Ngày, Cấu trúc Tab CSKH/Sale, Chuẩn hóa 5 Tài khoản Test & Tối ưu Giao diện
 
 - **Ma trận Điểm danh theo Lịch Ngày (Attendance Matrix by Calendar Dates):**

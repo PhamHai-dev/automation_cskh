@@ -279,6 +279,13 @@ export class ImportsRepository {
     total_sessions: number;
     class_model?: string | null;
     sales_note?: string | null;
+    study_report_url?: string | null;
+    exchange_info?: string | null;
+    callback_note?: string | null;
+    hot_issue_note?: string | null;
+    post_course_care?: string | null;
+    handed_over_at?: Date | null;
+    account_created_at?: Date | null;
     start_date?: Date | null;
     end_date?: Date | null;
     status?: EnrollmentStatus;
@@ -301,6 +308,13 @@ export class ImportsRepository {
         total_sessions: data.total_sessions,
         class_model: data.class_model,
         sales_note: data.sales_note,
+        study_report_url: data.study_report_url,
+        exchange_info: data.exchange_info,
+        callback_note: data.callback_note,
+        hot_issue_note: data.hot_issue_note,
+        post_course_care: data.post_course_care,
+        handed_over_at: data.handed_over_at,
+        account_created_at: data.account_created_at,
         start_date: data.start_date,
         end_date: data.end_date,
         status: data.status || EnrollmentStatus.NOT_STARTED,

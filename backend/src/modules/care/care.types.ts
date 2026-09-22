@@ -36,3 +36,23 @@ export interface CareTaskFilterParams {
   limit?: number;
   offset?: number;
 }
+
+export interface CareMilestoneItem {
+  id: number;
+  session_number: number;
+  display_order: number;
+  created_at: Date;
+}
+
+export interface UpdateEnrollmentCareDTO {
+  study_report_url?: string | null;
+  exchange_info?: string | null;
+  callback_note?: string | null;
+  hot_issue_note?: string | null;
+  post_course_care?: string | null;
+}
+
+export interface SaveSessionCareLogDTO {
+  content: string;
+  outcome?: CareLogOutcome;
+}

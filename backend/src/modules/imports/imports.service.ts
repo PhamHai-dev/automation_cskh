@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import ExcelJS from 'exceljs';
-import { ImportBatchStatus, ImportRowStatus, ImportType, AttendanceStatus, AttendanceSource, EnrollmentStatus, EnrollmentClassStatus, ImportCreateRequestStatus, ClassModelType, Prisma } from '@prisma/client';
+import { ImportBatchStatus, ImportRowStatus, ImportType, AttendanceStatus, AttendanceSource, EnrollmentStatus, EnrollmentClassStatus, ImportCreateRequestStatus, ClassModelType, Prisma, CareLogOutcome } from '@prisma/client';
 import { prisma } from '../../prisma/client';
 import { ImportsRepository } from './imports.repository';
 import { SheetPreviewData, UploadResponse, ValidationReport, ValidationErrorItem, ValidationWarningItem, SaveMappingDTO, ImportBatchSummary, RequestActor, ReconcileItem, ReconcileClassification, LogicalSheet } from './imports.types';
@@ -160,6 +160,20 @@ export class ImportsService {
         suggestedMapping['paid_at'] = colLetter;
       } else if (lower.includes('tên lớp') || lower === 'lớp' || lower.includes('lớp học') || lower.startsWith('lớp')) {
         suggestedMapping['class_name'] = colLetter;
+      } else if (lower.includes('báo cáo học tập')) {
+        suggestedMapping['study_report_url'] = colLetter;
+      } else if (lower.includes('thông tin trao đổi')) {
+        suggestedMapping['exchange_info'] = colLetter;
+      } else if (lower.includes('lịch hẹn gọi')) {
+        suggestedMapping['callback_note'] = colLetter;
+      } else if (lower.includes('điểm nóng')) {
+        suggestedMapping['hot_issue_note'] = colLetter;
+      } else if (lower.includes('chăm sóc sau kết thúc')) {
+        suggestedMapping['post_course_care'] = colLetter;
+      } else if (lower.includes('ngày bàn giao')) {
+        suggestedMapping['handed_over_at'] = colLetter;
+      } else if (lower.includes('ngày tạo tài khoản')) {
+        suggestedMapping['account_created_at'] = colLetter;
       }
     });
 
@@ -169,6 +183,7 @@ export class ImportsService {
   private cellText(cell: ExcelJS.Cell): string {
     let value: any = cell.value;
     if (value && typeof value === 'object') {
+      if ('hyperlink' in value && value.hyperlink) return String(value.hyperlink).trim();
       if ('result' in value) value = value.result;
       else if ('text' in value) value = value.text;
       else if ('richText' in value) value = value.richText.map((part: any) => part.text).join('');
@@ -1282,6 +1297,13 @@ export class ImportsService {
             total_sessions: totalSessions,
             class_model: getColVal('class_model'),
             sales_note: salesNote,
+            study_report_url: getColVal('study_report_url'),
+            exchange_info: getColVal('exchange_info'),
+            callback_note: getColVal('callback_note'),
+            hot_issue_note: getColVal('hot_issue_note'),
+            post_course_care: getColVal('post_course_care'),
+            handed_over_at: this.parseExcelDate(getColVal('handed_over_at')),
+            account_created_at: this.parseExcelDate(getColVal('account_created_at')),
             start_date: startDate,
             end_date: endDate,
             status,
@@ -1299,6 +1321,35 @@ export class ImportsService {
             start_date: startDate,
             end_date: endDate,
             status: EnrollmentClassStatus.ACTIVE,
+          });
+
+          // 6. Parse and save care logs from session columns (AO..BC)
+          const headerRow = worksheet.getRow(headerRowIdx);
+          headerRow.eachCell((cell: any, colNumber: number) => {
+            const colLetter = worksheet.getColumn(colNumber).letter;
+            let headerTitle = '';
+            if (typeof cell.value === 'object' && cell.value !== null && 'richText' in cell.value) {
+              headerTitle = (cell.value as any).richText.map((t: any) => t.text).join('');
+            } else {
+              headerTitle = String(cell.value || '').trim();
+            }
+            const match = headerTitle.match(/chăm sóc sau buổi\s*(\d+)/i);
+            if (match) {
+              const sessionNum = parseInt(match[1], 10);
+              const logContent = String(rawData[colLetter] || '').trim();
+              if (logContent && !isNaN(sessionNum)) {
+                prisma.careLog.create({
+                  data: {
+                    enrollment_id: enrollment.id,
+                    cs_id: finalCSId,
+                    after_session_number: sessionNum,
+                    content: logContent,
+                    outcome: CareLogOutcome.POSITIVE,
+                    created_by_id: actor?.id || finalCSId,
+                  },
+                }).catch(() => {});
+              }
+            }
           });
 
           successRows++;

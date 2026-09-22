@@ -57,4 +57,31 @@ router.post(
   controller.cancelCareTask
 );
 
+// Milestone Configuration endpoints
+router.get(
+  '/milestones',
+  requireRoles(['ADMIN', 'MANAGE', 'CS']),
+  controller.getMilestones
+);
+
+router.post(
+  '/milestones',
+  requireRoles(['ADMIN', 'MANAGE', 'CS']),
+  controller.addMilestone
+);
+
+// Update enrollment care fields (study_report_url, exchange_info, callback_note, hot_issue_note, post_course_care)
+router.put(
+  '/enrollments/:enrollmentId/care',
+  requireRoles(['ADMIN', 'MANAGE', 'CS']),
+  controller.updateEnrollmentCare
+);
+
+// Upsert care log for a specific session number
+router.put(
+  '/enrollments/:enrollmentId/sessions/:sessionNumber/care-log',
+  requireRoles(['ADMIN', 'MANAGE', 'CS']),
+  controller.saveSessionCareLog
+);
+
 export { router as careRouter };

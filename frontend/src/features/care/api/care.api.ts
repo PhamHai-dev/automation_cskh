@@ -43,4 +43,43 @@ export const careApi = {
     const res = await apiClient.post(`/care-tasks/${id}/cancel`);
     return res.data.data;
   },
+
+  // Milestones
+  getMilestones: async (): Promise<Array<{ id: number; session_number: number; display_order: number }>> => {
+    const res = await apiClient.get('/milestones');
+    return res.data.data;
+  },
+
+  addMilestone: async (session_number: number): Promise<{ id: number; session_number: number; display_order: number }> => {
+    const res = await apiClient.post('/milestones', { session_number });
+    return res.data.data;
+  },
+
+  // Update Enrollment Care Fields
+  updateEnrollmentCare: async (
+    enrollmentId: number,
+    data: {
+      study_report_url?: string | null;
+      exchange_info?: string | null;
+      callback_note?: string | null;
+      hot_issue_note?: string | null;
+      post_course_care?: string | null;
+    }
+  ): Promise<any> => {
+    const res = await apiClient.put(`/enrollments/${enrollmentId}/care`, data);
+    return res.data.data;
+  },
+
+  // Save Session Care Log
+  saveSessionCareLog: async (
+    enrollmentId: number,
+    sessionNumber: number,
+    data: {
+      content: string;
+      outcome?: string;
+    }
+  ): Promise<any> => {
+    const res = await apiClient.put(`/enrollments/${enrollmentId}/sessions/${sessionNumber}/care-log`, data);
+    return res.data.data;
+  },
 };

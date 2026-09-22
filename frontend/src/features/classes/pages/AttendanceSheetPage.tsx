@@ -389,7 +389,7 @@ export const AttendanceSheetPage = () => {
             <div className="w-full overflow-x-auto rounded-2xl border border-border/80 bg-surface shadow-soft">
               <table className="w-full text-sm text-left border-collapse">
                 <thead>
-                  <tr className="bg-surface-muted/80 border-b border-border/80 text-xs font-bold text-text-secondary uppercase tracking-wider">
+                  <tr className="bg-surface-muted/80 border-b border-border/80 text-xs font-bold text-text-secondary">
                     <th className="px-5 py-3.5">Học viên</th>
                     <th className="px-5 py-3.5">Gói học</th>
                     <th className="px-5 py-3.5">Trạng thái hiện tại</th>
@@ -403,10 +403,10 @@ export const AttendanceSheetPage = () => {
                           className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 border-slate-300 cursor-pointer accent-emerald-600"
                           title="Tích chọn tất cả có mặt"
                         />
-                        <span>CÓ MẶT (ĐIỀN SỐ BUỔI)</span>
+                        <span>Có mặt (điền số buổi)</span>
                       </div>
                     </th>
-                    <th className="px-5 py-3.5 min-w-[260px]">LÝ DO VẮNG / NGHỈ</th>
+                    <th className="px-5 py-3.5 min-w-[260px]">Lý do vắng / nghỉ</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/60">

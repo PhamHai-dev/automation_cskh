@@ -18,6 +18,13 @@ export interface Enrollment {
   completed_sessions?: number;
   class_model?: string | null;
   sales_note?: string | null;
+  study_report_url?: string | null;
+  exchange_info?: string | null;
+  callback_note?: string | null;
+  hot_issue_note?: string | null;
+  post_course_care?: string | null;
+  handed_over_at?: string | null;
+  account_created_at?: string | null;
   external_remaining_sessions?: number | null;
   start_date?: string | null;
   end_date?: string | null;
@@ -26,6 +33,27 @@ export interface Enrollment {
   updated_at: string;
   student?: Student;
   package?: Package;
+  sale?: {
+    id: number;
+    code: string;
+    name: string;
+  };
+  care_logs?: Array<{
+    id: number;
+    after_session_number: number;
+    content: string;
+    outcome?: string;
+    created_at: string;
+  }>;
+  care_tasks?: Array<{
+    id: number;
+    type: string;
+    title: string;
+    note: string;
+    status: string;
+    due_at?: string;
+    priority: string;
+  }>;
   cs?: {
     id: number;
     name: string;

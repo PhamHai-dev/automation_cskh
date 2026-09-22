@@ -299,4 +299,81 @@ describe('Care Module Integration Tests', () => {
       expect(res.body.data.status).toBe('CANCELLED');
     });
   });
+
+  describe('Care Milestones and Sheet 1 Tab 2 Updates', () => {
+    it('should create and retrieve care milestone configs', async () => {
+      // Create milestone 5
+      const createRes = await request(app)
+        .post('/api/v1/milestones')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ session_number: 5, label: 'Buổi 5' });
+
+      expect(createRes.status).toBe(201);
+      expect(createRes.body.data.session_number).toBe(5);
+
+      // Get milestones
+      const getRes = await request(app)
+        .get('/api/v1/milestones')
+        .set('Authorization', `Bearer ${cs1Token}`);
+
+      expect(getRes.status).toBe(200);
+      const sessionNumbers = getRes.body.data.map((m: any) => m.session_number);
+      expect(sessionNumbers).toContain(5);
+    });
+
+    it('should update enrollment care fields (study_report_url, exchange_info, etc.)', async () => {
+      const res = await request(app)
+        .put(`/api/v1/enrollments/${enrollment1Id}/care`)
+        .set('Authorization', `Bearer ${cs1Token}`)
+        .send({
+          study_report_url: 'https://docs.google.com/spreadsheets/d/test123',
+          exchange_info: 'Trao đổi phụ huynh rất hài lòng',
+          callback_note: 'Hẹn gọi lại vào thứ 6',
+          hot_issue_note: 'Cần đổi lịch học',
+          post_course_care: 'Đã hoàn thành khóa học xuất sắc',
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.study_report_url).toBe('https://docs.google.com/spreadsheets/d/test123');
+      expect(res.body.data.exchange_info).toBe('Trao đổi phụ huynh rất hài lòng');
+      expect(res.body.data.callback_note).toBe('Hẹn gọi lại vào thứ 6');
+      expect(res.body.data.hot_issue_note).toBe('Cần đổi lịch học');
+      expect(res.body.data.post_course_care).toBe('Đã hoàn thành khóa học xuất sắc');
+
+      // Verify that CareTasks were auto-created for callback_note and hot_issue_note
+      const tasksRes = await request(app)
+        .get(`/api/v1/care-tasks?enrollment_id=${enrollment1Id}`)
+        .set('Authorization', `Bearer ${cs1Token}`);
+
+      expect(tasksRes.status).toBe(200);
+      const callbackTask = tasksRes.body.data.find((t: any) => t.type === 'CALLBACK');
+      expect(callbackTask).toBeDefined();
+      const hotIssueTask = tasksRes.body.data.find((t: any) => t.type === 'HOT_ISSUE');
+      expect(hotIssueTask).toBeDefined();
+    });
+
+    it('should upsert session care log via inline edit endpoint', async () => {
+      const res = await request(app)
+        .put(`/api/v1/enrollments/${enrollment1Id}/sessions/2/care-log`)
+        .set('Authorization', `Bearer ${cs1Token}`)
+        .send({
+          content: 'Chăm sóc sau buổi 2: Học viên tiếp thu tốt, phát âm chuẩn',
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.content).toBe('Chăm sóc sau buổi 2: Học viên tiếp thu tốt, phát âm chuẩn');
+      expect(res.body.data.after_session_number).toBe(2);
+
+      // Verify care log in getCareLogs
+      const logsRes = await request(app)
+        .get(`/api/v1/enrollments/${enrollment1Id}/care-logs`)
+        .set('Authorization', `Bearer ${cs1Token}`);
+
+      expect(logsRes.status).toBe(200);
+      const log2 = logsRes.body.data.find((l: any) => l.after_session_number === 2);
+      expect(log2).toBeDefined();
+      expect(log2.content).toContain('Học viên tiếp thu tốt');
+    });
+  });
 });
+

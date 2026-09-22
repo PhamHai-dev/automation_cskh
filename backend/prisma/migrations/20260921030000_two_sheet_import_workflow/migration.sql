@@ -28,7 +28,7 @@ CREATE TABLE `import_create_requests` (
     INDEX `import_create_requests_status_created_at_idx`(`status`, `created_at`),
     INDEX `import_create_requests_requested_by_id_status_idx`(`requested_by_id`, `status`),
     INDEX `import_create_requests_assigned_cs_id_status_idx`(`assigned_cs_id`, `status`),
-    UNIQUE INDEX `import_create_requests_import_batch_id_external_id_package_code_key`(`import_batch_id`, `external_id`, `package_code`),
+    UNIQUE INDEX `import_create_requests_batch_ext_pkg_key`(`import_batch_id`, `external_id`, `package_code`),
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 

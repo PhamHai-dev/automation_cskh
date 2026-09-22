@@ -77,7 +77,7 @@ export const ImportHistoryTable: React.FC = () => {
       <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200 text-xs text-left">
-            <thead className="bg-gray-50 text-gray-600 font-semibold uppercase tracking-wider">
+            <thead className="bg-gray-50 text-gray-700 font-bold">
               <tr>
                 <th className="px-4 py-3">Mã đợt</th>
                 <th className="px-4 py-3">Tên file</th>

@@ -8,6 +8,7 @@ export class StudentsRepository {
         enrollments: {
           include: {
             package: true,
+            sale: true,
             cs: {
               select: {
                 id: true,
@@ -30,6 +31,10 @@ export class StudentsRepository {
                 attendance: true,
               },
             },
+            care_logs: {
+              orderBy: { after_session_number: 'asc' },
+            },
+            care_tasks: true,
           },
           orderBy: { created_at: 'desc' },
         },

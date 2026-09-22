@@ -109,4 +109,64 @@ export class CareController {
       next(err);
     }
   };
+
+  // --- CareMilestoneConfig Endpoints ---
+
+  getMilestones = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const list = await this.service.getMilestones();
+      res.status(200).json({ data: list, meta: null });
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  addMilestone = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const user = (req as any).user;
+      const sessionNumber = parseInt(req.body.session_number, 10);
+      const item = await this.service.addMilestone(sessionNumber, user.id);
+      res.status(201).json({ data: item, meta: null });
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  // --- Session CareLog Endpoint ---
+
+  saveSessionCareLog = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const enrollmentId = parseInt(req.params.enrollmentId, 10);
+      const sessionNumber = parseInt(req.params.sessionNumber, 10);
+      const user = (req as any).user;
+      const result = await this.service.saveSessionCareLog(
+        enrollmentId,
+        sessionNumber,
+        req.body,
+        user.id,
+        user.roles
+      );
+      res.status(200).json({ data: result, meta: null });
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  // --- Update Enrollment Care Fields ---
+
+  updateEnrollmentCare = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const enrollmentId = parseInt(req.params.enrollmentId, 10);
+      const user = (req as any).user;
+      const result = await this.service.updateEnrollmentCare(
+        enrollmentId,
+        req.body,
+        user.id,
+        user.roles
+      );
+      res.status(200).json({ data: result, meta: null });
+    } catch (err) {
+      next(err);
+    }
+  };
 }
