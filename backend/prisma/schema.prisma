@@ -37,12 +37,13 @@ model User {
   created_class_sessions ClassSession[]       @relation("SessionCreator")
   created_attendances    Attendance[]         @relation("AttendanceCreator")
   enrollments_as_cs      Enrollment[]         @relation("EnrollmentCS")
-  zalo_account           ZaloAccount?
+  zalo_accounts          ZaloAccount[]
   created_message_rules  MessageRule[]        @relation("MessageRuleCreator")
   care_logs              CareLog[]            @relation("CareLogCS")
   care_tasks_assigned    CareTask[]           @relation("CareTaskAssignee")
   import_batches         ImportBatch[]        @relation("ImportBatchUploader")
   audit_logs             AuditLog[]           @relation("AuditLogUser")
+  zalo_account_accesses  ZaloAccountAccess[]
 
   @@map("users")
 }
@@ -409,8 +410,10 @@ model Attendance {
 // -----------------------------------------------------------------------------
 
 enum ZaloAccountStatus {
-  NOT_LOGGED_IN
+  QR_PENDING
+  CONNECTING
   ACTIVE
+  NOT_LOGGED_IN
   EXPIRED
   BANNED
   DISABLED
@@ -418,20 +421,60 @@ enum ZaloAccountStatus {
 
 model ZaloAccount {
   id                     Int               @id @default(autoincrement())
-  cs_id                  Int               @unique
+  cs_id                  Int
+  zalo_uid               String?           @unique
+  display_name           String?
   zalo_phone             String?
+  status                 ZaloAccountStatus @default(QR_PENDING)
   encrypted_session_data String?           @db.Text
-  status                 ZaloAccountStatus @default(NOT_LOGGED_IN)
+  qr_code                String?           @db.Text // temporary QR data URL
+  last_connected_at      DateTime?
   last_login_at          DateTime?
   last_active_at         DateTime?
+  proxy_url              String?
+  archived_at            DateTime?
+  disconnect_reason      String?           @db.VarChar(50)
+  disconnected_at        DateTime?
+  qr_pending_at          DateTime?
+  session_epoch          Int?
   created_at             DateTime          @default(now())
   updated_at             DateTime          @updatedAt
 
-  cs                     User                  @relation(fields: [cs_id], references: [id])
+  cs                     User                   @relation(fields: [cs_id], references: [id])
+  sdk_limits             SdkLimit[]
   zalo_contact_relations ZaloContactRelation[]
   message_deliveries     MessageDelivery[]
+  zalo_groups            ZaloGroup[]
+  friends                Friend[]
+  status_logs            ZaloAccountStatusLog[]
+  conversations          Conversation[]
+  accesses               ZaloAccountAccess[]
 
+  @@index([cs_id])
+  @@index([status])
+  @@index([archived_at])
   @@map("zalo_accounts")
+}
+
+// -----------------------------------------------------------------------------
+// 4c. SDK Rate Limit Configuration
+// -----------------------------------------------------------------------------
+
+model SdkLimit {
+  id              Int      @id @default(autoincrement())
+  zalo_account_id Int? // null = default for all nicks (global default)
+  category        String // 'message', 'reaction', 'chat_action', etc.
+  daily_limit     Int      @default(200)
+  burst_limit     Int      @default(20)
+  burst_window_ms Int      @default(30000)
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
+
+  zalo_account ZaloAccount? @relation(fields: [zalo_account_id], references: [id])
+
+  @@unique([zalo_account_id, category])
+  @@index([zalo_account_id])
+  @@map("sdk_limits")
 }
 
 enum ZaloContactRelationStatus {
@@ -446,6 +489,8 @@ model ZaloContactRelation {
   student_id      Int
   zalo_account_id Int
   relation_status ZaloContactRelationStatus @default(UNKNOWN)
+  display_name    String? // cached Zalo display name
+  avatar_url      String? // cached Zalo avatar URL
   last_checked_at DateTime?
   created_at      DateTime                  @default(now())
   updated_at      DateTime                  @updatedAt
@@ -454,7 +499,47 @@ model ZaloContactRelation {
   zalo_account ZaloAccount @relation(fields: [zalo_account_id], references: [id])
 
   @@unique([student_id, zalo_account_id])
+  @@index([zalo_account_id])
   @@map("zalo_contact_relations")
+}
+
+// -----------------------------------------------------------------------------
+// 4b. Zalo Groups
+// -----------------------------------------------------------------------------
+
+model ZaloGroup {
+  id              Int       @id @default(autoincrement())
+  zalo_group_id   String    @unique
+  name            String?
+  avatar_url      String?
+  member_count    Int?
+  owner_zalo_uid  String?
+  zalo_account_id Int
+  last_synced_at  DateTime?
+  created_at      DateTime  @default(now())
+  updated_at      DateTime  @updatedAt
+
+  zalo_account ZaloAccount       @relation(fields: [zalo_account_id], references: [id])
+  members      ZaloGroupMember[]
+
+  @@index([zalo_account_id])
+  @@map("zalo_groups")
+}
+
+model ZaloGroupMember {
+  id           Int       @id @default(autoincrement())
+  group_id     Int
+  zalo_uid     String
+  display_name String?
+  avatar_url   String?
+  joined_at    DateTime?
+  created_at   DateTime  @default(now())
+
+  zalo_group ZaloGroup @relation(fields: [group_id], references: [id])
+
+  @@unique([group_id, zalo_uid])
+  @@index([group_id])
+  @@map("zalo_group_members")
 }
 
 enum MessageRuleChannel {
@@ -684,4 +769,117 @@ model AuditLog {
   user User @relation("AuditLogUser", fields: [user_id], references: [id])
 
   @@map("audit_logs")
+}
+
+// -----------------------------------------------------------------------------
+// 4d. Friend Tracking (ported from ZaloCRM)
+// ---------------------------------------------------------------------------
+
+model Friend {
+  id                Int       @id @default(autoincrement())
+  zalo_account_id   Int
+  zalo_uid_in_nick  String
+  friendship_status String    @default("none")
+  relationship_kind String    @default("none")
+  alias_in_nick     String?
+  has_conversation  Boolean   @default(false)
+  became_friend_at  DateTime?
+  removed_at        DateTime?
+  created_at        DateTime  @default(now())
+  updated_at        DateTime  @updatedAt
+
+  zalo_account ZaloAccount @relation(fields: [zalo_account_id], references: [id])
+
+  @@unique([zalo_account_id, zalo_uid_in_nick])
+  @@index([zalo_account_id])
+  @@index([friendship_status])
+  @@index([relationship_kind])
+  @@map("friends")
+}
+
+// -----------------------------------------------------------------------------
+// 4e. ZaloAccount Status Log (uptime tracking)
+// Invariant: exactly 1 record with ended_at=NULL per account.
+// MySQL partial unique not supported; enforced via transaction.
+// ---------------------------------------------------------------------------
+
+model ZaloAccountStatusLog {
+  id         Int       @id @default(autoincrement())
+  account_id Int
+  status     String
+  reason     String?
+  started_at DateTime
+  ended_at   DateTime?
+  created_at DateTime  @default(now())
+
+  zalo_account ZaloAccount @relation(fields: [account_id], references: [id])
+
+  @@index([account_id])
+  @@index([account_id, ended_at])
+  @@map("zalo_account_status_logs")
+}
+
+// -----------------------------------------------------------------------------
+// 4f. Conversation & Message (message sync persistence)
+// ---------------------------------------------------------------------------
+
+model Conversation {
+  id                 Int       @id @default(autoincrement())
+  zalo_account_id    Int
+  external_thread_id String
+  thread_type        String
+  display_name       String?
+  last_message_at    DateTime?
+  created_at         DateTime  @default(now())
+  updated_at         DateTime  @updatedAt
+
+  zalo_account ZaloAccount @relation(fields: [zalo_account_id], references: [id])
+  messages     Message[]
+
+  @@unique([zalo_account_id, external_thread_id])
+  @@index([zalo_account_id])
+  @@map("conversations")
+}
+
+model Message {
+  id              Int      @id @default(autoincrement())
+  conversation_id Int
+  zalo_msg_id     String
+  sender_uid      String
+  content         String   @db.Text
+  content_type    String   @default("text")
+  album_key       String?
+  album_index     Int?
+  album_total     Int?
+  is_self         Boolean  @default(false)
+  is_backfill     Boolean  @default(false)
+  raw_content     Json?
+  timestamp       DateTime
+  created_at      DateTime @default(now())
+
+  conversation Conversation @relation(fields: [conversation_id], references: [id])
+
+  @@unique([conversation_id, zalo_msg_id])
+  @@index([conversation_id])
+  @@map("messages")
+}
+
+// -----------------------------------------------------------------------------
+// 4g. ZaloAccount Access Control (multi-user per nick)
+// ---------------------------------------------------------------------------
+
+model ZaloAccountAccess {
+  id              Int      @id @default(autoincrement())
+  zalo_account_id Int
+  user_id         Int
+  permission      String   @default("read")
+  created_at      DateTime @default(now())
+
+  zalo_account ZaloAccount @relation(fields: [zalo_account_id], references: [id])
+  user         User        @relation(fields: [user_id], references: [id])
+
+  @@unique([zalo_account_id, user_id])
+  @@index([zalo_account_id])
+  @@index([user_id])
+  @@map("zalo_account_accesses")
 }

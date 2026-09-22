@@ -13,6 +13,8 @@ const envSchema = z.object({
   JWT_SECRET: z.string(),
   JWT_ACCESS_EXPIRES_IN: z.string().default('15m'),
   JWT_REFRESH_EXPIRES_IN: z.string().default('7d'),
+  ZALO_SESSION_SECRET: z.string().optional(),
+  LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('debug'),
 });
 
 const _env = envSchema.safeParse(process.env);
@@ -22,4 +24,7 @@ if (!_env.success) {
   process.exit(1);
 }
 
-export const env = _env.data;
+export const env = {
+  ..._env.data,
+  ZALO_SESSION_SECRET: _env.data.ZALO_SESSION_SECRET || _env.data.JWT_SECRET,
+};

@@ -13,6 +13,7 @@ import { EnrollmentsPage } from './features/enrollments/pages/EnrollmentsPage';
 import { ImportsPage } from './features/imports/pages/ImportsPage';
 import { DashboardPage } from './features/dashboard/pages/DashboardPage';
 import { CarePage } from './features/care/pages/CarePage';
+import { ZaloAccountsPage } from './features/zalo/pages/ZaloAccountsPage';
 import './styles/globals.css';
 import './styles/tokens.css';
 
@@ -162,6 +163,9 @@ function App() {
 
             <Route path="/enrollments" element={<EnrollmentsPage />} />
             <Route path="/ghi-danh" element={<Navigate to="/enrollments" replace />} />
+
+            <Route path="/zalo" element={<ZaloAccountsPage />} />
+            <Route path="/zalo/tai-khoan" element={<Navigate to="/zalo" replace />} />
           </Route>
         </Route>
       </Routes>
