@@ -10,12 +10,14 @@ export interface ClassTeacher {
   teacher?: Teacher;
 }
 
+export type ClassModelType = '1:1' | '1:2' | '1:n' | string;
+
 export interface Class {
   id: number;
   class_code?: string;
   class_name: string;
   level?: string;
-  model_type: 'ONE_TO_ONE' | 'GROUP';
+  model_type: ClassModelType;
   attendance_source: 'LEARNING_SYSTEM' | 'ZOOM';
   active: boolean;
   class_teachers?: ClassTeacher[];
@@ -29,11 +31,16 @@ export interface CreateClassDTO {
   class_code?: string;
   class_name: string;
   level?: string;
-  model_type: 'ONE_TO_ONE' | 'GROUP';
-  attendance_source: 'LEARNING_SYSTEM' | 'ZOOM';
+  model_type: '1:1' | '1:2' | '1:n';
+  attendance_source?: 'LEARNING_SYSTEM' | 'ZOOM';
 }
 
-export interface UpdateClassDTO extends Partial<CreateClassDTO> {
+export interface UpdateClassDTO {
+  class_code?: string;
+  class_name?: string;
+  level?: string;
+  model_type?: '1:1' | '1:2' | '1:n';
+  attendance_source?: 'LEARNING_SYSTEM' | 'ZOOM';
   active?: boolean;
 }
 

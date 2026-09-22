@@ -129,7 +129,7 @@ async function seedNewAccounts() {
       class_name: 'Lớp N5 - K01 (246 Sáng)',
       class_code: 'CLASS_01',
       level: 'N5',
-      model_type: 'GROUP',
+      model_type: 'ONE_TO_N',
       attendance_source: 'LEARNING_SYSTEM',
       active: true,
       class_teachers: {
@@ -154,7 +154,7 @@ async function seedNewAccounts() {
       class_name: 'Lớp N4 - K02 (357 Tối)',
       class_code: 'CLASS_02',
       level: 'N4',
-      model_type: 'GROUP',
+      model_type: 'ONE_TO_N',
       attendance_source: 'LEARNING_SYSTEM',
       active: true,
       class_teachers: {

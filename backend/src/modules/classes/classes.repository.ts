@@ -1,5 +1,6 @@
 import { prisma } from '../../prisma/client';
 import { CreateClassDTO, UpdateClassDTO, AssignTeacherDTO } from './classes.types';
+import { ClassModelType, AttendanceSourceType } from '@prisma/client';
 
 export class ClassesRepository {
   async findAll() {
@@ -31,11 +32,38 @@ export class ClassesRepository {
     });
   }
 
-  async create(data: CreateClassDTO) {
-    return prisma.class.create({ data });
+  async findByCode(class_code: string) {
+    return prisma.class.findFirst({
+      where: { class_code }
+    });
   }
 
-  async update(id: number, data: UpdateClassDTO) {
+  async create(data: {
+    class_code?: string;
+    class_name: string;
+    level?: string;
+    model_type: ClassModelType;
+    attendance_source?: AttendanceSourceType;
+  }) {
+    return prisma.class.create({
+      data: {
+        class_name: data.class_name,
+        class_code: data.class_code,
+        level: data.level,
+        model_type: data.model_type,
+        attendance_source: data.attendance_source || AttendanceSourceType.LEARNING_SYSTEM,
+      }
+    });
+  }
+
+  async update(id: number, data: {
+    class_code?: string;
+    class_name?: string;
+    level?: string;
+    model_type?: ClassModelType;
+    attendance_source?: AttendanceSourceType;
+    active?: boolean;
+  }) {
     return prisma.class.update({
       where: { id },
       data

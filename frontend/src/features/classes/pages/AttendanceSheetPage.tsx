@@ -297,7 +297,7 @@ export const AttendanceSheetPage = () => {
         description={
           session
             ? `Buổi số ${session.session_number} • Ngày ${new Date(session.session_date).toLocaleDateString('vi-VN')} • Mã lớp: ${cls?.class_code || '—'}`
-            : `Mã lớp: ${cls?.class_code || '—'} • Mô hình: ${cls?.model_type === 'ONE_TO_ONE' ? '1 kèm 1' : 'Lớp nhóm'}`
+            : `Mã lớp: ${cls?.class_code || '—'} • Mô hình: ${cls?.model_type || '—'}`
         }
         backUrl={`/classes/${clsId}/sessions`}
         breadcrumbs={[

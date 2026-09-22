@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import ExcelJS from 'exceljs';
-import { ImportBatchStatus, ImportRowStatus, ImportType, AttendanceStatus, AttendanceSource, EnrollmentStatus, EnrollmentClassStatus, ImportCreateRequestStatus, Prisma } from '@prisma/client';
+import { ImportBatchStatus, ImportRowStatus, ImportType, AttendanceStatus, AttendanceSource, EnrollmentStatus, EnrollmentClassStatus, ImportCreateRequestStatus, ClassModelType, Prisma } from '@prisma/client';
 import { prisma } from '../../prisma/client';
 import { ImportsRepository } from './imports.repository';
 import { SheetPreviewData, UploadResponse, ValidationReport, ValidationErrorItem, ValidationWarningItem, SaveMappingDTO, ImportBatchSummary, RequestActor, ReconcileItem, ReconcileClassification, LogicalSheet } from './imports.types';
@@ -1092,7 +1092,7 @@ export class ImportsService {
                 data: {
                   class_name: className,
                   class_code: className,
-                  model_type: 'ONE_TO_ONE',
+                  model_type: ClassModelType.ONE_TO_ONE,
                   attendance_source: 'LEARNING_SYSTEM',
                 },
               });
@@ -1838,7 +1838,7 @@ export class ImportsService {
       let enrollmentClass = null;
       if (snapshot.class_name) {
         let cls = await tx.class.findFirst({ where: { OR: [{ class_name: snapshot.class_name }, { class_code: snapshot.class_name }] } });
-        if (!cls) cls = await tx.class.create({ data: { class_name: snapshot.class_name, class_code: snapshot.class_name, level: snapshot.level || null, model_type: 'ONE_TO_ONE', attendance_source: 'LEARNING_SYSTEM' } });
+        if (!cls) cls = await tx.class.create({ data: { class_name: snapshot.class_name, class_code: snapshot.class_name, level: snapshot.level || null, model_type: ClassModelType.ONE_TO_ONE, attendance_source: 'LEARNING_SYSTEM' } });
         enrollmentClass = await tx.enrollmentClass.create({ data: { enrollment_id: enrollment.id, class_id: cls.id, sequence_no: 1, start_date: this.parseExcelDate(snapshot.start_date), end_date: this.parseExcelDate(snapshot.end_date), status: EnrollmentClassStatus.ACTIVE } });
         await this.applyAttendance(tx, enrollmentClass.id, cls.id, snapshot.attendance || [], actor.id);
       }

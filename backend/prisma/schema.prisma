@@ -27,20 +27,20 @@ model User {
   created_by    User?  @relation("UserCreator", fields: [created_by_id], references: [id])
   created_users User[] @relation("UserCreator")
 
-  auth_sessions          AuthSession[]
-  password_reset_tokens  PasswordResetToken[]
-  login_audits           LoginAudit[]
-  cs_group_members       CSGroupMember[]
-  manage_assignments     ManageAssignment[]
-  teacher_profile        TeacherProfile?
-  class_teachers         ClassTeacher[]
-  created_class_sessions ClassSession[]       @relation("SessionCreator")
-  created_attendances    Attendance[]         @relation("AttendanceCreator")
-  enrollments_as_cs      Enrollment[]         @relation("EnrollmentCS")
-  zalo_account           ZaloAccount?
-  created_message_rules  MessageRule[]        @relation("MessageRuleCreator")
-  care_logs              CareLog[]            @relation("CareLogCS")
-  care_tasks_assigned    CareTask[]           @relation("CareTaskAssignee")
+  auth_sessions                    AuthSession[]
+  password_reset_tokens            PasswordResetToken[]
+  login_audits                     LoginAudit[]
+  cs_group_members                 CSGroupMember[]
+  manage_assignments               ManageAssignment[]
+  teacher_profile                  TeacherProfile?
+  class_teachers                   ClassTeacher[]
+  created_class_sessions           ClassSession[]        @relation("SessionCreator")
+  created_attendances              Attendance[]          @relation("AttendanceCreator")
+  enrollments_as_cs                Enrollment[]          @relation("EnrollmentCS")
+  zalo_account                     ZaloAccount?
+  created_message_rules            MessageRule[]         @relation("MessageRuleCreator")
+  care_logs                        CareLog[]             @relation("CareLogCS")
+  care_tasks_assigned              CareTask[]            @relation("CareTaskAssignee")
   import_batches                   ImportBatch[]         @relation("ImportBatchUploader")
   audit_logs                       AuditLog[]            @relation("AuditLogUser")
   requested_import_create_requests ImportCreateRequest[] @relation("ImportCreateRequestRequester")
@@ -249,8 +249,9 @@ model TeacherProfile {
 }
 
 enum ClassModelType {
-  ONE_TO_ONE
-  GROUP
+  ONE_TO_ONE @map("1:1")
+  ONE_TO_TWO @map("1:2")
+  ONE_TO_N   @map("1:n")
 }
 
 enum AttendanceSourceType {
@@ -695,14 +696,14 @@ model AuditLog {
 }
 
 model Sale {
-  id          Int          @id @default(autoincrement())
-  code        String       @unique
-  name        String
-  phone       String?
-  email       String?
-  active      Boolean      @default(true)
-  created_at  DateTime     @default(now())
-  updated_at  DateTime     @updatedAt
+  id         Int      @id @default(autoincrement())
+  code       String   @unique
+  name       String
+  phone      String?
+  email      String?
+  active     Boolean  @default(true)
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
 
   enrollments Enrollment[]
 

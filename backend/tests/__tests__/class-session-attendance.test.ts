@@ -149,7 +149,7 @@ describe('ClassSession + Attendance Integration', () => {
         data: {
           class_code: `OTHER-${Date.now()}`,
           class_name: 'Other Class',
-          model_type: 'GROUP',
+          model_type: 'ONE_TO_N',
           attendance_source: 'LEARNING_SYSTEM',
           active: true,
         },

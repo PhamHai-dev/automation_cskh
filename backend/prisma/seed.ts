@@ -119,7 +119,7 @@ async function main() {
       class_code: 'CLASS_01',
       class_name: 'Lớp N5 Sáng',
       level: 'N5',
-      model_type: 'GROUP',
+      model_type: 'ONE_TO_N',
       attendance_source: 'LEARNING_SYSTEM',
       class_teachers: {
         create: {
@@ -143,7 +143,7 @@ async function main() {
       class_code: 'CLASS_02',
       class_name: 'Lớp N4 Tối',
       level: 'N4',
-      model_type: 'GROUP',
+      model_type: 'ONE_TO_N',
       attendance_source: 'LEARNING_SYSTEM',
       class_teachers: {
         create: {

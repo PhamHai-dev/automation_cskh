@@ -1,17 +1,21 @@
+import { ClassModelType, AttendanceSourceType } from '@prisma/client';
+
+export type ClassModelInput = '1:1' | '1:2' | '1:n' | 'ONE_TO_ONE' | 'ONE_TO_TWO' | 'ONE_TO_N';
+
 export interface CreateClassDTO {
   class_code?: string;
   class_name: string;
   level?: string;
-  model_type: 'ONE_TO_ONE' | 'GROUP';
-  attendance_source: 'LEARNING_SYSTEM' | 'ZOOM';
+  model_type: ClassModelInput | ClassModelType;
+  attendance_source?: AttendanceSourceType | 'LEARNING_SYSTEM' | 'ZOOM';
 }
 
 export interface UpdateClassDTO {
   class_code?: string;
   class_name?: string;
   level?: string;
-  model_type?: 'ONE_TO_ONE' | 'GROUP';
-  attendance_source?: 'LEARNING_SYSTEM' | 'ZOOM';
+  model_type?: ClassModelInput | ClassModelType;
+  attendance_source?: AttendanceSourceType | 'LEARNING_SYSTEM' | 'ZOOM';
   active?: boolean;
 }
 
@@ -21,3 +25,4 @@ export interface AssignTeacherDTO {
   start_date?: string | Date;
   end_date?: string | Date;
 }
+
