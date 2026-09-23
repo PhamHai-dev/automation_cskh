@@ -8,6 +8,7 @@ import {
 import { Button } from '../../../components/ui/Button';
 import { Badge } from '../../../components/ui/Badge';
 import { useToast } from '../../../components/ui/Toast';
+import { HorizontalTabs } from '../../../components/ui/HorizontalTabs';
 import { attendanceApi, classSessionsApi } from '../api/sessions.api';
 import {
   Save,
@@ -839,46 +840,17 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
     <div className="bg-surface rounded-2xl border border-border/80 shadow-soft overflow-hidden">
       {/* 3 Main Tab Switchers Bar */}
       <div className="p-3 sm:p-4 border-b border-border/80 bg-slate-50/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="flex items-center p-1 bg-surface rounded-xl border border-border/70 shadow-xs max-w-fit">
-          <button
-            type="button"
-            onClick={() => setActiveTab('quick')}
-            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
-              activeTab === 'quick'
-                ? 'bg-primary text-white shadow-xs'
-                : 'text-text-secondary hover:text-text-primary hover:bg-surface-muted'
-            }`}
-          >
-            <Zap className="w-3.5 h-3.5" />
-            <span>Tab 1: Điểm danh nhanh</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTab('detailed')}
-            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
-              activeTab === 'detailed'
-                ? 'bg-primary text-white shadow-xs'
-                : 'text-text-secondary hover:text-text-primary hover:bg-surface-muted'
-            }`}
-          >
-            <Calendar className="w-3.5 h-3.5" />
-            <span>Tab 2: Chi tiết</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTab('stats')}
-            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
-              activeTab === 'stats'
-                ? 'bg-primary text-white shadow-xs'
-                : 'text-text-secondary hover:text-text-primary hover:bg-surface-muted'
-            }`}
-          >
-            <BarChart3 className="w-3.5 h-3.5" />
-            <span>Tab 3: Thống kê điểm danh</span>
-          </button>
-        </div>
+        <HorizontalTabs
+          ariaLabel="Chế độ ma trận điểm danh"
+          value={activeTab}
+          onChange={setActiveTab}
+          size="sm"
+          items={[
+            { value: 'quick', label: 'Điểm danh nhanh', icon: <Zap /> },
+            { value: 'detailed', label: 'Chi tiết', icon: <Calendar /> },
+            { value: 'stats', label: 'Thống kê', icon: <BarChart3 /> },
+          ]}
+        />
 
         {/* Global Save Button */}
         <div className="flex items-center gap-2.5">

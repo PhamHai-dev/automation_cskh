@@ -144,7 +144,6 @@ export const ZaloAccountsPage: React.FC = () => {
     <PageContainer>
       <PageHeader
         title="Quan ly Tai khoan Zalo"
-        description="Quan ly nhieu nick Zalo cho moi CS, dang nhap QR va dong bo danh ba"
         actions={
           <div className="flex gap-2">
             <Button onClick={() => fetchAccounts()} variant="outline" className="flex items-center gap-2">

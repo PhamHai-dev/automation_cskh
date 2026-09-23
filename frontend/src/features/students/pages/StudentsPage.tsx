@@ -10,6 +10,7 @@ import { Input } from '../../../components/ui/Input';
 import { Badge } from '../../../components/ui/Badge';
 import { Modal } from '../../../components/ui/Modal';
 import { useToast } from '../../../components/ui/Toast';
+import { HorizontalTabs } from '../../../components/ui/HorizontalTabs';
 import { useAuth } from '../../../contexts/AuthContext';
 import {
   Edit,
@@ -1217,7 +1218,6 @@ export const StudentsPage: React.FC = () => {
       {/* Page Header */}
       <PageHeader
         title="Danh sách Học viên (Chuẩn Sheet 1)"
-        description="Đầy đủ thông tin học viên, tiến độ gói học, nợ buổi âm và nhật ký chăm sóc chia theo 2 Tab nghiệp vụ."
         actions={
           <div className="flex items-center gap-2">
             {activeTab === 'care_reports' && (
@@ -1243,40 +1243,26 @@ export const StudentsPage: React.FC = () => {
         }
       />
 
-      {/* Tab Navigation Switcher */}
-      <div className="flex items-center gap-3 mb-5 border-b border-border/80">
-        <button
-          type="button"
-          onClick={() => setActiveTab('students')}
-          className={`flex items-center gap-2 px-5 py-3 text-xs sm:text-sm font-bold border-b-2 transition-all ${
-            activeTab === 'students'
-              ? 'border-primary text-primary'
-              : 'border-transparent text-text-muted hover:text-text-primary'
-          }`}
-        >
-          <Users className="w-4 h-4" />
-          <span>Tab 1: Hồ sơ Học viên</span>
-          <span className="px-2 py-0.5 rounded-full text-[10px] bg-primary-soft text-primary font-bold">
-            {filteredStudents.length} HV
-          </span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setActiveTab('care_reports')}
-          className={`flex items-center gap-2 px-5 py-3 text-xs sm:text-sm font-bold border-b-2 transition-all ${
-            activeTab === 'care_reports'
-              ? 'border-emerald-600 text-emerald-700'
-              : 'border-transparent text-text-muted hover:text-text-primary'
-          }`}
-        >
-          <FileText className="w-4 h-4 text-emerald-600" />
-          <span>Tab 2: Báo cáo Học tập & Chăm sóc</span>
-          <span className="px-2 py-0.5 rounded-full text-[10px] bg-emerald-100 text-emerald-800 font-bold">
-            Excel Inline Edit
-          </span>
-        </button>
-      </div>
+      <HorizontalTabs
+        ariaLabel="Nội dung danh sách học viên"
+        value={activeTab}
+        onChange={setActiveTab}
+        className="mb-5"
+        items={[
+          {
+            value: 'students',
+            label: 'Hồ sơ học viên',
+            icon: <Users />,
+            badge: `${filteredStudents.length} HV`,
+          },
+          {
+            value: 'care_reports',
+            label: 'Báo cáo học tập & chăm sóc',
+            icon: <FileText />,
+            badge: 'Chỉnh sửa trực tiếp',
+          },
+        ]}
+      />
 
       {/* Filter and Tool Bar (Synced across both Tabs) */}
       <div className="mb-5 p-4 bg-surface rounded-2xl border border-border/80 shadow-soft flex flex-wrap items-center justify-between gap-4">
@@ -1681,60 +1667,18 @@ export const StudentsPage: React.FC = () => {
           }
         >
           <form onSubmit={handleSubmit} className="space-y-4">
-            {/* Form Sub-Tabs */}
-            <div className="flex flex-wrap gap-1.5 p-1 bg-slate-100 rounded-xl border border-slate-200/80 text-xs font-semibold">
-              <button
-                type="button"
-                onClick={() => setFormModalTab('profile')}
-                className={`flex items-center gap-1.5 px-3 py-2 rounded-lg transition-all ${
-                  formModalTab === 'profile'
-                    ? 'bg-white text-blue-700 shadow-xs font-bold'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
-                }`}
-              >
-                <Users className="w-3.5 h-3.5" />
-                <span>1. Hồ sơ & Liên hệ</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setFormModalTab('course')}
-                className={`flex items-center gap-1.5 px-3 py-2 rounded-lg transition-all ${
-                  formModalTab === 'course'
-                    ? 'bg-white text-blue-700 shadow-xs font-bold'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
-                }`}
-              >
-                <BookOpen className="w-3.5 h-3.5" />
-                <span>2. Khóa học & Tài chính</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setFormModalTab('class')}
-                className={`flex items-center gap-1.5 px-3 py-2 rounded-lg transition-all ${
-                  formModalTab === 'class'
-                    ? 'bg-white text-blue-700 shadow-xs font-bold'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
-                }`}
-              >
-                <Calendar className="w-3.5 h-3.5" />
-                <span>3. Lớp học & Lịch học</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setFormModalTab('care')}
-                className={`flex items-center gap-1.5 px-3 py-2 rounded-lg transition-all ${
-                  formModalTab === 'care'
-                    ? 'bg-white text-blue-700 shadow-xs font-bold'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
-                }`}
-              >
-                <MessageSquare className="w-3.5 h-3.5" />
-                <span>4. Báo cáo & CSKH</span>
-              </button>
-            </div>
+            <HorizontalTabs
+              ariaLabel="Nhóm thông tin học viên"
+              value={formModalTab}
+              onChange={setFormModalTab}
+              size="sm"
+              items={[
+                { value: 'profile', label: 'Hồ sơ & liên hệ', icon: <Users /> },
+                { value: 'course', label: 'Khóa học & tài chính', icon: <BookOpen /> },
+                { value: 'class', label: 'Lớp học & lịch học', icon: <Calendar /> },
+                { value: 'care', label: 'Báo cáo & CSKH', icon: <MessageSquare /> },
+              ]}
+            />
 
             {/* TAB 1: HỒ SƠ & LIÊN HỆ */}
             {formModalTab === 'profile' && (

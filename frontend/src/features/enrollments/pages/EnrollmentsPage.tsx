@@ -234,7 +234,6 @@ export const EnrollmentsPage: React.FC = () => {
     <PageContainer>
       <PageHeader
         title="Quản lý Điểm danh & Ghi danh"
-        description="Giao diện điểm danh 3 Tab chuẩn hóa Sheet 3: Điểm danh nhanh, Ma trận chi tiết và Báo cáo thống kê chuyên cần theo Sale."
       />
 
       {/* Filter and Search Bar */}

@@ -13,6 +13,7 @@ import { PageHeader } from '../../../components/common/PageHeader';
 import { Button } from '../../../components/ui/Button';
 import { Badge } from '../../../components/ui/Badge';
 import { useToast } from '../../../components/ui/Toast';
+import { HorizontalTabs } from '../../../components/ui/HorizontalTabs';
 import { AttendanceMatrix, StudentRow } from '../components/AttendanceMatrix';
 import {
   CalendarDays,
@@ -316,11 +317,6 @@ export const AttendanceSheetPage = () => {
     <PageContainer>
       <PageHeader
         title={cls ? `Điểm danh Lớp ${cls.class_name}` : 'Điểm danh Lớp học'}
-        description={
-          session
-            ? `Buổi số ${session.session_number} • Ngày ${new Date(session.session_date).toLocaleDateString('vi-VN')} • Mã lớp: ${cls?.class_code || '—'}`
-            : `Mã lớp: ${cls?.class_code || '—'} • Mô hình: ${cls?.model_type || '—'}`
-        }
         backUrl={`/classes/${clsId}/sessions`}
         breadcrumbs={[
           { label: 'Quản lý Lớp học', href: '/classes' },
@@ -353,39 +349,27 @@ export const AttendanceSheetPage = () => {
         }
       />
 
-      {/* Mode Switcher Tabs */}
-      <div className="flex items-center gap-2 mb-6 border-b border-border/80">
-        <button
-          type="button"
-          onClick={() => setActiveTab('matrix')}
-          className={`flex items-center gap-2 px-4 py-3 text-xs sm:text-sm font-bold border-b-2 transition-all ${
-            activeTab === 'matrix'
-              ? 'border-primary text-primary'
-              : 'border-transparent text-text-muted hover:text-text-primary'
-          }`}
-        >
-          <CalendarDays className="w-4 h-4" />
-          <span>Ma trận Điểm danh theo Ngày</span>
-          <span className="px-2 py-0.5 rounded-full text-[10px] bg-primary-soft text-primary font-bold">
-            Chuẩn mới (Có ô tích chọn)
-          </span>
-        </button>
-
-        {sessId ? (
-          <button
-            type="button"
-            onClick={() => setActiveTab('session')}
-            className={`flex items-center gap-2 px-4 py-3 text-xs sm:text-sm font-bold border-b-2 transition-all ${
-              activeTab === 'session'
-                ? 'border-primary text-primary'
-                : 'border-transparent text-text-muted hover:text-text-primary'
-            }`}
-          >
-            <CheckSquare className="w-4 h-4" />
-            <span>Phiếu Buổi #{session?.session_number || sessId}</span>
-          </button>
-        ) : null}
-      </div>
+      <HorizontalTabs
+        ariaLabel="Chế độ điểm danh"
+        value={activeTab}
+        onChange={setActiveTab}
+        className="mb-6"
+        items={[
+          {
+            value: 'matrix',
+            label: 'Ma trận theo ngày',
+            icon: <CalendarDays />,
+            badge: 'Có tích chọn',
+          },
+          ...(sessId
+            ? [{
+                value: 'session' as const,
+                label: `Phiếu buổi #${session?.session_number || sessId}`,
+                icon: <CheckSquare />,
+              }]
+            : []),
+        ]}
+      />
 
       {/* Tab 1: Full Attendance Matrix View */}
       {activeTab === 'matrix' && cls && (

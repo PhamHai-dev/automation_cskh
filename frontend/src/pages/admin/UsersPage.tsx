@@ -236,7 +236,6 @@ export const UsersPage: React.FC = () => {
     <PageContainer>
       <PageHeader
         title="Quản lý Người dùng & Phân quyền"
-        description="Quản trị danh sách nhân viên, phân quyền vai trò (Admin, CS, Giáo viên) và giám sát trạng thái tài khoản"
         actions={
           <Button onClick={() => openModal()} variant="primary" size="sm" className="flex items-center gap-1.5">
             <Plus className="w-4 h-4" />

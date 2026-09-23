@@ -64,7 +64,6 @@ export const DashboardPage: React.FC = () => {
     <PageContainer>
       <PageHeader
         title="Dashboard Báo cáo & Thống kê Chăm sóc Khách hàng"
-        description="Số liệu tổng hợp trực tiếp từ cơ sở dữ liệu: tình trạng học viên, tỷ lệ chuyên cần, ma trận mốc buổi học và tiến độ xử lý công việc"
         actions={
           <Button
             variant="outline"

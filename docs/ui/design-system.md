@@ -175,7 +175,31 @@ Chuẩn:
 
 Không tự tạo border/shadow khác nhau giữa các page.
 
-## 8. DataTable
+## 8. Horizontal Tabs
+
+Tab ngang chuẩn dùng component `HorizontalTabs` trong `frontend/src/components/ui`.
+Không viết lại tab bằng chuỗi Tailwind trong từng page.
+
+### Kiểu hiển thị
+
+- Dùng segmented pill: nền `surface-muted`, bo góc 12px, border semantic.
+- Tab active dùng nền `surface`, chữ/icon `primary`, border và shadow nhẹ.
+- Tab inactive dùng `text-secondary`; hover có nền surface nhẹ.
+- Không đổi màu active theo từng nghiệp vụ và không ghi `Tab 1`, `Tab 2` trên UI.
+- Badge chỉ chứa count hoặc metadata ngắn và dùng màu semantic của component.
+- Size `md` dùng ở cấp page; size `sm` dùng trong card, panel hoặc modal.
+
+### Nội dung và hành vi
+
+- Label ngắn, thuần tiếng Việt và mô tả đúng nội dung; icon là tùy chọn.
+- Dùng tab khi chuyển giữa các view ngang hàng trong cùng context.
+- Không dùng tab thay cho button action, filter hoặc tiến trình nhiều bước có thứ tự bắt buộc.
+- Trên mobile, tablist giữ một hàng và cuộn ngang; không ép chữ xuống dòng.
+- Phải có `tablist`/`tab`, `aria-selected`, focus-visible và điều hướng bằng
+  `ArrowLeft`, `ArrowRight`, `Home`, `End`.
+- Hiệu ứng chuyển trạng thái ngắn và phải tôn trọng `prefers-reduced-motion`.
+
+## 9. DataTable
 
 Đây là component quan trọng vì product có nhiều bảng.
 

@@ -206,7 +206,6 @@ export const TeachersPage: React.FC = () => {
     <PageContainer>
       <PageHeader
         title="Quản lý Giáo viên"
-        description="Quản lý danh sách giảng viên, thông tin liên hệ, mã giảng viên và phân loại giảng dạy"
         actions={
           <Button onClick={() => openModal()} variant="primary" size="sm" className="flex items-center gap-1.5">
             <Plus className="w-4 h-4" />

@@ -212,7 +212,6 @@ export const ClassSessionsPage: React.FC = () => {
     <PageContainer>
       <PageHeader
         title={`Buổi học: ${cls?.class_name || `Lớp #${clsId}`}`}
-        description={`Quản lý toàn bộ lịch học và phiếu điểm danh chuyên cần của lớp (${cls?.class_code || ''})`}
         backUrl="/classes"
         actions={
           <Button onClick={() => openModal()} variant="primary" size="sm" className="flex items-center gap-1.5">
