@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Class,
   ClassSession,
@@ -8,23 +8,19 @@ import {
 import { Button } from '../../../components/ui/Button';
 import { Badge } from '../../../components/ui/Badge';
 import { useToast } from '../../../components/ui/Toast';
-import { HorizontalTabs } from '../../../components/ui/HorizontalTabs';
 import { attendanceApi, classSessionsApi } from '../api/sessions.api';
 import {
   Save,
   ChevronLeft,
   ChevronRight,
-  Users,
-  CheckSquare,
   Check,
   X as CloseIcon,
-  Zap,
-  Calendar,
-  BarChart3,
   CalendarDays,
   Award,
   AlertTriangle,
   Clock,
+  Users,
+  BarChart3,
 } from 'lucide-react';
 
 export interface StudentRow {
@@ -38,6 +34,7 @@ export interface StudentRow {
   total_sessions?: number | null;   // Cột E: Tổng số buổi
   level?: string | null;            // Cột F: Khoá học / Trình độ
   email?: string | null;            // Cột G: Email
+  phone?: string | null;            // SĐT phục vụ tìm kiếm
   model_type?: string | null;       // Cột H: Mô hình (1:1, 1:2, 1:n)
   remaining_sessions?: number | null;// Cột I: Số buổi còn lại
   start_date?: string | null;       // Cột J: Ngày bắt đầu học
@@ -62,10 +59,25 @@ export interface AttendanceMatrixProps {
     pendingEdits: Record<string, AttendanceStatus>,
     customValues: Record<string, number>
   ) => Promise<void>;
+  activeTab?: AttendanceTab;
   titleHeader?: React.ReactNode;
 }
 
 export type AttendanceTab = 'quick' | 'detailed' | 'stats';
+
+const formatClassModel = (model?: string | null): string => {
+  const labels: Record<string, string> = {
+    ONE_TO_ONE: '1-1',
+    ONE_TO_TWO: '1-2',
+    ONE_TO_N: '1-N',
+    GROUP: '1-N',
+    '1:1': '1-1',
+    '1:2': '1-2',
+    '1:n': '1-N',
+  };
+
+  return labels[model || ''] || model || '1-1';
+};
 
 const STATUS_CONFIG: Record<
   AttendanceStatus,
@@ -145,11 +157,12 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
   attendances,
   onRefresh,
   onSaveCustom,
+  activeTab: controlledActiveTab,
 }) => {
   const toast = useToast();
 
-  // 3 Primary Tabs: 'quick' (Điểm danh nhanh), 'detailed' (Chi tiết), 'stats' (Thống kê điểm danh)
-  const [activeTab, setActiveTab] = useState<AttendanceTab>('quick');
+  const [internalActiveTab] = useState<AttendanceTab>('quick');
+  const activeTab = controlledActiveTab ?? internalActiveTab;
 
   // Tab 1 (Quick Attendance) specific date state (Default: Today)
   const [quickDate, setQuickDate] = useState<string>(() => toLocalDateString(new Date()));
@@ -178,6 +191,8 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
     studentName: string;
   } | null>(null);
   const [cellInputCount, setCellInputCount] = useState<number>(1);
+
+  const selectAllCheckboxRef = useRef<HTMLInputElement>(null);
 
   const toDateString = toLocalDateString;
 
@@ -444,14 +459,31 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
     setQuickDate(toLocalDateString(new Date()));
   };
 
-  // Toggle select all students (only valid assigned students)
-  const handleToggleSelectAllStudents = () => {
-    const validStudents = students.filter((s) => s.enrollment_class_id > 0);
-    if (selectedStudents.size === validStudents.length && validStudents.length > 0) {
-      setSelectedStudents(new Set());
-    } else {
-      setSelectedStudents(new Set(validStudents.map((s) => s.enrollment_class_id)));
+  const validVisibleStudentIds = useMemo(
+    () => students.filter((student) => student.enrollment_class_id > 0).map((student) => student.enrollment_class_id),
+    [students]
+  );
+  const selectedVisibleCount = validVisibleStudentIds.filter((id) => selectedStudents.has(id)).length;
+  const allVisibleSelected = validVisibleStudentIds.length > 0 && selectedVisibleCount === validVisibleStudentIds.length;
+  const someVisibleSelected = selectedVisibleCount > 0 && !allVisibleSelected;
+
+  useEffect(() => {
+    setSelectedStudents((current) => {
+      const visible = new Set(validVisibleStudentIds);
+      const next = new Set(Array.from(current).filter((id) => visible.has(id)));
+      return next.size === current.size ? current : next;
+    });
+  }, [validVisibleStudentIds]);
+
+  useEffect(() => {
+    if (selectAllCheckboxRef.current) {
+      selectAllCheckboxRef.current.indeterminate = someVisibleSelected;
     }
+  }, [someVisibleSelected]);
+
+  // Toggle all valid students currently visible after filters
+  const handleToggleSelectAllStudents = () => {
+    setSelectedStudents(allVisibleSelected ? new Set() : new Set(validVisibleStudentIds));
   };
 
   // Toggle single student select
@@ -502,48 +534,6 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
     toast.info(
       `Đã cập nhật trạng thái ${STATUS_CONFIG[status].label} cho ${selectedStudents.size} học viên`
     );
-  };
-
-  // Quick mark/unmark all present for a specific date (Column Checkbox)
-  const handleToggleAllForDate = (dateStr: string) => {
-    const validStudents = students.filter((s) => s.enrollment_class_id > 0);
-    const isAllAttended =
-      validStudents.length > 0 &&
-      validStudents.every((s) => {
-        const key = `${s.enrollment_class_id}_${dateStr}`;
-        const st = pendingEdits[key] || attendanceMap.get(key)?.status;
-        return st === 'ATTENDED';
-      });
-
-    const updates: Record<string, AttendanceStatus> = {};
-    const valUpdates: Record<string, number> = {};
-
-    if (isAllAttended) {
-      // Unmark all (set to unassigned / removed)
-      setPendingEdits((prev) => {
-        const next = { ...prev };
-        validStudents.forEach((s) => delete next[`${s.enrollment_class_id}_${dateStr}`]);
-        return next;
-      });
-      setCustomValues((prev) => {
-        const next = { ...prev };
-        validStudents.forEach((s) => delete next[`${s.enrollment_class_id}_${dateStr}`]);
-        return next;
-      });
-      toast.info(`Đã bỏ điểm danh cả lớp cho ngày ${new Date(dateStr).toLocaleDateString('vi-VN')}`);
-    } else {
-      // Mark all attended with 1 session
-      validStudents.forEach((s) => {
-        const key = `${s.enrollment_class_id}_${dateStr}`;
-        updates[key] = 'ATTENDED';
-        valUpdates[key] = 1;
-      });
-      setPendingEdits((prev) => ({ ...prev, ...updates }));
-      setCustomValues((prev) => ({ ...prev, ...valUpdates }));
-      toast.success(
-        `Đã tích chọn Có mặt (1 buổi) cả lớp cho ngày ${new Date(dateStr).toLocaleDateString('vi-VN')}`
-      );
-    }
   };
 
   // Select status for a cell from Popover
@@ -667,9 +657,10 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
     const isPending = !!pendingEdits[key];
 
     const cfg = currentStatus ? STATUS_CONFIG[currentStatus] : null;
-    let displayValue: string | number = '-';
+    let displayValue: React.ReactNode = <span className="font-medium text-text-muted">Chưa ghi</span>;
     if (currentStatus === 'ATTENDED') {
-      displayValue = customValues[key] ?? existingAtt?.session_count ?? 1;
+      const count = customValues[key] ?? existingAtt?.session_count ?? 1;
+      displayValue = <span className="inline-flex items-center gap-1"><Check className="h-3.5 w-3.5" /><span>{count}</span></span>;
     } else if (cfg) {
       displayValue = cfg.short;
     }
@@ -702,7 +693,7 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
           } ${isPending ? 'ring-2 ring-primary ring-offset-1' : ''}`}
           title={
             currentStatus === 'ATTENDED'
-              ? `Có mặt (${displayValue} buổi) - ${new Date(dateStr).toLocaleDateString('vi-VN')}`
+              ? `Có mặt (${customValues[key] ?? existingAtt?.session_count ?? 1} buổi) - ${new Date(dateStr).toLocaleDateString('vi-VN')}`
               : cfg
               ? `${cfg.label} - ${new Date(dateStr).toLocaleDateString('vi-VN')}`
               : `Chưa điểm danh (${new Date(dateStr).toLocaleDateString('vi-VN')})`
@@ -838,86 +829,60 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
 
   return (
     <div className="bg-surface rounded-2xl border border-border/80 shadow-soft overflow-hidden">
-      {/* 3 Main Tab Switchers Bar */}
-      <div className="p-3 sm:p-4 border-b border-border/80 bg-slate-50/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <HorizontalTabs
-          ariaLabel="Chế độ ma trận điểm danh"
-          value={activeTab}
-          onChange={setActiveTab}
+      {/* Save state header; the primary tabs live directly below the page title. */}
+      <div className="flex flex-wrap items-center justify-end gap-2.5 border-b border-border/80 bg-slate-50/60 p-3 sm:px-4">
+        {hasChanges && (
+          <Badge variant="warning" size="md" className="font-bold">
+            {Object.keys(pendingEdits).length} thay đổi chưa lưu
+          </Badge>
+        )}
+        <Button
+          variant="primary"
           size="sm"
-          items={[
-            { value: 'quick', label: 'Điểm danh nhanh', icon: <Zap /> },
-            { value: 'detailed', label: 'Chi tiết', icon: <Calendar /> },
-            { value: 'stats', label: 'Thống kê', icon: <BarChart3 /> },
-          ]}
-        />
-
-        {/* Global Save Button */}
-        <div className="flex items-center gap-2.5">
-          {hasChanges && (
-            <Badge variant="warning" size="md" className="font-bold">
-              {Object.keys(pendingEdits).length} thay đổi chưa lưu
-            </Badge>
-          )}
-
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={handleSaveAll}
-            disabled={!hasChanges || saving}
-            isLoading={saving}
-            leftIcon={<Save className="w-4 h-4" />}
-            className="font-bold"
-          >
-            Lưu kết quả điểm danh
-          </Button>
-        </div>
+          onClick={handleSaveAll}
+          disabled={!hasChanges || saving}
+          isLoading={saving}
+          leftIcon={<Save className="h-4 w-4" />}
+          className="font-bold"
+        >
+          Lưu kết quả điểm danh
+        </Button>
       </div>
 
       {/* Sub Toolbar per Active Tab */}
       {activeTab === 'quick' && (
-        <div className="p-3 px-4 border-b border-border/70 bg-surface flex flex-wrap items-center justify-between gap-3 text-xs">
-          <div className="flex items-center gap-2">
-            <span className="text-text-secondary font-bold">Ngày điểm danh:</span>
-            <div className="flex items-center gap-1 bg-surface-muted p-1 rounded-xl border border-border/60">
-              <button
-                type="button"
-                onClick={handleQuickDatePrev}
-                className="p-1 rounded-lg text-text-muted hover:text-text-primary hover:bg-surface transition-colors"
-                title="Ngày hôm trước"
-              >
-                <ChevronLeft className="w-4 h-4" />
-              </button>
-              <input
-                type="date"
-                value={quickDate}
-                onChange={(e) => e.target.value && setQuickDate(e.target.value)}
-                className="px-2 py-0.5 bg-surface text-text-primary font-bold text-xs rounded-lg border border-border/60 focus:outline-none focus:ring-1 focus:ring-primary"
-              />
-              <button
-                type="button"
-                onClick={handleQuickDateNext}
-                className="p-1 rounded-lg text-text-muted hover:text-text-primary hover:bg-surface transition-colors"
-                title="Ngày hôm sau"
-              >
-                <ChevronRight className="w-4 h-4" />
-              </button>
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleQuickDateToday}
-              className="text-xs h-7 px-2.5 font-bold"
+        <div className="flex flex-wrap items-center gap-3 border-b border-border/70 bg-surface px-4 py-3 text-xs">
+          <span className="font-bold text-text-secondary">Ngày điểm danh</span>
+          <div className="flex items-center gap-1 rounded-xl border border-border/60 bg-surface-muted p-1">
+            <button
+              type="button"
+              onClick={handleQuickDatePrev}
+              className="rounded-lg p-1 text-text-muted transition-colors hover:bg-surface hover:text-text-primary"
+              title="Ngày hôm trước"
+              aria-label="Chuyển đến ngày hôm trước"
             >
-              Hôm nay
-            </Button>
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+            <input
+              type="date"
+              value={quickDate}
+              onChange={(e) => e.target.value && setQuickDate(e.target.value)}
+              className="rounded-lg border border-border/60 bg-surface px-2 py-1 text-xs font-bold text-text-primary outline-none focus:ring-1 focus:ring-primary"
+              aria-label="Ngày điểm danh"
+            />
+            <button
+              type="button"
+              onClick={handleQuickDateNext}
+              className="rounded-lg p-1 text-text-muted transition-colors hover:bg-surface hover:text-text-primary"
+              title="Ngày hôm sau"
+              aria-label="Chuyển đến ngày hôm sau"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </button>
           </div>
-
-          <div className="text-[11px] text-text-muted flex items-center gap-2">
-            <span>Sĩ số: <strong className="text-text-primary">{students.length}</strong> học viên</span>
-            <span>•</span>
-            <span>Hiển thị cột <strong>A ➔ H</strong> + <strong>K</strong> + Ngày <strong>{new Date(quickDate).toLocaleDateString('vi-VN')}</strong></span>
-          </div>
+          <Button variant="outline" size="sm" onClick={handleQuickDateToday} className="h-8 px-3 text-xs font-bold">
+            Hôm nay
+          </Button>
         </div>
       )}
 
@@ -1049,88 +1014,59 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
         </div>
       )}
 
-      {/* Bulk Action Bar (When >= 1 student selected in Tab 1 or Tab 2) */}
+      {/* Compact bulk attendance action strip */}
       {selectedStudents.size > 0 && activeTab !== 'stats' && (
-        <div className="bg-primary-soft/90 border-b border-primary/30 p-2.5 px-4 flex flex-wrap items-center justify-between gap-3 text-xs animate-in fade-in duration-150">
-          <div className="flex items-center gap-2">
-            <CheckSquare className="w-4 h-4 text-primary" />
-            <span className="font-bold text-text-primary">
-              Đã tích chọn <span className="text-primary font-extrabold">{selectedStudents.size}</span> học viên
+        <div className="flex flex-col gap-3 border-b border-primary/20 bg-primary-soft/70 px-4 py-3 text-xs sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex shrink-0 items-center gap-2">
+            <span className="flex h-7 min-w-7 items-center justify-center rounded-full bg-primary px-2 font-extrabold text-white">
+              {selectedStudents.size}
             </span>
-            <button
-              type="button"
-              onClick={() => setSelectedStudents(new Set())}
-              className="text-text-muted hover:text-text-primary underline ml-1 text-[11px]"
-            >
-              Bỏ chọn
-            </button>
+            <span className="font-bold text-text-primary">học viên đã chọn</span>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2.5">
+          <div className="flex min-w-0 items-center gap-2 overflow-x-auto pb-1 [scrollbar-width:thin] sm:pb-0">
             {activeTab === 'detailed' && (
-              <div className="flex items-center gap-1.5">
-                <span className="text-text-secondary font-medium">Ngày:</span>
-                <select
-                  value={bulkDate}
-                  onChange={(e) => setBulkDate(e.target.value)}
-                  className="text-xs bg-surface border border-border rounded-lg px-2.5 py-1 font-bold text-text-primary focus:ring-1 focus:ring-primary"
-                >
-                  {datesList.map((d) => {
-                    const dStr = toDateString(d);
-                    return (
-                      <option key={dStr} value={dStr}>
-                        {DAY_OF_WEEK_NAMES[d.getDay()]} {d.getDate() < 10 ? `0${d.getDate()}` : d.getDate()}/{d.getMonth() + 1}
-                      </option>
-                    );
-                  })}
-                </select>
-              </div>
+              <select
+                aria-label="Ngày áp dụng điểm danh"
+                value={bulkDate}
+                onChange={(e) => setBulkDate(e.target.value)}
+                className="h-8 shrink-0 rounded-lg border border-border bg-surface px-2.5 text-xs font-bold text-text-primary"
+              >
+                {datesList.map((date) => {
+                  const dateString = toDateString(date);
+                  return <option key={dateString} value={dateString}>{DAY_OF_WEEK_NAMES[date.getDay()]} {date.toLocaleDateString('vi-VN')}</option>;
+                })}
+              </select>
             )}
-
-            <div className="flex items-center gap-1.5">
-              <span className="text-text-secondary font-medium">Số buổi:</span>
+            <div className="flex shrink-0 items-center rounded-lg border border-emerald-200 bg-surface p-0.5">
+              <label htmlFor="bulk-session-count" className="px-2 font-semibold text-text-secondary">Số buổi</label>
               <input
+                id="bulk-session-count"
                 type="number"
                 min="0.5"
                 max="10"
                 step="0.5"
                 value={bulkCount}
                 onChange={(e) => setBulkCount(Number(e.target.value) || 1)}
-                className="w-14 text-center bg-surface border border-border rounded-lg py-1 font-extrabold text-xs text-emerald-800"
+                className="h-7 w-12 rounded-md bg-emerald-50 text-center font-extrabold text-emerald-800 outline-none focus:ring-2 focus:ring-emerald-300"
               />
             </div>
-
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={handleBulkApplyAttended}
-              className="text-xs h-7 px-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold"
-            >
-              ✓ Đánh dấu có mặt ({bulkCount})
-            </Button>
-
-            <div className="flex items-center gap-1 border-l border-border/80 pl-2">
-              <span className="text-[11px] text-text-muted mr-1">Vắng:</span>
-              {(
-                [
-                  'ABSENT_APPROVED_A',
-                  'LEAVE_B',
-                  'ABSENT_UNAPPROVED_C',
-                  'TEACHER_ABSENT_D',
-                  'TECH_ERROR_E',
-                ] as AttendanceStatus[]
-              ).map((st) => (
-                <button
-                  key={st}
-                  type="button"
-                  onClick={() => handleBulkApplyAbsent(st)}
-                  className={`w-6 h-6 rounded flex items-center justify-center text-[10px] font-extrabold border ${STATUS_CONFIG[st].bg} ${STATUS_CONFIG[st].text} ${STATUS_CONFIG[st].border} hover:opacity-80 transition-transform active:scale-95`}
-                  title={STATUS_CONFIG[st].label}
-                >
-                  {STATUS_CONFIG[st].short}
-                </button>
-              ))}
-            </div>
+            <button type="button" onClick={handleBulkApplyAttended} aria-label={`Đánh dấu có mặt ${bulkCount} buổi cho ${selectedStudents.size} học viên`} className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg bg-emerald-600 px-3 font-bold text-white shadow-sm transition hover:bg-emerald-700 active:scale-[0.98]">
+              <Check className="h-3.5 w-3.5" /> Có mặt
+            </button>
+            {(['ABSENT_APPROVED_A', 'LEAVE_B', 'ABSENT_UNAPPROVED_C', 'TEACHER_ABSENT_D', 'TECH_ERROR_E'] as AttendanceStatus[]).map((status) => (
+              <button
+                key={status}
+                type="button"
+                onClick={() => handleBulkApplyAbsent(status)}
+                aria-label={`${STATUS_CONFIG[status].label} cho ${selectedStudents.size} học viên`}
+                className={`inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border px-2.5 font-bold transition hover:-translate-y-px hover:shadow-sm active:translate-y-0 ${STATUS_CONFIG[status].bg} ${STATUS_CONFIG[status].text} ${STATUS_CONFIG[status].border}`}
+                title={STATUS_CONFIG[status].label}
+              >
+                <span className="text-[10px] font-extrabold">{STATUS_CONFIG[status].short}</span>
+                <span>{STATUS_CONFIG[status].label.replace(/\s*\([A-E]\)$/, '')}</span>
+              </button>
+            ))}
           </div>
         </div>
       )}
@@ -1146,11 +1082,14 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
                 {/* Checkbox */}
                 <th className="px-2 py-3 border-r border-border/60 w-10 min-w-[40px] text-center bg-slate-100/90">
                   <input
+                    ref={selectAllCheckboxRef}
                     type="checkbox"
-                    checked={selectedStudents.size > 0 && selectedStudents.size === students.length}
+                    checked={allVisibleSelected}
                     onChange={handleToggleSelectAllStudents}
-                    className="w-3.5 h-3.5 rounded text-primary focus:ring-primary border-slate-300 cursor-pointer accent-primary"
-                    title="Chọn tất cả học viên"
+                    disabled={validVisibleStudentIds.length === 0}
+                    className="h-4 w-4 cursor-pointer rounded border-slate-300 accent-primary focus:ring-primary disabled:cursor-not-allowed disabled:opacity-40"
+                    title="Chọn hoặc bỏ chọn tất cả học viên đang hiển thị"
+                    aria-label="Chọn hoặc bỏ chọn tất cả học viên đang hiển thị"
                   />
                 </th>
                 <th className="px-2 py-3 border-r border-border/60 w-10 min-w-[40px] text-center bg-slate-100/90">
@@ -1189,12 +1128,6 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
                   const [y, m, day] = quickDate.split('-').map(Number);
                   const d = new Date(y, m - 1, day);
                   const isToday = toLocalDateString(new Date()) === quickDate;
-                  const isAllAttended =
-                    students.length > 0 &&
-                    students.every((s) => {
-                      const key = `${s.enrollment_class_id}_${quickDate}`;
-                      return (pendingEdits[key] || attendanceMap.get(key)?.status) === 'ATTENDED';
-                    });
 
                   return (
                     <th className="px-4 py-2 border-r border-border/60 text-center min-w-[140px] bg-blue-50/90 text-primary border-primary/40">
@@ -1209,19 +1142,6 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
                           {d.getFullYear()}
                         </span>
                       </div>
-                      <label
-                        className="mt-1 flex items-center justify-center gap-1 cursor-pointer text-[10px] font-bold text-emerald-800"
-                        title="Tích chọn cả lớp có mặt"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={isAllAttended}
-                          onChange={() => handleToggleAllForDate(quickDate)}
-                          className="w-3.5 h-3.5 rounded text-emerald-600 focus:ring-emerald-500 border-slate-300 cursor-pointer accent-emerald-600"
-                        />
-                        <span>Cả lớp có mặt</span>
-                      </label>
                     </th>
                   );
                 })()}
@@ -1301,7 +1221,7 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
                       {/* Cột H: Mô hình */}
                       <td className="px-3 py-2.5 border-r border-border/60 text-text-secondary whitespace-nowrap">
                         <Badge variant="neutral" size="sm">
-                          {st.model_type || '1:1'}
+                          {formatClassModel(st.model_type)}
                         </Badge>
                       </td>
 
@@ -1350,25 +1270,14 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
           <table className="w-full text-xs text-left border-collapse">
             <thead>
               <tr className="bg-surface-muted/90 text-text-secondary border-b border-border/80 text-[11px] font-bold">
-                {/* Checkbox Column */}
-                <th className="px-2 py-3 border-r border-border/60 sticky left-0 bg-slate-100 z-20 w-10 min-w-[40px] text-center">
-                  <input
-                    type="checkbox"
-                    checked={selectedStudents.size === students.length && students.length > 0}
-                    onChange={handleToggleSelectAllStudents}
-                    className="w-3.5 h-3.5 rounded text-primary focus:ring-primary border-slate-300 cursor-pointer accent-primary"
-                    title="Chọn tất cả học viên"
-                  />
-                </th>
-
                 {/* Sticky 3 Cột định danh nhận diện */}
-                <th className="px-2 py-3 border-r border-border/60 sticky left-10 bg-slate-100 z-20 w-10 min-w-[40px] text-center">
+                <th className="px-2 py-3 border-r border-border/60 sticky left-0 bg-slate-100 z-20 w-10 min-w-[40px] text-center">
                   #
                 </th>
-                <th className="px-3 py-3 border-r border-border/60 sticky left-20 bg-slate-100 z-20 whitespace-nowrap min-w-[85px]">
+                <th className="px-3 py-3 border-r border-border/60 sticky left-10 bg-slate-100 z-20 whitespace-nowrap min-w-[85px]">
                   ID
                 </th>
-                <th className="px-4 py-3 border-r-2 border-border/80 sticky left-[165px] bg-slate-100 z-20 whitespace-nowrap min-w-[160px] shadow-[4px_0_6px_-2px_rgba(0,0,0,0.06)]">
+                <th className="px-4 py-3 border-r-2 border-border/80 sticky left-[125px] bg-slate-100 z-20 whitespace-nowrap min-w-[160px] shadow-[4px_0_6px_-2px_rgba(0,0,0,0.06)]">
                   Họ tên HV
                 </th>
 
@@ -1474,13 +1383,6 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
                   const isToday = toDateString(new Date()) === dateStr;
                   const isWeekend = d.getDay() === 0 || d.getDay() === 6;
 
-                  const isAllAttended =
-                    students.length > 0 &&
-                    students.every((s) => {
-                      const key = `${s.enrollment_class_id}_${dateStr}`;
-                      const st = pendingEdits[key] || attendanceMap.get(key)?.status;
-                      return st === 'ATTENDED';
-                    });
 
                   return (
                     <th
@@ -1499,22 +1401,6 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
                       <div className="text-[12px] font-extrabold text-text-primary">
                         {d.getDate() < 10 ? `0${d.getDate()}` : d.getDate()}
                       </div>
-                      <label
-                        className="mt-1 flex items-center justify-center cursor-pointer group"
-                        title={
-                          isAllAttended
-                            ? `Bỏ chọn có mặt cả lớp ngày ${d.getDate()}/${d.getMonth() + 1}`
-                            : `Tích chọn cả lớp có mặt (1 buổi) ngày ${d.getDate()}/${d.getMonth() + 1}`
-                        }
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={isAllAttended}
-                          onChange={() => handleToggleAllForDate(dateStr)}
-                          className="w-3.5 h-3.5 rounded text-emerald-600 focus:ring-emerald-500 border-slate-300 cursor-pointer accent-emerald-600 transition-transform group-hover:scale-110"
-                        />
-                      </label>
                     </th>
                   );
                 })}
@@ -1524,13 +1410,12 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
             <tbody>
               {students.length === 0 ? (
                 <tr>
-                  <td colSpan={30 + datesList.length} className="text-center py-10 text-text-muted">
+                  <td colSpan={29 + datesList.length} className="text-center py-10 text-text-muted">
                     Không có học viên nào để điểm danh.
                   </td>
                 </tr>
               ) : (
                 students.map((st, idx) => {
-                  const isSelected = selectedStudents.has(st.enrollment_class_id);
                   const stat = studentStats.get(st.enrollment_class_id);
                   const remaining =
                     st.remaining_sessions ??
@@ -1541,33 +1426,21 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
                     <tr
                       key={st.enrollment_class_id}
                       className={`border-b border-border/60 hover:bg-slate-50/80 transition-colors ${
-                        isSelected ? 'bg-primary-soft/40' : idx % 2 === 1 ? 'bg-slate-50/30' : 'bg-surface'
+                        idx % 2 === 1 ? 'bg-slate-50/30' : 'bg-surface'
                       }`}
                     >
-                      {/* Checkbox */}
-                      <td className="px-2 py-2.5 border-r border-border/60 text-center sticky left-0 bg-slate-100 z-10">
-                        <input
-                          type="checkbox"
-                          checked={isSelected}
-                          disabled={st.enrollment_class_id <= 0}
-                          onChange={() => handleToggleSelectStudent(st.enrollment_class_id)}
-                          className="w-3.5 h-3.5 rounded text-primary focus:ring-primary border-slate-300 cursor-pointer accent-primary disabled:opacity-40 disabled:cursor-not-allowed"
-                          title={st.enrollment_class_id <= 0 ? 'Học viên chưa được xếp lớp' : 'Chọn học viên'}
-                        />
-                      </td>
-
                       {/* STT */}
-                      <td className="px-2 py-2.5 border-r border-border/60 text-center text-text-muted font-bold sticky left-10 bg-slate-100 z-10">
+                      <td className="px-2 py-2.5 border-r border-border/60 text-center text-text-muted font-bold sticky left-0 bg-slate-100 z-10">
                         {idx + 1}
                       </td>
 
                       {/* Mã HV (A) */}
-                      <td className="px-3 py-2.5 border-r border-border/60 font-mono font-bold text-text-primary whitespace-nowrap sticky left-20 bg-slate-100 z-10">
+                      <td className="px-3 py-2.5 border-r border-border/60 font-mono font-bold text-text-primary whitespace-nowrap sticky left-10 bg-slate-100 z-10">
                         {st.external_id || `HV_${st.student_id}`}
                       </td>
 
                       {/* Họ và tên (B) */}
-                      <td className="px-4 py-2.5 border-r-2 border-border/80 font-bold text-text-primary whitespace-nowrap sticky left-[165px] bg-slate-100 z-10 shadow-[4px_0_6px_-2px_rgba(0,0,0,0.06)]">
+                      <td className="px-4 py-2.5 border-r-2 border-border/80 font-bold text-text-primary whitespace-nowrap sticky left-[125px] bg-slate-100 z-10 shadow-[4px_0_6px_-2px_rgba(0,0,0,0.06)]">
                         {st.full_name}
                       </td>
 
@@ -1589,7 +1462,7 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
                       </td>
                       <td className="px-3 py-2.5 border-r border-border/60 text-text-secondary whitespace-nowrap">
                         <Badge variant="neutral" size="sm">
-                          {st.model_type || '1:1'}
+                          {formatClassModel(st.model_type)}
                         </Badge>
                       </td>
 
@@ -1907,7 +1780,7 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
                         </td>
                         <td className="px-3 py-2.5 border-r-2 border-border/80 text-text-secondary whitespace-nowrap">
                           <Badge variant="neutral" size="sm">
-                            {st.model_type || '1:1'}
+                            {formatClassModel(st.model_type)}
                           </Badge>
                         </td>
 

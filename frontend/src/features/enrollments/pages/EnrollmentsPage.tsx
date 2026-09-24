@@ -4,16 +4,19 @@ import { Enrollment } from '../types/enrollments.types';
 import { PageContainer } from '../../../components/common/PageContainer';
 import { PageHeader } from '../../../components/common/PageHeader';
 import { Input } from '../../../components/ui/Input';
+import { HorizontalTabs } from '../../../components/ui/HorizontalTabs';
+import { Button } from '../../../components/ui/Button';
 import { useToast } from '../../../components/ui/Toast';
 import { useAuth } from '../../../contexts/AuthContext';
 import {
   AttendanceMatrix,
+  AttendanceTab,
   StudentRow,
   formatSessionDate,
 } from '../../classes/components/AttendanceMatrix';
 import { classSessionsApi, attendanceApi } from '../../classes/api/sessions.api';
 import { ClassSession, Attendance, AttendanceStatus } from '../../classes/types/classes.types';
-import { Search, UserCheck } from 'lucide-react';
+import { BarChart3, Calendar, Search, SlidersHorizontal, UserCheck, Zap, X } from 'lucide-react';
 
 export const EnrollmentsPage: React.FC = () => {
   const toast = useToast();
@@ -23,9 +26,12 @@ export const EnrollmentsPage: React.FC = () => {
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Search & Filter state
+  // Search, filter & view state
+  const [activeTab, setActiveTab] = useState<AttendanceTab>('quick');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedSale, setSelectedSale] = useState<string>('');
+  const [modelFilter, setModelFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
 
   const fetchEnrollments = async () => {
     try {
@@ -56,24 +62,21 @@ export const EnrollmentsPage: React.FC = () => {
     return Array.from(set).filter(Boolean);
   }, [enrollments]);
 
+  const normalizeClassModel = (model?: string | null): string => {
+    const normalized = (model || '').toUpperCase();
+    if (normalized === 'ONE_TO_ONE' || model === '1:1' || model === '1-1') return '1:1';
+    if (normalized === 'ONE_TO_TWO' || model === '1:2' || model === '1-2') return '1:2';
+    if (normalized === 'ONE_TO_N' || normalized === 'GROUP' || model === '1:n' || model === '1-N') return '1:n';
+    return model || '1:1';
+  };
+
   // Extract rich StudentRow list for AttendanceMatrix with all fields A -> AH
-  const matrixStudents: StudentRow[] = useMemo(() => {
+  const listStudents: StudentRow[] = useMemo(() => {
     const list: StudentRow[] = [];
 
     enrollments.forEach((enr) => {
       const student = enr.student;
       if (!student) return;
-
-      // Filter by search query if any
-      if (searchQuery) {
-        const query = searchQuery.toLowerCase();
-        const matchName = student.full_name?.toLowerCase().includes(query);
-        const matchCode =
-          student.external_id?.toLowerCase().includes(query) ||
-          enr.external_id?.toLowerCase().includes(query);
-        const matchPhone = student.phone?.includes(query);
-        if (!matchName && !matchCode && !matchPhone) return;
-      }
 
       const pkg = enr.package;
 
@@ -95,6 +98,7 @@ export const EnrollmentsPage: React.FC = () => {
             total_sessions: enr.total_sessions || 0,
             level: enr.level || (cls as any)?.level || 'Thường',
             email: student.email || '',
+            phone: student.phone || '',
             model_type: (cls as any)?.model_type || enr.class_model || '1:1',
             remaining_sessions: enr.external_remaining_sessions,
             start_date: enr.start_date,
@@ -125,6 +129,7 @@ export const EnrollmentsPage: React.FC = () => {
           total_sessions: enr.total_sessions || 0,
           level: enr.level || 'Thường',
           email: student.email || '',
+          phone: student.phone || '',
           model_type: enr.class_model || '1:1',
           remaining_sessions: enr.external_remaining_sessions,
           start_date: enr.start_date,
@@ -142,7 +147,28 @@ export const EnrollmentsPage: React.FC = () => {
     });
 
     return list;
-  }, [enrollments, searchQuery]);
+  }, [enrollments]);
+
+  const matrixStudents = useMemo(() => {
+    const query = searchQuery.trim().toLocaleLowerCase('vi-VN');
+
+    return listStudents.filter((student) => {
+      const matchesSearch =
+        !query ||
+        [student.external_id, student.full_name, student.phone, student.email]
+          .some((value) => value?.toLocaleLowerCase('vi-VN').includes(query));
+      const matchesModel = !modelFilter || normalizeClassModel(student.model_type) === modelFilter;
+      const matchesStatus = !statusFilter || student.status === statusFilter;
+      return matchesSearch && matchesModel && matchesStatus;
+    });
+  }, [listStudents, searchQuery, modelFilter, statusFilter]);
+
+  const hasActiveFilters = Boolean(searchQuery || modelFilter || statusFilter);
+  const clearFilters = () => {
+    setSearchQuery('');
+    setModelFilter('');
+    setStatusFilter('');
+  };
 
   // Aggregate all sessions & attendances across the enrolled classes
   const { allSessions, allAttendances } = useMemo(() => {
@@ -232,56 +258,86 @@ export const EnrollmentsPage: React.FC = () => {
 
   return (
     <PageContainer>
-      <PageHeader
-        title="Quản lý Điểm danh & Ghi danh"
+      <PageHeader title="Quản lý Điểm danh & Ghi danh" />
+
+      <HorizontalTabs
+        ariaLabel="Nội dung quản lý ghi danh"
+        value={activeTab}
+        onChange={setActiveTab}
+        className="mb-5"
+        items={[
+          { value: 'quick', label: 'Điểm danh nhanh', icon: <Zap /> },
+          { value: 'detailed', label: 'Điểm danh chi tiết', icon: <Calendar /> },
+          { value: 'stats', label: 'Thống kê', icon: <BarChart3 /> },
+        ]}
       />
 
-      {/* Filter and Search Bar */}
-      <div className="bg-surface rounded-2xl p-4 border border-border/80 shadow-soft flex flex-col sm:flex-row items-center justify-between gap-4">
-        {/* Left: Role / Sale scope filter */}
-        <div className="flex items-center gap-3 flex-wrap">
-          {isCS ? (
-            <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-50 text-blue-900 border border-blue-200/80 rounded-xl text-xs font-bold">
-              <UserCheck className="w-4 h-4 text-blue-600" />
-              <span>Nhân viên Sale (CSKH): {user?.name || user?.email}</span>
-            </div>
-          ) : (
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-text-secondary whitespace-nowrap">
-                Lọc theo Sale:
-              </span>
+      <section
+        aria-label="Tìm kiếm và lọc học viên"
+        className="mb-5 rounded-2xl border border-border/80 bg-surface p-4 shadow-soft"
+      >
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
+          <div className="min-w-0 flex-1 xl:max-w-xl">
+            <Input
+              placeholder="Tìm theo ID, tên, SĐT hoặc email..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              leftIcon={<Search className="h-4 w-4 text-text-muted" />}
+            />
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <SlidersHorizontal className="hidden h-4 w-4 text-text-muted sm:block" aria-hidden="true" />
+            {!isCS && (
               <select
+                aria-label="Lọc theo nhân viên Sale"
                 value={selectedSale}
                 onChange={(e) => setSelectedSale(e.target.value)}
-                className="text-xs font-semibold px-3 py-1.5 bg-surface-muted border border-border/80 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 text-text-primary min-w-[200px]"
+                className="h-10 min-w-[180px] rounded-xl border border-border/80 bg-surface-muted px-3 text-xs font-semibold text-text-primary outline-none transition focus:ring-2 focus:ring-primary/20"
               >
-                <option value="">-- Tất cả nhân viên Sale --</option>
-                {salesList.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
+                <option value="">Tất cả nhân viên Sale</option>
+                {salesList.map((sale) => <option key={sale} value={sale}>{sale}</option>)}
               </select>
-            </div>
-          )}
-
-          <div className="text-xs text-text-muted flex items-center gap-1">
-            <span>Sĩ số:</span>
-            <strong className="text-text-primary font-bold">{matrixStudents.length}</strong>
-            <span>học viên</span>
+            )}
+            <select
+              aria-label="Lọc theo mô hình lớp"
+              value={modelFilter}
+              onChange={(e) => setModelFilter(e.target.value)}
+              className="h-10 min-w-[135px] rounded-xl border border-border/80 bg-surface-muted px-3 text-xs font-semibold text-text-primary outline-none transition focus:ring-2 focus:ring-primary/20"
+            >
+              <option value="">Tất cả mô hình</option>
+              <option value="1:1">Mô hình 1:1</option>
+              <option value="1:2">Mô hình 1:2</option>
+              <option value="1:n">Mô hình 1:n</option>
+            </select>
+            <select
+              aria-label="Lọc theo trạng thái ghi danh"
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="h-10 min-w-[160px] rounded-xl border border-border/80 bg-surface-muted px-3 text-xs font-semibold text-text-primary outline-none transition focus:ring-2 focus:ring-primary/20"
+            >
+              <option value="">Tất cả trạng thái</option>
+              <option value="NOT_STARTED">Chưa học</option>
+              <option value="STUDYING">Đang học</option>
+              <option value="PAUSED">Tạm dừng / Bảo lưu</option>
+              <option value="FINISHED">Hoàn thành</option>
+              <option value="CANCELLED">Đã hủy</option>
+            </select>
+            {hasActiveFilters && (
+              <Button variant="ghost" size="sm" onClick={clearFilters} leftIcon={<X className="h-4 w-4" />}>
+                Xóa bộ lọc
+              </Button>
+            )}
           </div>
         </div>
 
-        {/* Right: Quick Search */}
-        <div className="w-full sm:w-72">
-          <Input
-            placeholder="Tìm theo tên học viên, SĐT, mã..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            leftIcon={<Search className="w-4 h-4 text-text-muted" />}
-          />
-        </div>
-      </div>
+        {isCS && (
+          <div className="mt-3 flex items-center gap-2 text-xs font-semibold text-text-secondary">
+            <UserCheck className="h-4 w-4 text-primary" />
+            <span>Học viên phụ trách: {user?.name || user?.email}</span>
+          </div>
+        )}
+      </section>
 
       {/* Main Content Area: 3-Tab Attendance Management */}
       <div className="space-y-4">
@@ -292,6 +348,7 @@ export const EnrollmentsPage: React.FC = () => {
           </div>
         ) : (
           <AttendanceMatrix
+            activeTab={activeTab}
             students={matrixStudents}
             sessions={allSessions}
             attendances={allAttendances}
