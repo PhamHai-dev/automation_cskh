@@ -67,7 +67,7 @@ export function stopFriendSyncCron(): void {
 /** Single cycle: iterate connected accounts sequential with stagger. */
 async function runCronCycle(io: SyncIo | null): Promise<void> {
   const accounts = await prisma.zaloAccount.findMany({
-    where: { status: 'connected' as any },
+    where: { status: 'ACTIVE' as any },
     select: { id: true, display_name: true },
   });
 

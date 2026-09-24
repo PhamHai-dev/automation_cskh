@@ -153,6 +153,26 @@ export class ZaloController {
       next(error);
     }
   }
+
+  async disconnect(req: Request, res: Response, next: NextFunction) {
+    try {
+      const id = parseInt(req.params.id, 10);
+      await zaloService.disconnectAccount(id, req.user!.id);
+      res.json({ data: { disconnected: true }, meta: null });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async getStatus(req: Request, res: Response, next: NextFunction) {
+    try {
+      const id = parseInt(req.params.id, 10);
+      const result = await zaloService.getAccountLiveStatus(id);
+      res.json({ data: result, meta: null });
+    } catch (error) {
+      next(error);
+    }
+  }
 }
 
 const createAccountSchema = z.object({

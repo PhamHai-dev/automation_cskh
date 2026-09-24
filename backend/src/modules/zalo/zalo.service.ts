@@ -45,6 +45,35 @@ export class ZaloService {
     return account;
   }
 
+  async getAccountLiveStatus(id: number) {
+    const account = await this.getAccountById(id);
+    const liveStatus = zaloPool.getStatus(id);
+    return { status: account.status, liveStatus: liveStatus ?? account.status };
+  }
+
+  async disconnectAccount(id: number, requesterId: number) {
+    const account = await this.getAccountById(id);
+    const requester = await prisma.user.findUnique({ where: { id: requesterId } });
+    const isPrivileged =
+      requester && Array.isArray(requester.roles)
+        ? (requester.roles as string[]).some((r: string) => ['ADMIN', 'MANAGE'].includes(r))
+        : false;
+    if (!isPrivileged && account.cs_id !== requesterId) {
+      throw new AppError(403, 'Forbidden: not your Zalo account');
+    }
+    try {
+      zaloPool.disconnect(id);
+    } catch {
+      // already disconnected
+    }
+    const updated = await prisma.zaloAccount.update({
+      where: { id },
+      data: { status: 'NOT_LOGGED_IN' as any, disconnect_reason: 'manual', disconnected_at: new Date() } as any,
+    });
+    log.info('ZaloAccount manually disconnected', { accountId: id, requesterId });
+    return updated;
+  }
+
   /**
    * Create account with anti-ghost-dedup + ghost reuse transaction.
    * Race-safe: 2 parallel POST with same phone → only 1 record created.
@@ -307,6 +336,10 @@ export class ZaloService {
     });
 
     log.info('QR generated', { accountId, requesterId });
+    // Defensive: ensure qrDataUrl has data URI prefix before returning & storing
+    if (result.qrDataUrl && !result.qrDataUrl.startsWith('data:image')) {
+      result.qrDataUrl = `data:image/png;base64,${result.qrDataUrl}`;
+    }
     return result;
   }
 
@@ -318,14 +351,13 @@ export class ZaloService {
 
     if (data.session_data) {
       // If client sent encrypted session directly (e.g. from zca-js in browser), store it
+      // FIX #6: KHÔNG set status='ACTIVE' — loginQR flow trong pool xử lý status
       await prisma.zaloAccount.update({
         where: { id: accountId },
         data: {
           encrypted_session_data: data.session_data,
           ...(data.zalo_uid ? { zalo_uid: data.zalo_uid } : {}),
           ...(data.display_name ? { display_name: data.display_name } : {}),
-          status: 'ACTIVE' as any,
-          last_connected_at: new Date(),
           last_login_at: new Date(),
           qr_code: null,
         },
@@ -375,47 +407,74 @@ export class ZaloService {
     return zaloRepository.findGroupsForAccount(accountId);
   }
 
+  /**
+   * Refresh groups from Zalo SDK — auto-reconnect if client missing (Plan Phase 1).
+   * Returns partial results even when individual groups fail.
+   */
   async refreshGroups(accountId: number) {
     await this.getAccountById(accountId);
 
-    const client = zaloPool.getAccountClient(accountId) as any;
+    let client = zaloPool.getAccountClient(accountId) as any;
+    if (!client) {
+      const recovered = await zaloPool.tryReconnect(accountId);
+      if (recovered) {
+        client = zaloPool.getAccountClient(accountId) as any;
+        log.info('refreshGroups — auto-reconnect succeeded', { accountId });
+      }
+    }
     if (!client) {
       throw new AppError(400, `Account ${accountId} is not connected — cannot refresh groups`);
     }
 
-    // Try to fetch groups via zca-js
+    // Try to fetch groups via zca-js — with per-group error isolation
+    let gridVerMap: Record<string, any>;
     try {
-      const groups: any[] = (await client.getAllGroups?.()) ?? (await client.getGroupList?.()) ?? [];
-      let synced = 0;
-      for (const g of groups) {
-        const groupId: string = g.groupId ?? g.grid ?? g.id ?? '';
-        if (!groupId) continue;
-        const group = await zaloRepository.upsertGroup(groupId, accountId, {
-          name: g.name ?? g.groupName ?? null,
-          avatar_url: g.avatar ?? g.thumb ?? null,
-          member_count: g.memberCount ?? g.totalMember ?? null,
-          owner_zalo_uid: g.ownerId ?? g.creatorId ?? null,
-        });
-        // Sync members if available
-        const members: any[] = g.members ?? g.memberIds ?? [];
-        if (Array.isArray(members)) {
-          for (const m of members) {
-            const uid: string = typeof m === 'string' ? m : (m.uid ?? m.id ?? '');
-            if (!uid) continue;
-            await zaloRepository.upsertGroupMember(group.id, uid, {
-              display_name: typeof m === 'object' ? (m.displayName ?? m.dName ?? null) : null,
-              avatar_url: typeof m === 'object' ? (m.avatar ?? null) : null,
-            });
-          }
-        }
-        synced++;
-      }
-      log.info('Groups refreshed', { accountId, synced });
-      return { synced, total: groups.length };
+      const res: any = await client.getAllGroups?.();
+      gridVerMap = res?.gridVerMap ?? {};
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      log.error('Group refresh failed', { accountId, error: msg });
-      throw new AppError(500, `Group refresh failed: ${msg}`);
+      log.error('getAllGroups SDK call failed', { accountId, error: msg });
+      // 502 = upstream SDK error, not a server error
+      throw new AppError(502, `Zalo SDK getAllGroups failed: ${msg}`);
     }
+
+    const groupIds = Object.keys(gridVerMap);
+    let synced = 0;
+    const errors: string[] = [];
+
+    for (const groupId of groupIds) {
+      try {
+        // Fetch rich info per group (name / avatar / member count)
+        let name: string | null = null;
+        let avatar: string | null = null;
+        let memberCount: number | null = null;
+        let ownerUid: string | null = null;
+        try {
+          const infoRes: any = await client.getGroupInfo?.(groupId);
+          const info = infoRes?.gridInfoMap?.[groupId] ?? Object.values(infoRes?.gridInfoMap ?? {})[0];
+          if (info) {
+            name = info.name || info.groupName || null;
+            avatar = info.fullAvt || info.avt || null;
+            memberCount = typeof info.totalMember === 'number' ? info.totalMember : null;
+            ownerUid = info.adminId || info.creatorId || null;
+          }
+        } catch { /* fall back to grid-only row */ }
+
+        await zaloRepository.upsertGroup(groupId, accountId, {
+          name: name ?? undefined,
+          avatar_url: avatar ?? undefined,
+          member_count: memberCount ?? undefined,
+          owner_zalo_uid: ownerUid ?? undefined,
+        });
+        synced++;
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        errors.push(`${groupId}: ${msg}`);
+        log.warn('refreshGroups — per-group upsert failed', { accountId, groupId, error: msg });
+      }
+    }
+
+    log.info('Groups refreshed', { accountId, synced, total: groupIds.length, errors: errors.length });
+    return { synced, total: groupIds.length, errors: errors.length > 0 ? errors : undefined };
   }
 }

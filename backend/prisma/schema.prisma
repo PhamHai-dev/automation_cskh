@@ -38,7 +38,7 @@ model User {
   created_attendances              Attendance[]          @relation("AttendanceCreator")
   enrollments_as_cs                Enrollment[]          @relation("EnrollmentCS")
   zalo_accounts                    ZaloAccount[]
-  created_message_rules            MessageRule[]         @relation("MessageRuleCreator")
+  automation_workflows             AutomationWorkflow[]  @relation("AutomationWorkflowOwner")
   care_logs                        CareLog[]             @relation("CareLogCS")
   care_tasks_assigned              CareTask[]            @relation("CareTaskAssignee")
   import_batches                   ImportBatch[]         @relation("ImportBatchUploader")
@@ -160,6 +160,7 @@ model Student {
 
   enrollments            Enrollment[]
   zalo_contact_relations ZaloContactRelation[]
+  contacts               Contact[]
 
   @@map("students")
 }
@@ -174,8 +175,7 @@ model Package {
   created_at             DateTime @default(now())
   updated_at             DateTime @updatedAt
 
-  enrollments   Enrollment[]
-  message_rules MessageRule[]
+  enrollments Enrollment[]
 
   @@map("packages")
 }
@@ -226,11 +226,11 @@ model Enrollment {
   cs      User     @relation("EnrollmentCS", fields: [cs_id], references: [id])
   sale    Sale?    @relation(fields: [sale_id], references: [id])
 
-  enrollment_classes EnrollmentClass[]
-  message_rules      MessageRule[]
-  message_deliveries MessageDelivery[]
-  care_logs          CareLog[]
-  care_tasks         CareTask[]
+  enrollment_classes     EnrollmentClass[]
+  message_deliveries     MessageDelivery[]
+  automation_enrollments AutomationEnrollment[]
+  care_logs              CareLog[]
+  care_tasks             CareTask[]
 
   @@map("enrollments")
 }
@@ -445,7 +445,7 @@ model ZaloAccount {
   last_login_at          DateTime?
   last_active_at         DateTime?
   proxy_url              String?
-  archived_by_id      Int?
+  archived_by_id         Int?
   archived_at            DateTime?
   disconnect_reason      String?           @db.VarChar(50)
   disconnected_at        DateTime?
@@ -469,6 +469,7 @@ model ZaloAccount {
   labels                 ZaloLabel[]
   group_scans            GroupScan[]
   group_members          GroupMember[]
+  contact_accesses       ContactAccess[]
 
   @@index([cs_id])
   @@index([status])
@@ -519,6 +520,7 @@ model ZaloContactRelation {
   zalo_account ZaloAccount @relation(fields: [zalo_account_id], references: [id])
 
   @@unique([student_id, zalo_account_id])
+  @@index([student_id])
   @@index([zalo_account_id])
   @@map("zalo_contact_relations")
 }
@@ -539,8 +541,9 @@ model ZaloGroup {
   created_at      DateTime  @default(now())
   updated_at      DateTime  @updatedAt
 
-  zalo_account ZaloAccount       @relation(fields: [zalo_account_id], references: [id])
-  members      ZaloGroupMember[]
+  zalo_account       ZaloAccount       @relation(fields: [zalo_account_id], references: [id])
+  members            ZaloGroupMember[]
+  message_deliveries MessageDelivery[]
 
   @@index([zalo_account_id])
   @@map("zalo_groups")
@@ -562,43 +565,83 @@ model ZaloGroupMember {
   @@map("zalo_group_members")
 }
 
-enum MessageRuleChannel {
-  ZALO_PERSONAL
+enum AutomationTriggerEvent {
+  ATTENDED
+  ABSENT_APPROVED_A
+  LEAVE_B
+  ABSENT_UNAPPROVED_C
+  TEACHER_ABSENT_D
+  TECH_ERROR_E
 }
 
-model MessageRule {
-  id                     Int                @id @default(autoincrement())
-  package_id             Int?
-  enrollment_id          Int?
-  trigger_session_number Int
-  delay_minutes          Int
-  require_approval       Boolean            @default(false)
-  channel                MessageRuleChannel @default(ZALO_PERSONAL)
-  message_content        String             @db.Text
-  message_variables      Json
-  version                Int                @default(1)
-  active                 Boolean            @default(true)
-  created_by_id          Int
-  created_at             DateTime           @default(now())
-  updated_at             DateTime           @updatedAt
+enum AutomationChannel {
+  ZALO_PERSONAL
+  ZALO_GROUP
+}
 
-  package            Package?          @relation(fields: [package_id], references: [id])
-  enrollment         Enrollment?       @relation(fields: [enrollment_id], references: [id])
-  created_by         User              @relation("MessageRuleCreator", fields: [created_by_id], references: [id])
-  message_deliveries MessageDelivery[]
+model AutomationWorkflow {
+  id          Int      @id @default(autoincrement())
+  name        String
+  description String?  @db.Text
+  owner_cs_id Int
+  active      Boolean  @default(true)
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
 
-  @@map("message_rules")
+  owner       User                   @relation("AutomationWorkflowOwner", fields: [owner_cs_id], references: [id])
+  steps       AutomationStep[]
+  enrollments AutomationEnrollment[]
+
+  @@index([owner_cs_id])
+  @@map("automation_workflows")
+}
+
+model AutomationStep {
+  id                Int                    @id @default(autoincrement())
+  workflow_id       Int
+  session_number    Int
+  trigger_event     AutomationTriggerEvent
+  delay_minutes     Int
+  channel           AutomationChannel
+  target_group_id   Int?
+  message_content   String                 @db.Text
+  message_variables Json
+  active            Boolean                @default(true)
+  created_at        DateTime               @default(now())
+  updated_at        DateTime               @updatedAt
+
+  workflow   AutomationWorkflow @relation(fields: [workflow_id], references: [id], onDelete: Cascade)
+  deliveries MessageDelivery[]
+
+  @@unique([workflow_id, session_number, trigger_event])
+  @@index([workflow_id])
+  @@map("automation_steps")
+}
+
+model AutomationEnrollment {
+  id            Int      @id @default(autoincrement())
+  workflow_id   Int
+  enrollment_id Int
+  added_by      Int
+  created_at    DateTime @default(now())
+
+  workflow   AutomationWorkflow @relation(fields: [workflow_id], references: [id], onDelete: Cascade)
+  enrollment Enrollment         @relation(fields: [enrollment_id], references: [id], onDelete: Cascade)
+
+  @@unique([workflow_id, enrollment_id])
+  @@map("automation_enrollments")
 }
 
 enum MessageDeliveryStatus {
   SCHEDULED
-  WAITING_APPROVAL
   QUEUED
   SENDING
   SENT
   FAILED
   CANCELLED
   SKIPPED_NOT_FRIEND
+  SKIPPED_GROUP_INACTIVE
+  SKIPPED_ACCOUNT_INACTIVE
   SKIPPED_SESSION_EXPIRED
   SKIPPED_DISABLED
 }
@@ -607,12 +650,12 @@ model MessageDelivery {
   id                  Int                   @id @default(autoincrement())
   enrollment_id       Int
   attendance_id       Int
-  message_rule_id     Int
+  automation_step_id  Int
   zalo_account_id     Int
+  zalo_group_id       Int?
   scheduled_at        DateTime
   sent_at             DateTime?
   status              MessageDeliveryStatus @default(SCHEDULED)
-  template_version    Int
   rendered_content    String                @db.Text
   variables_snapshot  Json
   retry_count         Int                   @default(0)
@@ -622,12 +665,13 @@ model MessageDelivery {
   created_at          DateTime              @default(now())
   updated_at          DateTime              @updatedAt
 
-  enrollment   Enrollment  @relation(fields: [enrollment_id], references: [id])
-  attendance   Attendance  @relation(fields: [attendance_id], references: [id])
-  message_rule MessageRule @relation(fields: [message_rule_id], references: [id])
-  zalo_account ZaloAccount @relation(fields: [zalo_account_id], references: [id])
+  enrollment      Enrollment     @relation(fields: [enrollment_id], references: [id])
+  attendance      Attendance     @relation(fields: [attendance_id], references: [id])
+  automation_step AutomationStep @relation(fields: [automation_step_id], references: [id])
+  zalo_account    ZaloAccount    @relation(fields: [zalo_account_id], references: [id])
+  zalo_group      ZaloGroup?     @relation(fields: [zalo_group_id], references: [id])
 
-  @@unique([attendance_id, message_rule_id])
+  @@unique([attendance_id, automation_step_id])
   @@map("message_deliveries")
 }
 
@@ -863,11 +907,25 @@ model Friend {
   id                Int       @id @default(autoincrement())
   zalo_account_id   Int
   zalo_uid_in_nick  String
+  contact_id        Int?      @map("contact_id") // FK to Contact (unified Zalo identity)
   friendship_status String    @default("none")
   relationship_kind String    @default("none")
   alias_in_nick     String?
   has_conversation  Boolean   @default(false)
   phone_from_sdk    String?
+  // Zalo-side metadata — per-identity display name + avatar (set by message-handler)
+  zalo_display_name String?   @map("zalo_display_name")
+  zalo_avatar_url   String?   @map("zalo_avatar_url")
+  // Globally-unique identifiers — same identity across multiple nicks
+  zalo_global_id    String?   @map("zalo_global_id")
+  zalo_username     String?   @map("zalo_username")
+  // Per-pair aggregates (set-if-newer / increment from message hooks)
+  first_message_at  DateTime? @map("first_message_at")
+  last_inbound_at   DateTime? @map("last_inbound_at")
+  last_outbound_at  DateTime? @map("last_outbound_at")
+  total_inbound     Int       @default(0) @map("total_inbound")
+  total_outbound    Int       @default(0) @map("total_outbound")
+  // Lifecycle timestamps
   became_friend_at  DateTime?
   removed_at        DateTime?
   created_at        DateTime  @default(now())
@@ -879,7 +937,53 @@ model Friend {
   @@index([zalo_account_id])
   @@index([friendship_status])
   @@index([relationship_kind])
+  @@index([phone_from_sdk])
+  @@index([zalo_global_id])
+  @@index([contact_id])
   @@map("friends")
+}
+
+// -----------------------------------------------------------------------------
+// 4k. Contact (unified Zalo identity) + ContactAccess (per-nick access)
+// ---------------------------------------------------------------------------
+
+model Contact {
+  id            Int       @id @default(autoincrement())
+  zalo_uid      String    @unique // primary Zalo UID
+  student_id    Int? // optional link to a Student
+  display_name  String?
+  avatar_url    String?
+  phone         String?
+  last_verified DateTime? // last time any nick confirmed this contact
+  created_at    DateTime  @default(now())
+  updated_at    DateTime  @updatedAt
+
+  student  Student?        @relation(fields: [student_id], references: [id])
+  accesses ContactAccess[]
+
+  @@index([student_id])
+  @@map("contacts")
+}
+
+model ContactAccess {
+  id                Int       @id @default(autoincrement())
+  zalo_uid          String // target contact UID
+  zalo_account_id   Int // nick that holds this contact
+  is_friend         Boolean   @default(false)
+  friendship_status String    @default("none")
+  alias_in_nick     String?
+  has_conversation  Boolean   @default(false)
+  last_seen_at      DateTime?
+  created_at        DateTime  @default(now())
+  updated_at        DateTime  @updatedAt
+
+  zalo_account ZaloAccount @relation(fields: [zalo_account_id], references: [id])
+  contact      Contact     @relation(fields: [zalo_uid], references: [zalo_uid])
+
+  @@unique([zalo_uid, zalo_account_id])
+  @@index([zalo_uid])
+  @@index([zalo_account_id])
+  @@map("contact_accesses")
 }
 
 // -----------------------------------------------------------------------------
@@ -909,43 +1013,72 @@ model ZaloAccountStatusLog {
 // ---------------------------------------------------------------------------
 
 model Conversation {
-  id                 Int       @id @default(autoincrement())
-  zalo_account_id    Int
-  external_thread_id String
-  thread_type        String
-  display_name       String?
-  last_message_at    DateTime?
-  created_at         DateTime  @default(now())
-  updated_at         DateTime  @updatedAt
+  id                  Int       @id @default(autoincrement())
+  zalo_account_id     Int
+  external_thread_id  String
+  thread_type         String // "user" | "group"
+  display_name        String?
+  avatar_url          String?   @map("avatar_url")
+  // Group-specific (resolved via getGroupInfo from Zalo SDK)
+  group_name          String?   @map("group_name")
+  group_avatar_url    String?   @map("group_avatar_url")
+  group_members_count Int?      @map("group_members_count")
+  last_message_at     DateTime? @map("last_message_at")
+  unread_count        Int       @default(0) @map("unread_count")
+  is_replied          Boolean   @default(true) @map("is_replied")
+  // Tab filter: "main" (Cá nhân/Nhóm default) | "other" (Ưu tiên)
+  tab                 String    @default("main")
+  // Soft delete — hidden but restorable
+  deleted_at          DateTime? @map("deleted_at")
+  created_at          DateTime  @default(now())
+  updated_at          DateTime  @updatedAt
 
   zalo_account ZaloAccount @relation(fields: [zalo_account_id], references: [id])
   messages     Message[]
 
   @@unique([zalo_account_id, external_thread_id])
   @@index([zalo_account_id])
+  @@index([zalo_account_id, tab, last_message_at])
+  @@index([deleted_at])
   @@map("conversations")
 }
 
 model Message {
-  id              Int      @id @default(autoincrement())
-  conversation_id Int
-  zalo_msg_id     String
-  sender_uid      String
-  content         String   @db.Text
-  content_type    String   @default("text")
-  album_key       String?
-  album_index     Int?
-  album_total     Int?
-  is_self         Boolean  @default(false)
-  is_backfill     Boolean  @default(false)
-  raw_content     Json?
-  timestamp       DateTime
-  created_at      DateTime @default(now())
+  id                 Int       @id @default(autoincrement())
+  conversation_id    Int
+  zalo_msg_id        String
+  zalo_cli_msg_id    String?   @map("zalo_cli_msg_id") // Zalo client msg ID — needed for undo API
+  sender_uid         String
+  sender_name        String?   @map("sender_name") // display name of sender at send time
+  sender_type        String    @default("other") @map("sender_type") // "self" | "other"
+  content            String    @db.Text
+  content_type       String    @default("text")
+  attachments        Json      @default("[]") // [{url, name, mime, size}]
+  quote              Json? // reply quote message reference
+  mentions           Json? // [{uid, pos, len, type}] group mentions
+  reactions          Json? // { "emoji": ["uid1", "uid2"] } — per-emoji reaction map
+  album_key          String?
+  album_index        Int?
+  album_total        Int?
+  is_self            Boolean   @default(false)
+  is_backfill        Boolean   @default(false)
+  is_deleted         Boolean   @default(false) @map("is_deleted")
+  deleted_at         DateTime? @map("deleted_at")
+  // Read receipts — only for outgoing (sender_type='self')
+  delivered_at       DateTime? @map("delivered_at") // Zalo confirm device received
+  seen_at            DateTime? @map("seen_at") // KH opened conversation
+  // Phase metrics: distinguish source of sent message
+  sent_via           String    @default("user") @map("sent_via") // "user" | "automation" | "system"
+  replied_by_user_id Int?      @map("replied_by_user_id")
+  raw_content        Json?
+  timestamp          DateTime
+  created_at         DateTime  @default(now())
 
   conversation Conversation @relation(fields: [conversation_id], references: [id])
 
   @@unique([conversation_id, zalo_msg_id])
   @@index([conversation_id])
+  @@index([sender_type])
   @@map("messages")
 }
 

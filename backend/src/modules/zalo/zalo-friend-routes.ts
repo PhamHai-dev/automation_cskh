@@ -84,8 +84,8 @@ router.get('/:accountId/friends-db', async (req: Request, res: Response) => {
       where.OR = [
         { zalo_uid_in_nick: { contains: q } },
         { alias_in_nick: { contains: q, mode: 'insensitive' } },
-        { display_name: { contains: q, mode: 'insensitive' } },
-        ...(normalizedPhone.length >= 9 ? [{ phone_number: { contains: normalizedPhone } }] as any : []),
+        { zalo_display_name: { contains: q, mode: 'insensitive' } },
+        ...(normalizedPhone.length >= 9 ? [{ phone_from_sdk: { contains: normalizedPhone } }] as any : []),
       ];
     }
 

@@ -25,6 +25,8 @@
 
 import { prisma } from '../../prisma/client';
 import { createLogger } from '../../shared/logger/logger';
+import { emitToAccount } from '../../shared/realtime/socket-singleton';
+import { upsertContactAccess } from './contact-resolver';
 
 const log = createLogger('FriendEventHandler');
 
@@ -113,6 +115,11 @@ export async function applyFriendTransition(args: {
   /** 'event' = real Zalo event (reliable becameFriendAt); 'sync' = bulk getAllFriends (don't set becameFriendAt) */
   source?: 'event' | 'sync';
   aliasInNick?: string | null;
+  /** Per-identity profile from Zalo SDK (set on real events + bulk sync) */
+  zaloDisplayName?: string | null;
+  zaloAvatarUrl?: string | null;
+  zaloGlobalId?: string | null;
+  zaloUsername?: string | null;
 }): Promise<void> {
   const { zaloAccountId, zaloUidInNick, newFriendshipStatus } = args;
   const source = args.source ?? 'event';
@@ -142,6 +149,19 @@ export async function applyFriendTransition(args: {
     };
     if (args.aliasInNick !== undefined) {
       data.alias_in_nick = args.aliasInNick;
+    }
+    // Per-identity Zalo profile fields — set when provided (events + bulk sync)
+    if (args.zaloDisplayName !== undefined) {
+      data.zalo_display_name = args.zaloDisplayName;
+    }
+    if (args.zaloAvatarUrl !== undefined) {
+      data.zalo_avatar_url = args.zaloAvatarUrl;
+    }
+    if (args.zaloGlobalId !== undefined) {
+      data.zalo_global_id = args.zaloGlobalId;
+    }
+    if (args.zaloUsername !== undefined) {
+      data.zalo_username = args.zaloUsername;
     }
 
     // Only set becameFriendAt on REAL event source, and only if not already set.
@@ -174,6 +194,10 @@ export async function applyFriendTransition(args: {
         has_conversation: hasConversation,
         became_friend_at: (data.became_friend_at as Date) ?? null,
         removed_at: (data.removed_at as Date) ?? null,
+        zalo_display_name: (args.zaloDisplayName as string) ?? null,
+        zalo_avatar_url: (args.zaloAvatarUrl as string) ?? null,
+        zalo_global_id: (args.zaloGlobalId as string) ?? null,
+        zalo_username: (args.zaloUsername as string) ?? null,
       },
       update: data as never,
     });
@@ -190,6 +214,13 @@ export async function applyFriendTransition(args: {
       });
     }
   });
+
+  // Contact unification: upsert ContactAccess (best-effort, non-blocking)
+  upsertContactAccess(zaloAccountId, zaloUidInNick, {
+    isFriend: newFriendshipStatus === 'accepted',
+    friendshipStatus: newFriendshipStatus,
+    aliasInNick: args.aliasInNick ?? null,
+  }).catch(() => {});
 
   // Best-effort reconcile (no-op in current schema)
   await reconcileConversationContact({ zaloAccountId, zaloUidInNick });
@@ -311,11 +342,34 @@ export async function handleFriendEvent(
       else if (typeof d.alias === 'string') alias = d.alias;
     }
 
+    // Extract per-identity Zalo profile from event payload
+    let zaloDisplayName: string | null | undefined = undefined;
+    let zaloAvatarUrl: string | null | undefined = undefined;
+    let zaloGlobalId: string | null | undefined = undefined;
+    let zaloUsername: string | null | undefined = undefined;
+    if (event.data && typeof event.data === 'object') {
+      const d = event.data as Record<string, unknown>;
+      if (typeof d.displayName === 'string') zaloDisplayName = d.displayName;
+      else if (typeof d.dName === 'string') zaloDisplayName = d.dName;
+      if (typeof d.avatar === 'string') zaloAvatarUrl = d.avatar;
+      else if (typeof d.avatarUrl === 'string') zaloAvatarUrl = d.avatarUrl;
+      if (typeof d.globalId === 'string') zaloGlobalId = d.globalId;
+      if (typeof d.username === 'string') zaloUsername = d.username;
+    }
+
     await applyFriendTransition({
       zaloAccountId: accountId,
       zaloUidInNick: friendUid,
       newFriendshipStatus: newStatus,
       aliasInNick: alias,
+      zaloDisplayName,
+      zaloAvatarUrl,
+      zaloGlobalId,
+      zaloUsername,
+    });
+    // Real-time: emit friend status change to subscribed clients
+    emitToAccount(accountId, 'zalo:friend-update', {
+      accountId, type: event.type, uid: friendUid, newStatus, alias: alias ?? null,
     });
     log.info('Friend event processed', { accountId, type: event.type, uid: friendUid, newStatus });
   } catch (err) {

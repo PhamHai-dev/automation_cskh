@@ -1,6 +1,10 @@
 import { AttendanceRepository } from './attendance.repository';
 import { MarkAttendanceDTO, BulkMarkAttendanceDTO, UpdateAttendanceDTO } from './attendance.types';
 import { prisma } from '../../prisma/client';
+import { handleAttendanceEvent, cancelPendingDeliveries } from '../automation/automation-trigger.service';
+import { createLogger } from '../../shared/logger/logger';
+
+const log = createLogger('AttendanceService');
 
 export class AttendanceService {
   private repository: AttendanceRepository;
@@ -34,6 +38,10 @@ export class AttendanceService {
 
     const result = await this.repository.mark(data.enrollment_class_id, sessionId, data.status, 'MANUAL', userId, data.session_count || 1);
     await this.logAudit(userId, 'CREATE', 'Attendance', String(result.id), null, result);
+    // Fire-and-forget: trigger automation deliveries for this attendance
+    handleAttendanceEvent(result.id).catch((err: any) =>
+      log.error('Automation trigger failed (markAttendance)', { attendanceId: result.id, error: err.message }),
+    );
     return result;
   }
 
@@ -57,6 +65,12 @@ export class AttendanceService {
 
     const results = await this.repository.bulkMark(data.items, sessionId, 'MANUAL', userId);
     await this.logAudit(userId, 'BULK_CREATE', 'Attendance', `session:${sessionId}`, null, { count: results.length });
+    // Fire-and-forget: trigger automation for each newly created attendance
+    for (const attendance of results) {
+      handleAttendanceEvent(attendance.id).catch((err: any) =>
+        log.error('Automation trigger failed (bulkMark)', { attendanceId: attendance.id, error: err.message }),
+      );
+    }
     return results;
   }
 
@@ -64,6 +78,12 @@ export class AttendanceService {
     const before = await this.repository.findById(attendanceId);
     const result = await this.repository.update(attendanceId, data);
     await this.logAudit(userId, 'UPDATE', 'Attendance', String(attendanceId), before, result);
+    // Cancel pending deliveries for the old attendance state, then re-trigger with the new status
+    cancelPendingDeliveries(attendanceId)
+      .then(() => handleAttendanceEvent(attendanceId))
+      .catch((err: any) =>
+        log.error('Automation re-trigger failed (updateAttendance)', { attendanceId, error: err.message }),
+      );
     return result;
   }
 

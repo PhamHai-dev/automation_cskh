@@ -11,6 +11,8 @@
     "typecheck": "tsc --noEmit",
     "test": "jest",
     "test:coverage": "jest --coverage",
+    "test:zalo": "jest tests/__tests__/zalo-pool-fixes.test.ts tests/__tests__/zalo-service-fixes.test.ts --no-coverage",
+    "verify:zalo": "ts-node --transpile-only scripts/verify-zalo-sync.ts",
     "postinstall": "prisma generate"
   },
   "dependencies": {

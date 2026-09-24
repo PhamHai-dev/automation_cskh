@@ -248,15 +248,26 @@ async function main() {
   }
 
   // 5. Automation & Others
-  console.log('Creating automation rules...');
-  await prisma.messageRule.create({
+  console.log('Creating automation workflow...');
+  const workflow = await prisma.automationWorkflow.create({
     data: {
-      package_id: package1.id,
-      trigger_session_number: 1,
+      name: 'Chào mừng sau buổi học đầu tiên',
+      description: 'Gửi tin nhắn Zalo cho học viên sau buổi học đầu tiên',
+      owner_cs_id: csManager.id,
+      active: true,
+    }
+  });
+
+  await prisma.automationStep.create({
+    data: {
+      workflow_id: workflow.id,
+      session_number: 1,
+      trigger_event: 'ATTENDED',
       delay_minutes: 30,
-      message_content: 'Chào {{student_name}}, chúc mừng bạn đã hoàn thành buổi học đầu tiên!',
-      message_variables: ['student_name'],
-      created_by_id: admin.id
+      channel: 'ZALO_PERSONAL',
+      message_content: 'Chào {{student_name}}, chúc mừng bạn đã hoàn thành buổi học đầu tiên! Bạn còn {{remaining_sessions}} buổi nữa.',
+      message_variables: ['student_name', 'remaining_sessions'],
+      active: true,
     }
   });
 

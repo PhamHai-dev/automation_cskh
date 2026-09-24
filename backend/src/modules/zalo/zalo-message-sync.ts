@@ -37,7 +37,7 @@ async function syncGroupMessages(api: any, accountId: number): Promise<number> {
   // Nhung group conversation moi nhat (top N) cua nick
   const groupConvs = await prisma.conversation.findMany({
     where: { zalo_account_id: accountId, thread_type: 'group' },
-    select: { id: true, external_thread_id: true },
+    select: { id: true, external_thread_id: true, display_name: true, group_name: true },
     take: MAX_GROUPS_PER_SYNC,
     orderBy: { last_message_at: 'desc' },
   });
@@ -46,6 +46,25 @@ async function syncGroupMessages(api: any, accountId: number): Promise<number> {
 
   for (const conv of groupConvs) {
     try {
+      // ─── Backfill group display_name if still raw ID ────────────────────
+      if (!conv.group_name || conv.group_name === conv.external_thread_id) {
+        try {
+          const infoRes: any = await api.getGroupInfo?.(conv.external_thread_id);
+          const info = infoRes?.gridInfoMap?.[conv.external_thread_id]
+            ?? Object.values(infoRes?.gridInfoMap ?? {})[0];
+          if (info) {
+            const newName = info.name || info.groupName || null;
+            const newAvatar = info.fullAvt || info.avt || null;
+            if (newName) {
+              await prisma.conversation.update({
+                where: { id: conv.id },
+                data: { group_name: newName, display_name: newName, group_avatar_url: newAvatar },
+              });
+            }
+          }
+        } catch { /* non-critical */ }
+      }
+
       const history = await api.getGroupChatHistory(conv.external_thread_id, MESSAGES_PER_GROUP);
       const messages = history?.groupMsgs || history?.data?.groupMsgs || [];
 
@@ -64,6 +83,23 @@ async function syncGroupMessages(api: any, accountId: number): Promise<number> {
       });
       const existingIds = new Set(existing.map((m) => m.zalo_msg_id));
 
+      // Batch-resolve sender UIDs → display names from GroupMember table
+      const senderUids = new Set<string>();
+      for (const [, msg] of msgIdMap) {
+        const uid = String(msg.data?.uidFrom || '');
+        if (uid) senderUids.add(uid);
+      }
+      let memberNameMap = new Map<string, string>();
+      if (senderUids.size > 0) {
+        const members = await prisma.groupMember.findMany({
+          where: { zalo_account_id: accountId, group_id: conv.external_thread_id, member_uid: { in: [...senderUids] } },
+          select: { member_uid: true, display_name: true, zalo_name: true },
+        });
+        for (const m of members) {
+          memberNameMap.set(m.member_uid, m.display_name || m.zalo_name || '');
+        }
+      }
+
       let groupInserted = 0;
       let lastTs: Date | null = null;
 
@@ -76,13 +112,16 @@ async function syncGroupMessages(api: any, accountId: number): Promise<number> {
         const contentType = detectContentType(msg.data?.msgType, rawContent);
         const album = extractAlbumInfo(contentType, rawContent);
         const ts = new Date(parseInt(msg.data?.ts || String(Date.now())));
+        const senderUid = String(msg.data?.uidFrom || '');
 
         try {
           await prisma.message.create({
             data: {
               conversation_id: conv.id,
               zalo_msg_id: zaloMsgId,
-              sender_uid: String(msg.data?.uidFrom || ''),
+              sender_uid: senderUid,
+              sender_name: memberNameMap.get(senderUid) || (msg.isSelf ? 'Me' : senderUid),
+              sender_type: msg.isSelf ? 'self' : 'other',
               content,
               content_type: contentType,
               album_key: album.albumKey,

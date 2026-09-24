@@ -15,8 +15,10 @@
  */
 import { prisma } from '../../prisma/client';
 import { createLogger } from '../../shared/logger/logger';
+import { emitToAccount } from '../../shared/realtime/socket-singleton';
 import { zaloPool } from './zalo-pool';
 import { applyFriendTransition } from './friend-event-handler';
+import { upsertContactAccess } from './contact-resolver';
 
 const log = createLogger('FriendSync');
 
@@ -51,12 +53,20 @@ const lastManualSyncAt = new Map<number, number>();
 type DiffSnapshot = {
   alias_in_nick?: string | null;
   has_conversation?: boolean | null;
+  zalo_display_name?: string | null;
+  zalo_avatar_url?: string | null;
+  zalo_global_id?: string | null;
+  zalo_username?: string | null;
 };
 
 function computeDiff(existing: DiffSnapshot, incoming: DiffSnapshot): DiffSnapshot {
   const patch: DiffSnapshot = {};
   if ((existing.alias_in_nick ?? null) !== (incoming.alias_in_nick ?? null)) patch.alias_in_nick = incoming.alias_in_nick ?? null;
   if ((existing.has_conversation ?? null) !== (incoming.has_conversation ?? null)) patch.has_conversation = incoming.has_conversation ?? null;
+  if ((existing.zalo_display_name ?? null) !== (incoming.zalo_display_name ?? null)) patch.zalo_display_name = incoming.zalo_display_name ?? null;
+  if ((existing.zalo_avatar_url ?? null) !== (incoming.zalo_avatar_url ?? null)) patch.zalo_avatar_url = incoming.zalo_avatar_url ?? null;
+  if ((existing.zalo_global_id ?? null) !== (incoming.zalo_global_id ?? null)) patch.zalo_global_id = incoming.zalo_global_id ?? null;
+  if ((existing.zalo_username ?? null) !== (incoming.zalo_username ?? null)) patch.zalo_username = incoming.zalo_username ?? null;
   return patch;
 }
 
@@ -64,25 +74,49 @@ function computeDiff(existing: DiffSnapshot, incoming: DiffSnapshot): DiffSnapsh
 function buildUpdateData(patch: DiffSnapshot): {
   alias_in_nick?: string | null;
   has_conversation?: boolean;
+  zalo_display_name?: string | null;
+  zalo_avatar_url?: string | null;
+  zalo_global_id?: string | null;
+  zalo_username?: string | null;
 } {
-  const data: { alias_in_nick?: string | null; has_conversation?: boolean } = {};
+  const data: Record<string, unknown> = {};
   if (patch.alias_in_nick !== undefined) data.alias_in_nick = patch.alias_in_nick;
   if (patch.has_conversation !== undefined && patch.has_conversation !== null) data.has_conversation = patch.has_conversation;
-  return data;
+  if (patch.zalo_display_name !== undefined) data.zalo_display_name = patch.zalo_display_name;
+  if (patch.zalo_avatar_url !== undefined) data.zalo_avatar_url = patch.zalo_avatar_url;
+  if (patch.zalo_global_id !== undefined) data.zalo_global_id = patch.zalo_global_id;
+  if (patch.zalo_username !== undefined) data.zalo_username = patch.zalo_username;
+  return data as any;
 }
 
 function extractFriendInfo(raw: Record<string, unknown>): {
   uid: string;
-  snapshot: { alias_in_nick: string | null; has_conversation: boolean };
-  phoneNumber: string | null; // F2: capture public phone from SDK
+  snapshot: {
+    alias_in_nick: string | null;
+    has_conversation: boolean;
+    zalo_display_name: string | null;
+    zalo_avatar_url: string | null;
+    zalo_global_id: string | null;
+    zalo_username: string | null;
+  };
+  phoneNumber: string | null;
 } | null {
-  const uid = String((raw.userId ?? raw.uid ?? '') as string);
+  const uid = String((raw.userId ?? raw.uid ?? raw.zaloUid ?? '') as string);
   if (!uid) return null;
+  // First sync: log raw keys so we can verify SDK field names
+  if (Object.keys(raw).length > 0 && !raw._logged) {
+    log.debug(`[friend-sync] raw keys for uid=${uid}: ${Object.keys(raw).join(',')}`);
+    (raw as any)._logged = true;
+  }
   return {
     uid,
     snapshot: {
       alias_in_nick: String((raw.zaloName ?? raw.displayName ?? '') as string) || null,
       has_conversation: true,
+      zalo_display_name: String((raw.displayName ?? raw.zaloName ?? raw.name ?? '') as string) || null,
+      zalo_avatar_url: String((raw.avatar ?? raw.avatarUrl ?? raw.avt ?? raw.thumbAvatarUrl ?? '') as string) || null,
+      zalo_global_id: String((raw.globalId ?? raw.zaloGlobalId ?? '') as string) || null,
+      zalo_username: String((raw.username ?? raw.zaloUsername ?? '') as string) || null,
     },
     phoneNumber: String((raw.phoneNumber ?? '') as string).trim() || null,
   };
@@ -126,18 +160,23 @@ export async function syncFriendsForAccount(
 
   try {
     const liveRaw: any = await api.getAllFriends();
-    const sentRaw: any = await api.getSentFriendRequests();
     liveFriends = Array.isArray(liveRaw) ? liveRaw
       : Array.isArray(liveRaw?.data) ? liveRaw.data
       : Array.isArray(liveRaw?.items) ? liveRaw.items : [];
-    sentRequests = Array.isArray(sentRaw) ? sentRaw
-      : Array.isArray(sentRaw?.data) ? sentRaw.data
-      : Array.isArray(sentRaw?.items) ? sentRaw.items : [];
   } catch (err) {
-    result.errors++;
-    result.durationMs = Date.now() - startedAt;
-    log.warn(`[friend-sync:${accountId}] SDK fetch failed`, { error: String(err) });
-    return result;
+    log.warn(`[friend-sync:${accountId}] getAllFriends failed`, { error: String(err) });
+  }
+
+  // FIX #11: getSentFriendRequests may not exist in all zca-js versions
+  try {
+    if (typeof api.getSentFriendRequests === 'function') {
+      const sentRaw: any = await api.getSentFriendRequests();
+      sentRequests = Array.isArray(sentRaw) ? sentRaw
+        : Array.isArray(sentRaw?.data) ? sentRaw.data
+        : Array.isArray(sentRaw?.items) ? sentRaw.items : [];
+    }
+  } catch (err) {
+    log.warn(`[friend-sync:${accountId}] getSentFriendRequests failed (non-critical)`, { error: String(err) });
   }
 
   result.liveCount = liveFriends.length + sentRequests.length;
@@ -151,6 +190,7 @@ export async function syncFriendsForAccount(
     where: { zalo_account_id: accountId, zalo_uid_in_nick: { in: [...allUids] } },
     select: {
       id: true, zalo_uid_in_nick: true, alias_in_nick: true, has_conversation: true,
+      zalo_display_name: true, zalo_avatar_url: true, zalo_global_id: true, zalo_username: true,
     },
   });
   const existingByUid = new Map(existingFriends.map((f) => [f.zalo_uid_in_nick, f]));
@@ -203,6 +243,18 @@ export async function syncFriendsForAccount(
   log.info(
     `[friend-sync:${accountId}] trigger=${opts.trigger} live=${result.liveCount} upserted=${result.upsertedFriends} emitted=${result.emittedCount} errors=${result.errors} dur=${result.durationMs}ms`,
   );
+
+  // Real-time: notify subscribed clients that sync completed
+  emitToAccount(accountId, 'zalo:sync-complete', {
+    accountId,
+    trigger: opts.trigger,
+    liveCount: result.liveCount,
+    upsertedFriends: result.upsertedFriends,
+    emittedCount: result.emittedCount,
+    errors: result.errors,
+    durationMs: result.durationMs,
+    skipped: result.skipped,
+  });
   return result;
 }
 
@@ -210,24 +262,47 @@ export async function syncFriendsForAccount(
 interface ProcessFriendArgs {
   accountId: number;
   uid: string;
-  snapshot: { alias_in_nick: string | null; has_conversation: boolean };
-  phoneNumber: string | null; // F2: public phone from SDK
+  snapshot: {
+    alias_in_nick: string | null;
+    has_conversation: boolean;
+    zalo_display_name: string | null;
+    zalo_avatar_url: string | null;
+    zalo_global_id: string | null;
+    zalo_username: string | null;
+  };
+  phoneNumber: string | null;
   targetStatus: 'accepted' | 'pending_sent';
-  existing: { id: number; alias_in_nick: string | null; has_conversation: boolean } | undefined;
+  existing: {
+    id: number; alias_in_nick: string | null; has_conversation: boolean;
+    zalo_display_name: string | null; zalo_avatar_url: string | null;
+    zalo_global_id: string | null; zalo_username: string | null;
+  } | undefined;
   io: SyncIo | null;
   result: SyncFriendsResult;
 }
 
 async function processFriend(args: ProcessFriendArgs): Promise<void> {
-  // 1. Apply friendship state machine
+  // 1. Apply friendship state machine (include avatar/profile so new rows have data on create)
   await applyFriendTransition({
     zaloAccountId: args.accountId,
     zaloUidInNick: args.uid,
     newFriendshipStatus: args.targetStatus === 'accepted' ? 'accepted' : 'pending_sent',
     source: 'sync',
     aliasInNick: args.snapshot.alias_in_nick,
+    zaloDisplayName: args.snapshot.zalo_display_name,
+    zaloAvatarUrl: args.snapshot.zalo_avatar_url,
+    zaloGlobalId: args.snapshot.zalo_global_id,
+    zaloUsername: args.snapshot.zalo_username,
   });
   args.result.upsertedFriends++;
+
+  // Contact unification: ensure Contact + ContactAccess exist (best-effort, non-blocking)
+  upsertContactAccess(args.accountId, args.uid, {
+    isFriend: args.targetStatus === 'accepted',
+    friendshipStatus: args.targetStatus === 'accepted' ? 'accepted' : 'pending_sent',
+    aliasInNick: args.snapshot.alias_in_nick,
+    hasConversation: args.snapshot.has_conversation,
+  }).catch(() => {});
 
   // F2: If SDK returned a public phone number, save it (best-effort)
   if (args.phoneNumber) {
@@ -239,11 +314,22 @@ async function processFriend(args: ProcessFriendArgs): Promise<void> {
 
   // 2. Diff identity fields -> update + emit only if changed
   const existingSnap: DiffSnapshot = args.existing
-    ? { alias_in_nick: args.existing.alias_in_nick, has_conversation: args.existing.has_conversation }
+    ? {
+        alias_in_nick: args.existing.alias_in_nick,
+        has_conversation: args.existing.has_conversation,
+        zalo_display_name: args.existing.zalo_display_name,
+        zalo_avatar_url: args.existing.zalo_avatar_url,
+        zalo_global_id: args.existing.zalo_global_id,
+        zalo_username: args.existing.zalo_username,
+      }
     : {};
   const incomingSnap: DiffSnapshot = {
     alias_in_nick: args.snapshot.alias_in_nick,
     has_conversation: args.snapshot.has_conversation,
+    zalo_display_name: args.snapshot.zalo_display_name,
+    zalo_avatar_url: args.snapshot.zalo_avatar_url,
+    zalo_global_id: args.snapshot.zalo_global_id,
+    zalo_username: args.snapshot.zalo_username,
   };
 
   const patch = computeDiff(existingSnap, incomingSnap);

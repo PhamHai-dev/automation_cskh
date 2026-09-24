@@ -18,6 +18,7 @@
  *   POST /bulk-action           — reconnect / sync-contacts / disable many
  */
 import { Router, Request, Response } from 'express';
+import { Prisma } from '@prisma/client';
 import { prisma } from '../../prisma/client';
 import { createLogger } from '../../shared/logger/logger';
 import { zaloPool } from './zalo-pool';
@@ -169,7 +170,7 @@ router.get('/dashboard/enriched', async (req: Request, res: Response) => {
         SELECT c.zalo_account_id as account_id, MAX(m.timestamp) as last_at
         FROM messages m
         INNER JOIN conversations c ON c.id = m.conversation_id
-        WHERE c.zalo_account_id IN (${ids})
+        WHERE c.zalo_account_id IN (${Prisma.raw(ids.join(','))})
         GROUP BY c.zalo_account_id
       `,
       // F7: Use nick-metrics for detailed msg breakdown (friend/stranger split)
@@ -251,7 +252,7 @@ router.get('/dashboard/enriched', async (req: Request, res: Response) => {
 // ───────────────────────────────────────────────────────────────────────
 // GET /:id/uptime?range=7d — sparkline data
 // ───────────────────────────────────────────────────────────────────────
-router.get('/:id/uptime', async (req: Request, res: Response) => {
+router.get('/accounts/:id/uptime', async (req: Request, res: Response) => {
   const accountId = parseInt(req.params.id, 10);
   try {
     if (!(await checkAccess(req, res, accountId, 'read'))) return;

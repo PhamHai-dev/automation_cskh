@@ -20,6 +20,7 @@
 
 import { prisma } from '../../prisma/client';
 import { createLogger } from '../../shared/logger/logger';
+import { emitToAccount } from '../../shared/realtime/socket-singleton';
 import { zaloPool } from './zalo-pool';
 import { detectContentType, extractAlbumInfo, updateContactAvatar } from './zalo-message-helpers';
 import { handleFriendEvent } from './friend-event-handler';
@@ -256,6 +257,13 @@ export function attachListenersForAccount(accountId: number): void {
         threadType: typing?.type === 1 ? 'group' : 'user',
         ts: typing?.data?.ts ? Number(typing.data.ts) : Date.now(),
       });
+      // Real-time: emit to subscribed clients
+      emitToAccount(accountId, 'zalo:typing', {
+        accountId,
+        threadId: typing?.threadId ?? '',
+        uidFrom: String(typing?.data?.uidFrom ?? ''),
+        ts: typing?.data?.ts ? Number(typing.data.ts) : Date.now(),
+      });
     } catch (err) {
       log.warn('Typing event error', { accountId, error: String(err) });
     }
@@ -370,6 +378,18 @@ export function attachListenersForAccount(accountId: number): void {
           isGroup, contentType, hasMentions: !!mentions,
         });
       }
+
+      // Real-time: emit inbound message to subscribed clients
+      emitToAccount(accountId, 'zalo:message', {
+        accountId,
+        threadId: message.threadId || '',
+        senderUid: senderUid,
+        displayName: senderName,
+        content: content.slice(0, 2500),
+        timestamp: incomingMsg.timestamp.toISOString(),
+        isGroup,
+        contentType,
+      });
     } catch (err) {
       log.error('Message handler error', { accountId, error: String(err) });
     }
@@ -387,6 +407,10 @@ export function attachListenersForAccount(accountId: number): void {
         return;
       }
       log.info('Undo event', { accountId, globalMsgId, cliMsgId: cliMsgIdNum });
+      // Real-time: emit undo to subscribed clients
+      emitToAccount(accountId, 'zalo:undo', {
+        accountId, globalMsgId: String(globalMsgId ?? ''), cliMsgId: String(cliMsgIdNum ?? ''),
+      });
       // TODO: Implement handleMessageUndo when message-sync module is ready
     } catch (err) {
       log.warn('Undo handler error', { accountId, error: String(err) });
@@ -413,6 +437,12 @@ export function attachListenersForAccount(accountId: number): void {
     try {
       await handleFriendEvent(accountId, event);
       log.debug('Friend event processed', { accountId, type: event?.type, threadId: event?.threadId });
+      // Real-time: broadcast friend event
+      emitToAccount(accountId, 'zalo:friend-update', {
+        accountId,
+        type: event?.type ?? 'unknown',
+        threadId: String(event?.threadId ?? ''),
+      });
     } catch (err) {
       log.error('friend_event handler error', { accountId, error: String(err) });
     }
@@ -464,6 +494,10 @@ export function attachListenersForAccount(accountId: number): void {
           log.warn('group_event refresh failed', { accountId, error: String(err) }),
         );
       }
+      // Real-time: broadcast group update
+      emitToAccount(accountId, 'zalo:group-update', {
+        accountId, type: eventType, groupId: String(groupId),
+      });
     }
   });
 

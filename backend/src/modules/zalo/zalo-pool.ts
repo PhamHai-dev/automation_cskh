@@ -28,11 +28,26 @@ import { prisma } from '../../prisma/client';
 import { createLogger } from '../../shared/logger/logger';
 import { encryptJson, decryptJson } from '../../shared/crypto/aes-gcm';
 import { withProxy } from './proxy-util';
+import { emitToAccount } from '../../shared/realtime/socket-singleton';
 import type { ZaloSessionData } from './types/zalo.types';
 import { PoolAccountStatus } from './types/zalo.types';
 import { writeTransition } from './status-log-service';
 
 const log = createLogger('ZaloPool');
+
+// ── QR normalization ──────────────────────────────────────────────────────
+/** Ensure QR image string has proper data URI prefix for browser <img> src. */
+function normalizeQrImage(raw: string | null | undefined): string {
+  if (!raw) return '';
+  // Already has data URI prefix
+  if (raw.startsWith('data:image')) return raw;
+  // Looks like base64 — prepend PNG prefix
+  if (/^[A-Za-z0-9+/=]/.test(raw)) {
+    return `data:image/png;base64,${raw}`;
+  }
+  // Anything else (URL etc.) return as-is
+  return raw;
+}
 
 // ── zca-js lazy require (CJS) ─────────────────────────────────────────────────
 let ZaloClass: any = null;
@@ -146,7 +161,9 @@ class ZaloAccountPool extends EventEmitter {
         switch (event.type) {
           case 0: // QRCodeGenerated
             log.info('QR code generated', { accountId });
-            this.emitEvent({ type: 'qr:generated', accountId, data: { qr: event.data.image } });
+            const qrDataUrl = normalizeQrImage(event.data.image);
+            this.emitEvent({ type: 'qr:generated', accountId, data: { qr: qrDataUrl } });
+            emitToAccount(accountId, 'zalo:qr', { accountId, qrDataUrl });
             break;
           case 1: // QRCodeExpired
             qrExpiredCount++;
@@ -183,10 +200,12 @@ class ZaloAccountPool extends EventEmitter {
         // F6: Write status log transition for uptime tracking
         writeTransition({ accountId, status: 'connected', reason: 'login' }).catch(() => {});
 
-        api.getOwnId().then((ownId: string) => {
+        Promise.resolve(api.getOwnId()).then((ownId: string) => {
           instance.zaloUid = ownId;
           this.updateAccountDB(accountId, 'connected', ownId);
+          this.autoSyncOnConnect(accountId); // FIX #5: auto-sync friends after connect
           this.emitEvent({ type: 'session:connected', accountId });
+          emitToAccount(accountId, 'zalo:status', { accountId, status: 'ACTIVE' });
           log.info('Login completed', { accountId, zaloUid: ownId });
         }).catch((err: any) => {
           log.error('getOwnId failed after login', { accountId, error: String(err) });
@@ -207,13 +226,14 @@ class ZaloAccountPool extends EventEmitter {
   async reconnect(accountId: number, encryptedSession: string | null): Promise<void> {
     if (!ZaloClass || !encryptedSession) return;
 
-    // Eligibility guard (ZaloCRM FIX 2 nick-ghost)
+    // FIX #2: Relax eligibility guard — allow recovery when session exists but uid is null
+    // (copy từ ZaloCRM L338-349)
     const eligibility = await prisma.zaloAccount.findUnique({
       where: { id: accountId },
       select: { zalo_uid: true, archived_at: true, disconnect_reason: true },
     });
-    if (!eligibility || eligibility.zalo_uid === null || eligibility.archived_at !== null) {
-      log.info('reconnect skip — ghost/archived', { accountId });
+    if (!eligibility || eligibility.archived_at !== null) {
+      log.info(`[zalo:${accountId}] reconnect() skip — ghost/archived`);
       return;
     }
     if (eligibility.disconnect_reason === 'manual') {
@@ -288,7 +308,9 @@ class ZaloAccountPool extends EventEmitter {
       instance.zaloUid = ownId;
       this.attachListeners(accountId, api, epoch);
       this.updateAccountDB(accountId, 'connected', ownId);
+      this.autoSyncOnConnect(accountId); // FIX #5: auto-sync friends after reconnect
       this.emitEvent({ type: 'session:connected', accountId });
+      emitToAccount(accountId, 'zalo:status', { accountId, status: 'ACTIVE' });
       log.info('Reconnected', { accountId, zaloUid: ownId });
     } catch (err) {
       const instance = this.instances.get(accountId);
@@ -327,6 +349,32 @@ class ZaloAccountPool extends EventEmitter {
     }
   }
 
+  // ── Public: tryReconnect (auto-recovery) ─────────────────────────────────
+  /**
+   * tryReconnect — ensure a live SDK client for accountId before operations
+   * that REQUIRE the client (groups sync, chat send, ...).
+   * Returns true if a live client is available after the attempt.
+   * Mirrors autoReconnect(): skips manual-disconnect / archived / missing session.
+   */
+  async tryReconnect(accountId: number): Promise<boolean> {
+    if (this.getApi(accountId)) return true;
+
+    const account = await prisma.zaloAccount.findUnique({
+      where: { id: accountId },
+      select: { encrypted_session_data: true, disconnect_reason: true, archived_at: true },
+    });
+    if (!account?.encrypted_session_data) return false;
+    if (account.disconnect_reason === 'manual' || account.archived_at !== null) return false;
+
+    log.info('tryReconnect — client missing, attempting recovery', { accountId });
+    try {
+      await this.reconnect(accountId, account.encrypted_session_data);
+    } catch (err) {
+      log.error('tryReconnect failed', { accountId, error: String(err) });
+    }
+    return !!this.getApi(accountId);
+  }
+
   // ── Listeners ────────────────────────────────────────────────────────────
   private attachListeners(accountId: number, api: any, epoch: number): void {
     const listener = api.listener ?? api;
@@ -342,6 +390,7 @@ class ZaloAccountPool extends EventEmitter {
       if (cur) cur.status = 'disconnected';
       this.updateAccountDB(accountId, 'disconnected', null);
       this.emitEvent({ type: 'session:disconnected', accountId });
+      emitToAccount(accountId, 'zalo:status', { accountId, status: 'EXPIRED', reason: 'disconnect' });
       // F6: Write status log transition
       writeTransition({ accountId, status: 'disconnected', reason: 'disconnect' }).catch(() => {});
 
@@ -357,6 +406,7 @@ class ZaloAccountPool extends EventEmitter {
         this.updateAccountDB(accountId, 'qr_pending', null);
         this.disconnectHistory.delete(key);
         this.emitEvent({ type: 'error', accountId, error: 'Session unstable — QR re-login required' });
+        emitToAccount(accountId, 'zalo:status', { accountId, status: 'ERROR', reason: 'circuit_breaker' });
         // F6: Write status log for auth_fail
         writeTransition({ accountId, status: 'qr_pending', reason: 'session_expired' }).catch(() => {});
         return;
@@ -382,7 +432,7 @@ class ZaloAccountPool extends EventEmitter {
   // ── DB updates ───────────────────────────────────────────────────────────
   private async updateAccountDB(
     accountId: number,
-    status: string,
+    poolStatus: string,
     zaloUid: string | null,
   ): Promise<void> {
     try {
@@ -398,21 +448,30 @@ class ZaloAccountPool extends EventEmitter {
         });
       }
 
+      // FIX #9: Map pool-internal status → Prisma ZaloAccountStatus enum
+      const statusMap: Record<string, string> = {
+        connected: 'ACTIVE',
+        disconnected: 'NOT_LOGGED_IN',
+        qr_pending: 'QR_PENDING',
+        connecting: 'CONNECTING',
+      };
+      const prismaStatus = statusMap[poolStatus] ?? poolStatus;
+
       await prisma.zaloAccount.update({
         where: { id: accountId },
         data: {
-          status: status as any,
+          status: prismaStatus as any,
           ...(zaloUid !== null ? { zalo_uid: zaloUid } : {}),
-          ...(status === 'connected' ? {
+          ...(poolStatus === 'connected' ? {
             last_connected_at: new Date(),
             disconnect_reason: null,
             disconnected_at: null,
             archived_at: null,
           } : {}),
-          ...(status === 'disconnected' ? {
+          ...(poolStatus === 'disconnected' ? {
             disconnected_at: new Date(),
           } : {}),
-          ...(status === 'qr_pending' ? {
+          ...(poolStatus === 'qr_pending' ? {
             encrypted_session_data: null,
           } : {}),
         },
@@ -442,8 +501,7 @@ class ZaloAccountPool extends EventEmitter {
         where: { id: accountId },
         data: {
           encrypted_session_data: encrypted,
-          status: 'ACTIVE',
-          last_connected_at: new Date(),
+          // FIX #3: KHÔNG set status/last_connected_at — updateAccountDB() xử lý sau getOwnId()
           last_login_at: new Date(),
         },
       }).catch((err) => log.error('saveSession error', { accountId, error: String(err) }));
@@ -459,6 +517,7 @@ class ZaloAccountPool extends EventEmitter {
       try { instance.api.listener.stop(); } catch { /* ignore */ }
     }
     this.instances.delete(accountId);
+    emitToAccount(accountId, 'zalo:status', { accountId, status: 'NOT_LOGGED_IN', reason: 'manual' });
     log.info('Disconnected', { accountId });
   }
 
@@ -515,12 +574,18 @@ class ZaloAccountPool extends EventEmitter {
 
   // ── Reconnect all accounts (boot) ────────────────────────────────────────
   async reconnectAll(): Promise<void> {
+    // FIX #1 + #7: Widen filter — include accounts with session but no uid yet (ghost recovery)
+    // FIX #7: MySQL NULL handling — use OR to explicitly include NULL disconnect_reason
+    // (NOT disconnect_reason='manual') excludes NULLs in MySQL, so we need OR clause
     const accounts = await prisma.zaloAccount.findMany({
       where: {
         encrypted_session_data: { not: null },
         archived_at: null,
-        zalo_uid: { not: null },
-        NOT: { disconnect_reason: 'manual' },
+        status: { not: 'NOT_LOGGED_IN' as any },
+        OR: [
+          { disconnect_reason: null },
+          { disconnect_reason: { not: 'manual' } },
+        ],
       },
       select: { id: true, encrypted_session_data: true, cs_id: true, display_name: true },
     });
@@ -573,17 +638,38 @@ class ZaloAccountPool extends EventEmitter {
   /** Alias for loginQR() — used by zalo.service.generateQr() */
   async generateQr(accountId: number, csId: number): Promise<{ qrDataUrl: string }> {
     const result = await this.loginQR(accountId, csId);
-    return { qrDataUrl: result.qrImage };
+    return { qrDataUrl: normalizeQrImage(result.qrImage) };
   }
 
-  /** Complete QR login — store session from QR scan result */
+  /** FIX #4: Complete QR login — store encrypted session, don't assign raw data as api */
   async completeQrLogin(accountId: number, sessionData: any): Promise<void> {
-    const inst = this.instances.get(accountId);
-    if (inst) {
-      inst.api = sessionData;
-      inst.status = 'connected';
-      inst.lastActivity = new Date();
+    try {
+      const encrypted = encryptJson(sessionData);
+      await prisma.zaloAccount.update({
+        where: { id: accountId },
+        data: { encrypted_session_data: encrypted },
+      });
+      log.info('completeQrLogin — session stored', { accountId });
+    } catch (err) {
+      log.error('completeQrLogin error', { accountId, error: String(err) });
     }
+  }
+
+  // ── FIX #5: Auto-sync friends/groups after connect (copy từ ZaloCRM L454-475) ──
+  private autoSyncOnConnect(accountId: number): void {
+    void (async () => {
+      try {
+        const { syncFriendsForAccount } = await import('./friend-sync-service');
+        const res = await syncFriendsForAccount(accountId, { trigger: 'connect' });
+        log.info('Auto-sync on connect', {
+          accountId,
+          friends: res.emittedCount ?? 0,
+          errors: res.errors,
+        });
+      } catch (err) {
+        log.error('Auto-sync on connect failed', { accountId, error: String(err) });
+      }
+    })();
   }
 
   // ── Shutdown ─────────────────────────────────────────────────────────────
