@@ -12,12 +12,19 @@ import { createLogger } from '../../shared/logger/logger';
 const log = createLogger('AutomationQueue');
 
 let _queue: Queue | null = null;
+let _bullMqConnection: any = null;
 
 function getQueue(): Queue {
   if (_queue) return _queue;
+  // BullMQ v5 requires maxRetriesPerRequest=null for Redis connection
   const redis = getRedisClient();
+  const bullMqConnection = (redis as any).duplicate({
+    maxRetriesPerRequest: null,
+    enableReadyCheck: false,
+  });
+  _bullMqConnection = bullMqConnection;
   _queue = new Queue('automation-delivery', {
-    connection: redis as any,
+    connection: bullMqConnection,
     defaultJobOptions: {
       removeOnComplete: 100,
       removeOnFail: 50,
@@ -90,5 +97,9 @@ export async function closeAutomationQueue(): Promise<void> {
     await _queue.close();
     _queue = null;
     log.info('Automation queue closed');
+  }
+  if (_bullMqConnection) {
+    try { await _bullMqConnection.quit(); } catch { /* noop */ }
+    _bullMqConnection = null;
   }
 }

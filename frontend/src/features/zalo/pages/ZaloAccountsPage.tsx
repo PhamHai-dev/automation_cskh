@@ -102,9 +102,18 @@ export const ZaloAccountsPage: React.FC = () => {
     {
       header: 'Tai khoan Zalo',
       cell: (item) => (
-        <div>
-          <div className="font-semibold text-gray-900">{item.display_name || 'Nick #' + item.id}</div>
-          <div className="text-gray-500 text-xs">{item.zalo_uid || 'ID: ' + item.id}</div>
+        <div className="flex items-center gap-3">
+          {item.avatar_url ? (
+            <img src={item.avatar_url} alt="" className="w-10 h-10 rounded-full object-cover border border-border/50 shrink-0" />
+          ) : (
+            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary/10 to-primary/20 text-primary flex items-center justify-center text-sm font-bold shrink-0">
+              {(item.display_name || `#${item.id}`).charAt(0).toUpperCase()}
+            </div>
+          )}
+          <div>
+            <div className="font-semibold text-gray-900">{item.display_name || 'Nick #' + item.id}</div>
+            <div className="text-gray-500 text-xs">{item.zalo_uid || 'ID: ' + item.id}</div>
+          </div>
         </div>
       ),
     },

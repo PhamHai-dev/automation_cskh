@@ -204,6 +204,7 @@ class ZaloAccountPool extends EventEmitter {
           instance.zaloUid = ownId;
           this.updateAccountDB(accountId, 'connected', ownId);
           this.autoSyncOnConnect(accountId); // FIX #5: auto-sync friends after connect
+          this.fetchAndSaveAvatar(accountId, api, ownId); // save avatar from Zalo SDK
           this.emitEvent({ type: 'session:connected', accountId });
           emitToAccount(accountId, 'zalo:status', { accountId, status: 'ACTIVE' });
           log.info('Login completed', { accountId, zaloUid: ownId });
@@ -309,6 +310,7 @@ class ZaloAccountPool extends EventEmitter {
       this.attachListeners(accountId, api, epoch);
       this.updateAccountDB(accountId, 'connected', ownId);
       this.autoSyncOnConnect(accountId); // FIX #5: auto-sync friends after reconnect
+      this.fetchAndSaveAvatar(accountId, api, ownId); // refresh avatar from Zalo SDK
       this.emitEvent({ type: 'session:connected', accountId });
       emitToAccount(accountId, 'zalo:status', { accountId, status: 'ACTIVE' });
       log.info('Reconnected', { accountId, zaloUid: ownId });
@@ -486,6 +488,119 @@ class ZaloAccountPool extends EventEmitter {
         log.error('updateAccountDB error', { accountId, error: String(err) });
       }
     }
+  }
+
+  // ── Avatar fetch (fire-and-forget) ───────────────────────────────────────
+  private fetchAndSaveAvatar(accountId: number, api: any, ownId: string): void {
+    Promise.resolve()
+      .then(async () => {
+        let avatarUrl: string | null = null;
+        try {
+          // Method 1: getOwnInfo (preferred)
+          if (typeof api.getOwnInfo === 'function') {
+            const info: any = await api.getOwnInfo();
+            avatarUrl = info?.data?.avatar ?? info?.avatar ?? info?.avatarUrl
+              ?? info?.thumbAvatarUrl ?? info?.avt ?? info?.fullAvt ?? null;
+            log.debug('getOwnInfo avatar result', { accountId, avatarUrl, keys: Object.keys(info || {}) });
+          }
+          // Method 2: getUserInfo with own UID
+          if (!avatarUrl && typeof api.getUserInfo === 'function') {
+            try {
+              const info: any = await api.getUserInfo(ownId);
+              const u = info?.[ownId] ?? info?.data?.[ownId] ?? info ?? null;
+              avatarUrl = u?.data?.avatar ?? u?.avatar ?? u?.avatarUrl ?? u?.avt ?? null;
+              log.debug('getUserInfo avatar result', { accountId, avatarUrl });
+            } catch { /* ignore */ }
+          }
+          // Method 3: fetchAccountInfo
+          if (!avatarUrl && typeof api.fetchAccountInfo === 'function') {
+            try {
+              const info: any = await api.fetchAccountInfo();
+              avatarUrl = info?.data?.avatar ?? info?.avatar ?? info?.avatarUrl ?? null;
+              log.debug('fetchAccountInfo avatar result', { accountId, avatarUrl });
+            } catch { /* ignore */ }
+          }
+          // Method 4: profile.getProfile
+          if (!avatarUrl && typeof api?.profile?.getProfile === 'function') {
+            try {
+              const info: any = await api.profile.getProfile();
+              avatarUrl = info?.data?.avatar ?? info?.avatar ?? null;
+              log.debug('profile.getProfile avatar result', { accountId, avatarUrl });
+            } catch { /* ignore */ }
+          }
+        } catch (err: any) {
+          log.debug('avatar fetch error (non-critical)', { accountId, error: String(err) });
+        }
+        if (avatarUrl) {
+          await prisma.zaloAccount
+            .update({ where: { id: accountId }, data: { avatar_url: avatarUrl } })
+            .catch(() => {});
+          log.info('Avatar saved', { accountId, avatarUrl });
+        } else {
+          log.warn('No avatar found from any method', { accountId, ownId });
+        }
+      })
+      .catch(() => {});
+  }
+
+  // ── Refresh avatar (manual, callable from service) ───────────────────────
+  async refreshAvatar(accountId: number): Promise<string | null> {
+    const inst = this.instances.get(accountId);
+    if (!inst?.api || inst.status !== 'connected') {
+      log.warn('Cannot refresh avatar — not connected', { accountId });
+      return null;
+    }
+    let avatarUrl: string | null = null;
+    try {
+      const ownId = inst.zaloUid ?? await inst.api.getOwnId();
+      if (typeof inst.api.getOwnInfo === 'function') {
+        const info: any = await inst.api.getOwnInfo();
+        avatarUrl = info?.data?.avatar ?? info?.avatar ?? info?.avatarUrl ?? info?.fullAvt ?? null;
+      }
+      if (!avatarUrl && typeof inst.api.getUserInfo === 'function') {
+        const info: any = await inst.api.getUserInfo(ownId);
+        const u = info?.[ownId] ?? info?.data?.[ownId] ?? info ?? null;
+        avatarUrl = u?.data?.avatar ?? u?.avatar ?? u?.avt ?? null;
+      }
+      if (avatarUrl) {
+        await prisma.zaloAccount.update({ where: { id: accountId }, data: { avatar_url: avatarUrl } });
+        log.info('Avatar refreshed', { accountId, avatarUrl });
+      }
+    } catch (err: any) {
+      log.error('refreshAvatar error', { accountId, error: String(err) });
+    }
+    return avatarUrl;
+  }
+
+  // ── Refresh group avatars (bulk) ─────────────────────────────────────────
+  async refreshGroupAvatars(accountId: number): Promise<number> {
+    const api = this.getApi(accountId);
+    if (!api) return 0;
+    const groups = await prisma.conversation.findMany({
+      where: { zalo_account_id: accountId, thread_type: 'group', group_avatar_url: null },
+      select: { id: true, external_thread_id: true },
+      take: 50,
+    });
+    let updated = 0;
+    for (const conv of groups) {
+      try {
+        const infoRes: any = await api.getGroupInfo?.(conv.external_thread_id);
+        const info = infoRes?.gridInfoMap?.[conv.external_thread_id]
+          ?? Object.values(infoRes?.gridInfoMap ?? {})[0];
+        if (info) {
+          const newAvatar = info.fullAvt || info.avt || null;
+          if (newAvatar) {
+            await prisma.conversation.update({
+              where: { id: conv.id },
+              data: { group_avatar_url: newAvatar } as any,
+            });
+            updated++;
+          }
+        }
+      } catch { /* non-critical */ }
+    }
+    log.info('Group avatars refreshed', { accountId, updated, total: groups.length });
+    return updated;
   }
 
   // ── Session persistence ──────────────────────────────────────────────────

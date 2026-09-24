@@ -98,6 +98,19 @@ export async function refreshGroupInfoNow(
     if (!updates) return false;
 
     await prisma.zaloGroup.update({ where: { id: grp.id }, data: updates });
+    // Mirror to Conversation — so group avatar/name displays reflect immediately.
+    try {
+      const convData: Record<string, unknown> = {};
+      if (updates.name) { convData.group_name = updates.name; convData.display_name = updates.name; }
+      if (updates.avatar_url) convData.group_avatar_url = updates.avatar_url;
+      if (updates.member_count != null) convData.group_members_count = updates.member_count;
+      if (Object.keys(convData).length) {
+        await prisma.conversation.updateMany({
+          where: { zalo_account_id: accountId, external_thread_id: groupId, thread_type: 'group' },
+          data: convData,
+        });
+      }
+    } catch { /* Conversation may not exist yet — non-critical */ }
     io?.emit('zalo:group-info-updated', { groupId, zaloGroupId: grp.id, ...updates });
     log.info(`[group-info-refresh] Group ${groupId} (acc ${accountId}) refreshed: ${Object.keys(updates).join(',')}`);
     return true;
