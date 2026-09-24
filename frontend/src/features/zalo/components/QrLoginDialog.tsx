@@ -1,6 +1,15 @@
-import React, { useState } from 'react';
-import type { ZaloAccount } from '../types/zalo.types';
+import React, { useState, useCallback } from 'react';
+import type { ZaloAccount, ZaloSocketStatusEvent, ZaloSocketQrEvent } from '../types/zalo.types';
 import { zaloApi } from '../api/zalo.api';
+import { useZaloAccountSocket } from '../../../hooks/useSocket';
+
+/** Ensure QR image string has proper data URI prefix for browser <img> src. */
+function normalizeQrDataUrl(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  if (raw.startsWith('data:image')) return raw;
+  if (/^[A-Za-z0-9+/=]/.test(raw)) return `data:image/png;base64,${raw}`;
+  return raw;
+}
 
 interface QrLoginDialogProps {
   account: ZaloAccount;
@@ -8,20 +17,51 @@ interface QrLoginDialogProps {
   onSuccess: () => void;
 }
 
+/**
+ * QrLoginDialog — Socket.IO driven QR login.
+ * Subscribes to zalo:qr + zalo:status events; no HTTP polling.
+ */
 export const QrLoginDialog: React.FC<QrLoginDialogProps> = ({ account, onClose, onSuccess }) => {
-  const [qrDataUrl, setQrDataUrl] = useState<string | null>(account.qr_code || null);
+  const [qrDataUrl, setQrDataUrl] = useState<string | null>(normalizeQrDataUrl(account.qr_code));
   const [loading, setLoading] = useState(!account.qr_code);
   const [error, setError] = useState('');
   const [scanStatus, setScanStatus] = useState<'waiting' | 'scanned' | 'success' | 'expired'>('waiting');
-  const [pollTimer, setPollTimer] = useState<ReturnType<typeof setInterval> | null>(null);
+
+  const { connected, on, off } = useZaloAccountSocket(account.id);
+
+  // Socket listeners: zalo:qr, zalo:status
+  const handleQrEvent = useCallback((data: ZaloSocketQrEvent) => {
+    if (data.accountId !== account.id) return;
+    setQrDataUrl(normalizeQrDataUrl(data.qrDataUrl));
+    setScanStatus('waiting');
+    setLoading(false);
+  }, [account.id]);
+
+  const handleStatusEvent = useCallback((data: ZaloSocketStatusEvent) => {
+    if (data.accountId !== account.id) return;
+    if (data.status === 'ACTIVE') {
+      setScanStatus('success');
+      onSuccess();
+    } else if (data.status === 'EXPIRED') {
+      setScanStatus('expired');
+    } else if (data.status === 'QR_PENDING') {
+      setScanStatus('waiting');
+    }
+  }, [account.id, onSuccess]);
+
+  React.useEffect(() => {
+    on('zalo:qr', handleQrEvent);
+    on('zalo:status', handleStatusEvent);
+    return () => {
+      off('zalo:qr', handleQrEvent);
+      off('zalo:status', handleStatusEvent);
+    };
+  }, [on, off, handleQrEvent, handleStatusEvent]);
 
   // Generate QR on mount
   React.useEffect(() => {
-    if (qrDataUrl) return; // already have QR
+    if (qrDataUrl) return;
     generateQr();
-    return () => {
-      if (pollTimer) clearInterval(pollTimer);
-    };
   }, []);
 
   const generateQr = async () => {
@@ -29,10 +69,8 @@ export const QrLoginDialog: React.FC<QrLoginDialogProps> = ({ account, onClose, 
     setError('');
     try {
       const result = await zaloApi.generateQr(account.id);
-      setQrDataUrl(result.qrDataUrl);
+      setQrDataUrl(normalizeQrDataUrl(result.qrDataUrl));
       setScanStatus('waiting');
-      // Start polling for scan status
-      startPolling(account.id);
     } catch (err: any) {
       setError(err.response?.data?.error?.message || 'Không thể tạo mã QR');
     } finally {
@@ -40,29 +78,7 @@ export const QrLoginDialog: React.FC<QrLoginDialogProps> = ({ account, onClose, 
     }
   };
 
-  const startPolling = (accountId: number) => {
-    const timer = setInterval(async () => {
-      try {
-        const status = await zaloApi.getStatus(accountId);
-        if (status.liveStatus === 'ACTIVE') {
-          clearInterval(timer);
-          setScanStatus('success');
-          onSuccess();
-        } else if (status.status === 'EXPIRED') {
-          clearInterval(timer);
-          setScanStatus('expired');
-        }
-      } catch {
-        // Polling error — continue
-      }
-    }, 3000);
-    setPollTimer(timer);
-  };
-
-  const handleClose = () => {
-    if (pollTimer) clearInterval(pollTimer);
-    onClose();
-  };
+  const handleClose = () => onClose();
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
@@ -77,12 +93,18 @@ export const QrLoginDialog: React.FC<QrLoginDialogProps> = ({ account, onClose, 
               Nick: {account.display_name || `#${account.id}`}
             </p>
           </div>
-          <button
-            onClick={handleClose}
-            className="text-gray-400 hover:text-gray-600 text-lg leading-none p-1"
-          >
-            &times;
-          </button>
+          <div className="flex items-center gap-2">
+            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium ${connected ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500'}`}>
+              <span className={`w-1.5 h-1.5 rounded-full ${connected ? 'bg-emerald-500 animate-pulse' : 'bg-gray-400'}`} />
+              {connected ? 'Live' : 'Offline'}
+            </span>
+            <button
+              onClick={handleClose}
+              className="text-gray-400 hover:text-gray-600 text-lg leading-none p-1"
+            >
+              &times;
+            </button>
+          </div>
         </div>
 
         {/* Content */}

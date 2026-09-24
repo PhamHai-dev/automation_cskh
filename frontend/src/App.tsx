@@ -17,6 +17,13 @@ import { DashboardPage } from './features/dashboard/pages/DashboardPage';
 import { CarePage } from './features/care/pages/CarePage';
 import { ToastProvider } from './components/ui/Toast';
 import { ZaloAccountsPage } from './features/zalo/pages/ZaloAccountsPage';
+import { ZaloMonitorPage } from './features/zalo/pages/ZaloMonitorPage';
+import { StudentZaloLinkPage } from './features/zalo/pages/StudentZaloLinkPage';
+import { ZaloContactsPage } from './features/zalo/pages/ZaloContactsPage';
+import { ZaloGroupsPage } from './features/zalo/pages/ZaloGroupsPage';
+import { ZaloChatPage } from './features/zalo/pages/ZaloChatPage';
+import { AutomationWorkflowsPage } from './features/automation/pages/AutomationWorkflowsPage';
+import { AutomationWorkflowDetailPage } from './features/automation/pages/AutomationWorkflowDetailPage';
 import './styles/globals.css';
 import './styles/tokens.css';
 
@@ -66,6 +73,13 @@ function App() {
 
               <Route path="/zalo" element={<ZaloAccountsPage />} />
               <Route path="/zalo/tai-khoan" element={<Navigate to="/zalo" replace />} />
+              <Route path="/zalo/monitor" element={<ZaloMonitorPage />} />
+              <Route path="/zalo/lien-ket" element={<StudentZaloLinkPage />} />
+              <Route path="/zalo/danh-ba" element={<ZaloContactsPage />} />
+              <Route path="/zalo/nhom" element={<ZaloGroupsPage />} />
+              <Route path="/zalo/chat" element={<ZaloChatPage />} />
+              <Route path="/automation" element={<AutomationWorkflowsPage />} />
+              <Route path="/automation/:id" element={<AutomationWorkflowDetailPage />} />
             </Route>
 
             {/* Classes, Attendance, Imports/Exports: Admin, Manage, CS, Teacher */}

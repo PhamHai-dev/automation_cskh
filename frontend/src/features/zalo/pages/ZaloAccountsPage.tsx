@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { zaloApi } from '../api/zalo.api';
-import type { ZaloAccount, CreateZaloAccountDTO } from '../types/zalo.types';
+import type { ZaloAccount, CreateZaloAccountDTO, ZaloSocketStatusEvent } from '../types/zalo.types';
 import { ZALO_STATUS_LABELS, ZALO_STATUS_COLORS } from '../types/zalo.types';
 import { PageContainer } from '../../../components/common/PageContainer';
 import { PageHeader } from '../../../components/common/PageHeader';
@@ -8,6 +8,7 @@ import { DataTable, Column } from '../../../components/common/DataTable';
 import { Button } from '../../../components/ui/Button';
 import { Input } from '../../../components/ui/Input';
 import { QrLoginDialog } from '../components/QrLoginDialog';
+import { useSocket } from '../../../hooks/useSocket';
 import { Plus, QrCode, Trash2, WifiOff, RefreshCw, Users } from 'lucide-react';
 
 export const ZaloAccountsPage: React.FC = () => {
@@ -36,6 +37,22 @@ export const ZaloAccountsPage: React.FC = () => {
   };
 
   useEffect(() => { fetchAccounts(); }, []);
+
+  // Live: update account status in-place when zalo:status arrives
+  const handleStatusEvent = useCallback((evt: ZaloSocketStatusEvent) => {
+    setAccounts((prev) =>
+      prev.map((a) =>
+        a.id === evt.accountId ? { ...a, liveStatus: evt.status as ZaloAccount['liveStatus'] } : a,
+      ),
+    );
+  }, []);
+
+  const { on, off } = useSocket();
+
+  useEffect(() => {
+    on('zalo:status', handleStatusEvent);
+    return () => { off('zalo:status', handleStatusEvent); };
+  }, [on, off, handleStatusEvent]);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();

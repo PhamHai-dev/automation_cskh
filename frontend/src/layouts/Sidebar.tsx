@@ -13,6 +13,9 @@ import {
   ShieldCheck,
   ChevronLeft,
   Sparkles,
+  Zap,
+  Link2,
+  MessageSquare,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -94,6 +97,47 @@ export const Sidebar: React.FC<SidebarProps> = ({
           path: '/teachers',
           icon: <UserCheck className="w-5 h-5 shrink-0" />,
           allowedRoles: ['ADMIN', 'MANAGE'],
+        },
+      ],
+    },
+    {
+      title: 'TỰ ĐỘNG HÓA',
+      items: [
+        {
+          name: 'Tài khoản Zalo',
+          path: '/zalo',
+          icon: <MessageSquare className="w-5 h-5 shrink-0" />,
+          allowedRoles: ['ADMIN', 'MANAGE', 'CS'],
+        },
+        {
+          name: 'Danh bạ Zalo',
+          path: '/zalo/danh-ba',
+          icon: <Users className="w-5 h-5 shrink-0" />,
+          allowedRoles: ['ADMIN', 'MANAGE', 'CS'],
+        },
+        {
+          name: 'Nhóm Zalo',
+          path: '/zalo/nhom',
+          icon: <Users className="w-5 h-5 shrink-0" />,
+          allowedRoles: ['ADMIN', 'MANAGE', 'CS'],
+        },
+        {
+          name: 'Tin nhắn Zalo',
+          path: '/zalo/chat',
+          icon: <MessageSquare className="w-5 h-5 shrink-0" />,
+          allowedRoles: ['ADMIN', 'MANAGE', 'CS'],
+        },
+        {
+          name: 'Liên kết HV ↔ Zalo',
+          path: '/zalo/lien-ket',
+          icon: <Link2 className="w-5 h-5 shrink-0" />,
+          allowedRoles: ['ADMIN', 'MANAGE', 'CS'],
+        },
+        {
+          name: 'Automation Workflow',
+          path: '/automation',
+          icon: <Zap className="w-5 h-5 shrink-0" />,
+          allowedRoles: ['ADMIN', 'MANAGE', 'CS'],
         },
       ],
     },

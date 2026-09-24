@@ -17,6 +17,8 @@ import { careRouter } from './modules/care/care.routes';
 import { dashboardRouter } from './modules/dashboard/dashboard.routes';
 import { zaloRouter } from './modules/zalo/zalo.routes';
 
+import { automationRouter } from './modules/automation/automation.routes';
+
 const app: Express = express();
 
 // Middlewares
@@ -48,6 +50,7 @@ app.use('/api/v1/imports', importsRouter);
 app.use('/api/v1', careRouter);
 app.use('/api/v1/dashboard', dashboardRouter);
 app.use('/api/v1/zalo', zaloRouter);
+app.use('/api/v1/automation', automationRouter);
 
 // Error handling
 app.use(errorMiddleware);

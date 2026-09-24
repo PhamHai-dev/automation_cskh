@@ -94,3 +94,130 @@ export const ZALO_STATUS_COLORS: Record<ZaloAccountStatus, string> = {
   DISABLED: 'bg-gray-100 text-gray-400',
   ERROR: 'bg-red-100 text-red-700',
 };
+
+// ── Socket.IO realtime event payloads (backed by backend zalo-pool/listener emits) ──
+
+export interface ZaloSocketStatusEvent {
+  accountId: number;
+  status: string; // ACTIVE | EXPIRED | ERROR | NOT_LOGGED_IN | QR_PENDING
+  reason?: string; // disconnect | circuit_breaker | manual | ...
+}
+
+export interface ZaloSocketQrEvent {
+  accountId: number;
+  qrDataUrl: string;
+}
+
+export interface ZaloSocketMessageEvent {
+  accountId: number;
+  threadId: string;
+  senderUid: string;
+  displayName: string;
+  content: string;
+  timestamp: string;
+  isGroup: boolean;
+  contentType?: string;
+}
+
+export interface ZaloSocketTypingEvent {
+  accountId: number;
+  threadId: string;
+  uidFrom: string;
+  ts: number;
+}
+
+export interface ZaloSocketFriendEvent {
+  accountId: number;
+  type: number | string;
+  threadId?: string;
+  uid?: string;
+  newStatus?: string;
+  alias?: string | null;
+}
+
+export interface ZaloSocketGroupEvent {
+  accountId: number;
+  type: string;
+  groupId: string;
+}
+
+export interface ZaloSocketUndoEvent {
+  accountId: number;
+  globalMsgId: string;
+  cliMsgId?: string;
+}
+
+export interface ZaloSocketSyncEvent {
+  accountId: number;
+  trigger: string;
+  liveCount: number;
+  upsertedFriends: number;
+  emittedCount: number;
+  errors: number;
+  durationMs: number;
+  skipped: string | null;
+}
+
+/** Union of all zalo:* events a client can receive. */
+export type ZaloSocketEvent =
+  | { event: 'zalo:status'; data: ZaloSocketStatusEvent }
+  | { event: 'zalo:qr'; data: ZaloSocketQrEvent }
+  | { event: 'zalo:message'; data: ZaloSocketMessageEvent }
+  | { event: 'zalo:typing'; data: ZaloSocketTypingEvent }
+  | { event: 'zalo:friend-update'; data: ZaloSocketFriendEvent }
+  | { event: 'zalo:group-update'; data: ZaloSocketGroupEvent }
+  | { event: 'zalo:undo'; data: ZaloSocketUndoEvent }
+  | { event: 'zalo:sync-complete'; data: ZaloSocketSyncEvent };
+
+// ── Deferred features: reactions / polls / mentions / reply-quote ─────────
+
+export interface ReactionEntry {
+  rType: string; // emoji unicode e.g. "❤️"
+  uids: string[]; // userIds who reacted
+}
+
+export interface ReactionView {
+  emoji: string;
+  count: number;
+  reactedBySelf: boolean;
+}
+
+export interface ReactionDetailUser {
+  uid: string;
+  name?: string;
+  avatarUrl?: string | null;
+}
+
+export interface PollOption {
+  id: number;
+  text: string;
+  votes: number;
+  votedBySelf: boolean;
+  voterUids?: string[];
+}
+
+export interface PollView {
+  id: string;
+  question: string;
+  options: PollOption[];
+  totalVotes: number;
+  allowMulti: boolean;
+  anonymous: boolean;
+  expiresAt?: string | null;
+  createdBy?: string;
+}
+
+export interface MentionMeta {
+  uid: string;
+  pos: number;
+  len: number;
+  type: number; // 0 = user
+}
+
+export interface QuoteRef {
+  msgId: string;
+  senderName?: string;
+  content?: string;
+  contentType?: string;
+}
+
