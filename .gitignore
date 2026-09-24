@@ -10,3 +10,4 @@ coverage/
 backend/prisma/dev.db
 frontend/.vite/
 backend/uploads/
+backend/scratch-*.js

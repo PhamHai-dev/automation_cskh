@@ -21,6 +21,7 @@ export class ZaloRepository {
 
   async findAll() {
     return prisma.zaloAccount.findMany({
+      where: { archived_at: null },
       include: { cs: { select: { id: true, name: true, email: true } } },
       orderBy: { created_at: 'desc' },
     });

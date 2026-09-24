@@ -118,13 +118,98 @@ export class AutomationRepository {
       include: {
         enrollment: {
           include: {
-            student: { select: { id: true, full_name: true, phone: true } },
+            student: { select: { id: true, full_name: true, phone: true, email: true } },
             cs: { select: { id: true, name: true } },
+            package: { select: { id: true, name: true } },
+            enrollment_classes: {
+              take: 1,
+              orderBy: { sequence_no: 'asc' },
+              select: {
+                id: true,
+                class: {
+                  select: {
+                    id: true,
+                    class_code: true,
+                    class_name: true,
+                    class_teachers: {
+                      where: { active: true, role: 'MAIN' },
+                      select: {
+                        teacher: { select: { id: true, name: true } },
+                      },
+                      take: 1,
+                    },
+                  },
+                },
+              },
+            },
           },
         },
       },
       orderBy: { created_at: 'desc' },
     });
+  }
+
+  async listAvailableEnrollments(workflowId: number, options?: { q?: string; csId?: number; page?: number; limit?: number }) {
+    const page = options?.page ?? 1;
+    const limit = options?.limit ?? 20;
+    const q = options?.q?.trim() ?? '';
+
+    // IDs already enrolled in this workflow
+    const enrolledRows = await prisma.automationEnrollment.findMany({
+      where: { workflow_id: workflowId },
+      select: { enrollment_id: true },
+    });
+    const enrolledIds = enrolledRows.map((e) => e.enrollment_id);
+
+    const where: any = {
+      ...(enrolledIds.length ? { id: { notIn: enrolledIds } } : {}),
+      ...(q ? {
+        OR: [
+          { student: { full_name: { contains: q } } },
+          { student: { phone: { contains: q } } },
+          { student: { email: { contains: q } } },
+        ],
+      } : {}),
+      ...(options?.csId ? { cs_id: options.csId } : {}),
+    };
+
+    const [items, total] = await Promise.all([
+      prisma.enrollment.findMany({
+        where,
+        include: {
+          student: { select: { id: true, full_name: true, phone: true, email: true } },
+          cs: { select: { id: true, name: true } },
+          package: { select: { id: true, name: true } },
+          enrollment_classes: {
+            take: 1,
+            orderBy: { sequence_no: 'asc' },
+            select: {
+              id: true,
+              class: {
+                select: {
+                  id: true,
+                  class_code: true,
+                  class_name: true,
+                  class_teachers: {
+                    where: { active: true, role: 'MAIN' },
+                    select: {
+                      teacher: { select: { id: true, name: true } },
+                    },
+                    take: 1,
+                  },
+                },
+              },
+            },
+          },
+        },
+        orderBy: { created_at: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      prisma.enrollment.count({ where }),
+    ]);
+
+    return { items, total, page, limit, totalPages: Math.ceil(total / limit) };
   }
 
   async findEnrollmentsByWorkflow(workflowId: number) {

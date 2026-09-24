@@ -24,12 +24,14 @@ import { useToast } from '../../../components/ui/Toast';
 import {
   Plus,
   Trash2,
+  Pencil,
   ArrowLeft,
   Zap,
   Users,
   Clock,
   MessageSquare,
   Copy,
+  BookOpen,
 } from 'lucide-react';
 
 type TabType = 'steps' | 'enrollments' | 'deliveries';
@@ -47,8 +49,9 @@ export const AutomationWorkflowDetailPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<TabType>('steps');
 
-  // Step modal
+  // Step modal (add/edit dùng chung form)
   const [isStepModalOpen, setIsStepModalOpen] = useState(false);
+  const [editingStepId, setEditingStepId] = useState<number | null>(null);
   const [stepForm, setStepForm] = useState({
     session_number: 1,
     trigger_event: 'ATTENDED' as AutomationTriggerEvent,
@@ -59,10 +62,61 @@ export const AutomationWorkflowDetailPage: React.FC = () => {
   });
   const [stepSubmitting, setStepSubmitting] = useState(false);
 
-  // Enrollment modal
+  // Enrollment modal (popup chọn HV)
   const [isEnrollModalOpen, setIsEnrollModalOpen] = useState(false);
-  const [enrollInput, setEnrollInput] = useState('');
   const [enrollSubmitting, setEnrollSubmitting] = useState(false);
+  const [available, setAvailable] = useState<Array<{
+    id: number;
+    student: { id: number; full_name: string; phone: string | null; email: string | null };
+    cs: { id: number; name: string } | null;
+    package: { id: number; name: string } | null;
+    enrollment_classes: Array<{
+      id: number;
+      class: {
+        id: number; class_code: string | null; class_name: string;
+        class_teachers: Array<{ teacher: { id: number; name: string | null } }>;
+      };
+    }>;
+    start_date: string | null;
+    status: string;
+  }>>([]);
+  const [availLoading, setAvailLoading] = useState(false);
+  const [availSearch, setAvailSearch] = useState('');
+  const [availPage, setAvailPage] = useState(1);
+  const [availTotalPages, setAvailTotalPages] = useState(1);
+  const [selectedEnrollmentIds, setSelectedEnrollmentIds] = useState<number[]>([]);
+
+  const AVAIL_PAGE_SIZE = 10;
+
+  const loadAvailable = async (page = availPage, q = availSearch) => {
+    try {
+      setAvailLoading(true);
+      const res = await automationApi.listAvailableEnrollments(workflowId, { q: q || undefined, page, limit: AVAIL_PAGE_SIZE });
+      setAvailable(res.items as any);
+      setAvailTotalPages(res.totalPages || 1);
+      setAvailPage(res.page);
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Không thể tải danh sách học viên');
+    } finally {
+      setAvailLoading(false);
+    }
+  };
+
+  const openEnrollModal = () => {
+    setSelectedEnrollmentIds([]);
+    setAvailSearch('');
+    setAvailPage(1);
+    setIsEnrollModalOpen(true);
+    loadAvailable(1, '');
+  };
+
+  const toggleSelectEnrollment = (enrollmentId: number) => {
+    setSelectedEnrollmentIds((prev) =>
+      prev.includes(enrollmentId) ? prev.filter((id) => id !== enrollmentId) : [...prev, enrollmentId]
+    );
+  };
+
+  const isSelected = (enrollmentId: number) => selectedEnrollmentIds.includes(enrollmentId);
 
   const fetchAll = async () => {
     try {
@@ -102,19 +156,69 @@ export const AutomationWorkflowDetailPage: React.FC = () => {
       } as any);
       toast.success('Đã thêm cụm trigger');
       setIsStepModalOpen(false);
-      setStepForm({
-        session_number: 1,
-        trigger_event: 'ATTENDED',
-        delay_minutes: 30,
-        channel: 'ZALO_PERSONAL',
-        target_group_id: '',
-        message_content: '',
-      });
+      setEditingStepId(null);
+      resetStepForm();
       fetchAll();
     } catch (err: any) {
       toast.error(err.response?.data?.message || 'Không thể thêm cụm trigger');
     } finally {
       setStepSubmitting(false);
+    }
+  };
+
+  const resetStepForm = () => {
+    setStepForm({
+      session_number: 1,
+      trigger_event: 'ATTENDED',
+      delay_minutes: 30,
+      channel: 'ZALO_PERSONAL',
+      target_group_id: '',
+      message_content: '',
+    });
+  };
+
+  // ─── Edit Step ────────────────────────────────────────────────────────
+  const openEditStep = (step: AutomationStep) => {
+    setEditingStepId(step.id);
+    setStepForm({
+      session_number: step.session_number,
+      trigger_event: step.trigger_event,
+      delay_minutes: step.delay_minutes,
+      channel: step.channel,
+      target_group_id: step.target_group_id ? String(step.target_group_id) : '',
+      message_content: step.message_content,
+    });
+    setIsStepModalOpen(true);
+  };
+
+  const handleUpdateStep = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingStepId) return;
+    try {
+      setStepSubmitting(true);
+      await automationApi.updateStep(editingStepId, {
+        ...stepForm,
+        target_group_id: stepForm.channel === 'ZALO_GROUP' && stepForm.target_group_id
+          ? Number(stepForm.target_group_id)
+          : null,
+      } as any);
+      toast.success('Đã cập nhật cụm trigger');
+      setIsStepModalOpen(false);
+      setEditingStepId(null);
+      resetStepForm();
+      fetchAll();
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Không thể cập nhật cụm trigger');
+    } finally {
+      setStepSubmitting(false);
+    }
+  };
+
+  const handleSubmitStep = (e: React.FormEvent) => {
+    if (editingStepId) {
+      handleUpdateStep(e);
+    } else {
+      handleAddStep(e);
     }
   };
 
@@ -129,27 +233,25 @@ export const AutomationWorkflowDetailPage: React.FC = () => {
     }
   };
 
-  // ─── Add Enrollment ────────────────────────────────────────────────
+  // ─── Add Enrollment (popup chọn HV) ───────────────────────────────
 
   const handleAddEnrollment = async () => {
-    const ids = enrollInput
-      .split(',')
-      .map((s) => parseInt(s.trim(), 10))
-      .filter((n) => !isNaN(n));
-    if (ids.length === 0) {
-      toast.warning('Vui lòng nhập enrollment ID (có thể phân cách bằng dấu phẩy)');
+    if (selectedEnrollmentIds.length === 0) {
+      toast.warning('Vui lòng chọn ít nhất 1 học viên');
       return;
     }
     try {
       setEnrollSubmitting(true);
-      const res = await automationApi.addEnrollments(workflowId, ids);
+      const res = await automationApi.addEnrollments(workflowId, selectedEnrollmentIds);
       if (res.errors.length > 0) {
-        toast.warning(`Đã thêm ${res.enrolled}, ${res.errors.length} lỗi (trùng/lỗi)`); 
+        toast.warning(`Đã thêm ${res.enrolled}, ${res.errors.length} lỗi (trùng/lỗi)`);
       } else {
         toast.success(`Đã thêm ${res.enrolled} học viên vào workflow`);
       }
       setIsEnrollModalOpen(false);
-      setEnrollInput('');
+      setSelectedEnrollmentIds([]);
+      setAvailSearch('');
+      setAvailPage(1);
       fetchAll();
     } catch (err: any) {
       toast.error(err.response?.data?.message || 'Không thể thêm học viên');
@@ -332,14 +434,24 @@ export const AutomationWorkflowDetailPage: React.FC = () => {
                           {step.message_content}
                         </p>
                       </div>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleDeleteStep(step.id)}
-                        title="Xóa cụm"
-                      >
-                        <Trash2 className="w-3.5 h-3.5 text-red-400" />
-                      </Button>
+                      <div className="flex items-center gap-1">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => openEditStep(step)}
+                          title="Sửa cụm"
+                        >
+                          <Pencil className="w-3.5 h-3.5 text-text-muted hover:text-primary" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleDeleteStep(step.id)}
+                          title="Xóa cụm"
+                        >
+                          <Trash2 className="w-3.5 h-3.5 text-red-400" />
+                        </Button>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -357,7 +469,7 @@ export const AutomationWorkflowDetailPage: React.FC = () => {
               variant="primary"
               size="sm"
               leftIcon={<Plus className="w-3.5 h-3.5" />}
-              onClick={() => setIsEnrollModalOpen(true)}
+              onClick={openEnrollModal}
             >
               Thêm học viên
             </Button>
@@ -370,32 +482,59 @@ export const AutomationWorkflowDetailPage: React.FC = () => {
           ) : (
             <div className="border border-border/80 rounded-xl overflow-hidden">
               <div className="divide-y divide-border/60">
-                {enrollments.map((en) => (
-                  <div key={en.id} className="px-4 py-3 flex items-center justify-between gap-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-bold">
-                        {en.enrollment?.student?.full_name?.charAt(0) ?? '?'}
-                      </div>
-                      <div>
-                        <div className="text-sm font-semibold text-text-primary">
-                          {en.enrollment?.student?.full_name || `Enrollment #${en.enrollment_id}`}
+                {enrollments.map((en) => {
+                  const ec = en.enrollment?.enrollment_classes?.[0];
+                  const cls = ec?.class;
+                  const teacher = cls?.class_teachers?.[0]?.teacher?.name;
+                  return (
+                    <div key={en.id} className="px-4 py-3 flex items-center justify-between gap-4">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-bold shrink-0">
+                          {en.enrollment?.student?.full_name?.charAt(0) ?? '?'}
                         </div>
-                        <div className="text-[11px] text-text-muted">
-                          SĐT: {en.enrollment?.student?.phone || '—'}
-                          {en.enrollment?.cs ? ` | CS: ${en.enrollment.cs.name}` : ''}
+                        <div className="min-w-0">
+                          <div className="text-sm font-semibold text-text-primary truncate">
+                            {en.enrollment?.student?.full_name || `Enrollment #${en.enrollment_id}`}
+                            <span className="ml-1.5 text-[10px] font-mono text-text-muted">#{en.enrollment?.student?.id ?? '—'}</span>
+                          </div>
+                          <div className="text-[11px] text-text-muted flex flex-wrap items-center gap-1.5">
+                            <span>SĐT: {en.enrollment?.student?.phone || '—'}</span>
+                            {en.enrollment?.student?.email && <span>📧 {en.enrollment.student.email}</span>}
+                            {en.enrollment?.cs && <span>• CS: {en.enrollment.cs.name}</span>}
+                            {en.enrollment?.package?.name && (
+                              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-primary/5 text-primary text-[10px] font-bold">
+                                {en.enrollment.package.name}
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[11px] text-text-muted flex flex-wrap items-center gap-1.5 mt-0.5">
+                            <BookOpen className="w-3 h-3 text-indigo-500" />
+                            {cls ? (
+                              <span>
+                                Lớp:{' '}
+                                <strong className="text-text-secondary">
+                                  {cls.class_name}
+                                  {cls.class_code ? ` (${cls.class_code})` : ''}
+                                </strong>
+                              </span>
+                            ) : (
+                              <span className="text-text-muted/60">Chưa xếp lớp</span>
+                            )}
+                            {teacher && <span className="inline-flex items-center gap-0.5">• Giáo viên: {teacher}</span>}
+                          </div>
                         </div>
                       </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleRemoveEnrollment(en.enrollment_id)}
+                        title="Gỡ học viên"
+                      >
+                        <Trash2 className="w-3.5 h-3.5 text-red-400" />
+                      </Button>
                     </div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleRemoveEnrollment(en.enrollment_id)}
-                      title="Gỡ học viên"
-                    >
-                      <Trash2 className="w-3.5 h-3.5 text-red-400" />
-                    </Button>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}
@@ -455,10 +594,14 @@ export const AutomationWorkflowDetailPage: React.FC = () => {
       {/* ─── Add Step Modal ─────────────────────────────────────────── */}
       <Modal
         isOpen={isStepModalOpen}
-        onClose={() => setIsStepModalOpen(false)}
-        title="Thêm cụm trigger"
+        onClose={() => {
+          setIsStepModalOpen(false);
+          setEditingStepId(null);
+          resetStepForm();
+        }}
+        title={editingStepId ? 'Chỉnh sửa cụm trigger' : 'Thêm cụm trigger'}
       >
-        <form onSubmit={handleAddStep} className="space-y-4">
+        <form onSubmit={handleSubmitStep} className="space-y-4">
           <div className="grid grid-cols-2 gap-3">
             <Input
               label="Buổi học (session) *"
@@ -549,35 +692,128 @@ export const AutomationWorkflowDetailPage: React.FC = () => {
               Hủy
             </Button>
             <Button variant="primary" type="submit" isLoading={stepSubmitting}>
-              Thêm cụm
+              {editingStepId ? 'Lưu thay đổi' : 'Thêm cụm'}
             </Button>
           </div>
         </form>
       </Modal>
 
-      {/* ─── Add Enrollment Modal ────────────────────────────────────── */}
+      {/* ─── Add Enrollment Modal (popup chọn HV) ────────────────────── */}
       <Modal
         isOpen={isEnrollModalOpen}
         onClose={() => setIsEnrollModalOpen(false)}
-        title="Thêm học viên vào workflow"
+        title="Chọn học viên áp dụng"
+        size="lg"
       >
         <div className="space-y-4">
-          <p className="text-xs text-text-secondary">
-            Nhập <strong>Enrollment ID</strong>, phân cách bằng dấu phẩy nếu nhiều. Enrollment ID có thể tìm ở trang Ghi danh.
-          </p>
-          <textarea
-            value={enrollInput}
-            onChange={(e) => setEnrollInput(e.target.value)}
-            rows={3}
-            placeholder="VD: 1, 2, 3"
-            className="w-full px-3.5 py-2.5 text-sm bg-surface-muted border border-border/80 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 font-mono"
-          />
-          <div className="flex justify-end gap-3">
+          {/* Search */}
+          <div className="flex items-center gap-2">
+            <input
+              value={availSearch}
+              onChange={(e) => { setAvailSearch(e.target.value); }}
+              onKeyDown={(e) => { if (e.key === 'Enter') { setAvailPage(1); loadAvailable(1, availSearch); } }}
+              placeholder="Tìm theo tên / SĐT / email..."
+              className="flex-1 px-3.5 py-2.5 text-sm bg-surface-muted border border-border/80 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20"
+            />
+            <Button variant="outline" size="sm" onClick={() => { setAvailPage(1); loadAvailable(1, availSearch); }}>
+              Tìm
+            </Button>
+          </div>
+
+          {/* Table */}
+          <div className="border border-border/80 rounded-xl overflow-hidden max-h-[320px] overflow-y-auto">
+            {availLoading ? (
+              <div className="text-center py-10 text-text-muted text-sm">Đang tải...</div>
+            ) : available.length === 0 ? (
+              <div className="text-center py-10 text-text-muted text-sm">Không có học viên nào khả dụng.</div>
+            ) : (
+              <table className="w-full text-left text-sm">
+                <thead className="bg-surface-subtle/60 text-[10px] uppercase tracking-wide text-text-muted sticky top-0">
+                  <tr>
+                    <th className="px-3 py-2 w-8"></th>
+                    <th className="px-3 py-2 font-semibold">Học viên</th>
+                    <th className="px-3 py-2 font-semibold">Gói / Lớp / GV</th>
+                    <th className="px-3 py-2 font-semibold">CS phụ trách</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border/60">
+                  {available.map((en) => (
+                    <tr
+                      key={en.id}
+                      onClick={() => toggleSelectEnrollment(en.id)}
+                      className={`cursor-pointer transition-colors ${isSelected(en.id) ? 'bg-primary/5' : 'hover:bg-surface-muted/60'}`}
+                    >
+                      <td className="px-3 py-2.5">
+                        <input
+                          type="checkbox"
+                          checked={isSelected(en.id)}
+                          onChange={() => toggleSelectEnrollment(en.id)}
+                          className="accent-primary w-4 h-4"
+                        />
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <div className="font-semibold text-text-primary">
+                          {en.student.full_name}
+                          <span className="ml-1.5 text-[10px] font-mono text-text-muted">#{en.id}</span>
+                        </div>
+                        <div className="text-[10px] text-text-muted">SĐT: {en.student.phone || '—'}</div>
+                      </td>
+                      <td className="px-3 py-2.5 text-[10px] text-text-secondary">
+                        <div>{en.package?.name || '—'}</div>
+                        {en.enrollment_classes?.[0]?.class && (
+                          <div>Lớp: <strong>{en.enrollment_classes[0].class.class_name}</strong>{en.enrollment_classes[0].class.class_code ? ` (${en.enrollment_classes[0].class.class_code})` : ''}</div>
+                        )}
+                        {en.enrollment_classes?.[0]?.class?.class_teachers?.[0]?.teacher?.name && (
+                          <div>GV: {en.enrollment_classes[0].class.class_teachers[0].teacher.name}</div>
+                        )}
+                      </td>
+                      <td className="px-3 py-2.5 text-xs text-text-secondary">{en.cs?.name || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+
+          {/* Footer: selected count + pagination */}
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-xs text-text-muted">
+              Đã chọn <strong className="text-primary">{selectedEnrollmentIds.length}</strong> học viên
+            </span>
+            <div className="flex items-center gap-1">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={availPage <= 1 || availLoading}
+                onClick={() => loadAvailable(availPage - 1)}
+              >
+                ←
+              </Button>
+              <span className="px-2 text-xs text-text-muted">
+                {availPage} / {availTotalPages}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={availPage >= availTotalPages || availLoading}
+                onClick={() => loadAvailable(availPage + 1)}
+              >
+                →
+              </Button>
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-3 pt-2 border-t border-border/80">
             <Button variant="outline" onClick={() => setIsEnrollModalOpen(false)}>
               Hủy
             </Button>
-            <Button variant="primary" onClick={handleAddEnrollment} isLoading={enrollSubmitting}>
-              Thêm học viên
+            <Button
+              variant="primary"
+              onClick={handleAddEnrollment}
+              isLoading={enrollSubmitting}
+              disabled={selectedEnrollmentIds.length === 0}
+            >
+              Thêm {selectedEnrollmentIds.length > 0 ? `(${selectedEnrollmentIds.length})` : ''}
             </Button>
           </div>
         </div>

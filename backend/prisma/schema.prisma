@@ -453,6 +453,7 @@ model ZaloAccount {
   session_epoch          Int?
   last_sync_error        String?           @db.Text
   last_sync_at           DateTime?
+  avatar_url             String?           @db.VarChar(500)
   created_at             DateTime          @default(now())
   updated_at             DateTime          @updatedAt
 
@@ -512,6 +513,7 @@ model ZaloContactRelation {
   relation_status ZaloContactRelationStatus @default(UNKNOWN)
   display_name    String? // cached Zalo display name
   avatar_url      String? // cached Zalo avatar URL
+  friend_zalo_uid String? // Friend.zalo_uid_in_nick — direct UID for worker send target
   last_checked_at DateTime?
   created_at      DateTime                  @default(now())
   updated_at      DateTime                  @updatedAt
@@ -522,6 +524,7 @@ model ZaloContactRelation {
   @@unique([student_id, zalo_account_id])
   @@index([student_id])
   @@index([zalo_account_id])
+  @@index([friend_zalo_uid])
   @@map("zalo_contact_relations")
 }
 

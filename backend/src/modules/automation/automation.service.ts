@@ -140,6 +140,18 @@ export class AutomationService {
     return automationRepository.listEnrollments(workflowId);
   }
 
+  async listAvailableEnrollments(workflowId: number, userId: number, role: string, query: { q?: string; page?: number; limit?: number }) {
+    const workflow = await automationRepository.findWorkflowById(workflowId);
+    if (!workflow) throw Object.assign(new Error('Workflow not found'), { status: 404 });
+    if (!['ADMIN', 'MANAGE'].includes(role) && workflow.owner_cs_id !== userId) {
+      throw Object.assign(new Error('Forbidden'), { status: 403 });
+    }
+
+    // CS chỉ thấy học viên mình phụ trách; ADMIN/MANAGE thấy tất cả
+    const csId = ['ADMIN', 'MANAGE'].includes(role) ? undefined : userId;
+    return automationRepository.listAvailableEnrollments(workflowId, { ...query, csId });
+  }
+
   // ─── Deliveries ─────────────────────────────────────────────────────
 
   async listDeliveries(workflowId: number, query: { status?: string; enrollmentId?: number; page?: number; limit?: number }) {
