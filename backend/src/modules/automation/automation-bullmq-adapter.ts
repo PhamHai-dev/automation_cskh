@@ -13,9 +13,11 @@ const log = createLogger('AutomationQueue');
 
 let _queue: Queue | null = null;
 
-function getQueue(): Queue {
+function getQueue(): Queue | null {
   if (_queue) return _queue;
   const redis = getRedisClient();
+  if (!redis) return null;
+
   _queue = new Queue('automation-delivery', {
     connection: redis as any,
     defaultJobOptions: {
@@ -49,6 +51,10 @@ export async function enqueueDelivery(
   const delayMs = Math.max(0, delayMinutes) * 60_000;
   try {
     const queue = getQueue();
+    if (!queue) {
+      log.warn('Queue unavailable — delivery queued in DB only', { deliveryId: payload.deliveryId });
+      return null;
+    }
     const jobId = `automation:delivery:${payload.deliveryId}`;
     const job = await queue.add('send', payload, {
       jobId,
@@ -71,6 +77,7 @@ export async function enqueueDelivery(
 export async function cancelDelivery(deliveryId: number, queueJobId?: string | null): Promise<void> {
   try {
     const queue = getQueue();
+    if (!queue) return;
     const jobId = queueJobId ?? `automation:delivery:${deliveryId}`;
     const job = await queue.getJob(jobId);
     if (job) {

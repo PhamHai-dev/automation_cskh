@@ -55,8 +55,10 @@ const server = app.listen(PORT, async () => {
 
   // Start automation delivery worker
   try {
-    startAutomationWorker();
-    log.info('Automation worker started');
+    const worker = startAutomationWorker();
+    if (worker) {
+      log.info('Automation worker started');
+    }
   } catch (err) {
     log.warn('Automation worker start failed (continuing without automation)', {
       error: err instanceof Error ? err.message : String(err),

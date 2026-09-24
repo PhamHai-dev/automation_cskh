@@ -251,10 +251,15 @@ let _worker: Worker | null = null;
 /**
  * Start the automation delivery worker.
  */
-export function startAutomationWorker(): Worker {
+export function startAutomationWorker(): Worker | null {
   if (_worker) return _worker;
 
   const redis = getRedisClient();
+  if (!redis) {
+    log.info('Automation worker skipped (Redis disabled or unavailable)');
+    return null;
+  }
+
   _worker = new Worker(
     'automation-delivery',
     async (job: Job<SendJobData>) => {
@@ -289,7 +294,11 @@ export function startAutomationWorker(): Worker {
  */
 export async function stopAutomationWorker(): Promise<void> {
   if (_worker) {
-    await _worker.close();
+    try {
+      await _worker.close();
+    } catch {
+      // ignore
+    }
     _worker = null;
     log.info('Automation worker stopped');
   }

@@ -89,7 +89,7 @@ export class ZaloRateLimiter {
   }
 
   private async checkRedis(
-    r: ReturnType<typeof getRedisClient>,
+    r: NonNullable<ReturnType<typeof getRedisClient>>,
     accountId: number,
     category: OpCategory,
     limits: CategoryLimit,

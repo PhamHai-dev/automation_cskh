@@ -1,4 +1,4 @@
-import React, { KeyboardEvent, ReactNode, useId, useRef } from 'react';
+import { type KeyboardEvent, type ReactNode, useId, useRef } from 'react';
 
 export interface HorizontalTabItem<T extends string> {
   value: T;

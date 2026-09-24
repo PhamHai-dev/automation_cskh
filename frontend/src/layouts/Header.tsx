@@ -1,5 +1,5 @@
 import React from 'react';
-import { Menu, LogOut, Shield } from 'lucide-react';
+import { Menu, LogOut } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { Badge } from '../components/ui/Badge';
 import { useNavigate } from 'react-router-dom';
@@ -51,11 +51,6 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar, sidebarOpen }) 
         >
           <Menu className="w-5 h-5" />
         </button>
-
-        <div className="hidden sm:flex items-center gap-2 text-xs text-text-muted">
-          <Shield className="w-3.5 h-3.5 text-primary" />
-          <span className="font-semibold text-text-secondary">Cổng Điều Phối Chăm Sóc & Đào Tạo</span>
-        </div>
       </div>
 
       {/* User Actions */}
