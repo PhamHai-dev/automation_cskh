@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Class,
   ClassSession,
@@ -14,7 +15,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Check,
-  X as CloseIcon,
   CalendarDays,
   Award,
   AlertTriangle,
@@ -158,6 +158,7 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
   onRefresh,
   onSaveCustom,
   activeTab: controlledActiveTab,
+  titleHeader,
 }) => {
   const toast = useToast();
 
@@ -190,9 +191,12 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
     dateStr: string;
     studentName: string;
   } | null>(null);
-  const [cellInputCount, setCellInputCount] = useState<number>(1);
+  const [cellInputCount, setCellInputCount] = useState<number | ''>(1);
 
   const selectAllCheckboxRef = useRef<HTMLInputElement>(null);
+  const activeCellContainerRef = useRef<HTMLDivElement>(null);
+  const attendancePopoverRef = useRef<HTMLDivElement>(null);
+  const [popoverAnchor, setPopoverAnchor] = useState({ top: 0, left: 0 });
 
   const toDateString = toLocalDateString;
 
@@ -481,6 +485,27 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
     }
   }, [someVisibleSelected]);
 
+  useEffect(() => {
+    if (!activeCell) return;
+
+    const handlePointerDownOutside = (event: PointerEvent) => {
+      const target = event.target as Node;
+      const clickedTrigger = activeCellContainerRef.current?.contains(target);
+      const clickedPopover = attendancePopoverRef.current?.contains(target);
+      if (!clickedTrigger && !clickedPopover) setActiveCell(null);
+    };
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setActiveCell(null);
+    };
+
+    document.addEventListener('pointerdown', handlePointerDownOutside);
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDownOutside);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [activeCell]);
+
   // Toggle all valid students currently visible after filters
   const handleToggleSelectAllStudents = () => {
     setSelectedStudents(allVisibleSelected ? new Set() : new Set(validVisibleStudentIds));
@@ -657,7 +682,7 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
     const isPending = !!pendingEdits[key];
 
     const cfg = currentStatus ? STATUS_CONFIG[currentStatus] : null;
-    let displayValue: React.ReactNode = <span className="font-medium text-text-muted">Chưa ghi</span>;
+    let displayValue: React.ReactNode = <span className="font-medium text-text-muted">-</span>;
     if (currentStatus === 'ATTENDED') {
       const count = customValues[key] ?? existingAtt?.session_count ?? 1;
       displayValue = <span className="inline-flex items-center gap-1"><Check className="h-3.5 w-3.5" /><span>{count}</span></span>;
@@ -665,32 +690,50 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
       displayValue = cfg.short;
     }
 
+    const isActive =
+      activeCell?.enrollmentClassId === st.enrollment_class_id &&
+      activeCell?.dateStr === dateStr;
+
     return (
-      <div className="relative flex items-center justify-center p-1">
+      <div
+        ref={isActive ? activeCellContainerRef : undefined}
+        className="relative flex items-center justify-center p-1"
+      >
         <button
           type="button"
-          onClick={() => {
-            if (
-              activeCell?.enrollmentClassId === st.enrollment_class_id &&
-              activeCell?.dateStr === dateStr
-            ) {
+          onClick={(event) => {
+            if (isActive) {
               setActiveCell(null);
             } else {
+              const cellRect = event.currentTarget.getBoundingClientRect();
+              const popoverWidth = 292;
+              const viewportPadding = 12;
+              const preferredLeft = cellRect.left + cellRect.width / 2;
+              const minLeft = viewportPadding + popoverWidth / 2;
+              const maxLeft = window.innerWidth - viewportPadding - popoverWidth / 2;
+              setPopoverAnchor({
+                top: cellRect.top - 10,
+                left: Math.min(Math.max(preferredLeft, minLeft), maxLeft),
+              });
               setActiveCell({
                 enrollmentClassId: st.enrollment_class_id,
                 dateStr,
                 studentName: st.full_name,
               });
-              const currentCount =
-                customValues[key] ?? existingAtt?.session_count ?? 1;
-              setCellInputCount(currentCount);
+              setCellInputCount(customValues[key] ?? existingAtt?.session_count ?? 1);
             }
           }}
-          className={`w-full h-8 rounded-lg flex items-center justify-center font-extrabold text-xs transition-all border ${
+          aria-expanded={isActive}
+          aria-label={`Điểm danh ${st.full_name} ngày ${new Date(dateStr).toLocaleDateString('vi-VN')}`}
+          className={`flex h-9 w-full items-center justify-center rounded-lg border text-xs font-extrabold transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${
             cfg
               ? `${cfg.bg} ${cfg.text} ${cfg.border}`
-              : 'bg-transparent text-text-muted hover:bg-slate-100/80 border-transparent hover:border-border'
-          } ${isPending ? 'ring-2 ring-primary ring-offset-1' : ''}`}
+              : 'border-transparent bg-transparent text-text-muted hover:border-border hover:bg-surface-muted'
+          } ${isPending ? 'ring-2 ring-amber-300 ring-offset-1' : ''} ${
+            isActive
+              ? 'relative z-30 scale-[1.04] border-primary bg-primary-soft text-primary shadow-md ring-2 ring-primary/35 ring-offset-2'
+              : ''
+          }`}
           title={
             currentStatus === 'ATTENDED'
               ? `Có mặt (${customValues[key] ?? existingAtt?.session_count ?? 1} buổi) - ${new Date(dateStr).toLocaleDateString('vi-VN')}`
@@ -702,189 +745,151 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
           {displayValue}
         </button>
 
-        {/* Popover Editor */}
-        {activeCell?.enrollmentClassId === st.enrollment_class_id &&
-          activeCell?.dateStr === dateStr && (
-            <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1 z-50 bg-surface rounded-2xl shadow-soft-xl border border-border p-3 flex flex-col gap-2.5 w-60 text-left animate-in zoom-in-95 duration-100">
-              {/* Header */}
-              <div className="flex items-center justify-between border-b border-border/60 pb-1.5">
-                <div>
-                  <div className="text-[11px] font-bold text-text-primary truncate max-w-[170px]">
-                    {activeCell.studentName}
-                  </div>
-                  <div className="text-[10px] text-text-muted">
-                    {new Date(dateStr).toLocaleDateString('vi-VN', {
-                      weekday: 'short',
-                      day: '2-digit',
-                      month: '2-digit',
-                    })}
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setActiveCell(null)}
-                  className="p-1 rounded-md text-text-muted hover:text-text-primary hover:bg-surface-muted"
-                >
-                  <CloseIcon className="w-3.5 h-3.5" />
-                </button>
-              </div>
+        {isActive && createPortal(
+          <div
+            ref={attendancePopoverRef}
+            className="fixed z-[100] w-[292px] -translate-x-1/2 -translate-y-full rounded-2xl border border-border bg-surface p-3 text-left shadow-soft-xl animate-in zoom-in-95 duration-100"
+            style={{ top: popoverAnchor.top, left: popoverAnchor.left }}
+          >
+            <span
+              aria-hidden="true"
+              className="absolute -bottom-1.5 left-1/2 h-3 w-3 -translate-x-1/2 rotate-45 border-b border-r border-border bg-surface"
+            />
 
-              {/* Section 1: Có mặt & Điền số */}
-              <div className="bg-emerald-50/70 border border-emerald-200/80 rounded-xl p-2 flex flex-col gap-1.5">
-                <div className="text-[10px] font-bold text-emerald-900 flex items-center justify-between">
-                  <span>CÓ MẶT (ĐIỀN SỐ):</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <input
-                    type="number"
-                    min="0.5"
-                    max="10"
-                    step="0.5"
-                    value={cellInputCount}
-                    onChange={(e) => setCellInputCount(Number(e.target.value) || 1)}
-                    className="w-16 text-center bg-white border border-emerald-300 rounded-lg py-1 font-extrabold text-xs text-emerald-800 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                  />
-                  <button
-                    type="button"
-                    onClick={() =>
-                      handleStatusSelect(
-                        st.enrollment_class_id,
-                        dateStr,
-                        'ATTENDED',
-                        cellInputCount
-                      )
-                    }
-                    className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg py-1 text-xs font-bold transition-colors flex items-center justify-center gap-1"
-                  >
-                    <Check className="w-3.5 h-3.5" />
-                    <span>Áp dụng ({cellInputCount})</span>
-                  </button>
-                </div>
-                <div className="flex items-center gap-1 pt-0.5">
-                  {[1, 2, 3].map((num) => (
-                    <button
-                      key={num}
-                      type="button"
-                      onClick={() =>
-                        handleStatusSelect(st.enrollment_class_id, dateStr, 'ATTENDED', num)
-                      }
-                      className="flex-1 bg-white hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-md py-0.5 text-[11px] font-extrabold transition-colors"
-                    >
-                      {num} buổi
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Section 2: Vắng học / Nghỉ */}
-              <div className="flex flex-col gap-1">
-                <div className="text-[10px] font-bold text-text-muted px-1">
-                  VẮNG / NGHỈ:
-                </div>
-                {(
-                  [
-                    'ABSENT_APPROVED_A',
-                    'LEAVE_B',
-                    'ABSENT_UNAPPROVED_C',
-                    'TEACHER_ABSENT_D',
-                    'TECH_ERROR_E',
-                  ] as AttendanceStatus[]
-                ).map((stKey) => {
-                  const opt = STATUS_CONFIG[stKey];
-                  return (
-                    <button
-                      key={stKey}
-                      type="button"
-                      onClick={() =>
-                        handleStatusSelect(st.enrollment_class_id, dateStr, stKey)
-                      }
-                      className="flex items-center justify-between px-2 py-1 rounded-lg text-xs font-semibold hover:bg-surface-muted transition-colors text-left"
-                    >
-                      <span className="text-text-primary text-[11px]">{opt.label}</span>
-                      <span
-                        className={`w-5 h-5 rounded flex items-center justify-center text-[10px] font-extrabold ${opt.bg} ${opt.text}`}
-                      >
-                        {opt.short}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* Section 3: Clear / Reset */}
-              <div className="border-t border-border/60 pt-1.5">
-                <button
-                  type="button"
-                  onClick={() => handleClearCell(st.enrollment_class_id, dateStr)}
-                  className="w-full text-center text-text-muted hover:text-rose-600 hover:bg-rose-50 py-1 rounded-lg text-[11px] font-semibold transition-colors"
-                >
-                  Xóa điểm danh (đặt về chưa học)
-                </button>
-              </div>
+            <div className="relative mb-2 grid grid-cols-[72px_1fr] gap-2">
+              <label htmlFor={`attendance-count-${key}`} className="sr-only">Số buổi có mặt</label>
+              <input
+                id={`attendance-count-${key}`}
+                type="number"
+                min="0.5"
+                max="10"
+                step="0.5"
+                value={cellInputCount}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setCellInputCount(value === '' ? '' : Number(value));
+                }}
+                onBlur={() => {
+                  if (cellInputCount === '') setCellInputCount(1);
+                }}
+                className="h-9 rounded-xl border border-emerald-300 bg-emerald-50 text-center text-xs font-extrabold text-emerald-800 outline-none transition focus:ring-2 focus:ring-emerald-300"
+              />
+              <button
+                type="button"
+                disabled={cellInputCount === '' || cellInputCount < 0.5 || cellInputCount > 10}
+                onClick={() => {
+                  if (cellInputCount !== '') {
+                    handleStatusSelect(st.enrollment_class_id, dateStr, 'ATTENDED', cellInputCount);
+                  }
+                }}
+                className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl bg-emerald-600 px-3 text-xs font-bold text-white shadow-sm transition hover:bg-emerald-700 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 focus-visible:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Check className="h-4 w-4" />
+                Có mặt{cellInputCount !== '' ? ` (${cellInputCount})` : ''}
+              </button>
             </div>
-          )}
+
+            <div className="relative grid grid-cols-2 gap-2">
+              {(
+                [
+                  'ABSENT_APPROVED_A',
+                  'LEAVE_B',
+                  'ABSENT_UNAPPROVED_C',
+                  'TEACHER_ABSENT_D',
+                  'TECH_ERROR_E',
+                ] as AttendanceStatus[]
+              ).map((status) => {
+                const option = STATUS_CONFIG[status];
+                return (
+                  <button
+                    key={status}
+                    type="button"
+                    onClick={() => handleStatusSelect(st.enrollment_class_id, dateStr, status)}
+                    className={`flex h-9 items-center justify-center rounded-xl border px-2 text-[11px] font-bold transition hover:-translate-y-px hover:shadow-sm active:translate-y-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 ${option.bg} ${option.text} ${option.border}`}
+                    title={option.label}
+                  >
+                    {option.label}
+                  </button>
+                );
+              })}
+              <button
+                type="button"
+                onClick={() => handleClearCell(st.enrollment_class_id, dateStr)}
+                className="flex h-9 items-center justify-center rounded-xl border border-border bg-surface-muted px-2 text-[11px] font-bold text-text-secondary transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-200"
+              >
+                Chưa điểm danh (-)
+              </button>
+            </div>
+          </div>,
+          document.body
+        )}
       </div>
     );
   };
 
   return (
     <div className="bg-surface rounded-2xl border border-border/80 shadow-soft overflow-hidden">
-      {/* Save state header; the primary tabs live directly below the page title. */}
-      <div className="flex flex-wrap items-center justify-end gap-2.5 border-b border-border/80 bg-slate-50/60 p-3 sm:px-4">
-        {hasChanges && (
-          <Badge variant="warning" size="md" className="font-bold">
-            {Object.keys(pendingEdits).length} thay đổi chưa lưu
-          </Badge>
-        )}
-        <Button
-          variant="primary"
-          size="sm"
-          onClick={handleSaveAll}
-          disabled={!hasChanges || saving}
-          isLoading={saving}
-          leftIcon={<Save className="h-4 w-4" />}
-          className="font-bold"
-        >
-          Lưu kết quả điểm danh
-        </Button>
-      </div>
-
-      {/* Sub Toolbar per Active Tab */}
-      {activeTab === 'quick' && (
-        <div className="flex flex-wrap items-center gap-3 border-b border-border/70 bg-surface px-4 py-3 text-xs">
-          <span className="font-bold text-text-secondary">Ngày điểm danh</span>
-          <div className="flex items-center gap-1 rounded-xl border border-border/60 bg-surface-muted p-1">
-            <button
-              type="button"
-              onClick={handleQuickDatePrev}
-              className="rounded-lg p-1 text-text-muted transition-colors hover:bg-surface hover:text-text-primary"
-              title="Ngày hôm trước"
-              aria-label="Chuyển đến ngày hôm trước"
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </button>
-            <input
-              type="date"
-              value={quickDate}
-              onChange={(e) => e.target.value && setQuickDate(e.target.value)}
-              className="rounded-lg border border-border/60 bg-surface px-2 py-1 text-xs font-bold text-text-primary outline-none focus:ring-1 focus:ring-primary"
-              aria-label="Ngày điểm danh"
-            />
-            <button
-              type="button"
-              onClick={handleQuickDateNext}
-              className="rounded-lg p-1 text-text-muted transition-colors hover:bg-surface hover:text-text-primary"
-              title="Ngày hôm sau"
-              aria-label="Chuyển đến ngày hôm sau"
-            >
-              <ChevronRight className="h-4 w-4" />
-            </button>
-          </div>
-          <Button variant="outline" size="sm" onClick={handleQuickDateToday} className="h-8 px-3 text-xs font-bold">
-            Hôm nay
+      {/* Unified filters, save action and active-tab controls */}
+      <div className="flex flex-wrap items-center gap-2.5 border-b border-border/80 bg-slate-50/60 p-3 sm:px-4">
+        {titleHeader}
+        <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-2">
+          {activeTab === 'quick' && (
+            <>
+              <div className="flex h-10 items-center gap-1 rounded-xl border border-border/60 bg-surface p-1">
+                <button
+                  type="button"
+                  onClick={handleQuickDatePrev}
+                  className="rounded-lg p-1 text-text-muted transition-colors hover:bg-surface-muted hover:text-text-primary"
+                  title="Ngày hôm trước"
+                  aria-label="Chuyển đến ngày hôm trước"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </button>
+                <input
+                  type="date"
+                  value={quickDate}
+                  onChange={(e) => e.target.value && setQuickDate(e.target.value)}
+                  className="w-[132px] rounded-lg border-0 bg-transparent px-1 py-1 text-xs font-bold text-text-primary outline-none focus:ring-1 focus:ring-primary"
+                  aria-label="Ngày điểm danh"
+                />
+                <button
+                  type="button"
+                  onClick={handleQuickDateNext}
+                  className="rounded-lg p-1 text-text-muted transition-colors hover:bg-surface-muted hover:text-text-primary"
+                  title="Ngày hôm sau"
+                  aria-label="Chuyển đến ngày hôm sau"
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </button>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleQuickDateToday}
+                className="h-10 whitespace-nowrap px-3 text-xs font-bold"
+              >
+                Hôm nay
+              </Button>
+            </>
+          )}
+          {hasChanges && (
+            <Badge variant="warning" size="md" className="font-bold">
+              {Object.keys(pendingEdits).length} thay đổi chưa lưu
+            </Badge>
+          )}
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={handleSaveAll}
+            disabled={!hasChanges || saving}
+            isLoading={saving}
+            leftIcon={<Save className="h-4 w-4" />}
+            className="h-10 whitespace-nowrap font-bold"
+          >
+            Lưu điểm danh
           </Button>
         </div>
-      )}
+      </div>
 
       {activeTab === 'detailed' && (
         <div className="p-3 px-4 border-b border-border/70 bg-surface flex flex-wrap items-center justify-between gap-3 text-xs">
@@ -958,10 +963,6 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
               Hôm nay
             </Button>
           </div>
-
-          <div className="text-[11px] text-text-muted">
-            Cấu trúc chuẩn Sheet 3: <strong>[A ➔ O, U ➔ X]</strong> ➔ <strong>[Z ➔ AH]</strong> ➔ <strong>[Lịch ngày]</strong>
-          </div>
         </div>
       )}
 
@@ -1007,15 +1008,11 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
               Tháng hiện tại
             </Button>
           </div>
-
-          <div className="text-[11px] text-text-muted">
-            Tổng hợp dữ liệu chuyên cần từ <strong>Cột A ➔ H</strong> và <strong>Cột Y ➔ AH</strong>
-          </div>
         </div>
       )}
 
       {/* Compact bulk attendance action strip */}
-      {selectedStudents.size > 0 && activeTab !== 'stats' && (
+      {selectedStudents.size > 0 && activeTab === 'quick' && (
         <div className="flex flex-col gap-3 border-b border-primary/20 bg-primary-soft/70 px-4 py-3 text-xs sm:flex-row sm:items-center sm:justify-between">
           <div className="flex shrink-0 items-center gap-2">
             <span className="flex h-7 min-w-7 items-center justify-center rounded-full bg-primary px-2 font-extrabold text-white">
@@ -1025,19 +1022,6 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
           </div>
 
           <div className="flex min-w-0 items-center gap-2 overflow-x-auto pb-1 [scrollbar-width:thin] sm:pb-0">
-            {activeTab === 'detailed' && (
-              <select
-                aria-label="Ngày áp dụng điểm danh"
-                value={bulkDate}
-                onChange={(e) => setBulkDate(e.target.value)}
-                className="h-8 shrink-0 rounded-lg border border-border bg-surface px-2.5 text-xs font-bold text-text-primary"
-              >
-                {datesList.map((date) => {
-                  const dateString = toDateString(date);
-                  return <option key={dateString} value={dateString}>{DAY_OF_WEEK_NAMES[date.getDay()]} {date.toLocaleDateString('vi-VN')}</option>;
-                })}
-              </select>
-            )}
             <div className="flex shrink-0 items-center rounded-lg border border-emerald-200 bg-surface p-0.5">
               <label htmlFor="bulk-session-count" className="px-2 font-semibold text-text-secondary">Số buổi</label>
               <input
@@ -1841,10 +1825,6 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
               <span>{key === 'ATTENDED' ? 'Có mặt (Điền số buổi: 1, 2...)' : opt.label}</span>
             </div>
           ))}
-        </div>
-
-        <div className="text-[11px] text-text-muted">
-          * Tích chọn ô Checkbox để thao tác hàng loạt; Click vào ô để nhập số buổi có mặt hoặc chọn lý do vắng
         </div>
       </div>
     </div>

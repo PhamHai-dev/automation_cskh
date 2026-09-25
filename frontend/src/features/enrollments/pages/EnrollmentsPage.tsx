@@ -16,7 +16,7 @@ import {
 } from '../../classes/components/AttendanceMatrix';
 import { classSessionsApi, attendanceApi } from '../../classes/api/sessions.api';
 import { ClassSession, Attendance, AttendanceStatus } from '../../classes/types/classes.types';
-import { BarChart3, Calendar, Search, SlidersHorizontal, UserCheck, Zap, X } from 'lucide-react';
+import { BarChart3, Calendar, Search, SlidersHorizontal, Zap, X } from 'lucide-react';
 
 export const EnrollmentsPage: React.FC = () => {
   const toast = useToast();
@@ -272,73 +272,6 @@ export const EnrollmentsPage: React.FC = () => {
         ]}
       />
 
-      <section
-        aria-label="Tìm kiếm và lọc học viên"
-        className="mb-5 rounded-2xl border border-border/80 bg-surface p-4 shadow-soft"
-      >
-        <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
-          <div className="min-w-0 flex-1 xl:max-w-xl">
-            <Input
-              placeholder="Tìm theo ID, tên, SĐT hoặc email..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              leftIcon={<Search className="h-4 w-4 text-text-muted" />}
-            />
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            <SlidersHorizontal className="hidden h-4 w-4 text-text-muted sm:block" aria-hidden="true" />
-            {!isCS && (
-              <select
-                aria-label="Lọc theo nhân viên Sale"
-                value={selectedSale}
-                onChange={(e) => setSelectedSale(e.target.value)}
-                className="h-10 min-w-[180px] rounded-xl border border-border/80 bg-surface-muted px-3 text-xs font-semibold text-text-primary outline-none transition focus:ring-2 focus:ring-primary/20"
-              >
-                <option value="">Tất cả nhân viên Sale</option>
-                {salesList.map((sale) => <option key={sale} value={sale}>{sale}</option>)}
-              </select>
-            )}
-            <select
-              aria-label="Lọc theo mô hình lớp"
-              value={modelFilter}
-              onChange={(e) => setModelFilter(e.target.value)}
-              className="h-10 min-w-[135px] rounded-xl border border-border/80 bg-surface-muted px-3 text-xs font-semibold text-text-primary outline-none transition focus:ring-2 focus:ring-primary/20"
-            >
-              <option value="">Tất cả mô hình</option>
-              <option value="1:1">Mô hình 1:1</option>
-              <option value="1:2">Mô hình 1:2</option>
-              <option value="1:n">Mô hình 1:n</option>
-            </select>
-            <select
-              aria-label="Lọc theo trạng thái ghi danh"
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="h-10 min-w-[160px] rounded-xl border border-border/80 bg-surface-muted px-3 text-xs font-semibold text-text-primary outline-none transition focus:ring-2 focus:ring-primary/20"
-            >
-              <option value="">Tất cả trạng thái</option>
-              <option value="NOT_STARTED">Chưa học</option>
-              <option value="STUDYING">Đang học</option>
-              <option value="PAUSED">Tạm dừng / Bảo lưu</option>
-              <option value="FINISHED">Hoàn thành</option>
-              <option value="CANCELLED">Đã hủy</option>
-            </select>
-            {hasActiveFilters && (
-              <Button variant="ghost" size="sm" onClick={clearFilters} leftIcon={<X className="h-4 w-4" />}>
-                Xóa bộ lọc
-              </Button>
-            )}
-          </div>
-        </div>
-
-        {isCS && (
-          <div className="mt-3 flex items-center gap-2 text-xs font-semibold text-text-secondary">
-            <UserCheck className="h-4 w-4 text-primary" />
-            <span>Học viên phụ trách: {user?.name || user?.email}</span>
-          </div>
-        )}
-      </section>
-
       {/* Main Content Area: 3-Tab Attendance Management */}
       <div className="space-y-4">
         {loading && enrollments.length === 0 ? (
@@ -349,6 +282,59 @@ export const EnrollmentsPage: React.FC = () => {
         ) : (
           <AttendanceMatrix
             activeTab={activeTab}
+            titleHeader={(
+              <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+                <div className="min-w-[220px] flex-[1_1_320px] xl:max-w-[420px]">
+                  <Input
+                    placeholder="Tìm ID, tên, SĐT hoặc email..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    leftIcon={<Search className="h-4 w-4 text-text-muted" />}
+                  />
+                </div>
+                <SlidersHorizontal className="hidden h-4 w-4 shrink-0 text-text-muted xl:block" aria-hidden="true" />
+                {!isCS && (
+                  <select
+                    aria-label="Lọc theo nhân viên Sale"
+                    value={selectedSale}
+                    onChange={(e) => setSelectedSale(e.target.value)}
+                    className="h-10 w-[148px] rounded-xl border border-border/80 bg-surface px-2.5 text-xs font-semibold text-text-primary outline-none transition focus:ring-2 focus:ring-primary/20"
+                  >
+                    <option value="">Tất cả Sale</option>
+                    {salesList.map((sale) => <option key={sale} value={sale}>{sale}</option>)}
+                  </select>
+                )}
+                <select
+                  aria-label="Lọc theo mô hình lớp"
+                  value={modelFilter}
+                  onChange={(e) => setModelFilter(e.target.value)}
+                  className="h-10 w-[132px] rounded-xl border border-border/80 bg-surface px-2.5 text-xs font-semibold text-text-primary outline-none transition focus:ring-2 focus:ring-primary/20"
+                >
+                  <option value="">Tất cả mô hình</option>
+                  <option value="1:1">Mô hình 1:1</option>
+                  <option value="1:2">Mô hình 1:2</option>
+                  <option value="1:n">Mô hình 1:n</option>
+                </select>
+                <select
+                  aria-label="Lọc theo trạng thái ghi danh"
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                  className="h-10 w-[146px] rounded-xl border border-border/80 bg-surface px-2.5 text-xs font-semibold text-text-primary outline-none transition focus:ring-2 focus:ring-primary/20"
+                >
+                  <option value="">Tất cả trạng thái</option>
+                  <option value="NOT_STARTED">Chưa học</option>
+                  <option value="STUDYING">Đang học</option>
+                  <option value="PAUSED">Tạm dừng / Bảo lưu</option>
+                  <option value="FINISHED">Hoàn thành</option>
+                  <option value="CANCELLED">Đã hủy</option>
+                </select>
+                {hasActiveFilters && (
+                  <Button variant="ghost" size="sm" onClick={clearFilters} leftIcon={<X className="h-4 w-4" />}>
+                    Xóa lọc
+                  </Button>
+                )}
+              </div>
+            )}
             students={matrixStudents}
             sessions={allSessions}
             attendances={allAttendances}
