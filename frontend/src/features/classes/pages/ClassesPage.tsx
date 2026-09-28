@@ -259,10 +259,10 @@ export const ClassesPage: React.FC = () => {
               navigate(`/classes/${item.id}/attendance`);
             }}
             title="Xem ma trận điểm danh theo ngày"
-            className="flex items-center gap-1 text-xs text-teal-600 border-teal-200 hover:bg-teal-50"
+            leftIcon={<Calendar className="w-3.5 h-3.5" />}
+            className="text-xs text-teal-600 border-teal-200 hover:bg-teal-50"
           >
-            <Calendar className="w-3.5 h-3.5" />
-            <span>Điểm danh</span>
+            Điểm danh
           </Button>
           <Button
             variant="outline"
@@ -272,10 +272,10 @@ export const ClassesPage: React.FC = () => {
               navigate(`/classes/${item.id}/sessions`);
             }}
             title="Xem danh sách buổi học"
-            className="flex items-center gap-1 text-xs text-blue-600 border-blue-200 hover:bg-blue-50"
+            leftIcon={<Calendar className="w-3.5 h-3.5" />}
+            className="text-xs text-blue-600 border-blue-200 hover:bg-blue-50"
           >
-            <Calendar className="w-3.5 h-3.5" />
-            <span>Buổi học</span>
+            Buổi học
           </Button>
           <Button
             variant="ghost"
@@ -284,10 +284,9 @@ export const ClassesPage: React.FC = () => {
               e.stopPropagation();
               openModal(item);
             }}
+            leftIcon={<Edit className="w-4 h-4 text-slate-500 hover:text-blue-600" />}
             title="Chỉnh sửa lớp học"
-          >
-            <Edit className="w-4 h-4 text-slate-500 hover:text-blue-600" />
-          </Button>
+          />
         </div>
       ),
     },
@@ -298,8 +297,12 @@ export const ClassesPage: React.FC = () => {
       <PageHeader
         title="Quản lý Lớp học"
         actions={
-          <Button onClick={() => openModal()} variant="primary" size="sm" className="flex items-center gap-1.5">
-            <Plus className="w-4 h-4" />
+          <Button
+            onClick={() => openModal()}
+            variant="primary"
+            size="sm"
+            leftIcon={<Plus className="w-4 h-4" />}
+          >
             Thêm lớp học mới
           </Button>
         }
@@ -312,35 +315,38 @@ export const ClassesPage: React.FC = () => {
           setSearchTerm('');
           setModelFilter('');
         }}
+        gridClassName="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 items-end"
       >
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          <div>
-            <label className="block text-[11px] font-semibold text-slate-500 mb-1">Tìm theo Tên hoặc Mã lớp</label>
-            <div className="relative">
-              <input
-                type="text"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="Nhập tên hoặc mã lớp..."
-                className="w-full pl-9 pr-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2" />
-            </div>
+        <div>
+          <label className="block text-[11px] font-semibold text-text-secondary uppercase tracking-wider mb-1.5">
+            Tìm theo Tên hoặc Mã lớp
+          </label>
+          <div className="relative">
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Nhập tên hoặc mã lớp..."
+              className="w-full h-9 pl-9 pr-3 border border-border rounded-xl text-sm bg-white text-text-primary focus:outline-none focus:ring-2 focus:ring-primary shadow-xs transition"
+            />
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
           </div>
+        </div>
 
-          <div>
-            <label className="block text-[11px] font-semibold text-slate-500 mb-1">Mô hình lớp</label>
-            <select
-              value={modelFilter}
-              onChange={(e) => setModelFilter(e.target.value)}
-              className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium"
-            >
-              <option value="">Tất cả mô hình</option>
-              <option value="1:1">1:1</option>
-              <option value="1:2">1:2</option>
-              <option value="1:n">1:n</option>
-            </select>
-          </div>
+        <div>
+          <label className="block text-[11px] font-semibold text-text-secondary uppercase tracking-wider mb-1.5">
+            Mô hình lớp
+          </label>
+          <select
+            value={modelFilter}
+            onChange={(e) => setModelFilter(e.target.value)}
+            className="w-full h-9 px-3 border border-border rounded-xl text-sm bg-white text-text-primary focus:outline-none focus:ring-2 focus:ring-primary shadow-xs transition cursor-pointer"
+          >
+            <option value="">Tất cả mô hình</option>
+            <option value="1:1">1:1</option>
+            <option value="1:2">1:2</option>
+            <option value="1:n">1:n</option>
+          </select>
         </div>
       </FilterBar>
 

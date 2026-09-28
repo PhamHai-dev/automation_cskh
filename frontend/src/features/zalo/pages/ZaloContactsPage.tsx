@@ -294,12 +294,13 @@ export const ZaloContactsPage: React.FC = () => {
             <Button
               onClick={handleSync}
               variant="outline"
-              className="flex items-center gap-1.5 text-sm"
-              disabled={syncing || !isActive}
+              size="sm"
+              isLoading={syncing}
+              disabled={!isActive}
+              leftIcon={<RefreshCw className="w-4 h-4" />}
               title="Auto-sync mỗi 15 phút. Click để refresh ngay lập tức."
             >
-              <RefreshCw className={`w-4 h-4 ${syncing ? 'animate-spin' : ''}`} />
-              {syncing ? 'Đang làm mới…' : '↻ Làm mới ngay'}
+              Làm mới ngay
             </Button>
           </div>
         </div>

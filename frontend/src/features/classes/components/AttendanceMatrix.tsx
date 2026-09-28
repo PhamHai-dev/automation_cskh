@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Class,
@@ -290,6 +290,64 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
     });
   }, [attendanceMap]);
 
+  // Check if a cell's status & count are identical to what is already stored in the database
+  const isSameAsDatabase = useCallback(
+    (
+      key: string,
+      newStatus: AttendanceStatus | undefined,
+      newCount: number = 1
+    ): boolean => {
+      // If the cell was marked as cleared locally, it is considered empty
+      if (clearedKeys.has(key)) {
+        return !newStatus;
+      }
+
+      const existing = attendanceMap.get(key);
+      // If no existing record in DB: same only if newStatus is also empty/undefined
+      if (!existing) {
+        return !newStatus;
+      }
+
+      // If new status is empty/undefined, it differs because existing record is in DB
+      if (!newStatus) {
+        return false;
+      }
+
+      // Different attendance status (e.g. ATTENDED vs ABSENT_A)
+      if (existing.status !== newStatus) {
+        return false;
+      }
+
+      // If ATTENDED, compare session_count (defaults to 1 if not specified)
+      if (newStatus === 'ATTENDED') {
+        const existingCount = Number(existing.session_count ?? 1);
+        const targetCount = typeof newCount === 'number' && !isNaN(newCount) ? newCount : 1;
+        return existingCount === targetCount;
+      }
+
+      return true;
+    },
+    [attendanceMap, clearedKeys]
+  );
+
+  // Compute genuine pending changes that differ from the database
+  const actualPendingChanges = useMemo(() => {
+    const result: Record<string, AttendanceStatus> = {};
+    for (const [key, status] of Object.entries(pendingEdits)) {
+      const count = customValues[key] ?? 1;
+      if (!isSameAsDatabase(key, status, count)) {
+        result[key] = status;
+      }
+    }
+    return result;
+  }, [pendingEdits, customValues, isSameAsDatabase]);
+
+  const changesCount = useMemo(
+    () => Object.keys(actualPendingChanges).length,
+    [actualPendingChanges]
+  );
+  const hasChanges = changesCount > 0;
+
   // Dynamic Reactive Statistics calculation for each student (X, Y, Z, AA, AB, AC, AD, AE, AF, AG, AH)
   const studentStats = useMemo(() => {
     const statsMap = new Map<
@@ -327,8 +385,8 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
       // Track counted dates to prevent duplicate calculation
       const processedDates = new Set<string>();
 
-      // 1. Process pendingEdits first (takes precedence)
-      Object.entries(pendingEdits).forEach(([key, status]) => {
+      // 1. Process actualPendingChanges first (takes precedence)
+      Object.entries(actualPendingChanges).forEach(([key, status]) => {
         const [ecIdStr, dStr] = key.split('_');
         if (parseInt(ecIdStr, 10) !== s.enrollment_class_id) return;
         processedDates.add(dStr);
@@ -349,7 +407,7 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
         }
       });
 
-      // 2. Process existing attendances not overridden in pendingEdits
+      // 2. Process existing attendances not overridden in actualPendingChanges
       attendances.forEach((a) => {
         if (a.enrollment_class_id !== s.enrollment_class_id || (a as any).deleted_at) return;
         const dStr =
@@ -394,7 +452,7 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
     });
 
     return statsMap;
-  }, [students, attendances, sessions, pendingEdits, customValues, currentDate]);
+  }, [students, attendances, sessions, actualPendingChanges, customValues, currentDate, clearedKeys]);
 
   // Overall KPI cards computation for Tab 3
   const overallKPIs = useMemo(() => {
@@ -570,12 +628,17 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
 
     const updates: Record<string, AttendanceStatus> = {};
     const valUpdates: Record<string, number> = {};
+    const keysToRemove: string[] = [];
 
     selectedStudents.forEach((ecId) => {
       if (ecId <= 0) return;
       const key = `${ecId}_${targetDate}`;
-      updates[key] = 'ATTENDED';
-      valUpdates[key] = bulkCount;
+      if (isSameAsDatabase(key, 'ATTENDED', bulkCount)) {
+        keysToRemove.push(key);
+      } else {
+        updates[key] = 'ATTENDED';
+        valUpdates[key] = bulkCount;
+      }
     });
 
     setClearedKeys((prev) => {
@@ -586,8 +649,16 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
       return next;
     });
 
-    setPendingEdits((prev) => ({ ...prev, ...updates }));
-    setCustomValues((prev) => ({ ...prev, ...valUpdates }));
+    setPendingEdits((prev) => {
+      const next = { ...prev, ...updates };
+      keysToRemove.forEach((k) => delete next[k]);
+      return next;
+    });
+    setCustomValues((prev) => {
+      const next = { ...prev, ...valUpdates };
+      keysToRemove.forEach((k) => delete next[k]);
+      return next;
+    });
     toast.success(
       `Đã đánh dấu Có mặt (${bulkCount} buổi) cho ${selectedStudents.size} học viên vào ngày ${new Date(targetDate).toLocaleDateString('vi-VN')}`
     );
@@ -613,11 +684,16 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
     }
 
     const updates: Record<string, AttendanceStatus> = {};
+    const keysToRemove: string[] = [];
 
     selectedStudents.forEach((ecId) => {
       if (ecId <= 0) return;
       const key = `${ecId}_${targetDate}`;
-      updates[key] = status;
+      if (isSameAsDatabase(key, status, 1)) {
+        keysToRemove.push(key);
+      } else {
+        updates[key] = status;
+      }
     });
 
     setClearedKeys((prev) => {
@@ -628,7 +704,17 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
       return next;
     });
 
-    setPendingEdits((prev) => ({ ...prev, ...updates }));
+    setPendingEdits((prev) => {
+      const next = { ...prev, ...updates };
+      keysToRemove.forEach((k) => delete next[k]);
+      return next;
+    });
+    setCustomValues((prev) => {
+      const next = { ...prev };
+      keysToRemove.forEach((k) => delete next[k]);
+      Object.keys(updates).forEach((k) => delete next[k]);
+      return next;
+    });
     toast.info(
       `Đã cập nhật trạng thái ${STATUS_CONFIG[status].label} cho ${selectedStudents.size} học viên`
     );
@@ -723,9 +809,32 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
       return next;
     });
 
-    setPendingEdits((prev) => ({ ...prev, [key]: status }));
-    if (status === 'ATTENDED') {
-      setCustomValues((prev) => ({ ...prev, [key]: countVal }));
+    const isSame = isSameAsDatabase(key, status, countVal);
+    if (isSame) {
+      setPendingEdits((prev) => {
+        if (!(key in prev)) return prev;
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
+      setCustomValues((prev) => {
+        if (!(key in prev)) return prev;
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
+    } else {
+      setPendingEdits((prev) => ({ ...prev, [key]: status }));
+      if (status === 'ATTENDED') {
+        setCustomValues((prev) => ({ ...prev, [key]: countVal }));
+      } else {
+        setCustomValues((prev) => {
+          if (!(key in prev)) return prev;
+          const next = { ...prev };
+          delete next[key];
+          return next;
+        });
+      }
     }
     setActiveCell(null);
   };
@@ -785,14 +894,14 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
 
   // Save all edits
   const handleSaveAll = async () => {
-    const entries = Object.entries(pendingEdits);
+    const entries = Object.entries(actualPendingChanges);
     if (entries.length === 0) return;
 
     try {
       setSaving(true);
 
       if (onSaveCustom) {
-        await onSaveCustom(pendingEdits, customValues);
+        await onSaveCustom(actualPendingChanges, customValues);
       } else if (cls) {
         const byDate = new Map<string, { ecId: number; status: AttendanceStatus }[]>();
         entries.forEach(([key, status]) => {
@@ -836,8 +945,6 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
     }
   };
 
-  const hasChanges = Object.keys(pendingEdits).length > 0;
-
   // Title for current view
   const viewTitle = useMemo(() => {
     const month = currentDate.getMonth() + 1;
@@ -869,14 +976,14 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
     const key = `${st.enrollment_class_id}_${dateStr}`;
     const isCleared = clearedKeys.has(key);
     const existingAtt = isCleared ? undefined : attendanceMap.get(key);
+    const isPending = Boolean(actualPendingChanges[key]);
     const currentStatus: AttendanceStatus | undefined =
-      pendingEdits[key] || existingAtt?.status;
-    const isPending = !!pendingEdits[key];
+      isPending ? actualPendingChanges[key] : existingAtt?.status;
 
     const cfg = currentStatus ? STATUS_CONFIG[currentStatus] : null;
     let displayValue: React.ReactNode = <span className="font-medium text-text-muted">-</span>;
     if (currentStatus === 'ATTENDED') {
-      const count = customValues[key] ?? existingAtt?.session_count ?? 1;
+      const count = isPending ? (customValues[key] ?? 1) : (existingAtt?.session_count ?? 1);
       displayValue = <span className="inline-flex items-center gap-1"><Check className="h-3.5 w-3.5" /><span>{count}</span></span>;
     } else if (cfg) {
       displayValue = cfg.short;
@@ -912,7 +1019,10 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
                 dateStr,
                 studentName: st.full_name,
               });
-              setCellInputCount(customValues[key] ?? existingAtt?.session_count ?? 1);
+              const currentCellCount = isPending
+                ? (customValues[key] ?? 1)
+                : (existingAtt?.session_count ?? 1);
+              setCellInputCount(currentCellCount);
             }
           }}
           aria-expanded={isActive}
@@ -928,7 +1038,7 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
           }`}
           title={
             currentStatus === 'ATTENDED'
-              ? `Có mặt (${customValues[key] ?? existingAtt?.session_count ?? 1} buổi) - ${new Date(dateStr).toLocaleDateString('vi-VN')}`
+              ? `Có mặt (${isPending ? (customValues[key] ?? 1) : (existingAtt?.session_count ?? 1)} buổi) - ${new Date(dateStr).toLocaleDateString('vi-VN')}`
               : cfg
               ? `${cfg.label} - ${new Date(dateStr).toLocaleDateString('vi-VN')}`
               : `Chưa điểm danh (${new Date(dateStr).toLocaleDateString('vi-VN')})`
@@ -1066,7 +1176,7 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
           )}
           {hasChanges && (
             <Badge variant="warning" size="md" className="font-bold">
-              {Object.keys(pendingEdits).length} thay đổi chưa lưu
+              {changesCount} thay đổi chưa lưu
             </Badge>
           )}
           <Button

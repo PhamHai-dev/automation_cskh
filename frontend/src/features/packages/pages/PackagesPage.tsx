@@ -148,8 +148,12 @@ export const PackagesPage: React.FC = () => {
       <PageHeader
         title="Quản lý Gói học"
         actions={
-          <Button onClick={() => openModal()} variant="primary" size="sm" className="flex items-center gap-1.5">
-            <Plus className="w-4 h-4" />
+          <Button
+            onClick={() => openModal()}
+            variant="primary"
+            size="sm"
+            leftIcon={<Plus className="w-4 h-4" />}
+          >
             Thêm gói học mới
           </Button>
         }
@@ -159,18 +163,21 @@ export const PackagesPage: React.FC = () => {
         title="Tìm kiếm gói học"
         activeCount={searchTerm ? 1 : 0}
         onClear={() => setSearchTerm('')}
+        gridClassName="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 items-end"
       >
         <div className="max-w-md">
-          <label className="block text-[11px] font-semibold text-slate-500 mb-1">Tìm theo Mã hoặc Tên gói</label>
+          <label className="block text-[11px] font-semibold text-text-secondary uppercase tracking-wider mb-1.5">
+            Tìm theo Mã hoặc Tên gói
+          </label>
           <div className="relative">
             <input
               type="text"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               placeholder="Nhập mã gói hoặc tên gói..."
-              className="w-full pl-9 pr-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full h-9 pl-9 pr-3 border border-border rounded-xl text-sm bg-white text-text-primary focus:outline-none focus:ring-2 focus:ring-primary shadow-xs transition"
             />
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2" />
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
           </div>
         </div>
       </FilterBar>

@@ -163,13 +163,22 @@ export const ZaloAccountsPage: React.FC = () => {
         title="Quan ly Tai khoan Zalo"
         actions={
           <div className="flex gap-2">
-            <Button onClick={() => fetchAccounts()} variant="outline" className="flex items-center gap-2">
-              <RefreshCw className={'w-4 h-4 ' + (loading ? 'animate-spin' : '')} />
-              Lam moi
+            <Button
+              onClick={() => fetchAccounts()}
+              variant="outline"
+              size="sm"
+              isLoading={loading}
+              leftIcon={<RefreshCw className="w-4 h-4" />}
+            >
+              Làm mới
             </Button>
-            <Button onClick={() => setIsCreateOpen(true)} variant="primary" className="flex items-center gap-2">
-              <Plus className="w-4 h-4" />
-              Them tai khoan Zalo
+            <Button
+              onClick={() => setIsCreateOpen(true)}
+              variant="primary"
+              size="sm"
+              leftIcon={<Plus className="w-4 h-4" />}
+            >
+              Thêm tài khoản Zalo
             </Button>
           </div>
         }

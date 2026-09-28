@@ -71,10 +71,9 @@ export const DashboardPage: React.FC = () => {
             variant="outline"
             size="sm"
             onClick={loadData}
-            disabled={loading}
-            className="flex items-center gap-1.5"
+            isLoading={loading}
+            leftIcon={<RefreshCw className="w-3.5 h-3.5" />}
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
             Làm mới dữ liệu
           </Button>
         }
@@ -85,45 +84,50 @@ export const DashboardPage: React.FC = () => {
         title="Bộ lọc dữ liệu Dashboard"
         activeCount={activeFiltersCount}
         onClear={() => setFilters({})}
+        gridClassName="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 items-end"
       >
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          <div>
-            <label className="block text-[11px] font-semibold text-slate-500 mb-1">Từ ngày</label>
-            <input
-              type="date"
-              value={filters.date_from || ''}
-              onChange={(e) => setFilters({ ...filters, date_from: e.target.value || undefined })}
-              className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
+        <div>
+          <label className="block text-[11px] font-semibold text-text-secondary uppercase tracking-wider mb-1.5">
+            Từ ngày
+          </label>
+          <input
+            type="date"
+            value={filters.date_from || ''}
+            onChange={(e) => setFilters({ ...filters, date_from: e.target.value || undefined })}
+            className="w-full h-9 px-3 border border-border rounded-xl text-sm bg-white text-text-primary focus:outline-none focus:ring-2 focus:ring-primary shadow-xs transition"
+          />
+        </div>
 
-          <div>
-            <label className="block text-[11px] font-semibold text-slate-500 mb-1">Đến ngày</label>
-            <input
-              type="date"
-              value={filters.date_to || ''}
-              onChange={(e) => setFilters({ ...filters, date_to: e.target.value || undefined })}
-              className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
+        <div>
+          <label className="block text-[11px] font-semibold text-text-secondary uppercase tracking-wider mb-1.5">
+            Đến ngày
+          </label>
+          <input
+            type="date"
+            value={filters.date_to || ''}
+            onChange={(e) => setFilters({ ...filters, date_to: e.target.value || undefined })}
+            className="w-full h-9 px-3 border border-border rounded-xl text-sm bg-white text-text-primary focus:outline-none focus:ring-2 focus:ring-primary shadow-xs transition"
+          />
+        </div>
 
-          <div>
-            <label className="block text-[11px] font-semibold text-slate-500 mb-1">Trạng thái Ghi danh</label>
-            <select
-              value={filters.status || ''}
-              onChange={(e) => setFilters({ ...filters, status: e.target.value || undefined })}
-              className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="">Tất cả trạng thái</option>
-              <option value="WAITING_CLASS">Chờ lớp</option>
-              <option value="STUDYING">Đang học</option>
-              <option value="PAUSED">Bảo lưu</option>
-              <option value="FINISHED">Kết thúc</option>
-              <option value="UPCOMING">Sắp học</option>
-              <option value="NOT_STARTED">Chưa học</option>
-              <option value="CANCELLED">Đã hủy</option>
-            </select>
-          </div>
+        <div>
+          <label className="block text-[11px] font-semibold text-text-secondary uppercase tracking-wider mb-1.5">
+            Trạng thái Ghi danh
+          </label>
+          <select
+            value={filters.status || ''}
+            onChange={(e) => setFilters({ ...filters, status: e.target.value || undefined })}
+            className="w-full h-9 px-3 border border-border rounded-xl text-sm bg-white text-text-primary focus:outline-none focus:ring-2 focus:ring-primary shadow-xs transition cursor-pointer"
+          >
+            <option value="">Tất cả trạng thái</option>
+            <option value="WAITING_CLASS">Chờ lớp</option>
+            <option value="STUDYING">Đang học</option>
+            <option value="PAUSED">Bảo lưu</option>
+            <option value="FINISHED">Kết thúc</option>
+            <option value="UPCOMING">Sắp học</option>
+            <option value="NOT_STARTED">Chưa học</option>
+            <option value="CANCELLED">Đã hủy</option>
+          </select>
         </div>
       </FilterBar>
 

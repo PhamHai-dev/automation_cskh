@@ -137,9 +137,8 @@ export const CarePage: React.FC = () => {
                 setEditingTask(null);
                 setIsTaskModalOpen(true);
               }}
-              className="flex items-center gap-1.5"
+              leftIcon={<Plus className="w-4 h-4" />}
             >
-              <Plus className="w-4 h-4" />
               Tạo nhiệm vụ mới
             </Button>
           ) : undefined

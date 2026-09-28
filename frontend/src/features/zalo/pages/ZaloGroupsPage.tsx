@@ -208,10 +208,9 @@ export const ZaloGroupsPage: React.FC = () => {
           onClick={handleRefresh}
           variant="outline"
           size="sm"
-          disabled={syncing}
-          className="flex items-center gap-1.5"
+          isLoading={syncing}
+          leftIcon={<RefreshCw className="w-3.5 h-3.5" />}
         >
-          <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
           <span className="hidden sm:inline">Đồng bộ</span>
         </Button>
 
@@ -240,9 +239,9 @@ export const ZaloGroupsPage: React.FC = () => {
               onClick={() => setShowCreateDialog(true)}
               variant="primary"
               size="sm"
-              className="w-full flex items-center justify-center gap-1.5"
+              className="w-full"
+              leftIcon={<Plus className="w-3.5 h-3.5" />}
             >
-              <Plus className="w-3.5 h-3.5" />
               Tạo nhóm mới
             </Button>
           </div>

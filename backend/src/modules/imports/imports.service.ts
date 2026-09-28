@@ -38,6 +38,21 @@ export class ImportsService {
     return JSON.parse(fs.readFileSync(p, 'utf-8'));
   }
 
+  private cleanupTempFiles(importId: number, meta?: any) {
+    try {
+      const metaPath = this.getMetaFilePath(importId);
+      const filePath = meta?.filePath || this.getUploadFilePath(importId, '.xlsx');
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+      }
+      if (fs.existsSync(metaPath)) {
+        fs.unlinkSync(metaPath);
+      }
+    } catch {
+      // Do not block completion if temporary file cleanup fails
+    }
+  }
+
   // Helper to parse Excel dates safely
   public parseExcelDate(val: any): Date | null {
     if (!val) return null;
@@ -52,19 +67,32 @@ export class ImportsService {
       if (!isNaN(d.getTime())) return d;
     }
     if (typeof val === 'string') {
-      const trimmed = val.trim();
-      // Try YYYY-MM-DD
+      let trimmed = val.trim();
+      if (!trimmed) return null;
+      if (trimmed.includes('\n')) {
+        trimmed = trimmed.split('\n')[0].trim();
+      }
+      // Try YYYY-MM-DD or YYYY-MM-DD HH:mm:ss (or ISO)
       if (/^\d{4}-\d{2}-\d{2}/.test(trimmed)) {
         const d = new Date(trimmed);
         if (!isNaN(d.getTime())) return d;
       }
-      // Try DD/MM/YYYY
-      const parts = trimmed.split(/[/.-]/);
-      if (parts.length === 3) {
-        if (parts[0].length === 2 && parts[2].length === 4) {
-          const d = new Date(parseInt(parts[2], 10), parseInt(parts[1], 10) - 1, parseInt(parts[0], 10));
-          if (!isNaN(d.getTime())) return d;
-        }
+      // Try DD/MM/YYYY with optional time
+      const dmyMatch = trimmed.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})(?:\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/);
+      if (dmyMatch) {
+        const day = parseInt(dmyMatch[1], 10);
+        const month = parseInt(dmyMatch[2], 10) - 1;
+        const year = parseInt(dmyMatch[3], 10);
+        const hour = dmyMatch[4] ? parseInt(dmyMatch[4], 10) : 0;
+        const min = dmyMatch[5] ? parseInt(dmyMatch[5], 10) : 0;
+        const sec = dmyMatch[6] ? parseInt(dmyMatch[6], 10) : 0;
+        const d = new Date(year, month, day, hour, min, sec);
+        if (!isNaN(d.getTime())) return d;
+      }
+      // Fallback: try new Date(trimmed)
+      const directDate = new Date(trimmed);
+      if (!isNaN(directDate.getTime()) && !/^\d+$/.test(trimmed)) {
+        return directDate;
       }
       const parsedNum = parseFloat(trimmed);
       if (!isNaN(parsedNum) && parsedNum > 30000 && parsedNum < 70000) {
@@ -148,7 +176,7 @@ export class ImportsService {
         suggestedMapping['status'] = colLetter;
       } else if (lower.includes('mô hình')) {
         suggestedMapping['class_model'] = colLetter;
-      } else if (lower.includes('nội dung')) {
+      } else if ((lower.includes('nội dung khoá') || lower.includes('nội dung khóa') || lower === 'nội dung' || lower.includes('nội dung')) && !lower.includes('chăm sóc')) {
         suggestedMapping['course_content'] = colLetter;
       } else if (lower.includes('thanh toán')) {
         suggestedMapping['payment_status'] = colLetter;
@@ -183,10 +211,38 @@ export class ImportsService {
   private cellText(cell: ExcelJS.Cell): string {
     let value: any = cell.value;
     if (value && typeof value === 'object') {
+      if (value instanceof Date && !isNaN(value.getTime())) {
+        const iso = value.toISOString();
+        if (iso.endsWith('T00:00:00.000Z')) {
+          return iso.slice(0, 10);
+        }
+        const pad = (n: number) => String(n).padStart(2, '0');
+        const y = value.getFullYear();
+        const m = pad(value.getMonth() + 1);
+        const d = pad(value.getDate());
+        const hh = pad(value.getHours());
+        const mm = pad(value.getMinutes());
+        const ss = pad(value.getSeconds());
+        return `${y}-${m}-${d} ${hh}:${mm}:${ss}`;
+      }
       if ('hyperlink' in value && value.hyperlink) return String(value.hyperlink).trim();
       if ('result' in value) value = value.result;
       else if ('text' in value) value = value.text;
       else if ('richText' in value) value = value.richText.map((part: any) => part.text).join('');
+    }
+    if (value instanceof Date && !isNaN(value.getTime())) {
+      const iso = value.toISOString();
+      if (iso.endsWith('T00:00:00.000Z')) {
+        return iso.slice(0, 10);
+      }
+      const pad = (n: number) => String(n).padStart(2, '0');
+      const y = value.getFullYear();
+      const m = pad(value.getMonth() + 1);
+      const d = pad(value.getDate());
+      const hh = pad(value.getHours());
+      const mm = pad(value.getMinutes());
+      const ss = pad(value.getSeconds());
+      return `${y}-${m}-${d} ${hh}:${mm}:${ss}`;
     }
     return value === undefined || value === null ? '' : String(value).trim();
   }
@@ -836,13 +892,15 @@ export class ImportsService {
           enrollmentUpdatedAt: enrollment?.updated_at.toISOString(),
         } : undefined,
         diffs,
-        attendanceDiffs: ((snapshot.attendance as any[]) || []).map((a) => ({
-          entity: 'Attendance',
-          field: a.date.slice(0, 10),
-          before: null,
-          after: a.value || null,
-          action: 'UPSERT',
-        })),
+        attendanceDiffs: ((snapshot.attendance as any[]) || [])
+          .filter((a) => a.value !== undefined && a.value !== null && String(a.value).trim() !== '')
+          .map((a) => ({
+            entity: 'Attendance',
+            field: a.date.slice(0, 10),
+            before: null,
+            after: a.value,
+            action: 'UPSERT',
+          })),
         warnings,
         errors,
       });
@@ -1153,13 +1211,19 @@ export class ImportsService {
     }
 
     const status = failedRows ? (successRows ? ImportBatchStatus.PARTIAL_FAILED : ImportBatchStatus.FAILED) : ImportBatchStatus.COMPLETED;
-    return this.repo.updateBatch(importId, {
+    const updated = await this.repo.updateBatch(importId, {
       status,
       total_rows: items.length,
       success_rows: successRows,
       failed_rows: failedRows,
       completed_at: new Date(),
     });
+
+    if (status === ImportBatchStatus.COMPLETED) {
+      this.cleanupTempFiles(importId, meta);
+    }
+
+    return updated;
   }
 
   // Execute import
@@ -1202,14 +1266,8 @@ export class ImportsService {
         const getColVal = (field: string) => {
           const colLetter = mapping[field];
           if (!colLetter) return null;
-          const cell = row.getCell(colLetter);
-          let val = cell.value;
-          if (typeof val === 'object' && val !== null) {
-            if ('result' in val) val = (val as any).result;
-            else if ('text' in val) val = (val as any).text;
-            else if ('richText' in val) val = (val as any).richText.map((t: any) => t.text).join('');
-          }
-          return val !== undefined && val !== null ? String(val).trim() : null;
+          const text = this.cellText(row.getCell(colLetter));
+          return text || null;
         };
 
         const fullName = getColVal('full_name');
@@ -1543,6 +1601,10 @@ export class ImportsService {
       failed_rows: failedRows,
       completed_at: new Date(),
     });
+
+    if (finalStatus === ImportBatchStatus.COMPLETED) {
+      this.cleanupTempFiles(importId, meta);
+    }
 
     await this.repo.createAuditLog({
       user_id: userId,

@@ -1225,17 +1225,17 @@ export const StudentsPage: React.FC = () => {
             {activeTab === 'care_reports' && (
               <Button
                 variant="outline"
-                size="md"
+                size="sm"
                 onClick={() => setIsAddMilestoneModalOpen(true)}
                 leftIcon={<PlusCircle className="w-4 h-4 text-emerald-600" />}
                 className="border-emerald-300 text-emerald-800 hover:bg-emerald-50"
               >
-                + Thêm mốc buổi CS
+                Thêm mốc buổi CS
               </Button>
             )}
             <Button
               variant="primary"
-              size="md"
+              size="sm"
               onClick={() => openModal()}
               leftIcon={<Plus className="w-4 h-4" />}
             >
@@ -2158,8 +2158,8 @@ export const StudentsPage: React.FC = () => {
                       else if (formModalTab === 'class') setFormModalTab('course');
                       else if (formModalTab === 'care') setFormModalTab('class');
                     }}
+                    leftIcon={<ChevronLeft className="w-3.5 h-3.5" />}
                   >
-                    <ChevronLeft className="w-3.5 h-3.5 mr-1" />
                     Quay lại
                   </Button>
                 )}
@@ -2173,9 +2173,9 @@ export const StudentsPage: React.FC = () => {
                       else if (formModalTab === 'course') setFormModalTab('class');
                       else if (formModalTab === 'class') setFormModalTab('care');
                     }}
+                    rightIcon={<ChevronRight className="w-3.5 h-3.5" />}
                   >
                     Tiếp theo
-                    <ChevronRight className="w-3.5 h-3.5 ml-1" />
                   </Button>
                 )}
               </div>
@@ -2195,9 +2195,9 @@ export const StudentsPage: React.FC = () => {
                   variant="primary"
                   size="sm"
                   isLoading={submitting}
+                  leftIcon={<CheckCircle2 className="w-4 h-4" />}
                   className="px-5 font-bold shadow-md shadow-blue-500/20"
                 >
-                  <CheckCircle2 className="w-4 h-4 mr-1.5" />
                   {editingStudent ? 'Cập nhật hồ sơ' : 'Lưu học viên mới'}
                 </Button>
               </div>

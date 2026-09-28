@@ -172,11 +172,11 @@ export const ClassSessionsPage: React.FC = () => {
               e.stopPropagation();
               navigate(`/classes/${clsId}/sessions/${item.id}/attendance`);
             }}
-            className="flex items-center gap-1 text-xs border-blue-200 text-blue-600 hover:bg-blue-50"
+            className="text-xs border-blue-200 text-blue-600 hover:bg-blue-50"
             title="Điểm danh buổi học này"
+            leftIcon={<ClipboardCheck className="w-3.5 h-3.5" />}
           >
-            <ClipboardCheck className="w-3.5 h-3.5" />
-            <span>Điểm danh</span>
+            Điểm danh
           </Button>
           <Button
             variant="ghost"
@@ -185,10 +185,9 @@ export const ClassSessionsPage: React.FC = () => {
               e.stopPropagation();
               openModal(item);
             }}
+            leftIcon={<Edit className="w-4 h-4 text-slate-500 hover:text-blue-600" />}
             title="Chỉnh sửa buổi học"
-          >
-            <Edit className="w-4 h-4 text-slate-500 hover:text-blue-600" />
-          </Button>
+          />
           {item.status === 'SCHEDULED' && (
             <Button
               variant="ghost"
@@ -214,8 +213,12 @@ export const ClassSessionsPage: React.FC = () => {
         title={`Buổi học: ${cls?.class_name || `Lớp #${clsId}`}`}
         backUrl="/classes"
         actions={
-          <Button onClick={() => openModal()} variant="primary" size="sm" className="flex items-center gap-1.5">
-            <Plus className="w-4 h-4" />
+          <Button
+            onClick={() => openModal()}
+            variant="primary"
+            size="sm"
+            leftIcon={<Plus className="w-4 h-4" />}
+          >
             Thêm buổi học mới
           </Button>
         }

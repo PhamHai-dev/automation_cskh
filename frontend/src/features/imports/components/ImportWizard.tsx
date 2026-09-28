@@ -234,8 +234,15 @@ export const ImportWizard: React.FC<Props> = ({ onImportComplete }) => {
       </div>
       <div className="flex justify-between">
         <Button id="mapping-back-button" variant="outline" onClick={() => setStep(1)}>Quay lại</Button>
-        <Button id="validate-workbook-button" variant="primary" isLoading={busy} disabled={isValidateDisabled} onClick={validate}>
-          Đối soát dữ liệu <ArrowRight className="w-4 h-4 ml-2" />
+        <Button
+          id="validate-workbook-button"
+          variant="primary"
+          isLoading={busy}
+          disabled={isValidateDisabled}
+          onClick={validate}
+          rightIcon={<ArrowRight className="w-4 h-4" />}
+        >
+          Đối soát dữ liệu
         </Button>
       </div>
     </Card>}

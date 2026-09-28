@@ -207,8 +207,12 @@ export const TeachersPage: React.FC = () => {
       <PageHeader
         title="Quản lý Giáo viên"
         actions={
-          <Button onClick={() => openModal()} variant="primary" size="sm" className="flex items-center gap-1.5">
-            <Plus className="w-4 h-4" />
+          <Button
+            onClick={() => openModal()}
+            variant="primary"
+            size="sm"
+            leftIcon={<Plus className="w-4 h-4" />}
+          >
             Thêm giáo viên mới
           </Button>
         }
@@ -221,35 +225,38 @@ export const TeachersPage: React.FC = () => {
           setSearchTerm('');
           setTypeFilter('');
         }}
+        gridClassName="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 items-end"
       >
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          <div>
-            <label className="block text-[11px] font-semibold text-slate-500 mb-1">Tìm theo Tên, Email hoặc Mã GV</label>
-            <div className="relative">
-              <input
-                type="text"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="Nhập tên giáo viên..."
-                className="w-full pl-9 pr-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2" />
-            </div>
+        <div>
+          <label className="block text-[11px] font-semibold text-text-secondary uppercase tracking-wider mb-1.5">
+            Tìm theo Tên, Email hoặc Mã GV
+          </label>
+          <div className="relative">
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Nhập tên giáo viên..."
+              className="w-full h-9 pl-9 pr-3 border border-border rounded-xl text-sm bg-white text-text-primary focus:outline-none focus:ring-2 focus:ring-primary shadow-xs transition"
+            />
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
           </div>
+        </div>
 
-          <div>
-            <label className="block text-[11px] font-semibold text-slate-500 mb-1">Phân loại giáo viên</label>
-            <select
-              value={typeFilter}
-              onChange={(e) => setTypeFilter(e.target.value)}
-              className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="">Tất cả phân loại</option>
-              <option value="VIETNAMESE">Giáo viên Việt</option>
-              <option value="JAPANESE">Giáo viên Bản ngữ</option>
-              <option value="OTHER">Khác</option>
-            </select>
-          </div>
+        <div>
+          <label className="block text-[11px] font-semibold text-text-secondary uppercase tracking-wider mb-1.5">
+            Phân loại giáo viên
+          </label>
+          <select
+            value={typeFilter}
+            onChange={(e) => setTypeFilter(e.target.value)}
+            className="w-full h-9 px-3 border border-border rounded-xl text-sm bg-white text-text-primary focus:outline-none focus:ring-2 focus:ring-primary shadow-xs transition cursor-pointer"
+          >
+            <option value="">Tất cả phân loại</option>
+            <option value="VIETNAMESE">Giáo viên Việt</option>
+            <option value="JAPANESE">Giáo viên Bản ngữ</option>
+            <option value="OTHER">Khác</option>
+          </select>
         </div>
       </FilterBar>
 

@@ -134,10 +134,11 @@ export const AutoAttendanceConfigCard: React.FC = () => {
               size="sm"
               onClick={handleRunNow}
               disabled={loading || running}
-              className="flex items-center gap-1.5 self-start sm:self-auto shrink-0 border-primary/30 text-primary hover:bg-primary/5"
+              isLoading={running}
+              leftIcon={<Play className="w-3.5 h-3.5" />}
+              className="self-start sm:self-auto shrink-0 border-primary/30 text-primary hover:bg-primary/5"
             >
-              <Play className={`w-3.5 h-3.5 ${running ? 'animate-spin' : ''}`} />
-              {running ? 'Đang quét...' : 'Quét kiểm tra ngay'}
+              Quét kiểm tra ngay
             </Button>
           </div>
         </CardHeader>
@@ -175,12 +176,11 @@ export const AutoAttendanceConfigCard: React.FC = () => {
                   <Button
                     type="submit"
                     variant="primary"
-                    size="md"
-                    disabled={saving}
-                    className="flex items-center gap-1.5"
+                    size="sm"
+                    isLoading={saving}
+                    leftIcon={<Save className="w-4 h-4" />}
                   >
-                    <Save className="w-4 h-4" />
-                    {saving ? 'Đang lưu...' : 'Lưu cấu hình'}
+                    Lưu cấu hình
                   </Button>
                 </div>
                 <p className="text-[11px] text-text-muted mt-1.5 flex items-center gap-1">

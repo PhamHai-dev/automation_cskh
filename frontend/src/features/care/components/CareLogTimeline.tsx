@@ -57,8 +57,11 @@ export const CareLogTimeline: React.FC<CareLogTimelineProps> = ({
           <h3 className="text-lg font-semibold text-gray-900">Lịch sử Chăm sóc Học viên</h3>
           <p className="text-sm text-gray-500">Ghi chép liên tục theo mốc buổi học và diễn biến tâm lý học viên</p>
         </div>
-        <Button onClick={() => setIsModalOpen(true)} className="flex items-center gap-2">
-          <Plus className="w-4 h-4" />
+        <Button
+          size="sm"
+          onClick={() => setIsModalOpen(true)}
+          leftIcon={<Plus className="w-4 h-4" />}
+        >
           Ghi nhận phản hồi
         </Button>
       </div>

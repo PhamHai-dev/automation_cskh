@@ -50,16 +50,18 @@ export const ImportsPage: React.FC = () => {
               size="sm"
               onClick={handleExportStudents}
               isLoading={isExportingStudents}
+              leftIcon={<Download className="w-4 h-4 text-blue-600" />}
             >
-              <Download className="w-4 h-4 mr-1.5 text-blue-600" /> Xuất DS Học viên
+              Xuất DS Học viên
             </Button>
             <Button
               variant="outline"
               size="sm"
               onClick={handleExportAttendance}
               isLoading={isExportingAttendance}
+              leftIcon={<Download className="w-4 h-4 text-teal-600" />}
             >
-              <Download className="w-4 h-4 mr-1.5 text-teal-600" /> Xuất Bảng Điểm danh
+              Xuất Bảng Điểm danh
             </Button>
           </div>
         }

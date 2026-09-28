@@ -21,6 +21,7 @@ import {
   Pencil,
   Inbox,
   Users,
+  RefreshCw,
 } from 'lucide-react';
 
 type TabType = 'unlinked' | 'suggest' | 'linked';
@@ -291,7 +292,12 @@ export const StudentZaloLinkPage: React.FC = () => {
               </option>
             ))}
           </select>
-          <Button variant="outline" size="sm" onClick={() => (activeTab === 'suggest' ? fetchSuggestions() : fetchLinked())}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => (activeTab === 'suggest' ? fetchSuggestions() : fetchLinked())}
+            leftIcon={<RefreshCw className="w-3.5 h-3.5" />}
+          >
             Làm mới
           </Button>
         </div>
@@ -327,7 +333,12 @@ export const StudentZaloLinkPage: React.FC = () => {
               onKeyDown={(e) => e.key === 'Enter' && fetchUnlinked()}
               className="flex-1"
             />
-            <Button variant="outline" onClick={fetchUnlinked} leftIcon={<Search className="w-3.5 h-3.5" />}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={fetchUnlinked}
+              leftIcon={<Search className="w-3.5 h-3.5" />}
+            >
               Tìm
             </Button>
           </div>

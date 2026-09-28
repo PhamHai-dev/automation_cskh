@@ -3,7 +3,7 @@ import { Loader2 } from 'lucide-react';
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: 'primary' | 'secondary' | 'outline' | 'ghost' | 'danger' | 'accent' | 'soft';
-  size?: 'sm' | 'md' | 'lg';
+  size?: 'sm' | 'md' | 'lg' | 'icon' | 'icon-sm' | 'icon-xs';
   isLoading?: boolean;
   leftIcon?: ReactNode;
   rightIcon?: ReactNode;
@@ -25,7 +25,7 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     ref
   ) => {
     const baseStyles =
-      'inline-flex items-center justify-center font-medium rounded-xl transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none active:scale-[0.98] select-none';
+      'inline-flex items-center justify-center font-medium rounded-xl transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none active:scale-[0.98] select-none whitespace-nowrap';
 
     const variants = {
       primary:
@@ -48,7 +48,12 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
       sm: 'h-8 px-2.5 text-xs gap-1.5',
       md: 'h-9 px-3.5 py-1.5 text-sm gap-2',
       lg: 'h-11 px-5 py-2.5 text-base gap-2.5',
+      icon: 'h-9 w-9 p-0 gap-0',
+      'icon-sm': 'h-8 w-8 p-0 gap-0',
+      'icon-xs': 'h-7 w-7 p-0 gap-0',
     };
+
+    const hasChildren = children !== undefined && children !== null && children !== false && children !== '';
 
     return (
       <button
@@ -58,12 +63,16 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         {...props}
       >
         {isLoading ? (
-          <Loader2 className="h-4 w-4 animate-spin text-current" />
+          <Loader2 className="h-4 w-4 shrink-0 animate-spin text-current" />
         ) : (
-          leftIcon && <span className="inline-flex shrink-0">{leftIcon}</span>
+          leftIcon && <span className="inline-flex shrink-0 items-center justify-center leading-none">{leftIcon}</span>
         )}
-        <span>{children}</span>
-        {!isLoading && rightIcon && <span className="inline-flex shrink-0">{rightIcon}</span>}
+        {hasChildren && (
+          <span className="inline-flex items-center gap-1.5 leading-none">{children}</span>
+        )}
+        {!isLoading && rightIcon && (
+          <span className="inline-flex shrink-0 items-center justify-center leading-none">{rightIcon}</span>
+        )}
       </button>
     );
   }
