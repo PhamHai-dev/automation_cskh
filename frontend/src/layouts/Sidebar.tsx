@@ -151,7 +151,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           allowedRoles: ['ADMIN', 'MANAGE', 'CS', 'TEACHER'],
         },
         {
-          name: 'Quản trị Người dùng',
+          name: 'Quản trị & Cấu hình',
           path: '/settings/users',
           icon: <ShieldCheck className="w-5 h-5 shrink-0" />,
           allowedRoles: ['ADMIN'],

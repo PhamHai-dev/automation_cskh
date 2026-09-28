@@ -26,7 +26,7 @@ export const createStudentSchema = z.object({
     sales_note: z.string().optional(),
     start_date: z.string().optional(),
     end_date: z.string().optional(),
-    status: z.enum(['NOT_STARTED', 'STUDYING', 'PAUSED', 'FINISHED', 'CANCELLED']).optional(),
+    status: z.enum(['WAITING_CLASS', 'STUDYING', 'PAUSED', 'FINISHED', 'UPCOMING', 'NOT_STARTED', 'CANCELLED']).optional(),
 
     // Class & Schedule fields
     class_id: z.number().optional(),
@@ -73,7 +73,7 @@ export const updateStudentSchema = z.object({
     sales_note: z.string().optional(),
     start_date: z.string().optional(),
     end_date: z.string().optional(),
-    status: z.enum(['NOT_STARTED', 'STUDYING', 'PAUSED', 'FINISHED', 'CANCELLED']).optional(),
+    status: z.enum(['WAITING_CLASS', 'STUDYING', 'PAUSED', 'FINISHED', 'UPCOMING', 'NOT_STARTED', 'CANCELLED']).optional(),
 
     // Class & Schedule fields
     class_id: z.number().optional(),

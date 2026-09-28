@@ -36,6 +36,7 @@ export class ClassesRepository {
               },
             },
             attendance: {
+              where: { deleted_at: null },
               include: {
                 class_session: true,
               },

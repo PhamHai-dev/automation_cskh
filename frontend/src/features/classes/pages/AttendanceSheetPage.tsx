@@ -546,6 +546,22 @@ export const AttendanceSheetPage = () => {
                                 </button>
                               );
                             })}
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                try {
+                                  await attendanceApi.remove(clsId, sessId, att.id);
+                                  toast.success('Đã reset trạng thái điểm danh');
+                                  fetchData();
+                                } catch (err: any) {
+                                  toast.error('Lỗi khi reset điểm danh: ' + (err.response?.data?.error?.message || err.message));
+                                }
+                              }}
+                              className="px-2 py-1 rounded-lg text-xs font-semibold border border-border/60 bg-surface-muted text-text-muted hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 transition-all"
+                              title="Chuyển sang Chưa điểm danh (-)"
+                            >
+                              -
+                            </button>
                           </div>
                         </td>
                       </tr>

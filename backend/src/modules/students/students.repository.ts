@@ -28,7 +28,7 @@ export class StudentsRepository {
                     class_schedules: true,
                   },
                 },
-                attendance: true,
+                attendance: { where: { deleted_at: null } },
               },
             },
             care_logs: {
@@ -137,10 +137,10 @@ export class StudentsRepository {
       });
 
       // 4. Create or link Class & Schedules
-      if (data.class_name || data.start_time || data.schedule_pattern) {
+      if (data.class_name || data.schedule_pattern) {
         const className =
           data.class_name?.trim() ||
-          `Lớp ${student.full_name} (${data.schedule_pattern || '246'})`;
+          `Lớp ${student.full_name} (${data.schedule_pattern})`;
 
         let classObj = await tx.class.findFirst({
           where: { class_name: className },
@@ -157,16 +157,18 @@ export class StudentsRepository {
           });
         }
 
-        // Schedule
-        if (data.start_time || data.schedule_pattern || data.duration_minutes) {
+        // A schedule requires an explicit pattern; time and duration may remain missing
+        // so the data-quality flow can report them instead of inventing defaults.
+        if (data.schedule_pattern) {
           await tx.classSchedule.create({
             data: {
               class_id: classObj.id,
-              start_time: data.start_time || '20h00',
-              schedule_pattern: data.schedule_pattern || '246',
-              duration_minutes: data.duration_minutes
-                ? Number(data.duration_minutes)
-                : 30,
+              start_time: data.start_time || null,
+              schedule_pattern: data.schedule_pattern,
+              duration_minutes:
+                data.duration_minutes !== undefined && data.duration_minutes !== ''
+                  ? Number(data.duration_minutes)
+                  : null,
             },
           });
         }
@@ -315,22 +317,30 @@ export class StudentsRepository {
             });
           }
           const sched = ec.class.class_schedules?.[0];
-          if (sched && (data.start_time || data.schedule_pattern || data.duration_minutes)) {
+          if (sched && (data.start_time !== undefined || data.schedule_pattern !== undefined || data.duration_minutes !== undefined)) {
             await tx.classSchedule.update({
               where: { id: sched.id },
               data: {
-                ...(data.start_time ? { start_time: data.start_time } : {}),
-                ...(data.schedule_pattern ? { schedule_pattern: data.schedule_pattern } : {}),
-                ...(data.duration_minutes ? { duration_minutes: Number(data.duration_minutes) } : {}),
+                ...(data.start_time !== undefined ? { start_time: data.start_time || null } : {}),
+                ...(data.schedule_pattern !== undefined ? { schedule_pattern: data.schedule_pattern } : {}),
+                ...(data.duration_minutes !== undefined
+                  ? {
+                      duration_minutes:
+                        data.duration_minutes === '' ? null : Number(data.duration_minutes),
+                    }
+                  : {}),
               },
             });
-          } else if (!sched && (data.start_time || data.schedule_pattern || data.duration_minutes)) {
+          } else if (!sched && data.schedule_pattern) {
             await tx.classSchedule.create({
               data: {
                 class_id: ec.class.id,
-                start_time: data.start_time || '20h00',
-                schedule_pattern: data.schedule_pattern || '246',
-                duration_minutes: data.duration_minutes ? Number(data.duration_minutes) : 30,
+                start_time: data.start_time || null,
+                schedule_pattern: data.schedule_pattern,
+                duration_minutes:
+                  data.duration_minutes !== undefined && data.duration_minutes !== ''
+                    ? Number(data.duration_minutes)
+                    : null,
               },
             });
           }

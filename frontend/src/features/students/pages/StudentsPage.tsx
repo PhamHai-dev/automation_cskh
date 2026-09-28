@@ -44,10 +44,12 @@ const ENROLLMENT_STATUS_LABELS: Record<
   string,
   { label: string; variant: 'info' | 'success' | 'warning' | 'danger' | 'neutral' }
 > = {
-  NOT_STARTED: { label: 'Chưa học', variant: 'neutral' },
+  WAITING_CLASS: { label: 'Chờ lớp', variant: 'warning' },
   STUDYING: { label: 'Đang học', variant: 'success' },
-  PAUSED: { label: 'Bảo lưu / Tạm dừng', variant: 'warning' },
-  FINISHED: { label: 'Hoàn thành', variant: 'info' },
+  PAUSED: { label: 'Bảo lưu', variant: 'warning' },
+  FINISHED: { label: 'Kết thúc', variant: 'neutral' },
+  UPCOMING: { label: 'Sắp học', variant: 'info' },
+  NOT_STARTED: { label: 'Chưa học', variant: 'neutral' },
   CANCELLED: { label: 'Đã hủy', variant: 'danger' },
 };
 
@@ -1301,9 +1303,11 @@ export const StudentsPage: React.FC = () => {
             className="text-xs font-medium px-3 py-1.5 bg-surface-muted border border-border/80 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 text-text-primary min-w-[150px]"
           >
             <option value="">-- Tất cả trạng thái --</option>
+            <option value="WAITING_CLASS">Chờ lớp</option>
             <option value="STUDYING">Đang học</option>
-            <option value="PAUSED">Bảo lưu / Tạm dừng</option>
-            <option value="FINISHED">Hoàn thành</option>
+            <option value="PAUSED">Bảo lưu</option>
+            <option value="FINISHED">Kết thúc</option>
+            <option value="UPCOMING">Sắp học</option>
             <option value="NOT_STARTED">Chưa học</option>
           </select>
 
@@ -1988,10 +1992,12 @@ export const StudentsPage: React.FC = () => {
                       onChange={(e) => setFormData({ ...formData, status: e.target.value })}
                       className="w-full text-xs px-3 py-2 bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20"
                     >
+                      <option value="WAITING_CLASS">Chờ lớp (WAITING_CLASS)</option>
                       <option value="STUDYING">Đang học (STUDYING)</option>
+                      <option value="PAUSED">Bảo lưu (PAUSED)</option>
+                      <option value="FINISHED">Kết thúc (FINISHED)</option>
+                      <option value="UPCOMING">Sắp học (UPCOMING)</option>
                       <option value="NOT_STARTED">Chưa học (NOT_STARTED)</option>
-                      <option value="PAUSED">Bảo lưu / Tạm dừng (PAUSED)</option>
-                      <option value="FINISHED">Hoàn thành (FINISHED)</option>
                       <option value="CANCELLED">Đã hủy (CANCELLED)</option>
                     </select>
                   </div>

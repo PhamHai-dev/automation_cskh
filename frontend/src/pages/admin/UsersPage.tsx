@@ -9,7 +9,11 @@ import { Badge } from '../../components/ui/Badge';
 import { Input } from '../../components/ui/Input';
 import { Modal } from '../../components/ui/Modal';
 import { useToast } from '../../components/ui/Toast';
-import { Edit, UserX, UserCheck, KeyRound, Plus, Search, AlertTriangle, Shield } from 'lucide-react';
+import { Edit, UserX, UserCheck, KeyRound, Plus, Search, AlertTriangle, Shield, Sliders, Users as UsersIcon } from 'lucide-react';
+import { HorizontalTabs, HorizontalTabItem } from '../../components/ui/HorizontalTabs';
+import { AutoAttendanceConfigCard } from './components/AutoAttendanceConfigCard';
+
+type AdminTab = 'users' | 'settings';
 
 interface User {
   id: number;
@@ -30,10 +34,24 @@ const ROLE_LABELS: Record<string, string> = {
 
 export const UsersPage: React.FC = () => {
   const toast = useToast();
+  const [activeTab, setActiveTab] = useState<AdminTab>('users');
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState('');
+
+  const adminTabs: HorizontalTabItem<AdminTab>[] = [
+    {
+      value: 'users',
+      label: 'Người dùng & Phân quyền',
+      icon: <UsersIcon className="w-4 h-4" />,
+    },
+    {
+      value: 'settings',
+      label: 'Cấu hình',
+      icon: <Sliders className="w-4 h-4" />,
+    },
+  ];
 
   // Modal states
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -235,61 +253,78 @@ export const UsersPage: React.FC = () => {
   return (
     <PageContainer>
       <PageHeader
-        title="Quản lý Người dùng & Phân quyền"
+        title={activeTab === 'users' ? 'Quản lý Người dùng & Phân quyền' : 'Cấu hình Hệ thống'}
         actions={
-          <Button onClick={() => openModal()} variant="primary" size="sm" className="flex items-center gap-1.5">
-            <Plus className="w-4 h-4" />
-            Thêm người dùng mới
-          </Button>
+          activeTab === 'users' ? (
+            <Button onClick={() => openModal()} variant="primary" size="sm" className="flex items-center gap-1.5">
+              <Plus className="w-4 h-4" />
+              Thêm người dùng mới
+            </Button>
+          ) : null
         }
       />
 
-      <FilterBar
-        title="Tìm kiếm & Lọc người dùng"
-        activeCount={activeFiltersCount}
-        onClear={() => {
-          setSearchTerm('');
-          setRoleFilter('');
-        }}
-      >
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          <div>
-            <label className="block text-[11px] font-semibold text-slate-500 mb-1">Tìm theo Tên hoặc Email</label>
-            <div className="relative">
-              <input
-                type="text"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="Nhập tên hoặc email..."
-                className="w-full pl-9 pr-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2" />
+      <div className="mb-6">
+        <HorizontalTabs
+          items={adminTabs}
+          value={activeTab}
+          onChange={setActiveTab}
+          ariaLabel="Phân hệ Quản trị"
+        />
+      </div>
+
+      {activeTab === 'settings' ? (
+        <AutoAttendanceConfigCard />
+      ) : (
+        <>
+          <FilterBar
+            title="Tìm kiếm & Lọc người dùng"
+            activeCount={activeFiltersCount}
+            onClear={() => {
+              setSearchTerm('');
+              setRoleFilter('');
+            }}
+          >
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-500 mb-1">Tìm theo Tên hoặc Email</label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    placeholder="Nhập tên hoặc email..."
+                    className="w-full pl-9 pr-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2" />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-500 mb-1">Vai trò</label>
+                <select
+                  value={roleFilter}
+                  onChange={(e) => setRoleFilter(e.target.value)}
+                  className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">Tất cả vai trò</option>
+                  <option value="ADMIN">Quản trị viên (ADMIN)</option>
+                  <option value="MANAGE">Quản lý nhóm (MANAGE)</option>
+                  <option value="CS">Nhân viên CSKH (CS)</option>
+                  <option value="TEACHER">Giáo viên (TEACHER)</option>
+                </select>
+              </div>
             </div>
-          </div>
+          </FilterBar>
 
-          <div>
-            <label className="block text-[11px] font-semibold text-slate-500 mb-1">Vai trò</label>
-            <select
-              value={roleFilter}
-              onChange={(e) => setRoleFilter(e.target.value)}
-              className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="">Tất cả vai trò</option>
-              <option value="ADMIN">Quản trị viên (ADMIN)</option>
-              <option value="MANAGE">Quản lý nhóm (MANAGE)</option>
-              <option value="CS">Nhân viên CSKH (CS)</option>
-              <option value="TEACHER">Giáo viên (TEACHER)</option>
-            </select>
-          </div>
-        </div>
-      </FilterBar>
-
-      <DataTable
-        columns={columns}
-        data={filteredUsers}
-        isLoading={loading}
-        emptyMessage="Không tìm thấy người dùng nào phù hợp."
-      />
+          <DataTable
+            columns={columns}
+            data={filteredUsers}
+            isLoading={loading}
+            emptyMessage="Không tìm thấy người dùng nào phù hợp."
+          />
+        </>
+      )}
 
       {/* Modal Thêm/Sửa */}
       <Modal

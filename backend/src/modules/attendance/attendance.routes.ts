@@ -19,4 +19,7 @@ router.post('/bulk', requireRoles(['ADMIN', 'MANAGE', 'CS', 'TEACHER']), control
 // Update attendance
 router.patch('/:attendanceId', requireRoles(['ADMIN', 'MANAGE', 'CS', 'TEACHER']), controller.update);
 
+// Reset (Soft-delete) attendance
+router.delete('/:attendanceId', requireRoles(['ADMIN', 'MANAGE', 'CS', 'TEACHER']), controller.reset);
+
 export { router as attendanceRouter };

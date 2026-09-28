@@ -5,7 +5,7 @@ import { Prisma } from '@prisma/client';
 export class AttendanceRepository {
   async findBySession(classId: number, sessionId: number) {
     return prisma.attendance.findMany({
-      where: { class_session_id: sessionId },
+      where: { class_session_id: sessionId, deleted_at: null },
       include: {
         enrollment_class: {
           include: {
@@ -23,8 +23,8 @@ export class AttendanceRepository {
   }
 
   async findById(attendanceId: number) {
-    return prisma.attendance.findUnique({
-      where: { id: attendanceId },
+    return prisma.attendance.findFirst({
+      where: { id: attendanceId, deleted_at: null },
       include: {
         enrollment_class: { include: { enrollment: true } },
         class_session: true,
@@ -38,6 +38,7 @@ export class AttendanceRepository {
       where: {
         enrollment_class_id: enrollmentClassId,
         class_session_id: classSessionId,
+        deleted_at: null,
       },
     });
   }
@@ -55,6 +56,8 @@ export class AttendanceRepository {
           status: status as any,
           session_count: sessionCount,
           source: source as any,
+          deleted_at: null,
+          deleted_by_id: null,
         },
         create: {
           enrollment_class_id: enrollmentClassId,
@@ -84,6 +87,8 @@ export class AttendanceRepository {
             status: item.status as any,
             session_count: item.session_count ?? 1,
             source: source as any,
+            deleted_at: null,
+            deleted_by_id: null,
           },
           create: {
             enrollment_class_id: item.enrollment_class_id,
@@ -113,10 +118,27 @@ export class AttendanceRepository {
     });
   }
 
+  async reset(attendanceId: number, userId: number) {
+    return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      const attendance = await tx.attendance.update({
+        where: { id: attendanceId },
+        data: { deleted_at: new Date(), deleted_by_id: userId },
+      });
+      await tx.messageDelivery.updateMany({
+        where: {
+          attendance_id: attendanceId,
+          status: { in: ['SCHEDULED', 'QUEUED'] },
+        },
+        data: { status: 'CANCELLED' },
+      });
+      return attendance;
+    });
+  }
+
   async countByStatus(classId: number) {
     return prisma.attendance.groupBy({
       by: ['status'],
-      where: { class_session: { class_id: classId } },
+      where: { class_session: { class_id: classId }, deleted_at: null },
       _count: true,
     });
   }

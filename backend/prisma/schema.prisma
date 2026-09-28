@@ -36,6 +36,7 @@ model User {
   class_teachers                   ClassTeacher[]
   created_class_sessions           ClassSession[]        @relation("SessionCreator")
   created_attendances              Attendance[]          @relation("AttendanceCreator")
+  deleted_attendances              Attendance[]          @relation("AttendanceDeleter")
   enrollments_as_cs                Enrollment[]          @relation("EnrollmentCS")
   zalo_accounts                    ZaloAccount[]
   automation_workflows             AutomationWorkflow[]  @relation("AutomationWorkflowOwner")
@@ -48,6 +49,7 @@ model User {
   requested_import_create_requests ImportCreateRequest[] @relation("ImportCreateRequestRequester")
   reviewed_import_create_requests  ImportCreateRequest[] @relation("ImportCreateRequestReviewer")
   assigned_import_create_requests  ImportCreateRequest[] @relation("ImportCreateRequestAssignee")
+  updated_app_settings             AppSetting[]          @relation("AppSettingUpdater")
 
   @@map("users")
 }
@@ -181,10 +183,12 @@ model Package {
 }
 
 enum EnrollmentStatus {
-  NOT_STARTED
+  WAITING_CLASS
   STUDYING
   PAUSED
   FINISHED
+  UPCOMING
+  NOT_STARTED
   CANCELLED
 }
 
@@ -347,8 +351,11 @@ model ClassSchedule {
   created_at       DateTime  @default(now())
   updated_at       DateTime  @updatedAt
 
-  class Class @relation(fields: [class_id], references: [id])
+  class                      Class                     @relation(fields: [class_id], references: [id])
+  generated_sessions         ClassSession[]
+  auto_attendance_executions AutoAttendanceExecution[]
 
+  @@index([active, valid_from, valid_to])
   @@map("class_schedules")
 }
 
@@ -371,11 +378,15 @@ model ClassSession {
   created_at     DateTime           @default(now())
   updated_at     DateTime           @updatedAt
 
-  class      Class        @relation(fields: [class_id], references: [id])
-  created_by User         @relation("SessionCreator", fields: [created_by_id], references: [id])
-  attendance Attendance[]
+  class_schedule_id Int?
+  class             Class          @relation(fields: [class_id], references: [id])
+  class_schedule    ClassSchedule? @relation(fields: [class_schedule_id], references: [id])
+  created_by        User           @relation("SessionCreator", fields: [created_by_id], references: [id])
+  attendance        Attendance[]
 
   @@unique([class_id, session_number])
+  @@unique([class_schedule_id, session_date])
+  @@index([session_date, status])
   @@map("class_sessions")
 }
 
@@ -396,6 +407,7 @@ enum AttendanceSource {
   MANUAL
   EXCEL_IMPORT
   TEACHER_UPLOAD
+  AUTO_SCHEDULE
 }
 
 model Attendance {
@@ -406,12 +418,15 @@ model Attendance {
   session_count       Float            @default(1)
   source              AttendanceSource
   created_by_id       Int
+  deleted_at          DateTime?
+  deleted_by_id       Int?
   created_at          DateTime         @default(now())
   updated_at          DateTime         @updatedAt
 
   enrollment_class   EnrollmentClass   @relation(fields: [enrollment_class_id], references: [id])
   class_session      ClassSession      @relation(fields: [class_session_id], references: [id])
   created_by         User              @relation("AttendanceCreator", fields: [created_by_id], references: [id])
+  deleted_by         User?             @relation("AttendanceDeleter", fields: [deleted_by_id], references: [id])
   message_deliveries MessageDelivery[]
 
   @@unique([enrollment_class_id, class_session_id])
@@ -729,6 +744,8 @@ enum CareTaskType {
   CALLBACK
   HOT_ISSUE
   FOLLOW_UP
+  AUTO_ATTENDANCE
+  SCHEDULE_DATA_ISSUE
 }
 
 enum CareTaskPriority {
@@ -745,22 +762,24 @@ enum CareTaskStatus {
 }
 
 model CareTask {
-  id             Int              @id @default(autoincrement())
-  enrollment_id  Int
-  assigned_to_id Int
-  type           CareTaskType
-  title          String?
-  note           String?          @db.Text
-  due_at         DateTime?
-  priority       CareTaskPriority @default(NORMAL)
-  status         CareTaskStatus   @default(PENDING)
-  completed_at   DateTime?
-  created_at     DateTime         @default(now())
-  updated_at     DateTime         @updatedAt
+  id              Int              @id @default(autoincrement())
+  enrollment_id   Int
+  assigned_to_id  Int
+  type            CareTaskType
+  title           String?
+  note            String?          @db.Text
+  due_at          DateTime?
+  priority        CareTaskPriority @default(NORMAL)
+  status          CareTaskStatus   @default(PENDING)
+  completed_at    DateTime?
+  idempotency_key String?          @unique
+  created_at      DateTime         @default(now())
+  updated_at      DateTime         @updatedAt
 
   enrollment  Enrollment @relation(fields: [enrollment_id], references: [id])
   assigned_to User       @relation("CareTaskAssignee", fields: [assigned_to_id], references: [id])
 
+  @@index([status, assigned_to_id])
   @@map("care_tasks")
 }
 
@@ -772,6 +791,45 @@ model CareMilestoneConfig {
   created_at     DateTime @default(now())
 
   @@map("care_milestone_configs")
+}
+
+enum AutoAttendanceExecutionStatus {
+  PROCESSING
+  COMPLETED
+  FAILED
+  SKIPPED
+}
+
+model AutoAttendanceExecution {
+  id                Int                           @id @default(autoincrement())
+  class_schedule_id Int
+  session_date      DateTime                      @db.Date
+  scheduled_run_at  DateTime
+  status            AutoAttendanceExecutionStatus @default(PROCESSING)
+  attendance_count  Int                           @default(0)
+  error_message     String?                       @db.Text
+  started_at        DateTime                      @default(now())
+  completed_at      DateTime?
+  created_at        DateTime                      @default(now())
+  updated_at        DateTime                      @updatedAt
+
+  class_schedule ClassSchedule @relation(fields: [class_schedule_id], references: [id])
+
+  @@unique([class_schedule_id, session_date])
+  @@index([status, scheduled_run_at])
+  @@map("auto_attendance_executions")
+}
+
+model AppSetting {
+  key           String   @id
+  value         Json
+  updated_by_id Int?
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+
+  updated_by User? @relation("AppSettingUpdater", fields: [updated_by_id], references: [id])
+
+  @@map("app_settings")
 }
 
 enum ImportType {

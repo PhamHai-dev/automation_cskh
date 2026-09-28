@@ -87,6 +87,16 @@ export class AttendanceService {
     return result;
   }
 
+  async resetAttendance(attendanceId: number, userId: number) {
+    const before = await this.repository.findById(attendanceId);
+    if (!before) {
+      throw new Error('Attendance not found');
+    }
+    const result = await this.repository.reset(attendanceId, userId);
+    await this.logAudit(userId, 'DELETE', 'Attendance', String(attendanceId), before, result);
+    return result;
+  }
+
   private async logAudit(userId: number, action: string, entityType: string, entityId: string, beforeData: any, afterData: any) {
     try {
       await prisma.auditLog.create({

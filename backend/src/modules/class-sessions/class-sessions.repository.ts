@@ -18,7 +18,7 @@ export class ClassSessionsRepository {
       where: { id: sessionId, class_id: classId },
       include: {
         created_by: { select: { id: true, name: true, email: true } },
-        attendance: { include: { enrollment_class: { include: { enrollment: true } } } },
+        attendance: { where: { deleted_at: null }, include: { enrollment_class: { include: { enrollment: true } } } },
       },
     });
   }

@@ -150,6 +150,16 @@ export const formatSessionDate = (raw: string | Date | null | undefined): string
   return `${year}-${month}-${day}`;
 };
 
+const isDateInSchedule = (dateStr: string, pattern?: string | null): boolean => {
+  if (!pattern) return true;
+  if (pattern.toUpperCase() === 'LKCD') return true;
+  const d = new Date(dateStr);
+  const day = d.getDay();
+  const map: Record<number, string> = { 0: 'CN', 1: '2', 2: '3', 3: '4', 4: '5', 5: '6', 6: '7' };
+  const char = map[day];
+  return pattern.toUpperCase().includes(char);
+};
+
 export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
   cls,
   students,
@@ -179,6 +189,8 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
   // Track custom attendance numeric values (default 1 for ATTENDED)
   const [customValues, setCustomValues] = useState<Record<string, number>>({});
   const [saving, setSaving] = useState(false);
+  // Track optimistically cleared attendance cells
+  const [clearedKeys, setClearedKeys] = useState<Set<string>>(new Set());
 
   // Multi-student selection state for bulk actions
   const [selectedStudents, setSelectedStudents] = useState<Set<number>>(new Set());
@@ -251,6 +263,7 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
     });
 
     attendances.forEach((a) => {
+      if ((a as any).deleted_at) return;
       let dStr = sessionDateMap.get(a.class_session_id);
       if (!dStr && (a as any).class_session?.session_date) {
         dStr = formatSessionDate((a as any).class_session.session_date);
@@ -262,6 +275,20 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
 
     return map;
   }, [sessions, attendances]);
+
+  // Clean up clearedKeys when attendances updates from server
+  React.useEffect(() => {
+    if (clearedKeys.size === 0) return;
+    setClearedKeys((prev) => {
+      const next = new Set(prev);
+      for (const key of next) {
+        if (!attendanceMap.has(key)) {
+          next.delete(key);
+        }
+      }
+      return next.size === prev.size ? prev : next;
+    });
+  }, [attendanceMap]);
 
   // Dynamic Reactive Statistics calculation for each student (X, Y, Z, AA, AB, AC, AD, AE, AF, AG, AH)
   const studentStats = useMemo(() => {
@@ -324,14 +351,14 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
 
       // 2. Process existing attendances not overridden in pendingEdits
       attendances.forEach((a) => {
-        if (a.enrollment_class_id !== s.enrollment_class_id) return;
+        if (a.enrollment_class_id !== s.enrollment_class_id || (a as any).deleted_at) return;
         const dStr =
           formatSessionDate(a.class_session?.session_date) ||
           sessions.find((sess) => sess.id === a.class_session_id)?.session_date
             ? formatSessionDate(sessions.find((sess) => sess.id === a.class_session_id)!.session_date)
             : '';
 
-        if (!dStr || processedDates.has(dStr)) return;
+        if (!dStr || processedDates.has(dStr) || clearedKeys.has(`${s.enrollment_class_id}_${dStr}`)) return;
         processedDates.add(dStr);
 
         const status = a.status;
@@ -526,6 +553,21 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
   const handleBulkApplyAttended = () => {
     const targetDate = activeTab === 'quick' ? quickDate : bulkDate;
     if (selectedStudents.size === 0 || !targetDate) return;
+
+    let outOfScheduleCount = 0;
+    selectedStudents.forEach((ecId) => {
+      const student = students.find(s => s.enrollment_class_id === ecId);
+      if (student && !isDateInSchedule(targetDate, student.schedule_pattern)) {
+        outOfScheduleCount++;
+      }
+    });
+
+    if (outOfScheduleCount > 0) {
+      if (!window.confirm(`Có ${outOfScheduleCount} học viên được chọn không có lịch học vào ngày này. Bạn có chắc chắn muốn điểm danh?`)) {
+        return;
+      }
+    }
+
     const updates: Record<string, AttendanceStatus> = {};
     const valUpdates: Record<string, number> = {};
 
@@ -534,6 +576,14 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
       const key = `${ecId}_${targetDate}`;
       updates[key] = 'ATTENDED';
       valUpdates[key] = bulkCount;
+    });
+
+    setClearedKeys((prev) => {
+      const next = new Set(prev);
+      selectedStudents.forEach((ecId) => {
+        next.delete(`${ecId}_${targetDate}`);
+      });
+      return next;
     });
 
     setPendingEdits((prev) => ({ ...prev, ...updates }));
@@ -547,6 +597,21 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
   const handleBulkApplyAbsent = (status: AttendanceStatus) => {
     const targetDate = activeTab === 'quick' ? quickDate : bulkDate;
     if (selectedStudents.size === 0 || !targetDate) return;
+
+    let outOfScheduleCount = 0;
+    selectedStudents.forEach((ecId) => {
+      const student = students.find(s => s.enrollment_class_id === ecId);
+      if (student && !isDateInSchedule(targetDate, student.schedule_pattern)) {
+        outOfScheduleCount++;
+      }
+    });
+
+    if (outOfScheduleCount > 0) {
+      if (!window.confirm(`Có ${outOfScheduleCount} học viên được chọn không có lịch học vào ngày này. Bạn có chắc chắn muốn điểm danh?`)) {
+        return;
+      }
+    }
+
     const updates: Record<string, AttendanceStatus> = {};
 
     selectedStudents.forEach((ecId) => {
@@ -555,10 +620,84 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
       updates[key] = status;
     });
 
+    setClearedKeys((prev) => {
+      const next = new Set(prev);
+      selectedStudents.forEach((ecId) => {
+        next.delete(`${ecId}_${targetDate}`);
+      });
+      return next;
+    });
+
     setPendingEdits((prev) => ({ ...prev, ...updates }));
     toast.info(
       `Đã cập nhật trạng thái ${STATUS_CONFIG[status].label} cho ${selectedStudents.size} học viên`
     );
+  };
+
+  // Bulk Clear Attendance for selected students
+  const handleBulkClear = async () => {
+    const targetDate = activeTab === 'quick' ? quickDate : bulkDate;
+    if (selectedStudents.size === 0 || !targetDate) return;
+
+    const toRemove: Array<{ classId: number; sessionId: number; attendanceId: number; key: string }> = [];
+    const keysToClear: string[] = [];
+
+    selectedStudents.forEach((ecId) => {
+      if (ecId <= 0) return;
+      const key = `${ecId}_${targetDate}`;
+      keysToClear.push(key);
+      const student = students.find((s) => s.enrollment_class_id === ecId);
+      const existingRecord = attendanceMap.get(key);
+      const classId =
+        cls?.id ||
+        (existingRecord as any)?.class_session?.class_id ||
+        sessions.find((s) => s.id === existingRecord?.class_session_id)?.class_id ||
+        student?.class_id;
+      const sessionId =
+        existingRecord?.class_session_id ||
+        (existingRecord as any)?.class_session?.id ||
+        sessions.find((s) => formatSessionDate(s.session_date) === targetDate)?.id;
+
+      if (existingRecord && classId && sessionId) {
+        toRemove.push({ classId, sessionId, attendanceId: existingRecord.id, key });
+      }
+    });
+
+    // Optimistically clear local state immediately
+    setClearedKeys((prev) => {
+      const next = new Set(prev);
+      keysToClear.forEach((k) => next.add(k));
+      return next;
+    });
+    setPendingEdits((prev) => {
+      const next = { ...prev };
+      keysToClear.forEach((k) => delete next[k]);
+      return next;
+    });
+    setCustomValues((prev) => {
+      const next = { ...prev };
+      keysToClear.forEach((k) => delete next[k]);
+      return next;
+    });
+
+    if (toRemove.length > 0) {
+      try {
+        setSaving(true);
+        await Promise.all(
+          toRemove.map((item) =>
+            attendanceApi.remove(item.classId, item.sessionId, item.attendanceId)
+          )
+        );
+        toast.success(`Đã reset trạng thái điểm danh cho ${toRemove.length} học viên`);
+        onRefresh();
+      } catch (err: any) {
+        toast.error('Lỗi khi reset điểm danh: ' + (err.response?.data?.error?.message || err.message));
+      } finally {
+        setSaving(false);
+      }
+    } else {
+      toast.info(`Đã chuyển ${selectedStudents.size} học viên sang Chưa điểm danh`);
+    }
   };
 
   // Select status for a cell from Popover
@@ -568,7 +707,22 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
     status: AttendanceStatus,
     countVal: number = 1
   ) => {
+    const student = students.find(s => s.enrollment_class_id === enrollmentClassId);
+    if (student && !isDateInSchedule(dateStr, student.schedule_pattern)) {
+      if (!window.confirm(`Học viên ${student.full_name} không có lịch học vào ngày này (${new Date(dateStr).toLocaleDateString('vi-VN')}). Bạn có chắc chắn muốn điểm danh?`)) {
+        return;
+      }
+    }
+
     const key = `${enrollmentClassId}_${dateStr}`;
+    // Remove from clearedKeys since user selected an active status
+    setClearedKeys((prev) => {
+      if (!prev.has(key)) return prev;
+      const next = new Set(prev);
+      next.delete(key);
+      return next;
+    });
+
     setPendingEdits((prev) => ({ ...prev, [key]: status }));
     if (status === 'ATTENDED') {
       setCustomValues((prev) => ({ ...prev, [key]: countVal }));
@@ -576,9 +730,24 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
     setActiveCell(null);
   };
 
-  // Clear attendance for a cell
-  const handleClearCell = (enrollmentClassId: number, dateStr: string) => {
+  // Clear attendance for a cell (Chuyển sang Chưa điểm danh)
+  const handleClearCell = async (enrollmentClassId: number, dateStr: string) => {
     const key = `${enrollmentClassId}_${dateStr}`;
+    const student = students.find((s) => s.enrollment_class_id === enrollmentClassId);
+    const existingRecord = attendanceMap.get(key);
+
+    const classId =
+      cls?.id ||
+      (existingRecord as any)?.class_session?.class_id ||
+      sessions.find((s) => s.id === existingRecord?.class_session_id)?.class_id ||
+      student?.class_id;
+    const sessionId =
+      existingRecord?.class_session_id ||
+      (existingRecord as any)?.class_session?.id ||
+      sessions.find((s) => formatSessionDate(s.session_date) === dateStr)?.id;
+
+    // 1. Optimistically clear local state immediately so cell switches to '-'
+    setClearedKeys((prev) => new Set(prev).add(key));
     setPendingEdits((prev) => {
       const next = { ...prev };
       delete next[key];
@@ -590,6 +759,28 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
       return next;
     });
     setActiveCell(null);
+
+    // 2. If record exists in database, call API to soft-delete
+    if (existingRecord && classId && sessionId) {
+      try {
+        setSaving(true);
+        await attendanceApi.remove(classId, sessionId, existingRecord.id);
+        toast.success('Đã chuyển sang Chưa điểm danh');
+        onRefresh();
+      } catch (err: any) {
+        // Rollback optimistic clear if API fails
+        setClearedKeys((prev) => {
+          const next = new Set(prev);
+          next.delete(key);
+          return next;
+        });
+        toast.error('Lỗi khi reset điểm danh: ' + (err.response?.data?.error?.message || err.message));
+      } finally {
+        setSaving(false);
+      }
+    } else {
+      toast.info('Đã chuyển sang Chưa điểm danh');
+    }
   };
 
   // Save all edits
@@ -676,7 +867,8 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
     }
 
     const key = `${st.enrollment_class_id}_${dateStr}`;
-    const existingAtt = attendanceMap.get(key);
+    const isCleared = clearedKeys.has(key);
+    const existingAtt = isCleared ? undefined : attendanceMap.get(key);
     const currentStatus: AttendanceStatus | undefined =
       pendingEdits[key] || existingAtt?.status;
     const isPending = !!pendingEdits[key];
@@ -1051,6 +1243,16 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
                 <span>{STATUS_CONFIG[status].label.replace(/\s*\([A-E]\)$/, '')}</span>
               </button>
             ))}
+            <button
+              type="button"
+              onClick={handleBulkClear}
+              aria-label={`Chuyển Chưa điểm danh cho ${selectedStudents.size} học viên`}
+              className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-border bg-surface-muted px-2.5 font-bold text-text-secondary transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 active:scale-[0.98]"
+              title="Chuyển sang Chưa điểm danh"
+            >
+              <span className="text-[10px] font-extrabold">-</span>
+              <span>Chưa điểm danh</span>
+            </button>
           </div>
         </div>
       )}
@@ -1215,9 +1417,9 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
                           variant={
                             st.status === 'STUDYING'
                               ? 'success'
-                              : st.status === 'PAUSED'
+                              : st.status === 'PAUSED' || st.status === 'WAITING_CLASS'
                               ? 'warning'
-                              : st.status === 'FINISHED'
+                              : st.status === 'UPCOMING'
                               ? 'info'
                               : 'neutral'
                           }
@@ -1228,7 +1430,13 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
                             : st.status === 'PAUSED'
                             ? 'Bảo lưu'
                             : st.status === 'FINISHED'
-                            ? 'Hoàn thành'
+                            ? 'Kết thúc'
+                            : st.status === 'WAITING_CLASS'
+                            ? 'Chờ lớp'
+                            : st.status === 'UPCOMING'
+                            ? 'Sắp học'
+                            : st.status === 'NOT_STARTED'
+                            ? 'Chưa học'
                             : st.status}
                         </Badge>
                       </td>
@@ -1469,9 +1677,9 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
                           variant={
                             st.status === 'STUDYING'
                               ? 'success'
-                              : st.status === 'PAUSED'
+                              : st.status === 'PAUSED' || st.status === 'WAITING_CLASS'
                               ? 'warning'
-                              : st.status === 'FINISHED'
+                              : st.status === 'UPCOMING'
                               ? 'info'
                               : 'neutral'
                           }
@@ -1482,7 +1690,13 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
                             : st.status === 'PAUSED'
                             ? 'Bảo lưu'
                             : st.status === 'FINISHED'
-                            ? 'Hoàn thành'
+                            ? 'Kết thúc'
+                            : st.status === 'WAITING_CLASS'
+                            ? 'Chờ lớp'
+                            : st.status === 'UPCOMING'
+                            ? 'Sắp học'
+                            : st.status === 'NOT_STARTED'
+                            ? 'Chưa học'
                             : st.status}
                         </Badge>
                       </td>

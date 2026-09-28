@@ -18,10 +18,12 @@ import { Users, GraduationCap, CheckCircle, AlertCircle, RefreshCw } from 'lucid
 import { Button } from '../../../components/ui/Button';
 
 const STATUS_LABELS: Record<string, { label: string; color: string; bgSoft: string; textColor: string }> = {
-  NOT_STARTED: { label: 'Chưa học', color: 'bg-slate-400', bgSoft: 'bg-slate-100', textColor: 'text-slate-700' },
+  WAITING_CLASS: { label: 'Chờ lớp', color: 'bg-amber-500', bgSoft: 'bg-amber-50', textColor: 'text-amber-700' },
   STUDYING: { label: 'Đang học', color: 'bg-blue-600', bgSoft: 'bg-blue-50', textColor: 'text-blue-700' },
-  PAUSED: { label: 'Bảo lưu / Tạm dừng', color: 'bg-amber-500', bgSoft: 'bg-amber-50', textColor: 'text-amber-700' },
-  FINISHED: { label: 'Hoàn thành', color: 'bg-emerald-600', bgSoft: 'bg-emerald-50', textColor: 'text-emerald-700' },
+  PAUSED: { label: 'Bảo lưu', color: 'bg-amber-500', bgSoft: 'bg-amber-50', textColor: 'text-amber-700' },
+  FINISHED: { label: 'Kết thúc', color: 'bg-emerald-600', bgSoft: 'bg-emerald-50', textColor: 'text-emerald-700' },
+  UPCOMING: { label: 'Sắp học', color: 'bg-sky-500', bgSoft: 'bg-sky-50', textColor: 'text-sky-700' },
+  NOT_STARTED: { label: 'Chưa học', color: 'bg-slate-400', bgSoft: 'bg-slate-100', textColor: 'text-slate-700' },
   CANCELLED: { label: 'Đã hủy', color: 'bg-rose-500', bgSoft: 'bg-rose-50', textColor: 'text-rose-700' },
 };
 
@@ -113,10 +115,12 @@ export const DashboardPage: React.FC = () => {
               className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               <option value="">Tất cả trạng thái</option>
+              <option value="WAITING_CLASS">Chờ lớp</option>
               <option value="STUDYING">Đang học</option>
-              <option value="NOT_STARTED">Chưa học</option>
               <option value="PAUSED">Bảo lưu</option>
-              <option value="FINISHED">Hoàn thành</option>
+              <option value="FINISHED">Kết thúc</option>
+              <option value="UPCOMING">Sắp học</option>
+              <option value="NOT_STARTED">Chưa học</option>
               <option value="CANCELLED">Đã hủy</option>
             </select>
           </div>

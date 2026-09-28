@@ -42,6 +42,35 @@ CREATE TABLE `automation_enrollments` (
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
+CREATE TABLE `zalo_groups` (
+    `id` INTEGER NOT NULL AUTO_INCREMENT,
+    `zalo_group_id` VARCHAR(191) NOT NULL,
+    `name` VARCHAR(191) NULL,
+    `avatar_url` VARCHAR(191) NULL,
+    `member_count` INTEGER NULL,
+    `owner_zalo_uid` VARCHAR(191) NULL,
+    `zalo_account_id` INTEGER NOT NULL,
+    `last_synced_at` DATETIME(3) NULL,
+    `created_at` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `updated_at` DATETIME(3) NOT NULL,
+    UNIQUE INDEX `zalo_groups_zalo_group_id_key`(`zalo_group_id`),
+    INDEX `zalo_groups_zalo_account_id_idx`(`zalo_account_id`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+CREATE TABLE `zalo_group_members` (
+    `id` INTEGER NOT NULL AUTO_INCREMENT,
+    `group_id` INTEGER NOT NULL,
+    `zalo_uid` VARCHAR(191) NOT NULL,
+    `display_name` VARCHAR(191) NULL,
+    `avatar_url` VARCHAR(191) NULL,
+    `joined_at` DATETIME(3) NULL,
+    `created_at` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    UNIQUE INDEX `zalo_group_members_group_id_zalo_uid_key`(`group_id`, `zalo_uid`),
+    INDEX `zalo_group_members_group_id_idx`(`group_id`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
 -- 2. Add new columns to message_deliveries
 ALTER TABLE `message_deliveries` ADD COLUMN `automation_step_id` INTEGER NULL;
 ALTER TABLE `message_deliveries` ADD COLUMN `zalo_group_id` INTEGER NULL;
@@ -67,7 +96,6 @@ ALTER TABLE `message_deliveries` ADD UNIQUE INDEX `message_deliveries_attendance
 DROP TABLE `message_rules`;
 
 -- 8. Create indexes
-CREATE INDEX `friends_phone_from_sdk_idx` ON `friends`(`phone_from_sdk`);
 CREATE INDEX `zalo_contact_relations_student_id_idx` ON `zalo_contact_relations`(`student_id`);
 CREATE INDEX `automation_workflows_owner_cs_id_idx` ON `automation_workflows`(`owner_cs_id`);
 
@@ -76,5 +104,7 @@ ALTER TABLE `automation_workflows` ADD CONSTRAINT `automation_workflows_owner_cs
 ALTER TABLE `automation_steps` ADD CONSTRAINT `automation_steps_workflow_id_fkey` FOREIGN KEY (`workflow_id`) REFERENCES `automation_workflows`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
 ALTER TABLE `automation_enrollments` ADD CONSTRAINT `automation_enrollments_workflow_id_fkey` FOREIGN KEY (`workflow_id`) REFERENCES `automation_workflows`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
 ALTER TABLE `automation_enrollments` ADD CONSTRAINT `automation_enrollments_enrollment_id_fkey` FOREIGN KEY (`enrollment_id`) REFERENCES `enrollments`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE `zalo_groups` ADD CONSTRAINT `zalo_groups_zalo_account_id_fkey` FOREIGN KEY (`zalo_account_id`) REFERENCES `zalo_accounts`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE `zalo_group_members` ADD CONSTRAINT `zalo_group_members_group_id_fkey` FOREIGN KEY (`group_id`) REFERENCES `zalo_groups`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
 ALTER TABLE `message_deliveries` ADD CONSTRAINT `message_deliveries_automation_step_id_fkey` FOREIGN KEY (`automation_step_id`) REFERENCES `automation_steps`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
 ALTER TABLE `message_deliveries` ADD CONSTRAINT `message_deliveries_zalo_group_id_fkey` FOREIGN KEY (`zalo_group_id`) REFERENCES `zalo_groups`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;

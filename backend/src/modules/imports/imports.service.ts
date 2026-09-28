@@ -228,9 +228,11 @@ export class ImportsService {
 
   private statusFromText(value?: string): EnrollmentStatus {
     const status = (value || '').toLowerCase();
+    if (status.includes('chờ')) return EnrollmentStatus.WAITING_CLASS;
+    if (status.includes('sắp học')) return EnrollmentStatus.UPCOMING;
     if (status.includes('bảo lưu')) return EnrollmentStatus.PAUSED;
     if (status.includes('kết thúc') || status.includes('hoàn thành')) return EnrollmentStatus.FINISHED;
-    if (status.includes('chờ') || status.includes('sắp học')) return EnrollmentStatus.NOT_STARTED;
+    if (status.includes('chưa học')) return EnrollmentStatus.NOT_STARTED;
     if (status.includes('hủy')) return EnrollmentStatus.CANCELLED;
     return EnrollmentStatus.STUDYING;
   }
@@ -1262,9 +1264,11 @@ export class ImportsService {
           // 3. Status mapping
           const statusRaw = (getColVal('status') || '').toLowerCase();
           let status: EnrollmentStatus = EnrollmentStatus.STUDYING;
-          if (statusRaw.includes('bảo lưu')) status = EnrollmentStatus.PAUSED;
+          if (statusRaw.includes('chờ')) status = EnrollmentStatus.WAITING_CLASS;
+          else if (statusRaw.includes('sắp học')) status = EnrollmentStatus.UPCOMING;
+          else if (statusRaw.includes('bảo lưu')) status = EnrollmentStatus.PAUSED;
           else if (statusRaw.includes('kết thúc') || statusRaw.includes('hoàn thành')) status = EnrollmentStatus.FINISHED;
-          else if (statusRaw.includes('chờ') || statusRaw.includes('sắp học')) status = EnrollmentStatus.NOT_STARTED;
+          else if (statusRaw.includes('chưa học')) status = EnrollmentStatus.NOT_STARTED;
           else if (statusRaw.includes('hủy')) status = EnrollmentStatus.CANCELLED;
 
           const startDate = this.parseExcelDate(getColVal('start_date'));

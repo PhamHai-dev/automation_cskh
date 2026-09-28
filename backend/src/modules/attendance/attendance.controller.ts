@@ -62,4 +62,15 @@ export class AttendanceController {
       next(error);
     }
   }
+
+  async reset(req: Request, res: Response, next: NextFunction) {
+    try {
+      const attendanceId = parseInt(req.params.attendanceId);
+      const userId = req.user?.id || 0;
+      await attendanceService.resetAttendance(attendanceId, userId);
+      res.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  }
 }

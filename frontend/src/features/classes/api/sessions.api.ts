@@ -47,4 +47,8 @@ export const attendanceApi = {
     const res = await apiClient.patch(`/classes/${classId}/sessions/${sessionId}/attendance/${attendanceId}`, data);
     return res.data.data;
   },
+
+  remove: async (classId: number, sessionId: number, attendanceId: number): Promise<void> => {
+    await apiClient.delete(`/classes/${classId}/sessions/${sessionId}/attendance/${attendanceId}`);
+  },
 };

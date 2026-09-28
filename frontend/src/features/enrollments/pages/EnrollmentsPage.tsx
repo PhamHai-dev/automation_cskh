@@ -322,10 +322,12 @@ export const EnrollmentsPage: React.FC = () => {
                   className="h-10 w-[146px] rounded-xl border border-border/80 bg-surface px-2.5 text-xs font-semibold text-text-primary outline-none transition focus:ring-2 focus:ring-primary/20"
                 >
                   <option value="">Tất cả trạng thái</option>
-                  <option value="NOT_STARTED">Chưa học</option>
+                  <option value="WAITING_CLASS">Chờ lớp</option>
                   <option value="STUDYING">Đang học</option>
-                  <option value="PAUSED">Tạm dừng / Bảo lưu</option>
-                  <option value="FINISHED">Hoàn thành</option>
+                  <option value="PAUSED">Bảo lưu</option>
+                  <option value="FINISHED">Kết thúc</option>
+                  <option value="UPCOMING">Sắp học</option>
+                  <option value="NOT_STARTED">Chưa học</option>
                   <option value="CANCELLED">Đã hủy</option>
                 </select>
                 {hasActiveFilters && (

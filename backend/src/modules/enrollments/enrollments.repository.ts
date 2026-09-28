@@ -27,12 +27,15 @@ const ENROLLMENT_INCLUDES = {
           class_schedules: true,
           class_sessions: {
             include: {
-              attendance: true,
+              attendance: {
+                where: { deleted_at: null },
+              },
             },
           },
         },
       },
       attendance: {
+        where: { deleted_at: null },
         include: {
           class_session: true,
         },
