@@ -172,14 +172,16 @@ export class ImportsService {
         suggestedMapping['start_date'] = colLetter;
       } else if (lower.includes('ngày kết thúc') || lower.includes('kết thúc/bảo lưu')) {
         suggestedMapping['end_date'] = colLetter;
+      } else if (lower.includes('thanh toán')) {
+        suggestedMapping['payment_status'] = colLetter;
+      } else if (lower.includes('trạng thái hv') || lower.includes('trạng thái học viên') || lower.includes('nguồn hv')) {
+        suggestedMapping['student_source_status'] = colLetter;
       } else if (lower.includes('trạng thái') || lower.includes('tình trạng')) {
         suggestedMapping['status'] = colLetter;
       } else if (lower.includes('mô hình')) {
         suggestedMapping['class_model'] = colLetter;
       } else if ((lower.includes('nội dung khoá') || lower.includes('nội dung khóa') || lower === 'nội dung' || lower.includes('nội dung')) && !lower.includes('chăm sóc')) {
         suggestedMapping['course_content'] = colLetter;
-      } else if (lower.includes('thanh toán')) {
-        suggestedMapping['payment_status'] = colLetter;
       } else if (lower.includes('sale') && !lower.includes('ghi chú')) {
         suggestedMapping['sale_name'] = colLetter;
       } else if (lower.includes('ghi chú sale')) {
@@ -190,7 +192,7 @@ export class ImportsService {
         suggestedMapping['class_name'] = colLetter;
       } else if (lower.includes('báo cáo học tập')) {
         suggestedMapping['study_report_url'] = colLetter;
-      } else if (lower.includes('thông tin trao đổi')) {
+      } else if (lower.includes('thông tin trao đổi') || lower.includes('trao đổi với hv') || lower.includes('trao đổi')) {
         suggestedMapping['exchange_info'] = colLetter;
       } else if (lower.includes('lịch hẹn gọi')) {
         suggestedMapping['callback_note'] = colLetter;
@@ -840,6 +842,30 @@ export class ImportsService {
         snapshot.attendance = attendance;
       }
 
+      if (one && ws1 && s1) {
+        const headerRow1 = ws1.getRow(s1.headerRowIdx);
+        const sourceRow1 = ws1.getRow(one.rowNumber);
+        const careLogs: Array<{ after_session_number: number; content: string }> = [];
+        for (let col = 1; col <= ws1.columnCount; col++) {
+          const headerCell = headerRow1.getCell(col);
+          let headerTitle = '';
+          if (typeof headerCell.value === 'object' && headerCell.value !== null && 'richText' in headerCell.value) {
+            headerTitle = (headerCell.value as any).richText.map((t: any) => t.text).join('');
+          } else {
+            headerTitle = String(headerCell.value || '').trim();
+          }
+          const match = headerTitle.match(/chăm sóc sau buổi\s*(\d+)/i);
+          if (match) {
+            const sessionNum = parseInt(match[1], 10);
+            const content = this.cellText(sourceRow1.getCell(col));
+            if (content && !isNaN(sessionNum)) {
+              careLogs.push({ after_session_number: sessionNum, content });
+            }
+          }
+        }
+        snapshot.careLogs = careLogs;
+      }
+
       const diffs: any[] = [];
       const compare = (entity: string, field: string, before: unknown, after: unknown) => {
         if ((before ?? '') !== (after ?? '')) {
@@ -1123,6 +1149,13 @@ export class ImportsService {
                 total_sessions: Number(snap.total_sessions) || 30,
                 class_model: snap.class_model || null,
                 sales_note: snap.sales_note || null,
+                study_report_url: snap.study_report_url || null,
+                exchange_info: snap.exchange_info || null,
+                callback_note: snap.callback_note || null,
+                hot_issue_note: snap.hot_issue_note || null,
+                post_course_care: snap.post_course_care || null,
+                handed_over_at: this.parseExcelDate(snap.handed_over_at),
+                account_created_at: this.parseExcelDate(snap.account_created_at),
                 start_date: this.parseExcelDate(snap.start_date),
                 end_date: this.parseExcelDate(snap.end_date),
                 status: this.statusFromText(snap.status),
@@ -1144,6 +1177,13 @@ export class ImportsService {
               sale_id: snap.sale_name !== undefined ? saleId : enrollment.sale_id,
               sale_name: snap.sale_name !== undefined ? saleName : enrollment.sale_name,
               sales_note: snap.sales_note !== undefined ? (snap.sales_note || null) : enrollment.sales_note,
+              study_report_url: snap.study_report_url !== undefined ? (snap.study_report_url || null) : enrollment.study_report_url,
+              exchange_info: snap.exchange_info !== undefined ? (snap.exchange_info || null) : enrollment.exchange_info,
+              callback_note: snap.callback_note !== undefined ? (snap.callback_note || null) : enrollment.callback_note,
+              hot_issue_note: snap.hot_issue_note !== undefined ? (snap.hot_issue_note || null) : enrollment.hot_issue_note,
+              post_course_care: snap.post_course_care !== undefined ? (snap.post_course_care || null) : enrollment.post_course_care,
+              handed_over_at: snap.handed_over_at !== undefined ? this.parseExcelDate(snap.handed_over_at) : enrollment.handed_over_at,
+              account_created_at: snap.account_created_at !== undefined ? this.parseExcelDate(snap.account_created_at) : enrollment.account_created_at,
               external_synced_at: new Date(),
             };
             if (!isCS && (assignedCsId || meta.assignedCsId)) {
@@ -1186,6 +1226,35 @@ export class ImportsService {
           // 7. Attendance from Sheet 3
           if (ec && snap.attendance?.length) {
             await this.applyAttendance(tx, ec.id, ec.class_id, snap.attendance, actor.id);
+          }
+
+          // 8. Care Logs from Sheet 1 (Chăm sóc sau buổi 1, 3, 10, ...)
+          const careLogs = snap.careLogs as Array<{ after_session_number: number; content: string }> | undefined;
+          if (Array.isArray(careLogs) && careLogs.length > 0) {
+            for (const cl of careLogs) {
+              if (cl.content && cl.after_session_number) {
+                const existingLog = await tx.careLog.findFirst({
+                  where: { enrollment_id: enrollment.id, after_session_number: cl.after_session_number },
+                });
+                if (existingLog) {
+                  await tx.careLog.update({
+                    where: { id: existingLog.id },
+                    data: { content: cl.content },
+                  });
+                } else {
+                  await tx.careLog.create({
+                    data: {
+                      enrollment_id: enrollment.id,
+                      cs_id: finalCsId,
+                      after_session_number: cl.after_session_number,
+                      content: cl.content,
+                      outcome: CareLogOutcome.POSITIVE,
+                      created_by_id: actor.id,
+                    },
+                  });
+                }
+              }
+            }
           }
         });
 
