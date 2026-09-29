@@ -9,9 +9,13 @@ import { Button } from '../../../components/ui/Button';
 import { Input } from '../../../components/ui/Input';
 import { QrLoginDialog } from '../components/QrLoginDialog';
 import { useSocket } from '../../../hooks/useSocket';
+import { useAuth } from '../../../contexts/AuthContext';
 import { Plus, QrCode, Trash2, WifiOff, RefreshCw, Users } from 'lucide-react';
 
 export const ZaloAccountsPage: React.FC = () => {
+  const { user } = useAuth();
+  const isAdminOrManager = user?.roles?.some((r) => ['ADMIN', 'MANAGE'].includes(r));
+
   const [accounts, setAccounts] = useState<ZaloAccount[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -22,7 +26,12 @@ export const ZaloAccountsPage: React.FC = () => {
   const [deleteTarget, setDeleteTarget] = useState<ZaloAccount | null>(null);
 
   // Create form
-  const [form, setForm] = useState<CreateZaloAccountDTO>({ cs_id: 0, display_name: '', zalo_phone: '', proxy_url: '' });
+  const [form, setForm] = useState<CreateZaloAccountDTO>({
+    cs_id: user?.id || 0,
+    display_name: '',
+    zalo_phone: '',
+    proxy_url: '',
+  });
   const [formLoading, setFormLoading] = useState(false);
 
   const fetchAccounts = async () => {
@@ -182,7 +191,15 @@ export const ZaloAccountsPage: React.FC = () => {
               Làm mới
             </Button>
             <Button
-              onClick={() => setIsCreateOpen(true)}
+              onClick={() => {
+                setForm({
+                  cs_id: user?.id || 0,
+                  display_name: '',
+                  zalo_phone: '',
+                  proxy_url: '',
+                });
+                setIsCreateOpen(true);
+              }}
               variant="primary"
               size="sm"
               leftIcon={<Plus className="w-4 h-4" />}
@@ -221,10 +238,25 @@ export const ZaloAccountsPage: React.FC = () => {
               <button onClick={() => setIsCreateOpen(false)} className="text-gray-400 hover:text-gray-600 text-lg leading-none">&times;</button>
             </div>
             <form onSubmit={handleCreate} className="p-6 space-y-4">
-              <Input label="CS phu trach (User ID) *" type="number" required value={form.cs_id || ''} onChange={(e) => setForm({ ...form, cs_id: parseInt(e.target.value) || 0 })} placeholder="ID nhan vien CS" />
-              <Input label="Ten hien thi" value={form.display_name || ''} onChange={(e) => setForm({ ...form, display_name: e.target.value })} placeholder="VD: Nick CS An" />
-              <Input label="So dien thoai Zalo" value={form.zalo_phone || ''} onChange={(e) => setForm({ ...form, zalo_phone: e.target.value })} placeholder="0901234567" />
-              <Input label="Proxy URL (tuy chon)" value={form.proxy_url || ''} onChange={(e) => setForm({ ...form, proxy_url: e.target.value })} placeholder="http://proxy:port" />
+              {isAdminOrManager ? (
+                <Input
+                  label="CS phụ trách (User ID) *"
+                  type="number"
+                  required
+                  value={form.cs_id || ''}
+                  onChange={(e) => setForm({ ...form, cs_id: parseInt(e.target.value) || 0 })}
+                  placeholder="ID nhân viên CS"
+                />
+              ) : (
+                <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 text-sm">
+                  <span className="text-gray-500 block text-xs mb-1">CS phụ trách:</span>
+                  <span className="font-semibold text-gray-800">{user?.name || user?.email}</span>
+                  <span className="text-xs text-gray-500 ml-2">(ID: {user?.id})</span>
+                </div>
+              )}
+              <Input label="Tên hiển thị" value={form.display_name || ''} onChange={(e) => setForm({ ...form, display_name: e.target.value })} placeholder="VD: Nick CS An" />
+              <Input label="Số điện thoại Zalo" value={form.zalo_phone || ''} onChange={(e) => setForm({ ...form, zalo_phone: e.target.value })} placeholder="0901234567" />
+              <Input label="Proxy URL (tùy chọn)" value={form.proxy_url || ''} onChange={(e) => setForm({ ...form, proxy_url: e.target.value })} placeholder="http://proxy:port" />
               <div className="mt-6 flex justify-end gap-2 pt-4 border-t border-gray-100">
                 <Button variant="outline" type="button" onClick={() => setIsCreateOpen(false)}>Huy</Button>
                 <Button variant="primary" type="submit" isLoading={formLoading}>Tao tai khoan</Button>
