@@ -123,6 +123,22 @@ router.get('/accounts/:accountId/conversations', async (req: Request, res: Respo
       }
     }
 
+    // ─── Resolve group avatars from ZaloGroup table (fallback) ──────────────
+    const groupThreadsMissing = conversations
+      .filter((c) => c.thread_type === 'group' && !c.group_avatar_url)
+      .map((c) => c.external_thread_id);
+
+    const groupAvatarMap = new Map<string, string | null>();
+    if (groupThreadsMissing.length > 0) {
+      const zaloGroups = await prisma.zaloGroup.findMany({
+        where: { zalo_account_id: accountId, zalo_group_id: { in: groupThreadsMissing } },
+        select: { zalo_group_id: true, avatar_url: true },
+      });
+      for (const g of zaloGroups) {
+        if (g.avatar_url) groupAvatarMap.set(g.zalo_group_id, g.avatar_url);
+      }
+    }
+
     const result = conversations.map((c) => {
       // For user (DM) conversations, resolve name from Friend table first, then Contact table
       let resolvedName = c.display_name;
@@ -141,7 +157,7 @@ router.get('/accounts/:accountId/conversations', async (req: Request, res: Respo
       } else {
         // group: prefer group_name > display_name
         resolvedName = c.group_name || c.display_name || c.external_thread_id;
-        resolvedAvatar = c.group_avatar_url || null;
+        resolvedAvatar = c.group_avatar_url || groupAvatarMap.get(c.external_thread_id) || null;
       }
 
       return {
@@ -151,7 +167,7 @@ router.get('/accounts/:accountId/conversations', async (req: Request, res: Respo
         displayName: resolvedName,
         avatarUrl: resolvedAvatar,
         groupName: c.group_name,
-        groupAvatarUrl: c.group_avatar_url,
+        groupAvatarUrl: c.group_avatar_url || groupAvatarMap.get(c.external_thread_id) || null,
         groupMembersCount: c.group_members_count,
         tab: c.tab,
         unreadCount: c.unread_count,

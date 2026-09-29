@@ -79,8 +79,16 @@ export async function processDeliveryJob(job: Job<SendJobData>): Promise<void> {
       return;
     }
 
-    // 4. Get Zalo API from pool
-    const api = zaloPool.getApi(delivery.zalo_account_id);
+    // 4. Get Zalo API from pool (try reconnect if not connected)
+    let api = zaloPool.getApi(delivery.zalo_account_id);
+    if (!api) {
+      // Attempt auto-reconnect before giving up
+      const reconnected = await zaloPool.tryReconnect(delivery.zalo_account_id);
+      if (reconnected) {
+        api = zaloPool.getApi(delivery.zalo_account_id);
+        log.info('Zalo account auto-reconnected before send', { deliveryId, zaloAccountId: delivery.zalo_account_id });
+      }
+    }
     if (!api) {
       await prisma.messageDelivery.update({
         where: { id: deliveryId },
@@ -107,21 +115,14 @@ export async function processDeliveryJob(job: Job<SendJobData>): Promise<void> {
       let providerMessageId: string | null = null;
 
       if (delivery.zalo_group_id) {
-        // Send to group
+        // Send to group — zca-js: sendMessage(content, threadId, threadType=1)
         const groupId = delivery.zalo_group?.zalo_group_id;
         if (!groupId) {
           throw new Error('Group ID missing');
         }
-        const sent = await api.sendMessageToGroup?.(
-          groupId,
-          delivery.rendered_content,
-          undefined,
-          { msgType: 'text' },
-        );
-        providerMessageId = sent?.data?.messageId ?? sent?.messageId ?? null;
+        const sent = await api.sendMessage(delivery.rendered_content, groupId, 1);
+        providerMessageId = sent?.data?.messageId ?? sent?.msgId ?? sent?.messageId ?? null;
       } else {
-        // Send to personal (need the friend's zalo_uid)
-        // For personal sends we need to find the contact's zalo_uid via Friend table
         const zaloUid = await resolvePersonalTargetZaloUid(delivery);
         if (!zaloUid) {
           await prisma.messageDelivery.update({
@@ -131,10 +132,9 @@ export async function processDeliveryJob(job: Job<SendJobData>): Promise<void> {
           log.info('No friend UID resolved — skipping', { deliveryId });
           return;
         }
-        const sent = await api.sendMessage?.(zaloUid, delivery.rendered_content, undefined, {
-          msgType: 'text',
-        });
-        providerMessageId = sent?.data?.messageId ?? sent?.messageId ?? null;
+        // zca-js: sendMessage(content, threadId, threadType=0 for User)
+        const sent = await api.sendMessage(delivery.rendered_content, zaloUid, 0);
+        providerMessageId = sent?.data?.messageId ?? sent?.msgId ?? sent?.messageId ?? null;
       }
 
       // 7. Mark SENT
@@ -205,43 +205,83 @@ async function checkInvariants(delivery: any): Promise<{ shouldSend: boolean; sk
 }
 
 /**
+ * Normalize phone to last 9 digits for matching.
+ * Handles formats: 0988767563 → 988767563, 84988767563 → 988767563
+ */
+function normalizePhoneForMatch(phone: string): string {
+  const digits = phone.replace(/\D/g, '');
+  // Strip leading country code (84 for Vietnam, 0 for local)
+  if (digits.length >= 10 && digits.startsWith('84')) {
+    return digits.slice(2); // 84988767563 → 988767563
+  }
+  if (digits.length >= 10 && digits.startsWith('0')) {
+    return digits.slice(1); // 0988767563 → 988767563
+  }
+  return digits;
+}
+
+/**
  * Resolve the friend's zalo_uid for personal sends.
  * Looks in Friend table by student phone → friend.phone_from_sdk.
+ * Uses suffix matching (last 9 digits) for cross-format compatibility.
  */
 async function resolvePersonalTargetZaloUid(delivery: any): Promise<string | null> {
-  const phone = delivery.enrollment.student.phone;
-  if (!phone) return null;
-
-  // Try ZaloContactRelation first (has student_id linkage)
+  // 1. Try friend_zalo_uid stored on ZaloContactRelation (fast path)
   const relation = await prisma.zaloContactRelation.findFirst({
     where: {
       student_id: delivery.enrollment.student_id,
       zalo_account_id: delivery.zalo_account_id,
       relation_status: 'FRIEND',
     },
-    select: { id: true },
+    select: { id: true, friend_zalo_uid: true },
   });
-  if (relation) {
-    // Look up the friend's zalo_uid_in_nick in Friend table (phone match)
-    const friend = await prisma.friend.findFirst({
-      where: {
-        zalo_account_id: delivery.zalo_account_id,
-        phone_from_sdk: phone,
-      },
-      select: { zalo_uid_in_nick: true },
+
+  if (relation?.friend_zalo_uid) {
+    log.debug('Resolved target UID from relation.friend_zalo_uid', {
+      deliveryId: delivery.id,
+      friendZaloUid: relation.friend_zalo_uid,
     });
-    if (friend?.zalo_uid_in_nick) return friend.zalo_uid_in_nick;
+    return relation.friend_zalo_uid;
   }
 
-  // Fallback: direct phone match in Friend table
-  const friend = await prisma.friend.findFirst({
+  // 2. Fallback: phone-based suffix matching (legacy)
+  const phone = delivery.enrollment.student.phone;
+  if (!phone) {
+    log.warn('No phone and no friend_zalo_uid — cannot resolve', { deliveryId: delivery.id });
+    return null;
+  }
+
+  const normalize = (p: string) => p.replace(/\D/g, '').slice(-9);
+  const studentNorm = normalize(phone);
+  if (studentNorm.length < 9) return null;
+
+  const allFriends = await prisma.friend.findMany({
     where: {
       zalo_account_id: delivery.zalo_account_id,
-      phone_from_sdk: phone,
+      phone_from_sdk: { not: null },
     },
-    select: { zalo_uid_in_nick: true },
+    select: { zalo_uid_in_nick: true, phone_from_sdk: true },
   });
-  return friend?.zalo_uid_in_nick ?? null;
+  const fallback = allFriends.find((f) => {
+    if (!f.phone_from_sdk) return false;
+    return normalize(f.phone_from_sdk) === studentNorm;
+  });
+
+  if (fallback?.zalo_uid_in_nick) {
+    log.info('Resolved target UID via phone fallback', {
+      deliveryId: delivery.id,
+      friendZaloUid: fallback.zalo_uid_in_nick,
+    });
+    // Backfill relation for future lookups
+    if (relation) {
+      prisma.zaloContactRelation.update({
+        where: { id: relation.id },
+        data: { friend_zalo_uid: fallback.zalo_uid_in_nick },
+      }).catch(() => {});
+    }
+  }
+
+  return fallback?.zalo_uid_in_nick ?? null;
 }
 
 // ─── Worker singleton ────────────────────────────────────────────────
@@ -260,13 +300,17 @@ export function startAutomationWorker(): Worker | null {
     return null;
   }
 
+  const bullMqConnection = (redis as any).duplicate({
+    maxRetriesPerRequest: null,
+    enableReadyCheck: false,
+  });
   _worker = new Worker(
     'automation-delivery',
     async (job: Job<SendJobData>) => {
       await processDeliveryJob(job);
     },
     {
-      connection: redis as any,
+      connection: bullMqConnection,
       concurrency: 5,
     },
   );

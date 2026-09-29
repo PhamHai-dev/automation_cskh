@@ -22,6 +22,7 @@ import {
   Inbox,
   Users,
   RefreshCw,
+  BookOpen,
 } from 'lucide-react';
 
 type TabType = 'unlinked' | 'suggest' | 'linked';
@@ -73,8 +74,11 @@ export const StudentZaloLinkPage: React.FC = () => {
   // ── Edit popup state ─────────────────────────────────────────────────
   const [editPopupOpen, setEditPopupOpen] = useState(false);
   const [editRelation, setEditRelation] = useState<any>(null);
-  const [editDisplayName, setEditDisplayName] = useState('');
-  const [editRelationStatus, setEditRelationStatus] = useState('FRIEND');
+  const [editPopupAccountId, setEditPopupAccountId] = useState<string>('');
+  const [editPopupFriends, setEditPopupFriends] = useState<FriendRow[]>([]);
+  const [editPopupSearch, setEditPopupSearch] = useState('');
+  const [editPopupSelected, setEditPopupSelected] = useState<FriendRow | null>(null);
+  const [editPopupFriendsLoading, setEditPopupFriendsLoading] = useState(false);
   const [editSaving, setEditSaving] = useState(false);
 
   const [linkingId, setLinkingId] = useState<string | null>(null);
@@ -177,6 +181,7 @@ export const StudentZaloLinkPage: React.FC = () => {
         zalo_account_id: linkPopupSelected.zalo_account_id,
         relation_status: 'FRIEND',
         display_name: linkPopupSelected.zalo_display_name || linkPopupSelected.alias_in_nick || undefined,
+        friend_zalo_uid: linkPopupSelected.zalo_uid_in_nick || undefined,
       });
       toast.success(`Đã liên kết ${linkPopupStudent.full_name} ↔ ${(linkPopupSelected.zalo_display_name || linkPopupSelected.alias_in_nick || 'Nick')}`);
       setLinkPopupOpen(false);
@@ -202,24 +207,56 @@ export const StudentZaloLinkPage: React.FC = () => {
     }
   };
 
-  // ─── Open edit popup ───────────────────────────────────────────────
-  const openEditPopup = (relation: any) => {
+  // ─── Open edit popup (contact picker) ────────────────────────────
+  const openEditPopup = async (relation: any) => {
     setEditRelation(relation);
-    setEditDisplayName(relation.display_name || '');
-    setEditRelationStatus(relation.relation_status || 'FRIEND');
+    const accountId = String(relation.zalo_account_id ?? '');
+    setEditPopupAccountId(accountId);
+    setEditPopupSearch('');
+    setEditPopupSelected(null);
     setEditPopupOpen(true);
+    // Fetch friends for this account and try to pre-select current friend
+    if (accountId) {
+      try {
+        setEditPopupFriendsLoading(true);
+        const res = await zaloApi.getFriendsDb(Number(accountId), { limit: 200 });
+        const friends: FriendRow[] = res.data?.friends ?? res.friends ?? [];
+        setEditPopupFriends(friends);
+        // Try to find current friend by display_name or avatar match
+        const match = friends.find(
+          (f) =>
+            (relation.display_name && (f.zalo_display_name === relation.display_name || f.alias_in_nick === relation.display_name)) ||
+            (relation.friendZaloUid && f.zalo_uid_in_nick === relation.friendZaloUid),
+        );
+        if (match) setEditPopupSelected(match);
+      } catch {
+        setEditPopupFriends([]);
+      } finally {
+        setEditPopupFriendsLoading(false);
+      }
+    }
   };
 
-  // ─── Save edit ─────────────────────────────────────────────────────
+  // ─── Save edit (change link target) ─────────────────────────────
   const handleEditSave = async () => {
-    if (!editRelation) return;
+    if (!editRelation || !editPopupSelected) return;
     try {
       setEditSaving(true);
-      await automationApi.updateLink(editRelation.id, {
-        display_name: editDisplayName,
-        relation_status: editRelationStatus,
-      });
-      toast.success('Đã cập nhật liên kết');
+      const newAccountId = Number(editPopupAccountId);
+      const payload: any = {
+        display_name: editPopupSelected.zalo_display_name || editPopupSelected.alias_in_nick || undefined,
+        relation_status: 'FRIEND',
+        friend_zalo_uid: editPopupSelected.zalo_uid_in_nick || undefined,
+      };
+      if (newAccountId !== editRelation.zalo_account_id) {
+        payload.new_zalo_account_id = newAccountId;
+      }
+      await automationApi.updateLink(editRelation.id, payload);
+      toast.success(
+        newAccountId !== editRelation.zalo_account_id
+          ? 'Đã chuyển liên kết sang nick mới'
+          : 'Đã cập nhật liên kết',
+      );
       setEditPopupOpen(false);
       fetchLinked();
     } catch (err: any) {
@@ -239,6 +276,7 @@ export const StudentZaloLinkPage: React.FC = () => {
         zalo_account_id: item.friend.zalo_account_id,
         relation_status: 'FRIEND',
         display_name: item.friend.display_name ?? undefined,
+        friend_zalo_uid: item.friend.zalo_uid ?? undefined,
       });
       toast.success(`Đã liên kết ${item.student.full_name} ↔ nick #${item.friend.zalo_account_id}`);
       fetchSuggestions();
@@ -253,6 +291,17 @@ export const StudentZaloLinkPage: React.FC = () => {
   const filteredFriends = linkPopupFriends.filter((f) => {
     if (!linkPopupSearch) return true;
     const q = linkPopupSearch.toLowerCase();
+    return (
+      (f.zalo_display_name || '').toLowerCase().includes(q) ||
+      (f.alias_in_nick || '').toLowerCase().includes(q) ||
+      (f.phone_from_sdk || '').includes(q) ||
+      (f.zalo_uid_in_nick || '').includes(q)
+    );
+  });
+
+  const filteredEditFriends = editPopupFriends.filter((f) => {
+    if (!editPopupSearch) return true;
+    const q = editPopupSearch.toLowerCase();
     return (
       (f.zalo_display_name || '').toLowerCase().includes(q) ||
       (f.alias_in_nick || '').toLowerCase().includes(q) ||
@@ -427,15 +476,55 @@ export const StudentZaloLinkPage: React.FC = () => {
                     {linkedItems.map((r: any) => (
                       <div key={r.id} className="px-4 py-3 flex items-center justify-between gap-4 hover:bg-surface-muted/30 transition-colors">
                         <div className="flex items-center gap-3 min-w-0">
-                          <div className="w-9 h-9 rounded-full bg-gradient-to-br from-emerald-100 to-emerald-200 text-emerald-700 flex items-center justify-center text-xs font-bold shrink-0">
-                            {r.student?.full_name?.charAt(0) || '?'}
+                          <div className="relative shrink-0">
+                            <div className="w-9 h-9 rounded-full bg-gradient-to-br from-emerald-100 to-emerald-200 text-emerald-700 flex items-center justify-center text-xs font-bold">
+                              {r.student?.full_name?.charAt(0) || '?'}
+                            </div>
+                            {(r.friendAvatarUrl || r.zalo_account?.avatar_url) && (
+                              <img
+                                src={r.friendAvatarUrl || r.zalo_account?.avatar_url}
+                                alt=""
+                                className="absolute -bottom-0.5 -right-0.5 w-5 h-5 rounded-full object-cover border-2 border-white"
+                              />
+                            )}
                           </div>
                           <div className="min-w-0">
                             <div className="text-sm font-semibold text-text-primary truncate">
                               {r.student?.full_name}
+                              <span className="ml-1.5 text-[10px] font-mono text-text-muted">#{r.student?.id ?? '—'}</span>
                               {r.student?.phone && <span className="ml-2 text-xs font-normal text-text-muted">{r.student.phone}</span>}
                             </div>
-                            <div className="text-[11px] text-text-muted flex items-center gap-1.5">
+                            <div className="text-[11px] text-text-muted flex flex-wrap items-center gap-1.5 mt-0.5">
+                              {r.student?.email && <span className="inline-flex items-center gap-0.5">📧 {r.student.email}</span>}
+                              {r.student?.enrollments?.[0]?.package?.name && (
+                                <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-primary/5 text-primary text-[10px] font-bold">
+                                  {r.student.enrollments[0].package.name}
+                                </span>
+                              )}
+                              {r.student?.enrollments?.[0]?.cs?.name && (
+                                <span className="inline-flex items-center gap-0.5">• CS: {r.student.enrollments[0].cs.name}</span>
+                              )}
+                            </div>
+                            <div className="text-[11px] text-text-muted flex flex-wrap items-center gap-1.5 mt-0.5">
+                              <BookOpen className="w-3 h-3 text-indigo-500" />
+                              {r.student?.enrollments?.[0]?.enrollment_classes?.[0]?.class ? (
+                                <span>
+                                  Lớp:{' '}
+                                  <strong className="text-text-secondary">
+                                    {r.student.enrollments[0].enrollment_classes[0].class.class_name}
+                                    {r.student.enrollments[0].enrollment_classes[0].class.class_code
+                                      ? ` (${r.student.enrollments[0].enrollment_classes[0].class.class_code})`
+                                      : ''}
+                                  </strong>
+                                </span>
+                              ) : (
+                                <span className="text-text-muted/60">Chưa xếp lớp</span>
+                              )}
+                              {r.student?.enrollments?.[0]?.enrollment_classes?.[0]?.class?.class_teachers?.[0]?.teacher?.name && (
+                                <span className="inline-flex items-center gap-0.5">• Giáo viên: {r.student.enrollments[0].enrollment_classes[0].class.class_teachers[0].teacher.name}</span>
+                              )}
+                            </div>
+                            <div className="text-[11px] text-text-muted flex items-center gap-1.5 mt-0.5">
                               <Link2 className="w-3 h-3 text-emerald-500" />
                               <span>
                                 Zalo: <strong className="text-emerald-700">{r.display_name || '—'}</strong>
@@ -650,46 +739,150 @@ export const StudentZaloLinkPage: React.FC = () => {
         </div>
       </Modal>
 
-      {/* ── POPUP: Sửa liên kết ──────────────────────────────────── */}
+      {/* ── POPUP: Sửa liên kết (= chuyển đích Zalo) ────────────── */}
       <Modal
         isOpen={editPopupOpen}
         onClose={() => setEditPopupOpen(false)}
         title={editRelation ? `Sửa liên kết: ${editRelation.student?.full_name || '—'}` : 'Sửa liên kết'}
-        description="Chỉnh sửa tên hiển thị Zalo và trạng thái liên kết."
-        size="sm"
+        description={
+          editRelation?.student?.phone
+            ? `Học viên #${editRelation.student.id ?? '—'} · SĐT ${editRelation.student.phone} — chuyển sang nick Zalo khác và chọn lại người trong danh bạ.`
+            : 'Chuyển liên kết sang nick Zalo khác và chọn lại người trong danh bạ.'
+        }
+        size="md"
         footer={
           <>
             <Button variant="outline" onClick={() => setEditPopupOpen(false)}>
               Hủy
             </Button>
-            <Button variant="primary" onClick={handleEditSave} isLoading={editSaving} leftIcon={<Check className="w-4 h-4" />}>
-              Lưu
+            <Button
+              variant="primary"
+              onClick={handleEditSave}
+              isLoading={editSaving}
+              disabled={!editPopupSelected}
+              leftIcon={<Check className="w-4 h-4" />}
+            >
+              Lưu liên kết mới
             </Button>
           </>
         }
       >
+        {/* Nick Zalo (credential / QR-login account) */}
         <div className="space-y-4">
           <div>
-            <label className="block text-xs font-semibold text-text-secondary mb-1.5">Tên hiển thị Zalo:</label>
-            <Input
-              value={editDisplayName}
-              onChange={(e) => setEditDisplayName(e.target.value)}
-              placeholder="Nhập tên hiển thị..."
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-semibold text-text-secondary mb-1.5">Trạng thái:</label>
+            <label className="block text-xs font-semibold text-text-secondary mb-1.5">
+              Nick Zalo (lấy danh bạ)
+            </label>
             <select
-              value={editRelationStatus}
-              onChange={(e) => setEditRelationStatus(e.target.value)}
+              value={editPopupAccountId}
+              onChange={async (e) => {
+                const newId = e.target.value;
+                setEditPopupAccountId(newId);
+                if (!newId) {
+                  setEditPopupFriends([]);
+                  setEditPopupSelected(null);
+                  return;
+                }
+                setEditPopupFriendsLoading(true);
+                try {
+                  const res = await zaloApi.getFriendsDb(Number(newId), { limit: 200 });
+                  const friends: FriendRow[] = res.data?.friends ?? res.friends ?? [];
+                  setEditPopupFriends(friends);
+                } catch {
+                  setEditPopupFriends([]);
+                } finally {
+                  setEditPopupFriendsLoading(false);
+                }
+                setEditPopupSelected(null);
+                setEditPopupSearch('');
+              }}
               className="w-full px-3 py-2 text-sm bg-surface-muted border border-border/80 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20"
             >
-              <option value="FRIEND">FRIEND (Bạn bè)</option>
-              <option value="STRANGER">STRANGER (Người lạ)</option>
-              <option value="UNKNOWN">UNKNOWN (Không rõ)</option>
-              <option value="BLOCKED">BLOCKED (Bị chặn)</option>
+              {accounts.map((a) => (
+                <option key={a.id} value={String(a.id)}>
+                  {a.display_name || `Nick #${a.id}`} — {a.zalo_phone || '—'}
+                </option>
+              ))}
             </select>
+            <p className="mt-1 text-[10px] text-text-muted">CS quét QR đăng nhập để tạo nick này; đổi nick sẽ load lại danh bạ bên dưới.</p>
           </div>
+
+          {/* Search in contact list */}
+          <div>
+            <label className="block text-xs font-semibold text-text-secondary mb-1.5">
+              Chọn lại bạn bè trong danh bạ
+            </label>
+            <Input
+              placeholder="Tìm theo tên, SĐT, UID..."
+              value={editPopupSearch}
+              onChange={(e) => setEditPopupSearch(e.target.value)}
+              leftIcon={<Search className="w-4 h-4 text-text-muted" />}
+            />
+          </div>
+
+          {/* Friends list */}
+          <div className="max-h-[320px] overflow-y-auto border border-border/80 rounded-xl">
+            {editPopupFriendsLoading ? (
+              <div className="flex items-center justify-center py-8 text-text-muted text-sm gap-2">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Đang tải danh bạ...
+              </div>
+            ) : filteredEditFriends.length === 0 ? (
+              <div className="text-center py-8 text-text-muted text-xs">
+                {editPopupFriends.length === 0
+                  ? 'Chưa có bạn bè nào cho nick này. Hãy đồng bộ danh bạ.'
+                  : 'Không tìm thấy kết quả.'}
+              </div>
+            ) : (
+              <div className="divide-y divide-border/60">
+                {filteredEditFriends.map((f) => {
+                  const isSelected = editPopupSelected?.zalo_uid_in_nick === f.zalo_uid_in_nick;
+                  return (
+                    <button
+                      key={f.id}
+                      onClick={() => setEditPopupSelected(f)}
+                      className={`w-full px-3 py-2.5 flex items-center gap-3 text-left transition-colors ${
+                        isSelected ? 'bg-primary/5 ring-2 ring-primary/30' : 'hover:bg-surface-muted/50'
+                      }`}
+                    >
+                      {f.avatar_url ? (
+                        <img src={f.avatar_url} alt="" className="w-8 h-8 rounded-full object-cover shrink-0" />
+                      ) : (
+                        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-violet-100 to-violet-200 text-violet-700 flex items-center justify-center text-xs font-bold shrink-0">
+                          {(f.zalo_display_name || f.alias_in_nick || '?').charAt(0)}
+                        </div>
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm font-medium text-text-primary truncate">
+                          {f.zalo_display_name || f.alias_in_nick || f.zalo_uid_in_nick || '—'}
+                        </div>
+                        <div className="text-[11px] text-text-muted truncate">
+                          {f.phone_from_sdk && <span>SĐT: {f.phone_from_sdk}</span>}
+                          {f.zalo_uid_in_nick && <span> · UID: {f.zalo_uid_in_nick}</span>}
+                        </div>
+                      </div>
+                      {isSelected && <Check className="w-4 h-4 text-primary shrink-0" />}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {editPopupSelected && (
+            <div className="p-3 bg-primary-soft border border-primary-border rounded-xl text-xs text-primary flex items-center gap-2">
+              <Check className="w-4 h-4 shrink-0" />
+              <span>
+                Sẽ liên kết <strong>{editRelation?.student?.full_name}</strong> →{' '}
+                <strong>
+                  {editPopupSelected.zalo_display_name || editPopupSelected.alias_in_nick || editPopupSelected.zalo_uid_in_nick}
+                </strong>
+                {editPopupAccountId && Number(editPopupAccountId) !== editRelation?.zalo_account_id && (
+                  <span className="ml-1 text-amber-600">(đổi nick)</span>
+                )}
+              </span>
+            </div>
+          )}
         </div>
       </Modal>
     </PageContainer>

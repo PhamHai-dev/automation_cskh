@@ -97,6 +97,26 @@ export const automationApi = {
     return res.data;
   },
 
+  listAvailableEnrollments: async (
+    workflowId: number,
+    params?: { q?: string; page?: number; limit?: number }
+  ): Promise<{
+    items: Array<{
+      id: number;
+      student: { id: number; full_name: string; phone: string | null; email: string | null };
+      cs: { id: number; name: string } | null;
+      start_date: string | null;
+      status: string;
+    }>;
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+  }> => {
+    const res = await apiClient.get(`/automation/workflows/${workflowId}/enrollments/available`, { params });
+    return res.data;
+  },
+
   addEnrollments: async (
     workflowId: number,
     enrollmentIds: number[]
@@ -180,6 +200,7 @@ export const automationApi = {
     zalo_account_id: number;
     relation_status?: string;
     display_name?: string;
+    friend_zalo_uid?: string;
   }): Promise<{ relation: any }> => {
     const res = await apiClient.post('/zalo/links', data);
     return res.data;
@@ -191,7 +212,7 @@ export const automationApi = {
 
   updateLink: async (
     linkId: number,
-    data: { display_name?: string; relation_status?: string }
+    data: { display_name?: string; relation_status?: string; new_zalo_account_id?: number; friend_zalo_uid?: string }
   ): Promise<{ relation: any }> => {
     const res = await apiClient.patch(`/zalo/links/${linkId}`, data);
     return res.data;

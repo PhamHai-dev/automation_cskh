@@ -12,3 +12,4 @@ frontend/.vite/
 backend/uploads/
 ~$*
 *.tmp
+backend/scratch-*.js

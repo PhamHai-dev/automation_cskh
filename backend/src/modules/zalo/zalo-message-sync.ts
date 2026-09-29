@@ -37,7 +37,7 @@ async function syncGroupMessages(api: any, accountId: number): Promise<number> {
   // Nhung group conversation moi nhat (top N) cua nick
   const groupConvs = await prisma.conversation.findMany({
     where: { zalo_account_id: accountId, thread_type: 'group' },
-    select: { id: true, external_thread_id: true, display_name: true, group_name: true },
+    select: { id: true, external_thread_id: true, display_name: true, group_name: true, group_avatar_url: true },
     take: MAX_GROUPS_PER_SYNC,
     orderBy: { last_message_at: 'desc' },
   });
@@ -46,8 +46,11 @@ async function syncGroupMessages(api: any, accountId: number): Promise<number> {
 
   for (const conv of groupConvs) {
     try {
-      // ─── Backfill group display_name if still raw ID ────────────────────
-      if (!conv.group_name || conv.group_name === conv.external_thread_id) {
+      // ─── Backfill group display_name/avatar if still raw/missing ────────
+      const needsBackfill = !conv.group_name
+        || conv.group_name === conv.external_thread_id
+        || !conv.group_avatar_url;
+      if (needsBackfill) {
         try {
           const infoRes: any = await api.getGroupInfo?.(conv.external_thread_id);
           const info = infoRes?.gridInfoMap?.[conv.external_thread_id]
@@ -55,10 +58,20 @@ async function syncGroupMessages(api: any, accountId: number): Promise<number> {
           if (info) {
             const newName = info.name || info.groupName || null;
             const newAvatar = info.fullAvt || info.avt || null;
+            const upd: Record<string, unknown> = {
+              group_avatar_url: newAvatar ?? conv.group_avatar_url,
+            };
             if (newName) {
+              upd.group_name = newName;
+              upd.display_name = newName;
+              upd.group_avatar_url = newAvatar ?? conv.group_avatar_url;
+            } else if (newAvatar) {
+              upd.group_avatar_url = newAvatar;
+            }
+            if (Object.keys(upd).length > 0) {
               await prisma.conversation.update({
                 where: { id: conv.id },
-                data: { group_name: newName, display_name: newName, group_avatar_url: newAvatar },
+                data: upd as any,
               });
             }
           }

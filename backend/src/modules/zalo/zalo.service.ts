@@ -27,6 +27,7 @@ export class ZaloService {
         zalo_uid: a.zalo_uid,
         display_name: a.display_name,
         zalo_phone: a.zalo_phone,
+        avatar_url: a.avatar_url,
         status: a.status,
         last_connected_at: a.last_connected_at,
         last_login_at: a.last_login_at,

@@ -66,6 +66,29 @@ router.post('/workflows', async (req: Request, res: Response) => {
   }
 });
 
+// Available enrollments (popup chon HV)
+router.get('/workflows/:id/enrollments/available', async (req: Request, res: Response) => {
+  try {
+    const workflowId = Number(req.params.id);
+    if (isNaN(workflowId) || workflowId < 1) {
+      return res.status(400).json({ success: false, message: 'Invalid workflow ID' });
+    }
+    const result = await automationService.listAvailableEnrollments(
+      workflowId,
+      req.user!.id,
+      getRole(req),
+      {
+        q: (req.query.q as string)?.trim(),
+        page: req.query.page ? Number(req.query.page) : undefined,
+        limit: req.query.limit ? Number(req.query.limit) : undefined,
+      },
+    );
+    res.json({ success: true, ...result });
+  } catch (err: any) {
+    handleError(res, err);
+  }
+});
+
 // Get workflow detail (with steps + enrollments count)
 router.get('/workflows/:id', async (req: Request, res: Response) => {
   try {

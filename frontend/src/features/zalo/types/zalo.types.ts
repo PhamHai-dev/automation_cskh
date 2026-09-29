@@ -25,6 +25,7 @@ export interface ZaloAccount {
   zalo_uid: string | null;
   display_name: string | null;
   zalo_phone: string | null;
+  avatar_url: string | null;
   status: ZaloAccountStatus;
   proxy_url: string | null;
   last_connected_at: string | null;
