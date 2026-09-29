@@ -28,6 +28,7 @@ interface NavItem {
   path: string;
   icon: React.ReactNode;
   allowedRoles?: string[];
+  end?: boolean;
 }
 
 interface NavGroup {
@@ -108,6 +109,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           path: '/zalo',
           icon: <MessageSquare className="w-5 h-5 shrink-0" />,
           allowedRoles: ['ADMIN', 'MANAGE', 'CS'],
+          end: true,
         },
         {
           name: 'Danh bạ Zalo',
@@ -204,6 +206,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <NavLink
                   key={item.path}
                   to={item.path}
+                  end={item.end}
                   onClick={onMobileClose}
                   className={({ isActive }) =>
                     `flex items-center gap-3 px-3 py-2.5 rounded-xl font-medium text-xs sm:text-sm transition-all duration-150 ${isActive
