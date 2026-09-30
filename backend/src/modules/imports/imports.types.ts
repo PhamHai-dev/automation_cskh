@@ -3,6 +3,28 @@ import { ImportBatchStatus, ImportType } from '@prisma/client';
 export type LogicalSheet = 'studentEnrollment' | 'attendance';
 export type ReconcileClassification = 'UPDATE' | 'CREATE' | 'REQUEST_TRANSFER' | 'REQUEST_CREATE' | 'CONFLICT' | 'INVALID' | 'SKIPPED_SCOPE';
 
+export interface MonthAttendanceBlock {
+  month: number;
+  year: number;
+  label: string;
+  startCol: number;
+  endCol: number;
+  totalDays: number;
+  summaryCols: {
+    attendedCol: number;
+    absentACol: number;
+    leaveBCol: number;
+    absentCCol: number;
+    teacherDCol: number;
+    techErrorECol: number;
+  };
+  dailyCols: Array<{
+    colNumber: number;
+    colLetter: string;
+    date: string;
+  }>;
+}
+
 export interface SheetPreviewData {
   sheet?: LogicalSheet;
   sheetName: string;
@@ -11,6 +33,9 @@ export interface SheetPreviewData {
   rows: Record<string, unknown>[];
   totalRows: number;
   suggestedMapping: Record<string, string>;
+  availableMonths?: MonthAttendanceBlock[];
+  selectedMonth?: number;
+  selectedYear?: number;
 }
 
 export interface UploadResponse {
@@ -30,6 +55,8 @@ export interface SaveMappingDTO {
   headerRowIndex?: number;
   columnMapping: Record<string, string>;
   assignedCsId?: number;
+  selectedMonth?: number;
+  selectedYear?: number;
 }
 
 export interface ValidationErrorItem {

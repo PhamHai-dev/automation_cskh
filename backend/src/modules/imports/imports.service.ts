@@ -4,7 +4,7 @@ import ExcelJS from 'exceljs';
 import { ImportBatchStatus, ImportRowStatus, ImportType, AttendanceStatus, AttendanceSource, EnrollmentStatus, EnrollmentClassStatus, ImportCreateRequestStatus, ClassModelType, Prisma, CareLogOutcome } from '@prisma/client';
 import { prisma } from '../../prisma/client';
 import { ImportsRepository } from './imports.repository';
-import { SheetPreviewData, UploadResponse, ValidationReport, ValidationErrorItem, ValidationWarningItem, SaveMappingDTO, ImportBatchSummary, RequestActor, ReconcileItem, ReconcileClassification, LogicalSheet } from './imports.types';
+import { SheetPreviewData, UploadResponse, ValidationReport, ValidationErrorItem, ValidationWarningItem, SaveMappingDTO, ImportBatchSummary, RequestActor, ReconcileItem, ReconcileClassification, LogicalSheet, MonthAttendanceBlock } from './imports.types';
 import { AppError } from '../../middlewares/error.middleware';
 
 export class ImportsService {
@@ -56,6 +56,11 @@ export class ImportsService {
   // Helper to parse Excel dates safely
   public parseExcelDate(val: any): Date | null {
     if (!val) return null;
+    if (typeof val === 'object' && val !== null) {
+      if ('result' in val && val.result !== undefined && val.result !== null) {
+        val = val.result;
+      }
+    }
     if (val instanceof Date && !isNaN(val.getTime())) {
       return val;
     }
@@ -228,9 +233,13 @@ export class ImportsService {
         return `${y}-${m}-${d} ${hh}:${mm}:${ss}`;
       }
       if ('hyperlink' in value && value.hyperlink) return String(value.hyperlink).trim();
-      if ('result' in value) value = value.result;
-      else if ('text' in value) value = value.text;
-      else if ('richText' in value) value = value.richText.map((part: any) => part.text).join('');
+      if ('result' in value && value.result !== undefined && value.result !== null) {
+        value = value.result;
+      } else if ('text' in value) {
+        value = value.text;
+      } else if ('richText' in value) {
+        value = value.richText.map((part: any) => part.text).join('');
+      }
     }
     if (value instanceof Date && !isNaN(value.getTime())) {
       const iso = value.toISOString();
@@ -249,6 +258,94 @@ export class ImportsService {
     return value === undefined || value === null ? '' : String(value).trim();
   }
 
+  public detectAttendanceMonthBlocks(worksheet: ExcelJS.Worksheet): MonthAttendanceBlock[] {
+    const row1 = worksheet.getRow(1);
+    const row2 = worksheet.getRow(2);
+
+    let defaultYear = new Date().getFullYear();
+    for (let c = 1; c <= 30; c++) {
+      const val = row1.getCell(c).value;
+      const num = Number(typeof val === 'object' && val !== null && 'result' in val ? (val as any).result : val);
+      if (num >= 2020 && num <= 2035) {
+        defaultYear = num;
+        break;
+      }
+    }
+
+    const rawMonths: Array<{ month: number; year: number; startCol: number }> = [];
+    for (let c = 26; c <= worksheet.columnCount; c++) {
+      const c1 = row1.getCell(c);
+      const t1 = c1.text ? c1.text.trim() : '';
+      let val1 = c1.value;
+      if (val1 && typeof val1 === 'object' && 'result' in val1) {
+        val1 = (val1 as any).result;
+      }
+
+      let m: number | null = null;
+      let y = defaultYear;
+
+      const matchThang = t1.match(/Tháng\s*(\d{1,2})/i);
+      if (matchThang) {
+        m = parseInt(matchThang[1], 10);
+      } else if (val1 instanceof Date || (typeof val1 === 'string' && val1.length > 7 && !isNaN(Date.parse(val1)))) {
+        const parsedDate = this.parseExcelDate(val1) || this.parseExcelDate(t1);
+        if (parsedDate && parsedDate.getFullYear() >= 2020) {
+          m = parsedDate.getMonth() + 1;
+          y = parsedDate.getFullYear();
+        }
+      }
+
+      if (m !== null && m >= 1 && m <= 12) {
+        rawMonths.push({ month: m, year: y, startCol: c });
+      }
+    }
+
+    const blocks: MonthAttendanceBlock[] = [];
+    for (let i = 0; i < rawMonths.length; i++) {
+      const cur = rawMonths[i];
+      const endCol = i < rawMonths.length - 1 ? rawMonths[i + 1].startCol - 1 : worksheet.columnCount;
+
+      const summaryCols = {
+        attendedCol: cur.startCol,
+        absentACol: cur.startCol + 1,
+        leaveBCol: cur.startCol + 2,
+        absentCCol: cur.startCol + 3,
+        teacherDCol: cur.startCol + 4,
+        techErrorECol: cur.startCol + 5,
+      };
+
+      const dailyCols: MonthAttendanceBlock['dailyCols'] = [];
+      for (let c = cur.startCol + 6; c <= endCol; c++) {
+        const c2 = row2.getCell(c);
+        const parsedDate = this.parseExcelDate(c2.value) || this.parseExcelDate(c2.text);
+        if (parsedDate) {
+          dailyCols.push({
+            colNumber: c,
+            colLetter: worksheet.getColumn(c).letter,
+            date: parsedDate.toISOString(),
+          });
+        }
+      }
+
+      if (dailyCols.length === 0) continue;
+
+      const blockYear = new Date(dailyCols[0].date).getFullYear() || cur.year;
+
+      blocks.push({
+        month: cur.month,
+        year: blockYear,
+        label: `Tháng ${cur.month}/${blockYear}`,
+        startCol: cur.startCol,
+        endCol,
+        totalDays: dailyCols.length,
+        summaryCols,
+        dailyCols,
+      });
+    }
+
+    return blocks;
+  }
+
   private buildPreview(worksheet: ExcelJS.Worksheet, logical: LogicalSheet, limit = 10): SheetPreviewData {
     const type = logical === 'studentEnrollment' ? ImportType.STUDENT_ENROLLMENT : ImportType.ATTENDANCE;
     const { headerRowIdx, headers, suggestedMapping } = this.detectColumns(worksheet, type);
@@ -259,7 +356,17 @@ export class ImportsService {
       row.eachCell({ includeEmpty: false }, (cell, col) => { item[worksheet.getColumn(col).letter] = this.cellText(cell); });
       if (Object.keys(item).length > 1) rows.push(item);
     }
-    return { sheet: logical, sheetName: worksheet.name, headerRowIndex: headerRowIdx, headers, rows, totalRows: Math.max(0, worksheet.rowCount - headerRowIdx), suggestedMapping };
+    const availableMonths = logical === 'attendance' ? this.detectAttendanceMonthBlocks(worksheet) : undefined;
+    return {
+      sheet: logical,
+      sheetName: worksheet.name,
+      headerRowIndex: headerRowIdx,
+      headers,
+      rows,
+      totalRows: Math.max(0, worksheet.rowCount - headerRowIdx),
+      suggestedMapping,
+      availableMonths,
+    };
   }
 
   private async assertBatchAccess(importId: number, actor?: RequestActor, write = false) {
@@ -457,6 +564,7 @@ export class ImportsService {
         rows: previewRows,
         totalRows,
         suggestedMapping,
+        availableMonths: importType === ImportType.ATTENDANCE ? this.detectAttendanceMonthBlocks(worksheet) : undefined,
       },
       assignedCsId: effectiveAssignedCsId,
     };
@@ -489,7 +597,10 @@ export class ImportsService {
       if (!sheetMeta) throw new AppError(400, 'Sheet logic không hợp lệ');
       const ws = workbook.getWorksheet(sheetMeta.sheetName);
       if (!ws) throw new AppError(400, `Không tìm thấy sheet ${sheetMeta.sheetName}`);
-      return this.buildPreview(ws, logical, limit);
+      const p = this.buildPreview(ws, logical, limit);
+      p.selectedMonth = sheetMeta.selectedMonth;
+      p.selectedYear = sheetMeta.selectedYear;
+      return p;
     }
 
     const targetSheet = sheetName || meta.selectedSheet;
@@ -536,6 +647,9 @@ export class ImportsService {
       rows: previewRows,
       totalRows,
       suggestedMapping,
+      availableMonths: meta.importType === ImportType.ATTENDANCE ? this.detectAttendanceMonthBlocks(worksheet) : undefined,
+      selectedMonth: meta.selectedMonth,
+      selectedYear: meta.selectedYear,
     };
   }
 
@@ -563,6 +677,8 @@ export class ImportsService {
       if (!meta.sheets?.[sheetKey]) throw new AppError(400, 'sheet phải là studentEnrollment hoặc attendance');
       meta.sheets[sheetKey].headerRowIdx = dto.headerRowIndex || meta.sheets[sheetKey].headerRowIdx;
       meta.sheets[sheetKey].columnMapping = { ...meta.sheets[sheetKey].columnMapping, ...dto.columnMapping };
+      if (dto.selectedMonth !== undefined) meta.sheets[sheetKey].selectedMonth = dto.selectedMonth;
+      if (dto.selectedYear !== undefined) meta.sheets[sheetKey].selectedYear = dto.selectedYear;
       this.saveMeta(importId, meta);
       return { success: true, columnMapping: meta.sheets[sheetKey].columnMapping, assignedCsId: meta.assignedCsId };
     }
@@ -570,6 +686,8 @@ export class ImportsService {
     if (dto.sheetName) meta.selectedSheet = dto.sheetName;
     if (dto.headerRowIndex) meta.headerRowIdx = dto.headerRowIndex;
     meta.columnMapping = { ...meta.columnMapping, ...dto.columnMapping };
+    if (dto.selectedMonth !== undefined) meta.selectedMonth = dto.selectedMonth;
+    if (dto.selectedYear !== undefined) meta.selectedYear = dto.selectedYear;
 
     this.saveMeta(importId, meta);
     return { success: true, columnMapping: meta.columnMapping, assignedCsId: meta.assignedCsId };
@@ -660,16 +778,28 @@ export class ImportsService {
         if (rowHasError) invalidRowsCount++;
       });
     } else if (meta.importType === ImportType.ATTENDANCE) {
-      // Find date columns in header row
+      let monthBlocks = this.detectAttendanceMonthBlocks(worksheet);
+      if (meta.selectedMonth) {
+        monthBlocks = monthBlocks.filter(b => b.month === meta.selectedMonth && (!meta.selectedYear || b.year === meta.selectedYear));
+      }
+
       const dateCols: { col: string; date: Date }[] = [];
-      const headerRow = worksheet.getRow(headerRowIdx);
-      headerRow.eachCell((cell, colNumber) => {
-        const colLetter = worksheet.getColumn(colNumber).letter;
-        const parsedDate = this.parseExcelDate(cell.value);
-        if (parsedDate) {
-          dateCols.push({ col: colLetter, date: parsedDate });
+      if (monthBlocks.length > 0) {
+        for (const b of monthBlocks) {
+          for (const d of b.dailyCols) {
+            dateCols.push({ col: d.colLetter, date: new Date(d.date) });
+          }
         }
-      });
+      } else {
+        const headerRow = worksheet.getRow(headerRowIdx);
+        headerRow.eachCell((cell, colNumber) => {
+          const colLetter = worksheet.getColumn(colNumber).letter;
+          const parsedDate = this.parseExcelDate(cell.value);
+          if (parsedDate) {
+            dateCols.push({ col: colLetter, date: parsedDate });
+          }
+        });
+      }
 
       const extIdCol = mapping['external_id'] || 'A';
       const fullNameCol = mapping['full_name'] || 'B';
@@ -680,14 +810,9 @@ export class ImportsService {
 
       for (let r = headerRowIdx + 1; r <= worksheet.rowCount; r++) {
         const row = worksheet.getRow(r);
-        const extIdRaw = row.getCell(extIdCol).value;
-        const extId = extIdRaw !== undefined && extIdRaw !== null ? String(extIdRaw).trim() : '';
-
-        const fullNameRaw = row.getCell(fullNameCol).value;
-        const fullName = fullNameRaw !== undefined && fullNameRaw !== null ? String(fullNameRaw).trim() : '';
-
-        const classNameRaw = row.getCell(classNameCol).value;
-        const className = classNameRaw !== undefined && classNameRaw !== null ? String(classNameRaw).trim() : '';
+        const extId = this.cellText(row.getCell(extIdCol));
+        const fullName = this.cellText(row.getCell(fullNameCol));
+        const className = this.cellText(row.getCell(classNameCol));
 
         if (!extId && !fullName) continue;
         totalDataRows++;
@@ -709,15 +834,15 @@ export class ImportsService {
 
         // Check attendance entries in date columns
         for (const dc of dateCols) {
-          const val = row.getCell(dc.col).value;
-          if (val !== undefined && val !== null && String(val).trim()) {
-            const strVal = String(val).trim().toUpperCase();
+          const val = this.cellText(row.getCell(dc.col));
+          if (val) {
+            const strVal = val.toUpperCase();
             const validCodes = ['1', '1.0', '2', '2.0', '3', '3.0', '0', '0.0', 'A', 'B', 'C', 'D', 'E', 'X', 'ĐÃ HỌC'];
             if (!validCodes.includes(strVal)) {
               errors.push({
                 rowNumber: r,
                 field: `Cột ${dc.col}`,
-                message: `Giá trị điểm danh không hợp lệ: "${String(val).trim()}" tại ngày ${dc.date.toISOString().split('T')[0]}`,
+                message: `Giá trị điểm danh không hợp lệ: "${val}" tại ngày ${dc.date.toISOString().split('T')[0]}`,
               });
               rowHasError = true;
             }
@@ -774,6 +899,14 @@ export class ImportsService {
       teacherClassNames = await this.repo.getTeacherAssignedClassNames(actor.id);
     }
 
+    let monthBlocks: MonthAttendanceBlock[] = [];
+    if (ws3) {
+      monthBlocks = this.detectAttendanceMonthBlocks(ws3);
+      if (s3?.selectedMonth) {
+        monthBlocks = monthBlocks.filter((b) => b.month === s3.selectedMonth && (!s3.selectedYear || b.year === s3.selectedYear));
+      }
+    }
+
     for (const key of keys) {
       const one = byKey1.get(key);
       const three = byKey3.get(key);
@@ -828,17 +961,59 @@ export class ImportsService {
       };
 
       if (three && ws3 && s3) {
-        const header = ws3.getRow(s3.headerRowIdx);
         const attendance: any[] = [];
-        header.eachCell((cell, col) => {
-          const date = this.parseExcelDate(cell.value);
-          if (date) {
-            attendance.push({
-              date: date.toISOString(),
-              value: this.cellText(ws3.getRow(three.rowNumber).getCell(col)),
-            });
+        const sourceRow3 = ws3.getRow(three.rowNumber);
+
+        if (monthBlocks.length > 0) {
+          for (const block of monthBlocks) {
+            let attendedInMonth = 0;
+            let absentCInMonth = 0;
+
+            for (const dayCol of block.dailyCols) {
+              const rawVal = this.cellText(sourceRow3.getCell(dayCol.colNumber));
+              if (rawVal) {
+                attendance.push({
+                  date: dayCol.date,
+                  value: rawVal,
+                });
+                const status = this.attendanceStatus(rawVal);
+                if (status === AttendanceStatus.ATTENDED) {
+                  attendedInMonth++;
+                } else if (status === AttendanceStatus.ABSENT_UNAPPROVED_C) {
+                  absentCInMonth++;
+                }
+              }
+            }
+
+            // Reconciliation check against month summary column (Số buổi đã học = Sum + C)
+            if (block.summaryCols.attendedCol) {
+              const summaryAttendedText = this.cellText(sourceRow3.getCell(block.summaryCols.attendedCol));
+              const summaryAttendedNum = Number(summaryAttendedText);
+              if (!isNaN(summaryAttendedNum) && summaryAttendedText !== '') {
+                const expectedTotal = attendedInMonth + absentCInMonth;
+                if (summaryAttendedNum !== expectedTotal) {
+                  warnings.push(
+                    `${block.label}: Cột tổng kết đã học (${summaryAttendedNum}) lệch so với chi tiết điểm danh (${expectedTotal} = ${attendedInMonth} học + ${absentCInMonth} nghỉ không phép C).`
+                  );
+                }
+              }
+            }
           }
-        });
+        } else {
+          const header = ws3.getRow(s3.headerRowIdx);
+          header.eachCell((cell, col) => {
+            const date = this.parseExcelDate(cell.value);
+            if (date) {
+              const rawVal = this.cellText(sourceRow3.getCell(col));
+              if (rawVal) {
+                attendance.push({
+                  date: date.toISOString(),
+                  value: rawVal,
+                });
+              }
+            }
+          });
+        }
         snapshot.attendance = attendance;
       }
 
@@ -1504,16 +1679,28 @@ export class ImportsService {
         }
       }
     } else if (meta.importType === ImportType.ATTENDANCE) {
-      // Find date columns
+      let monthBlocks = this.detectAttendanceMonthBlocks(worksheet);
+      if (meta.selectedMonth) {
+        monthBlocks = monthBlocks.filter((b) => b.month === meta.selectedMonth && (!meta.selectedYear || b.year === meta.selectedYear));
+      }
+
       const dateCols: { col: string; date: Date }[] = [];
-      const headerRow = worksheet.getRow(headerRowIdx);
-      headerRow.eachCell((cell, colNumber) => {
-        const colLetter = worksheet.getColumn(colNumber).letter;
-        const parsedDate = this.parseExcelDate(cell.value);
-        if (parsedDate) {
-          dateCols.push({ col: colLetter, date: parsedDate });
+      if (monthBlocks.length > 0) {
+        for (const b of monthBlocks) {
+          for (const d of b.dailyCols) {
+            dateCols.push({ col: d.colLetter, date: new Date(d.date) });
+          }
         }
-      });
+      } else {
+        const headerRow = worksheet.getRow(headerRowIdx);
+        headerRow.eachCell((cell, colNumber) => {
+          const colLetter = worksheet.getColumn(colNumber).letter;
+          const parsedDate = this.parseExcelDate(cell.value);
+          if (parsedDate) {
+            dateCols.push({ col: colLetter, date: parsedDate });
+          }
+        });
+      }
 
       const extIdCol = mapping['external_id'] || 'A';
       const fullNameCol = mapping['full_name'] || 'B';
@@ -1521,20 +1708,15 @@ export class ImportsService {
 
       for (let r = headerRowIdx + 1; r <= worksheet.rowCount; r++) {
         const row = worksheet.getRow(r);
-        const extIdRaw = row.getCell(extIdCol).value;
-        const extId = extIdRaw !== undefined && extIdRaw !== null ? String(extIdRaw).trim() : '';
-
-        const fullNameRaw = row.getCell(fullNameCol).value;
-        const fullName = fullNameRaw !== undefined && fullNameRaw !== null ? String(fullNameRaw).trim() : '';
-
-        const classNameRaw = row.getCell(classNameCol).value;
-        const className = classNameRaw !== undefined && classNameRaw !== null ? String(classNameRaw).trim() : '';
+        const extId = this.cellText(row.getCell(extIdCol));
+        const fullName = this.cellText(row.getCell(fullNameCol));
+        const className = this.cellText(row.getCell(classNameCol));
 
         if (!extId && !fullName) continue;
 
         const rawData: Record<string, any> = {};
         row.eachCell({ includeEmpty: false }, (cell, colNumber) => {
-          rawData[worksheet.getColumn(colNumber).letter] = cell.value;
+          rawData[worksheet.getColumn(colNumber).letter] = this.cellText(cell);
         });
 
         try {
@@ -1594,25 +1776,10 @@ export class ImportsService {
 
           let markedCount = 0;
           for (const dc of dateCols) {
-            const val = row.getCell(dc.col).value;
-            if (val !== undefined && val !== null && String(val).trim()) {
-              const strVal = String(val).trim().toUpperCase();
-              let attStatus: AttendanceStatus | null = null;
-
-              const num = Number(strVal);
-              if ((!isNaN(num) && num > 0) || ['X', 'ĐÃ HỌC'].includes(strVal)) {
-                attStatus = AttendanceStatus.ATTENDED;
-              } else if (strVal === 'A') {
-                attStatus = AttendanceStatus.ABSENT_APPROVED_A;
-              } else if (strVal === 'B') {
-                attStatus = AttendanceStatus.LEAVE_B;
-              } else if (strVal === 'C') {
-                attStatus = AttendanceStatus.ABSENT_UNAPPROVED_C;
-              } else if (strVal === 'D') {
-                attStatus = AttendanceStatus.TEACHER_ABSENT_D;
-              } else if (strVal === 'E') {
-                attStatus = AttendanceStatus.TECH_ERROR_E;
-              }
+            const val = this.cellText(row.getCell(dc.col));
+            if (val) {
+              const strVal = val.toUpperCase();
+              let attStatus: AttendanceStatus | null = this.attendanceStatus(strVal);
 
               if (attStatus) {
                 const session = await this.repo.findOrCreateClassSession(

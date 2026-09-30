@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ArrowRight, CheckCircle2, FileSpreadsheet, Upload, AlertTriangle, UserCheck } from 'lucide-react';
+import { ArrowRight, CheckCircle2, FileSpreadsheet, Upload, AlertTriangle, UserCheck, Calendar } from 'lucide-react';
 import { Button } from '../../../components/ui/Button';
 import { Badge } from '../../../components/ui/Badge';
 import { Card } from '../../../components/ui/Card';
@@ -66,6 +66,8 @@ export const ImportWizard: React.FC<Props> = ({ onImportComplete }) => {
 
   const [csUsers, setCsUsers] = useState<CSUser[]>([]);
   const [assignedCsId, setAssignedCsId] = useState<number | undefined>(undefined);
+  const [selectedMonth, setSelectedMonth] = useState<number | undefined>(undefined);
+  const [selectedYear, setSelectedYear] = useState<number | undefined>(undefined);
 
   useEffect(() => {
     if (isAdminOrManage) {
@@ -122,6 +124,8 @@ export const ImportWizard: React.FC<Props> = ({ onImportComplete }) => {
           headerRowIndex: previews[logical]!.headerRowIndex,
           columnMapping: mappings[logical],
           assignedCsId,
+          selectedMonth: logical === 'attendance' ? selectedMonth : undefined,
+          selectedYear: logical === 'attendance' ? selectedYear : undefined,
         });
       }
     }
@@ -217,6 +221,55 @@ export const ImportWizard: React.FC<Props> = ({ onImportComplete }) => {
           })}
         </div>
       </div>
+
+      {sheet === 'attendance' && previews?.attendance?.availableMonths && previews.attendance.availableMonths.length > 0 && (
+        <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 space-y-2">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <label htmlFor="attendance-month-filter" className="text-xs font-bold text-text-primary flex items-center gap-1.5">
+                <Calendar className="w-4 h-4 text-primary" />
+                Phạm vi import điểm danh theo Tháng / Năm:
+              </label>
+              <p className="text-[11px] text-text-muted mt-0.5">
+                File Excel chứa các cột điểm danh theo tháng ở Hàng 1. Chọn tháng cụ thể hoặc nhập tất cả các tháng.
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <select
+                id="attendance-month-filter"
+                value={selectedMonth !== undefined ? `${selectedMonth}-${selectedYear || 2026}` : 'ALL'}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (val === 'ALL') {
+                    setSelectedMonth(undefined);
+                    setSelectedYear(undefined);
+                  } else {
+                    const [m, y] = val.split('-').map(Number);
+                    setSelectedMonth(m);
+                    setSelectedYear(y);
+                  }
+                }}
+                className="rounded-lg border border-primary/30 bg-white px-3 py-1.5 text-xs font-bold text-primary focus:border-primary focus:ring-1 focus:ring-primary shadow-sm"
+              >
+                <option value="ALL">✨ Nhập tất cả các tháng ({previews.attendance.availableMonths.length} tháng)</option>
+                {previews.attendance.availableMonths.map((bm) => (
+                  <option key={`${bm.month}-${bm.year}`} value={`${bm.month}-${bm.year}`}>
+                    {bm.label} ({bm.totalDays} ngày điểm danh)
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+          {selectedMonth !== undefined && (
+            <div className="flex items-center gap-2 pt-1 text-xs text-primary font-medium">
+              <Badge variant="info">Đang chọn: Tháng {selectedMonth}/{selectedYear || 2026}</Badge>
+              <span>
+                Chỉ import các buổi điểm danh trong Tháng {selectedMonth}/{selectedYear || 2026}. Các tháng khác được giữ nguyên an toàn.
+              </span>
+            </div>
+          )}
+        </div>
+      )}
       <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
         {fields[sheet].map((f) => (
           <label key={f.key} className="text-xs font-semibold text-text-secondary">

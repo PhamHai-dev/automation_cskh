@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Class,
@@ -11,7 +11,6 @@ import { Badge } from '../../../components/ui/Badge';
 import { useToast } from '../../../components/ui/Toast';
 import { attendanceApi, classSessionsApi } from '../api/sessions.api';
 import {
-  Save,
   ChevronLeft,
   ChevronRight,
   Check,
@@ -160,6 +159,295 @@ const isDateInSchedule = (dateStr: string, pattern?: string | null): boolean => 
   return pattern.toUpperCase().includes(char);
 };
 
+interface AttendancePickerPopoverProps {
+  anchorEl: HTMLElement;
+  studentName: string;
+  dateStr: string;
+  initialCount: number;
+  onSelectStatus: (status: AttendanceStatus, count?: number) => void;
+  onClear: () => void;
+  onClose: () => void;
+}
+
+interface PopoverPositionState {
+  top: number;
+  left: number;
+  placement: 'top' | 'bottom';
+  arrowLeft: number;
+}
+
+function computePopoverCoords(
+  anchorRect: DOMRect,
+  popoverEl: HTMLElement | null
+): PopoverPositionState {
+  const viewportPadding = 12;
+  const popoverWidth = popoverEl?.offsetWidth || 300;
+  const popoverHeight = popoverEl?.offsetHeight || 215;
+
+  // Lấy mép dưới của header thanh điều hướng (hoặc fallback 64px)
+  const headerEl = document.querySelector('header');
+  const headerBottom = headerEl ? headerEl.getBoundingClientRect().bottom : 64;
+  const safeTopLimit = Math.max(headerBottom, 0) + 8; // Khoảng đệm an toàn dưới header
+
+  // Căn giữa theo chiều ngang của ô
+  const anchorCenterX = anchorRect.left + anchorRect.width / 2;
+  const preferredLeft = anchorCenterX - popoverWidth / 2;
+
+  // Clamp left để không bao giờ bị cắt 2 bên màn hình
+  const minLeft = viewportPadding;
+  const maxLeft = Math.max(viewportPadding, window.innerWidth - popoverWidth - viewportPadding);
+  const left = Math.round(Math.min(Math.max(preferredLeft, minLeft), maxLeft));
+
+  // Kiểm tra: nếu đặt ở trên, mép trên của popover có chạm vào header không?
+  const topIfAbove = anchorRect.top - 8 - popoverHeight;
+
+  // Mặc định luôn ưu tiên hiển thị ở TRÊN ô; CHỈ KHI NÀO mép trên chạm vào header mới nhảy xuống dưới
+  const touchesHeader = topIfAbove < safeTopLimit;
+
+  let placement: 'top' | 'bottom' = 'top';
+  let top: number;
+
+  if (touchesHeader) {
+    // Mép trên chạm header -> nhảy xuống dưới ô
+    placement = 'bottom';
+    top = anchorRect.bottom + 8;
+    // Đảm bảo không tràn khỏi đáy màn hình
+    const maxTop = Math.max(safeTopLimit, window.innerHeight - popoverHeight - viewportPadding);
+    top = Math.round(Math.min(top, maxTop));
+  } else {
+    // Không chạm header -> giữ nguyên ở trên ô
+    placement = 'top';
+    top = Math.round(topIfAbove);
+  }
+
+  // Tọa độ mũi tên chỉ báo trỏ vào tâm ô
+  const arrowX = anchorCenterX - left;
+  const arrowLeft = Math.round(Math.min(Math.max(arrowX, 20), popoverWidth - 20));
+
+  return {
+    top,
+    left,
+    placement,
+    arrowLeft,
+  };
+}
+
+const AttendancePickerPopover: React.FC<AttendancePickerPopoverProps> = ({
+  anchorEl,
+  studentName,
+  dateStr,
+  initialCount,
+  onSelectStatus,
+  onClear,
+  onClose,
+}) => {
+  const popoverRef = useRef<HTMLDivElement>(null);
+  const [count, setCount] = useState<number | ''>(initialCount || 1);
+  const [position, setPosition] = useState<PopoverPositionState>(() =>
+    computePopoverCoords(anchorEl.getBoundingClientRect(), null)
+  );
+
+  useEffect(() => {
+    let rafId: number | null = null;
+
+    const updatePosition = () => {
+      if (!anchorEl || !document.body.contains(anchorEl)) {
+        onClose();
+        return;
+      }
+
+      const rect = anchorEl.getBoundingClientRect();
+
+      // Đóng popover nếu ô bị cuộn hoàn toàn ra khỏi viewport
+      const isCompletelyHidden =
+        rect.bottom < 0 ||
+        rect.top > window.innerHeight ||
+        rect.right < 0 ||
+        rect.left > window.innerWidth;
+
+      if (isCompletelyHidden) {
+        onClose();
+        return;
+      }
+
+      const nextPos = computePopoverCoords(rect, popoverRef.current);
+      setPosition((prev) => {
+        if (
+          prev.top === nextPos.top &&
+          prev.left === nextPos.left &&
+          prev.placement === nextPos.placement &&
+          prev.arrowLeft === nextPos.arrowLeft
+        ) {
+          return prev;
+        }
+        return nextPos;
+      });
+    };
+
+    updatePosition();
+
+    const handleScrollOrResize = () => {
+      if (rafId) cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(updatePosition);
+    };
+
+    // useCapture: true để bắt được sự kiện scroll của bất kỳ container cuộn ngang/dọc nào
+    window.addEventListener('scroll', handleScrollOrResize, true);
+    window.addEventListener('resize', handleScrollOrResize);
+
+    return () => {
+      if (rafId) cancelAnimationFrame(rafId);
+      window.removeEventListener('scroll', handleScrollOrResize, true);
+      window.removeEventListener('resize', handleScrollOrResize);
+    };
+  }, [anchorEl, onClose]);
+
+  useEffect(() => {
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (
+        anchorEl.contains(target) ||
+        popoverRef.current?.contains(target)
+      ) {
+        return;
+      }
+      onClose();
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        onClose();
+      }
+    };
+
+    document.addEventListener('pointerdown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [anchorEl, onClose]);
+
+  const formattedDate = useMemo(() => {
+    try {
+      return new Date(dateStr).toLocaleDateString('vi-VN', {
+        weekday: 'short',
+        day: '2-digit',
+        month: '2-digit',
+      });
+    } catch {
+      return dateStr;
+    }
+  }, [dateStr]);
+
+  return createPortal(
+    <div
+      ref={popoverRef}
+      role="dialog"
+      aria-label={`Điểm danh cho ${studentName} ngày ${formattedDate}`}
+      className="fixed z-[100] w-[300px] rounded-2xl border border-border bg-surface p-3 text-left shadow-soft-xl animate-in fade-in-0 zoom-in-95 duration-100 select-none"
+      style={{
+        top: `${position.top}px`,
+        left: `${position.left}px`,
+      }}
+    >
+      {/* Mũi tên chỉ vào ô */}
+      {position.placement === 'top' ? (
+        <span
+          aria-hidden="true"
+          className="absolute -bottom-1.5 h-3 w-3 -translate-x-1/2 rotate-45 border-b border-r border-border bg-surface"
+          style={{ left: `${position.arrowLeft}px` }}
+        />
+      ) : (
+        <span
+          aria-hidden="true"
+          className="absolute -top-1.5 h-3 w-3 -translate-x-1/2 rotate-45 border-t border-l border-border bg-surface"
+          style={{ left: `${position.arrowLeft}px` }}
+        />
+      )}
+
+      {/* Header nhỏ hiển thị tên học viên & ngày điểm danh */}
+      <div className="mb-2.5 flex items-center justify-between border-b border-border/60 pb-2 text-[11px]">
+        <span className="font-bold text-text-primary truncate max-w-[170px]" title={studentName}>
+          {studentName}
+        </span>
+        <span className="font-semibold text-primary bg-primary-soft/60 px-2 py-0.5 rounded-md">
+          {formattedDate}
+        </span>
+      </div>
+
+      {/* Dòng 1: Input số buổi và Nút Có mặt */}
+      <div className="relative mb-2 grid grid-cols-[72px_1fr] gap-2">
+        <label htmlFor="attendance-popover-count" className="sr-only">Số buổi có mặt</label>
+        <input
+          id="attendance-popover-count"
+          type="number"
+          min="0.5"
+          max="10"
+          step="0.5"
+          value={count}
+          onChange={(e) => {
+            const value = e.target.value;
+            setCount(value === '' ? '' : Number(value));
+          }}
+          onBlur={() => {
+            if (count === '') setCount(1);
+          }}
+          className="h-9 rounded-xl border border-emerald-300 bg-emerald-50 text-center text-xs font-extrabold text-emerald-800 outline-none transition focus:ring-2 focus:ring-emerald-300"
+        />
+        <button
+          type="button"
+          disabled={count === '' || count < 0.5 || count > 10}
+          onClick={() => {
+            if (count !== '') {
+              onSelectStatus('ATTENDED', count);
+            }
+          }}
+          className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl bg-emerald-600 px-3 text-xs font-bold text-white shadow-sm transition hover:bg-emerald-700 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 focus-visible:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <Check className="h-4 w-4" />
+          Có mặt{count !== '' ? ` (${count})` : ''}
+        </button>
+      </div>
+
+      {/* Dòng 2: Lưới các trạng thái nghỉ/lỗi & nút Chưa điểm danh */}
+      <div className="relative grid grid-cols-2 gap-2">
+        {(
+          [
+            'ABSENT_APPROVED_A',
+            'LEAVE_B',
+            'ABSENT_UNAPPROVED_C',
+            'TEACHER_ABSENT_D',
+            'TECH_ERROR_E',
+          ] as AttendanceStatus[]
+        ).map((status) => {
+          const option = STATUS_CONFIG[status];
+          return (
+            <button
+              key={status}
+              type="button"
+              onClick={() => onSelectStatus(status)}
+              className={`flex h-9 items-center justify-center rounded-xl border px-2 text-[11px] font-bold transition hover:-translate-y-px hover:shadow-sm active:translate-y-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 ${option.bg} ${option.text} ${option.border}`}
+              title={option.label}
+            >
+              {option.label}
+            </button>
+          );
+        })}
+        <button
+          type="button"
+          onClick={onClear}
+          className="flex h-9 items-center justify-center rounded-xl border border-border bg-surface-muted px-2 text-[11px] font-bold text-text-secondary transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-200"
+        >
+          Chưa điểm danh (-)
+        </button>
+      </div>
+    </div>,
+    document.body
+  );
+};
+
 export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
   cls,
   students,
@@ -184,13 +472,27 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
   // Selected date reference for Tab 2 & 3 (default: today)
   const [currentDate, setCurrentDate] = useState<Date>(() => new Date());
 
-  // Track pending local edits: Key is `${enrollment_class_id}_${dateString}`
-  const [pendingEdits, setPendingEdits] = useState<Record<string, AttendanceStatus>>({});
-  // Track custom attendance numeric values (default 1 for ATTENDED)
-  const [customValues, setCustomValues] = useState<Record<string, number>>({});
-  const [saving, setSaving] = useState(false);
-  // Track optimistically cleared attendance cells
+  // Track optimistic updates: Key is `${enrollment_class_id}_${dateString}`
+  const [optimisticUpdates, setOptimisticUpdates] = useState<
+    Record<
+      string,
+      {
+        status: AttendanceStatus;
+        session_count: number;
+        updated_at: string;
+        source: 'MANUAL';
+      }
+    >
+  >({});
   const [clearedKeys, setClearedKeys] = useState<Set<string>>(new Set());
+  const [bulkSaving, setBulkSaving] = useState(false);
+  const [savingCellKey, setSavingCellKey] = useState<string | null>(null);
+
+  // Sync optimistic states when attendances prop changes
+  useEffect(() => {
+    setOptimisticUpdates({});
+    setClearedKeys(new Set());
+  }, [attendances]);
 
   // Multi-student selection state for bulk actions
   const [selectedStudents, setSelectedStudents] = useState<Set<number>>(new Set());
@@ -202,13 +504,11 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
     enrollmentClassId: number;
     dateStr: string;
     studentName: string;
+    currentCount: number;
   } | null>(null);
-  const [cellInputCount, setCellInputCount] = useState<number | ''>(1);
+  const [activeAnchorEl, setActiveAnchorEl] = useState<HTMLElement | null>(null);
 
   const selectAllCheckboxRef = useRef<HTMLInputElement>(null);
-  const activeCellContainerRef = useRef<HTMLDivElement>(null);
-  const attendancePopoverRef = useRef<HTMLDivElement>(null);
-  const [popoverAnchor, setPopoverAnchor] = useState({ top: 0, left: 0 });
 
   const toDateString = toLocalDateString;
 
@@ -290,63 +590,6 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
     });
   }, [attendanceMap]);
 
-  // Check if a cell's status & count are identical to what is already stored in the database
-  const isSameAsDatabase = useCallback(
-    (
-      key: string,
-      newStatus: AttendanceStatus | undefined,
-      newCount: number = 1
-    ): boolean => {
-      // If the cell was marked as cleared locally, it is considered empty
-      if (clearedKeys.has(key)) {
-        return !newStatus;
-      }
-
-      const existing = attendanceMap.get(key);
-      // If no existing record in DB: same only if newStatus is also empty/undefined
-      if (!existing) {
-        return !newStatus;
-      }
-
-      // If new status is empty/undefined, it differs because existing record is in DB
-      if (!newStatus) {
-        return false;
-      }
-
-      // Different attendance status (e.g. ATTENDED vs ABSENT_A)
-      if (existing.status !== newStatus) {
-        return false;
-      }
-
-      // If ATTENDED, compare session_count (defaults to 1 if not specified)
-      if (newStatus === 'ATTENDED') {
-        const existingCount = Number(existing.session_count ?? 1);
-        const targetCount = typeof newCount === 'number' && !isNaN(newCount) ? newCount : 1;
-        return existingCount === targetCount;
-      }
-
-      return true;
-    },
-    [attendanceMap, clearedKeys]
-  );
-
-  // Compute genuine pending changes that differ from the database
-  const actualPendingChanges = useMemo(() => {
-    const result: Record<string, AttendanceStatus> = {};
-    for (const [key, status] of Object.entries(pendingEdits)) {
-      const count = customValues[key] ?? 1;
-      if (!isSameAsDatabase(key, status, count)) {
-        result[key] = status;
-      }
-    }
-    return result;
-  }, [pendingEdits, customValues, isSameAsDatabase]);
-
-  const changesCount = useMemo(
-    () => Object.keys(actualPendingChanges).length,
-    [actualPendingChanges]
-  );
-  const hasChanges = changesCount > 0;
 
   // Dynamic Reactive Statistics calculation for each student (X, Y, Z, AA, AB, AC, AD, AE, AF, AG, AH)
   const studentStats = useMemo(() => {
@@ -382,16 +625,16 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
       let monthTeacherD = 0;
       let monthTechE = 0;
 
-      // Track counted dates to prevent duplicate calculation
       const processedDates = new Set<string>();
 
-      // 1. Process actualPendingChanges first (takes precedence)
-      Object.entries(actualPendingChanges).forEach(([key, status]) => {
+      // 1. Process optimistic updates first
+      Object.entries(optimisticUpdates).forEach(([key, opt]) => {
         const [ecIdStr, dStr] = key.split('_');
         if (parseInt(ecIdStr, 10) !== s.enrollment_class_id) return;
         processedDates.add(dStr);
 
-        const count = customValues[key] ?? 1;
+        const status = opt.status;
+        const count = opt.session_count;
         if (status === 'ATTENDED') totalAttended += count;
         else if (status === 'ABSENT_APPROVED_A') totalAbsentA++;
         else if (status === 'ABSENT_UNAPPROVED_C') totalAbsentC++;
@@ -407,14 +650,14 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
         }
       });
 
-      // 2. Process existing attendances not overridden in actualPendingChanges
+      // 2. Process existing attendances not overridden in optimisticUpdates
       attendances.forEach((a) => {
         if (a.enrollment_class_id !== s.enrollment_class_id || (a as any).deleted_at) return;
         const dStr =
           formatSessionDate(a.class_session?.session_date) ||
-          sessions.find((sess) => sess.id === a.class_session_id)?.session_date
+          (sessions.find((sess) => sess.id === a.class_session_id)?.session_date
             ? formatSessionDate(sessions.find((sess) => sess.id === a.class_session_id)!.session_date)
-            : '';
+            : '');
 
         if (!dStr || processedDates.has(dStr) || clearedKeys.has(`${s.enrollment_class_id}_${dStr}`)) return;
         processedDates.add(dStr);
@@ -452,7 +695,7 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
     });
 
     return statsMap;
-  }, [students, attendances, sessions, actualPendingChanges, customValues, currentDate, clearedKeys]);
+  }, [students, attendances, sessions, optimisticUpdates, currentDate, clearedKeys]);
 
   // Overall KPI cards computation for Tab 3
   const overallKPIs = useMemo(() => {
@@ -570,30 +813,15 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
     }
   }, [someVisibleSelected]);
 
-  useEffect(() => {
-    if (!activeCell) return;
 
-    const handlePointerDownOutside = (event: PointerEvent) => {
-      const target = event.target as Node;
-      const clickedTrigger = activeCellContainerRef.current?.contains(target);
-      const clickedPopover = attendancePopoverRef.current?.contains(target);
-      if (!clickedTrigger && !clickedPopover) setActiveCell(null);
-    };
-    const handleEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setActiveCell(null);
-    };
-
-    document.addEventListener('pointerdown', handlePointerDownOutside);
-    document.addEventListener('keydown', handleEscape);
-    return () => {
-      document.removeEventListener('pointerdown', handlePointerDownOutside);
-      document.removeEventListener('keydown', handleEscape);
-    };
-  }, [activeCell]);
 
   // Toggle all valid students currently visible after filters
   const handleToggleSelectAllStudents = () => {
-    setSelectedStudents(allVisibleSelected ? new Set() : new Set(validVisibleStudentIds));
+    if (allVisibleSelected) {
+      setSelectedStudents(new Set());
+    } else {
+      setSelectedStudents(new Set(validVisibleStudentIds));
+    }
   };
 
   // Toggle single student select
@@ -607,120 +835,154 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
     });
   };
 
-  // Bulk Apply Attended for selected students
-  const handleBulkApplyAttended = () => {
-    const targetDate = activeTab === 'quick' ? quickDate : bulkDate;
-    if (selectedStudents.size === 0 || !targetDate) return;
+  // Hàm cốt lõi lưu trực tiếp danh sách bản ghi vào cơ sở dữ liệu
+  const executeSave = async (
+    records: { ecId: number; dateStr: string; status: AttendanceStatus; count: number }[]
+  ) => {
+    if (records.length === 0) return;
 
-    let outOfScheduleCount = 0;
-    selectedStudents.forEach((ecId) => {
-      const student = students.find(s => s.enrollment_class_id === ecId);
-      if (student && !isDateInSchedule(targetDate, student.schedule_pattern)) {
-        outOfScheduleCount++;
-      }
-    });
-
-    if (outOfScheduleCount > 0) {
-      if (!window.confirm(`Có ${outOfScheduleCount} học viên được chọn không có lịch học vào ngày này. Bạn có chắc chắn muốn điểm danh?`)) {
-        return;
-      }
-    }
-
-    const updates: Record<string, AttendanceStatus> = {};
-    const valUpdates: Record<string, number> = {};
-    const keysToRemove: string[] = [];
-
-    selectedStudents.forEach((ecId) => {
-      if (ecId <= 0) return;
-      const key = `${ecId}_${targetDate}`;
-      if (isSameAsDatabase(key, 'ATTENDED', bulkCount)) {
-        keysToRemove.push(key);
-      } else {
-        updates[key] = 'ATTENDED';
-        valUpdates[key] = bulkCount;
-      }
-    });
-
-    setClearedKeys((prev) => {
-      const next = new Set(prev);
-      selectedStudents.forEach((ecId) => {
-        next.delete(`${ecId}_${targetDate}`);
-      });
-      return next;
-    });
-
-    setPendingEdits((prev) => {
-      const next = { ...prev, ...updates };
-      keysToRemove.forEach((k) => delete next[k]);
-      return next;
-    });
-    setCustomValues((prev) => {
-      const next = { ...prev, ...valUpdates };
-      keysToRemove.forEach((k) => delete next[k]);
-      return next;
-    });
-    toast.success(
-      `Đã đánh dấu Có mặt (${bulkCount} buổi) cho ${selectedStudents.size} học viên vào ngày ${new Date(targetDate).toLocaleDateString('vi-VN')}`
-    );
-  };
-
-  // Bulk Apply Absent for selected students
-  const handleBulkApplyAbsent = (status: AttendanceStatus) => {
-    const targetDate = activeTab === 'quick' ? quickDate : bulkDate;
-    if (selectedStudents.size === 0 || !targetDate) return;
-
-    let outOfScheduleCount = 0;
-    selectedStudents.forEach((ecId) => {
-      const student = students.find(s => s.enrollment_class_id === ecId);
-      if (student && !isDateInSchedule(targetDate, student.schedule_pattern)) {
-        outOfScheduleCount++;
-      }
-    });
-
-    if (outOfScheduleCount > 0) {
-      if (!window.confirm(`Có ${outOfScheduleCount} học viên được chọn không có lịch học vào ngày này. Bạn có chắc chắn muốn điểm danh?`)) {
-        return;
-      }
-    }
-
-    const updates: Record<string, AttendanceStatus> = {};
-    const keysToRemove: string[] = [];
-
-    selectedStudents.forEach((ecId) => {
-      if (ecId <= 0) return;
-      const key = `${ecId}_${targetDate}`;
-      if (isSameAsDatabase(key, status, 1)) {
-        keysToRemove.push(key);
-      } else {
-        updates[key] = status;
-      }
-    });
-
-    setClearedKeys((prev) => {
-      const next = new Set(prev);
-      selectedStudents.forEach((ecId) => {
-        next.delete(`${ecId}_${targetDate}`);
-      });
-      return next;
-    });
-
-    setPendingEdits((prev) => {
-      const next = { ...prev, ...updates };
-      keysToRemove.forEach((k) => delete next[k]);
-      return next;
-    });
-    setCustomValues((prev) => {
+    // 1. Cập nhật optimistic UI ngay lập tức
+    const nowIso = new Date().toISOString();
+    setOptimisticUpdates((prev) => {
       const next = { ...prev };
-      keysToRemove.forEach((k) => delete next[k]);
-      Object.keys(updates).forEach((k) => delete next[k]);
+      records.forEach((r) => {
+        next[`${r.ecId}_${r.dateStr}`] = {
+          status: r.status,
+          session_count: r.count,
+          updated_at: nowIso,
+          source: 'MANUAL',
+        };
+      });
       return next;
     });
-    toast.info(
-      `Đã cập nhật trạng thái ${STATUS_CONFIG[status].label} cho ${selectedStudents.size} học viên`
-    );
+
+    setClearedKeys((prev) => {
+      const next = new Set(prev);
+      records.forEach((r) => next.delete(`${r.ecId}_${r.dateStr}`));
+      return next;
+    });
+
+    // 2. Gửi API lưu vào database
+    if (onSaveCustom) {
+      const pendingMap: Record<string, AttendanceStatus> = {};
+      const countMap: Record<string, number> = {};
+      records.forEach((r) => {
+        pendingMap[`${r.ecId}_${r.dateStr}`] = r.status;
+        countMap[`${r.ecId}_${r.dateStr}`] = r.count;
+      });
+      await onSaveCustom(pendingMap, countMap);
+    } else if (cls) {
+      const byDate = new Map<string, { ecId: number; status: AttendanceStatus; count: number }[]>();
+      records.forEach((r) => {
+        if (!byDate.has(r.dateStr)) byDate.set(r.dateStr, []);
+        byDate.get(r.dateStr)!.push(r);
+      });
+
+      for (const [dateStr, items] of byDate.entries()) {
+        let session = sessions.find((s) => formatSessionDate(s.session_date) === dateStr);
+        if (!session) {
+          session = await classSessionsApi.create(cls.id, {
+            session_number: sessions.length + 1,
+            session_date: dateStr,
+          });
+        }
+        await attendanceApi.bulkMark(cls.id, session.id, {
+          items: items.map((i) => ({
+            enrollment_class_id: i.ecId,
+            status: i.status,
+            session_count: i.status === 'ATTENDED' ? i.count : 1,
+          })),
+        });
+      }
+      onRefresh();
+    }
   };
 
-  // Bulk Clear Attendance for selected students
+  // Bulk Apply Attended for selected students (Lưu trực tiếp vào DB)
+  const handleBulkApplyAttended = async () => {
+    const targetDate = activeTab === 'quick' ? quickDate : bulkDate;
+    if (selectedStudents.size === 0 || !targetDate) return;
+
+    let outOfScheduleCount = 0;
+    selectedStudents.forEach((ecId) => {
+      const student = students.find((s) => s.enrollment_class_id === ecId);
+      if (student && !isDateInSchedule(targetDate, student.schedule_pattern)) {
+        outOfScheduleCount++;
+      }
+    });
+
+    if (outOfScheduleCount > 0) {
+      if (!window.confirm(`Có ${outOfScheduleCount} học viên được chọn không có lịch học vào ngày này. Bạn có chắc chắn muốn điểm danh?`)) {
+        return;
+      }
+    }
+
+    const records = Array.from(selectedStudents)
+      .filter((ecId) => ecId > 0)
+      .map((ecId) => ({
+        ecId,
+        dateStr: targetDate,
+        status: 'ATTENDED' as AttendanceStatus,
+        count: bulkCount,
+      }));
+
+    try {
+      setBulkSaving(true);
+      await executeSave(records);
+      toast.success(
+        `Đã lưu Có mặt (${bulkCount} buổi) cho ${records.length} học viên ngày ${new Date(targetDate).toLocaleDateString('vi-VN')}`
+      );
+    } catch (err: any) {
+      toast.error('Lỗi khi lưu điểm danh hàng loạt: ' + (err.response?.data?.error?.message || err.message));
+      onRefresh();
+    } finally {
+      setBulkSaving(false);
+    }
+  };
+
+  // Bulk Apply Absent for selected students (Lưu trực tiếp vào DB)
+  const handleBulkApplyAbsent = async (status: AttendanceStatus) => {
+    const targetDate = activeTab === 'quick' ? quickDate : bulkDate;
+    if (selectedStudents.size === 0 || !targetDate) return;
+
+    let outOfScheduleCount = 0;
+    selectedStudents.forEach((ecId) => {
+      const student = students.find(s => s.enrollment_class_id === ecId);
+      if (student && !isDateInSchedule(targetDate, student.schedule_pattern)) {
+        outOfScheduleCount++;
+      }
+    });
+
+    if (outOfScheduleCount > 0) {
+      if (!window.confirm(`Có ${outOfScheduleCount} học viên được chọn không có lịch học vào ngày này. Bạn có chắc chắn muốn điểm danh?`)) {
+        return;
+      }
+    }
+
+    const records = Array.from(selectedStudents)
+      .filter((ecId) => ecId > 0)
+      .map((ecId) => ({
+        ecId,
+        dateStr: targetDate,
+        status,
+        count: 1,
+      }));
+
+    try {
+      setBulkSaving(true);
+      await executeSave(records);
+      toast.success(
+        `Đã lưu ${STATUS_CONFIG[status].label} cho ${records.length} học viên ngày ${new Date(targetDate).toLocaleDateString('vi-VN')}`
+      );
+    } catch (err: any) {
+      toast.error('Lỗi khi lưu điểm danh hàng loạt: ' + (err.response?.data?.error?.message || err.message));
+      onRefresh();
+    } finally {
+      setBulkSaving(false);
+    }
+  };
+
+  // Bulk Clear Attendance for selected students (Xóa trực tiếp trong DB)
   const handleBulkClear = async () => {
     const targetDate = activeTab === 'quick' ? quickDate : bulkDate;
     if (selectedStudents.size === 0 || !targetDate) return;
@@ -733,34 +995,30 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
       const key = `${ecId}_${targetDate}`;
       keysToClear.push(key);
       const student = students.find((s) => s.enrollment_class_id === ecId);
-      const existingRecord = attendanceMap.get(key);
-      const classId =
-        cls?.id ||
-        (existingRecord as any)?.class_session?.class_id ||
-        sessions.find((s) => s.id === existingRecord?.class_session_id)?.class_id ||
-        student?.class_id;
-      const sessionId =
-        existingRecord?.class_session_id ||
-        (existingRecord as any)?.class_session?.id ||
-        sessions.find((s) => formatSessionDate(s.session_date) === targetDate)?.id;
-
-      if (existingRecord && classId && sessionId) {
-        toRemove.push({ classId, sessionId, attendanceId: existingRecord.id, key });
+      const existing = attendanceMap.get(key);
+      if (existing) {
+        const classId =
+          cls?.id ||
+          (existing as any)?.class_session?.class_id ||
+          sessions.find((s) => s.id === existing.class_session_id)?.class_id ||
+          student?.class_id;
+        const sessionId =
+          existing.class_session_id ||
+          (existing as any)?.class_session?.id ||
+          sessions.find((s) => formatSessionDate(s.session_date) === targetDate)?.id;
+        if (classId && sessionId) {
+          toRemove.push({ classId, sessionId, attendanceId: existing.id, key });
+        }
       }
     });
 
-    // Optimistically clear local state immediately
     setClearedKeys((prev) => {
       const next = new Set(prev);
       keysToClear.forEach((k) => next.add(k));
       return next;
     });
-    setPendingEdits((prev) => {
-      const next = { ...prev };
-      keysToClear.forEach((k) => delete next[k]);
-      return next;
-    });
-    setCustomValues((prev) => {
+
+    setOptimisticUpdates((prev) => {
       const next = { ...prev };
       keysToClear.forEach((k) => delete next[k]);
       return next;
@@ -768,78 +1026,75 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
 
     if (toRemove.length > 0) {
       try {
-        setSaving(true);
+        setBulkSaving(true);
         await Promise.all(
           toRemove.map((item) =>
             attendanceApi.remove(item.classId, item.sessionId, item.attendanceId)
           )
         );
-        toast.success(`Đã reset trạng thái điểm danh cho ${toRemove.length} học viên`);
+        toast.info(`Đã chuyển ${keysToClear.length} học viên sang Chưa điểm danh`);
         onRefresh();
       } catch (err: any) {
         toast.error('Lỗi khi reset điểm danh: ' + (err.response?.data?.error?.message || err.message));
+        onRefresh();
       } finally {
-        setSaving(false);
+        setBulkSaving(false);
       }
     } else {
-      toast.info(`Đã chuyển ${selectedStudents.size} học viên sang Chưa điểm danh`);
+      toast.info(`Đã chuyển ${keysToClear.length} học viên sang Chưa điểm danh`);
     }
   };
 
-  // Select status for a cell from Popover
-  const handleStatusSelect = (
+  // Select status for a cell from Popover (Lưu trực tiếp vào DB)
+  const handleStatusSelect = async (
     enrollmentClassId: number,
     dateStr: string,
     status: AttendanceStatus,
     countVal: number = 1
   ) => {
-    const student = students.find(s => s.enrollment_class_id === enrollmentClassId);
+    const student = students.find((s) => s.enrollment_class_id === enrollmentClassId);
     if (student && !isDateInSchedule(dateStr, student.schedule_pattern)) {
-      if (!window.confirm(`Học viên ${student.full_name} không có lịch học vào ngày này (${new Date(dateStr).toLocaleDateString('vi-VN')}). Bạn có chắc chắn muốn điểm danh?`)) {
+      if (
+        !window.confirm(
+          `Học viên ${student.full_name} không có lịch học vào ngày này (${new Date(
+            dateStr
+          ).toLocaleDateString('vi-VN')}). Bạn có chắc chắn muốn điểm danh?`
+        )
+      ) {
         return;
       }
     }
 
-    const key = `${enrollmentClassId}_${dateStr}`;
-    // Remove from clearedKeys since user selected an active status
-    setClearedKeys((prev) => {
-      if (!prev.has(key)) return prev;
-      const next = new Set(prev);
-      next.delete(key);
-      return next;
-    });
-
-    const isSame = isSameAsDatabase(key, status, countVal);
-    if (isSame) {
-      setPendingEdits((prev) => {
-        if (!(key in prev)) return prev;
-        const next = { ...prev };
-        delete next[key];
-        return next;
-      });
-      setCustomValues((prev) => {
-        if (!(key in prev)) return prev;
-        const next = { ...prev };
-        delete next[key];
-        return next;
-      });
-    } else {
-      setPendingEdits((prev) => ({ ...prev, [key]: status }));
-      if (status === 'ATTENDED') {
-        setCustomValues((prev) => ({ ...prev, [key]: countVal }));
-      } else {
-        setCustomValues((prev) => {
-          if (!(key in prev)) return prev;
-          const next = { ...prev };
-          delete next[key];
-          return next;
-        });
-      }
-    }
     setActiveCell(null);
+    setActiveAnchorEl(null);
+
+    const key = `${enrollmentClassId}_${dateStr}`;
+    setSavingCellKey(key);
+
+    try {
+      await executeSave([
+        {
+          ecId: enrollmentClassId,
+          dateStr,
+          status,
+          count: countVal,
+        },
+      ]);
+    } catch (err: any) {
+      toast.error('Lỗi khi lưu điểm danh: ' + (err.response?.data?.error?.message || err.message));
+      // Rollback optimistic update
+      setOptimisticUpdates((prev) => {
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
+      onRefresh();
+    } finally {
+      setSavingCellKey(null);
+    }
   };
 
-  // Clear attendance for a cell (Chuyển sang Chưa điểm danh)
+  // Clear attendance for a cell (Chuyển sang Chưa điểm danh và xóa trực tiếp trong DB)
   const handleClearCell = async (enrollmentClassId: number, dateStr: string) => {
     const key = `${enrollmentClassId}_${dateStr}`;
     const student = students.find((s) => s.enrollment_class_id === enrollmentClassId);
@@ -857,24 +1112,20 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
 
     // 1. Optimistically clear local state immediately so cell switches to '-'
     setClearedKeys((prev) => new Set(prev).add(key));
-    setPendingEdits((prev) => {
-      const next = { ...prev };
-      delete next[key];
-      return next;
-    });
-    setCustomValues((prev) => {
+    setOptimisticUpdates((prev) => {
       const next = { ...prev };
       delete next[key];
       return next;
     });
     setActiveCell(null);
+    setActiveAnchorEl(null);
+    setSavingCellKey(key);
 
     // 2. If record exists in database, call API to soft-delete
     if (existingRecord && classId && sessionId) {
       try {
-        setSaving(true);
         await attendanceApi.remove(classId, sessionId, existingRecord.id);
-        toast.success('Đã chuyển sang Chưa điểm danh');
+        toast.info('Đã chuyển sang Chưa điểm danh');
         onRefresh();
       } catch (err: any) {
         // Rollback optimistic clear if API fails
@@ -885,63 +1136,11 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
         });
         toast.error('Lỗi khi reset điểm danh: ' + (err.response?.data?.error?.message || err.message));
       } finally {
-        setSaving(false);
+        setSavingCellKey(null);
       }
     } else {
+      setSavingCellKey(null);
       toast.info('Đã chuyển sang Chưa điểm danh');
-    }
-  };
-
-  // Save all edits
-  const handleSaveAll = async () => {
-    const entries = Object.entries(actualPendingChanges);
-    if (entries.length === 0) return;
-
-    try {
-      setSaving(true);
-
-      if (onSaveCustom) {
-        await onSaveCustom(actualPendingChanges, customValues);
-      } else if (cls) {
-        const byDate = new Map<string, { ecId: number; status: AttendanceStatus }[]>();
-        entries.forEach(([key, status]) => {
-          const [ecIdStr, dateStr] = key.split('_');
-          const ecId = parseInt(ecIdStr, 10);
-          if (!byDate.has(dateStr)) byDate.set(dateStr, []);
-          byDate.get(dateStr)!.push({ ecId, status });
-        });
-
-        for (const [dateStr, items] of byDate.entries()) {
-          let session = sessions.find(
-            (s) => formatSessionDate(s.session_date) === dateStr
-          );
-
-          if (!session) {
-            session = await classSessionsApi.create(cls.id, {
-              session_number: sessions.length + 1,
-              session_date: dateStr,
-            });
-          }
-
-          await attendanceApi.bulkMark(cls.id, session.id, {
-            items: items.map((i) => ({
-              enrollment_class_id: i.ecId,
-              status: i.status,
-              session_count:
-                i.status === 'ATTENDED' ? customValues[`${i.ecId}_${dateStr}`] ?? 1 : 1,
-            })),
-          });
-        }
-      }
-
-      setPendingEdits({});
-      setCustomValues({});
-      toast.success('Đã lưu toàn bộ kết quả điểm danh thành công!');
-      onRefresh();
-    } catch (err: any) {
-      toast.error(err.response?.data?.error?.message || 'Không thể lưu điểm danh');
-    } finally {
-      setSaving(false);
     }
   };
 
@@ -974,17 +1173,27 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
     }
 
     const key = `${st.enrollment_class_id}_${dateStr}`;
+    const opt = optimisticUpdates[key];
     const isCleared = clearedKeys.has(key);
     const existingAtt = isCleared ? undefined : attendanceMap.get(key);
-    const isPending = Boolean(actualPendingChanges[key]);
+
     const currentStatus: AttendanceStatus | undefined =
-      isPending ? actualPendingChanges[key] : existingAtt?.status;
+      opt ? opt.status : existingAtt?.status;
+    const currentCount =
+      opt ? opt.session_count : (existingAtt?.session_count ?? 1);
+    const currentSource = opt ? opt.source : existingAtt?.source;
+    const currentUpdatedAt = opt ? opt.updated_at : (existingAtt?.updated_at || existingAtt?.created_at);
+
+    // Người dùng điểm danh hôm nay (thủ công, không phải tự động, và chỉ trong ngày hôm nay)
+    const todayStr = toLocalDateString(new Date());
+    const isManual = currentSource === 'MANUAL';
+    const isActionToday = currentUpdatedAt && toLocalDateString(new Date(currentUpdatedAt)) === todayStr;
+    const isUserAttendedToday = Boolean(currentStatus && isManual && isActionToday);
 
     const cfg = currentStatus ? STATUS_CONFIG[currentStatus] : null;
     let displayValue: React.ReactNode = <span className="font-medium text-text-muted">-</span>;
     if (currentStatus === 'ATTENDED') {
-      const count = isPending ? (customValues[key] ?? 1) : (existingAtt?.session_count ?? 1);
-      displayValue = <span className="inline-flex items-center gap-1"><Check className="h-3.5 w-3.5" /><span>{count}</span></span>;
+      displayValue = <span className="inline-flex items-center gap-1"><Check className="h-3.5 w-3.5" /><span>{currentCount}</span></span>;
     } else if (cfg) {
       displayValue = cfg.short;
     }
@@ -993,138 +1202,50 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
       activeCell?.enrollmentClassId === st.enrollment_class_id &&
       activeCell?.dateStr === dateStr;
 
+    // Màu sắc:
+    // Nếu người dùng điểm danh trong ngày hôm nay -> nền xanh nước biển nhạt, viền xanh nhẹ, chữ xanh đậm (BỎ VIỀN VÀNG)
+    // Ngược lại -> hiển thị màu bình thường theo STATUS_CONFIG
+    const colorClasses = isUserAttendedToday
+      ? 'border-blue-300 bg-blue-100 text-blue-700 font-extrabold hover:bg-blue-200/80'
+      : cfg
+      ? `${cfg.bg} ${cfg.text} ${cfg.border}`
+      : 'border-transparent bg-transparent text-text-muted hover:border-border hover:bg-surface-muted';
+
     return (
-      <div
-        ref={isActive ? activeCellContainerRef : undefined}
-        className="relative flex items-center justify-center p-1"
-      >
+      <div className="relative flex items-center justify-center p-1">
         <button
           type="button"
           onClick={(event) => {
             if (isActive) {
               setActiveCell(null);
+              setActiveAnchorEl(null);
             } else {
-              const cellRect = event.currentTarget.getBoundingClientRect();
-              const popoverWidth = 292;
-              const viewportPadding = 12;
-              const preferredLeft = cellRect.left + cellRect.width / 2;
-              const minLeft = viewportPadding + popoverWidth / 2;
-              const maxLeft = window.innerWidth - viewportPadding - popoverWidth / 2;
-              setPopoverAnchor({
-                top: cellRect.top - 10,
-                left: Math.min(Math.max(preferredLeft, minLeft), maxLeft),
-              });
+              setActiveAnchorEl(event.currentTarget);
               setActiveCell({
                 enrollmentClassId: st.enrollment_class_id,
                 dateStr,
                 studentName: st.full_name,
+                currentCount: typeof currentCount === 'number' ? currentCount : 1,
               });
-              const currentCellCount = isPending
-                ? (customValues[key] ?? 1)
-                : (existingAtt?.session_count ?? 1);
-              setCellInputCount(currentCellCount);
             }
           }}
           aria-expanded={isActive}
           aria-label={`Điểm danh ${st.full_name} ngày ${new Date(dateStr).toLocaleDateString('vi-VN')}`}
-          className={`flex h-9 w-full items-center justify-center rounded-lg border text-xs font-extrabold transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${
-            cfg
-              ? `${cfg.bg} ${cfg.text} ${cfg.border}`
-              : 'border-transparent bg-transparent text-text-muted hover:border-border hover:bg-surface-muted'
-          } ${isPending ? 'ring-2 ring-amber-300 ring-offset-1' : ''} ${
+          className={`flex h-9 w-full items-center justify-center rounded-lg border text-xs font-extrabold transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${colorClasses} ${
             isActive
               ? 'relative z-30 scale-[1.04] border-primary bg-primary-soft text-primary shadow-md ring-2 ring-primary/35 ring-offset-2'
               : ''
-          }`}
+          } ${savingCellKey === key ? 'opacity-60 animate-pulse' : ''}`}
           title={
             currentStatus === 'ATTENDED'
-              ? `Có mặt (${isPending ? (customValues[key] ?? 1) : (existingAtt?.session_count ?? 1)} buổi) - ${new Date(dateStr).toLocaleDateString('vi-VN')}`
+              ? `Có mặt (${currentCount} buổi) - ${new Date(dateStr).toLocaleDateString('vi-VN')}${isUserAttendedToday ? ' [Điểm danh thủ công hôm nay]' : ''}`
               : cfg
-              ? `${cfg.label} - ${new Date(dateStr).toLocaleDateString('vi-VN')}`
+              ? `${cfg.label} - ${new Date(dateStr).toLocaleDateString('vi-VN')}${isUserAttendedToday ? ' [Điểm danh thủ công hôm nay]' : ''}`
               : `Chưa điểm danh (${new Date(dateStr).toLocaleDateString('vi-VN')})`
           }
         >
           {displayValue}
         </button>
-
-        {isActive && createPortal(
-          <div
-            ref={attendancePopoverRef}
-            className="fixed z-[100] w-[292px] -translate-x-1/2 -translate-y-full rounded-2xl border border-border bg-surface p-3 text-left shadow-soft-xl animate-in zoom-in-95 duration-100"
-            style={{ top: popoverAnchor.top, left: popoverAnchor.left }}
-          >
-            <span
-              aria-hidden="true"
-              className="absolute -bottom-1.5 left-1/2 h-3 w-3 -translate-x-1/2 rotate-45 border-b border-r border-border bg-surface"
-            />
-
-            <div className="relative mb-2 grid grid-cols-[72px_1fr] gap-2">
-              <label htmlFor={`attendance-count-${key}`} className="sr-only">Số buổi có mặt</label>
-              <input
-                id={`attendance-count-${key}`}
-                type="number"
-                min="0.5"
-                max="10"
-                step="0.5"
-                value={cellInputCount}
-                onChange={(e) => {
-                  const value = e.target.value;
-                  setCellInputCount(value === '' ? '' : Number(value));
-                }}
-                onBlur={() => {
-                  if (cellInputCount === '') setCellInputCount(1);
-                }}
-                className="h-9 rounded-xl border border-emerald-300 bg-emerald-50 text-center text-xs font-extrabold text-emerald-800 outline-none transition focus:ring-2 focus:ring-emerald-300"
-              />
-              <button
-                type="button"
-                disabled={cellInputCount === '' || cellInputCount < 0.5 || cellInputCount > 10}
-                onClick={() => {
-                  if (cellInputCount !== '') {
-                    handleStatusSelect(st.enrollment_class_id, dateStr, 'ATTENDED', cellInputCount);
-                  }
-                }}
-                className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl bg-emerald-600 px-3 text-xs font-bold text-white shadow-sm transition hover:bg-emerald-700 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 focus-visible:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <Check className="h-4 w-4" />
-                Có mặt{cellInputCount !== '' ? ` (${cellInputCount})` : ''}
-              </button>
-            </div>
-
-            <div className="relative grid grid-cols-2 gap-2">
-              {(
-                [
-                  'ABSENT_APPROVED_A',
-                  'LEAVE_B',
-                  'ABSENT_UNAPPROVED_C',
-                  'TEACHER_ABSENT_D',
-                  'TECH_ERROR_E',
-                ] as AttendanceStatus[]
-              ).map((status) => {
-                const option = STATUS_CONFIG[status];
-                return (
-                  <button
-                    key={status}
-                    type="button"
-                    onClick={() => handleStatusSelect(st.enrollment_class_id, dateStr, status)}
-                    className={`flex h-9 items-center justify-center rounded-xl border px-2 text-[11px] font-bold transition hover:-translate-y-px hover:shadow-sm active:translate-y-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 ${option.bg} ${option.text} ${option.border}`}
-                    title={option.label}
-                  >
-                    {option.label}
-                  </button>
-                );
-              })}
-              <button
-                type="button"
-                onClick={() => handleClearCell(st.enrollment_class_id, dateStr)}
-                className="flex h-9 items-center justify-center rounded-xl border border-border bg-surface-muted px-2 text-[11px] font-bold text-text-secondary transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-200"
-              >
-                Chưa điểm danh (-)
-              </button>
-            </div>
-          </div>,
-          document.body
-        )}
       </div>
     );
   };
@@ -1174,22 +1295,6 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
               </Button>
             </>
           )}
-          {hasChanges && (
-            <Badge variant="warning" size="md" className="font-bold">
-              {changesCount} thay đổi chưa lưu
-            </Badge>
-          )}
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={handleSaveAll}
-            disabled={!hasChanges || saving}
-            isLoading={saving}
-            leftIcon={<Save className="h-4 w-4" />}
-            className="h-10 whitespace-nowrap font-bold"
-          >
-            Lưu điểm danh
-          </Button>
         </div>
       </div>
 
@@ -1321,6 +1426,14 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
               {selectedStudents.size}
             </span>
             <span className="font-bold text-text-primary">học viên đã chọn</span>
+            <button
+              type="button"
+              onClick={() => setSelectedStudents(new Set())}
+              className="ml-1 rounded-md border border-border/80 bg-surface px-2 py-1 text-[11px] font-semibold text-text-secondary transition hover:bg-surface-muted hover:text-text-primary"
+              title="Bỏ chọn tất cả học viên"
+            >
+              Bỏ chọn
+            </button>
           </div>
 
           <div className="flex min-w-0 items-center gap-2 overflow-x-auto pb-1 [scrollbar-width:thin] sm:pb-0">
@@ -1334,10 +1447,17 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
                 step="0.5"
                 value={bulkCount}
                 onChange={(e) => setBulkCount(Number(e.target.value) || 1)}
-                className="h-7 w-12 rounded-md bg-emerald-50 text-center font-extrabold text-emerald-800 outline-none focus:ring-2 focus:ring-emerald-300"
+                disabled={bulkSaving}
+                className="h-7 w-12 rounded-md bg-emerald-50 text-center font-extrabold text-emerald-800 outline-none focus:ring-2 focus:ring-emerald-300 disabled:opacity-50"
               />
             </div>
-            <button type="button" onClick={handleBulkApplyAttended} aria-label={`Đánh dấu có mặt ${bulkCount} buổi cho ${selectedStudents.size} học viên`} className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg bg-emerald-600 px-3 font-bold text-white shadow-sm transition hover:bg-emerald-700 active:scale-[0.98]">
+            <button
+              type="button"
+              onClick={handleBulkApplyAttended}
+              disabled={bulkSaving}
+              aria-label={`Đánh dấu có mặt ${bulkCount} buổi cho ${selectedStudents.size} học viên`}
+              className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg bg-emerald-600 px-3 font-bold text-white shadow-sm transition hover:bg-emerald-700 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
+            >
               <Check className="h-3.5 w-3.5" /> Có mặt
             </button>
             {(['ABSENT_APPROVED_A', 'LEAVE_B', 'ABSENT_UNAPPROVED_C', 'TEACHER_ABSENT_D', 'TECH_ERROR_E'] as AttendanceStatus[]).map((status) => (
@@ -1345,8 +1465,9 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
                 key={status}
                 type="button"
                 onClick={() => handleBulkApplyAbsent(status)}
+                disabled={bulkSaving}
                 aria-label={`${STATUS_CONFIG[status].label} cho ${selectedStudents.size} học viên`}
-                className={`inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border px-2.5 font-bold transition hover:-translate-y-px hover:shadow-sm active:translate-y-0 ${STATUS_CONFIG[status].bg} ${STATUS_CONFIG[status].text} ${STATUS_CONFIG[status].border}`}
+                className={`inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border px-2.5 font-bold transition hover:-translate-y-px hover:shadow-sm active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-50 ${STATUS_CONFIG[status].bg} ${STATUS_CONFIG[status].text} ${STATUS_CONFIG[status].border}`}
                 title={STATUS_CONFIG[status].label}
               >
                 <span className="text-[10px] font-extrabold">{STATUS_CONFIG[status].short}</span>
@@ -1356,8 +1477,9 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
             <button
               type="button"
               onClick={handleBulkClear}
+              disabled={bulkSaving}
               aria-label={`Chuyển Chưa điểm danh cho ${selectedStudents.size} học viên`}
-              className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-border bg-surface-muted px-2.5 font-bold text-text-secondary transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 active:scale-[0.98]"
+              className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-border bg-surface-muted px-2.5 font-bold text-text-secondary transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
               title="Chuyển sang Chưa điểm danh"
             >
               <span className="text-[10px] font-extrabold">-</span>
@@ -2149,8 +2271,43 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
               <span>{key === 'ATTENDED' ? 'Có mặt (Điền số buổi: 1, 2...)' : opt.label}</span>
             </div>
           ))}
+          <div className="flex items-center gap-1.5">
+            <span className="w-5 h-5 rounded flex items-center justify-center text-[10px] font-extrabold border border-blue-300 bg-blue-100 text-blue-700">
+              *
+            </span>
+            <span>Xanh nhạt: Điểm danh thủ công hôm nay</span>
+          </div>
         </div>
       </div>
+
+      {/* Floating Attendance Picker Popover */}
+      {activeCell && activeAnchorEl && (
+        <AttendancePickerPopover
+          anchorEl={activeAnchorEl}
+          studentName={activeCell.studentName}
+          dateStr={activeCell.dateStr}
+          initialCount={activeCell.currentCount}
+          onSelectStatus={(status, count) => {
+            handleStatusSelect(
+              activeCell.enrollmentClassId,
+              activeCell.dateStr,
+              status,
+              count
+            );
+            setActiveCell(null);
+            setActiveAnchorEl(null);
+          }}
+          onClear={() => {
+            handleClearCell(activeCell.enrollmentClassId, activeCell.dateStr);
+            setActiveCell(null);
+            setActiveAnchorEl(null);
+          }}
+          onClose={() => {
+            setActiveCell(null);
+            setActiveAnchorEl(null);
+          }}
+        />
+      )}
     </div>
   );
 };

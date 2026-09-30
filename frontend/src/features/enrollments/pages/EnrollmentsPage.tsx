@@ -18,6 +18,12 @@ import { classSessionsApi, attendanceApi } from '../../classes/api/sessions.api'
 import { ClassSession, Attendance, AttendanceStatus } from '../../classes/types/classes.types';
 import { BarChart3, Calendar, Search, SlidersHorizontal, Zap, X } from 'lucide-react';
 
+const DEFAULT_STATUS_BY_TAB: Record<AttendanceTab, string> = {
+  quick: 'STUDYING',
+  detailed: 'STUDYING',
+  stats: '',
+};
+
 export const EnrollmentsPage: React.FC = () => {
   const toast = useToast();
   const { user } = useAuth();
@@ -31,7 +37,15 @@ export const EnrollmentsPage: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedSale, setSelectedSale] = useState<string>('');
   const [modelFilter, setModelFilter] = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
+  const [statusFilterByTab, setStatusFilterByTab] = useState<Record<AttendanceTab, string>>(DEFAULT_STATUS_BY_TAB);
+
+  const statusFilter = statusFilterByTab[activeTab];
+  const setStatusFilter = (val: string) => {
+    setStatusFilterByTab((prev) => ({
+      ...prev,
+      [activeTab]: val,
+    }));
+  };
 
   const fetchEnrollments = async () => {
     try {
@@ -163,11 +177,16 @@ export const EnrollmentsPage: React.FC = () => {
     });
   }, [listStudents, searchQuery, modelFilter, statusFilter]);
 
-  const hasActiveFilters = Boolean(searchQuery || modelFilter || statusFilter);
+  const defaultStatus = DEFAULT_STATUS_BY_TAB[activeTab];
+  const hasActiveFilters = Boolean(
+    searchQuery ||
+    modelFilter ||
+    statusFilter !== defaultStatus
+  );
   const clearFilters = () => {
     setSearchQuery('');
     setModelFilter('');
-    setStatusFilter('');
+    setStatusFilter(defaultStatus);
   };
 
   // Aggregate all sessions & attendances across the enrolled classes

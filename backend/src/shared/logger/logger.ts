@@ -30,7 +30,7 @@ const COLORS: Record<LogLevel, string> = {
 };
 
 const RESET = '\x1b[0m';
-const minLevel = LOG_LEVELS[(process.env.LOG_LEVEL as LogLevel) || 'debug'];
+const minLevel = LOG_LEVELS[(process.env.LOG_LEVEL as LogLevel) || 'info'];
 
 export interface Logger {
   debug(message: string, meta?: Record<string, unknown>): void;

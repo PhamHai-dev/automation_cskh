@@ -24,7 +24,14 @@ export const importsApi = {
 
   saveMapping: async (
     importId: number,
-    data: { sheet: 'studentEnrollment' | 'attendance'; headerRowIndex?: number; columnMapping: Record<string, string>; assignedCsId?: number }
+    data: {
+      sheet: 'studentEnrollment' | 'attendance';
+      headerRowIndex?: number;
+      columnMapping: Record<string, string>;
+      assignedCsId?: number;
+      selectedMonth?: number;
+      selectedYear?: number;
+    }
   ): Promise<{ success: boolean; columnMapping: Record<string, string>; assignedCsId?: number }> => {
     const res = await apiClient.post(`/imports/${importId}/mapping`, {
       ...data,
