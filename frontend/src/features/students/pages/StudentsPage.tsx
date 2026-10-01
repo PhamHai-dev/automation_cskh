@@ -2,6 +2,7 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { studentsApi } from '../api/students.api';
 import { careApi } from '../../care/api/care.api';
 import { Student, CreateStudentDTO } from '../types/students.types';
+import { CareSelectCell } from '../components/CareSelectCell';
 import { PageContainer } from '../../../components/common/PageContainer';
 import { PageHeader } from '../../../components/common/PageHeader';
 import { DataTable, Column } from '../../../components/common/DataTable';
@@ -276,8 +277,8 @@ export const StudentsPage: React.FC = () => {
   const [students, setStudents] = useState<Student[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Care milestones state
-  const [configuredMilestones, setConfiguredMilestones] = useState<number[]>([1]);
+  // Care milestones state (mặc định các mốc chuẩn: 1, 3, 10, 15)
+  const [configuredMilestones, setConfiguredMilestones] = useState<number[]>([1, 3, 10, 15]);
   const [isAddMilestoneModalOpen, setIsAddMilestoneModalOpen] = useState(false);
   const [newMilestoneInput, setNewMilestoneInput] = useState<number | ''>('');
   const [addingMilestone, setAddingMilestone] = useState(false);
@@ -1126,9 +1127,9 @@ export const StudentsPage: React.FC = () => {
     // --- DYNAMIC CARE SESSION COLUMNS (AO ➔ BC: Buổi 1, Buổi N...) ---
     ...activeMilestones.map((sessionNum) => ({
       header: (
-        <div key={`head-sess-${sessionNum}`} className="flex items-center gap-1 text-emerald-800">
-          <MessageSquare className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-          <span>Chăm sóc buổi {sessionNum}</span>
+        <div key={`head-sess-${sessionNum}`} className="flex items-center gap-1 text-slate-800 whitespace-nowrap">
+          <MessageSquare className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+          <span>Nội dung chăm sóc sau buổi {sessionNum}</span>
         </div>
       ),
       cell: (item: Student) => {
@@ -1136,11 +1137,9 @@ export const StudentsPage: React.FC = () => {
         if (!enr) return <span className="text-slate-400">—</span>;
         const log = enr.care_logs?.find((cl) => cl.after_session_number === sessionNum);
         return (
-          <InlineEditableCell
+          <CareSelectCell
             value={log?.content}
-            multiline
-            placeholder={`Nhập nhận xét sau buổi ${sessionNum}...`}
-            className="bg-emerald-50/40 border border-emerald-100 hover:bg-emerald-50"
+            placeholder="Chọn phản hồi..."
             onSave={(newVal) => handleSaveSessionCareLog(enr.id, sessionNum, newVal)}
           />
         );

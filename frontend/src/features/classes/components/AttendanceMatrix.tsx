@@ -703,6 +703,8 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
     let grandTotalMonthAttended = 0;
     let grandTotalAbsentA = 0;
     let grandTotalAbsentC = 0;
+    let grandTotalMonthAbsentA = 0;
+    let grandTotalMonthAbsentC = 0;
     let grandTotalTeacherD = 0;
     let grandTotalLeaveB = 0;
     let grandTotalTechE = 0;
@@ -715,21 +717,22 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
         grandTotalMonthAttended += stat.monthAttended;
         grandTotalAbsentA += stat.totalAbsentA;
         grandTotalAbsentC += stat.totalAbsentC;
+        grandTotalMonthAbsentA += stat.monthAbsentA;
+        grandTotalMonthAbsentC += stat.monthAbsentC;
         grandTotalTeacherD += stat.totalTeacherD;
         grandTotalLeaveB += stat.monthLeaveB;
         grandTotalTechE += stat.monthTechE;
       }
       const rem =
-        s.remaining_sessions ??
-        (s.total_sessions ? s.total_sessions - (stat?.totalAttended || 0) : 0);
+        s.total_sessions ? s.total_sessions - (stat?.totalAttended || 0) : 0;
       if (rem < 0) negativeDebtStudents++;
     });
 
-    const totalSessionsRecorded =
-      grandTotalAttended + grandTotalAbsentA + grandTotalAbsentC + grandTotalTeacherD;
+    const monthSessionsRecorded =
+      grandTotalMonthAttended + grandTotalMonthAbsentA + grandTotalMonthAbsentC;
     const attendanceRate =
-      totalSessionsRecorded > 0
-        ? Math.round((grandTotalAttended / totalSessionsRecorded) * 100)
+      monthSessionsRecorded > 0
+        ? Math.round((grandTotalMonthAttended / monthSessionsRecorded) * 100)
         : 100;
 
     return {
@@ -737,6 +740,8 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
       grandTotalMonthAttended,
       grandTotalAbsentA,
       grandTotalAbsentC,
+      grandTotalMonthAbsentA,
+      grandTotalMonthAbsentC,
       grandTotalTeacherD,
       grandTotalLeaveB,
       grandTotalTechE,
@@ -1376,7 +1381,6 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
       {activeTab === 'stats' && (
         <div className="p-3 px-4 border-b border-border/70 bg-surface flex flex-wrap items-center justify-between gap-3 text-xs">
           <div className="flex items-center gap-2">
-            <span className="text-text-secondary font-bold">Tháng thống kê (Cột AC ➔ AH):</span>
             <div className="flex items-center gap-1 bg-surface-muted p-1 rounded-xl border border-border/60">
               <button
                 type="button"
@@ -1842,8 +1846,7 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
                 students.map((st, idx) => {
                   const stat = studentStats.get(st.enrollment_class_id);
                   const remaining =
-                    st.remaining_sessions ??
-                    (st.total_sessions ? st.total_sessions - (stat?.totalAttended || 0) : 0);
+                    st.total_sessions ? st.total_sessions - (stat?.totalAttended || 0) : 0;
                   const isNegativeDebt = remaining < 0;
 
                   return (
@@ -2046,9 +2049,11 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
                 <span>Nghỉ có phép (A)</span>
               </div>
               <div className="text-2xl font-black text-amber-950 mt-1">
-                {overallKPIs.grandTotalAbsentA}
+                {overallKPIs.grandTotalMonthAbsentA}
               </div>
-              <div className="text-[10px] text-amber-700 mt-0.5">Đã xin phép giáo viên</div>
+              <div className="text-[10px] text-amber-700 mt-0.5">
+                Tháng {currentDate.getMonth() + 1}/{currentDate.getFullYear()}
+              </div>
             </div>
 
             <div className="p-3.5 rounded-2xl bg-rose-50/80 border border-rose-200 shadow-2xs">
@@ -2057,9 +2062,11 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
                 <span>Nghỉ sai QĐ (C)</span>
               </div>
               <div className="text-2xl font-black text-rose-950 mt-1">
-                {overallKPIs.grandTotalAbsentC}
+                {overallKPIs.grandTotalMonthAbsentC}
               </div>
-              <div className="text-[10px] text-rose-700 mt-0.5">Vắng không báo trước</div>
+              <div className="text-[10px] text-rose-700 mt-0.5">
+                Tháng {currentDate.getMonth() + 1}/{currentDate.getFullYear()}
+              </div>
             </div>
 
             <div className="p-3.5 rounded-2xl bg-purple-50/80 border border-purple-200 shadow-2xs">
@@ -2070,7 +2077,9 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
               <div className="text-2xl font-black text-purple-950 mt-1">
                 {overallKPIs.attendanceRate}%
               </div>
-              <div className="text-[10px] text-purple-700 mt-0.5">Trên tổng ca học diễn ra</div>
+              <div className="text-[10px] text-purple-700 mt-0.5">
+                Tháng {currentDate.getMonth() + 1}/{currentDate.getFullYear()}
+              </div>
             </div>
 
             <div className="p-3.5 rounded-2xl bg-red-50/90 border border-red-300 shadow-2xs">
@@ -2090,13 +2099,13 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
             <table className="w-full text-xs text-left border-collapse">
               <thead>
                 <tr className="bg-surface-muted/90 text-text-secondary border-b border-border/80 text-[11px] font-bold">
-                  <th className="px-2 py-3 border-r border-border/60 w-10 min-w-[40px] text-center bg-slate-100">
+                  <th className="px-2 py-3 border-r border-border/60 sticky left-0 bg-slate-100 z-20 w-10 min-w-[40px] text-center">
                     #
                   </th>
-                  <th className="px-3 py-3 border-r border-border/60 whitespace-nowrap min-w-[85px]">
+                  <th className="px-3 py-3 border-r border-border/60 sticky left-10 bg-slate-100 z-20 whitespace-nowrap min-w-[85px]">
                     ID
                   </th>
-                  <th className="px-4 py-3 border-r border-border/60 whitespace-nowrap min-w-[160px]">
+                  <th className="px-4 py-3 border-r-2 border-border/80 sticky left-[125px] bg-slate-100 z-20 whitespace-nowrap min-w-[160px] shadow-[4px_0_6px_-2px_rgba(0,0,0,0.06)]">
                     Họ tên HV
                   </th>
                   <th className="px-3 py-3 border-r border-border/60 whitespace-nowrap min-w-[110px]">
@@ -2184,13 +2193,13 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
                           idx % 2 === 1 ? 'bg-slate-50/30' : 'bg-surface'
                         }`}
                       >
-                        <td className="px-2 py-2.5 border-r border-border/60 text-center text-text-muted font-bold bg-slate-100">
+                        <td className="px-2 py-2.5 border-r border-border/60 text-center text-text-muted font-bold sticky left-0 bg-slate-100 z-10">
                           {idx + 1}
                         </td>
-                        <td className="px-3 py-2.5 border-r border-border/60 font-mono font-bold text-text-primary whitespace-nowrap">
+                        <td className="px-3 py-2.5 border-r border-border/60 font-mono font-bold text-text-primary whitespace-nowrap sticky left-10 bg-slate-100 z-10">
                           {st.external_id || `HV_${st.student_id}`}
                         </td>
-                        <td className="px-4 py-2.5 border-r border-border/60 font-bold text-text-primary whitespace-nowrap">
+                        <td className="px-4 py-2.5 border-r-2 border-border/80 font-bold text-text-primary whitespace-nowrap sticky left-[125px] bg-slate-100 z-10 shadow-[4px_0_6px_-2px_rgba(0,0,0,0.06)]">
                           {st.full_name}
                         </td>
                         <td className="px-3 py-2.5 border-r border-border/60 text-text-secondary whitespace-nowrap">
