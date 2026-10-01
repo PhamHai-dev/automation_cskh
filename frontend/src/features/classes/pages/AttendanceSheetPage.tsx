@@ -173,18 +173,19 @@ export const AttendanceSheetPage = () => {
           email: student?.email || '',
           model_type: cls.model_type || enrollment?.class_model || '1:1',
           remaining_sessions: enrollment?.external_remaining_sessions,
+          attended_previous_years: enrollment?.attended_previous_years ?? 0,
           status: enrollment?.status || 'STUDYING',
           start_date: enrollment?.start_date,
           end_date: enrollment?.end_date,
           start_time: schedule?.start_time || '20h00',
           schedule_pattern: schedule?.schedule_pattern || '246',
           duration_minutes: schedule?.duration_minutes || 30,
-          teacher_name: teacher?.name || 'Giáo viên',
+          teacher_name: teacher?.name || '—',
           teacher_code:
             (teacher as any)?.teacher_profile?.teacher_code ||
             (teacher as any)?.teacher_code ||
-            'GV_01',
-          class_name: cls.class_name || 'Lớp học',
+            '—',
+          class_name: cls.class_name || '—',
         });
       });
     }
@@ -210,18 +211,19 @@ export const AttendanceSheetPage = () => {
           email: student?.email || '',
           model_type: cls?.model_type || enrollment?.class_model || '1:1',
           remaining_sessions: enrollment?.external_remaining_sessions,
+          attended_previous_years: enrollment?.attended_previous_years ?? 0,
           status: enrollment?.status || 'STUDYING',
           start_date: enrollment?.start_date,
           end_date: enrollment?.end_date,
           start_time: schedule?.start_time || '20h00',
           schedule_pattern: schedule?.schedule_pattern || '246',
           duration_minutes: schedule?.duration_minutes || 30,
-          teacher_name: teacher?.name || 'Giáo viên',
+          teacher_name: teacher?.name || '—',
           teacher_code:
             (teacher as any)?.teacher_profile?.teacher_code ||
             (teacher as any)?.teacher_code ||
-            'GV_01',
-          class_name: cls?.class_name || 'Lớp học',
+            '—',
+          class_name: cls?.class_name || '—',
         });
       }
     });

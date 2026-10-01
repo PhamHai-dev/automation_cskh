@@ -173,6 +173,8 @@ export class ImportsService {
         suggestedMapping['total_sessions'] = colLetter;
       } else if (lower.includes('số buổi còn lại')) {
         suggestedMapping['remaining_sessions'] = colLetter;
+      } else if (lower.includes('đã học năm trước') || lower.includes('buổi đã học năm trước')) {
+        suggestedMapping['attended_previous_years'] = colLetter;
       } else if (lower.includes('ngày bắt đầu')) {
         suggestedMapping['start_date'] = colLetter;
       } else if (lower.includes('ngày kết thúc') || lower.includes('kết thúc/bảo lưu')) {
@@ -1335,6 +1337,7 @@ export class ImportsService {
                 end_date: this.parseExcelDate(snap.end_date),
                 status: this.statusFromText(snap.status),
                 external_remaining_sessions: snap.remaining_sessions !== undefined && snap.remaining_sessions !== '' ? Number(snap.remaining_sessions) : null,
+                attended_previous_years: snap.attended_previous_years !== undefined && snap.attended_previous_years !== '' ? Number(snap.attended_previous_years) : 0,
                 external_synced_at: new Date(),
               },
               include: { enrollment_classes: { include: { class: true } } },
@@ -1344,6 +1347,7 @@ export class ImportsService {
             const updateData: any = {
               total_sessions: Number(snap.total_sessions) || enrollment.total_sessions,
               external_remaining_sessions: snap.remaining_sessions !== undefined && snap.remaining_sessions !== '' ? Number(snap.remaining_sessions) : null,
+              attended_previous_years: snap.attended_previous_years !== undefined && snap.attended_previous_years !== '' ? Number(snap.attended_previous_years) : enrollment.attended_previous_years,
               level: snap.level !== undefined ? (snap.level || null) : enrollment.level,
               status: snap.status ? this.statusFromText(snap.status) : enrollment.status,
               start_date: snap.start_date !== undefined ? this.parseExcelDate(snap.start_date) : enrollment.start_date,
@@ -2180,6 +2184,7 @@ export class ImportsService {
           sale_name: saleName,
           total_sessions: Number(snapshot.total_sessions) || pkg.default_total_sessions || 0,
           external_remaining_sessions: snapshot.remaining_sessions === '' ? null : Number(snapshot.remaining_sessions),
+          attended_previous_years: snapshot.attended_previous_years !== undefined && snapshot.attended_previous_years !== '' ? Number(snapshot.attended_previous_years) : 0,
           level: snapshot.level || null,
           start_date: this.parseExcelDate(snapshot.start_date),
           end_date: this.parseExcelDate(snapshot.end_date),

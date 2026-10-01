@@ -218,6 +218,7 @@ model Enrollment {
   end_date                    DateTime?        @db.Date
   status                      EnrollmentStatus @default(NOT_STARTED)
   auto_message_enabled        Boolean          @default(true)
+  attended_previous_years     Int?             @default(0)
   external_remaining_sessions Int?
   external_synced_at          DateTime?
   handed_over_at              DateTime?

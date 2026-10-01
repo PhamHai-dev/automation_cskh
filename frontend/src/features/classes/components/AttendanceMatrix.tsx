@@ -36,6 +36,7 @@ export interface StudentRow {
   phone?: string | null;            // SĐT phục vụ tìm kiếm
   model_type?: string | null;       // Cột H: Mô hình (1:1, 1:2, 1:n)
   remaining_sessions?: number | null;// Cột I: Số buổi còn lại
+  attended_previous_years?: number | null; // Số buổi đã học năm trước
   start_date?: string | null;       // Cột J: Ngày bắt đầu học
   status: string;                   // Cột K: Trạng thái (STUDYING, PAUSED, FINISHED...)
   end_date?: string | null;         // Cột L: Ngày kết thúc/Bảo lưu
@@ -1845,8 +1846,12 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
               ) : (
                 students.map((st, idx) => {
                   const stat = studentStats.get(st.enrollment_class_id);
+                  const prevAttended = st.attended_previous_years || 0;
+                  const currentAttended = stat?.totalAttended || 0;
                   const remaining =
-                    st.total_sessions ? st.total_sessions - (stat?.totalAttended || 0) : 0;
+                    st.total_sessions
+                      ? st.total_sessions - prevAttended - currentAttended
+                      : ((st.remaining_sessions ?? 0) - currentAttended);
                   const isNegativeDebt = remaining < 0;
 
                   return (

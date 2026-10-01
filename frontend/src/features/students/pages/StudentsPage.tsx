@@ -320,6 +320,7 @@ export const StudentsPage: React.FC = () => {
     level: 'N5',
     total_sessions: 30,
     external_remaining_sessions: 30,
+    attended_previous_years: '',
     class_model: 'Nhóm',
     sales_note: '',
 
@@ -561,6 +562,10 @@ export const StudentsPage: React.FC = () => {
         level: enr?.level || 'N5',
         total_sessions: enr?.total_sessions ?? 30,
         external_remaining_sessions: enr?.external_remaining_sessions ?? 30,
+        attended_previous_years:
+          enr?.attended_previous_years !== undefined && enr?.attended_previous_years !== null
+            ? enr.attended_previous_years
+            : '',
         class_model: enr?.class_model || 'Nhóm',
         sales_note: enr?.sales_note || '',
 
@@ -611,6 +616,10 @@ export const StudentsPage: React.FC = () => {
         ...formData,
         date_of_birth: formData.date_of_birth || undefined,
         paid_at: formData.paid_at || undefined,
+        attended_previous_years:
+          formData.attended_previous_years !== '' && formData.attended_previous_years !== undefined
+            ? Number(formData.attended_previous_years)
+            : undefined,
         start_date: formData.start_date || undefined,
         end_date: formData.end_date || undefined,
         handed_over_at: formData.handed_over_at || undefined,
@@ -888,12 +897,68 @@ export const StudentsPage: React.FC = () => {
       header: 'Số buổi còn lại',
       cell: (item) => {
         const enr = item.enrollments?.[0];
-        const rem = enr?.external_remaining_sessions;
-        if (rem === null || rem === undefined) return <span className="text-slate-400">—</span>;
+        const ec = enr?.enrollment_classes?.[0];
+        if (!enr) return <span className="text-slate-400">—</span>;
+
+        // Tính các buổi đã học năm nay:
+        const currentYear = new Date().getFullYear();
+        const attendedThisYear =
+          ec?.attendance?.filter((a: any) => {
+            if (a.status !== 'ATTENDED') return false;
+            const sessionDate = a.class_session?.session_date
+              ? new Date(a.class_session.session_date)
+              : null;
+            return !sessionDate || sessionDate.getFullYear() === currentYear;
+          }).length || 0;
+
+        // Đã học năm trước (ưu tiên giá trị nhập/Excel, nếu không thì tự tính)
+        let attendedPrev = 0;
+        if (enr.attended_previous_years !== undefined && enr.attended_previous_years !== null) {
+          attendedPrev = Number(enr.attended_previous_years);
+        } else {
+          const attendedInPastYears =
+            ec?.attendance?.filter((a: any) => {
+              if (a.status !== 'ATTENDED') return false;
+              const sessionDate = a.class_session?.session_date
+                ? new Date(a.class_session.session_date)
+                : null;
+              return sessionDate && sessionDate.getFullYear() < currentYear;
+            }).length || 0;
+
+          if (attendedInPastYears > 0) {
+            attendedPrev = attendedInPastYears;
+          } else if (
+            enr.total_sessions &&
+            enr.external_remaining_sessions !== undefined &&
+            enr.external_remaining_sessions !== null
+          ) {
+            attendedPrev = Math.max(
+              0,
+              enr.total_sessions - Number(enr.external_remaining_sessions) - attendedThisYear,
+            );
+          }
+        }
+
+        // Số buổi còn lại thực tế
+        let rem: number;
+        if (enr.total_sessions) {
+          rem = enr.total_sessions - attendedPrev - attendedThisYear;
+        } else if (
+          enr.external_remaining_sessions !== null &&
+          enr.external_remaining_sessions !== undefined
+        ) {
+          rem = Number(enr.external_remaining_sessions) - attendedThisYear;
+        } else {
+          return <span className="text-slate-400">—</span>;
+        }
+
         const isDebt = rem < 0;
 
         return (
-          <div className="flex items-center gap-1 whitespace-nowrap">
+          <div
+            className="flex items-center gap-1 whitespace-nowrap"
+            title={`Tổng buổi: ${enr.total_sessions || 0} - Đã học năm trước: ${attendedPrev} - Đã học năm nay: ${attendedThisYear} = Còn lại: ${rem}`}
+          >
             <span
               className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold border ${
                 isDebt
@@ -997,7 +1062,7 @@ export const StudentsPage: React.FC = () => {
         const sched = ec?.class?.class_schedules?.[0];
         return (
           <span className="text-slate-600 text-xs whitespace-nowrap">
-            {sched?.schedule_pattern ? `Thứ ${sched.schedule_pattern}` : 'Thứ 2, 4, 6'}
+            {sched?.schedule_pattern ? `Thứ ${sched.schedule_pattern}` : '—'}
           </span>
         );
       },
@@ -1009,7 +1074,7 @@ export const StudentsPage: React.FC = () => {
         const teacher = ec?.class?.class_teachers?.[0]?.teacher;
         return (
           <span className="font-semibold text-slate-800 text-xs whitespace-nowrap">
-            {teacher?.name || 'Sensei Tanaka'}
+            {teacher?.name || '—'}
           </span>
         );
       },
@@ -1019,7 +1084,10 @@ export const StudentsPage: React.FC = () => {
       cell: (item) => {
         const ec = item.enrollments?.[0]?.enrollment_classes?.[0];
         const teacher = ec?.class?.class_teachers?.[0]?.teacher;
-        const teacherCode = (teacher as any)?.teacher_code || 'GV_01';
+        const teacherCode =
+          (teacher as any)?.teacher_profile?.teacher_code ||
+          (teacher as any)?.teacher_code ||
+          '—';
         return <span className="text-slate-500 font-mono text-xs whitespace-nowrap">{teacherCode}</span>;
       },
     },
@@ -1032,21 +1100,93 @@ export const StudentsPage: React.FC = () => {
             className="font-semibold text-slate-800 text-xs whitespace-nowrap max-w-[150px] truncate block"
             title={ec?.class?.class_name || ''}
           >
-            {ec?.class?.class_name || 'Lớp N5 - K01 (246 Sáng)'}
+            {ec?.class?.class_name || '—'}
           </span>
         );
       },
     },
     {
       header: 'Đã học năm trước',
-      cell: () => <span className="text-slate-400 text-xs text-center block whitespace-nowrap">0</span>,
+      cell: (item) => {
+        const enr = item.enrollments?.[0];
+        const ec = enr?.enrollment_classes?.[0];
+
+        // 1. Nếu có giá trị lưu từ Excel hoặc người dùng nhập
+        if (enr?.attended_previous_years !== undefined && enr?.attended_previous_years !== null) {
+          return (
+            <span className="font-semibold text-slate-700 text-xs text-center block whitespace-nowrap">
+              {enr.attended_previous_years} buổi
+            </span>
+          );
+        }
+
+        // 2. Tự tính: Đếm các buổi ATTENDED có session_date trước năm hiện tại
+        const currentYear = new Date().getFullYear();
+        const attendedInPastYears =
+          ec?.attendance?.filter((a: any) => {
+            if (a.status !== 'ATTENDED') return false;
+            const sessionDate = a.class_session?.session_date
+              ? new Date(a.class_session.session_date)
+              : null;
+            return sessionDate && sessionDate.getFullYear() < currentYear;
+          }).length || 0;
+
+        if (attendedInPastYears > 0) {
+          return (
+            <span className="font-semibold text-slate-700 text-xs text-center block whitespace-nowrap">
+              {attendedInPastYears} buổi
+            </span>
+          );
+        }
+
+        // 3. Fallback: Nếu là học viên cũ import không có log chi tiết:
+        // Đã học năm trước = max(0, Tổng buổi - Còn lại ban đầu - Đã học năm nay)
+        const attendedThisYear =
+          ec?.attendance?.filter((a: any) => {
+            if (a.status !== 'ATTENDED') return false;
+            const sessionDate = a.class_session?.session_date
+              ? new Date(a.class_session.session_date)
+              : null;
+            return !sessionDate || sessionDate.getFullYear() === currentYear;
+          }).length || 0;
+
+        if (
+          enr?.total_sessions &&
+          enr?.external_remaining_sessions !== undefined &&
+          enr?.external_remaining_sessions !== null
+        ) {
+          const calculatedPrev = Math.max(
+            0,
+            enr.total_sessions - Number(enr.external_remaining_sessions) - attendedThisYear,
+          );
+          if (calculatedPrev > 0) {
+            return (
+              <span
+                className="font-medium text-blue-700 bg-blue-50 px-2 py-0.5 rounded text-xs text-center block whitespace-nowrap"
+                title="Tự động tính: Tổng số buổi - Số buổi còn lại ban đầu - Đã học năm nay"
+              >
+                {calculatedPrev} buổi
+              </span>
+            );
+          }
+        }
+
+        return <span className="text-slate-400 text-xs text-center block whitespace-nowrap">0</span>;
+      },
     },
     {
       header: 'Đã học 2026',
       cell: (item) => {
         const ec = item.enrollments?.[0]?.enrollment_classes?.[0];
+        const currentYear = new Date().getFullYear();
         const attendedCount =
-          ec?.attendance?.filter((a: any) => a.status === 'ATTENDED').length || 0;
+          ec?.attendance?.filter((a: any) => {
+            if (a.status !== 'ATTENDED') return false;
+            const sessionDate = a.class_session?.session_date
+              ? new Date(a.class_session.session_date)
+              : null;
+            return !sessionDate || sessionDate.getFullYear() === currentYear;
+          }).length || 0;
         return (
           <span className="font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded text-xs text-center block whitespace-nowrap">
             {attendedCount} buổi
@@ -1888,7 +2028,7 @@ export const StudentsPage: React.FC = () => {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
                   <div>
                     <label className="block font-medium text-slate-700 mb-1">Tổng số buổi</label>
                     <Input
@@ -1901,14 +2041,27 @@ export const StudentsPage: React.FC = () => {
                   </div>
                   <div>
                     <label className="block font-medium text-slate-700 mb-1">
-                      Số buổi còn lại (Hỗ trợ âm nợ)
+                      Số buổi còn lại
                     </label>
                     <Input
                       type="number"
-                      placeholder="30 (hoặc -1, -2 nếu nợ buổi)"
+                      placeholder="30 (hoặc âm nợ)"
                       value={formData.external_remaining_sessions ?? ''}
                       onChange={(e) =>
                         setFormData({ ...formData, external_remaining_sessions: e.target.value })
+                      }
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-medium text-slate-700 mb-1">
+                      Đã học năm trước
+                    </label>
+                    <Input
+                      type="number"
+                      placeholder="Ví dụ: 35"
+                      value={formData.attended_previous_years ?? ''}
+                      onChange={(e) =>
+                        setFormData({ ...formData, attended_previous_years: e.target.value })
                       }
                     />
                   </div>

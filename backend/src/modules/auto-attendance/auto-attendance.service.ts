@@ -79,21 +79,7 @@ export class AutoAttendanceService {
     let issuesCreated = 0;
 
     for (const schedule of activeSchedules) {
-      // 1. Check validity date range
-      if (schedule.valid_from) {
-        const validFromStr = toDateString(schedule.valid_from);
-        if (validFromStr > sessionDateStr) {
-          continue;
-        }
-      }
-      if (schedule.valid_to) {
-        const validToStr = toDateString(schedule.valid_to);
-        if (validToStr < sessionDateStr) {
-          continue;
-        }
-      }
-
-      // 2. Check schedule pattern (compact Vietnamese format: 246, 35CN, LKCD...)
+      // 1. Check schedule pattern (compact Vietnamese format: 246, 35CN, LKCD...)
       let pattern;
       try {
         pattern = parseSchedulePattern(schedule.schedule_pattern);
@@ -112,6 +98,26 @@ export class AutoAttendanceService {
         continue;
       }
 
+      // 2. Filter students in class who are active and currently within their study period (start_date -> end_date)
+      const eligibleEnrollmentClasses = schedule.class.enrollment_classes.filter((ec) => {
+        if (ec.status !== 'ACTIVE' || ec.enrollment.status !== 'STUDYING') {
+          return false;
+        }
+        if (ec.enrollment.start_date) {
+          const startDateStr = toDateString(ec.enrollment.start_date);
+          if (startDateStr > sessionDateStr) {
+            return false;
+          }
+        }
+        if (ec.enrollment.end_date) {
+          const endDateStr = toDateString(ec.enrollment.end_date);
+          if (endDateStr < sessionDateStr) {
+            return false;
+          }
+        }
+        return true;
+      });
+
       // 3. Check start_time (Rule: "Thiếu giờ học thì không tự điểm danh; hệ thống tạo SCHEDULE_DATA_ISSUE cho CS phụ trách")
       if (!schedule.start_time || !schedule.start_time.trim()) {
         const existingExec = await this.repository.findExecution(schedule.id, sessionDate);
@@ -125,7 +131,7 @@ export class AutoAttendanceService {
             error_message: 'Thiếu giờ học (start_time)',
           });
 
-          for (const ec of schedule.class.enrollment_classes) {
+          for (const ec of eligibleEnrollmentClasses) {
             const csId = ec.enrollment.cs_id || 1;
             const idempotencyKey = `SCHEDULE_DATA_ISSUE_${schedule.id}_${ec.enrollment.id}_${sessionDateStr}`;
             await this.repository.upsertScheduleIssueTask({
@@ -181,11 +187,11 @@ export class AutoAttendanceService {
         continue;
       }
 
-      // 7. Check if class has active enrollments
-      if (schedule.class.enrollment_classes.length === 0) {
+      // 7. Check if class has active eligible enrollments
+      if (eligibleEnrollmentClasses.length === 0) {
         await this.repository.updateExecution(execution.id, {
           status: 'SKIPPED',
-          error_message: 'Không có học viên đang học trong lớp',
+          error_message: 'Không có học viên đang học và trong hạn học trong lớp',
           completed_at: new Date(),
         });
         skippedCount++;
@@ -204,8 +210,8 @@ export class AutoAttendanceService {
         let classAttendedCount = 0;
         const createdAttendanceIds: number[] = [];
 
-        for (const ec of schedule.class.enrollment_classes) {
-          // Rule: "chỉ điền ô trống cho Enrollment STUDYING và EnrollmentClass ACTIVE"
+        for (const ec of eligibleEnrollmentClasses) {
+          // Rule: "chỉ điền ô trống cho Enrollment STUDYING và EnrollmentClass ACTIVE còn hạn học"
           const existingAtt = await this.repository.findExistingAttendance(ec.id, session.id);
           if (existingAtt) {
             continue;

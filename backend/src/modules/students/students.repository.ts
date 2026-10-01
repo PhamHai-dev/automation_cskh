@@ -22,7 +22,11 @@ export class StudentsRepository {
                   include: {
                     class_teachers: {
                       include: {
-                        teacher: true,
+                        teacher: {
+                          include: {
+                            teacher_profile: true,
+                          },
+                        },
                       },
                     },
                     class_schedules: true,
@@ -118,6 +122,10 @@ export class StudentsRepository {
             data.external_remaining_sessions !== undefined && data.external_remaining_sessions !== ''
               ? Number(data.external_remaining_sessions)
               : 30,
+          attended_previous_years:
+            data.attended_previous_years !== undefined && data.attended_previous_years !== ''
+              ? Number(data.attended_previous_years)
+              : 0,
           class_model: data.class_model || 'Nhóm',
           sales_note: data.sales_note || undefined,
           paid_at: data.paid_at ? new Date(data.paid_at) : undefined,
@@ -184,18 +192,13 @@ export class StudentsRepository {
                 u.email.toLowerCase().includes(teacherQuery))
           );
           if (teacherUser) {
-            const profile = await tx.teacherProfile.findUnique({
-              where: { user_id: teacherUser.id },
+            await tx.classTeacher.create({
+              data: {
+                class_id: classObj.id,
+                teacher_id: teacherUser.id,
+                role: 'MAIN',
+              },
             });
-            if (profile) {
-              await tx.classTeacher.create({
-                data: {
-                  class_id: classObj.id,
-                  teacher_id: profile.id,
-                  role: 'MAIN',
-                },
-              });
-            }
           }
         }
 
@@ -250,6 +253,11 @@ export class StudentsRepository {
         enrollmentUpdate.total_sessions = Number(data.total_sessions) || 30;
       if (data.external_remaining_sessions !== undefined && data.external_remaining_sessions !== '')
         enrollmentUpdate.external_remaining_sessions = Number(data.external_remaining_sessions);
+      if (data.attended_previous_years !== undefined)
+        enrollmentUpdate.attended_previous_years =
+          data.attended_previous_years === '' || data.attended_previous_years === null
+            ? null
+            : Number(data.attended_previous_years);
       if (data.class_model !== undefined)
         enrollmentUpdate.class_model = data.class_model || null;
       if (data.sales_note !== undefined)
@@ -290,7 +298,13 @@ export class StudentsRepository {
                 include: {
                   class_schedules: true,
                   class_teachers: {
-                    include: { teacher: true },
+                    include: {
+                      teacher: {
+                        include: {
+                          teacher_profile: true,
+                        },
+                      },
+                    },
                   },
                 },
               },
@@ -343,6 +357,43 @@ export class StudentsRepository {
                     : null,
               },
             });
+          }
+
+          // Teacher update
+          if (data.teacher_name !== undefined) {
+            const allUsers = await tx.user.findMany();
+            const teacherQuery = data.teacher_name.trim().toLowerCase();
+            const teacherUser = teacherQuery
+              ? allUsers.find(
+                  (u) =>
+                    Array.isArray(u.roles) &&
+                    (u.roles as string[]).includes('TEACHER') &&
+                    (u.name?.toLowerCase().includes(teacherQuery) ||
+                      u.email.toLowerCase().includes(teacherQuery))
+                )
+              : null;
+
+            const existingCT = ec.class.class_teachers?.[0];
+            if (teacherUser) {
+              if (existingCT) {
+                await tx.classTeacher.update({
+                  where: { id: existingCT.id },
+                  data: { teacher_id: teacherUser.id, active: true },
+                });
+              } else {
+                await tx.classTeacher.create({
+                  data: {
+                    class_id: ec.class.id,
+                    teacher_id: teacherUser.id,
+                    role: 'MAIN',
+                  },
+                });
+              }
+            } else if (teacherQuery === '' && existingCT) {
+              await tx.classTeacher.delete({
+                where: { id: existingCT.id },
+              });
+            }
           }
         }
       }

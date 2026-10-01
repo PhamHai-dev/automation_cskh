@@ -19,6 +19,7 @@ export interface CreateStudentDTO {
   level?: string;
   total_sessions?: number | string;
   external_remaining_sessions?: number | string;
+  attended_previous_years?: number | string | null;
   class_model?: string;
   sales_note?: string;
   start_date?: string | Date;
@@ -64,6 +65,7 @@ export interface UpdateStudentDTO {
   level?: string;
   total_sessions?: number | string;
   external_remaining_sessions?: number | string;
+  attended_previous_years?: number | string | null;
   class_model?: string;
   sales_note?: string;
   start_date?: string | Date;

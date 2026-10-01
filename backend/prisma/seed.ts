@@ -270,6 +270,7 @@ async function main() {
       end_date: parseDate(field(row, 'Ngày kết thúc/Bảo lưu')),
       status: enrollmentStatus(field(row, 'Trạng thái')),
       external_remaining_sessions: integer(field(row, 'Số buổi còn lại'), totalSessions),
+      attended_previous_years: integer(field(row, 'Tổng số buổi đã học năm trước', 'Tổng số buổi đã học'), 0),
       external_synced_at: new Date(),
       handed_over_at: parseDate(field(row, 'Ngày bàn giao')),
       account_created_at: parseDate(field(row, 'Ngày tạo tài khoản')),
