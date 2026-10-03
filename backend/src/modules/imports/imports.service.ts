@@ -211,6 +211,10 @@ export class ImportsService {
         suggestedMapping['handed_over_at'] = colLetter;
       } else if (lower.includes('ngày tạo tài khoản')) {
         suggestedMapping['account_created_at'] = colLetter;
+      } else if (lower.includes('mã gv') || lower.includes('mã giáo viên')) {
+        suggestedMapping['teacher_code'] = colLetter;
+      } else if (lower.includes('giáo viên') || lower === 'gv' || lower.includes('tên gv') || lower.includes('gv phụ trách')) {
+        suggestedMapping['teacher_name'] = colLetter;
       }
     });
 
@@ -947,7 +951,7 @@ export class ImportsService {
         include: {
           enrollments: {
             where: { package: { code: packageCode } },
-            include: { package: true, cs: true, enrollment_classes: { include: { class: true } } },
+            include: { package: true, cs: true, enrollment_classes: { include: { class: { include: { class_teachers: { include: { teacher: true } } } } } } },
             orderBy: { created_at: 'desc' },
           },
         },
@@ -1057,6 +1061,18 @@ export class ImportsService {
       if (enrollment) {
         compare('Enrollment', 'total_sessions', enrollment.total_sessions, Number(snapshot.total_sessions) || 0);
         compare('Enrollment', 'external_remaining_sessions', enrollment.external_remaining_sessions, snapshot.remaining_sessions === '' ? null : Number(snapshot.remaining_sessions));
+
+        const currentTeacher = (enrollment.enrollment_classes?.[0] as any)?.class?.class_teachers?.[0]?.teacher;
+        const currentTeacherText = currentTeacher ? `${currentTeacher.name} (${currentTeacher.code})` : null;
+        const newTeacherName = snapshot.teacher_name ? String(snapshot.teacher_name).trim() : null;
+        const newTeacherCode = snapshot.teacher_code ? String(snapshot.teacher_code).trim() : null;
+        const newTeacherText = newTeacherName || newTeacherCode ? `${newTeacherName || ''} ${newTeacherCode ? `(${newTeacherCode})` : ''}`.trim() : null;
+        if (newTeacherText && currentTeacherText !== newTeacherText) {
+          compare('ClassTeacher', 'teacher', currentTeacherText, newTeacherText);
+        }
+      } else if (snapshot.teacher_name || snapshot.teacher_code) {
+        const newTeacherText = `${snapshot.teacher_name || ''} ${snapshot.teacher_code ? `(${snapshot.teacher_code})` : ''}`.trim();
+        diffs.push({ entity: 'ClassTeacher', field: 'teacher', before: null, after: newTeacherText, action: 'UPDATE' });
       }
 
       let classification: ReconcileClassification;
@@ -1377,6 +1393,7 @@ export class ImportsService {
           // 6. Class & EnrollmentClass
           let ec = enrollment.enrollment_classes?.[0];
           const className = snap.class_name || `Lớp ${student.full_name}`;
+          let targetClassId = ec?.class_id;
           if (!ec || (snap.class_name && ec.class.class_name !== snap.class_name)) {
             let cls = await tx.class.findFirst({
               where: { OR: [{ class_name: className }, { class_code: className }] },
@@ -1391,6 +1408,7 @@ export class ImportsService {
                 },
               });
             }
+            targetClassId = cls.id;
             ec = await tx.enrollmentClass.create({
               data: {
                 enrollment_id: enrollment.id,
@@ -1400,6 +1418,33 @@ export class ImportsService {
               },
               include: { class: true },
             });
+          }
+
+          // 6.1 Assign Teacher if provided
+          const teacherName = snap.teacher_name ? String(snap.teacher_name).trim() : null;
+          const teacherCode = snap.teacher_code ? String(snap.teacher_code).trim() : null;
+          if ((teacherName || teacherCode) && targetClassId) {
+            const teacherRec = await this.repo.findOrCreateTeacher(teacherCode || undefined, teacherName || undefined);
+            if (teacherRec) {
+              const existingCT = await tx.classTeacher.findFirst({
+                where: { class_id: targetClassId, role: 'MAIN' },
+              });
+              if (existingCT) {
+                await tx.classTeacher.update({
+                  where: { id: existingCT.id },
+                  data: { teacher_id: teacherRec.id, active: true },
+                });
+              } else {
+                await tx.classTeacher.create({
+                  data: {
+                    class_id: targetClassId,
+                    teacher_id: teacherRec.id,
+                    role: 'MAIN',
+                    active: true,
+                  },
+                });
+              }
+            }
           }
 
           // 7. Attendance from Sheet 3
@@ -1632,6 +1677,33 @@ export class ImportsService {
             end_date: endDate,
             status: EnrollmentClassStatus.ACTIVE,
           });
+
+          // Assign Teacher in direct workbook import
+          const directTeacherName = getColVal('teacher_name');
+          const directTeacherCode = getColVal('teacher_code');
+          if (directTeacherName || directTeacherCode) {
+            const teacherRec = await this.repo.findOrCreateTeacher(directTeacherCode || undefined, directTeacherName || undefined);
+            if (teacherRec) {
+              const existingCT = await prisma.classTeacher.findFirst({
+                where: { class_id: cls.id, role: 'MAIN' },
+              });
+              if (existingCT) {
+                await prisma.classTeacher.update({
+                  where: { id: existingCT.id },
+                  data: { teacher_id: teacherRec.id, active: true },
+                });
+              } else {
+                await prisma.classTeacher.create({
+                  data: {
+                    class_id: cls.id,
+                    teacher_id: teacherRec.id,
+                    role: 'MAIN',
+                    active: true,
+                  },
+                });
+              }
+            }
+          }
 
           // 6. Parse and save care logs from session columns (AO..BC)
           const headerRow = worksheet.getRow(headerRowIdx);

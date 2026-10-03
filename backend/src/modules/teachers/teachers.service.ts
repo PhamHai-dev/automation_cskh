@@ -1,14 +1,7 @@
 import { TeachersRepository } from './teachers.repository';
-import { CreateTeacherDTO, UpdateTeacherDTO } from './teachers.types';
+import { CreateTeacherDTO, UpdateTeacherDTO, ProvisionAccountDTO } from './teachers.types';
 import bcrypt from 'bcrypt';
-
-class CustomError extends Error {
-  status: number;
-  constructor(message: string, status: number) {
-    super(message);
-    this.status = status;
-  }
-}
+import { AppError } from '../../middlewares/error.middleware';
 
 export class TeachersService {
   private repository: TeachersRepository;
@@ -23,26 +16,27 @@ export class TeachersService {
 
   async getTeacherById(id: number) {
     const teacher = await this.repository.findById(id);
-    if (!teacher || !(teacher.roles as string[]).includes('TEACHER')) {
-      throw new CustomError('Teacher not found', 404);
+    if (!teacher) {
+      throw new AppError(404, 'Không tìm thấy giáo viên');
     }
     return teacher;
   }
 
-  async createTeacher(data: CreateTeacherDTO, creatorId: number) {
-    // Generate a default password if not provided
-    const plainPassword = data.password || Math.random().toString(36).slice(-8);
-    const passwordHash = await bcrypt.hash(plainPassword, 10);
-    
-    return this.repository.create(data, creatorId, passwordHash);
+  async createTeacher(data: CreateTeacherDTO) {
+    return this.repository.create(data);
   }
 
   async updateTeacher(id: number, data: UpdateTeacherDTO) {
     const teacher = await this.repository.findById(id);
-    if (!teacher || !(teacher.roles as string[]).includes('TEACHER')) {
-      throw new CustomError('Teacher not found', 404);
+    if (!teacher) {
+      throw new AppError(404, 'Không tìm thấy giáo viên');
     }
-
     return this.repository.update(id, data);
+  }
+
+  async provisionAccount(id: number, data: ProvisionAccountDTO, creatorId?: number) {
+    const plainPassword = data.password || '123456';
+    const passwordHash = await bcrypt.hash(plainPassword, 10);
+    return this.repository.provisionAccount(id, data.email, passwordHash, creatorId);
   }
 }

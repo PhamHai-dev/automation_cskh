@@ -14,5 +14,6 @@ router.get('/:id', requireRoles(['ADMIN', 'MANAGE', 'CS', 'TEACHER']), controlle
 // Only Admin/Manage can create/update teachers
 router.post('/', requireRoles(['ADMIN', 'MANAGE']), controller.create);
 router.patch('/:id', requireRoles(['ADMIN', 'MANAGE']), controller.update);
+router.post('/:id/account', requireRoles(['ADMIN', 'MANAGE']), controller.provisionAccount);
 
 export { router as teachersRouter };

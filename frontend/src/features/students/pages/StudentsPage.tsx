@@ -2,6 +2,8 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { studentsApi } from '../api/students.api';
 import { careApi } from '../../care/api/care.api';
 import { Student, CreateStudentDTO } from '../types/students.types';
+import { teachersApi } from '../../teachers/api/teachers.api';
+import { Teacher } from '../../teachers/types/teachers.types';
 import { CareSelectCell } from '../components/CareSelectCell';
 import { PageContainer } from '../../../components/common/PageContainer';
 import { PageHeader } from '../../../components/common/PageHeader';
@@ -327,6 +329,7 @@ export const StudentsPage: React.FC = () => {
     // 3. Lớp học & Lịch học
     class_name: '',
     teacher_name: '',
+    teacher_code: '',
     start_date: '',
     end_date: '',
     status: 'STUDYING',
@@ -344,6 +347,7 @@ export const StudentsPage: React.FC = () => {
     account_created_at: '',
   };
 
+  const [teachersList, setTeachersList] = useState<Teacher[]>([]);
   const [formData, setFormData] = useState<CreateStudentDTO>(initialFormData);
   const [formModalTab, setFormModalTab] = useState<'profile' | 'course' | 'class' | 'care'>('profile');
 
@@ -370,9 +374,19 @@ export const StudentsPage: React.FC = () => {
     }
   };
 
+  const fetchTeachers = async () => {
+    try {
+      const data = await teachersApi.list();
+      setTeachersList(data);
+    } catch (err) {
+      console.error('Lỗi khi tải danh sách giáo viên:', err);
+    }
+  };
+
   useEffect(() => {
     fetchStudents();
     fetchMilestones();
+    fetchTeachers();
   }, []);
 
   // Filtered students list matching Sheet 1
@@ -572,6 +586,7 @@ export const StudentsPage: React.FC = () => {
         // 3. Lớp học & Lịch học
         class_name: ec?.class?.class_name || '',
         teacher_name: teacher?.name || '',
+        teacher_code: (teacher as any)?.code || (teacher as any)?.teacher_profile?.teacher_code || '',
         start_date: enr?.start_date ? new Date(enr.start_date).toISOString().split('T')[0] : '',
         end_date: enr?.end_date ? new Date(enr.end_date).toISOString().split('T')[0] : '',
         status: enr?.status || 'STUDYING',
@@ -1085,6 +1100,7 @@ export const StudentsPage: React.FC = () => {
         const ec = item.enrollments?.[0]?.enrollment_classes?.[0];
         const teacher = ec?.class?.class_teachers?.[0]?.teacher;
         const teacherCode =
+          (teacher as any)?.code ||
           (teacher as any)?.teacher_profile?.teacher_code ||
           (teacher as any)?.teacher_code ||
           '—';
@@ -2095,7 +2111,7 @@ export const StudentsPage: React.FC = () => {
             {/* TAB 3: LỚP HỌC & LỊCH HỌC */}
             {formModalTab === 'class' && (
               <div className="space-y-4 pt-1 animate-fadeIn text-xs">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div>
                     <label className="block font-medium text-slate-700 mb-1">Tên lớp học</label>
                     <Input
@@ -2106,13 +2122,59 @@ export const StudentsPage: React.FC = () => {
                   </div>
                   <div>
                     <label className="block font-medium text-slate-700 mb-1">
+                      Mã giáo viên
+                    </label>
+                    <Input
+                      list="teacher-codes-datalist"
+                      placeholder="Ví dụ: GV01, GV_TANAKA"
+                      value={formData.teacher_code || ''}
+                      onChange={(e) => {
+                        const codeVal = e.target.value;
+                        const matched = teachersList.find(
+                          (t) => t.code?.toLowerCase() === codeVal.trim().toLowerCase()
+                        );
+                        setFormData((prev) => ({
+                          ...prev,
+                          teacher_code: codeVal,
+                          ...(matched ? { teacher_name: matched.name } : {}),
+                        }));
+                      }}
+                    />
+                    <datalist id="teacher-codes-datalist">
+                      {teachersList.map((t) => (
+                        <option key={t.id} value={t.code}>
+                          {t.name}
+                        </option>
+                      ))}
+                    </datalist>
+                  </div>
+                  <div>
+                    <label className="block font-medium text-slate-700 mb-1">
                       Giáo viên phụ trách
                     </label>
                     <Input
+                      list="teacher-names-datalist"
                       placeholder="Ví dụ: Sensei Tanaka Kenji"
                       value={formData.teacher_name || ''}
-                      onChange={(e) => setFormData({ ...formData, teacher_name: e.target.value })}
+                      onChange={(e) => {
+                        const nameVal = e.target.value;
+                        const matched = teachersList.find(
+                          (t) => t.name?.toLowerCase() === nameVal.trim().toLowerCase()
+                        );
+                        setFormData((prev) => ({
+                          ...prev,
+                          teacher_name: nameVal,
+                          ...(matched ? { teacher_code: matched.code } : {}),
+                        }));
+                      }}
                     />
+                    <datalist id="teacher-names-datalist">
+                      {teachersList.map((t) => (
+                        <option key={t.id} value={t.name}>
+                          {t.code ? `[${t.code}]` : ''}
+                        </option>
+                      ))}
+                    </datalist>
                   </div>
                 </div>
 

@@ -182,6 +182,7 @@ export const AttendanceSheetPage = () => {
           duration_minutes: schedule?.duration_minutes || 30,
           teacher_name: teacher?.name || '—',
           teacher_code:
+            (teacher as any)?.code ||
             (teacher as any)?.teacher_profile?.teacher_code ||
             (teacher as any)?.teacher_code ||
             '—',
@@ -220,6 +221,7 @@ export const AttendanceSheetPage = () => {
           duration_minutes: schedule?.duration_minutes || 30,
           teacher_name: teacher?.name || '—',
           teacher_code:
+            (teacher as any)?.code ||
             (teacher as any)?.teacher_profile?.teacher_code ||
             (teacher as any)?.teacher_code ||
             '—',

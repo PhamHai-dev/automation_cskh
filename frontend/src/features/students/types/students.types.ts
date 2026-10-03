@@ -50,6 +50,7 @@ export interface CreateStudentDTO {
   // 3. Class & Schedule (V -> AJ)
   class_name?: string;
   teacher_name?: string;
+  teacher_code?: string;
   start_date?: string;
   end_date?: string;
   status?: string;

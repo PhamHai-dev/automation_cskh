@@ -24,7 +24,7 @@ export class StudentsRepository {
                       include: {
                         teacher: {
                           include: {
-                            teacher_profile: true,
+                            user: true,
                           },
                         },
                       },
@@ -182,24 +182,47 @@ export class StudentsRepository {
         }
 
         // Teacher
-        if (data.teacher_name) {
-          const teacherQuery = data.teacher_name.trim().toLowerCase();
-          const teacherUser = allUsers.find(
-            (u) =>
-              Array.isArray(u.roles) &&
-              (u.roles as string[]).includes('TEACHER') &&
-              (u.name?.toLowerCase().includes(teacherQuery) ||
-                u.email.toLowerCase().includes(teacherQuery))
-          );
-          if (teacherUser) {
-            await tx.classTeacher.create({
-              data: {
-                class_id: classObj.id,
-                teacher_id: teacherUser.id,
-                role: 'MAIN',
+        if (data.teacher_name || data.teacher_code) {
+          const teacherName = data.teacher_name?.trim() || '';
+          const teacherCode = data.teacher_code?.trim() || '';
+          let teacherRec = null;
+
+          if (teacherCode) {
+            teacherRec = await tx.teacher.findUnique({
+              where: { code: teacherCode },
+            });
+          }
+
+          if (!teacherRec && teacherName) {
+            teacherRec = await tx.teacher.findFirst({
+              where: {
+                OR: [
+                  { name: { contains: teacherName } },
+                  { code: teacherName },
+                ],
               },
             });
           }
+
+          if (!teacherRec) {
+            const finalCode = teacherCode || ('GV_' + (teacherName || 'GV').toUpperCase().replace(/[^A-Z0-9]/g, '_').slice(0, 20));
+            const finalName = teacherName || teacherCode;
+            teacherRec = await tx.teacher.create({
+              data: {
+                name: finalName,
+                code: finalCode,
+                active: true,
+              },
+            });
+          }
+
+          await tx.classTeacher.create({
+            data: {
+              class_id: classObj.id,
+              teacher_id: teacherRec.id,
+              role: 'MAIN',
+            },
+          });
         }
 
         // EnrollmentClass
@@ -301,7 +324,7 @@ export class StudentsRepository {
                     include: {
                       teacher: {
                         include: {
-                          teacher_profile: true,
+                          user: true,
                         },
                       },
                     },
@@ -360,36 +383,58 @@ export class StudentsRepository {
           }
 
           // Teacher update
-          if (data.teacher_name !== undefined) {
-            const allUsers = await tx.user.findMany();
-            const teacherQuery = data.teacher_name.trim().toLowerCase();
-            const teacherUser = teacherQuery
-              ? allUsers.find(
-                  (u) =>
-                    Array.isArray(u.roles) &&
-                    (u.roles as string[]).includes('TEACHER') &&
-                    (u.name?.toLowerCase().includes(teacherQuery) ||
-                      u.email.toLowerCase().includes(teacherQuery))
-                )
-              : null;
-
+          if (data.teacher_name !== undefined || data.teacher_code !== undefined) {
+            const teacherName = data.teacher_name !== undefined ? data.teacher_name.trim() : '';
+            const teacherCode = data.teacher_code !== undefined ? data.teacher_code.trim() : '';
             const existingCT = ec.class.class_teachers?.[0];
-            if (teacherUser) {
+
+            if (teacherName || teacherCode) {
+              let teacherRec = null;
+
+              if (teacherCode) {
+                teacherRec = await tx.teacher.findUnique({
+                  where: { code: teacherCode },
+                });
+              }
+
+              if (!teacherRec && teacherName) {
+                teacherRec = await tx.teacher.findFirst({
+                  where: {
+                    OR: [
+                      { name: { contains: teacherName } },
+                      { code: teacherName },
+                    ],
+                  },
+                });
+              }
+
+              if (!teacherRec) {
+                const finalCode = teacherCode || ('GV_' + (teacherName || 'GV').toUpperCase().replace(/[^A-Z0-9]/g, '_').slice(0, 20));
+                const finalName = teacherName || teacherCode;
+                teacherRec = await tx.teacher.create({
+                  data: {
+                    name: finalName,
+                    code: finalCode,
+                    active: true,
+                  },
+                });
+              }
+
               if (existingCT) {
                 await tx.classTeacher.update({
                   where: { id: existingCT.id },
-                  data: { teacher_id: teacherUser.id, active: true },
+                  data: { teacher_id: teacherRec.id, active: true },
                 });
               } else {
                 await tx.classTeacher.create({
                   data: {
                     class_id: ec.class.id,
-                    teacher_id: teacherUser.id,
+                    teacher_id: teacherRec.id,
                     role: 'MAIN',
                   },
                 });
               }
-            } else if (teacherQuery === '' && existingCT) {
+            } else if (existingCT) {
               await tx.classTeacher.delete({
                 where: { id: existingCT.id },
               });

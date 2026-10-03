@@ -32,8 +32,7 @@ model User {
   login_audits                     LoginAudit[]
   cs_group_members                 CSGroupMember[]
   manage_assignments               ManageAssignment[]
-  teacher_profile                  TeacherProfile?
-  class_teachers                   ClassTeacher[]
+  teacher                          Teacher?
   created_class_sessions           ClassSession[]        @relation("SessionCreator")
   created_attendances              Attendance[]          @relation("AttendanceCreator")
   deleted_attendances              Attendance[]          @relation("AttendanceDeleter")
@@ -246,18 +245,22 @@ enum TeacherType {
   OTHER
 }
 
-model TeacherProfile {
+model Teacher {
   id           Int          @id @default(autoincrement())
-  user_id      Int          @unique
-  teacher_code String?      @unique
-  teacher_type TeacherType?
+  code         String       @unique
+  name         String
+  phone        String?
+  email        String?
+  teacher_type TeacherType? @default(OTHER)
   active       Boolean      @default(true)
+  user_id      Int?         @unique
   created_at   DateTime     @default(now())
   updated_at   DateTime     @updatedAt
 
-  user User @relation(fields: [user_id], references: [id])
+  user           User?          @relation(fields: [user_id], references: [id])
+  class_teachers ClassTeacher[]
 
-  @@map("teacher_profiles")
+  @@map("teachers")
 }
 
 enum ClassModelType {
@@ -307,8 +310,8 @@ model ClassTeacher {
   created_at DateTime         @default(now())
   updated_at DateTime         @updatedAt
 
-  class   Class @relation(fields: [class_id], references: [id])
-  teacher User  @relation(fields: [teacher_id], references: [id])
+  class   Class   @relation(fields: [class_id], references: [id])
+  teacher Teacher @relation(fields: [teacher_id], references: [id])
 
   @@map("class_teachers")
 }

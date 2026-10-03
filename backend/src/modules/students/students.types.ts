@@ -30,6 +30,7 @@ export interface CreateStudentDTO {
   class_id?: number;
   class_name?: string;
   teacher_name?: string;
+  teacher_code?: string;
   start_time?: string;
   schedule_pattern?: string;
   duration_minutes?: number | string;
@@ -76,6 +77,7 @@ export interface UpdateStudentDTO {
   class_id?: number;
   class_name?: string;
   teacher_name?: string;
+  teacher_code?: string;
   start_time?: string;
   schedule_pattern?: string;
   duration_minutes?: number | string;

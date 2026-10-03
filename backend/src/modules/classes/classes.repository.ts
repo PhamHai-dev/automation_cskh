@@ -21,7 +21,7 @@ export class ClassesRepository {
         class_teachers: {
           include: {
             teacher: {
-              include: { teacher_profile: true },
+              include: { user: true },
             },
           },
         },
