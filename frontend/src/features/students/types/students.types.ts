@@ -43,12 +43,14 @@ export interface CreateStudentDTO {
   level?: string;
   total_sessions?: number | string;
   external_remaining_sessions?: number | string;
+  attended_previous_years?: number | string;
   class_model?: string;
   sales_note?: string;
 
   // 3. Class & Schedule (V -> AJ)
   class_name?: string;
   teacher_name?: string;
+  teacher_code?: string;
   start_date?: string;
   end_date?: string;
   status?: string;

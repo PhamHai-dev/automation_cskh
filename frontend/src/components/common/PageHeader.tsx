@@ -18,7 +18,6 @@ export interface PageHeaderProps {
 
 export const PageHeader: React.FC<PageHeaderProps> = ({
   title,
-  description,
   actions,
   breadcrumbs,
   backUrl,
@@ -80,11 +79,6 @@ export const PageHeader: React.FC<PageHeaderProps> = ({
           <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-text-primary">
             {title}
           </h1>
-          {description && (
-            <div className="mt-1 text-xs sm:text-sm text-text-secondary leading-relaxed">
-              {description}
-            </div>
-          )}
         </div>
         {actions && (
           <div className="flex items-center gap-2.5 shrink-0 flex-wrap sm:flex-nowrap">

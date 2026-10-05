@@ -1,11 +1,12 @@
 import React from 'react';
-import { Menu, LogOut, Shield } from 'lucide-react';
+import { Menu, LogOut } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { Badge } from '../components/ui/Badge';
 import { useNavigate } from 'react-router-dom';
 
 interface HeaderProps {
-  onMobileMenuOpen: () => void;
+  onToggleSidebar: () => void;
+  sidebarOpen: boolean;
 }
 
 const ROLE_DISPLAY_NAMES: Record<string, { label: string; variant: 'success' | 'info' | 'warning' | 'neutral' | 'accent' }> = {
@@ -15,7 +16,7 @@ const ROLE_DISPLAY_NAMES: Record<string, { label: string; variant: 'success' | '
   TEACHER: { label: 'Giáo viên', variant: 'accent' },
 };
 
-export const Header: React.FC<HeaderProps> = ({ onMobileMenuOpen }) => {
+export const Header: React.FC<HeaderProps> = ({ onToggleSidebar, sidebarOpen }) => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
 
@@ -38,20 +39,18 @@ export const Header: React.FC<HeaderProps> = ({ onMobileMenuOpen }) => {
 
   return (
     <header className="h-16 bg-surface/90 backdrop-blur-md border-b border-border/80 sticky top-0 z-30 px-4 sm:px-6 flex items-center justify-between">
-      {/* Mobile Menu Button */}
+      {/* Sidebar Open/Toggle Button */}
       <div className="flex items-center gap-3">
         <button
-          onClick={onMobileMenuOpen}
-          className="lg:hidden p-2 rounded-xl text-text-secondary hover:text-text-primary hover:bg-surface-muted transition-colors"
-          aria-label="Mở menu"
+          onClick={onToggleSidebar}
+          className={`p-2 rounded-xl text-text-secondary hover:text-text-primary hover:bg-surface-muted transition-colors ${
+            sidebarOpen ? 'lg:hidden' : 'flex'
+          }`}
+          aria-label="Mở thanh điều hướng"
+          title="Mở thanh điều hướng"
         >
           <Menu className="w-5 h-5" />
         </button>
-
-        <div className="hidden sm:flex items-center gap-2 text-xs text-text-muted">
-          <Shield className="w-3.5 h-3.5 text-primary" />
-          <span className="font-semibold text-text-secondary">Cổng Điều Phối Chăm Sóc & Đào Tạo</span>
-        </div>
       </div>
 
       {/* User Actions */}

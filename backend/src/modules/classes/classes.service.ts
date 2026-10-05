@@ -2,6 +2,8 @@ import { ClassesRepository } from './classes.repository';
 import { CreateClassDTO, UpdateClassDTO, AssignTeacherDTO } from './classes.types';
 import { prisma } from '../../prisma/client';
 import { ClassModelType, AttendanceSourceType } from '@prisma/client';
+import { AuthUser } from '../../middlewares/auth.middleware';
+import { getAccessibleClassIds, assertClassAccess } from './classes.scope';
 
 class CustomError extends Error {
   status: number;
@@ -53,12 +55,16 @@ export class ClassesService {
     return `CLS_${Date.now().toString(36).toUpperCase()}`;
   }
 
-  async getAllClasses() {
-    const classes = await this.repository.findAll();
+  async getAllClasses(user?: AuthUser) {
+    const accessibleIds = user ? await getAccessibleClassIds(user) : null;
+    const classes = await this.repository.findAll(accessibleIds);
     return classes.map((c) => this.formatClass(c));
   }
 
-  async getClassById(id: number) {
+  async getClassById(id: number, user?: AuthUser) {
+    if (user) {
+      await assertClassAccess(user, id, 'xem chi tiết lớp học này');
+    }
     const cls = await this.repository.findById(id);
     if (!cls) throw new CustomError('Class not found', 404);
     return this.formatClass(cls);
@@ -115,11 +121,24 @@ export class ClassesService {
     const existing = await this.repository.findById(classId);
     if (!existing) throw new CustomError('Class not found', 404);
 
-    const teacher = await prisma.user.findUnique({ where: { id: data.teacher_id } });
-    if (!teacher || !(teacher.roles as string[]).includes('TEACHER')) {
+    let teacherRecord = await prisma.teacher.findUnique({ where: { id: data.teacher_id } });
+    if (!teacherRecord) {
+      teacherRecord = await prisma.teacher.findUnique({ where: { user_id: data.teacher_id } });
+    }
+    if (!teacherRecord) {
+      const user = await prisma.user.findUnique({ where: { id: data.teacher_id }, include: { teacher: true } });
+      if (user?.teacher) {
+        teacherRecord = user.teacher;
+      }
+    }
+
+    if (!teacherRecord) {
       throw new CustomError('Teacher not found or user is not a teacher', 404);
     }
 
-    return this.repository.assignTeacher(classId, data);
+    return this.repository.assignTeacher(classId, {
+      ...data,
+      teacher_id: teacherRecord.id,
+    });
   }
 }

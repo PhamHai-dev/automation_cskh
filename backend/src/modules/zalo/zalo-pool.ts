@@ -778,7 +778,8 @@ class ZaloAccountPool extends EventEmitter {
         const res = await syncFriendsForAccount(accountId, { trigger: 'connect' });
         log.info('Auto-sync on connect', {
           accountId,
-          friends: res.emittedCount ?? 0,
+          friends: res.upsertedFriends ?? res.liveCount ?? 0,
+          changed: res.emittedCount ?? 0,
           errors: res.errors,
         });
       } catch (err) {

@@ -1,5 +1,9 @@
 import { StudentsRepository } from './students.repository';
 import { CreateStudentDTO, UpdateStudentDTO } from './students.types';
+import {
+  normalizeSchedulePattern,
+  normalizeScheduleTime,
+} from '../../shared/schedule/schedule-pattern';
 
 class CustomError extends Error {
   status: number;
@@ -27,31 +31,50 @@ export class StudentsService {
   }
 
   async createStudent(data: CreateStudentDTO, currentUserId?: number) {
+    const normalizedData = this.normalizeScheduleFields(data);
+
     // Basic duplication check
-    if (data.phone && data.phone.trim().length > 0) {
-      const existing = await this.repository.findByPhone(data.phone.trim());
+    if (normalizedData.phone && normalizedData.phone.trim().length > 0) {
+      const existing = await this.repository.findByPhone(normalizedData.phone.trim());
       if (existing) throw new CustomError('Student with this phone already exists', 409);
     }
-    if (data.email && data.email.trim().length > 0) {
-      const existing = await this.repository.findByEmail(data.email.trim());
+    if (normalizedData.email && normalizedData.email.trim().length > 0) {
+      const existing = await this.repository.findByEmail(normalizedData.email.trim());
       if (existing) throw new CustomError('Student with this email already exists', 409);
     }
-    return this.repository.create(data, currentUserId);
+    return this.repository.create(normalizedData, currentUserId);
   }
 
   async updateStudent(id: number, data: UpdateStudentDTO) {
+    const normalizedData = this.normalizeScheduleFields(data);
     const existing = await this.repository.findById(id);
     if (!existing) throw new CustomError('Student not found', 404);
 
-    if (data.phone && data.phone.trim().length > 0 && data.phone.trim() !== existing.phone) {
-      const duplicatePhone = await this.repository.findByPhone(data.phone.trim());
+    if (normalizedData.phone && normalizedData.phone.trim().length > 0 && normalizedData.phone.trim() !== existing.phone) {
+      const duplicatePhone = await this.repository.findByPhone(normalizedData.phone.trim());
       if (duplicatePhone) throw new CustomError('Student with this phone already exists', 409);
     }
-    if (data.email && data.email.trim().length > 0 && data.email.trim() !== existing.email) {
-      const duplicateEmail = await this.repository.findByEmail(data.email.trim());
+    if (normalizedData.email && normalizedData.email.trim().length > 0 && normalizedData.email.trim() !== existing.email) {
+      const duplicateEmail = await this.repository.findByEmail(normalizedData.email.trim());
       if (duplicateEmail) throw new CustomError('Student with this email already exists', 409);
     }
 
-    return this.repository.update(id, data);
+    return this.repository.update(id, normalizedData);
+  }
+
+  private normalizeScheduleFields<T extends CreateStudentDTO | UpdateStudentDTO>(data: T): T {
+    try {
+      return {
+        ...data,
+        ...(data.schedule_pattern !== undefined
+          ? { schedule_pattern: normalizeSchedulePattern(data.schedule_pattern) }
+          : {}),
+        ...(data.start_time !== undefined && data.start_time !== ''
+          ? { start_time: normalizeScheduleTime(data.start_time) }
+          : {}),
+      };
+    } catch (error) {
+      throw new CustomError(error instanceof Error ? error.message : 'Lịch học không hợp lệ', 400);
+    }
   }
 }

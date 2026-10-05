@@ -62,8 +62,14 @@ export const ImportHistoryTable: React.FC = () => {
         <h2 className="text-base font-bold text-gray-900">
           Lịch sử các đợt Import ({total} đợt)
         </h2>
-        <Button variant="outline" size="sm" onClick={fetchBatches} isLoading={loading}>
-          <RefreshCw className="w-3.5 h-3.5 mr-1.5" /> Làm mới
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={fetchBatches}
+          isLoading={loading}
+          leftIcon={<RefreshCw className="w-3.5 h-3.5" />}
+        >
+          Làm mới
         </Button>
       </div>
 
@@ -124,14 +130,16 @@ export const ImportHistoryTable: React.FC = () => {
                     <td className="px-4 py-3">{getStatusBadge(batch.status)}</td>
                     <td className="px-4 py-3 text-right">
                       {batch.failed_rows > 0 ? (
-                        <button
-                          type="button"
+                        <Button
+                          variant="ghost"
+                          size="sm"
                           onClick={() => importsApi.downloadErrors(batch.id, `loi_import_${batch.id}.xlsx`)}
-                          className="inline-flex items-center text-xs font-semibold text-red-600 hover:text-red-800 transition"
+                          className="text-red-600 hover:text-red-700 hover:bg-red-50 h-7 px-2"
+                          leftIcon={<Download className="w-3.5 h-3.5" />}
                           title="Tải file Excel các dòng lỗi"
                         >
-                          <Download className="w-3.5 h-3.5 mr-1" /> Tải lỗi
-                        </button>
+                          Tải lỗi
+                        </Button>
                       ) : (
                         <span className="text-gray-400">—</span>
                       )}

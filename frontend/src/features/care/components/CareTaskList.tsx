@@ -231,21 +231,21 @@ export const CareTaskList: React.FC<CareTaskListProps> = ({
                         size="sm"
                         variant="primary"
                         onClick={() => onComplete(task.id)}
-                        className="flex items-center gap-1 bg-emerald-600 hover:bg-emerald-700"
+                        className="bg-emerald-600 hover:bg-emerald-700"
+                        leftIcon={<Check className="w-3.5 h-3.5" />}
                         title="Đánh dấu hoàn thành"
                       >
-                        <Check className="w-3.5 h-3.5" />
-                        <span>Xong</span>
+                        Xong
                       </Button>
                       <Button
                         size="sm"
                         variant="outline"
                         onClick={() => onCancel(task.id)}
                         className="text-gray-500 hover:text-red-600 hover:border-red-300"
+                        leftIcon={<XCircle className="w-3.5 h-3.5" />}
                         title="Hủy nhiệm vụ"
                       >
-                        <XCircle className="w-3.5 h-3.5" />
-                        <span>Hủy</span>
+                        Hủy
                       </Button>
                     </>
                   )}
@@ -254,10 +254,9 @@ export const CareTaskList: React.FC<CareTaskListProps> = ({
                     variant="outline"
                     onClick={() => onEdit(task)}
                     className="text-gray-600 hover:text-blue-600"
+                    leftIcon={<Edit className="w-3.5 h-3.5" />}
                     title="Chỉnh sửa"
-                  >
-                    <Edit className="w-3.5 h-3.5" />
-                  </Button>
+                  />
                 </div>
               </div>
             );

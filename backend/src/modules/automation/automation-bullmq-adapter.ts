@@ -14,10 +14,12 @@ const log = createLogger('AutomationQueue');
 let _queue: Queue | null = null;
 let _bullMqConnection: any = null;
 
-function getQueue(): Queue {
+function getQueue(): Queue | null {
   if (_queue) return _queue;
   // BullMQ v5 requires maxRetriesPerRequest=null for Redis connection
   const redis = getRedisClient();
+  if (!redis) return null;
+
   const bullMqConnection = (redis as any).duplicate({
     maxRetriesPerRequest: null,
     enableReadyCheck: false,
@@ -56,6 +58,10 @@ export async function enqueueDelivery(
   const delayMs = Math.max(0, delayMinutes) * 60_000;
   try {
     const queue = getQueue();
+    if (!queue) {
+      log.warn('Queue unavailable — delivery queued in DB only', { deliveryId: payload.deliveryId });
+      return null;
+    }
     const jobId = `automation:delivery:${payload.deliveryId}`;
     const job = await queue.add('send', payload, {
       jobId,
@@ -78,6 +84,7 @@ export async function enqueueDelivery(
 export async function cancelDelivery(deliveryId: number, queueJobId?: string | null): Promise<void> {
   try {
     const queue = getQueue();
+    if (!queue) return;
     const jobId = queueJobId ?? `automation:delivery:${deliveryId}`;
     const job = await queue.getJob(jobId);
     if (job) {

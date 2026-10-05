@@ -34,6 +34,7 @@ export const ClassSessionsPage: React.FC = () => {
   const [cls, setCls] = useState<Class | null>(null);
   const [sessions, setSessions] = useState<ClassSession[]>([]);
   const [loading, setLoading] = useState(true);
+  const [forbiddenError, setForbiddenError] = useState<string | null>(null);
 
   // Modal states
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -52,6 +53,8 @@ export const ClassSessionsPage: React.FC = () => {
 
   const fetchData = async () => {
     try {
+      setLoading(true);
+      setForbiddenError(null);
       const [clsData, sessionsData] = await Promise.all([
         classesApi.get(clsId),
         classSessionsApi.list(clsId),
@@ -59,7 +62,15 @@ export const ClassSessionsPage: React.FC = () => {
       setCls(clsData);
       setSessions(sessionsData);
     } catch (err: any) {
-      toast.error(err.response?.data?.error?.message || 'Không thể tải danh sách buổi học');
+      if (err.response?.status === 403) {
+        setForbiddenError(
+          err.response?.data?.error?.message ||
+          err.response?.data?.message ||
+          'Bạn không được phân công phụ trách lớp học này.'
+        );
+      } else {
+        toast.error(err.response?.data?.error?.message || 'Không thể tải danh sách buổi học');
+      }
     } finally {
       setLoading(false);
     }
@@ -172,11 +183,11 @@ export const ClassSessionsPage: React.FC = () => {
               e.stopPropagation();
               navigate(`/classes/${clsId}/sessions/${item.id}/attendance`);
             }}
-            className="flex items-center gap-1 text-xs border-blue-200 text-blue-600 hover:bg-blue-50"
+            className="text-xs border-blue-200 text-blue-600 hover:bg-blue-50"
             title="Điểm danh buổi học này"
+            leftIcon={<ClipboardCheck className="w-3.5 h-3.5" />}
           >
-            <ClipboardCheck className="w-3.5 h-3.5" />
-            <span>Điểm danh</span>
+            Điểm danh
           </Button>
           <Button
             variant="ghost"
@@ -185,10 +196,9 @@ export const ClassSessionsPage: React.FC = () => {
               e.stopPropagation();
               openModal(item);
             }}
+            leftIcon={<Edit className="w-4 h-4 text-slate-500 hover:text-blue-600" />}
             title="Chỉnh sửa buổi học"
-          >
-            <Edit className="w-4 h-4 text-slate-500 hover:text-blue-600" />
-          </Button>
+          />
           {item.status === 'SCHEDULED' && (
             <Button
               variant="ghost"
@@ -208,15 +218,51 @@ export const ClassSessionsPage: React.FC = () => {
     },
   ];
 
+  if (forbiddenError) {
+    return (
+      <PageContainer>
+        <PageHeader
+          title="Danh sách buổi học"
+          backUrl="/classes"
+          breadcrumbs={[
+            { label: 'Lớp học phụ trách', href: '/classes' },
+            { label: 'Buổi học' },
+          ]}
+        />
+        <div className="bg-surface rounded-2xl border border-rose-200/80 p-8 text-center max-w-lg mx-auto my-12 shadow-soft">
+          <div className="w-14 h-14 bg-rose-50 text-rose-600 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-rose-100 shadow-2xs">
+            <AlertTriangle className="w-7 h-7" />
+          </div>
+          <h2 className="text-lg font-bold text-slate-900 mb-2">Không có quyền truy cập lớp học</h2>
+          <p className="text-sm text-slate-600 mb-6 leading-relaxed">
+            {forbiddenError}
+          </p>
+          <div className="flex justify-center gap-3">
+            <Button
+              variant="primary"
+              size="md"
+              onClick={() => navigate('/classes')}
+            >
+              Về danh sách lớp phụ trách
+            </Button>
+          </div>
+        </div>
+      </PageContainer>
+    );
+  }
+
   return (
     <PageContainer>
       <PageHeader
         title={`Buổi học: ${cls?.class_name || `Lớp #${clsId}`}`}
-        description={`Quản lý toàn bộ lịch học và phiếu điểm danh chuyên cần của lớp (${cls?.class_code || ''})`}
         backUrl="/classes"
         actions={
-          <Button onClick={() => openModal()} variant="primary" size="sm" className="flex items-center gap-1.5">
-            <Plus className="w-4 h-4" />
+          <Button
+            onClick={() => openModal()}
+            variant="primary"
+            size="sm"
+            leftIcon={<Plus className="w-4 h-4" />}
+          >
             Thêm buổi học mới
           </Button>
         }

@@ -1,36 +1,43 @@
-export interface TeacherProfile {
+export interface TeacherUser {
   id: number;
-  user_id: number;
-  teacher_code?: string;
-  teacher_type?: 'VIETNAMESE' | 'JAPANESE' | 'OTHER';
+  email: string;
   active: boolean;
-  created_at: string;
-  updated_at: string;
+  last_login_at?: string;
 }
 
 export interface Teacher {
   id: number;
-  email: string;
+  code: string;
   name: string;
   phone?: string;
-  roles: string[];
+  email?: string;
+  teacher_type?: 'VIETNAMESE' | 'JAPANESE' | 'OTHER';
   active: boolean;
-  teacher_profile?: TeacherProfile;
+  user_id?: number | null;
+  user?: TeacherUser | null;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface CreateTeacherDTO {
-  email: string;
+  code?: string;
   name: string;
-  password?: string;
   phone?: string;
-  teacher_code?: string;
+  email?: string;
   teacher_type?: 'VIETNAMESE' | 'JAPANESE' | 'OTHER';
+  active?: boolean;
 }
 
 export interface UpdateTeacherDTO {
+  code?: string;
   name?: string;
   phone?: string;
-  teacher_code?: string;
+  email?: string;
   teacher_type?: 'VIETNAMESE' | 'JAPANESE' | 'OTHER';
   active?: boolean;
+}
+
+export interface ProvisionAccountDTO {
+  email: string;
+  password?: string;
 }

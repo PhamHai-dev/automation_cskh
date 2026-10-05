@@ -59,7 +59,11 @@ export class ZaloService {
       requester && Array.isArray(requester.roles)
         ? (requester.roles as string[]).some((r: string) => ['ADMIN', 'MANAGE'].includes(r))
         : false;
-    if (!isPrivileged && account.cs_id !== requesterId) {
+    const access = await prisma.zaloAccountAccess.findUnique({
+      where: { zalo_account_id_user_id: { zalo_account_id: id, user_id: requesterId } },
+    });
+    const hasAdminAccess = access?.permission === 'admin';
+    if (!isPrivileged && account.cs_id !== requesterId && !hasAdminAccess) {
       throw new AppError(403, 'Forbidden: not your Zalo account');
     }
     try {
@@ -320,12 +324,23 @@ export class ZaloService {
     const account = await this.getAccountById(accountId);
     // Scope check: CS can only QR for own accounts; ADMIN/MANAGE can QR for any
     const requester = await prisma.user.findUnique({ where: { id: requesterId } });
+    log.info('generateQr check', {
+      accountId,
+      accountCsId: account.cs_id,
+      requesterId,
+      requesterEmail: requester?.email,
+      requesterRoles: requester?.roles,
+    });
     const isPrivileged =
       requester && Array.isArray(requester.roles)
         ? (requester.roles as string[]).some((r: string) => ['ADMIN', 'MANAGE'].includes(r))
         : false;
-    if (!isPrivileged && account.cs_id !== requesterId) {
-      throw new AppError(403, 'Forbidden: not your Zalo account');
+    const access = await prisma.zaloAccountAccess.findUnique({
+      where: { zalo_account_id_user_id: { zalo_account_id: accountId, user_id: requesterId } },
+    });
+    const hasAdminAccess = access?.permission === 'admin';
+    if (!isPrivileged && account.cs_id !== requesterId && !hasAdminAccess) {
+      throw new AppError(403, `Forbidden: not your Zalo account (account cs_id: ${account.cs_id}, your user id: ${requesterId})`);
     }
 
     const result = await zaloPool.generateQr(accountId, account.cs_id);

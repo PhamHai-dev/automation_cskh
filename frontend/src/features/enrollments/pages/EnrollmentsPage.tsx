@@ -1,78 +1,52 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { enrollmentsApi } from '../api/enrollments.api';
-import { Enrollment, CreateEnrollmentDTO, UpdateEnrollmentDTO } from '../types/enrollments.types';
+import { Enrollment } from '../types/enrollments.types';
+import {
+  EnrollmentFilterState,
+  INITIAL_ENROLLMENT_FILTERS,
+} from '../types/enrollmentFilter.types';
+import { EnrollmentFilterBar } from '../components/EnrollmentFilterBar';
 import { PageContainer } from '../../../components/common/PageContainer';
 import { PageHeader } from '../../../components/common/PageHeader';
-import { DataTable, Column } from '../../../components/common/DataTable';
-import { FilterBar } from '../../../components/common/FilterBar';
-import { Button } from '../../../components/ui/Button';
-import { Input } from '../../../components/ui/Input';
-import { Select } from '../../../components/ui/Select';
-import { Badge } from '../../../components/ui/Badge';
-import { Modal } from '../../../components/ui/Modal';
+import { HorizontalTabs } from '../../../components/ui/HorizontalTabs';
 import { useToast } from '../../../components/ui/Toast';
 import { useAuth } from '../../../contexts/AuthContext';
-import { AttendanceMatrix, StudentRow, formatSessionDate } from '../../classes/components/AttendanceMatrix';
+import {
+  AttendanceMatrix,
+  AttendanceTab,
+  StudentRow,
+  formatSessionDate,
+} from '../../classes/components/AttendanceMatrix';
 import { classSessionsApi, attendanceApi } from '../../classes/api/sessions.api';
 import { ClassSession, Attendance, AttendanceStatus } from '../../classes/types/classes.types';
-import {
-  CalendarDays,
-  Table as TableIcon,
-  Search,
-  UserCheck,
-  Plus,
-  Edit,
-  AlertTriangle,
-} from 'lucide-react';
+import { BarChart3, Calendar, Zap } from 'lucide-react';
 
-const ENROLLMENT_STATUS_LABELS: Record<
-  string,
-  { label: string; variant: 'info' | 'success' | 'warning' | 'danger' | 'neutral' }
-> = {
-  NOT_STARTED: { label: 'Chưa học', variant: 'neutral' },
-  STUDYING: { label: 'Đang học', variant: 'success' },
-  PAUSED: { label: 'Tạm dừng / Bảo lưu', variant: 'warning' },
-  FINISHED: { label: 'Hoàn thành', variant: 'info' },
-  CANCELLED: { label: 'Đã hủy', variant: 'danger' },
+const DEFAULT_STATUS_BY_TAB: Record<AttendanceTab, string> = {
+  quick: 'STUDYING',
+  detailed: 'STUDYING',
+  stats: '',
 };
 
 export const EnrollmentsPage: React.FC = () => {
   const toast = useToast();
   const { user } = useAuth();
-  const isCS = user?.roles.includes('CS') && !user?.roles.includes('ADMIN');
+  const isCS = user?.roles.includes('CS') && !user?.roles.includes('ADMIN') && !user?.roles.includes('MANAGE');
 
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // View mode: 'matrix' (default as requested) or 'table'
-  const [viewMode, setViewMode] = useState<'matrix' | 'table'>('matrix');
-
-  // Search & Filter state
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedSale, setSelectedSale] = useState<string>('');
-  const [statusFilter, setStatusFilter] = useState('');
-
-  // Modal states for Create/Edit
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingEnrollment, setEditingEnrollment] = useState<Enrollment | null>(null);
-  const [submitting, setSubmitting] = useState(false);
-
-  const [formData, setFormData] = useState({
-    student_id: '',
-    package_id: '',
-    cs_id: '',
-    total_sessions: '',
-    external_remaining_sessions: '',
-    start_date: '',
-    end_date: '',
-    status: 'NOT_STARTED' as 'NOT_STARTED' | 'STUDYING' | 'PAUSED' | 'FINISHED' | 'CANCELLED',
-  });
+  // Tab & Filters state
+  const [activeTab, setActiveTab] = useState<AttendanceTab>('quick');
+  const [filters, setFilters] = useState<EnrollmentFilterState>(() => ({
+    ...INITIAL_ENROLLMENT_FILTERS,
+    statusFilter: DEFAULT_STATUS_BY_TAB['quick'],
+  }));
 
   const fetchEnrollments = async () => {
     try {
       setLoading(true);
       const data = await enrollmentsApi.list({
-        sale: selectedSale || undefined,
+        sale: filters.selectedSale || undefined,
       });
       setEnrollments(data);
     } catch (err: any) {
@@ -84,35 +58,33 @@ export const EnrollmentsPage: React.FC = () => {
 
   useEffect(() => {
     fetchEnrollments();
-  }, [selectedSale]);
+  }, [filters.selectedSale]);
 
-  // Extract unique Sales list for Admin filter
-  const salesList = useMemo(() => {
-    const set = new Set<string>();
-    enrollments.forEach((e) => {
-      if (e.sale_name) set.add(e.sale_name);
-      if (e.cs?.name) set.add(e.cs.name);
-      if (e.cs?.email) set.add(e.cs.email);
-    });
-    return Array.from(set).filter(Boolean);
-  }, [enrollments]);
+  const handleTabChange = (tab: AttendanceTab) => {
+    setActiveTab(tab);
+    setFilters((prev) => ({
+      ...prev,
+      statusFilter: DEFAULT_STATUS_BY_TAB[tab],
+    }));
+  };
 
-  // Extract StudentRow list for AttendanceMatrix filtered by Sale
-  const matrixStudents: StudentRow[] = useMemo(() => {
+  const normalizeClassModel = (model?: string | null): string => {
+    const normalized = (model || '').toUpperCase();
+    if (normalized === 'ONE_TO_ONE' || model === '1:1' || model === '1-1') return '1:1';
+    if (normalized === 'ONE_TO_TWO' || model === '1:2' || model === '1-2') return '1:2';
+    if (normalized === 'ONE_TO_N' || normalized === 'GROUP' || model === '1:n' || model === '1-N') return '1:n';
+    return model || '1:1';
+  };
+
+  // Extract rich StudentRow list for AttendanceMatrix with all fields A -> AH
+  const listStudents: StudentRow[] = useMemo(() => {
     const list: StudentRow[] = [];
 
     enrollments.forEach((enr) => {
       const student = enr.student;
       if (!student) return;
 
-      // Filter by search query if any
-      if (searchQuery) {
-        const query = searchQuery.toLowerCase();
-        const matchName = student.full_name?.toLowerCase().includes(query);
-        const matchCode = student.external_id?.toLowerCase().includes(query) || enr.external_id?.toLowerCase().includes(query);
-        const matchPhone = student.phone?.includes(query);
-        if (!matchName && !matchCode && !matchPhone) return;
-      }
+      const pkg = enr.package;
 
       // If enrollment has assigned enrollment_classes
       if (enr.enrollment_classes && enr.enrollment_classes.length > 0) {
@@ -127,42 +99,64 @@ export const EnrollmentsPage: React.FC = () => {
             student_id: student.id,
             external_id: student.external_id || enr.external_id || `HV_${student.id}`,
             full_name: student.full_name,
-            status: enr.status,
+            package_name: pkg?.name || pkg?.code || 'Gói học',
+            course_content: enr.course_content || 'Thường',
+            total_sessions: enr.total_sessions || 0,
+            level: enr.level || (cls as any)?.level || 'Thường',
+            email: student.email || '',
+            phone: student.phone || '',
+            model_type: (cls as any)?.model_type || enr.class_model || '1:1',
+            remaining_sessions: enr.external_remaining_sessions,
+            attended_previous_years: enr.attended_previous_years ?? 0,
             start_date: enr.start_date,
+            status: enr.status,
             end_date: enr.end_date,
             start_time: schedule?.start_time || '20h00',
             schedule_pattern: schedule?.schedule_pattern || '246',
             duration_minutes: schedule?.duration_minutes || 30,
-            teacher_name: teacher?.name || 'Giáo viên',
-            teacher_code: (teacher as any)?.teacher_code || 'GV_01',
-            class_name: cls?.class_name || 'Lớp học',
-            sale_name: enr.sale_name || enr.cs?.name || 'Sale',
+            teacher_name: teacher?.name || '—',
+            teacher_code:
+              (teacher as any)?.code ||
+              (teacher as any)?.teacher_profile?.teacher_code ||
+              (teacher as any)?.teacher_code ||
+              '—',
+            class_name: cls?.class_name || '—',
+            sale_name: enr.sale_name || enr.cs?.name || '—',
           });
         });
       } else {
         // Enrolled but not yet assigned to a class
         list.push({
-          enrollment_class_id: enr.id,
-          class_id: 1,
+          enrollment_class_id: -enr.id,
+          class_id: 0,
           student_id: student.id,
           external_id: student.external_id || enr.external_id || `HV_${student.id}`,
           full_name: student.full_name,
-          status: enr.status,
+          package_name: pkg?.name || pkg?.code || 'Gói học',
+          course_content: enr.course_content || 'Thường',
+          total_sessions: enr.total_sessions || 0,
+          level: enr.level || 'Thường',
+          email: student.email || '',
+          phone: student.phone || '',
+          model_type: enr.class_model || '1:1',
+          remaining_sessions: enr.external_remaining_sessions,
+          attended_previous_years: enr.attended_previous_years ?? 0,
           start_date: enr.start_date,
+          status: enr.status,
           end_date: enr.end_date,
           start_time: '20h00',
           schedule_pattern: '246',
           duration_minutes: 30,
           teacher_name: 'Chưa xếp GV',
-          teacher_code: 'GV_--',
+          teacher_code: '—',
           class_name: 'Chưa xếp lớp',
-          sale_name: enr.sale_name || enr.cs?.name || 'Sale',
+          sale_name: enr.sale_name || enr.cs?.name || '—',
         });
       }
     });
 
     return list;
-  }, [enrollments, searchQuery]);
+  }, [enrollments]);
 
   // Aggregate all sessions & attendances across the enrolled classes
   const { allSessions, allAttendances } = useMemo(() => {
@@ -194,6 +188,240 @@ export const EnrollmentsPage: React.FC = () => {
     };
   }, [enrollments]);
 
+  // Map total attended sessions for each student to enable accurate reactive session filtering
+  const attendedSessionsMap = useMemo(() => {
+    const map = new Map<number, number>();
+    allAttendances.forEach((a) => {
+      if ((a as any).deleted_at) return;
+      if (a.status === 'ATTENDED') {
+        const cur = map.get(a.enrollment_class_id) || 0;
+        map.set(a.enrollment_class_id, cur + (a.session_count ?? 1));
+      }
+    });
+    return map;
+  }, [allAttendances]);
+
+  // Dynamic lists for filter dropdowns
+  const salesList = useMemo(() => {
+    const set = new Set<string>();
+    enrollments.forEach((e) => {
+      if (e.sale_name) set.add(e.sale_name);
+      if (e.cs?.name) set.add(e.cs.name);
+      if (e.cs?.email) set.add(e.cs.email);
+    });
+    return Array.from(set).filter(Boolean).sort();
+  }, [enrollments]);
+
+  const packagesList = useMemo(() => {
+    const set = new Set<string>();
+    listStudents.forEach((s) => {
+      if (s.package_name && s.package_name !== 'Gói học' && s.package_name !== '-') {
+        set.add(s.package_name);
+      }
+    });
+    return Array.from(set).sort();
+  }, [listStudents]);
+
+  const teachersList = useMemo(() => {
+    const set = new Set<string>();
+    listStudents.forEach((s) => {
+      if (s.teacher_name && s.teacher_name !== 'Chưa xếp GV' && s.teacher_name !== 'Giáo viên') {
+        set.add(s.teacher_name);
+      }
+    });
+    return Array.from(set).sort();
+  }, [listStudents]);
+
+  const teacherCodesList = useMemo(() => {
+    const set = new Set<string>();
+    listStudents.forEach((s) => {
+      if (s.teacher_code && s.teacher_code !== '—' && s.teacher_code !== 'GV_--') {
+        set.add(s.teacher_code);
+      }
+    });
+    return Array.from(set).sort();
+  }, [listStudents]);
+
+  const classesList = useMemo(() => {
+    const set = new Set<string>();
+    listStudents.forEach((s) => {
+      if (s.class_name && s.class_name !== 'Chưa xếp lớp' && s.class_name !== '—' && s.class_name !== 'Lớp học') {
+        set.add(s.class_name);
+      }
+    });
+    return Array.from(set).sort();
+  }, [listStudents]);
+
+  // Main filtered students list with all requested criteria
+  const matrixStudents = useMemo(() => {
+    const query = filters.searchQuery.trim().toLocaleLowerCase('vi-VN');
+    const pkgQuery = filters.packageName.trim().toLocaleLowerCase('vi-VN');
+    const classQuery = filters.className.trim().toLocaleLowerCase('vi-VN');
+
+    return listStudents.filter((student) => {
+      // 1. Text search: ID, Name, Phone, Email
+      if (query) {
+        const matchesSearch = [
+          student.external_id,
+          student.full_name,
+          student.phone,
+          student.email,
+        ].some((value) => value?.toLocaleLowerCase('vi-VN').includes(query));
+        if (!matchesSearch) return false;
+      }
+
+      // 2. Tìm kiếm / Lọc Gói học
+      if (pkgQuery) {
+        const pName = (student.package_name || '').toLocaleLowerCase('vi-VN');
+        if (!pName.includes(pkgQuery)) return false;
+      }
+
+      // 3. Lọc Khóa học: Kaiwa 1->6, JNPT 1->6
+      const levelStr = (student.level || '').toLowerCase();
+      const contentStr = (student.course_content || '').toLowerCase();
+      const classNameStr = (student.class_name || '').toLowerCase();
+
+      if (filters.courseCategory === 'KAIWA') {
+        const isKaiwa =
+          levelStr.includes('kaiwa') ||
+          contentStr.includes('kaiwa') ||
+          classNameStr.includes('kaiwa');
+        if (!isKaiwa) return false;
+      } else if (filters.courseCategory === 'JNPT') {
+        const isJnpt =
+          levelStr.includes('jnpt') ||
+          levelStr.includes('jlpt') ||
+          /\bn[1-6]\b/i.test(levelStr) ||
+          contentStr.includes('jnpt') ||
+          contentStr.includes('jlpt') ||
+          /\bn[1-6]\b/i.test(contentStr) ||
+          classNameStr.includes('jnpt') ||
+          classNameStr.includes('jlpt');
+        if (!isJnpt) return false;
+      }
+
+      if (filters.courseLevel) {
+        const target = filters.courseLevel.toLowerCase();
+        let matchesLevel =
+          levelStr.includes(target) ||
+          contentStr.includes(target) ||
+          classNameStr.includes(target);
+
+        if (!matchesLevel && target.startsWith('jnpt ')) {
+          const num = target.replace('jnpt ', '').trim();
+          matchesLevel =
+            levelStr.includes(`n${num}`) ||
+            contentStr.includes(`n${num}`) ||
+            levelStr.includes(`jlpt ${num}`) ||
+            contentStr.includes(`jlpt ${num}`);
+        } else if (!matchesLevel && target.startsWith('n')) {
+          const num = target.replace('n', '').trim();
+          matchesLevel =
+            levelStr.includes(`jnpt ${num}`) ||
+            contentStr.includes(`jnpt ${num}`) ||
+            levelStr.includes(`jlpt ${num}`) ||
+            contentStr.includes(`jlpt ${num}`);
+        }
+
+        if (!matchesLevel) return false;
+      }
+
+      // 4. Lọc theo Tổng số buổi, Số buổi đã học, Số buổi còn lại
+      const total = student.total_sessions || 0;
+      const prevAttended = student.attended_previous_years || 0;
+      const attendedCurrent = attendedSessionsMap.get(student.enrollment_class_id) || 0;
+      const attended = prevAttended + attendedCurrent;
+      const remaining = student.total_sessions
+        ? student.total_sessions - attended
+        : ((student.remaining_sessions ?? 0) - attendedCurrent);
+
+      // 4. Lọc theo Tổng số buổi, Số buổi đã học, Số buổi còn lại (Bằng hoặc Khoảng)
+      // Tổng số buổi
+      if (filters.totalSessionsOp === 'EXACT') {
+        if (filters.totalSessionsExact !== '' && total !== Number(filters.totalSessionsExact)) return false;
+      } else {
+        if (filters.totalSessionsMin !== '' && total < Number(filters.totalSessionsMin)) return false;
+        if (filters.totalSessionsMax !== '' && total > Number(filters.totalSessionsMax)) return false;
+      }
+
+      // Số buổi đã học
+      if (filters.attendedSessionsOp === 'EXACT') {
+        if (filters.attendedSessionsExact !== '' && attended !== Number(filters.attendedSessionsExact)) return false;
+      } else {
+        if (filters.attendedSessionsMin !== '' && attended < Number(filters.attendedSessionsMin)) return false;
+        if (filters.attendedSessionsMax !== '' && attended > Number(filters.attendedSessionsMax)) return false;
+      }
+
+      // Số buổi còn lại
+      if (filters.remainingSessionsOp === 'EXACT') {
+        if (filters.remainingSessionsExact !== '' && remaining !== Number(filters.remainingSessionsExact)) return false;
+      } else {
+        if (filters.remainingSessionsMin !== '' && remaining < Number(filters.remainingSessionsMin)) return false;
+        if (filters.remainingSessionsMax !== '' && remaining > Number(filters.remainingSessionsMax)) return false;
+      }
+
+      // 5. Lọc theo Giáo viên, Mã giáo viên, Tên lớp
+      if (filters.teacherName && student.teacher_name !== filters.teacherName) return false;
+      if (filters.teacherCode && student.teacher_code !== filters.teacherCode) return false;
+      if (classQuery && !classNameStr.includes(classQuery)) return false;
+
+      // 6. Lọc theo Ngày bắt đầu học, Ngày kết thúc / Bảo lưu (Bằng hoặc Khoảng)
+      const stStartDate = student.start_date ? formatSessionDate(student.start_date) : '';
+      const stEndDate = student.end_date ? formatSessionDate(student.end_date) : '';
+
+      if (filters.startDateOp === 'EXACT') {
+        if (filters.startDateExact && stStartDate !== filters.startDateExact) return false;
+      } else {
+        if (filters.startDateFrom && (!stStartDate || stStartDate < filters.startDateFrom)) return false;
+        if (filters.startDateTo && (!stStartDate || stStartDate > filters.startDateTo)) return false;
+      }
+
+      if (filters.endDateOp === 'EXACT') {
+        if (filters.endDateExact && stEndDate !== filters.endDateExact) return false;
+      } else {
+        if (filters.endDateFrom && (!stEndDate || stEndDate < filters.endDateFrom)) return false;
+        if (filters.endDateTo && (!stEndDate || stEndDate > filters.endDateTo)) return false;
+      }
+
+      // 7. Lọc theo Lịch học, Giờ học (nhập text tìm kiếm)
+      if (
+        filters.schedulePattern.trim() &&
+        !(student.schedule_pattern || '')
+          .toLowerCase()
+          .includes(filters.schedulePattern.trim().toLowerCase())
+      ) {
+        return false;
+      }
+
+      if (
+        filters.startTime.trim() &&
+        !(student.start_time || '')
+          .toLowerCase()
+          .includes(filters.startTime.trim().toLowerCase())
+      ) {
+        return false;
+      }
+
+      // 8. Mô hình & Trạng thái
+      if (filters.modelFilter && normalizeClassModel(student.model_type) !== filters.modelFilter) {
+        return false;
+      }
+
+      if (filters.statusFilter && student.status !== filters.statusFilter) {
+        return false;
+      }
+
+      return true;
+    });
+  }, [listStudents, filters, attendedSessionsMap]);
+
+  const handleResetFilters = () => {
+    setFilters({
+      ...INITIAL_ENROLLMENT_FILTERS,
+      statusFilter: DEFAULT_STATUS_BY_TAB[activeTab],
+    });
+  };
+
   // Save changes from Attendance Matrix across student classes
   const handleCustomSaveAll = async (
     pendingEdits: Record<string, AttendanceStatus>,
@@ -212,7 +440,10 @@ export const EnrollmentsPage: React.FC = () => {
       const [ecIdStr, dateStr] = key.split('_');
       const ecId = parseInt(ecIdStr, 10);
       const student = matrixStudents.find((s) => s.enrollment_class_id === ecId);
-      const classId = student?.class_id || 1;
+      if (!student || student.enrollment_class_id <= 0 || !student.class_id) {
+        return;
+      }
+      const classId = student.class_id;
 
       const groupKey = `${classId}_${dateStr}`;
       if (!byClassAndDate.has(groupKey)) {
@@ -239,7 +470,7 @@ export const EnrollmentsPage: React.FC = () => {
           enrollment_class_id: i.ecId,
           status: i.status,
           session_count:
-            i.status === 'ATTENDED' ? (customValues?.[`${i.ecId}_${dateStr}`] ?? 1) : 1,
+            i.status === 'ATTENDED' ? customValues?.[`${i.ecId}_${dateStr}`] ?? 1 : 1,
         })),
       });
     }
@@ -247,424 +478,81 @@ export const EnrollmentsPage: React.FC = () => {
     await fetchEnrollments();
   };
 
-  // Filtered list for Table view
-  const filteredEnrollments = useMemo(() => {
-    return enrollments.filter((item) => {
-      const matchSearch =
-        !searchQuery ||
-        item.student?.full_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        item.student?.phone?.includes(searchQuery) ||
-        String(item.student_id).includes(searchQuery) ||
-        (item.external_id && item.external_id.toLowerCase().includes(searchQuery.toLowerCase()));
-
-      const matchStatus = !statusFilter || item.status === statusFilter;
-
-      return matchSearch && matchStatus;
-    });
-  }, [enrollments, searchQuery, statusFilter]);
-
-  const openModal = (enrollment?: Enrollment) => {
-    if (enrollment) {
-      setEditingEnrollment(enrollment);
-      setFormData({
-        student_id: String(enrollment.student_id),
-        package_id: enrollment.package_id ? String(enrollment.package_id) : '',
-        cs_id: String(enrollment.cs_id),
-        total_sessions: String(enrollment.total_sessions),
-        external_remaining_sessions:
-          enrollment.external_remaining_sessions !== undefined &&
-          enrollment.external_remaining_sessions !== null
-            ? String(enrollment.external_remaining_sessions)
-            : '',
-        start_date: enrollment.start_date
-          ? new Date(enrollment.start_date).toISOString().split('T')[0]
-          : '',
-        end_date: enrollment.end_date
-          ? new Date(enrollment.end_date).toISOString().split('T')[0]
-          : '',
-        status: enrollment.status,
-      });
-    } else {
-      setEditingEnrollment(null);
-      setFormData({
-        student_id: '',
-        package_id: '',
-        cs_id: user?.id ? String(user.id) : '',
-        total_sessions: '24',
-        external_remaining_sessions: '24',
-        start_date: new Date().toISOString().split('T')[0],
-        end_date: '',
-        status: 'STUDYING',
-      });
-    }
-    setIsModalOpen(true);
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!formData.student_id || !formData.total_sessions) {
-      toast.warning('Vui lòng điền đầy đủ các thông tin bắt buộc.');
-      return;
-    }
-
-    try {
-      setSubmitting(true);
-      if (editingEnrollment) {
-        const updateData: UpdateEnrollmentDTO = {
-          package_id: formData.package_id ? parseInt(formData.package_id) : undefined,
-          total_sessions: parseInt(formData.total_sessions),
-          external_remaining_sessions: formData.external_remaining_sessions
-            ? parseInt(formData.external_remaining_sessions)
-            : undefined,
-          start_date: formData.start_date || undefined,
-          end_date: formData.end_date || undefined,
-          status: formData.status,
-        };
-        await enrollmentsApi.update(editingEnrollment.id, updateData);
-        toast.success('Cập nhật thông tin ghi danh thành công!');
-      } else {
-        const createData: CreateEnrollmentDTO = {
-          student_id: parseInt(formData.student_id),
-          package_id: formData.package_id ? parseInt(formData.package_id) : undefined,
-          cs_id: parseInt(formData.cs_id) || user?.id || 1,
-          total_sessions: parseInt(formData.total_sessions),
-          external_remaining_sessions: formData.external_remaining_sessions
-            ? parseInt(formData.external_remaining_sessions)
-            : undefined,
-          start_date: formData.start_date || undefined,
-          end_date: formData.end_date || undefined,
-        };
-        await enrollmentsApi.create(createData);
-        toast.success('Tạo bản ghi ghi danh thành công!');
-      }
-      setIsModalOpen(false);
-      fetchEnrollments();
-    } catch (err: any) {
-      toast.error(err.response?.data?.error?.message || 'Có lỗi xảy ra khi lưu thông tin ghi danh');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  // Table columns for detailed view
-  const tableColumns: Column<Enrollment>[] = [
-    {
-      header: 'Học viên & Mã ghi danh',
-      cell: (item) => (
-        <div className="flex items-center space-x-3">
-          <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-xs">
-            {item.student?.full_name?.charAt(0).toUpperCase() || 'H'}
-          </div>
-          <div>
-            <div className="font-bold text-slate-900 text-xs">{item.student?.full_name || 'Học viên'}</div>
-            <div className="text-slate-500 font-mono text-[11px]">
-              {item.external_id || `ID: ${item.id}`} • {item.student?.phone || '—'}
-            </div>
-          </div>
-        </div>
-      ),
-    },
-    {
-      header: 'Gói học & Trình độ',
-      cell: (item) => (
-        <div>
-          <div className="font-semibold text-slate-800 text-xs">{item.package?.name || 'Gói cơ bản'}</div>
-          <div className="text-[11px] text-slate-500">
-            {item.level || 'Chuẩn'} • {item.class_model || 'Nhóm'}
-          </div>
-        </div>
-      ),
-    },
-    {
-      header: 'Nhân viên Sale (CSKH)',
-      cell: (item) => (
-        <div className="flex items-center gap-1.5 font-medium text-slate-700">
-          <UserCheck className="w-3.5 h-3.5 text-blue-600" />
-          <span>{item.sale_name || item.cs?.name || item.cs?.email || 'Chưa gán'}</span>
-        </div>
-      ),
-    },
-    {
-      header: 'Số buổi còn lại',
-      cell: (item) => {
-        const rem = item.external_remaining_sessions;
-        if (rem === null || rem === undefined) return <span className="text-slate-400">—</span>;
-        const isDebt = rem < 0;
-
-        return (
-          <div className="flex items-center gap-1.5">
-            <span
-              className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold border ${
-                isDebt
-                  ? 'bg-red-100 text-red-800 border-red-300 font-extrabold shadow-xs'
-                  : rem <= 3
-                  ? 'bg-amber-100 text-amber-800 border-amber-300'
-                  : 'bg-emerald-50 text-emerald-800 border-emerald-200'
-              }`}
-            >
-              {isDebt && <AlertTriangle className="w-3 h-3 mr-1 text-red-600 animate-pulse" />}
-              {rem} buổi
-            </span>
-          </div>
-        );
-      },
-    },
-    {
-      header: 'Trạng thái',
-      cell: (item) => {
-        const conf = ENROLLMENT_STATUS_LABELS[item.status] || ENROLLMENT_STATUS_LABELS.NOT_STARTED;
-        return <Badge variant={conf.variant}>{conf.label}</Badge>;
-      },
-    },
-    {
-      header: 'Thời gian học',
-      cell: (item) => (
-        <div className="text-[11px] text-slate-600">
-          <div>BĐ: {item.start_date ? new Date(item.start_date).toLocaleDateString('vi-VN') : '—'}</div>
-          <div>KT: {item.end_date ? new Date(item.end_date).toLocaleDateString('vi-VN') : '—'}</div>
-        </div>
-      ),
-    },
-    {
-      header: 'Thao tác',
-      className: 'text-right',
-      cell: (item) => (
-        <div className="flex justify-end">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={(e) => {
-              e.stopPropagation();
-              openModal(item);
-            }}
-            title="Chỉnh sửa ghi danh"
-          >
-            <Edit className="w-4 h-4 text-slate-500 hover:text-blue-600" />
-          </Button>
-        </div>
-      ),
-    },
-  ];
-
   return (
     <PageContainer>
-      {/* Page Header */}
-      <PageHeader
-        title="Quản lý Ghi danh & Điểm danh"
-        description="Ma trận điểm danh theo ngày cho học viên do nhân viên Chăm sóc khách hàng (Sale) phụ trách."
-        actions={
-          <div className="flex items-center gap-2.5">
-            {/* View Mode Toggle */}
-            <div className="flex p-1 bg-surface-muted rounded-xl border border-border/80 text-xs font-semibold">
-              <button
-                type="button"
-                onClick={() => setViewMode('matrix')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all ${
-                  viewMode === 'matrix'
-                    ? 'bg-surface text-primary shadow-xs'
-                    : 'text-text-muted hover:text-text-primary'
-                }`}
-              >
-                <CalendarDays className="w-4 h-4" />
-                <span>Ma trận Điểm danh</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setViewMode('table')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all ${
-                  viewMode === 'table'
-                    ? 'bg-surface text-primary shadow-xs'
-                    : 'text-text-muted hover:text-text-primary'
-                }`}
-              >
-                <TableIcon className="w-4 h-4" />
-                <span>Chi tiết Ghi danh</span>
-              </button>
-            </div>
+      <PageHeader title="Quản lý Điểm danh & Ghi danh" />
 
-            <Button
-              variant="primary"
-              size="md"
-              onClick={() => openModal()}
-              leftIcon={<Plus className="w-4 h-4" />}
-            >
-              Thêm ghi danh
-            </Button>
-          </div>
-        }
+      <HorizontalTabs
+        ariaLabel="Nội dung quản lý ghi danh"
+        value={activeTab}
+        onChange={handleTabChange}
+        className="mb-4"
+        items={[
+          { value: 'quick', label: 'Điểm danh nhanh', icon: <Zap /> },
+          { value: 'detailed', label: 'Điểm danh chi tiết', icon: <Calendar /> },
+          { value: 'stats', label: 'Thống kê', icon: <BarChart3 /> },
+        ]}
       />
 
-      {/* Sale Filter & Info Bar */}
-      <div className="mb-5 p-4 bg-surface rounded-2xl border border-border/80 shadow-soft flex flex-wrap items-center justify-between gap-4">
-        {/* Left: Role identification / Sale Selector */}
-        <div className="flex items-center gap-3 flex-wrap">
-          {isCS ? (
-            <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-50 text-blue-900 border border-blue-200/80 rounded-xl text-xs font-bold">
-              <UserCheck className="w-4 h-4 text-blue-600" />
-              <span>Nhân viên Sale (CSKH): {user?.name || user?.email}</span>
-            </div>
-          ) : (
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-text-secondary whitespace-nowrap">
-                Lọc theo Sale:
-              </span>
-              <select
-                value={selectedSale}
-                onChange={(e) => setSelectedSale(e.target.value)}
-                className="text-xs font-medium px-3 py-1.5 bg-surface-muted border border-border/80 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 text-text-primary min-w-[180px]"
-              >
-                <option value="">-- Tất cả nhân viên Sale --</option>
-                {salesList.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
+      {/* Bộ lọc Quản lý Ghi danh chuyên nghiệp 2 tầng */}
+      <EnrollmentFilterBar
+        filters={filters}
+        onChange={setFilters}
+        onReset={handleResetFilters}
+        salesList={salesList}
+        packagesList={packagesList}
+        teachersList={teachersList}
+        teacherCodesList={teacherCodesList}
+        classesList={classesList}
+        isCS={isCS}
+      />
 
-          <div className="text-xs text-text-muted flex items-center gap-1">
-            <span>Tổng cộng:</span>
-            <strong className="text-text-primary font-bold">{matrixStudents.length}</strong>
-            <span>học viên</span>
+      {/* Main Content Area: 3-Tab Attendance Management */}
+      <div className="space-y-4">
+        {loading && enrollments.length === 0 ? (
+          <div className="flex items-center justify-center p-12 bg-surface rounded-2xl border border-border/80 text-text-muted">
+            <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin mr-3" />
+            <span>Đang tải dữ liệu điểm danh học viên...</span>
           </div>
-        </div>
-
-        {/* Right: Quick Search */}
-        <div className="w-full sm:w-72">
-          <Input
-            placeholder="Tìm theo tên học viên, SĐT, mã..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            leftIcon={<Search className="w-4 h-4 text-text-muted" />}
-          />
-        </div>
-      </div>
-
-      {/* Main Content Area: Matrix vs Table */}
-      {viewMode === 'matrix' ? (
-        <div className="space-y-4">
+        ) : (
           <AttendanceMatrix
+            activeTab={activeTab}
+            titleHeader={(
+              <div className="flex items-center gap-2 text-xs font-semibold text-text-secondary">
+                <span className="inline-flex items-center gap-1.5 rounded-lg border border-border/80 bg-surface px-2.5 py-1.5 shadow-2xs">
+                  <span>Hiển thị:</span>
+                  <span className="font-extrabold text-primary">{matrixStudents.length}</span>
+                  <span className="text-text-muted">/ {listStudents.length} học viên</span>
+                </span>
+                {filters.statusFilter && (
+                  <span className="rounded-md border border-blue-200 bg-blue-50 px-2 py-1 text-[11px] font-bold text-primary">
+                    {filters.statusFilter === 'STUDYING'
+                      ? 'Đang học'
+                      : filters.statusFilter === 'WAITING_CLASS'
+                      ? 'Chờ lớp'
+                      : filters.statusFilter === 'PAUSED'
+                      ? 'Bảo lưu'
+                      : filters.statusFilter === 'FINISHED'
+                      ? 'Kết thúc'
+                      : filters.statusFilter === 'UPCOMING'
+                      ? 'Sắp học'
+                      : filters.statusFilter === 'NOT_STARTED'
+                      ? 'Chưa học'
+                      : filters.statusFilter === 'CANCELLED'
+                      ? 'Đã hủy'
+                      : filters.statusFilter}
+                  </span>
+                )}
+              </div>
+            )}
             students={matrixStudents}
             sessions={allSessions}
             attendances={allAttendances}
             onRefresh={fetchEnrollments}
             onSaveCustom={handleCustomSaveAll}
           />
-        </div>
-      ) : (
-        <div className="space-y-4">
-          <FilterBar
-            activeCount={(searchQuery ? 1 : 0) + (statusFilter ? 1 : 0)}
-            onClear={() => {
-              setSearchQuery('');
-              setStatusFilter('');
-            }}
-          >
-            <div className="w-full sm:w-48">
-              <Select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-                options={[
-                  { value: '', label: 'Tất cả trạng thái' },
-                  { value: 'STUDYING', label: 'Đang học' },
-                  { value: 'PAUSED', label: 'Bảo lưu / Tạm dừng' },
-                  { value: 'FINISHED', label: 'Hoàn thành' },
-                  { value: 'NOT_STARTED', label: 'Chưa học' },
-                  { value: 'CANCELLED', label: 'Đã hủy' },
-                ]}
-              />
-            </div>
-          </FilterBar>
-
-          <DataTable
-            data={filteredEnrollments}
-            columns={tableColumns}
-            isLoading={loading}
-            emptyMessage="Không tìm thấy bản ghi ghi danh nào phù hợp."
-          />
-        </div>
-      )}
-
-      {/* Create / Edit Modal */}
-      <Modal
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        title={editingEnrollment ? 'Chỉnh sửa Ghi danh' : 'Tạo mới Ghi danh'}
-      >
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Input
-              label="Mã Học viên (ID) *"
-              type="number"
-              value={formData.student_id}
-              onChange={(e) => setFormData({ ...formData, student_id: e.target.value })}
-              required
-              disabled={!!editingEnrollment}
-            />
-
-            <Input
-              label="Mã Gói học (Package ID)"
-              type="number"
-              value={formData.package_id}
-              onChange={(e) => setFormData({ ...formData, package_id: e.target.value })}
-              placeholder="VD: 1, 2..."
-            />
-
-            <Input
-              label="Tổng số buổi *"
-              type="number"
-              value={formData.total_sessions}
-              onChange={(e) => setFormData({ ...formData, total_sessions: e.target.value })}
-              required
-            />
-
-            <Input
-              label="Số buổi còn lại"
-              type="number"
-              value={formData.external_remaining_sessions}
-              onChange={(e) => setFormData({ ...formData, external_remaining_sessions: e.target.value })}
-              placeholder="Có thể nhập số âm nếu nợ buổi: -1, -2..."
-            />
-
-            <Input
-              label="Ngày bắt đầu học"
-              type="date"
-              value={formData.start_date}
-              onChange={(e) => setFormData({ ...formData, start_date: e.target.value })}
-            />
-
-            <Input
-              label="Ngày kết thúc / Bảo lưu"
-              type="date"
-              value={formData.end_date}
-              onChange={(e) => setFormData({ ...formData, end_date: e.target.value })}
-            />
-          </div>
-
-          <Select
-            label="Trạng thái"
-            value={formData.status}
-            onChange={(e) => setFormData({ ...formData, status: e.target.value as any })}
-            options={[
-              { value: 'NOT_STARTED', label: 'Chưa học' },
-              { value: 'STUDYING', label: 'Đang học' },
-              { value: 'PAUSED', label: 'Tạm dừng / Bảo lưu' },
-              { value: 'FINISHED', label: 'Hoàn thành' },
-              { value: 'CANCELLED', label: 'Đã hủy' },
-            ]}
-          />
-
-          <div className="flex justify-end gap-3 pt-4 border-t border-border/80">
-            <Button variant="outline" type="button" onClick={() => setIsModalOpen(false)}>
-              Hủy
-            </Button>
-            <Button variant="primary" type="submit" isLoading={submitting}>
-              {editingEnrollment ? 'Lưu thay đổi' : 'Tạo mới'}
-            </Button>
-          </div>
-        </form>
-      </Modal>
+        )}
+      </div>
     </PageContainer>
   );
 };

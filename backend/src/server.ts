@@ -8,6 +8,7 @@ import { setupIo, closeIo } from './shared/realtime/socket-singleton';
 import { registerZaloSocketHandlers } from './modules/zalo/zalo-socket';
 import { startAutomationWorker, stopAutomationWorker } from './modules/automation/automation-worker';
 import { startZaloHealthCheck } from './modules/zalo/zalo-health-check';
+import { startAutoAttendanceScheduler, stopAutoAttendanceScheduler } from './modules/auto-attendance/auto-attendance-scheduler';
 
 const log = createLogger('Server');
 
@@ -55,10 +56,22 @@ const server = app.listen(PORT, async () => {
 
   // Start automation delivery worker
   try {
-    startAutomationWorker();
-    log.info('Automation worker started');
+    const worker = startAutomationWorker();
+    if (worker) {
+      log.info('Automation worker started');
+    }
   } catch (err) {
     log.warn('Automation worker start failed (continuing without automation)', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+
+  // Start auto attendance background scheduler
+  try {
+    startAutoAttendanceScheduler();
+    log.info('Auto attendance scheduler started');
+  } catch (err) {
+    log.warn('Auto attendance scheduler start failed (continuing)', {
       error: err instanceof Error ? err.message : String(err),
     });
   }
@@ -98,6 +111,16 @@ async function shutdown(signal: string): Promise<void> {
     log.info('Automation worker stopped');
   } catch (err) {
     log.error('Automation worker shutdown error', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+
+  // Stop auto attendance scheduler
+  try {
+    stopAutoAttendanceScheduler();
+    log.info('Auto attendance scheduler stopped');
+  } catch (err) {
+    log.error('Auto attendance scheduler shutdown error', {
       error: err instanceof Error ? err.message : String(err),
     });
   }

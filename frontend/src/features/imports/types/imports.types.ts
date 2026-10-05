@@ -2,6 +2,28 @@ export type ImportType = 'WORKBOOK' | 'STUDENT_ENROLLMENT' | 'ATTENDANCE';
 export type LogicalSheet = 'studentEnrollment' | 'attendance';
 export type ImportBatchStatus = 'PREVIEW' | 'PROCESSING' | 'COMPLETED' | 'PARTIAL_FAILED' | 'FAILED' | 'ROLLED_BACK';
 
+export interface MonthAttendanceBlock {
+  month: number;
+  year: number;
+  label: string;
+  startCol: number;
+  endCol: number;
+  totalDays: number;
+  summaryCols: {
+    attendedCol: number;
+    absentACol: number;
+    leaveBCol: number;
+    absentCCol: number;
+    teacherDCol: number;
+    techErrorECol: number;
+  };
+  dailyCols: Array<{
+    colNumber: number;
+    colLetter: string;
+    date: string;
+  }>;
+}
+
 export interface SheetPreviewData {
   sheet: LogicalSheet;
   sheetName: string;
@@ -10,6 +32,9 @@ export interface SheetPreviewData {
   rows: Record<string, unknown>[];
   totalRows: number;
   suggestedMapping: Record<string, string>;
+  availableMonths?: MonthAttendanceBlock[];
+  selectedMonth?: number;
+  selectedYear?: number;
 }
 export interface UploadResponse {
   importId: number;

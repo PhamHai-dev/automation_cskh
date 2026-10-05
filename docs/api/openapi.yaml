@@ -8,12 +8,6 @@ servers:
   - url: http://localhost:3000
     description: Local development server
 
-components:
-  securitySchemes:
-    bearerAuth:
-      type: http
-      scheme: bearer
-      bearerFormat: JWT
 
 security:
   - bearerAuth: []
@@ -617,8 +611,7 @@ paths:
                   data:
                     $ref: '#/components/schemas/EnrollmentSummaryStats'
                   meta:
-                    type: object
-                    nullable: true
+                    type: [object, 'null']
 
   /api/v1/dashboard/attendance:
     get:
@@ -663,8 +656,7 @@ paths:
                   data:
                     $ref: '#/components/schemas/AttendanceStats'
                   meta:
-                    type: object
-                    nullable: true
+                    type: [object, 'null']
 
   /api/v1/dashboard/care-pivot:
     get:
@@ -709,8 +701,7 @@ paths:
                   data:
                     $ref: '#/components/schemas/CarePivotMatrix'
                   meta:
-                    type: object
-                    nullable: true
+                    type: [object, 'null']
 
   /api/v1/dashboard/tasks-overview:
     get:
@@ -733,10 +724,64 @@ paths:
                   data:
                     $ref: '#/components/schemas/TasksOverviewStats'
                   meta:
-                    type: object
-                    nullable: true
+                    type: [object, 'null']
+
+  /api/v1/settings/auto-attendance:
+    get:
+      summary: Get automatic attendance settings (Admin only)
+      tags: [Settings/Auto Attendance]
+      responses:
+        '200':
+          description: Current automatic attendance settings
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, meta]
+                properties:
+                  data:
+                    $ref: '#/components/schemas/AutoAttendanceSettings'
+                  meta:
+                    type: [object, 'null']
+    patch:
+      summary: Update automatic attendance settings (Admin only)
+      tags: [Settings/Auto Attendance]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [delay_minutes]
+              properties:
+                delay_minutes:
+                  type: integer
+                  minimum: 0
+                  maximum: 1440
+      responses:
+        '200':
+          description: Updated automatic attendance settings
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, meta]
+                properties:
+                  data:
+                    $ref: '#/components/schemas/AutoAttendanceSettings'
+                  meta:
+                    type: [object, 'null']
+        '400':
+          description: Invalid delay
+        '403':
+          description: Admin role required
 
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
   schemas:
     User:
       type: object
@@ -903,7 +948,7 @@ components:
           enum: [ATTENDED, ABSENT_APPROVED_A, LEAVE_B, ABSENT_UNAPPROVED_C, TEACHER_ABSENT_D, TECH_ERROR_E]
         source:
           type: string
-          enum: [MANUAL, EXCEL_IMPORT, TEACHER_UPLOAD]
+          enum: [MANUAL, EXCEL_IMPORT, TEACHER_UPLOAD, AUTO_SCHEDULE]
         created_by_id:
           type: integer
         created_at:
@@ -1001,7 +1046,7 @@ components:
           type: integer
         type:
           type: string
-          enum: [CALLBACK, HOT_ISSUE, FOLLOW_UP]
+          enum: [CALLBACK, HOT_ISSUE, FOLLOW_UP, AUTO_ATTENDANCE, SCHEDULE_DATA_ISSUE]
         title:
           type: string
         note:
@@ -1024,6 +1069,21 @@ components:
         updated_at:
           type: string
           format: date-time
+
+    AutoAttendanceSettings:
+      type: object
+      required: [delay_minutes, updated_at]
+      properties:
+        delay_minutes:
+          type: integer
+          minimum: 0
+          maximum: 1440
+          example: 15
+        updated_at:
+          type: string
+          format: date-time
+        updated_by_id:
+          type: [integer, 'null']
 
     EnrollmentSummaryStats:
       type: object

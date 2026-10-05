@@ -4,6 +4,7 @@ import { PageHeader } from '../../../components/common/PageHeader';
 import { Button } from '../../../components/ui/Button';
 import { Modal } from '../../../components/ui/Modal';
 import { useToast } from '../../../components/ui/Toast';
+import { HorizontalTabs } from '../../../components/ui/HorizontalTabs';
 import { CareTaskList } from '../components/CareTaskList';
 import { CareTaskModal } from '../components/CareTaskModal';
 import { CareLogTimeline } from '../components/CareLogTimeline';
@@ -127,7 +128,6 @@ export const CarePage: React.FC = () => {
     <PageContainer>
       <PageHeader
         title="Quản lý Chăm sóc Học viên & Nhiệm vụ CS"
-        description="Theo dõi toàn diện nhật ký trao đổi theo mốc buổi học và quản lý danh sách việc cần làm (gọi lại, xử lý điểm nóng)"
         actions={
           activeTab === 'tasks' ? (
             <Button
@@ -137,40 +137,24 @@ export const CarePage: React.FC = () => {
                 setEditingTask(null);
                 setIsTaskModalOpen(true);
               }}
-              className="flex items-center gap-1.5"
+              leftIcon={<Plus className="w-4 h-4" />}
             >
-              <Plus className="w-4 h-4" />
               Tạo nhiệm vụ mới
             </Button>
           ) : undefined
         }
       />
 
-      {/* Tabs */}
-      <div className="flex border-b border-slate-200 mb-6">
-        <button
-          onClick={() => setActiveTab('tasks')}
-          className={`pb-3 px-4 text-xs font-bold border-b-2 flex items-center gap-2 transition-all ${
-            activeTab === 'tasks'
-              ? 'border-blue-600 text-blue-600'
-              : 'border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300'
-          }`}
-        >
-          <ListTodo className="w-4 h-4" />
-          Nhiệm vụ Chăm sóc (Care Tasks)
-        </button>
-        <button
-          onClick={() => setActiveTab('logs')}
-          className={`pb-3 px-4 text-xs font-bold border-b-2 flex items-center gap-2 transition-all ${
-            activeTab === 'logs'
-              ? 'border-blue-600 text-blue-600'
-              : 'border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300'
-          }`}
-        >
-          <History className="w-4 h-4" />
-          Nhật ký & Tiến trình Chăm sóc (Care Logs)
-        </button>
-      </div>
+      <HorizontalTabs
+        ariaLabel="Nội dung chăm sóc học viên"
+        value={activeTab}
+        onChange={setActiveTab}
+        className="mb-6"
+        items={[
+          { value: 'tasks', label: 'Nhiệm vụ chăm sóc', icon: <ListTodo /> },
+          { value: 'logs', label: 'Nhật ký chăm sóc', icon: <History /> },
+        ]}
+      />
 
       {/* Content */}
       {activeTab === 'tasks' ? (

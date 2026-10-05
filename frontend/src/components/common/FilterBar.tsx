@@ -5,6 +5,7 @@ import { Button } from '../ui/Button';
 export interface FilterBarProps {
   children: ReactNode;
   className?: string;
+  gridClassName?: string;
   title?: string;
   onReset?: () => void;
   onClear?: () => void;
@@ -15,6 +16,7 @@ export interface FilterBarProps {
 export const FilterBar: React.FC<FilterBarProps> = ({
   children,
   className = '',
+  gridClassName = 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 items-end',
   title = 'Bộ lọc dữ liệu',
   onReset,
   onClear,
@@ -51,7 +53,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
         )}
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 items-end">
+      <div className={gridClassName}>
         {children}
       </div>
     </div>

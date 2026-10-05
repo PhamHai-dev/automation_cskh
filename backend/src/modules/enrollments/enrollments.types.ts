@@ -14,7 +14,7 @@ export interface UpdateEnrollmentDTO {
   total_sessions?: number;
   start_date?: string | Date;
   end_date?: string | Date;
-  status?: 'NOT_STARTED' | 'STUDYING' | 'PAUSED' | 'FINISHED' | 'CANCELLED';
+  status?: 'WAITING_CLASS' | 'STUDYING' | 'PAUSED' | 'FINISHED' | 'UPCOMING' | 'NOT_STARTED' | 'CANCELLED';
 }
 
 export interface ReassignCSDTO {
