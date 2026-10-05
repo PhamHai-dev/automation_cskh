@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { classSessionsApi, attendanceApi } from '../api/sessions.api';
 import { classesApi } from '../api/classes.api';
 import {
@@ -20,6 +20,7 @@ import {
   CheckSquare,
   Save,
   Check,
+  AlertTriangle,
 } from 'lucide-react';
 
 const STATUS_OPTIONS: {
@@ -98,6 +99,7 @@ const StatusBadgeInline = ({ status }: { status: AttendanceStatus }) => {
 
 export const AttendanceSheetPage = () => {
   const { classId, sessionId } = useParams<{ classId: string; sessionId: string }>();
+  const navigate = useNavigate();
   const toast = useToast();
 
   const clsId = parseInt(classId || '0', 10);
@@ -112,6 +114,7 @@ export const AttendanceSheetPage = () => {
   const [allAttendances, setAllAttendances] = useState<Attendance[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [forbiddenError, setForbiddenError] = useState<string | null>(null);
 
   // Track local changes for single session view
   const [edits, setEdits] = useState<Record<number, AttendanceStatus>>({});
@@ -120,6 +123,7 @@ export const AttendanceSheetPage = () => {
   const fetchData = async () => {
     try {
       setLoading(true);
+      setForbiddenError(null);
       const [clsData, sessionData, attendData, sessionsList] = await Promise.all([
         classesApi.get(clsId),
         sessId ? classSessionsApi.get(clsId, sessId) : Promise.resolve(null),
@@ -140,7 +144,15 @@ export const AttendanceSheetPage = () => {
       );
       setAllAttendances(allAtts.flat());
     } catch (err: any) {
-      toast.error(err.response?.data?.error?.message || 'Không thể tải dữ liệu điểm danh');
+      if (err.response?.status === 403) {
+        setForbiddenError(
+          err.response?.data?.error?.message ||
+          err.response?.data?.message ||
+          'Bạn không được phân công phụ trách lớp học này nên không thể xem hoặc thực hiện điểm danh.'
+        );
+      } else {
+        toast.error(err.response?.data?.error?.message || 'Không thể tải dữ liệu điểm danh');
+      }
     } finally {
       setLoading(false);
     }
@@ -316,6 +328,39 @@ export const AttendanceSheetPage = () => {
   };
 
   const hasChanges = Object.keys(edits).length > 0;
+
+  if (forbiddenError) {
+    return (
+      <PageContainer>
+        <PageHeader
+          title="Điểm danh Lớp học"
+          backUrl="/classes"
+          breadcrumbs={[
+            { label: 'Lớp học phụ trách', href: '/classes' },
+            { label: 'Điểm danh' },
+          ]}
+        />
+        <div className="bg-surface rounded-2xl border border-rose-200/80 p-8 text-center max-w-lg mx-auto my-12 shadow-soft">
+          <div className="w-14 h-14 bg-rose-50 text-rose-600 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-rose-100 shadow-2xs">
+            <AlertTriangle className="w-7 h-7" />
+          </div>
+          <h2 className="text-lg font-bold text-slate-900 mb-2">Không có quyền truy cập lớp học</h2>
+          <p className="text-sm text-slate-600 mb-6 leading-relaxed">
+            {forbiddenError}
+          </p>
+          <div className="flex justify-center gap-3">
+            <Button
+              variant="primary"
+              size="md"
+              onClick={() => navigate('/classes')}
+            >
+              Về danh sách lớp phụ trách
+            </Button>
+          </div>
+        </div>
+      </PageContainer>
+    );
+  }
 
   return (
     <PageContainer>

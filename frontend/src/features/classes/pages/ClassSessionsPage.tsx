@@ -34,6 +34,7 @@ export const ClassSessionsPage: React.FC = () => {
   const [cls, setCls] = useState<Class | null>(null);
   const [sessions, setSessions] = useState<ClassSession[]>([]);
   const [loading, setLoading] = useState(true);
+  const [forbiddenError, setForbiddenError] = useState<string | null>(null);
 
   // Modal states
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -52,6 +53,8 @@ export const ClassSessionsPage: React.FC = () => {
 
   const fetchData = async () => {
     try {
+      setLoading(true);
+      setForbiddenError(null);
       const [clsData, sessionsData] = await Promise.all([
         classesApi.get(clsId),
         classSessionsApi.list(clsId),
@@ -59,7 +62,15 @@ export const ClassSessionsPage: React.FC = () => {
       setCls(clsData);
       setSessions(sessionsData);
     } catch (err: any) {
-      toast.error(err.response?.data?.error?.message || 'Không thể tải danh sách buổi học');
+      if (err.response?.status === 403) {
+        setForbiddenError(
+          err.response?.data?.error?.message ||
+          err.response?.data?.message ||
+          'Bạn không được phân công phụ trách lớp học này.'
+        );
+      } else {
+        toast.error(err.response?.data?.error?.message || 'Không thể tải danh sách buổi học');
+      }
     } finally {
       setLoading(false);
     }
@@ -206,6 +217,39 @@ export const ClassSessionsPage: React.FC = () => {
       ),
     },
   ];
+
+  if (forbiddenError) {
+    return (
+      <PageContainer>
+        <PageHeader
+          title="Danh sách buổi học"
+          backUrl="/classes"
+          breadcrumbs={[
+            { label: 'Lớp học phụ trách', href: '/classes' },
+            { label: 'Buổi học' },
+          ]}
+        />
+        <div className="bg-surface rounded-2xl border border-rose-200/80 p-8 text-center max-w-lg mx-auto my-12 shadow-soft">
+          <div className="w-14 h-14 bg-rose-50 text-rose-600 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-rose-100 shadow-2xs">
+            <AlertTriangle className="w-7 h-7" />
+          </div>
+          <h2 className="text-lg font-bold text-slate-900 mb-2">Không có quyền truy cập lớp học</h2>
+          <p className="text-sm text-slate-600 mb-6 leading-relaxed">
+            {forbiddenError}
+          </p>
+          <div className="flex justify-center gap-3">
+            <Button
+              variant="primary"
+              size="md"
+              onClick={() => navigate('/classes')}
+            >
+              Về danh sách lớp phụ trách
+            </Button>
+          </div>
+        </div>
+      </PageContainer>
+    );
+  }
 
   return (
     <PageContainer>

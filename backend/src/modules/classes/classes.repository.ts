@@ -3,8 +3,11 @@ import { CreateClassDTO, UpdateClassDTO, AssignTeacherDTO } from './classes.type
 import { ClassModelType, AttendanceSourceType } from '@prisma/client';
 
 export class ClassesRepository {
-  async findAll() {
+  async findAll(accessibleClassIds?: number[] | null) {
     return prisma.class.findMany({
+      where: accessibleClassIds !== null && accessibleClassIds !== undefined
+        ? { id: { in: accessibleClassIds } }
+        : undefined,
       include: {
         class_teachers: {
           include: { teacher: true }

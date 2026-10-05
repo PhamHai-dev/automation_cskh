@@ -82,7 +82,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
       title: 'ĐÀO TẠO & LỚP HỌC',
       items: [
         {
-          name: 'Quản lý Lớp học',
+          name: user?.roles?.includes('TEACHER') && !user?.roles?.includes('ADMIN') && !user?.roles?.includes('MANAGE')
+            ? 'Lớp học & Điểm danh'
+            : 'Quản lý Lớp học',
           path: '/classes',
           icon: <GraduationCap className="w-5 h-5 shrink-0" />,
           allowedRoles: ['ADMIN', 'MANAGE', 'CS', 'TEACHER'],

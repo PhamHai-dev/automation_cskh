@@ -12,6 +12,7 @@ import { Input } from '../../../components/ui/Input';
 import { Select } from '../../../components/ui/Select';
 import { Modal } from '../../../components/ui/Modal';
 import { useToast } from '../../../components/ui/Toast';
+import { useAuth } from '../../../contexts/AuthContext';
 import { Edit, Plus, Calendar, Search, Sparkles } from 'lucide-react';
 
 const MODEL_CONFIG: Record<string, { label: string; className: string }> = {
@@ -30,6 +31,10 @@ const SOURCE_LABELS: Record<string, string> = {
 };
 
 export const ClassesPage: React.FC = () => {
+  const { user } = useAuth();
+  const isTeacher = Boolean(user?.roles?.includes('TEACHER') && !user?.roles?.includes('ADMIN') && !user?.roles?.includes('MANAGE'));
+  const canManageClasses = Boolean(user?.roles?.some((r) => ['ADMIN', 'MANAGE'].includes(r)));
+
   const toast = useToast();
   const [classes, setClasses] = useState<Class[]>([]);
   const [loading, setLoading] = useState(true);
@@ -260,7 +265,7 @@ export const ClassesPage: React.FC = () => {
             }}
             title="Xem ma trận điểm danh theo ngày"
             leftIcon={<Calendar className="w-3.5 h-3.5" />}
-            className="text-xs text-teal-600 border-teal-200 hover:bg-teal-50"
+            className="text-xs text-teal-600 border-teal-200 hover:bg-teal-50 font-semibold"
           >
             Điểm danh
           </Button>
@@ -277,16 +282,18 @@ export const ClassesPage: React.FC = () => {
           >
             Buổi học
           </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={(e) => {
-              e.stopPropagation();
-              openModal(item);
-            }}
-            leftIcon={<Edit className="w-4 h-4 text-slate-500 hover:text-blue-600" />}
-            title="Chỉnh sửa lớp học"
-          />
+          {canManageClasses && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={(e) => {
+                e.stopPropagation();
+                openModal(item);
+              }}
+              leftIcon={<Edit className="w-4 h-4 text-slate-500 hover:text-blue-600" />}
+              title="Chỉnh sửa lớp học"
+            />
+          )}
         </div>
       ),
     },
@@ -295,18 +302,30 @@ export const ClassesPage: React.FC = () => {
   return (
     <PageContainer>
       <PageHeader
-        title="Quản lý Lớp học"
+        title={isTeacher ? 'Lớp học phụ trách & Điểm danh' : 'Quản lý Lớp học'}
         actions={
-          <Button
-            onClick={() => openModal()}
-            variant="primary"
-            size="sm"
-            leftIcon={<Plus className="w-4 h-4" />}
-          >
-            Thêm lớp học mới
-          </Button>
+          canManageClasses ? (
+            <Button
+              onClick={() => openModal()}
+              variant="primary"
+              size="sm"
+              leftIcon={<Plus className="w-4 h-4" />}
+            >
+              Thêm lớp học mới
+            </Button>
+          ) : undefined
         }
       />
+
+      {isTeacher && (
+        <div className="mb-4 px-4 py-3 rounded-xl bg-teal-50/90 border border-teal-200/90 text-xs text-teal-900 flex items-center justify-between shadow-2xs">
+          <div className="flex items-center gap-2">
+            <span className="font-bold">👨‍🏫 Lớp học phụ trách:</span>
+            <span>Tài khoản giáo viên của bạn chỉ hiển thị và cho phép xem, điểm danh các lớp bạn được phân công.</span>
+          </div>
+          <Badge variant="accent">Phụ trách: {classes.length} lớp</Badge>
+        </div>
+      )}
 
       <FilterBar
         title="Tìm kiếm & Lọc lớp học"
@@ -354,7 +373,11 @@ export const ClassesPage: React.FC = () => {
         columns={columns}
         data={filteredClasses}
         isLoading={loading}
-        emptyMessage="Chưa có lớp học nào trong hệ thống."
+        emptyMessage={
+          isTeacher
+            ? 'Bạn chưa được phân công phụ trách lớp học nào. Vui lòng liên hệ Quản lý để được phân công lớp.'
+            : 'Chưa có lớp học nào trong hệ thống.'
+        }
       />
 
       {/* Modal Thêm/Sửa */}

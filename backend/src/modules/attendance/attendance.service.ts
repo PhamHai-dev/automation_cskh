@@ -74,8 +74,17 @@ export class AttendanceService {
     return results;
   }
 
-  async updateAttendance(attendanceId: number, data: UpdateAttendanceDTO, userId: number) {
+  async updateAttendance(attendanceId: number, data: UpdateAttendanceDTO, userId: number, classId?: number, sessionId?: number) {
     const before = await this.repository.findById(attendanceId);
+    if (!before) {
+      throw new Error('Attendance not found');
+    }
+    if (classId && before.class_session.class_id !== classId) {
+      throw new Error('Attendance does not belong to this class');
+    }
+    if (sessionId && before.class_session_id !== sessionId) {
+      throw new Error('Attendance does not belong to this session');
+    }
     const result = await this.repository.update(attendanceId, data);
     await this.logAudit(userId, 'UPDATE', 'Attendance', String(attendanceId), before, result);
     // Cancel pending deliveries for the old attendance state, then re-trigger with the new status
@@ -87,10 +96,16 @@ export class AttendanceService {
     return result;
   }
 
-  async resetAttendance(attendanceId: number, userId: number) {
+  async resetAttendance(attendanceId: number, userId: number, classId?: number, sessionId?: number) {
     const before = await this.repository.findById(attendanceId);
     if (!before) {
       throw new Error('Attendance not found');
+    }
+    if (classId && before.class_session.class_id !== classId) {
+      throw new Error('Attendance does not belong to this class');
+    }
+    if (sessionId && before.class_session_id !== sessionId) {
+      throw new Error('Attendance does not belong to this session');
     }
     const result = await this.repository.reset(attendanceId, userId);
     await this.logAudit(userId, 'DELETE', 'Attendance', String(attendanceId), before, result);
