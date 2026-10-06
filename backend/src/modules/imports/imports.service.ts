@@ -4,7 +4,7 @@ import ExcelJS from 'exceljs';
 import { ImportBatchStatus, ImportRowStatus, ImportType, AttendanceStatus, AttendanceSource, EnrollmentStatus, EnrollmentClassStatus, ImportCreateRequestStatus, ClassModelType, Prisma, CareLogOutcome } from '@prisma/client';
 import { prisma } from '../../prisma/client';
 import { ImportsRepository } from './imports.repository';
-import { SheetPreviewData, UploadResponse, ValidationReport, ValidationErrorItem, ValidationWarningItem, SaveMappingDTO, ImportBatchSummary, RequestActor, ReconcileItem, ReconcileClassification, LogicalSheet } from './imports.types';
+import { SheetPreviewData, UploadResponse, ValidationReport, ValidationErrorItem, ValidationWarningItem, SaveMappingDTO, ImportBatchSummary, RequestActor, ReconcileItem, ReconcileClassification, LogicalSheet, MonthAttendanceBlock } from './imports.types';
 import { AppError } from '../../middlewares/error.middleware';
 
 export class ImportsService {
@@ -38,9 +38,29 @@ export class ImportsService {
     return JSON.parse(fs.readFileSync(p, 'utf-8'));
   }
 
+  private cleanupTempFiles(importId: number, meta?: any) {
+    try {
+      const metaPath = this.getMetaFilePath(importId);
+      const filePath = meta?.filePath || this.getUploadFilePath(importId, '.xlsx');
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+      }
+      if (fs.existsSync(metaPath)) {
+        fs.unlinkSync(metaPath);
+      }
+    } catch {
+      // Do not block completion if temporary file cleanup fails
+    }
+  }
+
   // Helper to parse Excel dates safely
   public parseExcelDate(val: any): Date | null {
     if (!val) return null;
+    if (typeof val === 'object' && val !== null) {
+      if ('result' in val && val.result !== undefined && val.result !== null) {
+        val = val.result;
+      }
+    }
     if (val instanceof Date && !isNaN(val.getTime())) {
       return val;
     }
@@ -52,19 +72,32 @@ export class ImportsService {
       if (!isNaN(d.getTime())) return d;
     }
     if (typeof val === 'string') {
-      const trimmed = val.trim();
-      // Try YYYY-MM-DD
+      let trimmed = val.trim();
+      if (!trimmed) return null;
+      if (trimmed.includes('\n')) {
+        trimmed = trimmed.split('\n')[0].trim();
+      }
+      // Try YYYY-MM-DD or YYYY-MM-DD HH:mm:ss (or ISO)
       if (/^\d{4}-\d{2}-\d{2}/.test(trimmed)) {
         const d = new Date(trimmed);
         if (!isNaN(d.getTime())) return d;
       }
-      // Try DD/MM/YYYY
-      const parts = trimmed.split(/[/.-]/);
-      if (parts.length === 3) {
-        if (parts[0].length === 2 && parts[2].length === 4) {
-          const d = new Date(parseInt(parts[2], 10), parseInt(parts[1], 10) - 1, parseInt(parts[0], 10));
-          if (!isNaN(d.getTime())) return d;
-        }
+      // Try DD/MM/YYYY with optional time
+      const dmyMatch = trimmed.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})(?:\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/);
+      if (dmyMatch) {
+        const day = parseInt(dmyMatch[1], 10);
+        const month = parseInt(dmyMatch[2], 10) - 1;
+        const year = parseInt(dmyMatch[3], 10);
+        const hour = dmyMatch[4] ? parseInt(dmyMatch[4], 10) : 0;
+        const min = dmyMatch[5] ? parseInt(dmyMatch[5], 10) : 0;
+        const sec = dmyMatch[6] ? parseInt(dmyMatch[6], 10) : 0;
+        const d = new Date(year, month, day, hour, min, sec);
+        if (!isNaN(d.getTime())) return d;
+      }
+      // Fallback: try new Date(trimmed)
+      const directDate = new Date(trimmed);
+      if (!isNaN(directDate.getTime()) && !/^\d+$/.test(trimmed)) {
+        return directDate;
       }
       const parsedNum = parseFloat(trimmed);
       if (!isNaN(parsedNum) && parsedNum > 30000 && parsedNum < 70000) {
@@ -140,18 +173,22 @@ export class ImportsService {
         suggestedMapping['total_sessions'] = colLetter;
       } else if (lower.includes('số buổi còn lại')) {
         suggestedMapping['remaining_sessions'] = colLetter;
+      } else if (lower.includes('đã học năm trước') || lower.includes('buổi đã học năm trước')) {
+        suggestedMapping['attended_previous_years'] = colLetter;
       } else if (lower.includes('ngày bắt đầu')) {
         suggestedMapping['start_date'] = colLetter;
       } else if (lower.includes('ngày kết thúc') || lower.includes('kết thúc/bảo lưu')) {
         suggestedMapping['end_date'] = colLetter;
+      } else if (lower.includes('thanh toán')) {
+        suggestedMapping['payment_status'] = colLetter;
+      } else if (lower.includes('trạng thái hv') || lower.includes('trạng thái học viên') || lower.includes('nguồn hv')) {
+        suggestedMapping['student_source_status'] = colLetter;
       } else if (lower.includes('trạng thái') || lower.includes('tình trạng')) {
         suggestedMapping['status'] = colLetter;
       } else if (lower.includes('mô hình')) {
         suggestedMapping['class_model'] = colLetter;
-      } else if (lower.includes('nội dung')) {
+      } else if ((lower.includes('nội dung khoá') || lower.includes('nội dung khóa') || lower === 'nội dung' || lower.includes('nội dung')) && !lower.includes('chăm sóc')) {
         suggestedMapping['course_content'] = colLetter;
-      } else if (lower.includes('thanh toán')) {
-        suggestedMapping['payment_status'] = colLetter;
       } else if (lower.includes('sale') && !lower.includes('ghi chú')) {
         suggestedMapping['sale_name'] = colLetter;
       } else if (lower.includes('ghi chú sale')) {
@@ -162,7 +199,7 @@ export class ImportsService {
         suggestedMapping['class_name'] = colLetter;
       } else if (lower.includes('báo cáo học tập')) {
         suggestedMapping['study_report_url'] = colLetter;
-      } else if (lower.includes('thông tin trao đổi')) {
+      } else if (lower.includes('thông tin trao đổi') || lower.includes('trao đổi với hv') || lower.includes('trao đổi')) {
         suggestedMapping['exchange_info'] = colLetter;
       } else if (lower.includes('lịch hẹn gọi')) {
         suggestedMapping['callback_note'] = colLetter;
@@ -174,6 +211,10 @@ export class ImportsService {
         suggestedMapping['handed_over_at'] = colLetter;
       } else if (lower.includes('ngày tạo tài khoản')) {
         suggestedMapping['account_created_at'] = colLetter;
+      } else if (lower.includes('mã gv') || lower.includes('mã giáo viên')) {
+        suggestedMapping['teacher_code'] = colLetter;
+      } else if (lower.includes('giáo viên') || lower === 'gv' || lower.includes('tên gv') || lower.includes('gv phụ trách')) {
+        suggestedMapping['teacher_name'] = colLetter;
       }
     });
 
@@ -183,12 +224,132 @@ export class ImportsService {
   private cellText(cell: ExcelJS.Cell): string {
     let value: any = cell.value;
     if (value && typeof value === 'object') {
+      if (value instanceof Date && !isNaN(value.getTime())) {
+        const iso = value.toISOString();
+        if (iso.endsWith('T00:00:00.000Z')) {
+          return iso.slice(0, 10);
+        }
+        const pad = (n: number) => String(n).padStart(2, '0');
+        const y = value.getFullYear();
+        const m = pad(value.getMonth() + 1);
+        const d = pad(value.getDate());
+        const hh = pad(value.getHours());
+        const mm = pad(value.getMinutes());
+        const ss = pad(value.getSeconds());
+        return `${y}-${m}-${d} ${hh}:${mm}:${ss}`;
+      }
       if ('hyperlink' in value && value.hyperlink) return String(value.hyperlink).trim();
-      if ('result' in value) value = value.result;
-      else if ('text' in value) value = value.text;
-      else if ('richText' in value) value = value.richText.map((part: any) => part.text).join('');
+      if ('result' in value && value.result !== undefined && value.result !== null) {
+        value = value.result;
+      } else if ('text' in value) {
+        value = value.text;
+      } else if ('richText' in value) {
+        value = value.richText.map((part: any) => part.text).join('');
+      }
+    }
+    if (value instanceof Date && !isNaN(value.getTime())) {
+      const iso = value.toISOString();
+      if (iso.endsWith('T00:00:00.000Z')) {
+        return iso.slice(0, 10);
+      }
+      const pad = (n: number) => String(n).padStart(2, '0');
+      const y = value.getFullYear();
+      const m = pad(value.getMonth() + 1);
+      const d = pad(value.getDate());
+      const hh = pad(value.getHours());
+      const mm = pad(value.getMinutes());
+      const ss = pad(value.getSeconds());
+      return `${y}-${m}-${d} ${hh}:${mm}:${ss}`;
     }
     return value === undefined || value === null ? '' : String(value).trim();
+  }
+
+  public detectAttendanceMonthBlocks(worksheet: ExcelJS.Worksheet): MonthAttendanceBlock[] {
+    const row1 = worksheet.getRow(1);
+    const row2 = worksheet.getRow(2);
+
+    let defaultYear = new Date().getFullYear();
+    for (let c = 1; c <= 30; c++) {
+      const val = row1.getCell(c).value;
+      const num = Number(typeof val === 'object' && val !== null && 'result' in val ? (val as any).result : val);
+      if (num >= 2020 && num <= 2035) {
+        defaultYear = num;
+        break;
+      }
+    }
+
+    const rawMonths: Array<{ month: number; year: number; startCol: number }> = [];
+    for (let c = 26; c <= worksheet.columnCount; c++) {
+      const c1 = row1.getCell(c);
+      const t1 = c1.text ? c1.text.trim() : '';
+      let val1 = c1.value;
+      if (val1 && typeof val1 === 'object' && 'result' in val1) {
+        val1 = (val1 as any).result;
+      }
+
+      let m: number | null = null;
+      let y = defaultYear;
+
+      const matchThang = t1.match(/Tháng\s*(\d{1,2})/i);
+      if (matchThang) {
+        m = parseInt(matchThang[1], 10);
+      } else if (val1 instanceof Date || (typeof val1 === 'string' && val1.length > 7 && !isNaN(Date.parse(val1)))) {
+        const parsedDate = this.parseExcelDate(val1) || this.parseExcelDate(t1);
+        if (parsedDate && parsedDate.getFullYear() >= 2020) {
+          m = parsedDate.getMonth() + 1;
+          y = parsedDate.getFullYear();
+        }
+      }
+
+      if (m !== null && m >= 1 && m <= 12) {
+        rawMonths.push({ month: m, year: y, startCol: c });
+      }
+    }
+
+    const blocks: MonthAttendanceBlock[] = [];
+    for (let i = 0; i < rawMonths.length; i++) {
+      const cur = rawMonths[i];
+      const endCol = i < rawMonths.length - 1 ? rawMonths[i + 1].startCol - 1 : worksheet.columnCount;
+
+      const summaryCols = {
+        attendedCol: cur.startCol,
+        absentACol: cur.startCol + 1,
+        leaveBCol: cur.startCol + 2,
+        absentCCol: cur.startCol + 3,
+        teacherDCol: cur.startCol + 4,
+        techErrorECol: cur.startCol + 5,
+      };
+
+      const dailyCols: MonthAttendanceBlock['dailyCols'] = [];
+      for (let c = cur.startCol + 6; c <= endCol; c++) {
+        const c2 = row2.getCell(c);
+        const parsedDate = this.parseExcelDate(c2.value) || this.parseExcelDate(c2.text);
+        if (parsedDate) {
+          dailyCols.push({
+            colNumber: c,
+            colLetter: worksheet.getColumn(c).letter,
+            date: parsedDate.toISOString(),
+          });
+        }
+      }
+
+      if (dailyCols.length === 0) continue;
+
+      const blockYear = new Date(dailyCols[0].date).getFullYear() || cur.year;
+
+      blocks.push({
+        month: cur.month,
+        year: blockYear,
+        label: `Tháng ${cur.month}/${blockYear}`,
+        startCol: cur.startCol,
+        endCol,
+        totalDays: dailyCols.length,
+        summaryCols,
+        dailyCols,
+      });
+    }
+
+    return blocks;
   }
 
   private buildPreview(worksheet: ExcelJS.Worksheet, logical: LogicalSheet, limit = 10): SheetPreviewData {
@@ -201,7 +362,17 @@ export class ImportsService {
       row.eachCell({ includeEmpty: false }, (cell, col) => { item[worksheet.getColumn(col).letter] = this.cellText(cell); });
       if (Object.keys(item).length > 1) rows.push(item);
     }
-    return { sheet: logical, sheetName: worksheet.name, headerRowIndex: headerRowIdx, headers, rows, totalRows: Math.max(0, worksheet.rowCount - headerRowIdx), suggestedMapping };
+    const availableMonths = logical === 'attendance' ? this.detectAttendanceMonthBlocks(worksheet) : undefined;
+    return {
+      sheet: logical,
+      sheetName: worksheet.name,
+      headerRowIndex: headerRowIdx,
+      headers,
+      rows,
+      totalRows: Math.max(0, worksheet.rowCount - headerRowIdx),
+      suggestedMapping,
+      availableMonths,
+    };
   }
 
   private async assertBatchAccess(importId: number, actor?: RequestActor, write = false) {
@@ -228,9 +399,11 @@ export class ImportsService {
 
   private statusFromText(value?: string): EnrollmentStatus {
     const status = (value || '').toLowerCase();
+    if (status.includes('chờ')) return EnrollmentStatus.WAITING_CLASS;
+    if (status.includes('sắp học')) return EnrollmentStatus.UPCOMING;
     if (status.includes('bảo lưu')) return EnrollmentStatus.PAUSED;
     if (status.includes('kết thúc') || status.includes('hoàn thành')) return EnrollmentStatus.FINISHED;
-    if (status.includes('chờ') || status.includes('sắp học')) return EnrollmentStatus.NOT_STARTED;
+    if (status.includes('chưa học')) return EnrollmentStatus.NOT_STARTED;
     if (status.includes('hủy')) return EnrollmentStatus.CANCELLED;
     return EnrollmentStatus.STUDYING;
   }
@@ -397,6 +570,7 @@ export class ImportsService {
         rows: previewRows,
         totalRows,
         suggestedMapping,
+        availableMonths: importType === ImportType.ATTENDANCE ? this.detectAttendanceMonthBlocks(worksheet) : undefined,
       },
       assignedCsId: effectiveAssignedCsId,
     };
@@ -429,7 +603,10 @@ export class ImportsService {
       if (!sheetMeta) throw new AppError(400, 'Sheet logic không hợp lệ');
       const ws = workbook.getWorksheet(sheetMeta.sheetName);
       if (!ws) throw new AppError(400, `Không tìm thấy sheet ${sheetMeta.sheetName}`);
-      return this.buildPreview(ws, logical, limit);
+      const p = this.buildPreview(ws, logical, limit);
+      p.selectedMonth = sheetMeta.selectedMonth;
+      p.selectedYear = sheetMeta.selectedYear;
+      return p;
     }
 
     const targetSheet = sheetName || meta.selectedSheet;
@@ -476,6 +653,9 @@ export class ImportsService {
       rows: previewRows,
       totalRows,
       suggestedMapping,
+      availableMonths: meta.importType === ImportType.ATTENDANCE ? this.detectAttendanceMonthBlocks(worksheet) : undefined,
+      selectedMonth: meta.selectedMonth,
+      selectedYear: meta.selectedYear,
     };
   }
 
@@ -503,6 +683,8 @@ export class ImportsService {
       if (!meta.sheets?.[sheetKey]) throw new AppError(400, 'sheet phải là studentEnrollment hoặc attendance');
       meta.sheets[sheetKey].headerRowIdx = dto.headerRowIndex || meta.sheets[sheetKey].headerRowIdx;
       meta.sheets[sheetKey].columnMapping = { ...meta.sheets[sheetKey].columnMapping, ...dto.columnMapping };
+      if (dto.selectedMonth !== undefined) meta.sheets[sheetKey].selectedMonth = dto.selectedMonth;
+      if (dto.selectedYear !== undefined) meta.sheets[sheetKey].selectedYear = dto.selectedYear;
       this.saveMeta(importId, meta);
       return { success: true, columnMapping: meta.sheets[sheetKey].columnMapping, assignedCsId: meta.assignedCsId };
     }
@@ -510,6 +692,8 @@ export class ImportsService {
     if (dto.sheetName) meta.selectedSheet = dto.sheetName;
     if (dto.headerRowIndex) meta.headerRowIdx = dto.headerRowIndex;
     meta.columnMapping = { ...meta.columnMapping, ...dto.columnMapping };
+    if (dto.selectedMonth !== undefined) meta.selectedMonth = dto.selectedMonth;
+    if (dto.selectedYear !== undefined) meta.selectedYear = dto.selectedYear;
 
     this.saveMeta(importId, meta);
     return { success: true, columnMapping: meta.columnMapping, assignedCsId: meta.assignedCsId };
@@ -600,16 +784,28 @@ export class ImportsService {
         if (rowHasError) invalidRowsCount++;
       });
     } else if (meta.importType === ImportType.ATTENDANCE) {
-      // Find date columns in header row
+      let monthBlocks = this.detectAttendanceMonthBlocks(worksheet);
+      if (meta.selectedMonth) {
+        monthBlocks = monthBlocks.filter(b => b.month === meta.selectedMonth && (!meta.selectedYear || b.year === meta.selectedYear));
+      }
+
       const dateCols: { col: string; date: Date }[] = [];
-      const headerRow = worksheet.getRow(headerRowIdx);
-      headerRow.eachCell((cell, colNumber) => {
-        const colLetter = worksheet.getColumn(colNumber).letter;
-        const parsedDate = this.parseExcelDate(cell.value);
-        if (parsedDate) {
-          dateCols.push({ col: colLetter, date: parsedDate });
+      if (monthBlocks.length > 0) {
+        for (const b of monthBlocks) {
+          for (const d of b.dailyCols) {
+            dateCols.push({ col: d.colLetter, date: new Date(d.date) });
+          }
         }
-      });
+      } else {
+        const headerRow = worksheet.getRow(headerRowIdx);
+        headerRow.eachCell((cell, colNumber) => {
+          const colLetter = worksheet.getColumn(colNumber).letter;
+          const parsedDate = this.parseExcelDate(cell.value);
+          if (parsedDate) {
+            dateCols.push({ col: colLetter, date: parsedDate });
+          }
+        });
+      }
 
       const extIdCol = mapping['external_id'] || 'A';
       const fullNameCol = mapping['full_name'] || 'B';
@@ -620,14 +816,9 @@ export class ImportsService {
 
       for (let r = headerRowIdx + 1; r <= worksheet.rowCount; r++) {
         const row = worksheet.getRow(r);
-        const extIdRaw = row.getCell(extIdCol).value;
-        const extId = extIdRaw !== undefined && extIdRaw !== null ? String(extIdRaw).trim() : '';
-
-        const fullNameRaw = row.getCell(fullNameCol).value;
-        const fullName = fullNameRaw !== undefined && fullNameRaw !== null ? String(fullNameRaw).trim() : '';
-
-        const classNameRaw = row.getCell(classNameCol).value;
-        const className = classNameRaw !== undefined && classNameRaw !== null ? String(classNameRaw).trim() : '';
+        const extId = this.cellText(row.getCell(extIdCol));
+        const fullName = this.cellText(row.getCell(fullNameCol));
+        const className = this.cellText(row.getCell(classNameCol));
 
         if (!extId && !fullName) continue;
         totalDataRows++;
@@ -649,15 +840,15 @@ export class ImportsService {
 
         // Check attendance entries in date columns
         for (const dc of dateCols) {
-          const val = row.getCell(dc.col).value;
-          if (val !== undefined && val !== null && String(val).trim()) {
-            const strVal = String(val).trim().toUpperCase();
+          const val = this.cellText(row.getCell(dc.col));
+          if (val) {
+            const strVal = val.toUpperCase();
             const validCodes = ['1', '1.0', '2', '2.0', '3', '3.0', '0', '0.0', 'A', 'B', 'C', 'D', 'E', 'X', 'ĐÃ HỌC'];
             if (!validCodes.includes(strVal)) {
               errors.push({
                 rowNumber: r,
                 field: `Cột ${dc.col}`,
-                message: `Giá trị điểm danh không hợp lệ: "${String(val).trim()}" tại ngày ${dc.date.toISOString().split('T')[0]}`,
+                message: `Giá trị điểm danh không hợp lệ: "${val}" tại ngày ${dc.date.toISOString().split('T')[0]}`,
               });
               rowHasError = true;
             }
@@ -714,6 +905,14 @@ export class ImportsService {
       teacherClassNames = await this.repo.getTeacherAssignedClassNames(actor.id);
     }
 
+    let monthBlocks: MonthAttendanceBlock[] = [];
+    if (ws3) {
+      monthBlocks = this.detectAttendanceMonthBlocks(ws3);
+      if (s3?.selectedMonth) {
+        monthBlocks = monthBlocks.filter((b) => b.month === s3.selectedMonth && (!s3.selectedYear || b.year === s3.selectedYear));
+      }
+    }
+
     for (const key of keys) {
       const one = byKey1.get(key);
       const three = byKey3.get(key);
@@ -752,7 +951,7 @@ export class ImportsService {
         include: {
           enrollments: {
             where: { package: { code: packageCode } },
-            include: { package: true, cs: true, enrollment_classes: { include: { class: true } } },
+            include: { package: true, cs: true, enrollment_classes: { include: { class: { include: { class_teachers: { include: { teacher: true } } } } } } },
             orderBy: { created_at: 'desc' },
           },
         },
@@ -768,18 +967,84 @@ export class ImportsService {
       };
 
       if (three && ws3 && s3) {
-        const header = ws3.getRow(s3.headerRowIdx);
         const attendance: any[] = [];
-        header.eachCell((cell, col) => {
-          const date = this.parseExcelDate(cell.value);
-          if (date) {
-            attendance.push({
-              date: date.toISOString(),
-              value: this.cellText(ws3.getRow(three.rowNumber).getCell(col)),
-            });
+        const sourceRow3 = ws3.getRow(three.rowNumber);
+
+        if (monthBlocks.length > 0) {
+          for (const block of monthBlocks) {
+            let attendedInMonth = 0;
+            let absentCInMonth = 0;
+
+            for (const dayCol of block.dailyCols) {
+              const rawVal = this.cellText(sourceRow3.getCell(dayCol.colNumber));
+              if (rawVal) {
+                attendance.push({
+                  date: dayCol.date,
+                  value: rawVal,
+                });
+                const status = this.attendanceStatus(rawVal);
+                if (status === AttendanceStatus.ATTENDED) {
+                  attendedInMonth++;
+                } else if (status === AttendanceStatus.ABSENT_UNAPPROVED_C) {
+                  absentCInMonth++;
+                }
+              }
+            }
+
+            // Reconciliation check against month summary column (Số buổi đã học = Sum + C)
+            if (block.summaryCols.attendedCol) {
+              const summaryAttendedText = this.cellText(sourceRow3.getCell(block.summaryCols.attendedCol));
+              const summaryAttendedNum = Number(summaryAttendedText);
+              if (!isNaN(summaryAttendedNum) && summaryAttendedText !== '') {
+                const expectedTotal = attendedInMonth + absentCInMonth;
+                if (summaryAttendedNum !== expectedTotal) {
+                  warnings.push(
+                    `${block.label}: Cột tổng kết đã học (${summaryAttendedNum}) lệch so với chi tiết điểm danh (${expectedTotal} = ${attendedInMonth} học + ${absentCInMonth} nghỉ không phép C).`
+                  );
+                }
+              }
+            }
           }
-        });
+        } else {
+          const header = ws3.getRow(s3.headerRowIdx);
+          header.eachCell((cell, col) => {
+            const date = this.parseExcelDate(cell.value);
+            if (date) {
+              const rawVal = this.cellText(sourceRow3.getCell(col));
+              if (rawVal) {
+                attendance.push({
+                  date: date.toISOString(),
+                  value: rawVal,
+                });
+              }
+            }
+          });
+        }
         snapshot.attendance = attendance;
+      }
+
+      if (one && ws1 && s1) {
+        const headerRow1 = ws1.getRow(s1.headerRowIdx);
+        const sourceRow1 = ws1.getRow(one.rowNumber);
+        const careLogs: Array<{ after_session_number: number; content: string }> = [];
+        for (let col = 1; col <= ws1.columnCount; col++) {
+          const headerCell = headerRow1.getCell(col);
+          let headerTitle = '';
+          if (typeof headerCell.value === 'object' && headerCell.value !== null && 'richText' in headerCell.value) {
+            headerTitle = (headerCell.value as any).richText.map((t: any) => t.text).join('');
+          } else {
+            headerTitle = String(headerCell.value || '').trim();
+          }
+          const match = headerTitle.match(/chăm sóc sau buổi\s*(\d+)/i);
+          if (match) {
+            const sessionNum = parseInt(match[1], 10);
+            const content = this.cellText(sourceRow1.getCell(col));
+            if (content && !isNaN(sessionNum)) {
+              careLogs.push({ after_session_number: sessionNum, content });
+            }
+          }
+        }
+        snapshot.careLogs = careLogs;
       }
 
       const diffs: any[] = [];
@@ -796,6 +1061,18 @@ export class ImportsService {
       if (enrollment) {
         compare('Enrollment', 'total_sessions', enrollment.total_sessions, Number(snapshot.total_sessions) || 0);
         compare('Enrollment', 'external_remaining_sessions', enrollment.external_remaining_sessions, snapshot.remaining_sessions === '' ? null : Number(snapshot.remaining_sessions));
+
+        const currentTeacher = (enrollment.enrollment_classes?.[0] as any)?.class?.class_teachers?.[0]?.teacher;
+        const currentTeacherText = currentTeacher ? `${currentTeacher.name} (${currentTeacher.code})` : null;
+        const newTeacherName = snapshot.teacher_name ? String(snapshot.teacher_name).trim() : null;
+        const newTeacherCode = snapshot.teacher_code ? String(snapshot.teacher_code).trim() : null;
+        const newTeacherText = newTeacherName || newTeacherCode ? `${newTeacherName || ''} ${newTeacherCode ? `(${newTeacherCode})` : ''}`.trim() : null;
+        if (newTeacherText && currentTeacherText !== newTeacherText) {
+          compare('ClassTeacher', 'teacher', currentTeacherText, newTeacherText);
+        }
+      } else if (snapshot.teacher_name || snapshot.teacher_code) {
+        const newTeacherText = `${snapshot.teacher_name || ''} ${snapshot.teacher_code ? `(${snapshot.teacher_code})` : ''}`.trim();
+        diffs.push({ entity: 'ClassTeacher', field: 'teacher', before: null, after: newTeacherText, action: 'UPDATE' });
       }
 
       let classification: ReconcileClassification;
@@ -834,13 +1111,15 @@ export class ImportsService {
           enrollmentUpdatedAt: enrollment?.updated_at.toISOString(),
         } : undefined,
         diffs,
-        attendanceDiffs: ((snapshot.attendance as any[]) || []).map((a) => ({
-          entity: 'Attendance',
-          field: a.date.slice(0, 10),
-          before: null,
-          after: a.value || null,
-          action: 'UPSERT',
-        })),
+        attendanceDiffs: ((snapshot.attendance as any[]) || [])
+          .filter((a) => a.value !== undefined && a.value !== null && String(a.value).trim() !== '')
+          .map((a) => ({
+            entity: 'Attendance',
+            field: a.date.slice(0, 10),
+            before: null,
+            after: a.value,
+            action: 'UPSERT',
+          })),
         warnings,
         errors,
       });
@@ -1063,10 +1342,18 @@ export class ImportsService {
                 total_sessions: Number(snap.total_sessions) || 30,
                 class_model: snap.class_model || null,
                 sales_note: snap.sales_note || null,
+                study_report_url: snap.study_report_url || null,
+                exchange_info: snap.exchange_info || null,
+                callback_note: snap.callback_note || null,
+                hot_issue_note: snap.hot_issue_note || null,
+                post_course_care: snap.post_course_care || null,
+                handed_over_at: this.parseExcelDate(snap.handed_over_at),
+                account_created_at: this.parseExcelDate(snap.account_created_at),
                 start_date: this.parseExcelDate(snap.start_date),
                 end_date: this.parseExcelDate(snap.end_date),
                 status: this.statusFromText(snap.status),
                 external_remaining_sessions: snap.remaining_sessions !== undefined && snap.remaining_sessions !== '' ? Number(snap.remaining_sessions) : null,
+                attended_previous_years: snap.attended_previous_years !== undefined && snap.attended_previous_years !== '' ? Number(snap.attended_previous_years) : 0,
                 external_synced_at: new Date(),
               },
               include: { enrollment_classes: { include: { class: true } } },
@@ -1076,6 +1363,7 @@ export class ImportsService {
             const updateData: any = {
               total_sessions: Number(snap.total_sessions) || enrollment.total_sessions,
               external_remaining_sessions: snap.remaining_sessions !== undefined && snap.remaining_sessions !== '' ? Number(snap.remaining_sessions) : null,
+              attended_previous_years: snap.attended_previous_years !== undefined && snap.attended_previous_years !== '' ? Number(snap.attended_previous_years) : enrollment.attended_previous_years,
               level: snap.level !== undefined ? (snap.level || null) : enrollment.level,
               status: snap.status ? this.statusFromText(snap.status) : enrollment.status,
               start_date: snap.start_date !== undefined ? this.parseExcelDate(snap.start_date) : enrollment.start_date,
@@ -1084,6 +1372,13 @@ export class ImportsService {
               sale_id: snap.sale_name !== undefined ? saleId : enrollment.sale_id,
               sale_name: snap.sale_name !== undefined ? saleName : enrollment.sale_name,
               sales_note: snap.sales_note !== undefined ? (snap.sales_note || null) : enrollment.sales_note,
+              study_report_url: snap.study_report_url !== undefined ? (snap.study_report_url || null) : enrollment.study_report_url,
+              exchange_info: snap.exchange_info !== undefined ? (snap.exchange_info || null) : enrollment.exchange_info,
+              callback_note: snap.callback_note !== undefined ? (snap.callback_note || null) : enrollment.callback_note,
+              hot_issue_note: snap.hot_issue_note !== undefined ? (snap.hot_issue_note || null) : enrollment.hot_issue_note,
+              post_course_care: snap.post_course_care !== undefined ? (snap.post_course_care || null) : enrollment.post_course_care,
+              handed_over_at: snap.handed_over_at !== undefined ? this.parseExcelDate(snap.handed_over_at) : enrollment.handed_over_at,
+              account_created_at: snap.account_created_at !== undefined ? this.parseExcelDate(snap.account_created_at) : enrollment.account_created_at,
               external_synced_at: new Date(),
             };
             if (!isCS && (assignedCsId || meta.assignedCsId)) {
@@ -1098,6 +1393,7 @@ export class ImportsService {
           // 6. Class & EnrollmentClass
           let ec = enrollment.enrollment_classes?.[0];
           const className = snap.class_name || `Lớp ${student.full_name}`;
+          let targetClassId = ec?.class_id;
           if (!ec || (snap.class_name && ec.class.class_name !== snap.class_name)) {
             let cls = await tx.class.findFirst({
               where: { OR: [{ class_name: className }, { class_code: className }] },
@@ -1112,6 +1408,7 @@ export class ImportsService {
                 },
               });
             }
+            targetClassId = cls.id;
             ec = await tx.enrollmentClass.create({
               data: {
                 enrollment_id: enrollment.id,
@@ -1123,9 +1420,65 @@ export class ImportsService {
             });
           }
 
+          // 6.1 Assign Teacher if provided
+          const teacherName = snap.teacher_name ? String(snap.teacher_name).trim() : null;
+          const teacherCode = snap.teacher_code ? String(snap.teacher_code).trim() : null;
+          if ((teacherName || teacherCode) && targetClassId) {
+            const teacherRec = await this.repo.findOrCreateTeacher(teacherCode || undefined, teacherName || undefined);
+            if (teacherRec) {
+              const existingCT = await tx.classTeacher.findFirst({
+                where: { class_id: targetClassId, role: 'MAIN' },
+              });
+              if (existingCT) {
+                await tx.classTeacher.update({
+                  where: { id: existingCT.id },
+                  data: { teacher_id: teacherRec.id, active: true },
+                });
+              } else {
+                await tx.classTeacher.create({
+                  data: {
+                    class_id: targetClassId,
+                    teacher_id: teacherRec.id,
+                    role: 'MAIN',
+                    active: true,
+                  },
+                });
+              }
+            }
+          }
+
           // 7. Attendance from Sheet 3
           if (ec && snap.attendance?.length) {
             await this.applyAttendance(tx, ec.id, ec.class_id, snap.attendance, actor.id);
+          }
+
+          // 8. Care Logs from Sheet 1 (Chăm sóc sau buổi 1, 3, 10, ...)
+          const careLogs = snap.careLogs as Array<{ after_session_number: number; content: string }> | undefined;
+          if (Array.isArray(careLogs) && careLogs.length > 0) {
+            for (const cl of careLogs) {
+              if (cl.content && cl.after_session_number) {
+                const existingLog = await tx.careLog.findFirst({
+                  where: { enrollment_id: enrollment.id, after_session_number: cl.after_session_number },
+                });
+                if (existingLog) {
+                  await tx.careLog.update({
+                    where: { id: existingLog.id },
+                    data: { content: cl.content },
+                  });
+                } else {
+                  await tx.careLog.create({
+                    data: {
+                      enrollment_id: enrollment.id,
+                      cs_id: finalCsId,
+                      after_session_number: cl.after_session_number,
+                      content: cl.content,
+                      outcome: CareLogOutcome.POSITIVE,
+                      created_by_id: actor.id,
+                    },
+                  });
+                }
+              }
+            }
           }
         });
 
@@ -1151,13 +1504,19 @@ export class ImportsService {
     }
 
     const status = failedRows ? (successRows ? ImportBatchStatus.PARTIAL_FAILED : ImportBatchStatus.FAILED) : ImportBatchStatus.COMPLETED;
-    return this.repo.updateBatch(importId, {
+    const updated = await this.repo.updateBatch(importId, {
       status,
       total_rows: items.length,
       success_rows: successRows,
       failed_rows: failedRows,
       completed_at: new Date(),
     });
+
+    if (status === ImportBatchStatus.COMPLETED) {
+      this.cleanupTempFiles(importId, meta);
+    }
+
+    return updated;
   }
 
   // Execute import
@@ -1200,14 +1559,8 @@ export class ImportsService {
         const getColVal = (field: string) => {
           const colLetter = mapping[field];
           if (!colLetter) return null;
-          const cell = row.getCell(colLetter);
-          let val = cell.value;
-          if (typeof val === 'object' && val !== null) {
-            if ('result' in val) val = (val as any).result;
-            else if ('text' in val) val = (val as any).text;
-            else if ('richText' in val) val = (val as any).richText.map((t: any) => t.text).join('');
-          }
-          return val !== undefined && val !== null ? String(val).trim() : null;
+          const text = this.cellText(row.getCell(colLetter));
+          return text || null;
         };
 
         const fullName = getColVal('full_name');
@@ -1262,9 +1615,11 @@ export class ImportsService {
           // 3. Status mapping
           const statusRaw = (getColVal('status') || '').toLowerCase();
           let status: EnrollmentStatus = EnrollmentStatus.STUDYING;
-          if (statusRaw.includes('bảo lưu')) status = EnrollmentStatus.PAUSED;
+          if (statusRaw.includes('chờ')) status = EnrollmentStatus.WAITING_CLASS;
+          else if (statusRaw.includes('sắp học')) status = EnrollmentStatus.UPCOMING;
+          else if (statusRaw.includes('bảo lưu')) status = EnrollmentStatus.PAUSED;
           else if (statusRaw.includes('kết thúc') || statusRaw.includes('hoàn thành')) status = EnrollmentStatus.FINISHED;
-          else if (statusRaw.includes('chờ') || statusRaw.includes('sắp học')) status = EnrollmentStatus.NOT_STARTED;
+          else if (statusRaw.includes('chưa học')) status = EnrollmentStatus.NOT_STARTED;
           else if (statusRaw.includes('hủy')) status = EnrollmentStatus.CANCELLED;
 
           const startDate = this.parseExcelDate(getColVal('start_date'));
@@ -1323,6 +1678,33 @@ export class ImportsService {
             status: EnrollmentClassStatus.ACTIVE,
           });
 
+          // Assign Teacher in direct workbook import
+          const directTeacherName = getColVal('teacher_name');
+          const directTeacherCode = getColVal('teacher_code');
+          if (directTeacherName || directTeacherCode) {
+            const teacherRec = await this.repo.findOrCreateTeacher(directTeacherCode || undefined, directTeacherName || undefined);
+            if (teacherRec) {
+              const existingCT = await prisma.classTeacher.findFirst({
+                where: { class_id: cls.id, role: 'MAIN' },
+              });
+              if (existingCT) {
+                await prisma.classTeacher.update({
+                  where: { id: existingCT.id },
+                  data: { teacher_id: teacherRec.id, active: true },
+                });
+              } else {
+                await prisma.classTeacher.create({
+                  data: {
+                    class_id: cls.id,
+                    teacher_id: teacherRec.id,
+                    role: 'MAIN',
+                    active: true,
+                  },
+                });
+              }
+            }
+          }
+
           // 6. Parse and save care logs from session columns (AO..BC)
           const headerRow = worksheet.getRow(headerRowIdx);
           headerRow.eachCell((cell: any, colNumber: number) => {
@@ -1373,16 +1755,28 @@ export class ImportsService {
         }
       }
     } else if (meta.importType === ImportType.ATTENDANCE) {
-      // Find date columns
+      let monthBlocks = this.detectAttendanceMonthBlocks(worksheet);
+      if (meta.selectedMonth) {
+        monthBlocks = monthBlocks.filter((b) => b.month === meta.selectedMonth && (!meta.selectedYear || b.year === meta.selectedYear));
+      }
+
       const dateCols: { col: string; date: Date }[] = [];
-      const headerRow = worksheet.getRow(headerRowIdx);
-      headerRow.eachCell((cell, colNumber) => {
-        const colLetter = worksheet.getColumn(colNumber).letter;
-        const parsedDate = this.parseExcelDate(cell.value);
-        if (parsedDate) {
-          dateCols.push({ col: colLetter, date: parsedDate });
+      if (monthBlocks.length > 0) {
+        for (const b of monthBlocks) {
+          for (const d of b.dailyCols) {
+            dateCols.push({ col: d.colLetter, date: new Date(d.date) });
+          }
         }
-      });
+      } else {
+        const headerRow = worksheet.getRow(headerRowIdx);
+        headerRow.eachCell((cell, colNumber) => {
+          const colLetter = worksheet.getColumn(colNumber).letter;
+          const parsedDate = this.parseExcelDate(cell.value);
+          if (parsedDate) {
+            dateCols.push({ col: colLetter, date: parsedDate });
+          }
+        });
+      }
 
       const extIdCol = mapping['external_id'] || 'A';
       const fullNameCol = mapping['full_name'] || 'B';
@@ -1390,20 +1784,15 @@ export class ImportsService {
 
       for (let r = headerRowIdx + 1; r <= worksheet.rowCount; r++) {
         const row = worksheet.getRow(r);
-        const extIdRaw = row.getCell(extIdCol).value;
-        const extId = extIdRaw !== undefined && extIdRaw !== null ? String(extIdRaw).trim() : '';
-
-        const fullNameRaw = row.getCell(fullNameCol).value;
-        const fullName = fullNameRaw !== undefined && fullNameRaw !== null ? String(fullNameRaw).trim() : '';
-
-        const classNameRaw = row.getCell(classNameCol).value;
-        const className = classNameRaw !== undefined && classNameRaw !== null ? String(classNameRaw).trim() : '';
+        const extId = this.cellText(row.getCell(extIdCol));
+        const fullName = this.cellText(row.getCell(fullNameCol));
+        const className = this.cellText(row.getCell(classNameCol));
 
         if (!extId && !fullName) continue;
 
         const rawData: Record<string, any> = {};
         row.eachCell({ includeEmpty: false }, (cell, colNumber) => {
-          rawData[worksheet.getColumn(colNumber).letter] = cell.value;
+          rawData[worksheet.getColumn(colNumber).letter] = this.cellText(cell);
         });
 
         try {
@@ -1463,25 +1852,10 @@ export class ImportsService {
 
           let markedCount = 0;
           for (const dc of dateCols) {
-            const val = row.getCell(dc.col).value;
-            if (val !== undefined && val !== null && String(val).trim()) {
-              const strVal = String(val).trim().toUpperCase();
-              let attStatus: AttendanceStatus | null = null;
-
-              const num = Number(strVal);
-              if ((!isNaN(num) && num > 0) || ['X', 'ĐÃ HỌC'].includes(strVal)) {
-                attStatus = AttendanceStatus.ATTENDED;
-              } else if (strVal === 'A') {
-                attStatus = AttendanceStatus.ABSENT_APPROVED_A;
-              } else if (strVal === 'B') {
-                attStatus = AttendanceStatus.LEAVE_B;
-              } else if (strVal === 'C') {
-                attStatus = AttendanceStatus.ABSENT_UNAPPROVED_C;
-              } else if (strVal === 'D') {
-                attStatus = AttendanceStatus.TEACHER_ABSENT_D;
-              } else if (strVal === 'E') {
-                attStatus = AttendanceStatus.TECH_ERROR_E;
-              }
+            const val = this.cellText(row.getCell(dc.col));
+            if (val) {
+              const strVal = val.toUpperCase();
+              let attStatus: AttendanceStatus | null = this.attendanceStatus(strVal);
 
               if (attStatus) {
                 const session = await this.repo.findOrCreateClassSession(
@@ -1539,6 +1913,10 @@ export class ImportsService {
       failed_rows: failedRows,
       completed_at: new Date(),
     });
+
+    if (finalStatus === ImportBatchStatus.COMPLETED) {
+      this.cleanupTempFiles(importId, meta);
+    }
 
     await this.repo.createAuditLog({
       user_id: userId,
@@ -1878,6 +2256,7 @@ export class ImportsService {
           sale_name: saleName,
           total_sessions: Number(snapshot.total_sessions) || pkg.default_total_sessions || 0,
           external_remaining_sessions: snapshot.remaining_sessions === '' ? null : Number(snapshot.remaining_sessions),
+          attended_previous_years: snapshot.attended_previous_years !== undefined && snapshot.attended_previous_years !== '' ? Number(snapshot.attended_previous_years) : 0,
           level: snapshot.level || null,
           start_date: this.parseExcelDate(snapshot.start_date),
           end_date: this.parseExcelDate(snapshot.end_date),

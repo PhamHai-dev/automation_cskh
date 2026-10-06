@@ -14,6 +14,7 @@ describe('Workbook Reconciliation, Sale Table & CS Assignment (Decision 32)', ()
   let cs2Id: number;
   let teacherToken: string;
   let teacherId: number;
+  let teacherUserId: number;
   let testClassId: number;
 
   beforeAll(async () => {
@@ -59,7 +60,7 @@ describe('Workbook Reconciliation, Sale Table & CS Assignment (Decision 32)', ()
     cs2Id = cs2User.id;
     cs2Token = signTestToken(cs2Id, ['CS']);
 
-    // 4. Setup Teacher user
+    // 4. Setup Teacher user + Teacher entity
     const teacherUser = await prisma.user.upsert({
       where: { email: 'teacher_wb_test@example.com' },
       update: {},
@@ -70,8 +71,23 @@ describe('Workbook Reconciliation, Sale Table & CS Assignment (Decision 32)', ()
         roles: ['TEACHER'],
       },
     });
-    teacherId = teacherUser.id;
-    teacherToken = signTestToken(teacherId, ['TEACHER']);
+    teacherUserId = teacherUser.id;
+    teacherToken = signTestToken(teacherUserId, ['TEACHER']);
+
+    // class_teachers.teacher_id references `teachers`, not `users`
+    const teacher = await prisma.teacher.upsert({
+      where: { user_id: teacherUserId },
+      update: {},
+      create: {
+        code: 'T-WB-001',
+        name: 'Teacher WB Test',
+        email: 'teacher_wb_test@example.com',
+        teacher_type: 'OTHER',
+        active: true,
+        user_id: teacherUserId,
+      },
+    });
+    teacherId = teacher.id;
 
     // 5. Setup Class assigned to Teacher
     const cls = await prisma.class.create({
@@ -190,16 +206,17 @@ describe('Workbook Reconciliation, Sale Table & CS Assignment (Decision 32)', ()
       where: { code: { in: ['SALE_WB_01', 'SALE_WB_02', 'SALE_ORIG'] } },
     });
     await prisma.importRow.deleteMany({
-      where: { import_batch: { uploaded_by_id: { in: [adminId, csId, cs2Id, teacherId] } } },
+      where: { import_batch: { uploaded_by_id: { in: [adminId, csId, cs2Id, teacherUserId] } } },
     });
     await prisma.importBatch.deleteMany({
-      where: { uploaded_by_id: { in: [adminId, csId, cs2Id, teacherId] } },
+      where: { uploaded_by_id: { in: [adminId, csId, cs2Id, teacherUserId] } },
     });
     await prisma.auditLog.deleteMany({
-      where: { user_id: { in: [adminId, csId, cs2Id, teacherId] } },
+      where: { user_id: { in: [adminId, csId, cs2Id, teacherUserId] } },
     });
+    await prisma.teacher.deleteMany({ where: { user_id: teacherUserId } });
     await prisma.user.deleteMany({
-      where: { id: { in: [adminId, csId, cs2Id, teacherId] } },
+      where: { id: { in: [adminId, csId, cs2Id, teacherUserId] } },
     });
     await prisma.$disconnect();
   });

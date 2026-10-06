@@ -1,5 +1,15 @@
 # Project Status
 
+## Kiểm tra merge — 2026-10-06
+
+- Auto-attendance: đã thay user ID cố định bằng actor hệ thống riêng, inactive và không có role (user phê duyệt).
+- Backend typecheck pass; 21/21 integration tests phân quyền giáo viên và auto-attendance pass trên database test riêng, Redis tắt.
+- 46 regression tests chọn lọc đã pass trước đó.
+- Chưa sẵn sàng deploy: migration replay lỗi tại `20260924043000_add_friend_zalo_uid` (AFTER avatar_url chưa tồn tại); database hiện tại lệch schema và chưa có lịch sử migration.
+- Redis local chưa kết nối được; không tự bật worker gửi tin. Chính sách retry execution FAILED chưa thay đổi.
+- Không reset/migrate database hiện tại; chưa commit/push/merge.
+
+
 - Current phase: Phase 7 — Zalo technical spike
 - Status: READY
 - Last updated: 2026-09-22

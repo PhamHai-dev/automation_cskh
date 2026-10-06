@@ -467,9 +467,53 @@ export class ImportsRepository {
     });
   }
 
+  async findOrCreateTeacher(code?: string, name?: string) {
+    const trimmedCode = code?.trim();
+    const trimmedName = name?.trim();
+    if (!trimmedCode && !trimmedName) return null;
+
+    if (trimmedCode) {
+      const byCode = await this.db.teacher.findUnique({
+        where: { code: trimmedCode },
+      });
+      if (byCode) return byCode;
+    }
+
+    if (trimmedName) {
+      const byName = await this.db.teacher.findFirst({
+        where: { name: { contains: trimmedName } },
+      });
+      if (byName) return byName;
+    }
+
+    let finalCode = trimmedCode;
+    if (!finalCode) {
+      const slug = (trimmedName || 'GV')
+        .toUpperCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^A-Z0-9]/g, '_')
+        .replace(/_+/g, '_')
+        .slice(0, 15);
+      finalCode = `GV_${slug}`;
+      const existingCode = await this.db.teacher.findUnique({ where: { code: finalCode } });
+      if (existingCode) {
+        finalCode = `${finalCode}_${Math.floor(Math.random() * 1000)}`;
+      }
+    }
+
+    return this.db.teacher.create({
+      data: {
+        code: finalCode,
+        name: trimmedName || finalCode,
+        active: true,
+      },
+    });
+  }
+
   async getTeacherAssignedClassIds(teacherUserId: number): Promise<number[]> {
     const records = await this.db.classTeacher.findMany({
-      where: { teacher_id: teacherUserId, active: true },
+      where: { teacher: { user_id: teacherUserId }, active: true },
       select: { class_id: true },
     });
     return records.map((r) => r.class_id);
@@ -477,7 +521,7 @@ export class ImportsRepository {
 
   async getTeacherAssignedClassNames(teacherUserId: number): Promise<string[]> {
     const records = await this.db.classTeacher.findMany({
-      where: { teacher_id: teacherUserId, active: true },
+      where: { teacher: { user_id: teacherUserId }, active: true },
       include: { class: true },
     });
     const names = new Set<string>();

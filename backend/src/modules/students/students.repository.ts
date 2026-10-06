@@ -22,13 +22,17 @@ export class StudentsRepository {
                   include: {
                     class_teachers: {
                       include: {
-                        teacher: true,
+                        teacher: {
+                          include: {
+                            user: true,
+                          },
+                        },
                       },
                     },
                     class_schedules: true,
                   },
                 },
-                attendance: true,
+                attendance: { where: { deleted_at: null } },
               },
             },
             care_logs: {
@@ -118,6 +122,10 @@ export class StudentsRepository {
             data.external_remaining_sessions !== undefined && data.external_remaining_sessions !== ''
               ? Number(data.external_remaining_sessions)
               : 30,
+          attended_previous_years:
+            data.attended_previous_years !== undefined && data.attended_previous_years !== ''
+              ? Number(data.attended_previous_years)
+              : 0,
           class_model: data.class_model || 'Nhóm',
           sales_note: data.sales_note || undefined,
           paid_at: data.paid_at ? new Date(data.paid_at) : undefined,
@@ -137,10 +145,10 @@ export class StudentsRepository {
       });
 
       // 4. Create or link Class & Schedules
-      if (data.class_name || data.start_time || data.schedule_pattern) {
+      if (data.class_name || data.schedule_pattern) {
         const className =
           data.class_name?.trim() ||
-          `Lớp ${student.full_name} (${data.schedule_pattern || '246'})`;
+          `Lớp ${student.full_name} (${data.schedule_pattern})`;
 
         let classObj = await tx.class.findFirst({
           where: { class_name: className },
@@ -157,44 +165,64 @@ export class StudentsRepository {
           });
         }
 
-        // Schedule
-        if (data.start_time || data.schedule_pattern || data.duration_minutes) {
+        // A schedule requires an explicit pattern; time and duration may remain missing
+        // so the data-quality flow can report them instead of inventing defaults.
+        if (data.schedule_pattern) {
           await tx.classSchedule.create({
             data: {
               class_id: classObj.id,
-              start_time: data.start_time || '20h00',
-              schedule_pattern: data.schedule_pattern || '246',
-              duration_minutes: data.duration_minutes
-                ? Number(data.duration_minutes)
-                : 30,
+              start_time: data.start_time || null,
+              schedule_pattern: data.schedule_pattern,
+              duration_minutes:
+                data.duration_minutes !== undefined && data.duration_minutes !== ''
+                  ? Number(data.duration_minutes)
+                  : null,
             },
           });
         }
 
         // Teacher
-        if (data.teacher_name) {
-          const teacherQuery = data.teacher_name.trim().toLowerCase();
-          const teacherUser = allUsers.find(
-            (u) =>
-              Array.isArray(u.roles) &&
-              (u.roles as string[]).includes('TEACHER') &&
-              (u.name?.toLowerCase().includes(teacherQuery) ||
-                u.email.toLowerCase().includes(teacherQuery))
-          );
-          if (teacherUser) {
-            const profile = await tx.teacherProfile.findUnique({
-              where: { user_id: teacherUser.id },
+        if (data.teacher_name || data.teacher_code) {
+          const teacherName = data.teacher_name?.trim() || '';
+          const teacherCode = data.teacher_code?.trim() || '';
+          let teacherRec = null;
+
+          if (teacherCode) {
+            teacherRec = await tx.teacher.findUnique({
+              where: { code: teacherCode },
             });
-            if (profile) {
-              await tx.classTeacher.create({
-                data: {
-                  class_id: classObj.id,
-                  teacher_id: profile.id,
-                  role: 'MAIN',
-                },
-              });
-            }
           }
+
+          if (!teacherRec && teacherName) {
+            teacherRec = await tx.teacher.findFirst({
+              where: {
+                OR: [
+                  { name: { contains: teacherName } },
+                  { code: teacherName },
+                ],
+              },
+            });
+          }
+
+          if (!teacherRec) {
+            const finalCode = teacherCode || ('GV_' + (teacherName || 'GV').toUpperCase().replace(/[^A-Z0-9]/g, '_').slice(0, 20));
+            const finalName = teacherName || teacherCode;
+            teacherRec = await tx.teacher.create({
+              data: {
+                name: finalName,
+                code: finalCode,
+                active: true,
+              },
+            });
+          }
+
+          await tx.classTeacher.create({
+            data: {
+              class_id: classObj.id,
+              teacher_id: teacherRec.id,
+              role: 'MAIN',
+            },
+          });
         }
 
         // EnrollmentClass
@@ -248,6 +276,11 @@ export class StudentsRepository {
         enrollmentUpdate.total_sessions = Number(data.total_sessions) || 30;
       if (data.external_remaining_sessions !== undefined && data.external_remaining_sessions !== '')
         enrollmentUpdate.external_remaining_sessions = Number(data.external_remaining_sessions);
+      if (data.attended_previous_years !== undefined)
+        enrollmentUpdate.attended_previous_years =
+          data.attended_previous_years === '' || data.attended_previous_years === null
+            ? null
+            : Number(data.attended_previous_years);
       if (data.class_model !== undefined)
         enrollmentUpdate.class_model = data.class_model || null;
       if (data.sales_note !== undefined)
@@ -288,7 +321,13 @@ export class StudentsRepository {
                 include: {
                   class_schedules: true,
                   class_teachers: {
-                    include: { teacher: true },
+                    include: {
+                      teacher: {
+                        include: {
+                          user: true,
+                        },
+                      },
+                    },
                   },
                 },
               },
@@ -315,24 +354,91 @@ export class StudentsRepository {
             });
           }
           const sched = ec.class.class_schedules?.[0];
-          if (sched && (data.start_time || data.schedule_pattern || data.duration_minutes)) {
+          if (sched && (data.start_time !== undefined || data.schedule_pattern !== undefined || data.duration_minutes !== undefined)) {
             await tx.classSchedule.update({
               where: { id: sched.id },
               data: {
-                ...(data.start_time ? { start_time: data.start_time } : {}),
-                ...(data.schedule_pattern ? { schedule_pattern: data.schedule_pattern } : {}),
-                ...(data.duration_minutes ? { duration_minutes: Number(data.duration_minutes) } : {}),
+                ...(data.start_time !== undefined ? { start_time: data.start_time || null } : {}),
+                ...(data.schedule_pattern !== undefined ? { schedule_pattern: data.schedule_pattern } : {}),
+                ...(data.duration_minutes !== undefined
+                  ? {
+                      duration_minutes:
+                        data.duration_minutes === '' ? null : Number(data.duration_minutes),
+                    }
+                  : {}),
               },
             });
-          } else if (!sched && (data.start_time || data.schedule_pattern || data.duration_minutes)) {
+          } else if (!sched && data.schedule_pattern) {
             await tx.classSchedule.create({
               data: {
                 class_id: ec.class.id,
-                start_time: data.start_time || '20h00',
-                schedule_pattern: data.schedule_pattern || '246',
-                duration_minutes: data.duration_minutes ? Number(data.duration_minutes) : 30,
+                start_time: data.start_time || null,
+                schedule_pattern: data.schedule_pattern,
+                duration_minutes:
+                  data.duration_minutes !== undefined && data.duration_minutes !== ''
+                    ? Number(data.duration_minutes)
+                    : null,
               },
             });
+          }
+
+          // Teacher update
+          if (data.teacher_name !== undefined || data.teacher_code !== undefined) {
+            const teacherName = data.teacher_name !== undefined ? data.teacher_name.trim() : '';
+            const teacherCode = data.teacher_code !== undefined ? data.teacher_code.trim() : '';
+            const existingCT = ec.class.class_teachers?.[0];
+
+            if (teacherName || teacherCode) {
+              let teacherRec = null;
+
+              if (teacherCode) {
+                teacherRec = await tx.teacher.findUnique({
+                  where: { code: teacherCode },
+                });
+              }
+
+              if (!teacherRec && teacherName) {
+                teacherRec = await tx.teacher.findFirst({
+                  where: {
+                    OR: [
+                      { name: { contains: teacherName } },
+                      { code: teacherName },
+                    ],
+                  },
+                });
+              }
+
+              if (!teacherRec) {
+                const finalCode = teacherCode || ('GV_' + (teacherName || 'GV').toUpperCase().replace(/[^A-Z0-9]/g, '_').slice(0, 20));
+                const finalName = teacherName || teacherCode;
+                teacherRec = await tx.teacher.create({
+                  data: {
+                    name: finalName,
+                    code: finalCode,
+                    active: true,
+                  },
+                });
+              }
+
+              if (existingCT) {
+                await tx.classTeacher.update({
+                  where: { id: existingCT.id },
+                  data: { teacher_id: teacherRec.id, active: true },
+                });
+              } else {
+                await tx.classTeacher.create({
+                  data: {
+                    class_id: ec.class.id,
+                    teacher_id: teacherRec.id,
+                    role: 'MAIN',
+                  },
+                });
+              }
+            } else if (existingCT) {
+              await tx.classTeacher.delete({
+                where: { id: existingCT.id },
+              });
+            }
           }
         }
       }

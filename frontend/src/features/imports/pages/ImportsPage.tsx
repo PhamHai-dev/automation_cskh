@@ -3,6 +3,7 @@ import { PageContainer } from '../../../components/common/PageContainer';
 import { PageHeader } from '../../../components/common/PageHeader';
 import { Button } from '../../../components/ui/Button';
 import { useToast } from '../../../components/ui/Toast';
+import { HorizontalTabs } from '../../../components/ui/HorizontalTabs';
 import { ImportWizard } from '../components/ImportWizard';
 import { ImportHistoryTable } from '../components/ImportHistoryTable';
 import { importsApi } from '../api/imports.api';
@@ -42,7 +43,6 @@ export const ImportsPage: React.FC = () => {
     <PageContainer>
       <PageHeader
         title="Nhập & Xuất Dữ Liệu Excel"
-        description="Nhập dữ liệu thực tế từ Sheet 1 (Hồ sơ học viên) và Sheet 3 (Chấm điểm danh theo ngày), kiểm tra lỗi và xuất dữ liệu đối soát."
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <Button
@@ -50,49 +50,33 @@ export const ImportsPage: React.FC = () => {
               size="sm"
               onClick={handleExportStudents}
               isLoading={isExportingStudents}
+              leftIcon={<Download className="w-4 h-4 text-blue-600" />}
             >
-              <Download className="w-4 h-4 mr-1.5 text-blue-600" /> Xuất DS Học viên
+              Xuất DS Học viên
             </Button>
             <Button
               variant="outline"
               size="sm"
               onClick={handleExportAttendance}
               isLoading={isExportingAttendance}
+              leftIcon={<Download className="w-4 h-4 text-teal-600" />}
             >
-              <Download className="w-4 h-4 mr-1.5 text-teal-600" /> Xuất Bảng Điểm danh
+              Xuất Bảng Điểm danh
             </Button>
           </div>
         }
       />
 
-      {/* Tabs */}
-      <div className="border-b border-slate-200 mb-6">
-        <nav className="flex space-x-6">
-          <button
-            type="button"
-            onClick={() => setActiveTab('wizard')}
-            className={`pb-3 px-1 border-b-2 font-bold text-xs flex items-center transition-all ${activeTab === 'wizard'
-                ? 'border-blue-600 text-blue-600'
-                : 'border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300'
-              }`}
-          >
-            <UploadCloud className="w-4 h-4 mr-2" />
-            Nhập dữ liệu mới (Wizard)
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTab('history')}
-            className={`pb-3 px-1 border-b-2 font-bold text-xs flex items-center transition-all ${activeTab === 'history'
-                ? 'border-blue-600 text-blue-600'
-                : 'border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300'
-              }`}
-          >
-            <History className="w-4 h-4 mr-2" />
-            Lịch sử Import
-          </button>
-        </nav>
-      </div>
+      <HorizontalTabs
+        ariaLabel="Nhập và xuất dữ liệu"
+        value={activeTab}
+        onChange={setActiveTab}
+        className="mb-6"
+        items={[
+          { value: 'wizard', label: 'Nhập dữ liệu', icon: <UploadCloud /> },
+          { value: 'history', label: 'Lịch sử nhập', icon: <History /> },
+        ]}
+      />
 
       {/* Tab Content */}
       {activeTab === 'wizard' ? (

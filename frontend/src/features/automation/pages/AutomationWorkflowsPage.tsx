@@ -9,7 +9,7 @@ import { Button } from '../../../components/ui/Button';
 import { Input } from '../../../components/ui/Input';
 import { Modal } from '../../../components/ui/Modal';
 import { useToast } from '../../../components/ui/Toast';
-import { Plus, Zap, Search, Pencil, Trash2, Power, Users, ListChecks } from 'lucide-react';
+import { Plus, Zap, Search, Pencil, Trash2, Power, Users, ListChecks, RefreshCw } from 'lucide-react';
 
 export const AutomationWorkflowsPage: React.FC = () => {
   const toast = useToast();
@@ -213,11 +213,20 @@ export const AutomationWorkflowsPage: React.FC = () => {
         description="Tạo luồng tự động gửi tin Zalo theo kết quả điểm danh từng buổi học (A/B/C/D/E)"
         actions={
           <div className="flex gap-2">
-            <Button onClick={fetchWorkflows} variant="outline" className="flex items-center gap-2">
-              <Search className="w-4 h-4" />
+            <Button
+              onClick={fetchWorkflows}
+              variant="outline"
+              size="sm"
+              leftIcon={<RefreshCw className="w-4 h-4" />}
+            >
               Làm mới
             </Button>
-            <Button onClick={openCreate} variant="primary" className="flex items-center gap-2" leftIcon={<Plus className="w-4 h-4" />}>
+            <Button
+              onClick={openCreate}
+              variant="primary"
+              size="sm"
+              leftIcon={<Plus className="w-4 h-4" />}
+            >
               Tạo workflow
             </Button>
           </div>

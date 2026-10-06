@@ -1,85 +1,139 @@
-import { PrismaClient, Prisma } from '@prisma/client';
 import { prisma } from '../../prisma/client';
 import { CreateTeacherDTO, UpdateTeacherDTO } from './teachers.types';
 
 export class TeachersRepository {
   async findAll() {
-    return prisma.user.findMany({
-      where: {
-        roles: {
-          array_contains: 'TEACHER'
-        }
-      },
+    return prisma.teacher.findMany({
       include: {
-        teacher_profile: true
+        user: {
+          select: {
+            id: true,
+            email: true,
+            active: true,
+            last_login_at: true,
+          },
+        },
       },
-      orderBy: { created_at: 'desc' }
+      orderBy: { created_at: 'desc' },
     });
   }
 
   async findById(id: number) {
-    return prisma.user.findUnique({
+    return prisma.teacher.findUnique({
       where: { id },
-      include: { teacher_profile: true }
+      include: {
+        user: {
+          select: {
+            id: true,
+            email: true,
+            active: true,
+            last_login_at: true,
+          },
+        },
+      },
     });
   }
 
-  async create(data: CreateTeacherDTO, creatorId: number, passwordHash: string) {
-    return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-      const user = await tx.user.create({
-        data: {
-          email: data.email,
-          name: data.name,
-          phone: data.phone,
-          password_hash: passwordHash,
-          roles: ['TEACHER'],
-          created_by_id: creatorId
-        }
-      });
+  async findByCode(code: string) {
+    return prisma.teacher.findUnique({
+      where: { code },
+      include: { user: true },
+    });
+  }
 
-      const profile = await tx.teacherProfile.create({
-        data: {
-          user_id: user.id,
-          teacher_code: data.teacher_code,
-          teacher_type: data.teacher_type
-        }
-      });
+  async findByName(name: string) {
+    return prisma.teacher.findFirst({
+      where: { name: { contains: name } },
+      include: { user: true },
+    });
+  }
 
-      return { ...user, teacher_profile: profile };
+  async create(data: CreateTeacherDTO) {
+    let code = data.code?.trim();
+    if (!code) {
+      code = 'GV_' + data.name.toUpperCase().replace(/[^A-Z0-9]/g, '_').slice(0, 15) + '_' + Math.floor(Math.random() * 1000);
+    }
+    return prisma.teacher.create({
+      data: {
+        code,
+        name: data.name.trim(),
+        phone: data.phone || null,
+        email: data.email || null,
+        teacher_type: data.teacher_type || 'OTHER',
+        active: data.active ?? true,
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            email: true,
+            active: true,
+            last_login_at: true,
+          },
+        },
+      },
     });
   }
 
   async update(id: number, data: UpdateTeacherDTO) {
-    return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-      const user = await tx.user.update({
-        where: { id },
+    return prisma.teacher.update({
+      where: { id },
+      data: {
+        ...(data.code ? { code: data.code.trim() } : {}),
+        ...(data.name ? { name: data.name.trim() } : {}),
+        ...(data.phone !== undefined ? { phone: data.phone || null } : {}),
+        ...(data.email !== undefined ? { email: data.email || null } : {}),
+        ...(data.teacher_type ? { teacher_type: data.teacher_type } : {}),
+        ...(data.active !== undefined ? { active: data.active } : {}),
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            email: true,
+            active: true,
+            last_login_at: true,
+          },
+        },
+      },
+    });
+  }
+
+  async provisionAccount(teacherId: number, email: string, passwordHash: string, creatorId?: number) {
+    return prisma.$transaction(async (tx) => {
+      const teacher = await tx.teacher.findUnique({ where: { id: teacherId } });
+      if (!teacher) throw new Error('Không tìm thấy giáo viên');
+      if (teacher.user_id) throw new Error('Giáo viên này đã có tài khoản đăng nhập');
+
+      const existingUser = await tx.user.findUnique({ where: { email } });
+      if (existingUser) throw new Error('Email này đã được sử dụng cho một tài khoản khác');
+
+      const user = await tx.user.create({
         data: {
-          name: data.name,
-          phone: data.phone,
-          active: data.active
-        }
+          email,
+          name: teacher.name,
+          phone: teacher.phone,
+          password_hash: passwordHash,
+          roles: ['TEACHER'],
+          created_by_id: creatorId,
+          active: true,
+        },
       });
 
-      const profileData: any = {};
-      if (data.teacher_code !== undefined) profileData.teacher_code = data.teacher_code;
-      if (data.teacher_type !== undefined) profileData.teacher_type = data.teacher_type;
-      if (data.active !== undefined) profileData.active = data.active;
-
-      let profile = null;
-      if (Object.keys(profileData).length > 0) {
-        profile = await tx.teacherProfile.upsert({
-          where: { user_id: id },
-          update: profileData,
-          create: {
-            user_id: id,
-            ...profileData
-          }
-        });
-      } else {
-        profile = await tx.teacherProfile.findUnique({ where: { user_id: id } });
-      }
-
-      return { ...user, teacher_profile: profile };
+      return tx.teacher.update({
+        where: { id: teacherId },
+        data: { user_id: user.id },
+        include: {
+          user: {
+            select: {
+              id: true,
+              email: true,
+              active: true,
+              last_login_at: true,
+            },
+          },
+        },
+      });
     });
   }
 }

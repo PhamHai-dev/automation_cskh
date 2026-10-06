@@ -21,6 +21,7 @@ import {
   Pencil,
   Inbox,
   Users,
+  RefreshCw,
   BookOpen,
 } from 'lucide-react';
 
@@ -340,7 +341,12 @@ export const StudentZaloLinkPage: React.FC = () => {
               </option>
             ))}
           </select>
-          <Button variant="outline" size="sm" onClick={() => (activeTab === 'suggest' ? fetchSuggestions() : fetchLinked())}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => (activeTab === 'suggest' ? fetchSuggestions() : fetchLinked())}
+            leftIcon={<RefreshCw className="w-3.5 h-3.5" />}
+          >
             Làm mới
           </Button>
         </div>
@@ -376,7 +382,12 @@ export const StudentZaloLinkPage: React.FC = () => {
               onKeyDown={(e) => e.key === 'Enter' && fetchUnlinked()}
               className="flex-1"
             />
-            <Button variant="outline" onClick={fetchUnlinked} leftIcon={<Search className="w-3.5 h-3.5" />}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={fetchUnlinked}
+              leftIcon={<Search className="w-3.5 h-3.5" />}
+            >
               Tìm
             </Button>
           </div>
@@ -472,6 +483,7 @@ export const StudentZaloLinkPage: React.FC = () => {
                             {(r.friendAvatarUrl || r.zalo_account?.avatar_url) && (
                               <img
                                 src={r.friendAvatarUrl || r.zalo_account?.avatar_url}
+                                referrerPolicy="no-referrer"
                                 alt=""
                                 className="absolute -bottom-0.5 -right-0.5 w-5 h-5 rounded-full object-cover border-2 border-white"
                               />
@@ -694,7 +706,7 @@ export const StudentZaloLinkPage: React.FC = () => {
                       }`}
                     >
                       {f.avatar_url ? (
-                        <img src={f.avatar_url} alt="" className="w-8 h-8 rounded-full object-cover shrink-0" />
+                        <img src={f.avatar_url} alt="" referrerPolicy="no-referrer" className="w-8 h-8 rounded-full object-cover shrink-0" />
                       ) : (
                         <div className="w-8 h-8 rounded-full bg-gradient-to-br from-violet-100 to-violet-200 text-violet-700 flex items-center justify-center text-xs font-bold shrink-0">
                           {(f.zalo_display_name || f.alias_in_nick || '?').charAt(0)}
@@ -835,7 +847,7 @@ export const StudentZaloLinkPage: React.FC = () => {
                       }`}
                     >
                       {f.avatar_url ? (
-                        <img src={f.avatar_url} alt="" className="w-8 h-8 rounded-full object-cover shrink-0" />
+                        <img src={f.avatar_url} alt="" referrerPolicy="no-referrer" className="w-8 h-8 rounded-full object-cover shrink-0" />
                       ) : (
                         <div className="w-8 h-8 rounded-full bg-gradient-to-br from-violet-100 to-violet-200 text-violet-700 flex items-center justify-center text-xs font-bold shrink-0">
                           {(f.zalo_display_name || f.alias_in_nick || '?').charAt(0)}

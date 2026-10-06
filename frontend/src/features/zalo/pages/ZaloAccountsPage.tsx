@@ -9,9 +9,13 @@ import { Button } from '../../../components/ui/Button';
 import { Input } from '../../../components/ui/Input';
 import { QrLoginDialog } from '../components/QrLoginDialog';
 import { useSocket } from '../../../hooks/useSocket';
+import { useAuth } from '../../../contexts/AuthContext';
 import { Plus, QrCode, Trash2, WifiOff, RefreshCw, Users } from 'lucide-react';
 
 export const ZaloAccountsPage: React.FC = () => {
+  const { user } = useAuth();
+  const isAdminOrManager = user?.roles?.some((r) => ['ADMIN', 'MANAGE'].includes(r));
+
   const [accounts, setAccounts] = useState<ZaloAccount[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -22,7 +26,12 @@ export const ZaloAccountsPage: React.FC = () => {
   const [deleteTarget, setDeleteTarget] = useState<ZaloAccount | null>(null);
 
   // Create form
-  const [form, setForm] = useState<CreateZaloAccountDTO>({ cs_id: 0, display_name: '', zalo_phone: '', proxy_url: '' });
+  const [form, setForm] = useState<CreateZaloAccountDTO>({
+    cs_id: user?.id || 0,
+    display_name: '',
+    zalo_phone: '',
+    proxy_url: '',
+  });
   const [formLoading, setFormLoading] = useState(false);
 
   const fetchAccounts = async () => {
@@ -47,12 +56,21 @@ export const ZaloAccountsPage: React.FC = () => {
     );
   }, []);
 
+  const handleAvatarUpdated = useCallback((evt: { accountId?: number }) => {
+    if (!evt?.accountId) return;
+    fetchAccounts();
+  }, []);
+
   const { on, off } = useSocket();
 
   useEffect(() => {
     on('zalo:status', handleStatusEvent);
-    return () => { off('zalo:status', handleStatusEvent); };
-  }, [on, off, handleStatusEvent]);
+    on('zalo:avatar-updated', handleAvatarUpdated);
+    return () => {
+      off('zalo:status', handleStatusEvent);
+      off('zalo:avatar-updated', handleAvatarUpdated);
+    };
+  }, [on, off, handleStatusEvent, handleAvatarUpdated]);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -104,7 +122,7 @@ export const ZaloAccountsPage: React.FC = () => {
       cell: (item) => (
         <div className="flex items-center gap-3">
           {item.avatar_url ? (
-            <img src={item.avatar_url} alt="" className="w-10 h-10 rounded-full object-cover border border-border/50 shrink-0" />
+            <img src={item.avatar_url} alt="" referrerPolicy="no-referrer" className="w-10 h-10 rounded-full object-cover border border-border/50 shrink-0" />
           ) : (
             <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary/10 to-primary/20 text-primary flex items-center justify-center text-sm font-bold shrink-0">
               {(item.display_name || `#${item.id}`).charAt(0).toUpperCase()}
@@ -170,16 +188,32 @@ export const ZaloAccountsPage: React.FC = () => {
     <PageContainer>
       <PageHeader
         title="Quan ly Tai khoan Zalo"
-        description="Quan ly nhieu nick Zalo cho moi CS, dang nhap QR va dong bo danh ba"
         actions={
           <div className="flex gap-2">
-            <Button onClick={() => fetchAccounts()} variant="outline" className="flex items-center gap-2">
-              <RefreshCw className={'w-4 h-4 ' + (loading ? 'animate-spin' : '')} />
-              Lam moi
+            <Button
+              onClick={() => fetchAccounts()}
+              variant="outline"
+              size="sm"
+              isLoading={loading}
+              leftIcon={<RefreshCw className="w-4 h-4" />}
+            >
+              Làm mới
             </Button>
-            <Button onClick={() => setIsCreateOpen(true)} variant="primary" className="flex items-center gap-2">
-              <Plus className="w-4 h-4" />
-              Them tai khoan Zalo
+            <Button
+              onClick={() => {
+                setForm({
+                  cs_id: user?.id || 0,
+                  display_name: '',
+                  zalo_phone: '',
+                  proxy_url: '',
+                });
+                setIsCreateOpen(true);
+              }}
+              variant="primary"
+              size="sm"
+              leftIcon={<Plus className="w-4 h-4" />}
+            >
+              Thêm tài khoản Zalo
             </Button>
           </div>
         }
@@ -213,10 +247,25 @@ export const ZaloAccountsPage: React.FC = () => {
               <button onClick={() => setIsCreateOpen(false)} className="text-gray-400 hover:text-gray-600 text-lg leading-none">&times;</button>
             </div>
             <form onSubmit={handleCreate} className="p-6 space-y-4">
-              <Input label="CS phu trach (User ID) *" type="number" required value={form.cs_id || ''} onChange={(e) => setForm({ ...form, cs_id: parseInt(e.target.value) || 0 })} placeholder="ID nhan vien CS" />
-              <Input label="Ten hien thi" value={form.display_name || ''} onChange={(e) => setForm({ ...form, display_name: e.target.value })} placeholder="VD: Nick CS An" />
-              <Input label="So dien thoai Zalo" value={form.zalo_phone || ''} onChange={(e) => setForm({ ...form, zalo_phone: e.target.value })} placeholder="0901234567" />
-              <Input label="Proxy URL (tuy chon)" value={form.proxy_url || ''} onChange={(e) => setForm({ ...form, proxy_url: e.target.value })} placeholder="http://proxy:port" />
+              {isAdminOrManager ? (
+                <Input
+                  label="CS phụ trách (User ID) *"
+                  type="number"
+                  required
+                  value={form.cs_id || ''}
+                  onChange={(e) => setForm({ ...form, cs_id: parseInt(e.target.value) || 0 })}
+                  placeholder="ID nhân viên CS"
+                />
+              ) : (
+                <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 text-sm">
+                  <span className="text-gray-500 block text-xs mb-1">CS phụ trách:</span>
+                  <span className="font-semibold text-gray-800">{user?.name || user?.email}</span>
+                  <span className="text-xs text-gray-500 ml-2">(ID: {user?.id})</span>
+                </div>
+              )}
+              <Input label="Tên hiển thị" value={form.display_name || ''} onChange={(e) => setForm({ ...form, display_name: e.target.value })} placeholder="VD: Nick CS An" />
+              <Input label="Số điện thoại Zalo" value={form.zalo_phone || ''} onChange={(e) => setForm({ ...form, zalo_phone: e.target.value })} placeholder="0901234567" />
+              <Input label="Proxy URL (tùy chọn)" value={form.proxy_url || ''} onChange={(e) => setForm({ ...form, proxy_url: e.target.value })} placeholder="http://proxy:port" />
               <div className="mt-6 flex justify-end gap-2 pt-4 border-t border-gray-100">
                 <Button variant="outline" type="button" onClick={() => setIsCreateOpen(false)}>Huy</Button>
                 <Button variant="primary" type="submit" isLoading={formLoading}>Tao tai khoan</Button>

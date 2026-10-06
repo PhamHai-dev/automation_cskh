@@ -94,16 +94,13 @@ export function deriveRelationshipKind(
  * Our Conversation has no contactId field (only zalo_account_id + externalThreadId),
  * so there is nothing to re-point. Kept as no-op for interface compatibility.
  */
-export async function reconcileConversationContact(args: {
+export async function reconcileConversationContact(_args: {
   zaloAccountId: number;
   contactId?: number | string;
   zaloUidInNick: string;
 }): Promise<number> {
-  if (!args.zaloUidInNick) return 0;
-  log.debug('reconcileConversationContact: no-op in single-org (no contactId on Conversation)', {
-    zaloAccountId: args.zaloAccountId,
-    zaloUidInNick: args.zaloUidInNick,
-  });
+  // Best-effort reconcile: our Conversation has no contactId (only zalo_account_id + externalThreadId),
+  // so there is nothing to re-point. Kept as no-op for interface compatibility.
   return 0;
 }
 
@@ -204,7 +201,7 @@ export async function applyFriendTransition(args: {
 
     // Counter delta — logged for observability; no Contact table in single-org
     const delta = counterDelta(fromKind, toKind);
-    if (delta.accepted !== 0 || delta.pending !== 0 || delta.chatting !== 0) {
+    if (source !== 'sync' && (delta.accepted !== 0 || delta.pending !== 0 || delta.chatting !== 0)) {
       log.debug('Friend counter delta (no-op without Contact table)', {
         zaloAccountId,
         zaloUidInNick,
@@ -225,12 +222,15 @@ export async function applyFriendTransition(args: {
   // Best-effort reconcile (no-op in current schema)
   await reconcileConversationContact({ zaloAccountId, zaloUidInNick });
 
-  log.info('Friend transition applied', {
-    zaloAccountId,
-    zaloUidInNick,
-    newFriendshipStatus,
-    source,
-  });
+  // Only log per-friend transitions for real-time events, not bulk sync
+  if (source !== 'sync') {
+    log.info('Friend transition applied', {
+      zaloAccountId,
+      zaloUidInNick,
+      newFriendshipStatus,
+      source,
+    });
+  }
 }
 
 /**

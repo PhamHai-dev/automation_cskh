@@ -304,8 +304,14 @@ export const AutomationWorkflowDetailPage: React.FC = () => {
       <PageContainer>
         <div className="text-center py-12">
           <p className="text-text-muted">Workflow không tồn tại</p>
-          <Button variant="ghost" onClick={() => navigate('/automation')} className="mt-4">
-            <ArrowLeft className="w-4 h-4 mr-2" /> Quay lại
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => navigate('/automation')}
+            leftIcon={<ArrowLeft className="w-4 h-4" />}
+            className="mt-4"
+          >
+            Quay lại
           </Button>
         </div>
       </PageContainer>

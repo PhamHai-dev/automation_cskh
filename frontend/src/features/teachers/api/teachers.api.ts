@@ -1,5 +1,5 @@
 import { apiClient } from '../../../api/client';
-import { Teacher, CreateTeacherDTO, UpdateTeacherDTO } from '../types/teachers.types';
+import { Teacher, CreateTeacherDTO, UpdateTeacherDTO, ProvisionAccountDTO } from '../types/teachers.types';
 
 export const teachersApi = {
   list: async (): Promise<Teacher[]> => {
@@ -20,5 +20,10 @@ export const teachersApi = {
   update: async (id: number, data: UpdateTeacherDTO): Promise<Teacher> => {
     const res = await apiClient.patch(`/teachers/${id}`, data);
     return res.data.data;
-  }
+  },
+
+  provisionAccount: async (id: number, data: ProvisionAccountDTO): Promise<Teacher> => {
+    const res = await apiClient.post(`/teachers/${id}/account`, data);
+    return res.data.data;
+  },
 };

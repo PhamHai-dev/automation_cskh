@@ -18,10 +18,12 @@ import { Users, GraduationCap, CheckCircle, AlertCircle, RefreshCw } from 'lucid
 import { Button } from '../../../components/ui/Button';
 
 const STATUS_LABELS: Record<string, { label: string; color: string; bgSoft: string; textColor: string }> = {
-  NOT_STARTED: { label: 'Chưa học', color: 'bg-slate-400', bgSoft: 'bg-slate-100', textColor: 'text-slate-700' },
+  WAITING_CLASS: { label: 'Chờ lớp', color: 'bg-amber-500', bgSoft: 'bg-amber-50', textColor: 'text-amber-700' },
   STUDYING: { label: 'Đang học', color: 'bg-blue-600', bgSoft: 'bg-blue-50', textColor: 'text-blue-700' },
-  PAUSED: { label: 'Bảo lưu / Tạm dừng', color: 'bg-amber-500', bgSoft: 'bg-amber-50', textColor: 'text-amber-700' },
-  FINISHED: { label: 'Hoàn thành', color: 'bg-emerald-600', bgSoft: 'bg-emerald-50', textColor: 'text-emerald-700' },
+  PAUSED: { label: 'Bảo lưu', color: 'bg-amber-500', bgSoft: 'bg-amber-50', textColor: 'text-amber-700' },
+  FINISHED: { label: 'Kết thúc', color: 'bg-emerald-600', bgSoft: 'bg-emerald-50', textColor: 'text-emerald-700' },
+  UPCOMING: { label: 'Sắp học', color: 'bg-sky-500', bgSoft: 'bg-sky-50', textColor: 'text-sky-700' },
+  NOT_STARTED: { label: 'Chưa học', color: 'bg-slate-400', bgSoft: 'bg-slate-100', textColor: 'text-slate-700' },
   CANCELLED: { label: 'Đã hủy', color: 'bg-rose-500', bgSoft: 'bg-rose-50', textColor: 'text-rose-700' },
 };
 
@@ -64,16 +66,14 @@ export const DashboardPage: React.FC = () => {
     <PageContainer>
       <PageHeader
         title="Dashboard Báo cáo & Thống kê Chăm sóc Khách hàng"
-        description="Số liệu tổng hợp trực tiếp từ cơ sở dữ liệu: tình trạng học viên, tỷ lệ chuyên cần, ma trận mốc buổi học và tiến độ xử lý công việc"
         actions={
           <Button
             variant="outline"
             size="sm"
             onClick={loadData}
-            disabled={loading}
-            className="flex items-center gap-1.5"
+            isLoading={loading}
+            leftIcon={<RefreshCw className="w-3.5 h-3.5" />}
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
             Làm mới dữ liệu
           </Button>
         }
@@ -84,43 +84,50 @@ export const DashboardPage: React.FC = () => {
         title="Bộ lọc dữ liệu Dashboard"
         activeCount={activeFiltersCount}
         onClear={() => setFilters({})}
+        gridClassName="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 items-end"
       >
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          <div>
-            <label className="block text-[11px] font-semibold text-slate-500 mb-1">Từ ngày</label>
-            <input
-              type="date"
-              value={filters.date_from || ''}
-              onChange={(e) => setFilters({ ...filters, date_from: e.target.value || undefined })}
-              className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
+        <div>
+          <label className="block text-[11px] font-semibold text-text-secondary uppercase tracking-wider mb-1.5">
+            Từ ngày
+          </label>
+          <input
+            type="date"
+            value={filters.date_from || ''}
+            onChange={(e) => setFilters({ ...filters, date_from: e.target.value || undefined })}
+            className="w-full h-9 px-3 border border-border rounded-xl text-sm bg-white text-text-primary focus:outline-none focus:ring-2 focus:ring-primary shadow-xs transition"
+          />
+        </div>
 
-          <div>
-            <label className="block text-[11px] font-semibold text-slate-500 mb-1">Đến ngày</label>
-            <input
-              type="date"
-              value={filters.date_to || ''}
-              onChange={(e) => setFilters({ ...filters, date_to: e.target.value || undefined })}
-              className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
+        <div>
+          <label className="block text-[11px] font-semibold text-text-secondary uppercase tracking-wider mb-1.5">
+            Đến ngày
+          </label>
+          <input
+            type="date"
+            value={filters.date_to || ''}
+            onChange={(e) => setFilters({ ...filters, date_to: e.target.value || undefined })}
+            className="w-full h-9 px-3 border border-border rounded-xl text-sm bg-white text-text-primary focus:outline-none focus:ring-2 focus:ring-primary shadow-xs transition"
+          />
+        </div>
 
-          <div>
-            <label className="block text-[11px] font-semibold text-slate-500 mb-1">Trạng thái Ghi danh</label>
-            <select
-              value={filters.status || ''}
-              onChange={(e) => setFilters({ ...filters, status: e.target.value || undefined })}
-              className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="">Tất cả trạng thái</option>
-              <option value="STUDYING">Đang học</option>
-              <option value="NOT_STARTED">Chưa học</option>
-              <option value="PAUSED">Bảo lưu</option>
-              <option value="FINISHED">Hoàn thành</option>
-              <option value="CANCELLED">Đã hủy</option>
-            </select>
-          </div>
+        <div>
+          <label className="block text-[11px] font-semibold text-text-secondary uppercase tracking-wider mb-1.5">
+            Trạng thái Ghi danh
+          </label>
+          <select
+            value={filters.status || ''}
+            onChange={(e) => setFilters({ ...filters, status: e.target.value || undefined })}
+            className="w-full h-9 px-3 border border-border rounded-xl text-sm bg-white text-text-primary focus:outline-none focus:ring-2 focus:ring-primary shadow-xs transition cursor-pointer"
+          >
+            <option value="">Tất cả trạng thái</option>
+            <option value="WAITING_CLASS">Chờ lớp</option>
+            <option value="STUDYING">Đang học</option>
+            <option value="PAUSED">Bảo lưu</option>
+            <option value="FINISHED">Kết thúc</option>
+            <option value="UPCOMING">Sắp học</option>
+            <option value="NOT_STARTED">Chưa học</option>
+            <option value="CANCELLED">Đã hủy</option>
+          </select>
         </div>
       </FilterBar>
 

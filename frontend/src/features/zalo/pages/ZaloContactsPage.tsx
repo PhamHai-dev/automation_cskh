@@ -222,6 +222,7 @@ export const ZaloContactsPage: React.FC = () => {
             >
               <div className="relative shrink-0">
                 <FriendAvatar
+                  url={a.avatar_url}
                   name={a.display_name || `#${a.id}`}
                   size={32}
                   className={selectedAccountId === a.id ? '' : 'opacity-70'}
@@ -272,7 +273,7 @@ export const ZaloContactsPage: React.FC = () => {
             </div>
             {currentAccount && (
               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 text-[11px] font-semibold">
-                <FriendAvatar name={currentAccount.display_name || ''} size={16} rounded="rounded" />
+                <FriendAvatar name={currentAccount.display_name || ''} url={currentAccount.avatar_url} size={16} rounded="rounded" />
                 <span className="truncate max-w-[120px]">{currentAccount.display_name || `Nick #${currentAccount.id}`}</span>
                 <span className="text-blue-400">·</span>
                 <span>{total} bạn</span>
@@ -294,12 +295,13 @@ export const ZaloContactsPage: React.FC = () => {
             <Button
               onClick={handleSync}
               variant="outline"
-              className="flex items-center gap-1.5 text-sm"
-              disabled={syncing || !isActive}
+              size="sm"
+              isLoading={syncing}
+              disabled={!isActive}
+              leftIcon={<RefreshCw className="w-4 h-4" />}
               title="Auto-sync mỗi 15 phút. Click để refresh ngay lập tức."
             >
-              <RefreshCw className={`w-4 h-4 ${syncing ? 'animate-spin' : ''}`} />
-              {syncing ? 'Đang làm mới…' : '↻ Làm mới ngay'}
+              Làm mới ngay
             </Button>
           </div>
         </div>

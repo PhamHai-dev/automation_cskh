@@ -7,7 +7,7 @@ const classesService = new ClassesService();
 export class ClassesController {
   async list(req: Request, res: Response, next: NextFunction) {
     try {
-      const classes = await classesService.getAllClasses();
+      const classes = await classesService.getAllClasses(req.user);
       res.json({ data: classes, meta: null });
     } catch (error) {
       next(error);
@@ -17,7 +17,7 @@ export class ClassesController {
   async get(req: Request, res: Response, next: NextFunction) {
     try {
       const id = parseInt(req.params.id);
-      const cls = await classesService.getClassById(id);
+      const cls = await classesService.getClassById(id, req.user);
       res.json({ data: cls, meta: null });
     } catch (error) {
       next(error);

@@ -1,16 +1,22 @@
 export interface CreateTeacherDTO {
-  email: string;
+  code?: string;
   name: string;
-  password?: string;
   phone?: string;
-  teacher_code?: string;
+  email?: string;
   teacher_type?: 'VIETNAMESE' | 'JAPANESE' | 'OTHER';
+  active?: boolean;
 }
 
 export interface UpdateTeacherDTO {
+  code?: string;
   name?: string;
   phone?: string;
-  teacher_code?: string;
+  email?: string;
   teacher_type?: 'VIETNAMESE' | 'JAPANESE' | 'OTHER';
   active?: boolean;
+}
+
+export interface ProvisionAccountDTO {
+  email: string;
+  password?: string;
 }

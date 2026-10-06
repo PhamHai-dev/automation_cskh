@@ -1,5 +1,14 @@
 # Project Changelog
 
+## 2026-10-06 — Audit actor cho điểm danh tự động
+
+- Theo xác nhận của user, scheduler sử dụng tài khoản audit riêng `auto-attendance@system.invalid`, tạo idempotently khi cần, không gán user ID=1.
+- Tài khoản inactive, roles rỗng, password marker không phải hash đăng nhập; nếu identity dành riêng bị thay đổi thành tài khoản khác thì từ chối sử dụng.
+- Session và Attendance ghi nhận cùng actor hệ thống. Không tự cấp quyền hoặc sửa tài khoản trùng email.
+- Backend typecheck pass; 21/21 integration tests pass trên database test cô lập, gồm audit actor và login trả 403.
+- Không thay đổi retry FAILED, lịch sử migration, cấu hình Redis hay database đang dùng.
+
+
 ## 2026-09-22 — Mở Rộng Form Thêm Mới & Chỉnh Sửa Học Viên Đầy Đủ Các Cột Sheet 1 & Chuẩn Hóa Lịch Học
 
 - **Mở Rộng Form Thêm Mới & Chỉnh Sửa Học Viên (`/students`):**

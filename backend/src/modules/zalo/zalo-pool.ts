@@ -32,6 +32,7 @@ import { emitToAccount } from '../../shared/realtime/socket-singleton';
 import type { ZaloSessionData } from './types/zalo.types';
 import { PoolAccountStatus } from './types/zalo.types';
 import { writeTransition } from './status-log-service';
+import { extractZaloProfile } from './zalo-profile-utils';
 
 const log = createLogger('ZaloPool');
 
@@ -200,11 +201,11 @@ class ZaloAccountPool extends EventEmitter {
         // F6: Write status log transition for uptime tracking
         writeTransition({ accountId, status: 'connected', reason: 'login' }).catch(() => {});
 
-        Promise.resolve(api.getOwnId()).then((ownId: string) => {
+        Promise.resolve(api.getOwnId()).then(async (ownId: string) => {
           instance.zaloUid = ownId;
-          this.updateAccountDB(accountId, 'connected', ownId);
-          this.autoSyncOnConnect(accountId); // FIX #5: auto-sync friends after connect
-          this.fetchAndSaveAvatar(accountId, api, ownId); // save avatar from Zalo SDK
+          await this.updateAccountDB(accountId, 'connected', ownId);
+          await this.fetchAndSaveAvatar(accountId, api, ownId);
+          this.autoSyncOnConnect(accountId);
           this.emitEvent({ type: 'session:connected', accountId });
           emitToAccount(accountId, 'zalo:status', { accountId, status: 'ACTIVE' });
           log.info('Login completed', { accountId, zaloUid: ownId });
@@ -308,9 +309,9 @@ class ZaloAccountPool extends EventEmitter {
 
       instance.zaloUid = ownId;
       this.attachListeners(accountId, api, epoch);
-      this.updateAccountDB(accountId, 'connected', ownId);
-      this.autoSyncOnConnect(accountId); // FIX #5: auto-sync friends after reconnect
-      this.fetchAndSaveAvatar(accountId, api, ownId); // refresh avatar from Zalo SDK
+      await this.updateAccountDB(accountId, 'connected', ownId);
+      await this.fetchAndSaveAvatar(accountId, api, ownId);
+      this.autoSyncOnConnect(accountId);
       this.emitEvent({ type: 'session:connected', accountId });
       emitToAccount(accountId, 'zalo:status', { accountId, status: 'ACTIVE' });
       log.info('Reconnected', { accountId, zaloUid: ownId });
@@ -490,57 +491,46 @@ class ZaloAccountPool extends EventEmitter {
     }
   }
 
-  // ── Avatar fetch (fire-and-forget) ───────────────────────────────────────
-  private fetchAndSaveAvatar(accountId: number, api: any, ownId: string): void {
-    Promise.resolve()
-      .then(async () => {
-        let avatarUrl: string | null = null;
-        try {
-          // Method 1: getOwnInfo (preferred)
-          if (typeof api.getOwnInfo === 'function') {
-            const info: any = await api.getOwnInfo();
-            avatarUrl = info?.data?.avatar ?? info?.avatar ?? info?.avatarUrl
-              ?? info?.thumbAvatarUrl ?? info?.avt ?? info?.fullAvt ?? null;
-            log.debug('getOwnInfo avatar result', { accountId, avatarUrl, keys: Object.keys(info || {}) });
-          }
-          // Method 2: getUserInfo with own UID
-          if (!avatarUrl && typeof api.getUserInfo === 'function') {
-            try {
-              const info: any = await api.getUserInfo(ownId);
-              const u = info?.[ownId] ?? info?.data?.[ownId] ?? info ?? null;
-              avatarUrl = u?.data?.avatar ?? u?.avatar ?? u?.avatarUrl ?? u?.avt ?? null;
-              log.debug('getUserInfo avatar result', { accountId, avatarUrl });
-            } catch { /* ignore */ }
-          }
-          // Method 3: fetchAccountInfo
-          if (!avatarUrl && typeof api.fetchAccountInfo === 'function') {
-            try {
-              const info: any = await api.fetchAccountInfo();
-              avatarUrl = info?.data?.avatar ?? info?.avatar ?? info?.avatarUrl ?? null;
-              log.debug('fetchAccountInfo avatar result', { accountId, avatarUrl });
-            } catch { /* ignore */ }
-          }
-          // Method 4: profile.getProfile
-          if (!avatarUrl && typeof api?.profile?.getProfile === 'function') {
-            try {
-              const info: any = await api.profile.getProfile();
-              avatarUrl = info?.data?.avatar ?? info?.avatar ?? null;
-              log.debug('profile.getProfile avatar result', { accountId, avatarUrl });
-            } catch { /* ignore */ }
-          }
-        } catch (err: any) {
-          log.debug('avatar fetch error (non-critical)', { accountId, error: String(err) });
-        }
-        if (avatarUrl) {
-          await prisma.zaloAccount
-            .update({ where: { id: accountId }, data: { avatar_url: avatarUrl } })
-            .catch(() => {});
-          log.info('Avatar saved', { accountId, avatarUrl });
-        } else {
-          log.warn('No avatar found from any method', { accountId, ownId });
-        }
-      })
-      .catch(() => {});
+  // ── Avatar fetch (best-effort, emits completion after persistence) ─────────
+  private async fetchAndSaveAvatar(accountId: number, api: any, ownId: string): Promise<string | null> {
+    try {
+      let profile: ReturnType<typeof extractZaloProfile> = null;
+      if (typeof api.getOwnInfo === 'function') {
+        profile = extractZaloProfile(await api.getOwnInfo(), ownId);
+      }
+      if (!profile?.avatarUrl && typeof api.getUserInfo === 'function') {
+        profile = extractZaloProfile(await api.getUserInfo(ownId), ownId) ?? profile;
+      }
+      if (!profile?.avatarUrl && typeof api.fetchAccountInfo === 'function') {
+        profile = extractZaloProfile(await api.fetchAccountInfo(), ownId) ?? profile;
+      }
+      if (!profile?.avatarUrl && typeof api?.profile?.getProfile === 'function') {
+        profile = extractZaloProfile(await api.profile.getProfile(), ownId) ?? profile;
+      }
+
+      if (!profile?.avatarUrl && !profile?.displayName) {
+        log.warn('No avatar/profile found from any method', { accountId, ownId });
+        return null;
+      }
+
+      await prisma.zaloAccount.update({
+        where: { id: accountId },
+        data: {
+          ...(profile.avatarUrl ? { avatar_url: profile.avatarUrl } : {}),
+          ...(profile.displayName ? { display_name: profile.displayName } : {}),
+        },
+      });
+      emitToAccount(accountId, 'zalo:avatar-updated', {
+        accountId,
+        avatarUrl: profile.avatarUrl,
+        displayName: profile.displayName,
+      });
+      log.info('Avatar/profile saved', { accountId, avatarUrl: profile.avatarUrl });
+      return profile.avatarUrl;
+    } catch (err: any) {
+      log.warn('Avatar fetch/save failed (non-critical)', { accountId, error: String(err) });
+      return null;
+    }
   }
 
   // ── Refresh avatar (manual, callable from service) ───────────────────────
@@ -550,26 +540,8 @@ class ZaloAccountPool extends EventEmitter {
       log.warn('Cannot refresh avatar — not connected', { accountId });
       return null;
     }
-    let avatarUrl: string | null = null;
-    try {
-      const ownId = inst.zaloUid ?? await inst.api.getOwnId();
-      if (typeof inst.api.getOwnInfo === 'function') {
-        const info: any = await inst.api.getOwnInfo();
-        avatarUrl = info?.data?.avatar ?? info?.avatar ?? info?.avatarUrl ?? info?.fullAvt ?? null;
-      }
-      if (!avatarUrl && typeof inst.api.getUserInfo === 'function') {
-        const info: any = await inst.api.getUserInfo(ownId);
-        const u = info?.[ownId] ?? info?.data?.[ownId] ?? info ?? null;
-        avatarUrl = u?.data?.avatar ?? u?.avatar ?? u?.avt ?? null;
-      }
-      if (avatarUrl) {
-        await prisma.zaloAccount.update({ where: { id: accountId }, data: { avatar_url: avatarUrl } });
-        log.info('Avatar refreshed', { accountId, avatarUrl });
-      }
-    } catch (err: any) {
-      log.error('refreshAvatar error', { accountId, error: String(err) });
-    }
-    return avatarUrl;
+    const ownId = inst.zaloUid ?? await inst.api.getOwnId();
+    return this.fetchAndSaveAvatar(accountId, inst.api, ownId);
   }
 
   // ── Refresh group avatars (bulk) ─────────────────────────────────────────
@@ -778,7 +750,8 @@ class ZaloAccountPool extends EventEmitter {
         const res = await syncFriendsForAccount(accountId, { trigger: 'connect' });
         log.info('Auto-sync on connect', {
           accountId,
-          friends: res.emittedCount ?? 0,
+          friends: res.upsertedFriends ?? res.liveCount ?? 0,
+          changed: res.emittedCount ?? 0,
           errors: res.errors,
         });
       } catch (err) {

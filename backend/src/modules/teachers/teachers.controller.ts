@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { TeachersService } from './teachers.service';
-import { createTeacherSchema, updateTeacherSchema } from './teachers.schema';
+import { createTeacherSchema, updateTeacherSchema, provisionAccountSchema } from './teachers.schema';
 
 const teachersService = new TeachersService();
 
@@ -27,11 +27,11 @@ export class TeachersController {
   async create(req: Request, res: Response, next: NextFunction) {
     try {
       const validated = createTeacherSchema.parse({ body: req.body });
-      const teacher = await teachersService.createTeacher(validated.body, req.user!.id);
+      const teacher = await teachersService.createTeacher(validated.body);
       res.status(201).json({ data: teacher, meta: null });
     } catch (error: any) {
       if (error.name === 'ZodError') {
-        res.status(400).json({ error: { code: 'VALIDATION_ERROR', message: 'Invalid data', details: error.errors } });
+        res.status(400).json({ error: { code: 'VALIDATION_ERROR', message: 'Dữ liệu không hợp lệ', details: error.errors } });
         return;
       }
       next(error);
@@ -46,7 +46,22 @@ export class TeachersController {
       res.json({ data: teacher, meta: null });
     } catch (error: any) {
       if (error.name === 'ZodError') {
-        res.status(400).json({ error: { code: 'VALIDATION_ERROR', message: 'Invalid data', details: error.errors } });
+        res.status(400).json({ error: { code: 'VALIDATION_ERROR', message: 'Dữ liệu không hợp lệ', details: error.errors } });
+        return;
+      }
+      next(error);
+    }
+  }
+
+  async provisionAccount(req: Request, res: Response, next: NextFunction) {
+    try {
+      const id = parseInt(req.params.id);
+      const validated = provisionAccountSchema.parse({ body: req.body });
+      const teacher = await teachersService.provisionAccount(id, validated.body, req.user?.id);
+      res.json({ data: teacher, meta: null });
+    } catch (error: any) {
+      if (error.name === 'ZodError') {
+        res.status(400).json({ error: { code: 'VALIDATION_ERROR', message: 'Dữ liệu không hợp lệ', details: error.errors } });
         return;
       }
       next(error);

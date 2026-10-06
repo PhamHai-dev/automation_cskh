@@ -26,6 +26,7 @@ export interface Enrollment {
   handed_over_at?: string | null;
   account_created_at?: string | null;
   external_remaining_sessions?: number | null;
+  attended_previous_years?: number | null;
   start_date?: string | null;
   end_date?: string | null;
   status: 'NOT_STARTED' | 'STUDYING' | 'PAUSED' | 'FINISHED' | 'CANCELLED';

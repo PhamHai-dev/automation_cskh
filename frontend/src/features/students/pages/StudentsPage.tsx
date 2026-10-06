@@ -2,6 +2,9 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { studentsApi } from '../api/students.api';
 import { careApi } from '../../care/api/care.api';
 import { Student, CreateStudentDTO } from '../types/students.types';
+import { teachersApi } from '../../teachers/api/teachers.api';
+import { Teacher } from '../../teachers/types/teachers.types';
+import { CareSelectCell } from '../components/CareSelectCell';
 import { PageContainer } from '../../../components/common/PageContainer';
 import { PageHeader } from '../../../components/common/PageHeader';
 import { DataTable, Column } from '../../../components/common/DataTable';
@@ -10,6 +13,7 @@ import { Input } from '../../../components/ui/Input';
 import { Badge } from '../../../components/ui/Badge';
 import { Modal } from '../../../components/ui/Modal';
 import { useToast } from '../../../components/ui/Toast';
+import { HorizontalTabs } from '../../../components/ui/HorizontalTabs';
 import { useAuth } from '../../../contexts/AuthContext';
 import {
   Edit,
@@ -43,10 +47,12 @@ const ENROLLMENT_STATUS_LABELS: Record<
   string,
   { label: string; variant: 'info' | 'success' | 'warning' | 'danger' | 'neutral' }
 > = {
-  NOT_STARTED: { label: 'Chưa học', variant: 'neutral' },
+  WAITING_CLASS: { label: 'Chờ lớp', variant: 'warning' },
   STUDYING: { label: 'Đang học', variant: 'success' },
-  PAUSED: { label: 'Bảo lưu / Tạm dừng', variant: 'warning' },
-  FINISHED: { label: 'Hoàn thành', variant: 'info' },
+  PAUSED: { label: 'Bảo lưu', variant: 'warning' },
+  FINISHED: { label: 'Kết thúc', variant: 'neutral' },
+  UPCOMING: { label: 'Sắp học', variant: 'info' },
+  NOT_STARTED: { label: 'Chưa học', variant: 'neutral' },
   CANCELLED: { label: 'Đã hủy', variant: 'danger' },
 };
 
@@ -273,8 +279,8 @@ export const StudentsPage: React.FC = () => {
   const [students, setStudents] = useState<Student[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Care milestones state
-  const [configuredMilestones, setConfiguredMilestones] = useState<number[]>([1]);
+  // Care milestones state (mặc định các mốc chuẩn: 1, 3, 10, 15)
+  const [configuredMilestones, setConfiguredMilestones] = useState<number[]>([1, 3, 10, 15]);
   const [isAddMilestoneModalOpen, setIsAddMilestoneModalOpen] = useState(false);
   const [newMilestoneInput, setNewMilestoneInput] = useState<number | ''>('');
   const [addingMilestone, setAddingMilestone] = useState(false);
@@ -316,12 +322,14 @@ export const StudentsPage: React.FC = () => {
     level: 'N5',
     total_sessions: 30,
     external_remaining_sessions: 30,
+    attended_previous_years: '',
     class_model: 'Nhóm',
     sales_note: '',
 
     // 3. Lớp học & Lịch học
     class_name: '',
     teacher_name: '',
+    teacher_code: '',
     start_date: '',
     end_date: '',
     status: 'STUDYING',
@@ -339,6 +347,7 @@ export const StudentsPage: React.FC = () => {
     account_created_at: '',
   };
 
+  const [teachersList, setTeachersList] = useState<Teacher[]>([]);
   const [formData, setFormData] = useState<CreateStudentDTO>(initialFormData);
   const [formModalTab, setFormModalTab] = useState<'profile' | 'course' | 'class' | 'care'>('profile');
 
@@ -365,9 +374,19 @@ export const StudentsPage: React.FC = () => {
     }
   };
 
+  const fetchTeachers = async () => {
+    try {
+      const data = await teachersApi.list();
+      setTeachersList(data);
+    } catch (err) {
+      console.error('Lỗi khi tải danh sách giáo viên:', err);
+    }
+  };
+
   useEffect(() => {
     fetchStudents();
     fetchMilestones();
+    fetchTeachers();
   }, []);
 
   // Filtered students list matching Sheet 1
@@ -557,12 +576,17 @@ export const StudentsPage: React.FC = () => {
         level: enr?.level || 'N5',
         total_sessions: enr?.total_sessions ?? 30,
         external_remaining_sessions: enr?.external_remaining_sessions ?? 30,
+        attended_previous_years:
+          enr?.attended_previous_years !== undefined && enr?.attended_previous_years !== null
+            ? enr.attended_previous_years
+            : '',
         class_model: enr?.class_model || 'Nhóm',
         sales_note: enr?.sales_note || '',
 
         // 3. Lớp học & Lịch học
         class_name: ec?.class?.class_name || '',
         teacher_name: teacher?.name || '',
+        teacher_code: (teacher as any)?.code || (teacher as any)?.teacher_profile?.teacher_code || '',
         start_date: enr?.start_date ? new Date(enr.start_date).toISOString().split('T')[0] : '',
         end_date: enr?.end_date ? new Date(enr.end_date).toISOString().split('T')[0] : '',
         status: enr?.status || 'STUDYING',
@@ -607,6 +631,10 @@ export const StudentsPage: React.FC = () => {
         ...formData,
         date_of_birth: formData.date_of_birth || undefined,
         paid_at: formData.paid_at || undefined,
+        attended_previous_years:
+          formData.attended_previous_years !== '' && formData.attended_previous_years !== undefined
+            ? Number(formData.attended_previous_years)
+            : undefined,
         start_date: formData.start_date || undefined,
         end_date: formData.end_date || undefined,
         handed_over_at: formData.handed_over_at || undefined,
@@ -884,12 +912,68 @@ export const StudentsPage: React.FC = () => {
       header: 'Số buổi còn lại',
       cell: (item) => {
         const enr = item.enrollments?.[0];
-        const rem = enr?.external_remaining_sessions;
-        if (rem === null || rem === undefined) return <span className="text-slate-400">—</span>;
+        const ec = enr?.enrollment_classes?.[0];
+        if (!enr) return <span className="text-slate-400">—</span>;
+
+        // Tính các buổi đã học năm nay:
+        const currentYear = new Date().getFullYear();
+        const attendedThisYear =
+          ec?.attendance?.filter((a: any) => {
+            if (a.status !== 'ATTENDED') return false;
+            const sessionDate = a.class_session?.session_date
+              ? new Date(a.class_session.session_date)
+              : null;
+            return !sessionDate || sessionDate.getFullYear() === currentYear;
+          }).length || 0;
+
+        // Đã học năm trước (ưu tiên giá trị nhập/Excel, nếu không thì tự tính)
+        let attendedPrev = 0;
+        if (enr.attended_previous_years !== undefined && enr.attended_previous_years !== null) {
+          attendedPrev = Number(enr.attended_previous_years);
+        } else {
+          const attendedInPastYears =
+            ec?.attendance?.filter((a: any) => {
+              if (a.status !== 'ATTENDED') return false;
+              const sessionDate = a.class_session?.session_date
+                ? new Date(a.class_session.session_date)
+                : null;
+              return sessionDate && sessionDate.getFullYear() < currentYear;
+            }).length || 0;
+
+          if (attendedInPastYears > 0) {
+            attendedPrev = attendedInPastYears;
+          } else if (
+            enr.total_sessions &&
+            enr.external_remaining_sessions !== undefined &&
+            enr.external_remaining_sessions !== null
+          ) {
+            attendedPrev = Math.max(
+              0,
+              enr.total_sessions - Number(enr.external_remaining_sessions) - attendedThisYear,
+            );
+          }
+        }
+
+        // Số buổi còn lại thực tế
+        let rem: number;
+        if (enr.total_sessions) {
+          rem = enr.total_sessions - attendedPrev - attendedThisYear;
+        } else if (
+          enr.external_remaining_sessions !== null &&
+          enr.external_remaining_sessions !== undefined
+        ) {
+          rem = Number(enr.external_remaining_sessions) - attendedThisYear;
+        } else {
+          return <span className="text-slate-400">—</span>;
+        }
+
         const isDebt = rem < 0;
 
         return (
-          <div className="flex items-center gap-1 whitespace-nowrap">
+          <div
+            className="flex items-center gap-1 whitespace-nowrap"
+            title={`Tổng buổi: ${enr.total_sessions || 0} - Đã học năm trước: ${attendedPrev} - Đã học năm nay: ${attendedThisYear} = Còn lại: ${rem}`}
+          >
             <span
               className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold border ${
                 isDebt
@@ -993,7 +1077,7 @@ export const StudentsPage: React.FC = () => {
         const sched = ec?.class?.class_schedules?.[0];
         return (
           <span className="text-slate-600 text-xs whitespace-nowrap">
-            {sched?.schedule_pattern ? `Thứ ${sched.schedule_pattern}` : 'Thứ 2, 4, 6'}
+            {sched?.schedule_pattern ? `Thứ ${sched.schedule_pattern}` : '—'}
           </span>
         );
       },
@@ -1005,7 +1089,7 @@ export const StudentsPage: React.FC = () => {
         const teacher = ec?.class?.class_teachers?.[0]?.teacher;
         return (
           <span className="font-semibold text-slate-800 text-xs whitespace-nowrap">
-            {teacher?.name || 'Sensei Tanaka'}
+            {teacher?.name || '—'}
           </span>
         );
       },
@@ -1015,7 +1099,11 @@ export const StudentsPage: React.FC = () => {
       cell: (item) => {
         const ec = item.enrollments?.[0]?.enrollment_classes?.[0];
         const teacher = ec?.class?.class_teachers?.[0]?.teacher;
-        const teacherCode = (teacher as any)?.teacher_code || 'GV_01';
+        const teacherCode =
+          (teacher as any)?.code ||
+          (teacher as any)?.teacher_profile?.teacher_code ||
+          (teacher as any)?.teacher_code ||
+          '—';
         return <span className="text-slate-500 font-mono text-xs whitespace-nowrap">{teacherCode}</span>;
       },
     },
@@ -1028,21 +1116,93 @@ export const StudentsPage: React.FC = () => {
             className="font-semibold text-slate-800 text-xs whitespace-nowrap max-w-[150px] truncate block"
             title={ec?.class?.class_name || ''}
           >
-            {ec?.class?.class_name || 'Lớp N5 - K01 (246 Sáng)'}
+            {ec?.class?.class_name || '—'}
           </span>
         );
       },
     },
     {
       header: 'Đã học năm trước',
-      cell: () => <span className="text-slate-400 text-xs text-center block whitespace-nowrap">0</span>,
+      cell: (item) => {
+        const enr = item.enrollments?.[0];
+        const ec = enr?.enrollment_classes?.[0];
+
+        // 1. Nếu có giá trị lưu từ Excel hoặc người dùng nhập
+        if (enr?.attended_previous_years !== undefined && enr?.attended_previous_years !== null) {
+          return (
+            <span className="font-semibold text-slate-700 text-xs text-center block whitespace-nowrap">
+              {enr.attended_previous_years} buổi
+            </span>
+          );
+        }
+
+        // 2. Tự tính: Đếm các buổi ATTENDED có session_date trước năm hiện tại
+        const currentYear = new Date().getFullYear();
+        const attendedInPastYears =
+          ec?.attendance?.filter((a: any) => {
+            if (a.status !== 'ATTENDED') return false;
+            const sessionDate = a.class_session?.session_date
+              ? new Date(a.class_session.session_date)
+              : null;
+            return sessionDate && sessionDate.getFullYear() < currentYear;
+          }).length || 0;
+
+        if (attendedInPastYears > 0) {
+          return (
+            <span className="font-semibold text-slate-700 text-xs text-center block whitespace-nowrap">
+              {attendedInPastYears} buổi
+            </span>
+          );
+        }
+
+        // 3. Fallback: Nếu là học viên cũ import không có log chi tiết:
+        // Đã học năm trước = max(0, Tổng buổi - Còn lại ban đầu - Đã học năm nay)
+        const attendedThisYear =
+          ec?.attendance?.filter((a: any) => {
+            if (a.status !== 'ATTENDED') return false;
+            const sessionDate = a.class_session?.session_date
+              ? new Date(a.class_session.session_date)
+              : null;
+            return !sessionDate || sessionDate.getFullYear() === currentYear;
+          }).length || 0;
+
+        if (
+          enr?.total_sessions &&
+          enr?.external_remaining_sessions !== undefined &&
+          enr?.external_remaining_sessions !== null
+        ) {
+          const calculatedPrev = Math.max(
+            0,
+            enr.total_sessions - Number(enr.external_remaining_sessions) - attendedThisYear,
+          );
+          if (calculatedPrev > 0) {
+            return (
+              <span
+                className="font-medium text-blue-700 bg-blue-50 px-2 py-0.5 rounded text-xs text-center block whitespace-nowrap"
+                title="Tự động tính: Tổng số buổi - Số buổi còn lại ban đầu - Đã học năm nay"
+              >
+                {calculatedPrev} buổi
+              </span>
+            );
+          }
+        }
+
+        return <span className="text-slate-400 text-xs text-center block whitespace-nowrap">0</span>;
+      },
     },
     {
       header: 'Đã học 2026',
       cell: (item) => {
         const ec = item.enrollments?.[0]?.enrollment_classes?.[0];
+        const currentYear = new Date().getFullYear();
         const attendedCount =
-          ec?.attendance?.filter((a: any) => a.status === 'ATTENDED').length || 0;
+          ec?.attendance?.filter((a: any) => {
+            if (a.status !== 'ATTENDED') return false;
+            const sessionDate = a.class_session?.session_date
+              ? new Date(a.class_session.session_date)
+              : null;
+            return !sessionDate || sessionDate.getFullYear() === currentYear;
+          }).length || 0;
         return (
           <span className="font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded text-xs text-center block whitespace-nowrap">
             {attendedCount} buổi
@@ -1123,9 +1283,9 @@ export const StudentsPage: React.FC = () => {
     // --- DYNAMIC CARE SESSION COLUMNS (AO ➔ BC: Buổi 1, Buổi N...) ---
     ...activeMilestones.map((sessionNum) => ({
       header: (
-        <div key={`head-sess-${sessionNum}`} className="flex items-center gap-1 text-emerald-800">
-          <MessageSquare className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-          <span>Chăm sóc buổi {sessionNum}</span>
+        <div key={`head-sess-${sessionNum}`} className="flex items-center gap-1 text-slate-800 whitespace-nowrap">
+          <MessageSquare className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+          <span>Nội dung chăm sóc sau buổi {sessionNum}</span>
         </div>
       ),
       cell: (item: Student) => {
@@ -1133,11 +1293,9 @@ export const StudentsPage: React.FC = () => {
         if (!enr) return <span className="text-slate-400">—</span>;
         const log = enr.care_logs?.find((cl) => cl.after_session_number === sessionNum);
         return (
-          <InlineEditableCell
+          <CareSelectCell
             value={log?.content}
-            multiline
-            placeholder={`Nhập nhận xét sau buổi ${sessionNum}...`}
-            className="bg-emerald-50/40 border border-emerald-100 hover:bg-emerald-50"
+            placeholder="Chọn phản hồi..."
             onSave={(newVal) => handleSaveSessionCareLog(enr.id, sessionNum, newVal)}
           />
         );
@@ -1217,23 +1375,22 @@ export const StudentsPage: React.FC = () => {
       {/* Page Header */}
       <PageHeader
         title="Danh sách Học viên (Chuẩn Sheet 1)"
-        description="Đầy đủ thông tin học viên, tiến độ gói học, nợ buổi âm và nhật ký chăm sóc chia theo 2 Tab nghiệp vụ."
         actions={
           <div className="flex items-center gap-2">
             {activeTab === 'care_reports' && (
               <Button
                 variant="outline"
-                size="md"
+                size="sm"
                 onClick={() => setIsAddMilestoneModalOpen(true)}
                 leftIcon={<PlusCircle className="w-4 h-4 text-emerald-600" />}
                 className="border-emerald-300 text-emerald-800 hover:bg-emerald-50"
               >
-                + Thêm mốc buổi CS
+                Thêm mốc buổi CS
               </Button>
             )}
             <Button
               variant="primary"
-              size="md"
+              size="sm"
               onClick={() => openModal()}
               leftIcon={<Plus className="w-4 h-4" />}
             >
@@ -1243,40 +1400,26 @@ export const StudentsPage: React.FC = () => {
         }
       />
 
-      {/* Tab Navigation Switcher */}
-      <div className="flex items-center gap-3 mb-5 border-b border-border/80">
-        <button
-          type="button"
-          onClick={() => setActiveTab('students')}
-          className={`flex items-center gap-2 px-5 py-3 text-xs sm:text-sm font-bold border-b-2 transition-all ${
-            activeTab === 'students'
-              ? 'border-primary text-primary'
-              : 'border-transparent text-text-muted hover:text-text-primary'
-          }`}
-        >
-          <Users className="w-4 h-4" />
-          <span>Tab 1: Hồ sơ Học viên</span>
-          <span className="px-2 py-0.5 rounded-full text-[10px] bg-primary-soft text-primary font-bold">
-            {filteredStudents.length} HV
-          </span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setActiveTab('care_reports')}
-          className={`flex items-center gap-2 px-5 py-3 text-xs sm:text-sm font-bold border-b-2 transition-all ${
-            activeTab === 'care_reports'
-              ? 'border-emerald-600 text-emerald-700'
-              : 'border-transparent text-text-muted hover:text-text-primary'
-          }`}
-        >
-          <FileText className="w-4 h-4 text-emerald-600" />
-          <span>Tab 2: Báo cáo Học tập & Chăm sóc</span>
-          <span className="px-2 py-0.5 rounded-full text-[10px] bg-emerald-100 text-emerald-800 font-bold">
-            Excel Inline Edit
-          </span>
-        </button>
-      </div>
+      <HorizontalTabs
+        ariaLabel="Nội dung danh sách học viên"
+        value={activeTab}
+        onChange={setActiveTab}
+        className="mb-5"
+        items={[
+          {
+            value: 'students',
+            label: 'Hồ sơ học viên',
+            icon: <Users />,
+            badge: `${filteredStudents.length} HV`,
+          },
+          {
+            value: 'care_reports',
+            label: 'Báo cáo học tập & chăm sóc',
+            icon: <FileText />,
+            badge: 'Chỉnh sửa trực tiếp',
+          },
+        ]}
+      />
 
       {/* Filter and Tool Bar (Synced across both Tabs) */}
       <div className="mb-5 p-4 bg-surface rounded-2xl border border-border/80 shadow-soft flex flex-wrap items-center justify-between gap-4">
@@ -1315,9 +1458,11 @@ export const StudentsPage: React.FC = () => {
             className="text-xs font-medium px-3 py-1.5 bg-surface-muted border border-border/80 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 text-text-primary min-w-[150px]"
           >
             <option value="">-- Tất cả trạng thái --</option>
+            <option value="WAITING_CLASS">Chờ lớp</option>
             <option value="STUDYING">Đang học</option>
-            <option value="PAUSED">Bảo lưu / Tạm dừng</option>
-            <option value="FINISHED">Hoàn thành</option>
+            <option value="PAUSED">Bảo lưu</option>
+            <option value="FINISHED">Kết thúc</option>
+            <option value="UPCOMING">Sắp học</option>
             <option value="NOT_STARTED">Chưa học</option>
           </select>
 
@@ -1681,60 +1826,18 @@ export const StudentsPage: React.FC = () => {
           }
         >
           <form onSubmit={handleSubmit} className="space-y-4">
-            {/* Form Sub-Tabs */}
-            <div className="flex flex-wrap gap-1.5 p-1 bg-slate-100 rounded-xl border border-slate-200/80 text-xs font-semibold">
-              <button
-                type="button"
-                onClick={() => setFormModalTab('profile')}
-                className={`flex items-center gap-1.5 px-3 py-2 rounded-lg transition-all ${
-                  formModalTab === 'profile'
-                    ? 'bg-white text-blue-700 shadow-xs font-bold'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
-                }`}
-              >
-                <Users className="w-3.5 h-3.5" />
-                <span>1. Hồ sơ & Liên hệ</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setFormModalTab('course')}
-                className={`flex items-center gap-1.5 px-3 py-2 rounded-lg transition-all ${
-                  formModalTab === 'course'
-                    ? 'bg-white text-blue-700 shadow-xs font-bold'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
-                }`}
-              >
-                <BookOpen className="w-3.5 h-3.5" />
-                <span>2. Khóa học & Tài chính</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setFormModalTab('class')}
-                className={`flex items-center gap-1.5 px-3 py-2 rounded-lg transition-all ${
-                  formModalTab === 'class'
-                    ? 'bg-white text-blue-700 shadow-xs font-bold'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
-                }`}
-              >
-                <Calendar className="w-3.5 h-3.5" />
-                <span>3. Lớp học & Lịch học</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setFormModalTab('care')}
-                className={`flex items-center gap-1.5 px-3 py-2 rounded-lg transition-all ${
-                  formModalTab === 'care'
-                    ? 'bg-white text-blue-700 shadow-xs font-bold'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
-                }`}
-              >
-                <MessageSquare className="w-3.5 h-3.5" />
-                <span>4. Báo cáo & CSKH</span>
-              </button>
-            </div>
+            <HorizontalTabs
+              ariaLabel="Nhóm thông tin học viên"
+              value={formModalTab}
+              onChange={setFormModalTab}
+              size="sm"
+              items={[
+                { value: 'profile', label: 'Hồ sơ & liên hệ', icon: <Users /> },
+                { value: 'course', label: 'Khóa học & tài chính', icon: <BookOpen /> },
+                { value: 'class', label: 'Lớp học & lịch học', icon: <Calendar /> },
+                { value: 'care', label: 'Báo cáo & CSKH', icon: <MessageSquare /> },
+              ]}
+            />
 
             {/* TAB 1: HỒ SƠ & LIÊN HỆ */}
             {formModalTab === 'profile' && (
@@ -1941,7 +2044,7 @@ export const StudentsPage: React.FC = () => {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
                   <div>
                     <label className="block font-medium text-slate-700 mb-1">Tổng số buổi</label>
                     <Input
@@ -1954,14 +2057,27 @@ export const StudentsPage: React.FC = () => {
                   </div>
                   <div>
                     <label className="block font-medium text-slate-700 mb-1">
-                      Số buổi còn lại (Hỗ trợ âm nợ)
+                      Số buổi còn lại
                     </label>
                     <Input
                       type="number"
-                      placeholder="30 (hoặc -1, -2 nếu nợ buổi)"
+                      placeholder="30 (hoặc âm nợ)"
                       value={formData.external_remaining_sessions ?? ''}
                       onChange={(e) =>
                         setFormData({ ...formData, external_remaining_sessions: e.target.value })
+                      }
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-medium text-slate-700 mb-1">
+                      Đã học năm trước
+                    </label>
+                    <Input
+                      type="number"
+                      placeholder="Ví dụ: 35"
+                      value={formData.attended_previous_years ?? ''}
+                      onChange={(e) =>
+                        setFormData({ ...formData, attended_previous_years: e.target.value })
                       }
                     />
                   </div>
@@ -1995,7 +2111,7 @@ export const StudentsPage: React.FC = () => {
             {/* TAB 3: LỚP HỌC & LỊCH HỌC */}
             {formModalTab === 'class' && (
               <div className="space-y-4 pt-1 animate-fadeIn text-xs">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div>
                     <label className="block font-medium text-slate-700 mb-1">Tên lớp học</label>
                     <Input
@@ -2006,13 +2122,59 @@ export const StudentsPage: React.FC = () => {
                   </div>
                   <div>
                     <label className="block font-medium text-slate-700 mb-1">
+                      Mã giáo viên
+                    </label>
+                    <Input
+                      list="teacher-codes-datalist"
+                      placeholder="Ví dụ: GV01, GV_TANAKA"
+                      value={formData.teacher_code || ''}
+                      onChange={(e) => {
+                        const codeVal = e.target.value;
+                        const matched = teachersList.find(
+                          (t) => t.code?.toLowerCase() === codeVal.trim().toLowerCase()
+                        );
+                        setFormData((prev) => ({
+                          ...prev,
+                          teacher_code: codeVal,
+                          ...(matched ? { teacher_name: matched.name } : {}),
+                        }));
+                      }}
+                    />
+                    <datalist id="teacher-codes-datalist">
+                      {teachersList.map((t) => (
+                        <option key={t.id} value={t.code}>
+                          {t.name}
+                        </option>
+                      ))}
+                    </datalist>
+                  </div>
+                  <div>
+                    <label className="block font-medium text-slate-700 mb-1">
                       Giáo viên phụ trách
                     </label>
                     <Input
+                      list="teacher-names-datalist"
                       placeholder="Ví dụ: Sensei Tanaka Kenji"
                       value={formData.teacher_name || ''}
-                      onChange={(e) => setFormData({ ...formData, teacher_name: e.target.value })}
+                      onChange={(e) => {
+                        const nameVal = e.target.value;
+                        const matched = teachersList.find(
+                          (t) => t.name?.toLowerCase() === nameVal.trim().toLowerCase()
+                        );
+                        setFormData((prev) => ({
+                          ...prev,
+                          teacher_name: nameVal,
+                          ...(matched ? { teacher_code: matched.code } : {}),
+                        }));
+                      }}
                     />
+                    <datalist id="teacher-names-datalist">
+                      {teachersList.map((t) => (
+                        <option key={t.id} value={t.name}>
+                          {t.code ? `[${t.code}]` : ''}
+                        </option>
+                      ))}
+                    </datalist>
                   </div>
                 </div>
 
@@ -2044,10 +2206,12 @@ export const StudentsPage: React.FC = () => {
                       onChange={(e) => setFormData({ ...formData, status: e.target.value })}
                       className="w-full text-xs px-3 py-2 bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20"
                     >
+                      <option value="WAITING_CLASS">Chờ lớp (WAITING_CLASS)</option>
                       <option value="STUDYING">Đang học (STUDYING)</option>
+                      <option value="PAUSED">Bảo lưu (PAUSED)</option>
+                      <option value="FINISHED">Kết thúc (FINISHED)</option>
+                      <option value="UPCOMING">Sắp học (UPCOMING)</option>
                       <option value="NOT_STARTED">Chưa học (NOT_STARTED)</option>
-                      <option value="PAUSED">Bảo lưu / Tạm dừng (PAUSED)</option>
-                      <option value="FINISHED">Hoàn thành (FINISHED)</option>
                       <option value="CANCELLED">Đã hủy (CANCELLED)</option>
                     </select>
                   </div>
@@ -2208,8 +2372,8 @@ export const StudentsPage: React.FC = () => {
                       else if (formModalTab === 'class') setFormModalTab('course');
                       else if (formModalTab === 'care') setFormModalTab('class');
                     }}
+                    leftIcon={<ChevronLeft className="w-3.5 h-3.5" />}
                   >
-                    <ChevronLeft className="w-3.5 h-3.5 mr-1" />
                     Quay lại
                   </Button>
                 )}
@@ -2223,9 +2387,9 @@ export const StudentsPage: React.FC = () => {
                       else if (formModalTab === 'course') setFormModalTab('class');
                       else if (formModalTab === 'class') setFormModalTab('care');
                     }}
+                    rightIcon={<ChevronRight className="w-3.5 h-3.5" />}
                   >
                     Tiếp theo
-                    <ChevronRight className="w-3.5 h-3.5 ml-1" />
                   </Button>
                 )}
               </div>
@@ -2245,9 +2409,9 @@ export const StudentsPage: React.FC = () => {
                   variant="primary"
                   size="sm"
                   isLoading={submitting}
+                  leftIcon={<CheckCircle2 className="w-4 h-4" />}
                   className="px-5 font-bold shadow-md shadow-blue-500/20"
                 >
-                  <CheckCircle2 className="w-4 h-4 mr-1.5" />
                   {editingStudent ? 'Cập nhật hồ sơ' : 'Lưu học viên mới'}
                 </Button>
               </div>

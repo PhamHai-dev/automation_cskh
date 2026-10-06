@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { classSessionsApi, attendanceApi } from '../api/sessions.api';
 import { classesApi } from '../api/classes.api';
 import {
@@ -13,12 +13,14 @@ import { PageHeader } from '../../../components/common/PageHeader';
 import { Button } from '../../../components/ui/Button';
 import { Badge } from '../../../components/ui/Badge';
 import { useToast } from '../../../components/ui/Toast';
+import { HorizontalTabs } from '../../../components/ui/HorizontalTabs';
 import { AttendanceMatrix, StudentRow } from '../components/AttendanceMatrix';
 import {
   CalendarDays,
   CheckSquare,
   Save,
   Check,
+  AlertTriangle,
 } from 'lucide-react';
 
 const STATUS_OPTIONS: {
@@ -97,6 +99,7 @@ const StatusBadgeInline = ({ status }: { status: AttendanceStatus }) => {
 
 export const AttendanceSheetPage = () => {
   const { classId, sessionId } = useParams<{ classId: string; sessionId: string }>();
+  const navigate = useNavigate();
   const toast = useToast();
 
   const clsId = parseInt(classId || '0', 10);
@@ -111,6 +114,7 @@ export const AttendanceSheetPage = () => {
   const [allAttendances, setAllAttendances] = useState<Attendance[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [forbiddenError, setForbiddenError] = useState<string | null>(null);
 
   // Track local changes for single session view
   const [edits, setEdits] = useState<Record<number, AttendanceStatus>>({});
@@ -119,6 +123,7 @@ export const AttendanceSheetPage = () => {
   const fetchData = async () => {
     try {
       setLoading(true);
+      setForbiddenError(null);
       const [clsData, sessionData, attendData, sessionsList] = await Promise.all([
         classesApi.get(clsId),
         sessId ? classSessionsApi.get(clsId, sessId) : Promise.resolve(null),
@@ -139,7 +144,15 @@ export const AttendanceSheetPage = () => {
       );
       setAllAttendances(allAtts.flat());
     } catch (err: any) {
-      toast.error(err.response?.data?.error?.message || 'Không thể tải dữ liệu điểm danh');
+      if (err.response?.status === 403) {
+        setForbiddenError(
+          err.response?.data?.error?.message ||
+          err.response?.data?.message ||
+          'Bạn không được phân công phụ trách lớp học này nên không thể xem hoặc thực hiện điểm danh.'
+        );
+      } else {
+        toast.error(err.response?.data?.error?.message || 'Không thể tải dữ liệu điểm danh');
+      }
     } finally {
       setLoading(false);
     }
@@ -158,21 +171,34 @@ export const AttendanceSheetPage = () => {
         const student = ec.enrollment?.student;
         const enrollment = ec.enrollment;
         const teacher = cls.class_teachers?.[0]?.teacher;
+        const schedule = cls.class_schedules?.[0];
 
         studentMap.set(ec.id, {
           enrollment_class_id: ec.id,
           student_id: student?.id || ec.id,
           external_id: student?.external_id || `HV_${student?.id || ec.id}`,
           full_name: student?.full_name || `Học viên #${ec.id}`,
+          package_name: enrollment?.package?.name || enrollment?.package?.code || 'Gói học',
+          course_content: enrollment?.course_content || 'Thường',
+          total_sessions: enrollment?.total_sessions || 0,
+          level: enrollment?.level || cls.level || 'Thường',
+          email: student?.email || '',
+          model_type: cls.model_type || enrollment?.class_model || '1:1',
+          remaining_sessions: enrollment?.external_remaining_sessions,
+          attended_previous_years: enrollment?.attended_previous_years ?? 0,
           status: enrollment?.status || 'STUDYING',
           start_date: enrollment?.start_date,
           end_date: enrollment?.end_date,
-          start_time: '20h00',
-          schedule_pattern: '246',
-          duration_minutes: 30,
-          teacher_name: teacher?.name || 'Thầy John',
-          teacher_code: (teacher as any)?.teacher_code || 'GV_01',
-          class_name: cls.class_name || 'Lớp học',
+          start_time: schedule?.start_time || '20h00',
+          schedule_pattern: schedule?.schedule_pattern || '246',
+          duration_minutes: schedule?.duration_minutes || 30,
+          teacher_name: teacher?.name || '—',
+          teacher_code:
+            (teacher as any)?.code ||
+            (teacher as any)?.teacher_profile?.teacher_code ||
+            (teacher as any)?.teacher_code ||
+            '—',
+          class_name: cls.class_name || '—',
         });
       });
     }
@@ -184,21 +210,34 @@ export const AttendanceSheetPage = () => {
         const student = att.enrollment_class?.enrollment?.student;
         const enrollment = att.enrollment_class?.enrollment as any;
         const teacher = cls?.class_teachers?.[0]?.teacher;
+        const schedule = cls?.class_schedules?.[0];
 
         studentMap.set(ecId, {
           enrollment_class_id: ecId,
           student_id: student?.id || ecId,
           external_id: student?.external_id || String(student?.id || ecId),
           full_name: student?.full_name || `Học viên #${ecId}`,
+          package_name: enrollment?.package?.name || enrollment?.package?.code || 'Gói học',
+          course_content: enrollment?.course_content || 'Thường',
+          total_sessions: enrollment?.total_sessions || 0,
+          level: enrollment?.level || cls?.level || 'Thường',
+          email: student?.email || '',
+          model_type: cls?.model_type || enrollment?.class_model || '1:1',
+          remaining_sessions: enrollment?.external_remaining_sessions,
+          attended_previous_years: enrollment?.attended_previous_years ?? 0,
           status: enrollment?.status || 'STUDYING',
           start_date: enrollment?.start_date,
           end_date: enrollment?.end_date,
-          start_time: '20h00',
-          schedule_pattern: '246',
-          duration_minutes: 30,
-          teacher_name: teacher?.name || 'Thầy John',
-          teacher_code: (teacher as any)?.teacher_code || 'GV_01',
-          class_name: cls?.class_name || 'Lớp học',
+          start_time: schedule?.start_time || '20h00',
+          schedule_pattern: schedule?.schedule_pattern || '246',
+          duration_minutes: schedule?.duration_minutes || 30,
+          teacher_name: teacher?.name || '—',
+          teacher_code:
+            (teacher as any)?.code ||
+            (teacher as any)?.teacher_profile?.teacher_code ||
+            (teacher as any)?.teacher_code ||
+            '—',
+          class_name: cls?.class_name || '—',
         });
       }
     });
@@ -290,15 +329,43 @@ export const AttendanceSheetPage = () => {
 
   const hasChanges = Object.keys(edits).length > 0;
 
+  if (forbiddenError) {
+    return (
+      <PageContainer>
+        <PageHeader
+          title="Điểm danh Lớp học"
+          backUrl="/classes"
+          breadcrumbs={[
+            { label: 'Lớp học phụ trách', href: '/classes' },
+            { label: 'Điểm danh' },
+          ]}
+        />
+        <div className="bg-surface rounded-2xl border border-rose-200/80 p-8 text-center max-w-lg mx-auto my-12 shadow-soft">
+          <div className="w-14 h-14 bg-rose-50 text-rose-600 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-rose-100 shadow-2xs">
+            <AlertTriangle className="w-7 h-7" />
+          </div>
+          <h2 className="text-lg font-bold text-slate-900 mb-2">Không có quyền truy cập lớp học</h2>
+          <p className="text-sm text-slate-600 mb-6 leading-relaxed">
+            {forbiddenError}
+          </p>
+          <div className="flex justify-center gap-3">
+            <Button
+              variant="primary"
+              size="md"
+              onClick={() => navigate('/classes')}
+            >
+              Về danh sách lớp phụ trách
+            </Button>
+          </div>
+        </div>
+      </PageContainer>
+    );
+  }
+
   return (
     <PageContainer>
       <PageHeader
         title={cls ? `Điểm danh Lớp ${cls.class_name}` : 'Điểm danh Lớp học'}
-        description={
-          session
-            ? `Buổi số ${session.session_number} • Ngày ${new Date(session.session_date).toLocaleDateString('vi-VN')} • Mã lớp: ${cls?.class_code || '—'}`
-            : `Mã lớp: ${cls?.class_code || '—'} • Mô hình: ${cls?.model_type || '—'}`
-        }
         backUrl={`/classes/${clsId}/sessions`}
         breadcrumbs={[
           { label: 'Quản lý Lớp học', href: '/classes' },
@@ -331,39 +398,27 @@ export const AttendanceSheetPage = () => {
         }
       />
 
-      {/* Mode Switcher Tabs */}
-      <div className="flex items-center gap-2 mb-6 border-b border-border/80">
-        <button
-          type="button"
-          onClick={() => setActiveTab('matrix')}
-          className={`flex items-center gap-2 px-4 py-3 text-xs sm:text-sm font-bold border-b-2 transition-all ${
-            activeTab === 'matrix'
-              ? 'border-primary text-primary'
-              : 'border-transparent text-text-muted hover:text-text-primary'
-          }`}
-        >
-          <CalendarDays className="w-4 h-4" />
-          <span>Ma trận Điểm danh theo Ngày</span>
-          <span className="px-2 py-0.5 rounded-full text-[10px] bg-primary-soft text-primary font-bold">
-            Chuẩn mới (Có ô tích chọn)
-          </span>
-        </button>
-
-        {sessId ? (
-          <button
-            type="button"
-            onClick={() => setActiveTab('session')}
-            className={`flex items-center gap-2 px-4 py-3 text-xs sm:text-sm font-bold border-b-2 transition-all ${
-              activeTab === 'session'
-                ? 'border-primary text-primary'
-                : 'border-transparent text-text-muted hover:text-text-primary'
-            }`}
-          >
-            <CheckSquare className="w-4 h-4" />
-            <span>Phiếu Buổi #{session?.session_number || sessId}</span>
-          </button>
-        ) : null}
-      </div>
+      <HorizontalTabs
+        ariaLabel="Chế độ điểm danh"
+        value={activeTab}
+        onChange={setActiveTab}
+        className="mb-6"
+        items={[
+          {
+            value: 'matrix',
+            label: 'Ma trận theo ngày',
+            icon: <CalendarDays />,
+            badge: 'Có tích chọn',
+          },
+          ...(sessId
+            ? [{
+                value: 'session' as const,
+                label: `Phiếu buổi #${session?.session_number || sessId}`,
+                icon: <CheckSquare />,
+              }]
+            : []),
+        ]}
+      />
 
       {/* Tab 1: Full Attendance Matrix View */}
       {activeTab === 'matrix' && cls && (
@@ -540,6 +595,22 @@ export const AttendanceSheetPage = () => {
                                 </button>
                               );
                             })}
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                try {
+                                  await attendanceApi.remove(clsId, sessId, att.id);
+                                  toast.success('Đã reset trạng thái điểm danh');
+                                  fetchData();
+                                } catch (err: any) {
+                                  toast.error('Lỗi khi reset điểm danh: ' + (err.response?.data?.error?.message || err.message));
+                                }
+                              }}
+                              className="px-2 py-1 rounded-lg text-xs font-semibold border border-border/60 bg-surface-muted text-text-muted hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 transition-all"
+                              title="Chuyển sang Chưa điểm danh (-)"
+                            >
+                              -
+                            </button>
                           </div>
                         </td>
                       </tr>

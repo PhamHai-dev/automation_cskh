@@ -32,7 +32,9 @@ async function seedMatrixTestData() {
     });
   }
 
-  let teacher = await prisma.user.findFirst({ where: { email: 'tanaka@example.com' } });
+  let teacher = await prisma.user.findFirst({
+    where: { OR: [{ email: 'tanaka@example.com' }, { email: 'teacher@gmail.com' }] },
+  });
   if (!teacher) {
     teacher = await prisma.user.create({
       data: {
@@ -46,18 +48,20 @@ async function seedMatrixTestData() {
   }
 
   // Teacher Profile
-  await prisma.teacherProfile.upsert({
-    where: { user_id: teacher.id },
-    create: {
-      user_id: teacher.id,
-      teacher_code: 'GV_JP01',
-      teacher_type: 'JAPANESE',
-    },
-    update: {
-      teacher_code: 'GV_JP01',
-      teacher_type: 'JAPANESE',
-    },
+  const existingTp = await prisma.teacherProfile.findUnique({
+    where: { teacher_code: 'GV_JP01' },
   });
+  if (existingTp) {
+    teacher = (await prisma.user.findUnique({ where: { id: existingTp.user_id } })) || teacher;
+  } else {
+    await prisma.teacherProfile.create({
+      data: {
+        user_id: teacher.id,
+        teacher_code: 'GV_JP01',
+        teacher_type: 'JAPANESE',
+      },
+    });
+  }
 
   // Second Teacher
   const teacher2 = await prisma.user.upsert({

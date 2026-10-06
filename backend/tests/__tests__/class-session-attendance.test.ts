@@ -8,6 +8,8 @@ afterAll(async () => {
 
 describe('ClassSession + Attendance Integration', () => {
   let testUserId: number;
+  let teacherId: number;
+  let teacherUserId: number;
   let testClassId: number;
   let testStudentId: number;
   let testEnrollmentId: number;
@@ -25,7 +27,7 @@ describe('ClassSession + Attendance Integration', () => {
     });
     testUserId = user.id;
 
-    const teacher = await prisma.user.create({
+    const teacherUser = await prisma.user.create({
       data: {
         name: 'Test Teacher',
         email: `test-teacher-${Date.now()}@test.com`,
@@ -33,6 +35,19 @@ describe('ClassSession + Attendance Integration', () => {
         roles: ['TEACHER'],
       },
     });
+
+    const teacher = await prisma.teacher.create({
+      data: {
+        code: `T-${Date.now()}`,
+        name: 'Test Teacher',
+        email: teacherUser.email,
+        teacher_type: 'OTHER',
+        active: true,
+        user_id: teacherUser.id,
+      },
+    });
+    teacherId = teacher.id;
+    teacherUserId = teacherUser.id;
 
     const cls = await prisma.class.create({
       data: {
@@ -109,6 +124,8 @@ describe('ClassSession + Attendance Integration', () => {
     await prisma.classTeacher.deleteMany({ where: { class_id: testClassId } });
     await prisma.class.delete({ where: { id: testClassId } }).catch(() => {});
     await prisma.user.delete({ where: { id: testUserId } }).catch(() => {});
+    await prisma.teacher.delete({ where: { id: teacherId } }).catch(() => {});
+    await prisma.user.delete({ where: { id: teacherUserId } }).catch(() => {});
   });
 
   describe('ClassSession CRUD', () => {

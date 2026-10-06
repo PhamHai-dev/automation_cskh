@@ -98,27 +98,24 @@ export const ZaloMonitorPage: React.FC = () => {
               variant="outline"
               size="sm"
               onClick={() => emit('zalo:test-ping', { ts: Date.now() })}
-              className="flex items-center gap-1"
+              leftIcon={<Wifi className="w-3.5 h-3.5" />}
             >
-              <Wifi className="w-3.5 h-3.5" />
               Test Ping
             </Button>
             <Button
               variant="outline"
               size="sm"
               onClick={() => setPaused((p) => !p)}
-              className="flex items-center gap-1"
+              leftIcon={paused ? <Play className="w-3.5 h-3.5" /> : <Pause className="w-3.5 h-3.5" />}
             >
-              {paused ? <Play className="w-3.5 h-3.5" /> : <Pause className="w-3.5 h-3.5" />}
               {paused ? 'Resume' : 'Pause'}
             </Button>
             <Button
               variant="outline"
               size="sm"
               onClick={clearEvents}
-              className="flex items-center gap-1"
+              leftIcon={<Trash2 className="w-3.5 h-3.5" />}
             >
-              <Trash2 className="w-3.5 h-3.5" />
               Clear
             </Button>
           </div>
