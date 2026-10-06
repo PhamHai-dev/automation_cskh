@@ -13,6 +13,33 @@ security:
   - bearerAuth: []
 
 paths:
+  /api/v1/settings/auto-attendance/run:
+    post:
+      summary: Run today's auto-attendance cycle and retry FAILED executions (ADMIN only)
+      description: Scheduler never retries automatically. Manual runs atomically claim FAILED executions for today; COMPLETED, SKIPPED and PROCESSING executions are not rerun. Existing attendance is never overwritten.
+      tags: [Attendance]
+      responses:
+        '200':
+          description: Cycle completed; inspect failed_count for per-schedule failures.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      processed_schedules: { type: integer }
+                      attended_count: { type: integer }
+                      skipped_count: { type: integer }
+                      failed_count: { type: integer }
+                      issues_created: { type: integer }
+                  meta: { type: 'null' }
+        '401':
+          description: Authentication required
+        '403':
+          description: ADMIN role required
+
   /health:
     get:
       security: []

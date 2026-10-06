@@ -2,6 +2,11 @@ import { z } from 'zod';
 import dotenv from 'dotenv';
 
 // Load .env file (tự động tìm trong thư mục backend)
+// Khi chạy test (NODE_ENV=test), nạp .env.test trước để integration test dùng
+// database riêng, tránh ghi/xóa nhầm dữ liệu development.
+if (process.env.NODE_ENV === 'test') {
+  dotenv.config({ path: '.env.test' });
+}
 dotenv.config();
 
 const envSchema = z.object({

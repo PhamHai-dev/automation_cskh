@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { zaloApi } from '../api/zalo.api';
 import type { ZaloAccount } from '../types/zalo.types';
@@ -56,6 +56,8 @@ export const ZaloGroupsPage: React.FC = () => {
   const [blocked, setBlocked] = useState<any[]>([]);
   const [pending, setPending] = useState<any[]>([]);
   const [loadingDetail, setLoadingDetail] = useState(false);
+  const [detailError, setDetailError] = useState<string | null>(null);
+  const detailRequest = useRef(0);
 
   // Dialogs
   const [showSettingsDialog, setShowSettingsDialog] = useState(false);
@@ -111,23 +113,31 @@ export const ZaloGroupsPage: React.FC = () => {
   // ─── Select group → load detail ────────────────────────────────────────
   const onSelectGroup = useCallback(async (groupId: string) => {
     if (!selectedAccountId || !groupId) return;
+    const requestId = ++detailRequest.current;
     setSelectedGroupId(groupId);
+    setSelectedGroup(null);
+    setMembers([]);
+    setBlocked([]);
+    setPending([]);
+    setDetailError(null);
     setLoadingDetail(true);
     try {
-      const [detail, memb, blkd, pend] = await Promise.all([
-        zaloApi.getGroupDetail(selectedAccountId, groupId).catch(() => null),
-        zaloApi.getGroupMembers(selectedAccountId, groupId).catch(() => []),
-        zaloApi.getGroupBlocked(selectedAccountId, groupId).catch(() => []),
-        zaloApi.getGroupPending(selectedAccountId, groupId).catch(() => []),
+      const [detail, memb, blkd, pend] = await Promise.allSettled([
+        zaloApi.getGroupDetail(selectedAccountId, groupId),
+        zaloApi.getGroupMembers(selectedAccountId, groupId),
+        zaloApi.getGroupBlocked(selectedAccountId, groupId),
+        zaloApi.getGroupPending(selectedAccountId, groupId),
       ]);
-      setSelectedGroup(detail);
-      setMembers(Array.isArray(memb) ? memb : []);
-      setBlocked(Array.isArray(blkd) ? blkd : []);
-      setPending(Array.isArray(pend) ? pend : []);
-    } catch {
-      setSelectedGroup(null);
+      if (requestId !== detailRequest.current) return;
+      setSelectedGroup(detail.status === 'fulfilled' ? detail.value : null);
+      setMembers(memb.status === 'fulfilled' && Array.isArray(memb.value) ? memb.value : []);
+      setBlocked(blkd.status === 'fulfilled' && Array.isArray(blkd.value) ? blkd.value : []);
+      setPending(pend.status === 'fulfilled' && Array.isArray(pend.value) ? pend.value : []);
+      if (detail.status === 'rejected' || memb.status === 'rejected') {
+        setDetailError('Không tải được đầy đủ chi tiết nhóm từ Zalo. Đang hiển thị thông tin đã đồng bộ; hãy kiểm tra kết nối tài khoản và thử lại.');
+      }
     } finally {
-      setLoadingDetail(false);
+      if (requestId === detailRequest.current) setLoadingDetail(false);
     }
   }, [selectedAccountId]);
 
@@ -174,12 +184,22 @@ export const ZaloGroupsPage: React.FC = () => {
   });
 
   // ─── Group info from detail ────────────────────────────────────────────
-  const groupInfo = selectedGroup?.gridInfoMap?.[selectedGroupId]
-    ?? Object.values(selectedGroup?.gridInfoMap ?? {})[0] as any ?? null;
+  const cachedGroup = groups.find((g) => g.zalo_group_id === selectedGroupId
+    && g.zalo_account_id === selectedAccountId);
+  const liveGroup = selectedGroup?.gridInfoMap?.[selectedGroupId];
+  const groupInfo = {
+    ...liveGroup,
+    name: liveGroup?.name || liveGroup?.groupName || cachedGroup?.name,
+    avatar: liveGroup?.fullAvt || liveGroup?.avt || liveGroup?.avatar || cachedGroup?.avatar_url,
+    totalMember: liveGroup?.totalMember ?? liveGroup?.memberCount ?? cachedGroup?.member_count,
+  };
 
   // ─── Account change ───────────────────────────────────────────────────
   const handleAccountChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const id = parseInt(e.target.value) || 0;
+    ++detailRequest.current;
+    setDetailError(null);
+    setLoadingDetail(false);
     setSelectedAccountId(id);
     setSelectedGroupId('');
     setSelectedGroup(null);
@@ -320,6 +340,8 @@ export const ZaloGroupsPage: React.FC = () => {
           ) : (
             <GroupDetailPanel
               groupInfo={groupInfo}
+              error={detailError}
+              onRetry={() => onSelectGroup(selectedGroupId)}
               groupId={selectedGroupId}
               members={members}
               blocked={blocked}
@@ -398,6 +420,8 @@ export const ZaloGroupsPage: React.FC = () => {
 
 const GroupDetailPanel: React.FC<{
   groupInfo: any;
+  error: string | null;
+  onRetry: () => void;
   groupId: string;
   members: Member[];
   blocked: any[];
@@ -414,7 +438,7 @@ const GroupDetailPanel: React.FC<{
   onApprovePending: (m: any) => void;
   onRejectPending: (m: any) => void;
 }> = ({
-  groupInfo, groupId, members, blocked, pending,
+  groupInfo, error, onRetry, groupId, members, blocked, pending,
   onOpenSettings, onOpenInviteLink, onOpenChat,
   onAddDeputy, onRemoveDeputy, onRemoveMember,
   onBlockMember, onTransferOwnership, onUnblockMember,
@@ -428,6 +452,12 @@ const GroupDetailPanel: React.FC<{
 
   return (
     <div className="flex flex-col h-full">
+      {error && (
+        <div role="alert" className="px-4 py-3 text-sm text-amber-800 bg-amber-50">
+          {error}
+          <Button id="retry-group-detail" variant="ghost" onClick={onRetry}>Thử lại</Button>
+        </div>
+      )}
       {/* Header */}
       <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-100 shrink-0">
         <FriendAvatar
@@ -489,7 +519,7 @@ const GroupDetailPanel: React.FC<{
         {tab === 'members' && (
           <div className="p-2">
             {members.length === 0 ? (
-              <div className="py-12 text-center text-xs text-gray-400">Chưa có thành viên</div>
+              <div className="py-12 text-center text-xs text-gray-400">{error ? 'Chưa tải được danh sách thành viên' : 'Chưa có thành viên'}</div>
             ) : (
               members.map((m) => (
                 <div

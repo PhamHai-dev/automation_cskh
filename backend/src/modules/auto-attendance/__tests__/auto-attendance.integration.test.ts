@@ -169,6 +169,18 @@ describe('Auto Attendance Integration Tests', () => {
     expect(attendance).not.toBeNull();
     expect(attendance!.status).toBe('ATTENDED');
     expect(attendance!.source).toBe('AUTO_SCHEDULE');
+    const actor = await prisma.user.findUniqueOrThrow({
+      where: { id: attendance!.created_by_id },
+    });
+    expect(actor.email).toBe('auto-attendance@system.invalid');
+    expect(actor.id).not.toBe(adminId);
+    expect(actor.active).toBe(false);
+    expect(actor.roles).toEqual([]);
+    expect(session!.created_by_id).toBe(actor.id);
+    const login = await request(app).post('/api/v1/auth/login').send({
+      email: actor.email, password: 'not-a-system-password',
+    });
+    expect(login.status).not.toBe(200);
 
     // Verify AutoAttendanceExecution was marked COMPLETED
     const execution = await prisma.autoAttendanceExecution.findFirst({
@@ -193,6 +205,24 @@ describe('Auto Attendance Integration Tests', () => {
       where: { class_id: testClassId },
     });
     expect(sessions.length).toBe(1);
+  });
+
+  it('only retries FAILED manually and claims concurrent runs once', async () => {
+    const execution = await prisma.autoAttendanceExecution.findFirstOrThrow({
+      where: { class_schedule_id: testScheduleId },
+    });
+    await prisma.autoAttendanceExecution.update({
+      where: { id: execution.id }, data: { status: 'FAILED', error_message: 'simulated transient failure' },
+    });
+    await service.processAutoAttendance();
+    expect((await prisma.autoAttendanceExecution.findUniqueOrThrow({ where: { id: execution.id } })).status).toBe('FAILED');
+    const results = await Promise.all([
+      service.processAutoAttendance(new Date(), true),
+      service.processAutoAttendance(new Date(), true),
+    ]);
+    expect(results.reduce((sum, result) => sum + result.processed_schedules, 0)).toBe(1);
+    expect(await prisma.attendance.count({ where: { enrollment_class_id: testEnrollmentClassId } })).toBe(1);
+    expect((await prisma.autoAttendanceExecution.findUniqueOrThrow({ where: { id: execution.id } })).status).toBe('COMPLETED');
   });
 
   it('POST /api/v1/settings/auto-attendance/run should trigger auto attendance cycle via API', async () => {

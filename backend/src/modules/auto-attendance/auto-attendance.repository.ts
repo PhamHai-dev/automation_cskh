@@ -3,6 +3,26 @@ import { prisma } from '../../prisma/client';
 import { AUTO_ATTENDANCE_DELAY_KEY } from './auto-attendance.types';
 
 export class AutoAttendanceRepository {
+  async ensureSystemActor() {
+    // Reserved audit identity: no interactive login and no business permissions.
+    const actor = await prisma.user.upsert({
+      where: { email: 'auto-attendance@system.invalid' },
+      update: {},
+      create: {
+        email: 'auto-attendance@system.invalid',
+        name: 'Hệ thống điểm danh tự động',
+        password_hash: '!SYSTEM_ACCOUNT_NO_LOGIN!',
+        roles: [],
+        active: false,
+      },
+    });
+    if (actor.active || actor.password_hash !== '!SYSTEM_ACCOUNT_NO_LOGIN!'
+      || !Array.isArray(actor.roles) || actor.roles.length !== 0) {
+      throw new Error('Reserved auto-attendance identity is not a valid system account');
+    }
+    return actor;
+  }
+
   findDelaySetting() {
     return prisma.appSetting.findUnique({
       where: { key: AUTO_ATTENDANCE_DELAY_KEY },
@@ -57,6 +77,13 @@ export class AutoAttendanceRepository {
           session_date: sessionDate,
         },
       },
+    });
+  }
+
+  claimFailedExecution(id: number) {
+    return prisma.autoAttendanceExecution.updateMany({
+      where: { id, status: 'FAILED' },
+      data: { status: 'PROCESSING', started_at: new Date(), completed_at: null, error_message: null },
     });
   }
 

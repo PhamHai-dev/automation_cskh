@@ -222,6 +222,7 @@ export const ZaloContactsPage: React.FC = () => {
             >
               <div className="relative shrink-0">
                 <FriendAvatar
+                  url={a.avatar_url}
                   name={a.display_name || `#${a.id}`}
                   size={32}
                   className={selectedAccountId === a.id ? '' : 'opacity-70'}
@@ -272,7 +273,7 @@ export const ZaloContactsPage: React.FC = () => {
             </div>
             {currentAccount && (
               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 text-[11px] font-semibold">
-                <FriendAvatar name={currentAccount.display_name || ''} size={16} rounded="rounded" />
+                <FriendAvatar name={currentAccount.display_name || ''} url={currentAccount.avatar_url} size={16} rounded="rounded" />
                 <span className="truncate max-w-[120px]">{currentAccount.display_name || `Nick #${currentAccount.id}`}</span>
                 <span className="text-blue-400">·</span>
                 <span>{total} bạn</span>

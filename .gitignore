@@ -13,3 +13,5 @@ backend/uploads/
 ~$*
 *.tmp
 backend/scratch-*.js
+src_code_ZaloCRM_tham_khao/
+backups/

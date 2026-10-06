@@ -483,6 +483,7 @@ export const StudentZaloLinkPage: React.FC = () => {
                             {(r.friendAvatarUrl || r.zalo_account?.avatar_url) && (
                               <img
                                 src={r.friendAvatarUrl || r.zalo_account?.avatar_url}
+                                referrerPolicy="no-referrer"
                                 alt=""
                                 className="absolute -bottom-0.5 -right-0.5 w-5 h-5 rounded-full object-cover border-2 border-white"
                               />
@@ -705,7 +706,7 @@ export const StudentZaloLinkPage: React.FC = () => {
                       }`}
                     >
                       {f.avatar_url ? (
-                        <img src={f.avatar_url} alt="" className="w-8 h-8 rounded-full object-cover shrink-0" />
+                        <img src={f.avatar_url} alt="" referrerPolicy="no-referrer" className="w-8 h-8 rounded-full object-cover shrink-0" />
                       ) : (
                         <div className="w-8 h-8 rounded-full bg-gradient-to-br from-violet-100 to-violet-200 text-violet-700 flex items-center justify-center text-xs font-bold shrink-0">
                           {(f.zalo_display_name || f.alias_in_nick || '?').charAt(0)}
@@ -846,7 +847,7 @@ export const StudentZaloLinkPage: React.FC = () => {
                       }`}
                     >
                       {f.avatar_url ? (
-                        <img src={f.avatar_url} alt="" className="w-8 h-8 rounded-full object-cover shrink-0" />
+                        <img src={f.avatar_url} alt="" referrerPolicy="no-referrer" className="w-8 h-8 rounded-full object-cover shrink-0" />
                       ) : (
                         <div className="w-8 h-8 rounded-full bg-gradient-to-br from-violet-100 to-violet-200 text-violet-700 flex items-center justify-center text-xs font-bold shrink-0">
                           {(f.zalo_display_name || f.alias_in_nick || '?').charAt(0)}

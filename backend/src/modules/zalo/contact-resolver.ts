@@ -5,6 +5,7 @@
  */
 import { prisma } from '../../prisma/client';
 import { createLogger } from '../../shared/logger/logger';
+import { extractZaloProfile } from './zalo-profile-utils';
 
 const log = createLogger('ContactResolver');
 
@@ -80,13 +81,13 @@ export async function resolveOrCreateContact(api: any, zaloUid: string): Promise
   if (!zaloUid || !api?.getUserInfo) return null;
   try {
     const result = await api.getUserInfo(zaloUid);
-    const profiles = result?.changed_profiles || {};
-    const profile = profiles[zaloUid] || profiles[`${zaloUid}_0`];
+    const profile = extractZaloProfile(result, zaloUid);
     if (profile) {
-      const displayName = profile.zaloName || profile.zalo_name || profile.displayName || '';
-      const avatarUrl = profile.avatar || '';
-      const phone = profile.phoneNumber || null;
-      await upsertContact(zaloUid, { displayName, avatarUrl, phone });
+      await upsertContact(zaloUid, {
+        displayName: profile.displayName ?? undefined,
+        avatarUrl: profile.avatarUrl ?? undefined,
+        phone: profile.phone ?? undefined,
+      });
       return await prisma.contact.findUnique({ where: { zalo_uid: zaloUid } });
     }
   } catch (err) {

@@ -884,7 +884,7 @@ export const ZaloChatPage: React.FC = () => {
             {/* Avatar + name */}
             <div className="px-4 py-5 text-center border-b border-gray-100">
               <FriendAvatar
-                url={activeThread.threadType === 'group' ? activeThread.groupAvatarUrl : null}
+                url={activeThread.threadType === 'group' ? activeThread.groupAvatarUrl : (activeThread.avatarUrl || null)}
                 name={activeThread.groupName || activeThread.displayName || '?'}
                 size={72}
                 rounded={activeThread.threadType === 'group' ? 'rounded-2xl' : 'rounded-full'}

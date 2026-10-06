@@ -30,7 +30,7 @@ export class AutoAttendanceController {
   }
 
   async runCycle(_req: Request, res: Response) {
-    const result = await service.processAutoAttendance();
+    const result = await service.processAutoAttendance(new Date(), true);
     return res.json({ data: result, meta: null });
   }
 }

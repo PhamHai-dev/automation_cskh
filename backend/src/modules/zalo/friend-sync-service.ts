@@ -18,7 +18,8 @@ import { createLogger } from '../../shared/logger/logger';
 import { emitToAccount } from '../../shared/realtime/socket-singleton';
 import { zaloPool } from './zalo-pool';
 import { applyFriendTransition } from './friend-event-handler';
-import { upsertContactAccess } from './contact-resolver';
+import { upsertContactAccess, upsertContact } from './contact-resolver';
+import { extractZaloProfile } from './zalo-profile-utils';
 
 const log = createLogger('FriendSync');
 
@@ -108,17 +109,18 @@ function extractFriendInfo(raw: Record<string, unknown>): {
     log.debug(`[friend-sync] raw keys for uid=${uid}: ${Object.keys(raw).join(',')}`);
     (raw as any)._logged = true;
   }
+  const profile = extractZaloProfile(raw, uid);
   return {
     uid,
     snapshot: {
-      alias_in_nick: String((raw.zaloName ?? raw.displayName ?? '') as string) || null,
+      alias_in_nick: profile?.displayName ?? (String((raw.zaloName ?? raw.displayName ?? '') as string) || null),
       has_conversation: true,
-      zalo_display_name: String((raw.displayName ?? raw.zaloName ?? raw.name ?? '') as string) || null,
-      zalo_avatar_url: String((raw.avatar ?? raw.avatarUrl ?? raw.avt ?? raw.thumbAvatarUrl ?? '') as string) || null,
+      zalo_display_name: profile?.displayName ?? (String((raw.displayName ?? raw.zaloName ?? raw.name ?? '') as string) || null),
+      zalo_avatar_url: profile?.avatarUrl ?? null,
       zalo_global_id: String((raw.globalId ?? raw.zaloGlobalId ?? '') as string) || null,
       zalo_username: String((raw.username ?? raw.zaloUsername ?? '') as string) || null,
     },
-    phoneNumber: String((raw.phoneNumber ?? '') as string).trim() || null,
+    phoneNumber: profile?.phone ?? (String((raw.phoneNumber ?? '') as string).trim() || null),
   };
 }
 
@@ -194,6 +196,29 @@ export async function syncFriendsForAccount(
     },
   });
   const existingByUid = new Map(existingFriends.map((f) => [f.zalo_uid_in_nick, f]));
+
+  // Enrich only friends whose bulk response omitted profile data.
+  const enrichProfiles = async (rows: Array<Record<string, unknown>>) => {
+    for (let index = 0; index < rows.length; index++) {
+      const info = extractFriendInfo(rows[index]);
+      if (!info || (info.snapshot.zalo_avatar_url && info.snapshot.zalo_display_name)) continue;
+      if (typeof api.getUserInfo !== 'function') continue;
+      try {
+        const profile = extractZaloProfile(await api.getUserInfo(info.uid), info.uid);
+        if (!profile) continue;
+        rows[index] = {
+          ...rows[index],
+          ...(profile.avatarUrl ? { avatar: profile.avatarUrl } : {}),
+          ...(profile.displayName ? { displayName: profile.displayName, zaloName: profile.displayName } : {}),
+          ...(profile.phone ? { phoneNumber: profile.phone } : {}),
+        };
+      } catch (err) {
+        log.debug(`[friend-sync:${accountId}] profile enrichment failed uid=${info.uid}`, { error: String(err) });
+      }
+    }
+  };
+  await enrichProfiles(liveFriends);
+  await enrichProfiles(sentRequests);
 
   // Process accepted friends
   for (const live of liveFriends) {
@@ -296,7 +321,11 @@ async function processFriend(args: ProcessFriendArgs): Promise<void> {
   });
   args.result.upsertedFriends++;
 
-  // Contact unification: ensure Contact + ContactAccess exist (best-effort, non-blocking)
+  // Contact unification: keep global profile data in sync with the per-nick Friend row.
+  upsertContact(args.uid, {
+    displayName: args.snapshot.zalo_display_name ?? undefined,
+    avatarUrl: args.snapshot.zalo_avatar_url ?? undefined,
+  }).catch(() => {});
   upsertContactAccess(args.accountId, args.uid, {
     isFriend: args.targetStatus === 'accepted',
     friendshipStatus: args.targetStatus === 'accepted' ? 'accepted' : 'pending_sent',

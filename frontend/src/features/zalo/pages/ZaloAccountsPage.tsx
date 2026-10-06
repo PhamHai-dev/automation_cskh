@@ -56,12 +56,21 @@ export const ZaloAccountsPage: React.FC = () => {
     );
   }, []);
 
+  const handleAvatarUpdated = useCallback((evt: { accountId?: number }) => {
+    if (!evt?.accountId) return;
+    fetchAccounts();
+  }, []);
+
   const { on, off } = useSocket();
 
   useEffect(() => {
     on('zalo:status', handleStatusEvent);
-    return () => { off('zalo:status', handleStatusEvent); };
-  }, [on, off, handleStatusEvent]);
+    on('zalo:avatar-updated', handleAvatarUpdated);
+    return () => {
+      off('zalo:status', handleStatusEvent);
+      off('zalo:avatar-updated', handleAvatarUpdated);
+    };
+  }, [on, off, handleStatusEvent, handleAvatarUpdated]);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -113,7 +122,7 @@ export const ZaloAccountsPage: React.FC = () => {
       cell: (item) => (
         <div className="flex items-center gap-3">
           {item.avatar_url ? (
-            <img src={item.avatar_url} alt="" className="w-10 h-10 rounded-full object-cover border border-border/50 shrink-0" />
+            <img src={item.avatar_url} alt="" referrerPolicy="no-referrer" className="w-10 h-10 rounded-full object-cover border border-border/50 shrink-0" />
           ) : (
             <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary/10 to-primary/20 text-primary flex items-center justify-center text-sm font-bold shrink-0">
               {(item.display_name || `#${item.id}`).charAt(0).toUpperCase()}

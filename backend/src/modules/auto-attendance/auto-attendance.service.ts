@@ -60,7 +60,7 @@ export class AutoAttendanceService {
    * Process a single auto-attendance check cycle for all active schedules.
    * Runs idempotently: one (class_schedule_id, session_date) is only processed once.
    */
-  async processAutoAttendance(now: Date = new Date()): Promise<AutoAttendanceCycleResult> {
+  async processAutoAttendance(now: Date = new Date(), retryFailed = false): Promise<AutoAttendanceCycleResult> {
     const settings = await this.getSettings();
     const delayMinutes = settings.delay_minutes ?? DEFAULT_AUTO_ATTENDANCE_DELAY_MINUTES;
 
@@ -169,22 +169,29 @@ export class AutoAttendanceService {
 
       // 5. Idempotency: "Một (class_schedule_id, session_date) chỉ được xử lý một lần"
       const existingExec = await this.repository.findExecution(schedule.id, sessionDate);
-      if (existingExec) {
+      if (existingExec && (!retryFailed || existingExec.status !== 'FAILED')) {
         continue;
       }
 
-      // 6. Record execution in PROCESSING status
+      // 6. Claim a failed execution atomically, or create the first execution.
       let execution;
-      try {
-        execution = await this.repository.createExecution({
-          class_schedule_id: schedule.id,
-          session_date: sessionDate,
-          scheduled_run_at: scheduledRunAt,
-          status: 'PROCESSING',
-        });
-      } catch (err: any) {
-        // Unique constraint race condition
-        continue;
+      if (existingExec) {
+        const claim = await this.repository.claimFailedExecution(existingExec.id);
+        if (claim.count !== 1) continue;
+        execution = existingExec;
+      } else {
+        try {
+          execution = await this.repository.createExecution({
+            class_schedule_id: schedule.id,
+            session_date: sessionDate,
+            scheduled_run_at: scheduledRunAt,
+            status: 'PROCESSING',
+          });
+        } catch (err: any) {
+          // Only a unique-constraint race means another worker owns this execution.
+          if (err.code === 'P2002') continue;
+          throw err;
+        }
       }
 
       // 7. Check if class has active eligible enrollments
@@ -200,11 +207,12 @@ export class AutoAttendanceService {
 
       // 8. Execute attendance marking
       try {
+        const actor = await this.repository.ensureSystemActor();
         const session = await this.repository.findOrCreateClassSession(
           schedule.class_id,
           schedule.id,
           sessionDate,
-          1,
+          actor.id,
         );
 
         let classAttendedCount = 0;
@@ -223,7 +231,7 @@ export class AutoAttendanceService {
             status: 'ATTENDED',
             session_count: 1,
             source: 'AUTO_SCHEDULE',
-            created_by_id: 1,
+            created_by_id: actor.id,
           });
 
           classAttendedCount++;
