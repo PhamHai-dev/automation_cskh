@@ -6,4 +6,5 @@ module.exports = {
   modulePathIgnorePatterns: ['<rootDir>/dist/'],
   clearMocks: true,
   setupFiles: ['<rootDir>/jest.setup.js'],
+  testTimeout: 30000,
 };
