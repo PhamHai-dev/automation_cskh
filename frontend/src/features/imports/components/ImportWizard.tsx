@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { ArrowRight, CheckCircle2, FileSpreadsheet, Upload, AlertTriangle, UserCheck, Calendar } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { ArrowRight, CheckCircle2, FileSpreadsheet, Upload, AlertTriangle, UserCheck, Calendar, Scale } from 'lucide-react';
 import { Button } from '../../../components/ui/Button';
 import { Badge } from '../../../components/ui/Badge';
 import { Card } from '../../../components/ui/Card';
@@ -50,6 +51,7 @@ const fields: Record<LogicalSheet, { key: string; label: string }[]> = {
 };
 
 export const ImportWizard: React.FC<Props> = ({ onImportComplete }) => {
+  const navigate = useNavigate();
   const toast = useToast();
   const { user } = useAuth();
   const isAdminOrManage = Boolean(user?.roles?.some((r: string) => r === 'ADMIN' || r === 'MANAGE'));
@@ -433,9 +435,19 @@ export const ImportWizard: React.FC<Props> = ({ onImportComplete }) => {
           {result.success_rows} bản ghi đã xử lý thành công; {result.failed_rows} bản ghi lỗi hoặc bỏ qua.
         </p>
       </div>
-      <Button id="new-import-button" variant="outline" onClick={() => { setStep(1); setFile(null); setUpload(null); setReport(null); setResult(null); }}>
-        Nhập file khác
-      </Button>
+      <div className="flex flex-wrap items-center justify-center gap-3">
+        <Button id="new-import-button" variant="outline" onClick={() => { setStep(1); setFile(null); setUpload(null); setReport(null); setResult(null); }}>
+          Nhập file khác
+        </Button>
+        <Button
+          id="go-reconciliation-button"
+          variant="primary"
+          leftIcon={<Scale className="w-4 h-4" />}
+          onClick={() => navigate('/attendance/reconciliation')}
+        >
+          Đến Trung tâm Đối soát Điểm danh
+        </Button>
+      </div>
     </Card>}
   </div>;
 };

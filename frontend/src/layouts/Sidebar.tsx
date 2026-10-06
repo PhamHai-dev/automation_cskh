@@ -16,6 +16,8 @@ import {
   Zap,
   Link2,
   MessageSquare,
+  CalendarCheck,
+  ClipboardCheck,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -88,6 +90,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
           path: '/classes',
           icon: <GraduationCap className="w-5 h-5 shrink-0" />,
           allowedRoles: ['ADMIN', 'MANAGE', 'CS', 'TEACHER'],
+        },
+        {
+          name: 'Lịch dạy của tôi',
+          path: '/teacher/my-sessions',
+          icon: <CalendarCheck className="w-5 h-5 shrink-0" />,
+          allowedRoles: ['ADMIN', 'MANAGE', 'TEACHER'],
+        },
+        {
+          name: 'Đối soát Điểm danh',
+          path: '/attendance/reconciliation',
+          icon: <ClipboardCheck className="w-5 h-5 shrink-0" />,
+          allowedRoles: ['ADMIN', 'MANAGE', 'CS'],
         },
         {
           name: 'Gói học & Khóa học',

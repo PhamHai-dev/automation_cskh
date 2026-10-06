@@ -49,6 +49,9 @@ model User {
   reviewed_import_create_requests  ImportCreateRequest[] @relation("ImportCreateRequestReviewer")
   assigned_import_create_requests  ImportCreateRequest[] @relation("ImportCreateRequestAssignee")
   updated_app_settings             AppSetting[]          @relation("AppSettingUpdater")
+  attendances_as_teacher           Attendance[]          @relation("AttendanceTeacherUser")
+  attendances_as_cs                Attendance[]          @relation("AttendanceCSUser")
+  resolved_attendances             Attendance[]          @relation("AttendanceResolver")
 
   @@map("users")
 }
@@ -407,6 +410,14 @@ enum AttendanceStatus {
   TECH_ERROR_E
 }
 
+enum ReconciliationState {
+  PENDING_CS
+  PENDING_TEACHER
+  MATCHED
+  CONFLICT
+  RESOLVED
+}
+
 enum AttendanceSource {
   MANUAL
   EXCEL_IMPORT
@@ -415,25 +426,54 @@ enum AttendanceSource {
 }
 
 model Attendance {
-  id                  Int              @id @default(autoincrement())
+  id                  Int @id @default(autoincrement())
   enrollment_class_id Int
   class_session_id    Int
-  status              AttendanceStatus
-  session_count       Float            @default(1)
-  source              AttendanceSource
-  created_by_id       Int
-  deleted_at          DateTime?
-  deleted_by_id       Int?
-  created_at          DateTime         @default(now())
-  updated_at          DateTime         @updatedAt
+
+  // 1. Dữ liệu từ Giáo viên
+  teacher_status       AttendanceStatus?
+  teacher_raw_value    String?
+  lesson_topic         String?
+  teacher_note         String?           @db.Text
+  teacher_submitted_at DateTime?
+  teacher_user_id      Int?
+
+  // 2. Dữ liệu từ CSKH
+  cs_status       AttendanceStatus?
+  cs_raw_value    String?
+  cs_note         String?           @db.Text
+  cs_submitted_at DateTime?
+  cs_user_id      Int?
+
+  // 3. Kết quả đối soát & trạng thái chốt
+  reconciliation_state ReconciliationState @default(PENDING_CS)
+  status               AttendanceStatus
+  session_count        Float               @default(1)
+
+  // Phân xử khi Lệch (Conflict)
+  resolved_by_id  Int?
+  resolved_at     DateTime?
+  resolution_note String?   @db.Text
+
+  // Audit & Nguồn gốc
+  source        AttendanceSource
+  created_by_id Int
+  deleted_at    DateTime?
+  deleted_by_id Int?
+  created_at    DateTime         @default(now())
+  updated_at    DateTime         @updatedAt
 
   enrollment_class   EnrollmentClass   @relation(fields: [enrollment_class_id], references: [id])
   class_session      ClassSession      @relation(fields: [class_session_id], references: [id])
   created_by         User              @relation("AttendanceCreator", fields: [created_by_id], references: [id])
   deleted_by         User?             @relation("AttendanceDeleter", fields: [deleted_by_id], references: [id])
+  teacher_user       User?             @relation("AttendanceTeacherUser", fields: [teacher_user_id], references: [id])
+  cs_user            User?             @relation("AttendanceCSUser", fields: [cs_user_id], references: [id])
+  resolved_by        User?             @relation("AttendanceResolver", fields: [resolved_by_id], references: [id])
   message_deliveries MessageDelivery[]
 
   @@unique([enrollment_class_id, class_session_id])
+  @@index([reconciliation_state])
   @@map("attendances")
 }
 

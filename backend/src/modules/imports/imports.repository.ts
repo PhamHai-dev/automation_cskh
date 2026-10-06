@@ -1,4 +1,4 @@
-import { PrismaClient, ImportBatch, ImportRow, ImportBatchStatus, ImportRowStatus, ImportType, AttendanceStatus, AttendanceSource, EnrollmentStatus, EnrollmentClassStatus, ClassModelType, AttendanceSourceType } from '@prisma/client';
+import { PrismaClient, ImportBatch, ImportRow, ImportBatchStatus, ImportRowStatus, ImportType, AttendanceStatus, AttendanceSource, EnrollmentStatus, EnrollmentClassStatus, ClassModelType, AttendanceSourceType, ReconciliationState } from '@prisma/client';
 import { prisma } from '../../prisma/client';
 
 export class ImportsRepository {
@@ -423,7 +423,37 @@ export class ImportsRepository {
     status: AttendanceStatus;
     source: AttendanceSource;
     created_by_id: number;
+    session_count?: number;
+    cs_status?: AttendanceStatus;
+    cs_raw_value?: string;
+    teacher_status?: AttendanceStatus;
+    teacher_raw_value?: string;
+    lesson_topic?: string;
+    reconciliation_state?: ReconciliationState;
+    cs_user_id?: number;
+    teacher_user_id?: number;
   }) {
+    const existing = await this.db.attendance.findUnique({
+      where: {
+        enrollment_class_id_class_session_id: {
+          enrollment_class_id: data.enrollment_class_id,
+          class_session_id: data.class_session_id,
+        },
+      },
+    });
+
+    const sessionCount = data.session_count || 1;
+    let recState = data.reconciliation_state || ReconciliationState.MATCHED;
+
+    if (existing) {
+      // Check if both sides have reported
+      const effectiveTeacherStatus = data.teacher_status || existing.teacher_status;
+      const effectiveCsStatus = data.cs_status || existing.cs_status;
+      if (effectiveTeacherStatus && effectiveCsStatus) {
+        recState = effectiveTeacherStatus === effectiveCsStatus ? ReconciliationState.MATCHED : ReconciliationState.CONFLICT;
+      }
+    }
+
     return this.db.attendance.upsert({
       where: {
         enrollment_class_id_class_session_id: {
@@ -434,6 +464,10 @@ export class ImportsRepository {
       update: {
         status: data.status,
         source: data.source,
+        session_count: sessionCount,
+        reconciliation_state: recState,
+        ...(data.cs_status !== undefined ? { cs_status: data.cs_status, cs_raw_value: data.cs_raw_value, cs_user_id: data.cs_user_id, cs_submitted_at: new Date() } : {}),
+        ...(data.teacher_status !== undefined ? { teacher_status: data.teacher_status, teacher_raw_value: data.teacher_raw_value, lesson_topic: data.lesson_topic, teacher_user_id: data.teacher_user_id, teacher_submitted_at: new Date() } : {}),
       },
       create: {
         enrollment_class_id: data.enrollment_class_id,
@@ -441,6 +475,17 @@ export class ImportsRepository {
         status: data.status,
         source: data.source,
         created_by_id: data.created_by_id,
+        session_count: sessionCount,
+        reconciliation_state: recState,
+        cs_status: data.cs_status || data.status,
+        cs_raw_value: data.cs_raw_value || null,
+        cs_user_id: data.cs_user_id || data.created_by_id,
+        cs_submitted_at: new Date(),
+        teacher_status: data.teacher_status || null,
+        teacher_raw_value: data.teacher_raw_value || null,
+        lesson_topic: data.lesson_topic || null,
+        teacher_user_id: data.teacher_user_id || null,
+        teacher_submitted_at: data.teacher_status ? new Date() : null,
       },
     });
   }

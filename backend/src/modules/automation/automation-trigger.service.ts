@@ -80,6 +80,15 @@ export async function handleAttendanceEvent(attendanceId: number): Promise<Trigg
       return result;
     }
 
+    // Check reconciliation state: Only fire automation when MATCHED or RESOLVED
+    if (attendance.reconciliation_state !== 'MATCHED' && attendance.reconciliation_state !== 'RESOLVED') {
+      log.info('Attendance not reconciled yet, skipping automation trigger', {
+        attendanceId,
+        reconciliation_state: attendance.reconciliation_state,
+      });
+      return result;
+    }
+
     const enrollment = attendance.enrollment_class.enrollment;
 
     // 2. Check auto_message_enabled
@@ -241,6 +250,8 @@ async function resolveEnrollmentSessionNumber(
     where: {
       enrollment_class: { enrollment_id: enrollmentId },
       class_session: { session_date: { lt: sessionDate } },
+      status: 'ATTENDED',
+      reconciliation_state: { in: ['MATCHED', 'RESOLVED'] },
     },
   });
   return count + 1;

@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import ExcelJS from 'exceljs';
-import { ImportBatchStatus, ImportRowStatus, ImportType, AttendanceStatus, AttendanceSource, EnrollmentStatus, EnrollmentClassStatus, ImportCreateRequestStatus, ClassModelType, Prisma, CareLogOutcome } from '@prisma/client';
+import { ImportBatchStatus, ImportRowStatus, ImportType, AttendanceStatus, AttendanceSource, EnrollmentStatus, EnrollmentClassStatus, ImportCreateRequestStatus, ClassModelType, Prisma, CareLogOutcome, ReconciliationState } from '@prisma/client';
 import { prisma } from '../../prisma/client';
 import { ImportsRepository } from './imports.repository';
 import { SheetPreviewData, UploadResponse, ValidationReport, ValidationErrorItem, ValidationWarningItem, SaveMappingDTO, ImportBatchSummary, RequestActor, ReconcileItem, ReconcileClassification, LogicalSheet, MonthAttendanceBlock } from './imports.types';
@@ -408,17 +408,70 @@ export class ImportsService {
     return EnrollmentStatus.STUDYING;
   }
 
+  public parseAttendanceValue(value: string): {
+    status: AttendanceStatus | null;
+    sessionCount: number;
+    lessonTopic: string | null;
+    studentExternalId?: string;
+  } {
+    if (!value || !value.trim()) {
+      return { status: null, sessionCount: 1, lessonTopic: null };
+    }
+
+    const trimmed = value.trim();
+
+    // 1. Check if format is [Mã HV]-[Tên bài / Mã A,B,C,D,E] (e.g. 420289324-K2 L4, HV_001-A)
+    const match = trimmed.match(/^([A-Za-z0-9_]+)\s*[-]\s*(.+)$/i);
+    if (match) {
+      const studentExternalId = match[1];
+      const remainder = match[2].trim();
+      const codeUpper = remainder.toUpperCase();
+
+      if (codeUpper === 'A') {
+        return { status: AttendanceStatus.ABSENT_APPROVED_A, sessionCount: 1, lessonTopic: null, studentExternalId };
+      }
+      if (codeUpper === 'B') {
+        return { status: AttendanceStatus.LEAVE_B, sessionCount: 1, lessonTopic: null, studentExternalId };
+      }
+      if (codeUpper === 'C') {
+        return { status: AttendanceStatus.ABSENT_UNAPPROVED_C, sessionCount: 1, lessonTopic: null, studentExternalId };
+      }
+      if (codeUpper === 'D') {
+        return { status: AttendanceStatus.TEACHER_ABSENT_D, sessionCount: 1, lessonTopic: null, studentExternalId };
+      }
+      if (codeUpper === 'E') {
+        return { status: AttendanceStatus.TECH_ERROR_E, sessionCount: 1, lessonTopic: null, studentExternalId };
+      }
+
+      // Remainder is lesson topic (e.g. "K2 L4", "k1-l1")
+      return { status: AttendanceStatus.ATTENDED, sessionCount: 1, lessonTopic: remainder, studentExternalId };
+    }
+
+    // 2. Direct single letter / code
+    const codeUpper = trimmed.toUpperCase();
+    if (codeUpper === 'A') return { status: AttendanceStatus.ABSENT_APPROVED_A, sessionCount: 1, lessonTopic: null };
+    if (codeUpper === 'B') return { status: AttendanceStatus.LEAVE_B, sessionCount: 1, lessonTopic: null };
+    if (codeUpper === 'C') return { status: AttendanceStatus.ABSENT_UNAPPROVED_C, sessionCount: 1, lessonTopic: null };
+    if (codeUpper === 'D') return { status: AttendanceStatus.TEACHER_ABSENT_D, sessionCount: 1, lessonTopic: null };
+    if (codeUpper === 'E') return { status: AttendanceStatus.TECH_ERROR_E, sessionCount: 1, lessonTopic: null };
+    if (['X', 'ĐÃ HỌC'].includes(codeUpper)) return { status: AttendanceStatus.ATTENDED, sessionCount: 1, lessonTopic: null };
+
+    // 3. Numeric values: 1, 1.0, 2, 2.0, 0.5...
+    const num = Number(trimmed);
+    if (!isNaN(num) && num > 0) {
+      return { status: AttendanceStatus.ATTENDED, sessionCount: num, lessonTopic: null };
+    }
+
+    // 4. Tolerant fallback for lesson topic without ID prefix (e.g. "K2 L4", "k1-l1")
+    if (trimmed.length >= 2 && isNaN(Number(trimmed))) {
+      return { status: AttendanceStatus.ATTENDED, sessionCount: 1, lessonTopic: trimmed };
+    }
+
+    return { status: null, sessionCount: 1, lessonTopic: null };
+  }
+
   private attendanceStatus(value: string): AttendanceStatus | null {
-    const code = value.trim().toUpperCase();
-    if (code === 'A') return AttendanceStatus.ABSENT_APPROVED_A;
-    if (code === 'B') return AttendanceStatus.LEAVE_B;
-    if (code === 'C') return AttendanceStatus.ABSENT_UNAPPROVED_C;
-    if (code === 'D') return AttendanceStatus.TEACHER_ABSENT_D;
-    if (code === 'E') return AttendanceStatus.TECH_ERROR_E;
-    const num = Number(code);
-    if (!isNaN(num) && num > 0) return AttendanceStatus.ATTENDED;
-    if (['X', 'ĐÃ HỌC'].includes(code)) return AttendanceStatus.ATTENDED;
-    return null;
+    return this.parseAttendanceValue(value).status;
   }
 
   // Upload file and initialize draft batch
@@ -1160,8 +1213,8 @@ export class ImportsService {
     for (const entry of entries || []) {
       const date = new Date(entry.date);
       if (isNaN(date.getTime())) continue;
-      const status = this.attendanceStatus(entry.value || '');
-      if (status) {
+      const parsed = this.parseAttendanceValue(entry.value || '');
+      if (parsed.status) {
         let session = await tx.classSession.findFirst({ where: { class_id: classId, session_date: date } });
         if (!session) {
           const last = await tx.classSession.findFirst({ where: { class_id: classId }, orderBy: { session_number: 'desc' } });
@@ -1174,10 +1227,47 @@ export class ImportsService {
             },
           });
         }
+
+        const existing = await tx.attendance.findUnique({
+          where: { enrollment_class_id_class_session_id: { enrollment_class_id: enrollmentClassId, class_session_id: session.id } },
+        });
+
+        let reconciliationState: ReconciliationState = ReconciliationState.MATCHED;
+        if (existing?.teacher_status) {
+          if (existing.teacher_status === parsed.status) {
+            reconciliationState = ReconciliationState.MATCHED;
+          } else {
+            reconciliationState = ReconciliationState.CONFLICT;
+          }
+        }
+
         await tx.attendance.upsert({
           where: { enrollment_class_id_class_session_id: { enrollment_class_id: enrollmentClassId, class_session_id: session.id } },
-          update: { status, source: AttendanceSource.EXCEL_IMPORT },
-          create: { enrollment_class_id: enrollmentClassId, class_session_id: session.id, status, source: AttendanceSource.EXCEL_IMPORT, created_by_id: userId },
+          update: {
+            status: parsed.status,
+            cs_status: parsed.status,
+            cs_raw_value: String(entry.value || ''),
+            cs_submitted_at: new Date(),
+            cs_user_id: userId,
+            session_count: parsed.sessionCount,
+            lesson_topic: parsed.lessonTopic || existing?.lesson_topic || null,
+            reconciliation_state: reconciliationState,
+            source: AttendanceSource.EXCEL_IMPORT,
+          },
+          create: {
+            enrollment_class_id: enrollmentClassId,
+            class_session_id: session.id,
+            status: parsed.status,
+            cs_status: parsed.status,
+            cs_raw_value: String(entry.value || ''),
+            cs_submitted_at: new Date(),
+            cs_user_id: userId,
+            session_count: parsed.sessionCount,
+            lesson_topic: parsed.lessonTopic,
+            reconciliation_state: reconciliationState,
+            source: AttendanceSource.EXCEL_IMPORT,
+            created_by_id: userId,
+          },
         });
       }
       // Note: Empty value in Excel does NOT wipe existing attendance (keeps old record per Q-013)
@@ -1854,10 +1944,9 @@ export class ImportsService {
           for (const dc of dateCols) {
             const val = this.cellText(row.getCell(dc.col));
             if (val) {
-              const strVal = val.toUpperCase();
-              let attStatus: AttendanceStatus | null = this.attendanceStatus(strVal);
+              const parsed = this.parseAttendanceValue(val);
 
-              if (attStatus) {
+              if (parsed.status) {
                 const session = await this.repo.findOrCreateClassSession(
                   enrollmentClass!.class_id,
                   dc.date,
@@ -1867,9 +1956,14 @@ export class ImportsService {
                 await this.repo.upsertAttendance({
                   enrollment_class_id: enrollmentClass!.id,
                   class_session_id: session.id,
-                  status: attStatus,
+                  status: parsed.status,
                   source: AttendanceSource.EXCEL_IMPORT,
                   created_by_id: userId,
+                  session_count: parsed.sessionCount,
+                  cs_status: parsed.status,
+                  cs_raw_value: val,
+                  cs_user_id: userId,
+                  lesson_topic: parsed.lessonTopic || undefined,
                 });
                 markedCount++;
               }

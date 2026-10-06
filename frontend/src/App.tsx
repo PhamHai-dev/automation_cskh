@@ -24,6 +24,8 @@ import { ZaloGroupsPage } from './features/zalo/pages/ZaloGroupsPage';
 import { ZaloChatPage } from './features/zalo/pages/ZaloChatPage';
 import { AutomationWorkflowsPage } from './features/automation/pages/AutomationWorkflowsPage';
 import { AutomationWorkflowDetailPage } from './features/automation/pages/AutomationWorkflowDetailPage';
+import { AttendanceReconciliationPage } from './features/attendance/pages/AttendanceReconciliationPage';
+import { MyTeachingSessionsPage } from './features/attendance/pages/MyTeachingSessionsPage';
 import './styles/globals.css';
 import './styles/tokens.css';
 
@@ -80,10 +82,16 @@ function App() {
               <Route path="/zalo/chat" element={<ZaloChatPage />} />
               <Route path="/automation" element={<AutomationWorkflowsPage />} />
               <Route path="/automation/:id" element={<AutomationWorkflowDetailPage />} />
+
+              <Route path="/attendance/reconciliation" element={<AttendanceReconciliationPage />} />
+              <Route path="/doi-soat-diem-danh" element={<Navigate to="/attendance/reconciliation" replace />} />
             </Route>
 
             {/* Classes, Attendance, Imports/Exports: Admin, Manage, CS, Teacher */}
             <Route element={<ProtectedRoute allowedRoles={['ADMIN', 'MANAGE', 'CS', 'TEACHER']} />}>
+              <Route path="/teacher/my-sessions" element={<MyTeachingSessionsPage />} />
+              <Route path="/lich-day-cua-toi" element={<Navigate to="/teacher/my-sessions" replace />} />
+
               <Route path="/imports" element={<ImportsPage />} />
               <Route path="/nhap-xuat-excel" element={<Navigate to="/imports" replace />} />
 
