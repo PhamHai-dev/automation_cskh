@@ -6,6 +6,7 @@ import { prisma } from '../../prisma/client';
 import { ImportsRepository } from './imports.repository';
 import { SheetPreviewData, UploadResponse, ValidationReport, ValidationErrorItem, ValidationWarningItem, SaveMappingDTO, ImportBatchSummary, RequestActor, ReconcileItem, ReconcileClassification, LogicalSheet, MonthAttendanceBlock } from './imports.types';
 import { AppError } from '../../middlewares/error.middleware';
+import { normalizeDateOnly, attendanceStatusLabel } from '../attendance/attendance.utils';
 
 export class ImportsService {
   private repo: ImportsRepository;
@@ -1074,6 +1075,35 @@ export class ImportsService {
           });
         }
         snapshot.attendance = attendance;
+
+        // Check for reconciliation conflict against teacher marks in DB
+        const ec = enrollment?.enrollment_classes?.[0];
+        if (ec) {
+          for (const att of attendance) {
+            const parsed = this.parseAttendanceValue(att.value);
+            if (parsed.status) {
+              const normalizedDate = normalizeDateOnly(att.date);
+              if (normalizedDate) {
+                const existingSession = await prisma.classSession.findFirst({
+                  where: { class_id: ec.class_id, session_date: normalizedDate },
+                  include: {
+                    attendance: {
+                      where: { enrollment_class_id: ec.id },
+                    },
+                  },
+                });
+
+                const existingAtt = existingSession?.attendance?.[0];
+                if (existingAtt?.teacher_status && existingAtt.teacher_status !== parsed.status) {
+                  const dateFormatted = `${normalizedDate.getUTCDate().toString().padStart(2, '0')}/${(normalizedDate.getUTCMonth() + 1).toString().padStart(2, '0')}/${normalizedDate.getUTCFullYear()}`;
+                  warnings.push(
+                    `Ngày ${dateFormatted}: Xung đột điểm danh — Giáo viên đã chấm [${attendanceStatusLabel(existingAtt.teacher_status)}], trong file đang chấm [${attendanceStatusLabel(parsed.status)}]. Buổi học sẽ bị đóng băng chờ phân xử.`
+                  );
+                }
+              }
+            }
+          }
+        }
       }
 
       if (one && ws1 && s1) {
@@ -1209,9 +1239,10 @@ export class ImportsService {
     return report;
   }
 
-  private async applyAttendance(tx: Prisma.TransactionClient, enrollmentClassId: number, classId: number, entries: any[], userId: number) {
+  private async applyAttendance(tx: Prisma.TransactionClient, enrollmentClassId: number, classId: number, entries: any[], userId: number): Promise<number> {
+    let conflictCount = 0;
     for (const entry of entries || []) {
-      const date = new Date(entry.date);
+      const date = normalizeDateOnly(entry.date) || new Date(entry.date);
       if (isNaN(date.getTime())) continue;
       const parsed = this.parseAttendanceValue(entry.value || '');
       if (parsed.status) {
@@ -1232,13 +1263,14 @@ export class ImportsService {
           where: { enrollment_class_id_class_session_id: { enrollment_class_id: enrollmentClassId, class_session_id: session.id } },
         });
 
-        let reconciliationState: ReconciliationState = ReconciliationState.MATCHED;
-        if (existing?.teacher_status) {
-          if (existing.teacher_status === parsed.status) {
-            reconciliationState = ReconciliationState.MATCHED;
-          } else {
-            reconciliationState = ReconciliationState.CONFLICT;
-          }
+        let reconciliationState: ReconciliationState;
+        if (!existing?.teacher_status) {
+          reconciliationState = ReconciliationState.PENDING_TEACHER;
+        } else if (existing.teacher_status === parsed.status) {
+          reconciliationState = ReconciliationState.MATCHED;
+        } else {
+          reconciliationState = ReconciliationState.CONFLICT;
+          conflictCount++;
         }
 
         await tx.attendance.upsert({
@@ -1272,6 +1304,7 @@ export class ImportsService {
       }
       // Note: Empty value in Excel does NOT wipe existing attendance (keeps old record per Q-013)
     }
+    return conflictCount;
   }
 
   private async confirmWorkbook(importId: number, actor: RequestActor, skipErrors: boolean, meta: any, assignedCsId?: number) {
@@ -1282,7 +1315,7 @@ export class ImportsService {
     }
     await this.repo.updateBatch(importId, { status: ImportBatchStatus.PROCESSING });
     await this.repo.clearPendingImportRows(importId);
-    let successRows = 0, failedRows = 0;
+    let successRows = 0, failedRows = 0, totalConflictAttendances = 0;
 
     const isCS = Boolean(actor?.roles?.includes('CS') && !actor?.roles?.includes('ADMIN') && !actor?.roles?.includes('MANAGE'));
     const targetCsId = isCS ? actor.id : (assignedCsId || meta.assignedCsId || actor.id);
@@ -1539,7 +1572,8 @@ export class ImportsService {
 
           // 7. Attendance from Sheet 3
           if (ec && snap.attendance?.length) {
-            await this.applyAttendance(tx, ec.id, ec.class_id, snap.attendance, actor.id);
+            const conflictsInSheet = await this.applyAttendance(tx, ec.id, ec.class_id, snap.attendance, actor.id);
+            totalConflictAttendances += conflictsInSheet;
           }
 
           // 8. Care Logs from Sheet 1 (Chăm sóc sau buổi 1, 3, 10, ...)
@@ -1606,7 +1640,7 @@ export class ImportsService {
       this.cleanupTempFiles(importId, meta);
     }
 
-    return updated;
+    return { ...updated, conflict_attendances: totalConflictAttendances };
   }
 
   // Execute import
@@ -1634,6 +1668,7 @@ export class ImportsService {
 
     let successRows = 0;
     let failedRows = 0;
+    let totalConflictAttendances = 0;
     const defaultCS = await this.repo.findDefaultCSUser();
     const userId = actor.id;
     const fallbackCSId = defaultCS ? defaultCS.id : userId;
@@ -1947,13 +1982,14 @@ export class ImportsService {
               const parsed = this.parseAttendanceValue(val);
 
               if (parsed.status) {
+                const sessionDate = normalizeDateOnly(dc.date) || dc.date;
                 const session = await this.repo.findOrCreateClassSession(
                   enrollmentClass!.class_id,
-                  dc.date,
+                  sessionDate,
                   userId
                 );
 
-                await this.repo.upsertAttendance({
+                const attRecord = await this.repo.upsertAttendance({
                   enrollment_class_id: enrollmentClass!.id,
                   class_session_id: session.id,
                   status: parsed.status,
@@ -1965,6 +2001,9 @@ export class ImportsService {
                   cs_user_id: userId,
                   lesson_topic: parsed.lessonTopic || undefined,
                 });
+                if (attRecord.reconciliation_state === ReconciliationState.CONFLICT) {
+                  totalConflictAttendances++;
+                }
                 markedCount++;
               }
             }
@@ -2025,7 +2064,7 @@ export class ImportsService {
       },
     });
 
-    return updatedBatch;
+    return { ...updatedBatch, conflict_attendances: totalConflictAttendances };
   }
 
   // Get batch by ID

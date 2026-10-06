@@ -442,4 +442,41 @@ describe('Two-Party Attendance Reconciliation Integration Tests', () => {
       where: { id: createdSession!.id },
     });
   });
+
+  it('Flow 5: Teacher marks ATTENDED (1), CS marks ABSENT_APPROVED_A (A) -> CONFLICT flagged and visible in conflict list', async () => {
+    // 1. Teacher marks ATTENDED (equivalent to '1')
+    await request(app)
+      .post(`/api/v1/attendance-reconciliation/${attendance1.id}/teacher-mark`)
+      .set('Authorization', `Bearer ${teacherToken}`)
+      .send({
+        status: AttendanceStatus.ATTENDED,
+        rawValue: '1',
+      });
+
+    // 2. CS marks ABSENT_APPROVED_A (equivalent to 'A')
+    const csRes = await request(app)
+      .post(`/api/v1/attendance-reconciliation/${attendance1.id}/cs-mark`)
+      .set('Authorization', `Bearer ${csToken}`)
+      .send({
+        status: AttendanceStatus.ABSENT_APPROVED_A,
+        rawValue: 'A',
+      });
+
+    expect(csRes.status).toBe(200);
+    expect(csRes.body.data.reconciliation_state).toBe(ReconciliationState.CONFLICT);
+    expect(csRes.body.data.teacher_status).toBe(AttendanceStatus.ATTENDED);
+    expect(csRes.body.data.cs_status).toBe(AttendanceStatus.ABSENT_APPROVED_A);
+
+    // 3. Appears in conflict list
+    const conflictRes = await request(app)
+      .get('/api/v1/attendance-reconciliation/conflicts')
+      .set('Authorization', `Bearer ${csToken}`);
+
+    expect(conflictRes.status).toBe(200);
+    const item = conflictRes.body.data.items.find((i: any) => i.id === attendance1.id);
+    expect(item).toBeDefined();
+    expect(item.teacher_status).toBe(AttendanceStatus.ATTENDED);
+    expect(item.cs_status).toBe(AttendanceStatus.ABSENT_APPROVED_A);
+  });
 });
+

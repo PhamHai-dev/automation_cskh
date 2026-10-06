@@ -87,3 +87,44 @@ export function parseTimeSlot(timeSlot?: string | null): { startTime?: string; e
   }
   return {};
 }
+
+/**
+ * Normalizes any Date or ISO date string to UTC midnight (00:00:00.000Z)
+ * to ensure exact matching across MySQL @db.Date fields regardless of timezone.
+ */
+export function normalizeDateOnly(date: Date | string | null | undefined): Date | null {
+  if (!date) return null;
+  const d = typeof date === 'string' ? new Date(date) : date;
+  if (isNaN(d.getTime())) return null;
+
+  // Use local calendar date from ISO or Date
+  if (typeof date === 'string' && /^\d{4}-\d{2}-\d{2}/.test(date)) {
+    const [y, m, day] = date.slice(0, 10).split('-').map(Number);
+    return new Date(Date.UTC(y, m - 1, day, 0, 0, 0, 0));
+  }
+
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 0, 0, 0, 0));
+}
+
+/**
+ * Human-friendly Vietnamese label for AttendanceStatus.
+ */
+export function attendanceStatusLabel(status: AttendanceStatus | null | undefined): string {
+  if (!status) return 'Chưa điểm danh';
+  switch (status) {
+    case AttendanceStatus.ATTENDED:
+      return 'Có mặt (1)';
+    case AttendanceStatus.ABSENT_APPROVED_A:
+      return 'Nghỉ có phép (A)';
+    case AttendanceStatus.LEAVE_B:
+      return 'Bảo lưu (B)';
+    case AttendanceStatus.ABSENT_UNAPPROVED_C:
+      return 'Nghỉ không phép (C)';
+    case AttendanceStatus.TEACHER_ABSENT_D:
+      return 'GV nghỉ (D)';
+    case AttendanceStatus.TECH_ERROR_E:
+      return 'Lỗi kỹ thuật (E)';
+    default:
+      return String(status);
+  }
+}

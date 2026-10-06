@@ -435,6 +435,18 @@ export const ImportWizard: React.FC<Props> = ({ onImportComplete }) => {
           {result.success_rows} bản ghi đã xử lý thành công; {result.failed_rows} bản ghi lỗi hoặc bỏ qua.
         </p>
       </div>
+
+      {result.conflict_attendances && result.conflict_attendances > 0 ? (
+        <div className="rounded-xl border border-warning/40 bg-warning/10 p-4 text-left space-y-2">
+          <div className="flex items-center gap-2 text-warning font-semibold text-sm">
+            <AlertTriangle className="w-5 h-5 shrink-0" />
+            <span>Phát hiện {result.conflict_attendances} buổi học có xung đột điểm danh giữa Giáo viên và CSKH!</span>
+          </div>
+          <p className="text-xs text-text-secondary leading-relaxed pl-7">
+            Các buổi học bị xung đột đã được <b>đóng băng tự động</b> (không tính công GV, không trừ buổi học và tạm dừng gửi tin Zalo) cho đến khi được phân xử tại Trung tâm Đối soát.
+          </p>
+        </div>
+      ) : null}
       <div className="flex flex-wrap items-center justify-center gap-3">
         <Button id="new-import-button" variant="outline" onClick={() => { setStep(1); setFile(null); setUpload(null); setReport(null); setResult(null); }}>
           Nhập file khác

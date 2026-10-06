@@ -1,5 +1,6 @@
 import { PrismaClient, ImportBatch, ImportRow, ImportBatchStatus, ImportRowStatus, ImportType, AttendanceStatus, AttendanceSource, EnrollmentStatus, EnrollmentClassStatus, ClassModelType, AttendanceSourceType, ReconciliationState } from '@prisma/client';
 import { prisma } from '../../prisma/client';
+import { normalizeDateOnly } from '../attendance/attendance.utils';
 
 export class ImportsRepository {
   private db: PrismaClient;
@@ -388,11 +389,12 @@ export class ImportsRepository {
   }
 
   async findOrCreateClassSession(class_id: number, session_date: Date, created_by_id: number) {
+    const normalizedDate = normalizeDateOnly(session_date) || session_date;
     // Check if session exists on that date for this class
     let session = await this.db.classSession.findFirst({
       where: {
         class_id,
-        session_date,
+        session_date: normalizedDate,
       },
     });
 
@@ -408,7 +410,7 @@ export class ImportsRepository {
         data: {
           class_id,
           session_number: nextNumber,
-          session_date,
+          session_date: normalizedDate,
           created_by_id,
         },
       });
@@ -443,15 +445,19 @@ export class ImportsRepository {
     });
 
     const sessionCount = data.session_count || 1;
-    let recState = data.reconciliation_state || ReconciliationState.MATCHED;
+    let recState = data.reconciliation_state;
 
-    if (existing) {
-      // Check if both sides have reported
-      const effectiveTeacherStatus = data.teacher_status || existing.teacher_status;
-      const effectiveCsStatus = data.cs_status || existing.cs_status;
-      if (effectiveTeacherStatus && effectiveCsStatus) {
-        recState = effectiveTeacherStatus === effectiveCsStatus ? ReconciliationState.MATCHED : ReconciliationState.CONFLICT;
-      }
+    const effectiveTeacherStatus = data.teacher_status !== undefined ? data.teacher_status : existing?.teacher_status;
+    const effectiveCsStatus = data.cs_status !== undefined ? data.cs_status : existing?.cs_status;
+
+    if (effectiveTeacherStatus && effectiveCsStatus) {
+      recState = effectiveTeacherStatus === effectiveCsStatus ? ReconciliationState.MATCHED : ReconciliationState.CONFLICT;
+    } else if (effectiveTeacherStatus && !effectiveCsStatus) {
+      recState = ReconciliationState.PENDING_CS;
+    } else if (!effectiveTeacherStatus && effectiveCsStatus) {
+      recState = ReconciliationState.PENDING_TEACHER;
+    } else {
+      recState = recState || ReconciliationState.PENDING_TEACHER;
     }
 
     return this.db.attendance.upsert({

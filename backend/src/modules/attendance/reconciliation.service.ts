@@ -4,7 +4,7 @@ import ExcelJS from 'exceljs';
 import { handleAttendanceEvent, cancelPendingDeliveries } from '../automation/automation-trigger.service';
 import { createLogger } from '../../shared/logger/logger';
 import { AppError } from '../../middlewares/error.middleware';
-import { parseAttendanceValue, parseTimeSlot } from './attendance.utils';
+import { parseAttendanceValue, parseTimeSlot, normalizeDateOnly } from './attendance.utils';
 
 const log = createLogger('ReconciliationService');
 
@@ -541,8 +541,9 @@ export class ReconciliationService {
           if (!ec) continue;
 
           // Find or create ClassSession for date
+          const normalizedDate = normalizeDateOnly(dc.date) || dc.date;
           let session = await prisma.classSession.findFirst({
-            where: { class_id: ec.class_id, session_date: dc.date },
+            where: { class_id: ec.class_id, session_date: normalizedDate },
           });
 
           if (!session) {
@@ -554,7 +555,7 @@ export class ReconciliationService {
               data: {
                 class_id: ec.class_id,
                 session_number: (lastSession?.session_number || 0) + 1,
-                session_date: dc.date,
+                session_date: normalizedDate,
                 start_time: startTime || null,
                 end_time: endTime || null,
                 created_by_id: teacherUserId,

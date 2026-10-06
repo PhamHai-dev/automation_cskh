@@ -124,6 +124,7 @@ export interface ImportBatchSummary {
   total_rows: number;
   success_rows: number;
   failed_rows: number;
+  conflict_attendances?: number;
   created_at: Date;
   completed_at: Date | null;
   uploaded_by: { id: number; name: string | null; email: string };

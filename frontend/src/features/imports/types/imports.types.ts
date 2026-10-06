@@ -69,7 +69,7 @@ export interface ValidationReport {
 }
 export interface ImportBatchSummary {
   id: number; file_name: string; import_type: ImportType; status: ImportBatchStatus;
-  total_rows: number; success_rows: number; failed_rows: number; created_at: string; completed_at: string | null;
+  total_rows: number; success_rows: number; failed_rows: number; conflict_attendances?: number; created_at: string; completed_at: string | null;
   uploaded_by: { id: number; name: string | null; email: string };
 }
 export interface ImportRowItem { id: number; row_number: number; raw_data: Record<string, unknown>; status: 'PENDING' | 'SUCCESS' | 'FAILED'; error_message?: string | null; entity_type?: string | null; entity_id?: string | null }
