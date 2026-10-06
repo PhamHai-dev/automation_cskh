@@ -9,6 +9,7 @@ docs/
 ├── README.md
 ├── STATUS.md
 ├── CHANGELOG.md
+├── GIT_WORKFLOW.md   # quy trình pull/push/merge chuẩn cho mọi branch
 ├── OPEN_QUESTIONS.md
 ├── product/        # scope, nghiệp vụ, role, business rule, module, backlog
 ├── architecture/   # system, data model, project structure, frontend, testing, code convention
@@ -81,6 +82,7 @@ AI chỉ làm một phase tại một thời điểm. Sau phase phải test, c�
 - `STATUS.md` — trạng thái phase hiện tại.
 - `CHANGELOG.md` — thay đổi quan trọng theo phase/ngày.
 - `OPEN_QUESTIONS.md` — câu hỏi AI không được tự đoán.
+- `GIT_WORKFLOW.md` — quy trình pull/push/merge/rebase chuẩn cho mọi branch (đọc trước khi thao tác Git).
 
 Khi tài liệu mâu thuẫn, ưu tiên quyết định mới nhất đã được user duyệt, sau đó domain spec, phase hiện tại và cuối cùng mới tới implementation. Nếu vẫn không rõ, hỏi user.
 
