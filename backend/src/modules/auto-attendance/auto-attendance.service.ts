@@ -229,7 +229,6 @@ export class AutoAttendanceService {
             enrollment_class_id: ec.id,
             class_session_id: session.id,
             status: 'ATTENDED',
-            session_count: 1,
             source: 'AUTO_SCHEDULE',
             created_by_id: actor.id,
           });

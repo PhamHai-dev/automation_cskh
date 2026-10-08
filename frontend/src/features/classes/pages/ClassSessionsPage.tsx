@@ -12,7 +12,7 @@ import { Select } from '../../../components/ui/Select';
 import { Badge } from '../../../components/ui/Badge';
 import { Modal } from '../../../components/ui/Modal';
 import { useToast } from '../../../components/ui/Toast';
-import { Edit, ClipboardCheck, Plus, AlertTriangle } from 'lucide-react';
+import { Edit, ClipboardCheck, Plus, AlertTriangle, Trash2 } from 'lucide-react';
 
 const SESSION_STATUS_VN: Record<string, { label: string; variant: 'info' | 'success' | 'danger' | 'warning' | 'neutral' }> = {
   SCHEDULED: { label: 'Đã lên lịch', variant: 'info' },
@@ -36,10 +36,10 @@ export const ClassSessionsPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [forbiddenError, setForbiddenError] = useState<string | null>(null);
 
-  // Modal states
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingSession, setEditingSession] = useState<ClassSession | null>(null);
   const [cancellingSession, setCancellingSession] = useState<ClassSession | null>(null);
+  const [deletingSession, setDeletingSession] = useState<ClassSession | null>(null);
 
   // Form states
   const [formData, setFormData] = useState({
@@ -93,9 +93,8 @@ export const ClassSessionsPage: React.FC = () => {
       });
     } else {
       setEditingSession(null);
-      const nextNumber = sessions.length > 0 ? Math.max(...sessions.map((s) => s.session_number)) + 1 : 1;
       setFormData({
-        session_number: String(nextNumber),
+        session_number: '',
         session_date: new Date().toISOString().split('T')[0],
         start_time: '19:00',
         end_time: '20:30',
@@ -115,7 +114,6 @@ export const ClassSessionsPage: React.FC = () => {
     e.preventDefault();
     try {
       const payload: CreateClassSessionDTO = {
-        session_number: parseInt(formData.session_number, 10),
         session_date: formData.session_date,
         start_time: formData.start_time || undefined,
         end_time: formData.end_time || undefined,
@@ -125,6 +123,7 @@ export const ClassSessionsPage: React.FC = () => {
       if (editingSession) {
         const updatePayload: UpdateClassSessionDTO = {
           ...payload,
+          session_number: parseInt(formData.session_number, 10),
           status: formData.status,
         };
         await classSessionsApi.update(clsId, editingSession.id, updatePayload);
@@ -148,7 +147,19 @@ export const ClassSessionsPage: React.FC = () => {
       setCancellingSession(null);
       fetchData();
     } catch (err: any) {
-      toast.error(err.response?.data?.error?.message || 'Hủy buổi học không thành công');
+      toast.error(err.response?.data?.message || err.response?.data?.error?.message || 'Hủy buổi học không thành công');
+    }
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deletingSession) return;
+    try {
+      await classSessionsApi.remove(clsId, deletingSession.id, true);
+      toast.success(`Đã xóa buổi học số ${deletingSession.session_number}`);
+      setDeletingSession(null);
+      fetchData();
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || err.response?.data?.error?.message || 'Xóa buổi học không thành công');
     }
   };
 
@@ -213,6 +224,17 @@ export const ClassSessionsPage: React.FC = () => {
               Hủy
             </Button>
           )}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={(e) => {
+              e.stopPropagation();
+              setDeletingSession(item);
+            }}
+            leftIcon={<Trash2 className="h-4 w-4" />}
+            className="text-rose-700 hover:bg-rose-50"
+            title="Xóa buổi học và dữ liệu điểm danh liên quan"
+          />
         </div>
       ),
     },
@@ -294,14 +316,16 @@ export const ClassSessionsPage: React.FC = () => {
       >
         <form id="session-form" onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
-            <Input
-              label="Buổi học số *"
-              type="number"
-              min={1}
-              required
-              value={formData.session_number}
-              onChange={(e) => setFormData({ ...formData, session_number: e.target.value })}
-            />
+            {editingSession && (
+              <Input
+                label="Buổi học số *"
+                type="number"
+                min={1}
+                required
+                value={formData.session_number}
+                onChange={(e) => setFormData({ ...formData, session_number: e.target.value })}
+              />
+            )}
             <Input
               label="Ngày diễn ra *"
               type="date"
@@ -310,6 +334,7 @@ export const ClassSessionsPage: React.FC = () => {
               onChange={(e) => setFormData({ ...formData, session_date: e.target.value })}
             />
           </div>
+          {!editingSession && <p className="text-xs text-text-muted">Số thứ tự buổi sẽ được hệ thống tự động cấp.</p>}
 
           <div className="grid grid-cols-2 gap-4">
             <Input
@@ -367,6 +392,24 @@ export const ClassSessionsPage: React.FC = () => {
             </strong>
             ?
           </p>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={deletingSession !== null}
+        onClose={() => setDeletingSession(null)}
+        title="Xóa buổi học của toàn lớp"
+        size="sm"
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" size="sm" onClick={() => setDeletingSession(null)}>Không xóa</Button>
+            <Button variant="danger" size="sm" onClick={handleConfirmDelete}>Xóa buổi và điểm danh</Button>
+          </div>
+        }
+      >
+        <div className="flex items-start gap-3 text-xs text-slate-700">
+          <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-rose-500" />
+          <p>Thao tác này xóa <strong>Buổi {deletingSession?.session_number}</strong> khỏi toàn lớp và mọi bản ghi điểm danh liên quan. Không thể hoàn tác.</p>
         </div>
       </Modal>
     </PageContainer>

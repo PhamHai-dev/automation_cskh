@@ -6,10 +6,8 @@ export class ClassSessionsRepository {
   async findByClassId(classId: number) {
     return prisma.classSession.findMany({
       where: { class_id: classId },
-      include: {
-        created_by: { select: { id: true, name: true, email: true } },
-      },
-      orderBy: { session_number: 'asc' },
+      include: { created_by: { select: { id: true, name: true, email: true } } },
+      orderBy: [{ session_date: 'asc' }, { start_time: 'asc' }, { session_number: 'asc' }],
     });
   }
 
@@ -24,17 +22,20 @@ export class ClassSessionsRepository {
   }
 
   async findByClassAndNumber(classId: number, sessionNumber: number) {
-    return prisma.classSession.findFirst({
-      where: { class_id: classId, session_number: sessionNumber },
-    });
+    return prisma.classSession.findFirst({ where: { class_id: classId, session_number: sessionNumber } });
   }
 
   async create(classId: number, data: CreateClassSessionDTO, userId: number) {
     return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-      const session = await tx.classSession.create({
+      const latest = await tx.classSession.findFirst({
+        where: { class_id: classId },
+        orderBy: { session_number: 'desc' },
+        select: { session_number: true },
+      });
+      return tx.classSession.create({
         data: {
           class_id: classId,
-          session_number: data.session_number,
+          session_number: data.session_number ?? (latest?.session_number ?? 0) + 1,
           session_date: new Date(data.session_date),
           start_time: data.start_time,
           end_time: data.end_time,
@@ -43,13 +44,12 @@ export class ClassSessionsRepository {
           created_by_id: userId,
         },
       });
-      return session;
-    });
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
   }
 
   async update(classId: number, sessionId: number, data: UpdateClassSessionDTO) {
     return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-      const session = await tx.classSession.updateMany({
+      await tx.classSession.updateMany({
         where: { id: sessionId, class_id: classId },
         data: {
           session_number: data.session_number,
@@ -60,7 +60,6 @@ export class ClassSessionsRepository {
           status: data.status,
         },
       });
-
       return tx.classSession.findFirst({ where: { id: sessionId, class_id: classId } });
     });
   }
@@ -69,6 +68,30 @@ export class ClassSessionsRepository {
     return prisma.classSession.updateMany({
       where: { id: sessionId, class_id: classId },
       data: { status: 'CANCELLED' },
+    });
+  }
+
+  async delete(classId: number, sessionId: number, userId: number) {
+    return prisma.$transaction(async (tx) => {
+      const session = await tx.classSession.findFirst({
+        where: { id: sessionId, class_id: classId },
+        include: { attendance: true },
+      });
+      if (!session) return null;
+      const attendanceCount = session.attendance.filter((item) => !item.deleted_at).length;
+      await tx.attendance.deleteMany({ where: { class_session_id: sessionId } });
+      await tx.classSession.delete({ where: { id: sessionId } });
+      await tx.auditLog.create({
+        data: {
+          user_id: userId,
+          action: 'DELETE',
+          entity_type: 'ClassSession',
+          entity_id: String(sessionId),
+          before_data: session as any,
+          after_data: { deleted: true, attendance_count: attendanceCount },
+        },
+      });
+      return { attendanceCount };
     });
   }
 }

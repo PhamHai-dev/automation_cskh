@@ -23,4 +23,7 @@ router.patch('/:sessionId', requireRoles(['ADMIN', 'MANAGE', 'CS', 'TEACHER']), 
 // Cancel session
 router.post('/:sessionId/cancel', requireRoles(['ADMIN', 'MANAGE', 'CS', 'TEACHER']), requireClassAccess('hủy buổi học của lớp này'), controller.cancel);
 
+// Delete session and, only after explicit confirmation, its attendance records
+router.delete('/:sessionId', requireRoles(['ADMIN', 'MANAGE', 'CS', 'TEACHER']), requireClassAccess('xóa buổi học của lớp này'), controller.remove);
+
 export { router as classSessionsRouter };

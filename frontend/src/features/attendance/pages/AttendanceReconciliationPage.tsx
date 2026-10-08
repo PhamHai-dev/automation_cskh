@@ -58,7 +58,7 @@ export const AttendanceReconciliationPage: React.FC = () => {
   const [selectedRecord, setSelectedRecord] = useState<AttendanceRecord | null>(null);
   const [isResolveModalOpen, setIsResolveModalOpen] = useState(false);
   const [finalStatus, setFinalStatus] = useState<AttendanceStatus>('ATTENDED');
-  const [sessionCount, setSessionCount] = useState<number>(1);
+
   const [resolutionNote, setResolutionNote] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -93,7 +93,7 @@ export const AttendanceReconciliationPage: React.FC = () => {
     setSelectedRecord(record);
     // Default finalStatus to teacher_status or cs_status
     setFinalStatus(record.teacher_status || record.cs_status || 'ATTENDED');
-    setSessionCount(record.session_count || 1);
+
     setResolutionNote('');
     setIsResolveModalOpen(true);
   };
@@ -110,7 +110,6 @@ export const AttendanceReconciliationPage: React.FC = () => {
       await reconciliationApi.resolveConflict(selectedRecord.id, {
         finalStatus,
         resolutionNote: resolutionNote.trim(),
-        sessionCount,
       });
       toast.success('Phân xử buổi học thành công! Trạng thái đã được chốt.');
       setIsResolveModalOpen(false);
@@ -743,18 +742,7 @@ export const AttendanceReconciliationPage: React.FC = () => {
                 </Select>
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-text-primary mb-1">
-                  Số buổi tính (Mặc định 1.0, hoặc 2.0 nếu dồn 2 buổi)
-                </label>
-                <Input
-                  type="number"
-                  step="0.5"
-                  min="0.5"
-                  value={sessionCount}
-                  onChange={(e) => setSessionCount(Number(e.target.value) || 1)}
-                />
-              </div>
+
 
               <div>
                 <label className="block text-xs font-semibold text-text-primary mb-1">

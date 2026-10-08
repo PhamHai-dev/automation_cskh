@@ -334,7 +334,6 @@ describe('Teacher Attendance Scope Integration Tests', () => {
         .send({
           enrollment_class_id: ec2.id,
           status: 'ATTENDED',
-          session_count: 1,
         });
 
       expect(res.status).toBe(403);
@@ -349,7 +348,6 @@ describe('Teacher Attendance Scope Integration Tests', () => {
             {
               enrollment_class_id: ec2.id,
               status: 'ATTENDED',
-              session_count: 1,
             },
           ],
         });
@@ -364,7 +362,6 @@ describe('Teacher Attendance Scope Integration Tests', () => {
         .send({
           enrollment_class_id: ec1.id,
           status: 'ATTENDED',
-          session_count: 1,
         });
 
       expect(res.status).toBe(201);

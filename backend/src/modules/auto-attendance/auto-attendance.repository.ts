@@ -128,37 +128,48 @@ export class AutoAttendanceRepository {
     sessionDate: Date,
     createdById: number,
   ) {
-    let session = await prisma.classSession.findFirst({
+    const existing = await prisma.classSession.findFirst({
       where: {
         class_id: classId,
+        class_schedule_id: classScheduleId,
         session_date: sessionDate,
       },
     });
+    if (existing) return existing;
 
-    if (!session) {
-      const lastSession = await prisma.classSession.findFirst({
-        where: { class_id: classId },
-        orderBy: { session_number: 'desc' },
-      });
-      const nextNumber = (lastSession?.session_number || 0) + 1;
-
-      session = await prisma.classSession.create({
-        data: {
-          class_id: classId,
-          class_schedule_id: classScheduleId,
-          session_number: nextNumber,
-          session_date: sessionDate,
-          created_by_id: createdById,
-        },
-      });
-    } else if (!session.class_schedule_id) {
-      session = await prisma.classSession.update({
-        where: { id: session.id },
-        data: { class_schedule_id: classScheduleId },
-      });
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        return await prisma.$transaction(async (tx) => {
+          const duplicate = await tx.classSession.findFirst({
+            where: {
+              class_id: classId,
+              class_schedule_id: classScheduleId,
+              session_date: sessionDate,
+            },
+          });
+          if (duplicate) return duplicate;
+          const lastSession = await tx.classSession.findFirst({
+            where: { class_id: classId },
+            orderBy: { session_number: 'desc' },
+            select: { session_number: true },
+          });
+          return tx.classSession.create({
+            data: {
+              class_id: classId,
+              class_schedule_id: classScheduleId,
+              session_number: (lastSession?.session_number || 0) + 1,
+              session_date: sessionDate,
+              created_by_id: createdById,
+            },
+          });
+        }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+      } catch (error) {
+        const retryable = error instanceof Prisma.PrismaClientKnownRequestError &&
+          (error.code === 'P2002' || error.code === 'P2034');
+        if (!retryable || attempt === 2) throw error;
+      }
     }
-
-    return session;
+    throw new Error('Unable to create class session after retry');
   }
 
   findExistingAttendance(enrollmentClassId: number, classSessionId: number) {
@@ -175,7 +186,6 @@ export class AutoAttendanceRepository {
     enrollment_class_id: number;
     class_session_id: number;
     status: 'ATTENDED';
-    session_count?: number;
     source: 'AUTO_SCHEDULE';
     created_by_id: number;
   }) {
@@ -184,7 +194,6 @@ export class AutoAttendanceRepository {
         enrollment_class_id: data.enrollment_class_id,
         class_session_id: data.class_session_id,
         status: data.status,
-        session_count: data.session_count ?? 1,
         source: data.source,
         created_by_id: data.created_by_id,
       },

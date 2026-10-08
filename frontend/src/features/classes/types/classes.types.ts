@@ -71,7 +71,7 @@ export interface ClassSession {
 }
 
 export interface CreateClassSessionDTO {
-  session_number: number;
+  session_number?: number;
   session_date: string;
   start_time?: string;
   end_time?: string;
@@ -93,8 +93,7 @@ export interface Attendance {
   enrollment_class_id: number;
   class_session_id: number;
   status: AttendanceStatus;
-  session_count?: number;
-  source: AttendanceSource;
+    source: AttendanceSource;
   created_by_id: number;
   created_by?: { id: number; name: string; email: string };
   enrollment_class?: {
@@ -114,8 +113,7 @@ export interface Attendance {
 export interface MarkAttendanceDTO {
   enrollment_class_id: number;
   status: AttendanceStatus;
-  session_count?: number;
-}
+  }
 
 export interface BulkMarkAttendanceDTO {
   items: MarkAttendanceDTO[];
@@ -123,8 +121,7 @@ export interface BulkMarkAttendanceDTO {
 
 export interface UpdateAttendanceDTO {
   status?: AttendanceStatus;
-  session_count?: number;
-}
+  }
 
 export const ATTENDANCE_STATUS_LABELS: Record<AttendanceStatus, string> = {
   ATTENDED: 'Có mặt',

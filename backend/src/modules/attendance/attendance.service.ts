@@ -36,7 +36,7 @@ export class AttendanceService {
       throw new Error('Attendance already exists for this enrollment class and session');
     }
 
-    const result = await this.repository.mark(data.enrollment_class_id, sessionId, data.status, 'MANUAL', userId, data.session_count || 1);
+    const result = await this.repository.mark(data.enrollment_class_id, sessionId, data.status, 'MANUAL', userId);
     await this.logAudit(userId, 'CREATE', 'Attendance', String(result.id), null, result);
     // Fire-and-forget: trigger automation deliveries for this attendance
     handleAttendanceEvent(result.id).catch((err: any) =>

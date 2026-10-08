@@ -1,3 +1,5 @@
+/// <reference types="node" />
+
 /**
  * assert-zalo-pool-fixes.ts — Regression assertions cho Zalo pool fixes.
  * Chạy: npx ts-node scripts/assert-zalo-pool-fixes.ts

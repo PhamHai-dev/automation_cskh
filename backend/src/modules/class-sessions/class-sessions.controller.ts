@@ -66,4 +66,17 @@ export class ClassSessionsController {
       next(error);
     }
   }
+
+  async remove(req: Request, res: Response, next: NextFunction) {
+    try {
+      const classId = parseInt(req.params.classId);
+      const sessionId = parseInt(req.params.sessionId);
+      const userId = req.user?.id || 0;
+      const confirmed = req.query.confirm === 'true';
+      const result = await classSessionsService.deleteSession(classId, sessionId, userId, confirmed);
+      res.json({ data: result, meta: null });
+    } catch (error) {
+      next(error);
+    }
+  }
 }

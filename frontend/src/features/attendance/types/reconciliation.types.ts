@@ -18,8 +18,7 @@ export interface AttendanceRecord {
   enrollment_class_id: number;
   class_session_id: number;
   status: AttendanceStatus | null;
-  session_count: number;
-  lesson_topic: string | null;
+    lesson_topic: string | null;
   reconciliation_state: ReconciliationState;
   
   teacher_status: AttendanceStatus | null;
@@ -78,20 +77,17 @@ export interface ReconciliationListResponse {
 export interface ResolveConflictRequest {
   finalStatus: AttendanceStatus;
   resolutionNote: string;
-  sessionCount?: number;
-}
+  }
 
 export interface TeacherMarkRequest {
   status: AttendanceStatus;
   rawValue?: string;
   lessonTopic?: string;
   note?: string;
-  sessionCount?: number;
-}
+  }
 
 export interface CSMarkRequest {
   status: AttendanceStatus;
   rawValue?: string;
   note?: string;
-  sessionCount?: number;
-}
+  }

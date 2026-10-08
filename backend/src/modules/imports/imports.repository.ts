@@ -425,7 +425,6 @@ export class ImportsRepository {
     status: AttendanceStatus;
     source: AttendanceSource;
     created_by_id: number;
-    session_count?: number;
     cs_status?: AttendanceStatus;
     cs_raw_value?: string;
     teacher_status?: AttendanceStatus;
@@ -444,7 +443,6 @@ export class ImportsRepository {
       },
     });
 
-    const sessionCount = data.session_count || 1;
     let recState = data.reconciliation_state;
 
     const effectiveTeacherStatus = data.teacher_status !== undefined ? data.teacher_status : existing?.teacher_status;
@@ -470,7 +468,6 @@ export class ImportsRepository {
       update: {
         status: data.status,
         source: data.source,
-        session_count: sessionCount,
         reconciliation_state: recState,
         ...(data.cs_status !== undefined ? { cs_status: data.cs_status, cs_raw_value: data.cs_raw_value, cs_user_id: data.cs_user_id, cs_submitted_at: new Date() } : {}),
         ...(data.teacher_status !== undefined ? { teacher_status: data.teacher_status, teacher_raw_value: data.teacher_raw_value, lesson_topic: data.lesson_topic, teacher_user_id: data.teacher_user_id, teacher_submitted_at: new Date() } : {}),
@@ -481,7 +478,6 @@ export class ImportsRepository {
         status: data.status,
         source: data.source,
         created_by_id: data.created_by_id,
-        session_count: sessionCount,
         reconciliation_state: recState,
         cs_status: data.cs_status || data.status,
         cs_raw_value: data.cs_raw_value || null,

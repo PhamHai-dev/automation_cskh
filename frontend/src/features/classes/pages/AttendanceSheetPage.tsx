@@ -118,7 +118,7 @@ export const AttendanceSheetPage = () => {
 
   // Track local changes for single session view
   const [edits, setEdits] = useState<Record<number, AttendanceStatus>>({});
-  const [editCounts, setEditCounts] = useState<Record<number, number>>({});
+  
 
   const fetchData = async () => {
     try {
@@ -249,7 +249,6 @@ export const AttendanceSheetPage = () => {
   const handleToggleAttended = (enrollmentClassId: number, checked: boolean) => {
     if (checked) {
       setEdits((prev) => ({ ...prev, [enrollmentClassId]: 'ATTENDED' }));
-      setEditCounts((prev) => ({ ...prev, [enrollmentClassId]: prev[enrollmentClassId] || 1 }));
     } else {
       setEdits((prev) => {
         const next = { ...prev };
@@ -257,12 +256,6 @@ export const AttendanceSheetPage = () => {
         return next;
       });
     }
-  };
-
-  // Change session count for attended
-  const handleCountChange = (enrollmentClassId: number, countVal: number) => {
-    setEditCounts((prev) => ({ ...prev, [enrollmentClassId]: countVal }));
-    setEdits((prev) => ({ ...prev, [enrollmentClassId]: 'ATTENDED' }));
   };
 
   // Handle absent status change
@@ -278,7 +271,6 @@ export const AttendanceSheetPage = () => {
       return {
         enrollment_class_id: ecIdNum,
         status,
-        session_count: status === 'ATTENDED' ? (editCounts[ecIdNum] || 1) : 1,
       };
     });
 
@@ -300,14 +292,11 @@ export const AttendanceSheetPage = () => {
   // Mark all attended
   const handleMarkAllAttended = () => {
     const newEdits: Record<number, AttendanceStatus> = {};
-    const newCounts: Record<number, number> = {};
     attendances.forEach((att) => {
       newEdits[att.enrollment_class_id] = 'ATTENDED';
-      newCounts[att.enrollment_class_id] = 1;
     });
     setEdits(newEdits);
-    setEditCounts(newCounts);
-    toast.info('Đã tích chọn Có mặt (1 buổi) cho tất cả học viên. Bấm Lưu thay đổi để xác nhận.');
+    toast.info('Đã tích chọn Có mặt cho tất cả học viên. Bấm Lưu thay đổi để xác nhận.');
   };
 
   // Toggle all attended checkbox
@@ -458,7 +447,7 @@ export const AttendanceSheetPage = () => {
                           className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 border-slate-300 cursor-pointer accent-emerald-600"
                           title="Tích chọn tất cả có mặt"
                         />
-                        <span>Có mặt (điền số buổi)</span>
+                        <span>Có mặt</span>
                       </div>
                     </th>
                     <th className="px-5 py-3.5 min-w-[260px]">Lý do vắng / nghỉ</th>
@@ -469,7 +458,6 @@ export const AttendanceSheetPage = () => {
                     const currentStatus = edits[att.enrollment_class_id] || att.status;
                     const isEdited = edits[att.enrollment_class_id] !== undefined;
                     const isAttended = currentStatus === 'ATTENDED';
-                    const currentCount = editCounts[att.enrollment_class_id] || 1;
 
                     return (
                       <tr
@@ -520,51 +508,7 @@ export const AttendanceSheetPage = () => {
                               </span>
                             </label>
 
-                            {/* Number input for session count */}
-                            <div className="flex items-center gap-1 ml-1">
-                              <input
-                                type="number"
-                                min="0.5"
-                                max="10"
-                                step="0.5"
-                                value={currentCount}
-                                disabled={!isAttended}
-                                onChange={(e) =>
-                                  handleCountChange(
-                                    att.enrollment_class_id,
-                                    Number(e.target.value) || 1
-                                  )
-                                }
-                                className={`w-14 text-center text-xs font-extrabold rounded-lg border py-1 focus:outline-none focus:ring-1 ${
-                                  isAttended
-                                    ? 'bg-emerald-50 border-emerald-300 text-emerald-800 focus:ring-emerald-500'
-                                    : 'bg-slate-100 border-border text-slate-400 cursor-not-allowed'
-                                }`}
-                              />
-                              <span className="text-[11px] text-text-muted">buổi</span>
-                            </div>
 
-                            {/* Quick 1, 2, 3 preset buttons */}
-                            {isAttended && (
-                              <div className="flex items-center gap-1 ml-1">
-                                {[1, 2, 3].map((num) => (
-                                  <button
-                                    key={num}
-                                    type="button"
-                                    onClick={() =>
-                                      handleCountChange(att.enrollment_class_id, num)
-                                    }
-                                    className={`w-5 h-5 rounded text-[10px] font-extrabold border ${
-                                      currentCount === num
-                                        ? 'bg-emerald-600 text-white border-emerald-600'
-                                        : 'bg-white text-emerald-800 border-emerald-300 hover:bg-emerald-50'
-                                    }`}
-                                  >
-                                    {num}
-                                  </button>
-                                ))}
-                              </div>
-                            )}
                           </div>
                         </td>
 

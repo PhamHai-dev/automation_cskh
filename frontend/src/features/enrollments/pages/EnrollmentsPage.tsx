@@ -195,7 +195,7 @@ export const EnrollmentsPage: React.FC = () => {
       if ((a as any).deleted_at) return;
       if (a.status === 'ATTENDED') {
         const cur = map.get(a.enrollment_class_id) || 0;
-        map.set(a.enrollment_class_id, cur + (a.session_count ?? 1));
+        map.set(a.enrollment_class_id, cur + 1);
       }
     });
     return map;
@@ -425,12 +425,12 @@ export const EnrollmentsPage: React.FC = () => {
   // Save changes from Attendance Matrix across student classes
   const handleCustomSaveAll = async (
     pendingEdits: Record<string, AttendanceStatus>,
-    customValues?: Record<string, number>
+    _customValues?: Record<string, number>,
+    sessionIndex = 0
   ) => {
     const entries = Object.entries(pendingEdits);
     if (entries.length === 0) return;
 
-    // Group edits by class_id and dateStr
     const byClassAndDate = new Map<
       string,
       { classId: number; dateStr: string; items: { ecId: number; status: AttendanceStatus }[] }
@@ -440,37 +440,27 @@ export const EnrollmentsPage: React.FC = () => {
       const [ecIdStr, dateStr] = key.split('_');
       const ecId = parseInt(ecIdStr, 10);
       const student = matrixStudents.find((s) => s.enrollment_class_id === ecId);
-      if (!student || student.enrollment_class_id <= 0 || !student.class_id) {
-        return;
-      }
-      const classId = student.class_id;
-
-      const groupKey = `${classId}_${dateStr}`;
+      if (!student || student.enrollment_class_id <= 0 || !student.class_id) return;
+      const groupKey = `${student.class_id}_${dateStr}`;
       if (!byClassAndDate.has(groupKey)) {
-        byClassAndDate.set(groupKey, { classId, dateStr, items: [] });
+        byClassAndDate.set(groupKey, { classId: student.class_id, dateStr, items: [] });
       }
       byClassAndDate.get(groupKey)!.items.push({ ecId, status });
     });
 
     for (const { classId, dateStr, items } of byClassAndDate.values()) {
-      const existingSessions = await classSessionsApi.list(classId);
-      let session = existingSessions.find(
-        (s) => formatSessionDate(s.session_date) === dateStr
-      );
-
+      const existingSessions = (await classSessionsApi.list(classId))
+        .filter((s) => formatSessionDate(s.session_date) === dateStr)
+        .sort((a, b) => (a.start_time || '').localeCompare(b.start_time || '') || a.session_number - b.session_number || a.id - b.id);
+      let session = existingSessions[sessionIndex];
       if (!session) {
-        session = await classSessionsApi.create(classId, {
-          session_number: existingSessions.length + 1,
-          session_date: dateStr,
-        });
+        session = await classSessionsApi.create(classId, { session_date: dateStr });
       }
 
       await attendanceApi.bulkMark(classId, session.id, {
         items: items.map((i) => ({
           enrollment_class_id: i.ecId,
           status: i.status,
-          session_count:
-            i.status === 'ATTENDED' ? customValues?.[`${i.ecId}_${dateStr}`] ?? 1 : 1,
         })),
       });
     }

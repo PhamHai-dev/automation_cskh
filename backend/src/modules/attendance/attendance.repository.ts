@@ -49,7 +49,7 @@ export class AttendanceRepository {
     return roles.includes('TEACHER') && !roles.includes('ADMIN') && !roles.includes('MANAGE') && !roles.includes('CS');
   }
 
-  async mark(enrollmentClassId: number, classSessionId: number, status: string, source: string, userId: number, sessionCount: number = 1) {
+  async mark(enrollmentClassId: number, classSessionId: number, status: string, source: string, userId: number) {
     const isTeacher = await this.isTeacherActor(userId);
     const parsedStatus = status as AttendanceStatus;
 
@@ -80,7 +80,6 @@ export class AttendanceRepository {
 
       const updateData: any = {
         status: parsedStatus,
-        session_count: sessionCount,
         source: source as any,
         reconciliation_state: recState,
         deleted_at: null,
@@ -91,7 +90,6 @@ export class AttendanceRepository {
         enrollment_class_id: enrollmentClassId,
         class_session_id: classSessionId,
         status: parsedStatus,
-        session_count: sessionCount,
         source: source as any,
         reconciliation_state: recState,
         created_by_id: userId,
@@ -127,14 +125,13 @@ export class AttendanceRepository {
     });
   }
 
-  async bulkMark(items: Array<{ enrollment_class_id: number; status: string; session_count?: number }>, classSessionId: number, source: string, userId: number) {
+  async bulkMark(items: Array<{ enrollment_class_id: number; status: string }>, classSessionId: number, source: string, userId: number) {
     const isTeacher = await this.isTeacherActor(userId);
 
     return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       const results = [];
       for (const item of items) {
         const parsedStatus = item.status as AttendanceStatus;
-        const count = item.session_count ?? 1;
 
         const existing = await tx.attendance.findUnique({
           where: {
@@ -162,7 +159,6 @@ export class AttendanceRepository {
 
         const updateData: any = {
           status: parsedStatus,
-          session_count: count,
           source: source as any,
           reconciliation_state: recState,
           deleted_at: null,
@@ -173,7 +169,6 @@ export class AttendanceRepository {
           enrollment_class_id: item.enrollment_class_id,
           class_session_id: classSessionId,
           status: parsedStatus,
-          session_count: count,
           source: source as any,
           reconciliation_state: recState,
           created_by_id: userId,
@@ -227,7 +222,6 @@ export class AttendanceRepository {
         where: { id: attendanceId },
         data: {
           status: data.status as any,
-          ...(data.session_count !== undefined ? { session_count: data.session_count } : {}),
           ...(recState ? { reconciliation_state: recState } : {}),
         },
       });

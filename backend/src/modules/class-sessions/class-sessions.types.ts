@@ -1,5 +1,5 @@
 export interface CreateClassSessionDTO {
-  session_number: number;
+  session_number?: number;
   session_date: string;
   start_time?: string;
   end_time?: string;

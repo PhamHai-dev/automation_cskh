@@ -25,6 +25,13 @@ export const classSessionsApi = {
   cancel: async (classId: number, sessionId: number): Promise<void> => {
     await apiClient.post(`/classes/${classId}/sessions/${sessionId}/cancel`);
   },
+
+  remove: async (classId: number, sessionId: number, confirm = false): Promise<{ attendanceCount: number }> => {
+    const res = await apiClient.delete(`/classes/${classId}/sessions/${sessionId}`, {
+      params: { confirm },
+    });
+    return res.data.data;
+  },
 };
 
 export const attendanceApi = {

@@ -448,7 +448,6 @@ model Attendance {
   // 3. Kết quả đối soát & trạng thái chốt
   reconciliation_state ReconciliationState @default(PENDING_CS)
   status               AttendanceStatus
-  session_count        Float               @default(1)
 
   // Phân xử khi Lệch (Conflict)
   resolved_by_id  Int?
