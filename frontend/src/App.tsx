@@ -26,6 +26,7 @@ import { AutomationWorkflowsPage } from './features/automation/pages/AutomationW
 import { AutomationWorkflowDetailPage } from './features/automation/pages/AutomationWorkflowDetailPage';
 import { AttendanceReconciliationPage } from './features/attendance/pages/AttendanceReconciliationPage';
 import { MyTeachingSessionsPage } from './features/attendance/pages/MyTeachingSessionsPage';
+import { TeacherAttendanceTrackingPage } from './features/attendance/pages/TeacherAttendanceTrackingPage';
 import './styles/globals.css';
 import './styles/tokens.css';
 
@@ -91,6 +92,8 @@ function App() {
             <Route element={<ProtectedRoute allowedRoles={['ADMIN', 'MANAGE', 'CS', 'TEACHER']} />}>
               <Route path="/teacher/my-sessions" element={<MyTeachingSessionsPage />} />
               <Route path="/lich-day-cua-toi" element={<Navigate to="/teacher/my-sessions" replace />} />
+              <Route path="/teacher/attendance-tracking" element={<TeacherAttendanceTrackingPage />} />
+              <Route path="/theo-doi-diem-danh" element={<Navigate to="/teacher/attendance-tracking" replace />} />
 
               <Route path="/imports" element={<ImportsPage />} />
               <Route path="/nhap-xuat-excel" element={<Navigate to="/imports" replace />} />

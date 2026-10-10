@@ -13,6 +13,7 @@ export interface TeacherMarkDTO {
   rawValue?: string;
   lessonTopic?: string;
   note?: string;
+  teacherId?: number;
 }
 
 export interface CSMarkDTO {
@@ -36,6 +37,7 @@ export interface ReconciliationQuery {
   startDate?: string;
   endDate?: string;
   search?: string;
+  state?: string;
 }
 
 interface Actor {
@@ -77,6 +79,77 @@ export class ReconciliationService {
     }
   }
 
+  /** Build the shared reconciliation filter and enforce role-owned data scope. */
+  private buildScopeWhere(
+    query: ReconciliationQuery,
+    actor?: Actor,
+    stateFilter?: ReconciliationState | ReconciliationState[]
+  ): Prisma.AttendanceWhereInput {
+    const where: Prisma.AttendanceWhereInput = {};
+
+    if (stateFilter) {
+      where.reconciliation_state = Array.isArray(stateFilter) ? { in: stateFilter } : stateFilter;
+    }
+
+    const classSessionWhere: Prisma.ClassSessionWhereInput = {};
+    if (query.classId) classSessionWhere.class_id = query.classId;
+    if (query.startDate || query.endDate) {
+      classSessionWhere.session_date = {
+        ...(query.startDate ? { gte: new Date(`${query.startDate}T00:00:00.000Z`) } : {}),
+        ...(query.endDate ? { lte: new Date(`${query.endDate}T23:59:59.999Z`) } : {}),
+      };
+    }
+
+    if (actor?.roles.includes('TEACHER') && !this.isPrivileged(actor)) {
+      if (query.teacherId && query.teacherId !== actor.id) {
+        throw new AppError(403, 'Bạn không được xem dữ liệu của giáo viên khác');
+      }
+      classSessionWhere.class = {
+        class_teachers: { some: { active: true, teacher: { active: true, user_id: actor.id } } },
+      };
+    } else if (query.teacherId) {
+      classSessionWhere.class = {
+        class_teachers: { some: { active: true, teacher: { active: true, user_id: query.teacherId } } },
+      };
+    }
+
+    if (Object.keys(classSessionWhere).length > 0) where.class_session = classSessionWhere;
+
+    const enrollmentWhere: Prisma.EnrollmentWhereInput = {};
+    if (actor && this.isScopedToOwnCS(actor)) enrollmentWhere.cs_id = actor.id;
+    else if (query.csId) enrollmentWhere.cs_id = query.csId;
+
+    if (query.search) {
+      enrollmentWhere.student = {
+        OR: [
+          { full_name: { contains: query.search } },
+          { external_id: { contains: query.search } },
+          { phone: { contains: query.search } },
+        ],
+      };
+    }
+
+    if (Object.keys(enrollmentWhere).length > 0) {
+      where.enrollment_class = { enrollment: enrollmentWhere };
+    }
+    return where;
+  }
+
+  private assertTeacherTrackingContext(query: ReconciliationQuery, actor: Actor) {
+    if (this.isPrivileged(actor) && !query.teacherId) {
+      throw new AppError(400, 'Vui lòng chọn giáo viên cần theo dõi');
+    }
+  }
+
+  /** CS-only (non privileged) users are scoped to their assigned students. */
+  private isScopedToOwnCS(actor: Actor) {
+    return (
+      actor.roles.includes('CS') &&
+      !actor.roles.includes('ADMIN') &&
+      !actor.roles.includes('MANAGE')
+    );
+  }
+
   private async runDownstream(attendanceId: number, state: ReconciliationState) {
     try {
       if (state === ReconciliationState.MATCHED || state === ReconciliationState.RESOLVED) {
@@ -98,7 +171,24 @@ export class ReconciliationService {
       },
     });
     if (!existing) throw new AppError(404, 'Không tìm thấy bản ghi điểm danh');
-    await this.assertTeacherScope(actor, existing.class_session.class_id);
+
+    if (this.isPrivileged(actor)) {
+      if (!data.teacherId) throw new AppError(400, 'Vui lòng chọn giáo viên được hỗ trợ');
+      const assignment = await prisma.classTeacher.findFirst({
+        where: {
+          class_id: existing.class_session.class_id,
+          active: true,
+          teacher: { active: true, user_id: data.teacherId },
+        },
+        select: { id: true },
+      });
+      if (!assignment) throw new AppError(403, 'Giáo viên được chọn không phụ trách lớp này');
+    } else {
+      if (data.teacherId && data.teacherId !== actor.id) {
+        throw new AppError(403, 'Bạn không được điểm danh thay giáo viên khác');
+      }
+      await this.assertTeacherScope(actor, existing.class_session.class_id);
+    }
 
     const state = this.deriveState(data.status, existing.cs_status);
     const updateData: Prisma.AttendanceUpdateInput = {
@@ -118,9 +208,12 @@ export class ReconciliationService {
 
     const updated = await prisma.$transaction(async (tx) => {
       const result = await tx.attendance.update({ where: { id: attendanceId }, data: updateData });
+      const action = existing.teacher_status && existing.teacher_status !== data.status
+        ? 'ATTENDANCE_TEACHER_STATUS_CHANGED'
+        : 'ATTENDANCE_TEACHER_MARK';
       await tx.auditLog.create({ data: {
         user_id: actor.id,
-        action: 'ATTENDANCE_TEACHER_MARK',
+        action,
         entity_type: 'Attendance',
         entity_id: String(attendanceId),
         before_data: existing as any,
@@ -253,47 +346,7 @@ export class ReconciliationService {
     const limit = Math.min(100, Math.max(1, query.pageSize || query.limit || 20));
     const skip = (page - 1) * limit;
 
-    const where: Prisma.AttendanceWhereInput = {
-      reconciliation_state: ReconciliationState.CONFLICT,
-    };
-
-    const classSessionWhere: Prisma.ClassSessionWhereInput = {};
-    if (query.classId) {
-      classSessionWhere.class_id = query.classId;
-    }
-    if (query.startDate || query.endDate) {
-      classSessionWhere.session_date = {
-        ...(query.startDate ? { gte: new Date(query.startDate) } : {}),
-        ...(query.endDate ? { lte: new Date(query.endDate) } : {}),
-      };
-    }
-    if (Object.keys(classSessionWhere).length > 0) {
-      where.class_session = classSessionWhere;
-    }
-
-    const enrollmentWhere: Prisma.EnrollmentWhereInput = {};
-    // Role-based data scope: CS only sees their own assigned students if not MANAGE/ADMIN
-    if (actor && actor.roles.includes('CS') && !actor.roles.includes('ADMIN') && !actor.roles.includes('MANAGE')) {
-      enrollmentWhere.cs_id = actor.id;
-    } else if (query.csId) {
-      enrollmentWhere.cs_id = query.csId;
-    }
-
-    if (query.search) {
-      enrollmentWhere.student = {
-        OR: [
-          { full_name: { contains: query.search } },
-          { external_id: { contains: query.search } },
-          { phone: { contains: query.search } },
-        ],
-      };
-    }
-
-    if (Object.keys(enrollmentWhere).length > 0) {
-      where.enrollment_class = {
-        enrollment: enrollmentWhere,
-      };
-    }
+    const where = this.buildScopeWhere(query, actor, ReconciliationState.CONFLICT);
 
     const [total, items] = await Promise.all([
       prisma.attendance.count({ where }),
@@ -344,48 +397,11 @@ export class ReconciliationService {
     const limit = Math.min(100, Math.max(1, query.pageSize || query.limit || 20));
     const skip = (page - 1) * limit;
 
-    const where: Prisma.AttendanceWhereInput = {
-      reconciliation_state: {
-        in: [ReconciliationState.PENDING_CS, ReconciliationState.PENDING_TEACHER],
-      },
-    };
+    const stateFilter: ReconciliationState | ReconciliationState[] = query.state
+      ? (query.state as ReconciliationState)
+      : [ReconciliationState.PENDING_CS, ReconciliationState.PENDING_TEACHER];
 
-    const pendingClassSessionWhere: Prisma.ClassSessionWhereInput = {};
-    if (query.classId) {
-      pendingClassSessionWhere.class_id = query.classId;
-    }
-    if (query.startDate || query.endDate) {
-      pendingClassSessionWhere.session_date = {
-        ...(query.startDate ? { gte: new Date(query.startDate) } : {}),
-        ...(query.endDate ? { lte: new Date(query.endDate) } : {}),
-      };
-    }
-    if (Object.keys(pendingClassSessionWhere).length > 0) {
-      where.class_session = pendingClassSessionWhere;
-    }
-
-    const pendingEnrollmentWhere: Prisma.EnrollmentWhereInput = {};
-    if (actor && actor.roles.includes('CS') && !actor.roles.includes('ADMIN') && !actor.roles.includes('MANAGE')) {
-      pendingEnrollmentWhere.cs_id = actor.id;
-    } else if (query.csId) {
-      pendingEnrollmentWhere.cs_id = query.csId;
-    }
-
-    if (query.search) {
-      pendingEnrollmentWhere.student = {
-        OR: [
-          { full_name: { contains: query.search } },
-          { external_id: { contains: query.search } },
-          { phone: { contains: query.search } },
-        ],
-      };
-    }
-
-    if (Object.keys(pendingEnrollmentWhere).length > 0) {
-      where.enrollment_class = {
-        enrollment: pendingEnrollmentWhere,
-      };
-    }
+    const where = this.buildScopeWhere(query, actor, stateFilter);
 
     const [total, items] = await Promise.all([
       prisma.attendance.count({ where }),
@@ -418,6 +434,139 @@ export class ReconciliationService {
       }),
     ]);
 
+    // Separate pending counts (independent of pagination) for KPI cards.
+    const pendingCsWhere = this.buildScopeWhere(query, actor, ReconciliationState.PENDING_CS);
+    const pendingTeacherWhere = this.buildScopeWhere(query, actor, ReconciliationState.PENDING_TEACHER);
+    const [pendingCsCount, pendingTeacherCount] = await Promise.all([
+      prisma.attendance.count({ where: pendingCsWhere }),
+      prisma.attendance.count({ where: pendingTeacherWhere }),
+    ]);
+
+    return {
+      items,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+      pendingCsCount,
+      pendingTeacherCount,
+    };
+  }
+
+  /**
+   * KPI counts for the reconciliation header cards.
+   * Independent of list pagination so numbers always match the tab totals.
+   */
+  async getStats(query: ReconciliationQuery, actor?: Actor) {
+    const conflictWhere = this.buildScopeWhere(query, actor, ReconciliationState.CONFLICT);
+    const pendingCsWhere = this.buildScopeWhere(query, actor, ReconciliationState.PENDING_CS);
+    const pendingTeacherWhere = this.buildScopeWhere(query, actor, ReconciliationState.PENDING_TEACHER);
+
+    const [conflictCount, pendingCsCount, pendingTeacherCount] = await Promise.all([
+      prisma.attendance.count({ where: conflictWhere }),
+      prisma.attendance.count({ where: pendingCsWhere }),
+      prisma.attendance.count({ where: pendingTeacherWhere }),
+    ]);
+
+    return { conflictCount, pendingCsCount, pendingTeacherCount };
+  }
+
+  /** Actions that represent a change AFTER the first attendance report. */
+  private readonly historyActions = [
+    'ATTENDANCE_CS_MARK',
+    'ATTENDANCE_BULK_APPROVED',
+    'ATTENDANCE_CONFLICT_RESOLVED',
+  ];
+
+  /**
+   * Reconciliation history: every change made to an attendance AFTER the first
+   * report (CSKH ghi nhận / duyệt hàng loạt / phân xử). Scoped to the actor's
+   * accessible students, with server-side pagination.
+   */
+  async getHistory(query: ReconciliationQuery, actor?: Actor) {
+    const page = Math.max(1, query.page || 1);
+    const limit = Math.min(100, Math.max(1, query.pageSize || query.limit || 20));
+    const skip = (page - 1) * limit;
+
+    // 1. Attendance ids within the actor's scope + search/session-date filters.
+    const attendanceWhere = this.buildScopeWhere(query, actor);
+    const scopedAttendances = await prisma.attendance.findMany({
+      where: attendanceWhere,
+      select: { id: true },
+    });
+    if (scopedAttendances.length === 0) {
+      return { items: [], total: 0, page, limit, totalPages: 0 };
+    }
+    const entityIdStrings = scopedAttendances.map((a) => String(a.id));
+
+    const logWhere: Prisma.AuditLogWhereInput = {
+      entity_type: 'Attendance',
+      action: { in: this.historyActions },
+      entity_id: { in: entityIdStrings },
+      ...(query.startDate || query.endDate
+        ? {
+            created_at: {
+              ...(query.startDate ? { gte: new Date(`${query.startDate}T00:00:00.000Z`) } : {}),
+              ...(query.endDate ? { lte: new Date(`${query.endDate}T23:59:59.999Z`) } : {}),
+            },
+          }
+        : {}),
+    };
+
+    // 2. Paginated audit logs (most recent first) with actor info.
+    const [total, logs] = await Promise.all([
+      prisma.auditLog.count({ where: logWhere }),
+      prisma.auditLog.findMany({
+        where: logWhere,
+        skip,
+        take: limit,
+        orderBy: { created_at: 'desc' },
+        include: { user: { select: { id: true, name: true, email: true } } },
+      }),
+    ]);
+
+    // 3. Resolve attendance details for the visible page only.
+    const pageAttendanceIds = Array.from(
+      new Set(logs.map((log) => Number(log.entity_id)).filter((n) => Number.isFinite(n)))
+    );
+    const attendanceDetails = await prisma.attendance.findMany({
+      where: { id: { in: pageAttendanceIds } },
+      include: {
+        enrollment_class: {
+          include: {
+            enrollment: { include: { student: { select: { id: true, full_name: true, external_id: true, phone: true } } } },
+            class: { select: { id: true, class_name: true, class_code: true } },
+          },
+        },
+        class_session: { select: { id: true, session_number: true, session_date: true, start_time: true, end_time: true } },
+      },
+    });
+    const attendanceById = new Map(attendanceDetails.map((a) => [a.id, a]));
+
+    const items = logs.map((log) => {
+      const attendance = attendanceById.get(Number(log.entity_id));
+      const before = (log.before_data || {}) as any;
+      const after = (log.after_data || {}) as any;
+      const fromStatus: string | null = before.cs_status ?? before.teacher_status ?? null;
+      const toStatus: string | null =
+        after.status ?? after.cs_status ?? after.teacher_status ?? null;
+      const note: string | null =
+        after.resolution_note ?? after.cs_note ?? after.teacher_note ?? null;
+      return {
+        id: log.id,
+        attendance_id: Number(log.entity_id),
+        action: log.action,
+        from_status: fromStatus,
+        to_status: toStatus,
+        note,
+        performed_by: log.user?.name || log.user?.email || 'N/A',
+        created_at: log.created_at,
+        student: attendance?.enrollment_class?.enrollment?.student ?? null,
+        class_name: attendance?.enrollment_class?.class?.class_name ?? null,
+        session: attendance?.class_session ?? null,
+      };
+    });
+
     return {
       items,
       total,
@@ -425,6 +574,128 @@ export class ReconciliationService {
       limit,
       totalPages: Math.ceil(total / limit),
     };
+  }
+
+  async getTeacherTrackingPending(query: ReconciliationQuery, actor: Actor) {
+    this.assertTeacherTrackingContext(query, actor);
+    const page = Math.max(1, query.page || 1);
+    const limit = Math.min(100, Math.max(1, query.pageSize || query.limit || 20));
+    const where = this.buildScopeWhere(query, actor, ReconciliationState.PENDING_TEACHER);
+    const [total, records] = await Promise.all([
+      prisma.attendance.count({ where }),
+      prisma.attendance.findMany({
+        where,
+        skip: (page - 1) * limit,
+        take: limit,
+        orderBy: { class_session: { session_date: 'desc' } },
+        select: {
+          id: true,
+          reconciliation_state: true,
+          class_session: {
+            select: {
+              id: true, session_number: true, session_date: true, start_time: true, end_time: true,
+              class: { select: { id: true, class_name: true, class_code: true } },
+            },
+          },
+          enrollment_class: {
+            select: {
+              enrollment: {
+                select: { student: { select: { id: true, full_name: true, external_id: true, phone: true } } },
+              },
+            },
+          },
+        },
+      }),
+    ]);
+    const items = records.map((record) => ({
+      id: record.id,
+      reconciliation_state: record.reconciliation_state,
+      student: record.enrollment_class.enrollment.student,
+      class: record.class_session.class,
+      session: {
+        id: record.class_session.id,
+        session_number: record.class_session.session_number,
+        session_date: record.class_session.session_date,
+        start_time: record.class_session.start_time,
+        end_time: record.class_session.end_time,
+      },
+    }));
+    return { items, total, page, limit, totalPages: Math.ceil(total / limit) };
+  }
+
+  async getTeacherTrackingCount(query: ReconciliationQuery, actor: Actor) {
+    this.assertTeacherTrackingContext(query, actor);
+    const where = this.buildScopeWhere(query, actor, ReconciliationState.PENDING_TEACHER);
+    return { count: await prisma.attendance.count({ where }) };
+  }
+
+  async getTeacherTrackingHistory(query: ReconciliationQuery, actor: Actor) {
+    this.assertTeacherTrackingContext(query, actor);
+    const page = Math.max(1, query.page || 1);
+    const limit = Math.min(100, Math.max(1, query.pageSize || query.limit || 20));
+    const scoped = await prisma.attendance.findMany({
+      where: this.buildScopeWhere(query, actor),
+      select: { id: true },
+    });
+    const entityIds = scoped.map(({ id }) => String(id));
+    if (entityIds.length === 0) return { items: [], total: 0, page, limit, totalPages: 0 };
+
+    const where: Prisma.AuditLogWhereInput = {
+      entity_type: 'Attendance',
+      action: 'ATTENDANCE_TEACHER_STATUS_CHANGED',
+      entity_id: { in: entityIds },
+      ...(query.startDate || query.endDate ? { created_at: {
+        ...(query.startDate ? { gte: new Date(`${query.startDate}T00:00:00.000Z`) } : {}),
+        ...(query.endDate ? { lte: new Date(`${query.endDate}T23:59:59.999Z`) } : {}),
+      } } : {}),
+    };
+    const [total, logs] = await Promise.all([
+      prisma.auditLog.count({ where }),
+      prisma.auditLog.findMany({
+        where,
+        skip: (page - 1) * limit,
+        take: limit,
+        orderBy: { created_at: 'desc' },
+        include: { user: { select: { name: true, email: true } } },
+      }),
+    ]);
+    const attendanceIds = logs.map(({ entity_id }) => Number(entity_id));
+    const details = await prisma.attendance.findMany({
+      where: { id: { in: attendanceIds } },
+      select: {
+        id: true,
+        enrollment_class: { select: { enrollment: { select: { student: { select: { id: true, full_name: true, external_id: true } } } } } },
+        class_session: { select: {
+          id: true, session_number: true, session_date: true, start_time: true, end_time: true,
+          class: { select: { id: true, class_name: true, class_code: true } },
+        } },
+      },
+    });
+    const byId = new Map(details.map((item) => [item.id, item]));
+    const items = logs.map((entry) => {
+      const before = (entry.before_data || {}) as any;
+      const after = (entry.after_data || {}) as any;
+      const attendance = byId.get(Number(entry.entity_id));
+      return {
+        id: entry.id,
+        attendance_id: Number(entry.entity_id),
+        from_status: before.teacher_status as AttendanceStatus,
+        to_status: after.teacher_status as AttendanceStatus,
+        note: after.teacher_note ?? null,
+        performed_by: entry.user?.name || entry.user?.email || 'N/A',
+        created_at: entry.created_at,
+        student: attendance?.enrollment_class.enrollment.student ?? null,
+        class: attendance?.class_session.class ?? null,
+        session: attendance ? {
+          id: attendance.class_session.id,
+          session_number: attendance.class_session.session_number,
+          session_date: attendance.class_session.session_date,
+          start_time: attendance.class_session.start_time,
+          end_time: attendance.class_session.end_time,
+        } : null,
+      };
+    });
+    return { items, total, page, limit, totalPages: Math.ceil(total / limit) };
   }
 
   /**

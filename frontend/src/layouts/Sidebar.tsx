@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { reconciliationApi } from '../features/attendance/api/reconciliation.api';
 import {
   LayoutDashboard,
   HeartHandshake,
@@ -31,6 +32,7 @@ interface NavItem {
   icon: React.ReactNode;
   allowedRoles?: string[];
   end?: boolean;
+  badge?: number;
 }
 
 interface NavGroup {
@@ -44,6 +46,25 @@ export const Sidebar: React.FC<SidebarProps> = ({
 }) => {
   const { user } = useAuth();
   const userRoles = user?.roles || [];
+  const isTeacherOnly = userRoles.includes('TEACHER') && !userRoles.includes('ADMIN') && !userRoles.includes('MANAGE');
+  const [attendancePendingCount, setAttendancePendingCount] = useState(0);
+
+  const loadAttendanceCount = useCallback(async () => {
+    if (!isTeacherOnly) return;
+    try {
+      const result = await reconciliationApi.getTeacherTrackingCount();
+      setAttendancePendingCount(result.count);
+    } catch {
+      setAttendancePendingCount(0);
+    }
+  }, [isTeacherOnly]);
+
+  useEffect(() => {
+    loadAttendanceCount();
+    const handleRefresh = () => loadAttendanceCount();
+    window.addEventListener('teacher-attendance-updated', handleRefresh);
+    return () => window.removeEventListener('teacher-attendance-updated', handleRefresh);
+  }, [loadAttendanceCount]);
 
   const navGroups: NavGroup[] = [
     {
@@ -96,6 +117,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
           path: '/teacher/my-sessions',
           icon: <CalendarCheck className="w-5 h-5 shrink-0" />,
           allowedRoles: ['ADMIN', 'MANAGE', 'TEACHER'],
+        },
+        {
+          name: 'Theo dõi điểm danh',
+          path: '/teacher/attendance-tracking',
+          icon: <ClipboardCheck className="w-5 h-5 shrink-0" />,
+          allowedRoles: ['ADMIN', 'MANAGE', 'TEACHER'],
+          badge: isTeacherOnly ? attendancePendingCount : undefined,
         },
         {
           name: 'Đối soát Điểm danh',
@@ -232,7 +260,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   }
                 >
                   <span className="shrink-0">{item.icon}</span>
-                  <span className="truncate">{item.name}</span>
+                  <span className="truncate flex-1">{item.name}</span>
+                  {item.badge !== undefined && item.badge > 0 && (
+                    <span className="min-w-5 rounded-full bg-warning/15 px-1.5 py-0.5 text-center text-[10px] font-bold text-amber-700">
+                      {item.badge > 99 ? '99+' : item.badge}
+                    </span>
+                  )}
                 </NavLink>
               ))}
             </div>

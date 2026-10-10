@@ -823,6 +823,61 @@ paths:
         '400': { description: Invalid date range }
         '403': { description: Teacher is outside actor scope }
 
+  /api/v1/attendance-reconciliation/teacher-tracking/pending:
+    get:
+      summary: List PENDING_TEACHER items in selected teacher scope without CSKH opinion fields
+      tags: [Attendance Reconciliation]
+      parameters:
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+        - { name: teacherId, in: query, description: Required for ADMIN/MANAGE; ignored as an override for TEACHER, schema: { type: integer } }
+        - { name: classId, in: query, schema: { type: integer } }
+        - { name: startDate, in: query, schema: { type: string, format: date } }
+        - { name: endDate, in: query, schema: { type: string, format: date } }
+        - { name: search, in: query, schema: { type: string, maxLength: 100 } }
+      responses:
+        '200': { description: Privacy-safe paginated teacher pending items }
+        '400': { description: ADMIN/MANAGE has not selected a teacher }
+        '403': { description: Teacher attempted to access another teacher scope }
+
+  /api/v1/attendance-reconciliation/teacher-tracking/count:
+    get:
+      summary: Count PENDING_TEACHER items in teacher scope independently of pagination
+      tags: [Attendance Reconciliation]
+      parameters:
+        - { name: teacherId, in: query, description: Required for ADMIN/MANAGE, schema: { type: integer } }
+        - { name: classId, in: query, schema: { type: integer } }
+      responses:
+        '200':
+          description: Pending count
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    type: object
+                    required: [count]
+                    properties:
+                      count: { type: integer }
+
+  /api/v1/attendance-reconciliation/teacher-tracking/history:
+    get:
+      summary: List teacher status changes after the first attendance report
+      description: Excludes first marks and edits that do not change teacher_status.
+      tags: [Attendance Reconciliation]
+      parameters:
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+        - { name: teacherId, in: query, description: Required for ADMIN/MANAGE, schema: { type: integer } }
+        - { name: classId, in: query, schema: { type: integer } }
+        - { name: startDate, in: query, schema: { type: string, format: date } }
+        - { name: endDate, in: query, schema: { type: string, format: date } }
+        - { name: search, in: query, schema: { type: string, maxLength: 100 } }
+      responses:
+        '200': { description: Paginated teacher status-change history }
+
   /api/v1/attendance-reconciliation/pending:
     get:
       summary: List pending attendance reconciliations in actor scope
@@ -861,6 +916,43 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ReconciliationListResponse' }
+
+  /api/v1/attendance-reconciliation/stats:
+    get:
+      summary: KPI counts for reconciliation header cards (independent of pagination)
+      tags: [Attendance Reconciliation]
+      parameters:
+        - { name: classId, in: query, schema: { type: integer } }
+        - { name: csId, in: query, schema: { type: integer } }
+        - { name: startDate, in: query, schema: { type: string, format: date } }
+        - { name: endDate, in: query, schema: { type: string, format: date } }
+        - { name: search, in: query, schema: { type: string, maxLength: 100 } }
+      responses:
+        '200':
+          description: Counts for conflict / pending CS / pending teacher
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReconciliationStatsResponse' }
+
+  /api/v1/attendance-reconciliation/history:
+    get:
+      summary: Paginated reconciliation history (changes made after the first attendance report)
+      description: Returns attendance audit changes scoped to the actor (CS sees only assigned students). Only post-first-mark actions are included: CS mark, bulk approve, conflict resolve.
+      tags: [Attendance Reconciliation]
+      parameters:
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+        - { name: classId, in: query, schema: { type: integer } }
+        - { name: csId, in: query, schema: { type: integer } }
+        - { name: startDate, in: query, schema: { type: string, format: date } }
+        - { name: endDate, in: query, schema: { type: string, format: date } }
+        - { name: search, in: query, schema: { type: string, maxLength: 100 } }
+      responses:
+        '200':
+          description: Paginated history items
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReconciliationHistoryListResponse' }
 
   /api/v1/attendance-reconciliation/{attendanceId}/teacher-mark:
     post:
@@ -1347,6 +1439,7 @@ components:
         rawValue: { type: [string, 'null'], maxLength: 100 }
         lessonTopic: { type: [string, 'null'], maxLength: 500 }
         note: { type: [string, 'null'], maxLength: 1000 }
+        teacherId: { type: integer, description: Required when ADMIN/MANAGE records attendance for the selected teacher }
 
     ReconciliationItem:
       type: object
@@ -1401,6 +1494,59 @@ components:
           type: array
           items: { $ref: '#/components/schemas/ReconciliationItem' }
         meta: { $ref: '#/components/schemas/PaginationMeta' }
+
+    ReconciliationStatsResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: object
+          required: [conflictCount, pendingCsCount, pendingTeacherCount]
+          properties:
+            conflictCount: { type: integer, description: Số buổi đang lệch cần phân xử (state CONFLICT) }
+            pendingCsCount: { type: integer, description: GV đã báo, CSKH chưa ghi nhận (state PENDING_CS) }
+            pendingTeacherCount: { type: integer, description: CSKH đã ghi nhận, GV chưa báo (state PENDING_TEACHER) }
+        meta: { type: [object, 'null'] }
+
+    ReconciliationHistoryListResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/ReconciliationHistoryItem' }
+        meta: { $ref: '#/components/schemas/PaginationMeta' }
+
+    ReconciliationHistoryItem:
+      type: object
+      required: [id, attendanceId, action, performedBy, createdAt]
+      properties:
+        id: { type: integer }
+        attendanceId: { type: integer }
+        action:
+          type: string
+          enum: [ATTENDANCE_CS_MARK, ATTENDANCE_BULK_APPROVED, ATTENDANCE_CONFLICT_RESOLVED]
+        fromStatus: { type: [string, 'null'] }
+        toStatus: { type: [string, 'null'] }
+        note: { type: [string, 'null'] }
+        performedBy: { type: string }
+        createdAt: { type: string, format: date-time }
+        student:
+          type: [object, 'null']
+          properties:
+            id: { type: integer }
+            fullName: { type: string }
+            externalId: { type: [string, 'null'] }
+            phone: { type: [string, 'null'] }
+        className: { type: [string, 'null'] }
+        session:
+          type: [object, 'null']
+          properties:
+            id: { type: integer }
+            sessionNumber: { type: integer }
+            sessionDate: { type: string, format: date }
+            startTime: { type: [string, 'null'] }
+            endTime: { type: [string, 'null'] }
 
     TeacherSessionListResponse:
       type: object

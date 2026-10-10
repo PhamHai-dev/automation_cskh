@@ -7,6 +7,7 @@ import {
   BulkApprovePendingSchema,
   ReconciliationQuerySchema,
   TeacherSessionsQuerySchema,
+  HistoryQuerySchema,
 } from './reconciliation.schema';
 import { AppError } from '../../middlewares/error.middleware';
 
@@ -33,6 +34,46 @@ export class ReconciliationController {
     try {
       const query = ReconciliationQuerySchema.parse(req.query);
       const result = await reconciliationService.getPending(query, req.user as Actor);
+      res.json({ success: true, data: result });
+    } catch (err) { next(err); }
+  }
+
+  async getStats(req: Request, res: Response, next: NextFunction) {
+    try {
+      const query = ReconciliationQuerySchema.parse(req.query);
+      const result = await reconciliationService.getStats(query, req.user as Actor);
+      res.json({ success: true, data: result });
+    } catch (err) { next(err); }
+  }
+
+  async getHistory(req: Request, res: Response, next: NextFunction) {
+    try {
+      const query = HistoryQuerySchema.parse(req.query);
+      const result = await reconciliationService.getHistory(query, req.user as Actor);
+      res.json({ success: true, data: result });
+    } catch (err) { next(err); }
+  }
+
+  async getTeacherTrackingPending(req: Request, res: Response, next: NextFunction) {
+    try {
+      const query = ReconciliationQuerySchema.parse(req.query);
+      const result = await reconciliationService.getTeacherTrackingPending(query, req.user as Actor);
+      res.json({ success: true, data: result });
+    } catch (err) { next(err); }
+  }
+
+  async getTeacherTrackingCount(req: Request, res: Response, next: NextFunction) {
+    try {
+      const query = ReconciliationQuerySchema.parse(req.query);
+      const result = await reconciliationService.getTeacherTrackingCount(query, req.user as Actor);
+      res.json({ success: true, data: result });
+    } catch (err) { next(err); }
+  }
+
+  async getTeacherTrackingHistory(req: Request, res: Response, next: NextFunction) {
+    try {
+      const query = HistoryQuerySchema.parse(req.query);
+      const result = await reconciliationService.getTeacherTrackingHistory(query, req.user as Actor);
       res.json({ success: true, data: result });
     } catch (err) { next(err); }
   }

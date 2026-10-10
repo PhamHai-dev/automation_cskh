@@ -12,6 +12,7 @@ export const TeacherMarkSchema = z.object({
   rawValue: nullableText(100),
   lessonTopic: nullableText(500),
   note: nullableText(1000),
+  teacherId: z.number().int().positive().optional(),
 });
 
 export const CSMarkSchema = z.object({
@@ -35,6 +36,22 @@ export const BulkApprovePendingSchema = z.object({
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Ngày phải có định dạng YYYY-MM-DD');
 
 export const ReconciliationQuerySchema = z.object({
+  page: z.coerce.number().int().positive().optional(),
+  pageSize: z.coerce.number().int().min(1).max(100).optional(),
+  limit: z.coerce.number().int().min(1).max(100).optional(),
+  classId: z.coerce.number().int().positive().optional(),
+  csId: z.coerce.number().int().positive().optional(),
+  teacherId: z.coerce.number().int().positive().optional(),
+  startDate: isoDate.optional(),
+  endDate: isoDate.optional(),
+  search: z.string().trim().max(100).optional(),
+  state: z.enum(['PENDING_CS', 'PENDING_TEACHER']).optional(),
+}).refine(
+  ({ startDate, endDate }) => !startDate || !endDate || startDate <= endDate,
+  { message: 'startDate phải nhỏ hơn hoặc bằng endDate', path: ['endDate'] },
+);
+
+export const HistoryQuerySchema = z.object({
   page: z.coerce.number().int().positive().optional(),
   pageSize: z.coerce.number().int().min(1).max(100).optional(),
   limit: z.coerce.number().int().min(1).max(100).optional(),

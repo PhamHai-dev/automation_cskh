@@ -18,6 +18,12 @@ export interface DataTableProps<T> {
   onRowClick?: (item: T) => void;
   pagination?: boolean;
   pageSize?: number;
+  /** When true, data is one server page; the parent controls page/pageSize/total. */
+  serverPagination?: boolean;
+  total?: number;
+  page?: number;
+  onPageChange?: (page: number) => void;
+  onPageSizeChange?: (pageSize: number) => void;
 }
 
 export function DataTable<T>({
@@ -28,26 +34,49 @@ export function DataTable<T>({
   onRowClick,
   pagination = true,
   pageSize: initialPageSize = 10,
+  serverPagination = false,
+  total,
+  page: externalPage = 1,
+  onPageChange,
+  onPageSizeChange,
 }: DataTableProps<T>) {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(initialPageSize);
 
-  const totalPages = Math.ceil(data.length / pageSize) || 1;
+  // Server mode uses externally supplied page/total; otherwise slice locally.
+  const currentPageSafe = serverPagination ? externalPage : currentPage;
+  const effectivePageSize = serverPagination ? (pageSize || initialPageSize) : pageSize;
+  const totalCount = serverPagination ? (total ?? data.length) : data.length;
+  const totalPages = Math.ceil(totalCount / effectivePageSize) || 1;
 
   const paginatedData = useMemo(() => {
-    if (!pagination) return data;
-    const start = (currentPage - 1) * pageSize;
-    return data.slice(start, start + pageSize);
-  }, [data, currentPage, pageSize, pagination]);
+    if (!pagination || serverPagination) return data;
+    const start = (currentPageSafe - 1) * effectivePageSize;
+    return data.slice(start, start + effectivePageSize);
+  }, [data, currentPageSafe, effectivePageSize, pagination, serverPagination]);
 
   const handlePageChange = (newPage: number) => {
-    if (newPage >= 1 && newPage <= totalPages) {
+    if (newPage < 1 || newPage > totalPages) return;
+    if (serverPagination) {
+      onPageChange?.(newPage);
+    } else {
       setCurrentPage(newPage);
     }
   };
 
-  const startRecord = data.length === 0 ? 0 : (currentPage - 1) * pageSize + 1;
-  const endRecord = Math.min(currentPage * pageSize, data.length);
+  const handlePageSizeChange = (newSize: number) => {
+    if (serverPagination) {
+      setPageSize(newSize);
+      onPageSizeChange?.(newSize);
+      onPageChange?.(1);
+    } else {
+      setPageSize(newSize);
+      setCurrentPage(1);
+    }
+  };
+
+  const startRecord = totalCount === 0 ? 0 : (currentPageSafe - 1) * effectivePageSize + 1;
+  const endRecord = Math.min(currentPageSafe * effectivePageSize, totalCount);
 
   return (
     <div className="w-full bg-surface rounded-2xl border border-border/80 shadow-soft overflow-hidden">
@@ -116,22 +145,21 @@ export function DataTable<T>({
       </div>
 
       {/* Pagination Footer */}
-      {pagination && !isLoading && data.length > 0 && (
+      {pagination && !isLoading && totalCount > 0 && (
         <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 sm:px-6 py-3 border-t border-border/80 bg-surface-muted/30 text-xs text-text-secondary">
           <div className="flex items-center gap-2">
             <span>
               Hiển thị <strong className="text-text-primary">{startRecord}</strong> -{' '}
               <strong className="text-text-primary">{endRecord}</strong> trên tổng số{' '}
-              <strong className="text-text-primary">{data.length}</strong> bản ghi
+              <strong className="text-text-primary">{totalCount}</strong> bản ghi
             </span>
             <span className="hidden sm:inline text-text-muted">•</span>
             <div className="hidden sm:flex items-center gap-1.5">
               <span>Mỗi trang:</span>
               <select
-                value={pageSize}
+                value={effectivePageSize}
                 onChange={(e) => {
-                  setPageSize(Number(e.target.value));
-                  setCurrentPage(1);
+                  handlePageSizeChange(Number(e.target.value));
                 }}
                 className="bg-surface border border-border rounded-lg px-2 py-1 text-xs text-text-primary focus:outline-none focus:ring-1 focus:ring-primary"
               >
@@ -147,21 +175,21 @@ export function DataTable<T>({
             <Button
               variant="outline"
               size="sm"
-              onClick={() => handlePageChange(currentPage - 1)}
-              disabled={currentPage <= 1}
+              onClick={() => handlePageChange(currentPageSafe - 1)}
+              disabled={currentPageSafe <= 1}
               className="h-8 w-8 p-0"
               aria-label="Trang trước"
             >
               <ChevronLeft className="w-4 h-4" />
             </Button>
             <span className="px-2 font-medium">
-              Trang {currentPage} / {totalPages}
+              Trang {currentPageSafe} / {totalPages}
             </span>
             <Button
               variant="outline"
               size="sm"
-              onClick={() => handlePageChange(currentPage + 1)}
-              disabled={currentPage >= totalPages}
+              onClick={() => handlePageChange(currentPageSafe + 1)}
+              disabled={currentPageSafe >= totalPages}
               className="h-8 w-8 p-0"
               aria-label="Trang sau"
             >

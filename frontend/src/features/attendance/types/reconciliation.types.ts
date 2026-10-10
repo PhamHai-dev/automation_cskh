@@ -72,6 +72,101 @@ export interface ReconciliationListResponse {
   page: number;
   limit: number;
   totalPages: number;
+  pendingCsCount?: number;
+  pendingTeacherCount?: number;
+}
+
+export interface ReconciliationStats {
+  conflictCount: number;
+  pendingCsCount: number;
+  pendingTeacherCount: number;
+}
+
+export type ReconciliationHistoryAction =
+  | 'ATTENDANCE_CS_MARK'
+  | 'ATTENDANCE_BULK_APPROVED'
+  | 'ATTENDANCE_CONFLICT_RESOLVED';
+
+export interface ReconciliationHistoryItem {
+  id: number;
+  attendance_id: number;
+  action: ReconciliationHistoryAction;
+  from_status: AttendanceStatus | null;
+  to_status: AttendanceStatus | null;
+  note: string | null;
+  performed_by: string;
+  created_at: string;
+  student: {
+    id: number;
+    full_name: string;
+    external_id: string | null;
+    phone: string | null;
+  } | null;
+  class_name: string | null;
+  session: {
+    id: number;
+    session_number: number;
+    session_date: string;
+    start_time: string | null;
+    end_time: string | null;
+  } | null;
+}
+
+export interface ReconciliationHistoryResponse {
+  items: ReconciliationHistoryItem[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+}
+
+export interface TeacherTrackingPendingItem {
+  id: number;
+  reconciliation_state: 'PENDING_TEACHER';
+  student: { id: number; full_name: string; external_id: string | null; phone: string | null };
+  class: { id: number; class_name: string; class_code: string | null };
+  session: {
+    id: number;
+    session_number: number;
+    session_date: string;
+    start_time: string | null;
+    end_time: string | null;
+  };
+}
+
+export interface TeacherTrackingPendingResponse {
+  items: TeacherTrackingPendingItem[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+}
+
+export interface TeacherTrackingHistoryItem {
+  id: number;
+  attendance_id: number;
+  from_status: AttendanceStatus;
+  to_status: AttendanceStatus;
+  note: string | null;
+  performed_by: string;
+  created_at: string;
+  student: { id: number; full_name: string; external_id: string | null } | null;
+  class: { id: number; class_name: string; class_code: string | null } | null;
+  session: {
+    id: number;
+    session_number: number;
+    session_date: string;
+    start_time: string | null;
+    end_time: string | null;
+  } | null;
+}
+
+export interface TeacherTrackingHistoryResponse {
+  items: TeacherTrackingHistoryItem[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
 }
 
 export interface ResolveConflictRequest {
@@ -84,6 +179,7 @@ export interface TeacherMarkRequest {
   rawValue?: string;
   lessonTopic?: string;
   note?: string;
+  teacherId?: number;
   }
 
 export interface CSMarkRequest {

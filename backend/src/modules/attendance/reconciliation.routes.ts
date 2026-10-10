@@ -33,11 +33,42 @@ router.get(
   reconciliationController.getConflicts
 );
 
+// Teacher tracking endpoints use a privacy-safe contract (no CSKH opinion fields).
+router.get(
+  '/teacher-tracking/pending',
+  requireRoles(['ADMIN', 'MANAGE', 'TEACHER']),
+  reconciliationController.getTeacherTrackingPending
+);
+router.get(
+  '/teacher-tracking/count',
+  requireRoles(['ADMIN', 'MANAGE', 'TEACHER']),
+  reconciliationController.getTeacherTrackingCount
+);
+router.get(
+  '/teacher-tracking/history',
+  requireRoles(['ADMIN', 'MANAGE', 'TEACHER']),
+  reconciliationController.getTeacherTrackingHistory
+);
+
 // Get list of pending attendances awaiting CS or Teacher
 router.get(
   '/pending',
   requireRoles(['ADMIN', 'MANAGE', 'CS']),
   reconciliationController.getPending
+);
+
+// KPI counts for reconciliation header cards
+router.get(
+  '/stats',
+  requireRoles(['ADMIN', 'MANAGE', 'CS']),
+  reconciliationController.getStats
+);
+
+// Reconciliation history (changes after the first attendance report)
+router.get(
+  '/history',
+  requireRoles(['ADMIN', 'MANAGE', 'CS']),
+  reconciliationController.getHistory
 );
 
 // Resolve a conflict
