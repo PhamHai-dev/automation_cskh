@@ -455,12 +455,12 @@ export class ImportsService {
     if (codeUpper === 'C') return { status: AttendanceStatus.ABSENT_UNAPPROVED_C, sessionCount: 1, lessonTopic: null };
     if (codeUpper === 'D') return { status: AttendanceStatus.TEACHER_ABSENT_D, sessionCount: 1, lessonTopic: null };
     if (codeUpper === 'E') return { status: AttendanceStatus.TECH_ERROR_E, sessionCount: 1, lessonTopic: null };
-    if (['X', 'ĐÃ HỌC'].includes(codeUpper)) return { status: AttendanceStatus.ATTENDED, sessionCount: 1, lessonTopic: null };
+    if (codeUpper === 'ĐÃ HỌC') return { status: AttendanceStatus.ATTENDED, sessionCount: 1, lessonTopic: null };
 
-    // 3. Numeric values: 1, 1.0, 2, 2.0, 0.5...
+    // 3. Any positive numeric value means attended for exactly this one session.
     const num = Number(trimmed);
     if (!isNaN(num) && num > 0) {
-      return { status: AttendanceStatus.ATTENDED, sessionCount: num, lessonTopic: null };
+      return { status: AttendanceStatus.ATTENDED, sessionCount: 1, lessonTopic: null };
     }
 
     // 4. Tolerant fallback for lesson topic without ID prefix (e.g. "K2 L4", "k1-l1")
@@ -1245,62 +1245,59 @@ export class ImportsService {
       const date = normalizeDateOnly(entry.date) || new Date(entry.date);
       if (isNaN(date.getTime())) continue;
       const parsed = this.parseAttendanceValue(entry.value || '');
-      if (parsed.status) {
-        let session = await tx.classSession.findFirst({ where: { class_id: classId, session_date: date } });
-        if (!session) {
-          const last = await tx.classSession.findFirst({ where: { class_id: classId }, orderBy: { session_number: 'desc' } });
-          session = await tx.classSession.create({
-            data: {
-              class_id: classId,
-              session_number: (last?.session_number || 0) + 1,
-              session_date: date,
-              created_by_id: userId,
-            },
-          });
-        }
+      if (!parsed.status) continue;
 
-        const existing = await tx.attendance.findUnique({
-          where: { enrollment_class_id_class_session_id: { enrollment_class_id: enrollmentClassId, class_session_id: session.id } },
-        });
+      const session = await tx.classSession.findFirst({
+        where: {
+          class_id: classId,
+          session_date: date,
+          ...(entry.startTime ? { start_time: entry.startTime } : {}),
+        },
+      });
+      if (!session) continue;
 
-        let reconciliationState: ReconciliationState;
-        if (!existing?.teacher_status) {
-          reconciliationState = ReconciliationState.PENDING_TEACHER;
-        } else if (existing.teacher_status === parsed.status) {
-          reconciliationState = ReconciliationState.MATCHED;
-        } else {
-          reconciliationState = ReconciliationState.CONFLICT;
-          conflictCount++;
-        }
+      const existing = await tx.attendance.findUnique({
+        where: { enrollment_class_id_class_session_id: { enrollment_class_id: enrollmentClassId, class_session_id: session.id } },
+      });
 
-        await tx.attendance.upsert({
-          where: { enrollment_class_id_class_session_id: { enrollment_class_id: enrollmentClassId, class_session_id: session.id } },
-          update: {
-            status: parsed.status,
-            cs_status: parsed.status,
-            cs_raw_value: String(entry.value || ''),
-            cs_submitted_at: new Date(),
-            cs_user_id: userId,
-            lesson_topic: parsed.lessonTopic || existing?.lesson_topic || null,
-            reconciliation_state: reconciliationState,
-            source: AttendanceSource.EXCEL_IMPORT,
-          },
-          create: {
-            enrollment_class_id: enrollmentClassId,
-            class_session_id: session.id,
-            status: parsed.status,
-            cs_status: parsed.status,
-            cs_raw_value: String(entry.value || ''),
-            cs_submitted_at: new Date(),
-            cs_user_id: userId,
-            lesson_topic: parsed.lessonTopic,
-            reconciliation_state: reconciliationState,
-            source: AttendanceSource.EXCEL_IMPORT,
-            created_by_id: userId,
-          },
-        });
+      let reconciliationState: ReconciliationState;
+      if (!existing?.teacher_status) {
+        reconciliationState = ReconciliationState.PENDING_TEACHER;
+      } else if (existing.teacher_status === parsed.status) {
+        reconciliationState = ReconciliationState.MATCHED;
+      } else {
+        reconciliationState = ReconciliationState.CONFLICT;
+        conflictCount++;
       }
-      // Note: Empty value in Excel does NOT wipe existing attendance (keeps old record per Q-013)
+
+      await tx.attendance.upsert({
+        where: { enrollment_class_id_class_session_id: { enrollment_class_id: enrollmentClassId, class_session_id: session.id } },
+        update: {
+          cs_status: parsed.status,
+          cs_raw_value: String(entry.value || ''),
+          cs_submitted_at: new Date(),
+          cs_user_id: userId,
+          reconciliation_state: reconciliationState,
+          source: AttendanceSource.EXCEL_IMPORT,
+          resolved_by_id: null,
+          resolved_at: null,
+          resolution_note: null,
+          ...(reconciliationState === ReconciliationState.MATCHED ? { status: parsed.status } : {}),
+        },
+        create: {
+          enrollment_class_id: enrollmentClassId,
+          class_session_id: session.id,
+          status: parsed.status,
+          cs_status: parsed.status,
+          cs_raw_value: String(entry.value || ''),
+          cs_submitted_at: new Date(),
+          cs_user_id: userId,
+          reconciliation_state: reconciliationState,
+          source: AttendanceSource.EXCEL_IMPORT,
+          created_by_id: userId,
+        },
+      });
+      // Empty cells are skipped and never wipe existing attendance.
     }
     return conflictCount;
   }

@@ -55,7 +55,7 @@ export const attendanceApi = {
     return res.data.data;
   },
 
-  remove: async (classId: number, sessionId: number, attendanceId: number): Promise<void> => {
-    await apiClient.delete(`/classes/${classId}/sessions/${sessionId}/attendance/${attendanceId}`);
+  remove: async (classId: number, sessionId: number, attendanceId: number, side?: 'TEACHER' | 'CS'): Promise<void> => {
+    await apiClient.delete(`/classes/${classId}/sessions/${sessionId}/attendance/${attendanceId}`, { params: { side } });
   },
 };

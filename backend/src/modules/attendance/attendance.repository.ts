@@ -43,14 +43,9 @@ export class AttendanceRepository {
     });
   }
 
-  private async isTeacherActor(userId: number): Promise<boolean> {
-    const user = await prisma.user.findUnique({ where: { id: userId }, select: { roles: true } });
-    const roles = (user?.roles as string[]) || [];
-    return roles.includes('TEACHER') && !roles.includes('ADMIN') && !roles.includes('MANAGE') && !roles.includes('CS');
-  }
 
-  async mark(enrollmentClassId: number, classSessionId: number, status: string, source: string, userId: number) {
-    const isTeacher = await this.isTeacherActor(userId);
+  async mark(enrollmentClassId: number, classSessionId: number, status: string, source: string, userId: number, side: 'TEACHER' | 'CS') {
+    const isTeacher = side === 'TEACHER';
     const parsedStatus = status as AttendanceStatus;
 
     return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
@@ -79,9 +74,9 @@ export class AttendanceRepository {
       }
 
       const updateData: any = {
-        status: parsedStatus,
         source: source as any,
         reconciliation_state: recState,
+        ...(recState === ReconciliationState.MATCHED ? { status: parsedStatus } : {}),
         deleted_at: null,
         deleted_by_id: null,
       };
@@ -125,8 +120,8 @@ export class AttendanceRepository {
     });
   }
 
-  async bulkMark(items: Array<{ enrollment_class_id: number; status: string }>, classSessionId: number, source: string, userId: number) {
-    const isTeacher = await this.isTeacherActor(userId);
+  async bulkMark(items: Array<{ enrollment_class_id: number; status: string }>, classSessionId: number, source: string, userId: number, side: 'TEACHER' | 'CS') {
+    const isTeacher = side === 'TEACHER';
 
     return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       const results = [];
@@ -158,9 +153,9 @@ export class AttendanceRepository {
         }
 
         const updateData: any = {
-          status: parsedStatus,
           source: source as any,
           reconciliation_state: recState,
+          ...(recState === ReconciliationState.MATCHED ? { status: parsedStatus } : {}),
           deleted_at: null,
           deleted_by_id: null,
         };
@@ -206,34 +201,72 @@ export class AttendanceRepository {
     });
   }
 
-  async update(attendanceId: number, data: UpdateAttendanceDTO) {
+  async update(attendanceId: number, data: UpdateAttendanceDTO, userId: number, side: 'TEACHER' | 'CS') {
     return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       const existing = await tx.attendance.findUnique({ where: { id: attendanceId } });
-      const parsedStatus = data.status ? (data.status as AttendanceStatus) : existing?.status;
+      if (!existing || !data.status) throw new Error('Attendance not found');
+      const parsedStatus = data.status as AttendanceStatus;
+      const teacherStatus = side === 'TEACHER' ? parsedStatus : existing.teacher_status;
+      const csStatus = side === 'CS' ? parsedStatus : existing.cs_status;
+      const recState = teacherStatus && csStatus
+        ? (teacherStatus === csStatus ? ReconciliationState.MATCHED : ReconciliationState.CONFLICT)
+        : (teacherStatus ? ReconciliationState.PENDING_CS : ReconciliationState.PENDING_TEACHER);
 
-      let recState = existing?.reconciliation_state;
-      if (existing && parsedStatus) {
-        if (existing.teacher_status && existing.cs_status) {
-          recState = existing.teacher_status === existing.cs_status ? ReconciliationState.MATCHED : ReconciliationState.CONFLICT;
-        }
-      }
-
-      const attendance = await tx.attendance.update({
+      return tx.attendance.update({
         where: { id: attendanceId },
         data: {
-          status: data.status as any,
-          ...(recState ? { reconciliation_state: recState } : {}),
+          ...(side === 'TEACHER' ? {
+            teacher_status: parsedStatus,
+            teacher_user_id: userId,
+            teacher_submitted_at: new Date(),
+          } : {
+            cs_status: parsedStatus,
+            cs_user_id: userId,
+            cs_submitted_at: new Date(),
+          }),
+          reconciliation_state: recState,
+          ...(recState === ReconciliationState.MATCHED ? { status: parsedStatus } : {}),
+          resolved_by_id: null,
+          resolved_at: null,
+          resolution_note: null,
         },
       });
-      return attendance;
     });
   }
 
-  async reset(attendanceId: number, userId: number) {
+  async reset(attendanceId: number, userId: number, side: 'TEACHER' | 'CS') {
     return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      const existing = await tx.attendance.findUnique({ where: { id: attendanceId } });
+      if (!existing) throw new Error('Attendance not found');
+      const teacherStatus = side === 'TEACHER' ? null : existing.teacher_status;
+      const csStatus = side === 'CS' ? null : existing.cs_status;
+      const hasAnyOpinion = Boolean(teacherStatus || csStatus);
+      const reconciliationState = teacherStatus
+        ? ReconciliationState.PENDING_CS
+        : ReconciliationState.PENDING_TEACHER;
       const attendance = await tx.attendance.update({
         where: { id: attendanceId },
-        data: { deleted_at: new Date(), deleted_by_id: userId },
+        data: {
+          ...(side === 'TEACHER' ? {
+            teacher_status: null,
+            teacher_user_id: null,
+            teacher_submitted_at: null,
+            teacher_raw_value: null,
+            teacher_note: null,
+          } : {
+            cs_status: null,
+            cs_user_id: null,
+            cs_submitted_at: null,
+            cs_raw_value: null,
+            cs_note: null,
+          }),
+          reconciliation_state: reconciliationState,
+          resolved_by_id: null,
+          resolved_at: null,
+          resolution_note: null,
+          deleted_at: hasAnyOpinion ? null : new Date(),
+          deleted_by_id: hasAnyOpinion ? null : userId,
+        },
       });
       await tx.messageDelivery.updateMany({
         where: {

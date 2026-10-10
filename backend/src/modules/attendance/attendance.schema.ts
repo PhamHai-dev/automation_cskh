@@ -1,11 +1,13 @@
 import { z } from 'zod';
-import { AttendanceStatus, AttendanceSource } from '@prisma/client';
+import { AttendanceStatus } from '@prisma/client';
+
+const attendanceSideSchema = z.enum(['TEACHER', 'CS']);
 
 export const markAttendanceSchema = z.object({
   body: z.object({
     enrollment_class_id: z.number().int().positive(),
     status: z.nativeEnum(AttendanceStatus),
-    source: z.nativeEnum(AttendanceSource).optional(),
+    side: attendanceSideSchema.optional(),
   }),
 });
 
@@ -14,15 +16,15 @@ export const bulkMarkAttendanceSchema = z.object({
     items: z.array(z.object({
       enrollment_class_id: z.number().int().positive(),
       status: z.nativeEnum(AttendanceStatus),
-    })),
-    source: z.nativeEnum(AttendanceSource).optional(),
+    })).min(1),
+    side: attendanceSideSchema.optional(),
   }),
 });
 
 export const updateAttendanceSchema = z.object({
   body: z.object({
-    status: z.nativeEnum(AttendanceStatus).optional(),
-    source: z.nativeEnum(AttendanceSource).optional(),
+    status: z.nativeEnum(AttendanceStatus),
+    side: attendanceSideSchema.optional(),
   }),
 });
 

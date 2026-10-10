@@ -70,9 +70,14 @@ export const AttendanceReconciliationPage: React.FC = () => {
   const loadData = useCallback(async () => {
     setIsLoading(true);
     try {
+      const filters = {
+        ...(search.trim() ? { search: search.trim() } : {}),
+        ...(startDate ? { startDate } : {}),
+        ...(endDate ? { endDate } : {}),
+      };
       const [conflictsRes, pendingRes] = await Promise.all([
-        reconciliationApi.getConflicts({ search, startDate, endDate }),
-        reconciliationApi.getPending({ search, startDate, endDate }),
+        reconciliationApi.getConflicts(filters),
+        reconciliationApi.getPending(filters),
       ]);
       setConflicts(conflictsRes.items || []);
       setTotalConflicts(conflictsRes.total || 0);

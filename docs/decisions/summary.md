@@ -21,9 +21,9 @@
 16. **Asset organization:** ảnh public đặt trong `frontend/public/images`, ảnh import trong React đặt ở `frontend/src/assets`; không lưu ảnh rải rác trong page.
 17. **Kỷ luật triển khai:** AI làm một phase tại một thời điểm; sau mỗi phase phải test, cập nhật phase/STATUS/CHANGELOG/OPEN_QUESTIONS và dừng chờ user xác nhận.
 18. **External student ID:** cột `ID` từ Sheet 1/3 là external ID cố định của `Student`, dùng xuyên nhiều Enrollment.
-19. **Attendance A–E:** A (nghỉ có phép), B (bảo lưu), C (nghỉ sai quy định), D (GV xin nghỉ), E (lỗi kỹ thuật) đều trừ buổi; không tính completed và không trigger message.
-20. **Session numbering:** `session_number` liên tục theo Enrollment và không reset khi chuyển lớp.
-21. **Import correction:** Admin sửa mọi dữ liệu import; Manage sửa trong scope; CS không sửa trực tiếp; MVP không khóa ngày/kỳ và mọi thay đổi phải audit.
+19. **Attendance final và tiêu thụ buổi (cập nhật 2026-10-10):** Giáo viên và CSKH nhập độc lập; chỉ `MATCHED/RESOLVED` mới được tính buổi và kích hoạt automation. Mỗi Attendance là một buổi; chỉ `ATTENDED` và `ABSENT_UNAPPROVED_C` trừ một buổi, A/B/D/E không trừ.
+20. **Session identity:** Điểm danh bám theo `EnrollmentClass + ClassSession`; không dùng `session_count` để biểu diễn nhiều buổi trong một Attendance.
+21. **Import correction (cập nhật 2026-10-10):** Cả giáo viên và CSKH đều import qua preview/commit. Được sửa dữ liệu final trong scope nhưng phải audit; nếu hai ý kiến lệch nhau thì quay lại `CONFLICT`, hủy delivery còn chờ và không hoàn tác delivery đã gửi.
 22. **Multi-role:** endpoint phù hợp dùng union data scope của các role; quyền ghi vẫn kiểm tra role thực hiện action.
 23. **UI brand:** primary `#2563EB`, accent `#14B8A6`, chỉ dùng qua semantic token tập trung.
 24. **Zalo relation:** không có relation hợp lệ thì delivery `skipped`, có lý do/cảnh báo CS và không tự retry.
@@ -32,7 +32,7 @@
 27. **Ma trận Điểm danh theo Lịch Ngày:** Bỏ số thứ tự buổi, hiển thị Thứ và Ngày theo lịch thực tế; mặc định xem theo Tháng hiện tại, hỗ trợ lọc theo Tuần/Tháng/Năm. Cố định 11 cột thông tin học viên & lớp học bên trái, loại bỏ cột "Chỉ số chuyên cần ĐH % và BT %".
 28. **Tab Quản lý Ghi danh theo Sale:** Tab Quản lý ghi danh (`/enrollments`) được tổ chức dạng Ma trận điểm danh theo ngày, tự động lọc học viên theo tài khoản Sale của người đang đăng nhập (với vai trò `CS`), hoặc cung cấp bộ chọn Sale cho `ADMIN`/`MANAGE`.
 29. **Danh sách Học viên chuẩn Sheet 1:** Tab Danh sách học viên (`/students`) hiển thị đầy đủ 28 cột của Sheet `1.Chăm sóc`, highlight badge đỏ cho số buổi nợ âm, tự động lọc theo Sale phụ trách.
-30. **Cơ chế đối soát Import Sheet 3:** Học viên đã khớp trong cơ sở dữ liệu thì tự động đồng bộ điểm danh theo ngày mà không hỏi lại; học viên mới xuất hiện trong file thì hiển thị hộp thoại xác nhận có muốn thêm vào hệ thống hay không.
+30. **Cơ chế đối soát workbook (cập nhật 2026-10-10):** Preview phân loại mới/không đổi/ghi đè/lỗi/ngoài scope; commit phần hợp lệ sau xác nhận. Chỉ match ClassSession đã tồn tại theo mã học viên + lớp trong scope + ngày + giờ; không tự tạo hoặc đoán học viên/lớp/buổi.
 31. **Bộ tài khoản kiểm thử chuẩn hóa:** Tạo sẵn 5 tài khoản test với mật khẩu chung `123456`: `admin@gmail.com` (ADMIN), `cskh1@gmail.com` (CS), `cskh2@gmail.com` (CS), `cskh3@gmail.com` (CS), `teacher@gmail.com` (TEACHER) và phân bổ dữ liệu học viên cho các Sale.
 32. **Mở rộng Nhập & Xuất Excel cho tất cả các vai trò & Tách biệt Sale với CSKH:**
     - **Tách biệt Sale và CSKH (Cập nhật Quyết định 26):** Cột `Sale` trong Sheet 1 không phải là tài khoản CSKH (`cs_id`), mà là trường dữ liệu nhân viên kinh doanh độc lập. Hệ thống bổ sung bảng `Sale` (`sales`) liên kết với `Enrollment.sale_id`. Cột `Sale` trong Excel tự động tạo mới / liên kết bản ghi `Sale`.
@@ -43,10 +43,8 @@
     - **Sheet 1 (`1.Chăm sóc`):** Kiểm tra theo cặp `(ID, Gói học)`; nếu đã có thì ghi đè (ô trống trên Excel xóa trắng trong DB để đồng bộ tuyệt đối; giữ nguyên lịch sử chăm sóc CareLog/CareTask); nếu chưa có thì thêm mới trực tiếp vào Database.
     - **Sheet 3 (`3.Chấm buổi`):** Kiểm tra theo cặp `(ID, Gói học)`; nếu đã có thì ghi đè điểm danh theo ngày (ô ngày trống trên Excel giữ nguyên điểm danh cũ); nếu chưa có thì bỏ qua dòng đó và ghi cảnh báo lỗi.
     - **Định dạng file:** Tối ưu cho file có cả 2 sheet, đồng thời hỗ trợ linh hoạt nếu file chỉ có riêng Sheet 1 hoặc riêng Sheet 3.
-33. **Nâng cấp Điểm danh: Ô Tích Chọn (Checkbox) & Điền Số Buổi thay vì dấu X:**
-    - **Loại bỏ chữ X:** Trạng thái "Có mặt" (`ATTENDED`) hiển thị và cho phép nhập số buổi học (mặc định là `1`, có thể điền `2`, `3`... số buổi/ca học) trên nền xanh lá (`bg-emerald-100 text-emerald-800`), không dùng ký hiệu chữ `X`.
-    - **Ô tích chọn (Checkbox) & Thao tác hàng loạt:**
-      - Thêm cột Checkbox chọn học viên (Row Checkbox) và Checkbox "Chọn tất cả" ở header ma trận. Khi tích chọn nhiều học viên, thanh thao tác hàng loạt cho phép chọn ngày và điểm danh đồng loạt (nhập số buổi có mặt hoặc chọn lý do vắng).
-      - Thêm Checkbox tại Header mỗi ngày để tích chọn / bỏ chọn cả lớp có mặt (1 buổi) chỉ với 1 click.
-      - Tại Phiếu Điểm danh buổi học: Chuyển đổi thành ô tích chọn `[✓] Có mặt` kèm ô điền số buổi và nút chọn nhanh `1`, `2`, `3`.
-    - **Đối soát Import Excel Sheet 3:** Nhận diện mọi số dương (> 0) là trạng thái Có mặt (`ATTENDED`).
+33. **Nâng cấp giao diện điểm danh (cập nhật 2026-10-10):**
+    - Trạng thái `ATTENDED` hiển thị ký hiệu `1`, nhưng mỗi Attendance luôn là đúng một buổi và không cho nhập `2`, `3`.
+    - Thay đổi từng học viên lưu ngay; thao tác nhiều học viên hoặc cả lớp bắt buộc xác nhận.
+    - Mọi số dương trong Excel chỉ được chuẩn hóa thành `ATTENDED`; không lưu giá trị số.
+34. **Đối soát hai nguồn (2026-10-10):** CSKH phụ trách được phân xử trong scope; ADMIN/MANAGE được phân xử mọi trường hợp. Phân xử bắt buộc có lý do. Dữ liệu pending/conflict không được tác động số buổi hoặc automation.

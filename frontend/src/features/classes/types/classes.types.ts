@@ -88,12 +88,18 @@ export type AttendanceStatus = 'ATTENDED' | 'ABSENT_APPROVED_A' | 'LEAVE_B' | 'A
 
 export type AttendanceSource = 'MANUAL' | 'EXCEL_IMPORT' | 'TEACHER_UPLOAD';
 
+export type AttendanceSide = 'TEACHER' | 'CS';
+export type ReconciliationState = 'PENDING_TEACHER' | 'PENDING_CS' | 'MATCHED' | 'CONFLICT' | 'RESOLVED';
+
 export interface Attendance {
   id: number;
   enrollment_class_id: number;
   class_session_id: number;
   status: AttendanceStatus;
-    source: AttendanceSource;
+  source: AttendanceSource;
+  teacher_status?: AttendanceStatus | null;
+  cs_status?: AttendanceStatus | null;
+  reconciliation_state?: ReconciliationState;
   created_by_id: number;
   created_by?: { id: number; name: string; email: string };
   enrollment_class?: {
@@ -113,15 +119,18 @@ export interface Attendance {
 export interface MarkAttendanceDTO {
   enrollment_class_id: number;
   status: AttendanceStatus;
-  }
+  side?: AttendanceSide;
+}
 
 export interface BulkMarkAttendanceDTO {
-  items: MarkAttendanceDTO[];
+  items: Array<{ enrollment_class_id: number; status: AttendanceStatus }>;
+  side?: AttendanceSide;
 }
 
 export interface UpdateAttendanceDTO {
-  status?: AttendanceStatus;
-  }
+  status: AttendanceStatus;
+  side?: AttendanceSide;
+}
 
 export const ATTENDANCE_STATUS_LABELS: Record<AttendanceStatus, string> = {
   ATTENDED: 'Có mặt',

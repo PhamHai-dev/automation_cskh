@@ -426,7 +426,8 @@ export const EnrollmentsPage: React.FC = () => {
   const handleCustomSaveAll = async (
     pendingEdits: Record<string, AttendanceStatus>,
     _customValues?: Record<string, number>,
-    sessionIndex = 0
+    sessionIndex = 0,
+    side?: 'TEACHER' | 'CS'
   ) => {
     const entries = Object.entries(pendingEdits);
     if (entries.length === 0) return;
@@ -462,6 +463,7 @@ export const EnrollmentsPage: React.FC = () => {
           enrollment_class_id: i.ecId,
           status: i.status,
         })),
+        side,
       });
     }
 

@@ -11,35 +11,35 @@ rule nào còn chờ user xác nhận và nơi chứa source chi tiết.
 - Không được chuyển trạng thái `CHƯA CHỐT → CHỐT` chỉ dựa trên suy luận của AI.
 - Khi user chốt rule mới, cập nhật đồng thời file này + `OPEN_QUESTIONS.md` + spec/phase liên quan.
 
-## 2. Attendance status — CHỐT MỘT PHẦN
+## 2. Attendance status và tiêu thụ buổi — CHỐT
 
 Nguồn schema: `architecture/data-model-core.md`.
-Quyết định tracking: `OPEN_QUESTIONS.md` — Q-002 (RESOLVED).
+Quyết định tracking: `OPEN_QUESTIONS.md` — Q-002 (RESOLVED, cập nhật 2026-10-10).
 
-| Attendance status | Tên hiển thị / ý nghĩa | Có tiêu thụ/trừ buổi? | Tính completed? | Trigger message “hoàn thành buổi N”? |
-| --- | --- | --- | --- | --- |
-| `attended` | Có mặt | TBD | TBD | TBD |
-| `absent_approved_A` | Nghỉ có phép | Có | Không | Không |
-| `leave_B` | Bảo lưu | Có | Không | Không |
-| `absent_unapproved_C` | Nghỉ sai quy định | Có | Không | Không |
-| `teacher_absent_D` | GV xin nghỉ | Có | Không | Không |
-| `tech_error_E` | Lỗi kỹ thuật | Có | Không | Không |
+| Attendance status | Tên hiển thị / ý nghĩa | Có tiêu thụ/trừ buổi? |
+| --- | --- | --- |
+| `ATTENDED` | Có mặt | Có, đúng 1 buổi |
+| `ABSENT_APPROVED_A` | Nghỉ có phép | Không |
+| `LEAVE_B` | Bảo lưu | Không |
+| `ABSENT_UNAPPROVED_C` | Nghỉ sai quy định | Có, đúng 1 buổi |
+| `TEACHER_ABSENT_D` | GV xin nghỉ | Không |
+| `TECH_ERROR_E` | Lỗi kỹ thuật | Không |
 
-Rule của `attended` chưa nằm trong quyết định Q-002; chỉ A/B/C/D/E được chốt ở đây.
+Mỗi Attendance đại diện đúng một `ClassSession`; không lưu hay nhân theo `session_count`. Mọi số dương trong ô ngày Excel chỉ được chuẩn hóa thành `ATTENDED` cho buổi đó.
 
-## 3. Source of truth cho số buổi — CHỐT NGUYÊN TẮC
+## 3. Source of truth cho số buổi và điều kiện final — CHỐT
 
 ```text
 total_sessions       ← Enrollment.total_sessions
-consumed/completed   ← derive từ Attendance theo business rule đã được chốt
-remaining_sessions   ← derive từ total_sessions và consumed/completed
+consumed_sessions    ← đếm Attendance final có status ATTENDED hoặc ABSENT_UNAPPROVED_C
+remaining_sessions   ← total_sessions - consumed_sessions
 ```
 
-Các số tổng hợp từ Excel/hệ thống ngoài chỉ dùng import/đối soát, không được âm thầm overwrite nguồn tính chính.
-Field đối soát nếu có dùng `external_remaining_sessions`, `external_synced_at` theo data model.
+Chỉ Attendance có `reconciliation_state` là `MATCHED` hoặc `RESOLVED` được tính buổi và kích hoạt automation. `PENDING_TEACHER`, `PENDING_CS`, `CONFLICT` là dữ liệu tạm, không được dùng làm kết quả chính thức.
 
-Không được suy ra một Attendance event mới chỉ từ các số tổng như “đã học 5/còn 15”.
-Automation chỉ được trigger từ `ClassSession + Attendance` cụ thể.
+Các số tổng hợp từ Excel/hệ thống ngoài chỉ dùng import/đối soát, không được âm thầm overwrite nguồn tính chính. Field đối soát nếu có dùng `external_remaining_sessions`, `external_synced_at` theo data model.
+
+Không được suy ra một Attendance event mới chỉ từ các số tổng như “đã học 5/còn 15”. Automation chỉ được trigger từ `ClassSession + Attendance` cụ thể đã final.
 
 ## 4. Student / Enrollment / EnrollmentClass — CHỐT
 
@@ -146,22 +146,17 @@ Quyết định tracking: Q-009 & Quyết định 32 (RESOLVED).
 - **Cột Sale Sheet 1:** Giá trị trong cột `Sale` của Sheet 1 là mã định danh sale (`code`). Khi import, hệ thống tự động tìm hoặc tạo mới bản ghi `Sale` (nếu chưa có) và liên kết `sale_id` vào `Enrollment`.
 - **Data Scope:** Người dùng role `CS` quản lý học viên dựa trên `enrollment.cs_id` (tài khoản CSKH được phân công), không phụ thuộc vào cột `Sale`. `ADMIN` và `MANAGE` có quyền xem toàn bộ học viên và có bộ lọc theo CSKH hoặc Sale.
 
-## 16. Ma trận Điểm danh theo Lịch Ngày, Ô Tích Chọn & Điền Số Buổi — CHỐT
+## 16. Ma trận Điểm danh theo Lịch Ngày và thao tác hàng loạt — CHỐT
 
-Quyết định tracking: Q-010 & Quyết định 33 (RESOLVED).
+Quyết định tracking: Q-010 & Quyết định 33 (RESOLVED, cập nhật 2026-10-10).
 
-- **Hiển thị theo ngày lịch:** Loại bỏ số thứ tự buổi học trừu tượng (Buổi 1, Buổi 2...), hiển thị trực tiếp theo **Thứ & Ngày trong lịch** (VD: `T2 01/09`, `T4 03/09`...).
-- **Bộ lọc thời gian:** Mặc định xem **Tháng hiện tại**, hỗ trợ chuyển nhanh theo **Tuần**, **Tháng**, **Năm/Tùy chỉnh**.
-- **Cột thông tin cố định bên trái (12 cột):** Ô tích chọn (Checkbox), STT, Mã HV, Họ và tên, Ngày bắt đầu học, Trạng thái, Ngày kết thúc/Bảo lưu, Giờ học, Lịch học, Thời lượng, GV & Mã GV, Tên lớp.
-- **Ô tích chọn (Checkbox) & Thao tác hàng loạt:**
-  - Bổ sung cột Checkbox chọn học viên (hỗ trợ chọn tất cả / chọn nhiều) để điểm danh hàng loạt qua thanh công cụ nhanh (chọn ngày, điền số buổi có mặt hoặc chọn lý do vắng).
-  - Tại Header cột ngày: Có ô Checkbox để tích chọn / bỏ chọn cả lớp có mặt (1 buổi) trong 1 click.
-  - Tại Phiếu Điểm danh Buổi học: Sử dụng ô tích chọn `[✓] Có mặt` trực quan thay thế dropdown cũ.
-- **Có mặt điền số thay vì dấu X:**
-  - Loại bỏ hoàn toàn ký hiệu chữ `X`. Trạng thái Có mặt hiển thị giá trị số (mặc định là `1`, cho phép điền `2`, `3`... số buổi/ca học) trên nền xanh lá (`bg-emerald-100 text-emerald-800`).
-  - Khi mở popover chỉnh sửa: Cung cấp ô nhập số và các nút chọn nhanh `1 buổi`, `2 buổi`, `3 buổi`.
-  - Các trạng thái vắng giữ nguyên ký hiệu: `A` (Nghỉ phép), `B` (Bảo lưu), `C` (Nghỉ sai QĐ), `D` (GV nghỉ), `E` (Lỗi KT).
-  - Đối soát Sheet 3 từ Excel: Mọi giá trị số dương (> 0) được nhận diện chính xác là Có mặt (`ATTENDED`).
+- **Hiển thị theo ngày lịch:** Loại bỏ số thứ tự buổi học trừu tượng, hiển thị trực tiếp theo **Thứ & Ngày trong lịch**.
+- **Bộ lọc thời gian:** Mặc định xem **Tháng hiện tại**, hỗ trợ **Tuần**, **Tháng**, **Năm/Tùy chỉnh**.
+- **Cột thông tin cố định bên trái (12 cột):** Ô tích chọn, STT, Mã HV, Họ và tên, Ngày bắt đầu học, Trạng thái, Ngày kết thúc/Bảo lưu, Giờ học, Lịch học, Thời lượng, GV & Mã GV, Tên lớp.
+- **Thao tác hàng loạt:** Có thể chọn nhiều học viên hoặc cả lớp, nhưng bắt buộc xác nhận trước khi lưu; thay đổi từng học viên được lưu ngay.
+- **Có mặt:** UI hiển thị `1` thay cho chữ `X`, nhưng đây chỉ là ký hiệu của một Attendance `ATTENDED`, không phải số lượng buổi có thể chỉnh thành `2`, `3`.
+- **Các trạng thái khác:** `A` (Nghỉ phép), `B` (Bảo lưu), `C` (Nghỉ sai QĐ), `D` (GV nghỉ), `E` (Lỗi KT).
+- **Excel:** Mọi giá trị số dương trong ô ngày được nhận diện là `ATTENDED`; không lưu trị số và không nhân số buổi.
 - **Loại bỏ:** Cột *"Chỉ số chuyên cần ĐH % và BT %"* không sử dụng.
 - **Tab Quản lý Ghi danh (`/enrollments`):** Tổ chức theo dạng Ma trận Điểm danh theo Sale, tự động lọc học viên theo Sale phụ trách.
 
@@ -173,12 +168,14 @@ Quyết định tracking: Q-012 (RESOLVED).
 - **Cảnh báo nợ âm:** Các học viên có `Số buổi còn lại < 0` (ví dụ: `-1`, `-2`, `-30`...) phải được làm nổi bật bằng huy hiệu cảnh báo nợ màu đỏ đậm (`bg-red-100 text-red-800 border-red-300 font-extrabold`).
 - **Data scope:** Tự động lọc học viên theo Sale phụ trách khi đăng nhập tài khoản `CS`.
 
-## 18. Đối soát Học viên khi Import Sheet 3 — CHỐT
+## 18. Đối soát Attendance khi import workbook — CHỐT
 
-Quyết định tracking: Q-011 (RESOLVED).
+Quyết định tracking: Q-011 (RESOLVED, cập nhật 2026-10-10).
 
-- **Học viên cũ:** Nếu học viên từ file khớp với học viên đã có trong cơ sở dữ liệu, hệ thống tự động đồng bộ điểm danh theo ngày mà **không hỏi lại**.
-- **Học viên mới:** Nếu phát hiện học viên từ file chưa từng có trong hệ thống, bắt buộc hiển thị hộp thoại xác nhận (Confirm modal) hỏi người dùng có muốn tự động tạo mới học viên và ghi danh vào lớp hay không.
+- Cả workbook giáo viên và CSKH đều theo luồng `preview → xác nhận → commit`.
+- Preview phân loại ô mới, không đổi, ghi đè, lỗi và ngoài scope; hiển thị giá trị cũ/mới trước khi xác nhận.
+- Commit chỉ áp dụng dữ liệu hợp lệ đã preview; ô lỗi bị bỏ qua nhưng phải có báo cáo chi tiết. Ô trống giữ nguyên dữ liệu cũ.
+- Chỉ match duy nhất theo mã học viên + lớp trong scope + ngày + giờ với `ClassSession` đã tồn tại. Không tự tạo Student, Enrollment, EnrollmentClass hoặc ClassSession và không đoán bản ghi mới nhất.
 
 ## 19. Nhập & Xuất Excel cho Tất Cả Các Vai Trò & Cơ Chế Phân Công CSKH — CHỐT
 

@@ -6,112 +6,95 @@ import {
   ResolveConflictSchema,
   BulkApprovePendingSchema,
   ReconciliationQuerySchema,
+  TeacherSessionsQuerySchema,
 } from './reconciliation.schema';
 import { AppError } from '../../middlewares/error.middleware';
+
+type Actor = { id: number; roles: string[] };
+
+function attendanceIdFrom(req: Request): number {
+  const attendanceId = Number(req.params.id);
+  if (!Number.isInteger(attendanceId) || attendanceId <= 0) {
+    throw new AppError(400, 'ID điểm danh không hợp lệ');
+  }
+  return attendanceId;
+}
 
 export class ReconciliationController {
   async getConflicts(req: Request, res: Response, next: NextFunction) {
     try {
       const query = ReconciliationQuerySchema.parse(req.query);
-      const actor = req.user as { id: number; roles: string[] };
-      const result = await reconciliationService.getConflicts(query, actor);
+      const result = await reconciliationService.getConflicts(query, req.user as Actor);
       res.json({ success: true, data: result });
-    } catch (err) {
-      next(err);
-    }
+    } catch (err) { next(err); }
   }
 
   async getPending(req: Request, res: Response, next: NextFunction) {
     try {
       const query = ReconciliationQuerySchema.parse(req.query);
-      const actor = req.user as { id: number; roles: string[] };
-      const result = await reconciliationService.getPending(query, actor);
+      const result = await reconciliationService.getPending(query, req.user as Actor);
       res.json({ success: true, data: result });
-    } catch (err) {
-      next(err);
-    }
+    } catch (err) { next(err); }
   }
 
   async resolveConflict(req: Request, res: Response, next: NextFunction) {
     try {
-      const attendanceId = Number(req.params.id);
-      if (isNaN(attendanceId)) {
-        throw new AppError(400, 'ID điểm danh không hợp lệ');
-      }
-      const data = ResolveConflictSchema.parse(req.body);
-      const actor = req.user as { id: number; roles: string[] };
-      const result = await reconciliationService.resolveConflict(attendanceId, data, actor);
+      const result = await reconciliationService.resolveConflict(
+        attendanceIdFrom(req),
+        ResolveConflictSchema.parse(req.body),
+        req.user as Actor,
+      );
       res.json({ success: true, data: result });
-    } catch (err) {
-      next(err);
-    }
+    } catch (err) { next(err); }
   }
 
   async bulkApprovePending(req: Request, res: Response, next: NextFunction) {
     try {
       const { attendanceIds } = BulkApprovePendingSchema.parse(req.body);
-      const userId = (req.user as any).id;
-      const result = await reconciliationService.bulkApprovePending(attendanceIds, userId);
+      const result = await reconciliationService.bulkApprovePending(attendanceIds, req.user as Actor);
       res.json({ success: true, data: result });
-    } catch (err) {
-      next(err);
-    }
+    } catch (err) { next(err); }
   }
 
   async markByTeacher(req: Request, res: Response, next: NextFunction) {
     try {
-      const attendanceId = Number(req.params.id);
-      if (isNaN(attendanceId)) {
-        throw new AppError(400, 'ID điểm danh không hợp lệ');
-      }
-      const data = TeacherMarkSchema.parse(req.body);
-      const userId = (req.user as any).id;
-      const result = await reconciliationService.markByTeacher(attendanceId, data, userId);
+      const result = await reconciliationService.markByTeacher(
+        attendanceIdFrom(req),
+        TeacherMarkSchema.parse(req.body),
+        req.user as Actor,
+      );
       res.json({ success: true, data: result });
-    } catch (err) {
-      next(err);
-    }
+    } catch (err) { next(err); }
   }
 
   async markByCS(req: Request, res: Response, next: NextFunction) {
     try {
-      const attendanceId = Number(req.params.id);
-      if (isNaN(attendanceId)) {
-        throw new AppError(400, 'ID điểm danh không hợp lệ');
-      }
-      const data = CSMarkSchema.parse(req.body);
-      const userId = (req.user as any).id;
-      const result = await reconciliationService.markByCS(attendanceId, data, userId);
+      const result = await reconciliationService.markByCS(
+        attendanceIdFrom(req),
+        CSMarkSchema.parse(req.body),
+        req.user as Actor,
+      );
       res.json({ success: true, data: result });
-    } catch (err) {
-      next(err);
-    }
+    } catch (err) { next(err); }
   }
 
   async uploadTeacherExcel(req: Request, res: Response, next: NextFunction) {
     try {
-      if (!req.file || !req.file.buffer) {
+      if (!req.file?.buffer) {
         throw new AppError(400, 'Vui lòng tải lên file Excel lịch dạy (giao_vien.xlsx)');
       }
-      const userId = (req.user as any).id;
-      const result = await reconciliationService.uploadTeacherExcel(req.file.buffer, userId);
+      const result = await reconciliationService.uploadTeacherExcel(req.file.buffer, req.user as Actor);
       res.json({ success: true, data: result });
-    } catch (err) {
-      next(err);
-    }
+    } catch (err) { next(err); }
   }
 
   async getTeacherSessions(req: Request, res: Response, next: NextFunction) {
     try {
-      const userId = (req.user as any).id;
-      const { startDate, endDate } = req.query as { startDate?: string; endDate?: string };
-      const result = await reconciliationService.getTeacherSessions(userId, startDate, endDate);
+      const query = TeacherSessionsQuerySchema.parse(req.query);
+      const result = await reconciliationService.getTeacherSessions(req.user as Actor, query);
       res.json({ success: true, data: result });
-    } catch (err) {
-      next(err);
-    }
+    } catch (err) { next(err); }
   }
 }
 
 export const reconciliationController = new ReconciliationController();
-

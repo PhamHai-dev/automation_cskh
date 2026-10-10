@@ -13,24 +13,22 @@ export interface TeacherMarkDTO {
   rawValue?: string;
   lessonTopic?: string;
   note?: string;
-  sessionCount?: number;
 }
 
 export interface CSMarkDTO {
   status: AttendanceStatus;
   rawValue?: string;
   note?: string;
-  sessionCount?: number;
 }
 
 export interface ResolveConflictDTO {
   finalStatus: AttendanceStatus;
   resolutionNote: string;
-  sessionCount?: number;
 }
 
 export interface ReconciliationQuery {
   page?: number;
+  pageSize?: number;
   limit?: number;
   classId?: number;
   csId?: number;
@@ -40,204 +38,210 @@ export interface ReconciliationQuery {
   search?: string;
 }
 
+interface Actor {
+  id: number;
+  roles: string[];
+}
+
+interface TeacherSessionsQuery {
+  startDate?: string;
+  endDate?: string;
+  teacherId?: number;
+}
+
 export class ReconciliationService {
-  /**
-   * Apply attendance input from Teacher.
-   */
-  async markByTeacher(attendanceId: number, data: TeacherMarkDTO, teacherUserId: number) {
+  private isPrivileged(actor: Actor) {
+    return actor.roles.includes('ADMIN') || actor.roles.includes('MANAGE');
+  }
+
+  private deriveState(teacherStatus: AttendanceStatus | null, csStatus: AttendanceStatus | null) {
+    if (!teacherStatus) return ReconciliationState.PENDING_TEACHER;
+    if (!csStatus) return ReconciliationState.PENDING_CS;
+    return teacherStatus === csStatus ? ReconciliationState.MATCHED : ReconciliationState.CONFLICT;
+  }
+
+  private async assertTeacherScope(actor: Actor, classId: number) {
+    if (this.isPrivileged(actor)) return;
+    if (!actor.roles.includes('TEACHER')) throw new AppError(403, 'Vai trò không được phép điểm danh phía giáo viên');
+    const assignment = await prisma.classTeacher.findFirst({
+      where: { class_id: classId, active: true, teacher: { user_id: actor.id, active: true } },
+      select: { id: true },
+    });
+    if (!assignment) throw new AppError(403, 'Bạn không được phân công active cho lớp này');
+  }
+
+  private assertCSScope(actor: Actor, assignedCSId: number) {
+    if (this.isPrivileged(actor)) return;
+    if (!actor.roles.includes('CS') || assignedCSId !== actor.id) {
+      throw new AppError(403, 'Bạn không phụ trách học viên này');
+    }
+  }
+
+  private async runDownstream(attendanceId: number, state: ReconciliationState) {
+    try {
+      if (state === ReconciliationState.MATCHED || state === ReconciliationState.RESOLVED) {
+        await handleAttendanceEvent(attendanceId);
+      } else if (state === ReconciliationState.CONFLICT) {
+        await cancelPendingDeliveries(attendanceId);
+      }
+    } catch (err: any) {
+      log.error('Attendance downstream action failed', { attendanceId, state, error: err.message });
+    }
+  }
+
+  async markByTeacher(attendanceId: number, data: TeacherMarkDTO, actor: Actor) {
     const existing = await prisma.attendance.findUnique({
       where: { id: attendanceId },
       include: {
+        class_session: { select: { class_id: true } },
         enrollment_class: { include: { enrollment: true } },
       },
     });
+    if (!existing) throw new AppError(404, 'Không tìm thấy bản ghi điểm danh');
+    await this.assertTeacherScope(actor, existing.class_session.class_id);
 
-    if (!existing) {
-      throw new AppError(404, 'Không tìm thấy bản ghi điểm danh');
-    }
+    const state = this.deriveState(data.status, existing.cs_status);
+    const updateData: Prisma.AttendanceUpdateInput = {
+      teacher_status: data.status,
+      teacher_raw_value: data.rawValue || null,
+      lesson_topic: data.lessonTopic || null,
+      teacher_note: data.note || null,
+      teacher_user: { connect: { id: actor.id } },
+      teacher_submitted_at: new Date(),
+      reconciliation_state: state,
+      resolved_by: { disconnect: true },
+      resolved_at: null,
+      resolution_note: null,
+      source: existing.source === AttendanceSource.MANUAL ? AttendanceSource.TEACHER_UPLOAD : existing.source,
+      ...(state === ReconciliationState.MATCHED ? { status: data.status } : {}),
+    };
 
-    const csStatus = existing.cs_status;
-    let reconciliationState: ReconciliationState;
-    let finalStatus: AttendanceStatus = data.status;
-
-    if (!csStatus) {
-      reconciliationState = ReconciliationState.PENDING_CS;
-    } else if (csStatus === data.status) {
-      reconciliationState = ReconciliationState.MATCHED;
-      finalStatus = data.status;
-    } else {
-      reconciliationState = ReconciliationState.CONFLICT;
-      finalStatus = data.status; // default to teacher status temporarily while in conflict
-    }
-
-    const updated = await prisma.attendance.update({
-      where: { id: attendanceId },
-      data: {
-        teacher_status: data.status,
-        teacher_raw_value: data.rawValue || null,
-        lesson_topic: data.lessonTopic || null,
-        teacher_note: data.note || null,
-        teacher_user_id: teacherUserId,
-        teacher_submitted_at: new Date(),
-        status: finalStatus,
-        reconciliation_state: reconciliationState,
-        source: existing.source === AttendanceSource.MANUAL ? AttendanceSource.TEACHER_UPLOAD : existing.source,
-      },
+    const updated = await prisma.$transaction(async (tx) => {
+      const result = await tx.attendance.update({ where: { id: attendanceId }, data: updateData });
+      await tx.auditLog.create({ data: {
+        user_id: actor.id,
+        action: 'ATTENDANCE_TEACHER_MARK',
+        entity_type: 'Attendance',
+        entity_id: String(attendanceId),
+        before_data: existing as any,
+        after_data: result as any,
+      } });
+      return result;
     });
-
-    if (reconciliationState === ReconciliationState.MATCHED) {
-      handleAttendanceEvent(updated.id).catch((err: any) =>
-        log.error('Automation trigger failed (markByTeacher MATCHED)', { attendanceId: updated.id, error: err.message })
-      );
-    } else if (reconciliationState === ReconciliationState.CONFLICT) {
-      cancelPendingDeliveries(updated.id).catch((err: any) =>
-        log.error('Cancel deliveries failed (markByTeacher CONFLICT)', { attendanceId: updated.id, error: err.message })
-      );
-    }
-
+    await this.runDownstream(updated.id, state);
     return updated;
   }
 
-  /**
-   * Apply attendance input from CSKH.
-   */
-  async markByCS(attendanceId: number, data: CSMarkDTO, csUserId: number) {
+  async markByCS(attendanceId: number, data: CSMarkDTO, actor: Actor) {
     const existing = await prisma.attendance.findUnique({
       where: { id: attendanceId },
-      include: {
-        enrollment_class: { include: { enrollment: true } },
-      },
+      include: { enrollment_class: { include: { enrollment: true } } },
     });
+    if (!existing) throw new AppError(404, 'Không tìm thấy bản ghi điểm danh');
+    this.assertCSScope(actor, existing.enrollment_class.enrollment.cs_id);
 
-    if (!existing) {
-      throw new AppError(404, 'Không tìm thấy bản ghi điểm danh');
-    }
+    const state = this.deriveState(existing.teacher_status, data.status);
+    const updateData: Prisma.AttendanceUpdateInput = {
+      cs_status: data.status,
+      cs_raw_value: data.rawValue || null,
+      cs_note: data.note || null,
+      cs_user: { connect: { id: actor.id } },
+      cs_submitted_at: new Date(),
+      reconciliation_state: state,
+      resolved_by: { disconnect: true },
+      resolved_at: null,
+      resolution_note: null,
+      ...(state === ReconciliationState.MATCHED ? { status: data.status } : {}),
+    };
 
-    const teacherStatus = existing.teacher_status;
-    let reconciliationState: ReconciliationState;
-    let finalStatus: AttendanceStatus = data.status;
-
-    if (!teacherStatus) {
-      reconciliationState = ReconciliationState.PENDING_TEACHER;
-    } else if (teacherStatus === data.status) {
-      reconciliationState = ReconciliationState.MATCHED;
-      finalStatus = data.status;
-    } else {
-      reconciliationState = ReconciliationState.CONFLICT;
-      finalStatus = data.status;
-    }
-
-    const updated = await prisma.attendance.update({
-      where: { id: attendanceId },
-      data: {
-        cs_status: data.status,
-        cs_raw_value: data.rawValue || null,
-        cs_note: data.note || null,
-        cs_user_id: csUserId,
-        cs_submitted_at: new Date(),
-        status: finalStatus,
-        reconciliation_state: reconciliationState,
-      },
+    const updated = await prisma.$transaction(async (tx) => {
+      const result = await tx.attendance.update({ where: { id: attendanceId }, data: updateData });
+      await tx.auditLog.create({ data: {
+        user_id: actor.id,
+        action: 'ATTENDANCE_CS_MARK',
+        entity_type: 'Attendance',
+        entity_id: String(attendanceId),
+        before_data: existing as any,
+        after_data: result as any,
+      } });
+      return result;
     });
-
-    if (reconciliationState === ReconciliationState.MATCHED) {
-      handleAttendanceEvent(updated.id).catch((err: any) =>
-        log.error('Automation trigger failed (markByCS MATCHED)', { attendanceId: updated.id, error: err.message })
-      );
-    } else if (reconciliationState === ReconciliationState.CONFLICT) {
-      cancelPendingDeliveries(updated.id).catch((err: any) =>
-        log.error('Cancel deliveries failed (markByCS CONFLICT)', { attendanceId: updated.id, error: err.message })
-      );
-    }
-
+    await this.runDownstream(updated.id, state);
     return updated;
   }
 
-  /**
-   * Resolve a conflicting attendance record.
-   */
-  async resolveConflict(attendanceId: number, data: ResolveConflictDTO, actor: { id: number; roles: string[] }) {
-    if (!data.resolutionNote || !data.resolutionNote.trim()) {
-      throw new AppError(400, 'Lý do giải trình phân xử là bắt buộc');
-    }
-
+  async resolveConflict(attendanceId: number, data: ResolveConflictDTO, actor: Actor) {
     const existing = await prisma.attendance.findUnique({
       where: { id: attendanceId },
-      include: {
-        enrollment_class: {
-          include: {
-            enrollment: true,
-          },
-        },
-      },
+      include: { enrollment_class: { include: { enrollment: true } } },
     });
-
-    if (!existing) {
-      throw new AppError(404, 'Không tìm thấy bản ghi điểm danh');
+    if (!existing) throw new AppError(404, 'Không tìm thấy bản ghi điểm danh');
+    if (existing.reconciliation_state !== ReconciliationState.CONFLICT) {
+      throw new AppError(409, 'Chỉ có thể phân xử bản ghi đang xung đột');
     }
+    this.assertCSScope(actor, existing.enrollment_class.enrollment.cs_id);
 
-    // Permission check: CS assigned to this enrollment OR MANAGE / ADMIN
-    const isManageOrAdmin = actor.roles.includes('MANAGE') || actor.roles.includes('ADMIN');
-    const isAssignedCS = actor.roles.includes('CS') && existing.enrollment_class.enrollment.cs_id === actor.id;
-
-    if (!isManageOrAdmin && !isAssignedCS) {
-      throw new AppError(403, 'Bạn không có quyền phân xử điểm danh cho học viên này');
-    }
-
-    const updated = await prisma.attendance.update({
-      where: { id: attendanceId },
-      data: {
+    const updated = await prisma.$transaction(async (tx) => {
+      const result = await tx.attendance.update({ where: { id: attendanceId }, data: {
         status: data.finalStatus,
         reconciliation_state: ReconciliationState.RESOLVED,
         resolved_by_id: actor.id,
         resolved_at: new Date(),
         resolution_note: data.resolutionNote.trim(),
-      },
+      } });
+      await tx.auditLog.create({ data: {
+        user_id: actor.id,
+        action: 'ATTENDANCE_CONFLICT_RESOLVED',
+        entity_type: 'Attendance',
+        entity_id: String(attendanceId),
+        before_data: existing as any,
+        after_data: result as any,
+      } });
+      return result;
     });
-
-    // Re-trigger automation after resolution
-    cancelPendingDeliveries(updated.id)
-      .then(() => handleAttendanceEvent(updated.id))
-      .catch((err: any) =>
-        log.error('Automation re-trigger failed (resolveConflict)', { attendanceId: updated.id, error: err.message })
-      );
-
+    await cancelPendingDeliveries(updated.id);
+    await this.runDownstream(updated.id, ReconciliationState.RESOLVED);
     return updated;
   }
 
-  /**
-   * Bulk approve pending attendances (e.g. approve all teacher-reported ATTENDED sessions).
-   */
-  async bulkApprovePending(attendanceIds: number[], csUserId: number) {
+  async bulkApprovePending(attendanceIds: number[], actor: Actor) {
     const attendances = await prisma.attendance.findMany({
-      where: {
-        id: { in: attendanceIds },
-        reconciliation_state: ReconciliationState.PENDING_CS,
-        teacher_status: { not: null },
-      },
+      where: { id: { in: attendanceIds } },
+      include: { enrollment_class: { include: { enrollment: true } } },
     });
-
-    const approvedIds: number[] = [];
-
-    for (const att of attendances) {
-      const teacherStatus = att.teacher_status!;
-      const updated = await prisma.attendance.update({
-        where: { id: att.id },
-        data: {
-          cs_status: teacherStatus,
-          cs_user_id: csUserId,
-          cs_submitted_at: new Date(),
-          status: teacherStatus,
-          reconciliation_state: ReconciliationState.MATCHED,
-        },
-      });
-
-      approvedIds.push(updated.id);
-      handleAttendanceEvent(updated.id).catch((err: any) =>
-        log.error('Automation trigger failed (bulkApprovePending)', { attendanceId: updated.id, error: err.message })
-      );
+    if (attendances.length !== attendanceIds.length) {
+      throw new AppError(404, 'Có bản ghi điểm danh không tồn tại');
+    }
+    for (const attendance of attendances) {
+      this.assertCSScope(actor, attendance.enrollment_class.enrollment.cs_id);
+      if (attendance.reconciliation_state !== ReconciliationState.PENDING_CS || !attendance.teacher_status) {
+        throw new AppError(409, `Điểm danh ${attendance.id} không ở trạng thái chờ CSKH`);
+      }
     }
 
+    const approvedIds = await prisma.$transaction(async (tx) => {
+      const ids: number[] = [];
+      for (const attendance of attendances) {
+        const result = await tx.attendance.update({ where: { id: attendance.id }, data: {
+          cs_status: attendance.teacher_status,
+          cs_user_id: actor.id,
+          cs_submitted_at: new Date(),
+          status: attendance.teacher_status!,
+          reconciliation_state: ReconciliationState.MATCHED,
+        } });
+        await tx.auditLog.create({ data: {
+          user_id: actor.id,
+          action: 'ATTENDANCE_BULK_APPROVED',
+          entity_type: 'Attendance',
+          entity_id: String(attendance.id),
+          before_data: attendance as any,
+          after_data: result as any,
+        } });
+        ids.push(result.id);
+      }
+      return ids;
+    });
+    for (const id of approvedIds) await this.runDownstream(id, ReconciliationState.MATCHED);
     return { approvedCount: approvedIds.length, approvedIds };
   }
 
@@ -246,7 +250,7 @@ export class ReconciliationService {
    */
   async getConflicts(query: ReconciliationQuery, actor?: { id: number; roles: string[] }) {
     const page = Math.max(1, query.page || 1);
-    const limit = Math.min(100, Math.max(1, query.limit || 20));
+    const limit = Math.min(100, Math.max(1, query.pageSize || query.limit || 20));
     const skip = (page - 1) * limit;
 
     const where: Prisma.AttendanceWhereInput = {
@@ -337,7 +341,7 @@ export class ReconciliationService {
    */
   async getPending(query: ReconciliationQuery, actor?: { id: number; roles: string[] }) {
     const page = Math.max(1, query.page || 1);
-    const limit = Math.min(100, Math.max(1, query.limit || 20));
+    const limit = Math.min(100, Math.max(1, query.pageSize || query.limit || 20));
     const skip = (page - 1) * limit;
 
     const where: Prisma.AttendanceWhereInput = {
@@ -426,7 +430,7 @@ export class ReconciliationService {
   /**
    * Upload and process teacher schedule/attendance Excel (e.g. giao_vien.xlsx - Sheet "2026 スケジュール")
    */
-  async uploadTeacherExcel(fileBuffer: Buffer, teacherUserId: number) {
+  async uploadTeacherExcel(fileBuffer: Buffer, actor: Actor) {
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(fileBuffer as any);
 
@@ -537,28 +541,19 @@ export class ReconciliationService {
           const ec = enrollment.enrollment_classes[0];
           if (!ec) continue;
 
-          // Find or create ClassSession for date
           const normalizedDate = normalizeDateOnly(dc.date) || dc.date;
-          let session = await prisma.classSession.findFirst({
-            where: { class_id: ec.class_id, session_date: normalizedDate },
+          const session = await prisma.classSession.findFirst({
+            where: {
+              class_id: ec.class_id,
+              session_date: normalizedDate,
+              ...(startTime ? { start_time: startTime } : {}),
+            },
           });
-
           if (!session) {
-            const lastSession = await prisma.classSession.findFirst({
-              where: { class_id: ec.class_id },
-              orderBy: { session_number: 'desc' },
-            });
-            session = await prisma.classSession.create({
-              data: {
-                class_id: ec.class_id,
-                session_number: (lastSession?.session_number || 0) + 1,
-                session_date: normalizedDate,
-                start_time: startTime || null,
-                end_time: endTime || null,
-                created_by_id: teacherUserId,
-              },
-            });
+            errors.push({ row: r, error: 'Không tìm thấy buổi học khớp lớp, ngày và giờ' });
+            continue;
           }
+          await this.assertTeacherScope(actor, ec.class_id);
 
           // Check existing attendance for reconciliation
           const existingAtt = await prisma.attendance.findUnique({
@@ -571,7 +566,6 @@ export class ReconciliationService {
           });
 
           let reconciliationState: ReconciliationState;
-          let finalStatus = parsed.status;
 
           if (existingAtt?.cs_status) {
             if (existingAtt.cs_status === parsed.status) {
@@ -598,10 +592,13 @@ export class ReconciliationService {
               teacher_raw_value: cellText,
               lesson_topic: parsed.lessonTopic || existingAtt?.lesson_topic || null,
               teacher_submitted_at: new Date(),
-              teacher_user_id: teacherUserId,
-              status: finalStatus,
+              teacher_user_id: actor.id,
               reconciliation_state: reconciliationState,
               source: AttendanceSource.TEACHER_UPLOAD,
+              resolved_by_id: null,
+              resolved_at: null,
+              resolution_note: null,
+              ...(reconciliationState === ReconciliationState.MATCHED ? { status: parsed.status } : {}),
             },
             create: {
               enrollment_class_id: ec.id,
@@ -610,11 +607,11 @@ export class ReconciliationService {
               teacher_raw_value: cellText,
               lesson_topic: parsed.lessonTopic,
               teacher_submitted_at: new Date(),
-              teacher_user_id: teacherUserId,
-              status: finalStatus,
+              teacher_user_id: actor.id,
+              status: parsed.status,
               reconciliation_state: reconciliationState,
               source: AttendanceSource.TEACHER_UPLOAD,
-              created_by_id: teacherUserId,
+              created_by_id: actor.id,
             },
           });
 
@@ -647,33 +644,43 @@ export class ReconciliationService {
   }
 
   /**
-   * Get teacher's own teaching sessions for today / week / date range.
+   * Get teaching sessions in the selected teacher scope.
    */
-  async getTeacherSessions(teacherUserId: number, startDate?: string, endDate?: string) {
+  async getTeacherSessions(actor: Actor, query: TeacherSessionsQuery) {
+    let targetUserId = actor.id;
+    if (query.teacherId !== undefined) {
+      if (!this.isPrivileged(actor)) {
+        throw new AppError(403, 'Chỉ ADMIN/MANAGE được chọn giáo viên khác');
+      }
+      targetUserId = query.teacherId;
+    } else if (!actor.roles.includes('TEACHER') && this.isPrivileged(actor)) {
+      throw new AppError(400, 'Vui lòng chọn giáo viên cần hỗ trợ');
+    }
+
     const teacherUser = await prisma.user.findUnique({
-      where: { id: teacherUserId },
+      where: { id: targetUserId },
       include: { teacher: true },
     });
-
     const teacherId = teacherUser?.teacher?.id;
+    if (!teacherId || !teacherUser.teacher?.active) {
+      throw new AppError(404, 'Không tìm thấy hồ sơ giáo viên đang hoạt động');
+    }
 
-    const classTeachers = teacherId ? await prisma.classTeacher.findMany({
+    const classTeachers = await prisma.classTeacher.findMany({
       where: { teacher_id: teacherId, active: true },
       select: { class_id: true },
-    }) : [];
+    });
     const classIds = classTeachers.map((ct) => ct.class_id);
+    if (classIds.length === 0) return [];
 
     const dateFilter: Prisma.DateTimeFilter = {};
-    if (startDate) dateFilter.gte = new Date(startDate);
-    if (endDate) dateFilter.lte = new Date(endDate);
+    if (query.startDate) dateFilter.gte = new Date(`${query.startDate}T00:00:00.000Z`);
+    if (query.endDate) dateFilter.lte = new Date(`${query.endDate}T00:00:00.000Z`);
 
-    const sessions = await prisma.classSession.findMany({
+    return prisma.classSession.findMany({
       where: {
-        OR: [
-          ...(classIds.length > 0 ? [{ class_id: { in: classIds } }] : []),
-          { created_by_id: teacherUserId },
-        ],
-        ...(startDate || endDate ? { session_date: dateFilter } : {}),
+        class_id: { in: classIds },
+        ...(query.startDate || query.endDate ? { session_date: dateFilter } : {}),
       },
       orderBy: [{ session_date: 'desc' }, { start_time: 'asc' }],
       include: {
@@ -695,8 +702,6 @@ export class ReconciliationService {
         },
       },
     });
-
-    return sessions;
   }
 }
 

@@ -147,6 +147,62 @@ describe('Auto Attendance Integration Tests', () => {
     expect(res.body.data.delay_minutes).toBe(10);
   });
 
+  it('should skip cron cycle when auto attendance is disabled, but still allow manual run', async () => {
+    // 1. Tắt điểm danh tự động
+    const patch = await request(app)
+      .patch('/api/v1/settings/auto-attendance')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ delay_minutes: 10, enabled: false });
+    expect(patch.status).toBe(200);
+    expect(patch.body.data.enabled).toBe(false);
+
+    const get = await request(app)
+      .get('/api/v1/settings/auto-attendance')
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(get.status).toBe(200);
+    expect(get.body.data.enabled).toBe(false);
+
+    // 2. Xóa execution để lịch học trở lại trạng thái "chưa xử lý" (đáng lẽ sẽ được điểm danh)
+    await prisma.autoAttendanceExecution.deleteMany({
+      where: { class_schedule_id: testScheduleId },
+    });
+    await prisma.attendance.deleteMany({
+      where: { enrollment_class_id: testEnrollmentClassId },
+    });
+
+    // 3. Chu kỳ cron (ignoreEnabled=false) phải BỎ QUA toàn bộ khi đang tắt
+    const disabledCycle = await service.processAutoAttendance();
+    expect(disabledCycle.processed_schedules).toBe(0);
+    expect(disabledCycle.attended_count).toBe(0);
+
+    // Không có execution/attendance mới được tạo khi đang tắt
+    expect(await prisma.autoAttendanceExecution.count({ where: { class_schedule_id: testScheduleId } })).toBe(0);
+    expect(await prisma.attendance.count({ where: { enrollment_class_id: testEnrollmentClassId } })).toBe(0);
+
+    // 4. Bật lại và quét thủ công qua API (/run luôn chạy bất kể cron)
+    await request(app)
+      .patch('/api/v1/settings/auto-attendance')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ delay_minutes: 10, enabled: true });
+
+    const run = await request(app)
+      .post('/api/v1/settings/auto-attendance/run')
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(run.status).toBe(200);
+    expect(run.body.data.attended_count).toBeGreaterThanOrEqual(1);
+
+    // 5. Dọn dẹp để test "automatically mark attendance" chạy lại từ trạng thái mới
+    await prisma.autoAttendanceExecution.deleteMany({
+      where: { class_schedule_id: testScheduleId },
+    });
+    await prisma.attendance.deleteMany({
+      where: { enrollment_class_id: testEnrollmentClassId },
+    });
+    await prisma.classSession.deleteMany({
+      where: { class_id: testClassId },
+    });
+  });
+
   it('processAutoAttendance() should automatically mark attendance for eligible class schedule', async () => {
     const result = await service.processAutoAttendance();
 

@@ -1,6 +1,10 @@
 import { Prisma } from '@prisma/client';
 import { prisma } from '../../prisma/client';
-import { AUTO_ATTENDANCE_DELAY_KEY } from './auto-attendance.types';
+import {
+  AUTO_ATTENDANCE_DELAY_KEY,
+  AUTO_ATTENDANCE_ENABLED_KEY,
+  DEFAULT_AUTO_ATTENDANCE_ENABLED,
+} from './auto-attendance.types';
 
 export class AutoAttendanceRepository {
   async ensureSystemActor() {
@@ -29,10 +33,16 @@ export class AutoAttendanceRepository {
     });
   }
 
-  upsertDelaySetting(delayMinutes: number, updatedById: number) {
+  findEnabledSetting() {
+    return prisma.appSetting.findUnique({
+      where: { key: AUTO_ATTENDANCE_ENABLED_KEY },
+    });
+  }
+
+  async upsertDelaySetting(delayMinutes: number, updatedById: number, enabled?: boolean) {
     const value = delayMinutes as unknown as Prisma.InputJsonValue;
 
-    return prisma.appSetting.upsert({
+    await prisma.appSetting.upsert({
       where: { key: AUTO_ATTENDANCE_DELAY_KEY },
       create: {
         key: AUTO_ATTENDANCE_DELAY_KEY,
@@ -44,6 +54,47 @@ export class AutoAttendanceRepository {
         updated_by_id: updatedById,
       },
     });
+
+    if (typeof enabled === 'boolean') {
+      await this.upsertEnabledSetting(enabled, updatedById);
+    }
+
+    const [delay, enabledRow] = await Promise.all([
+      this.findDelaySetting(),
+      this.findEnabledSetting(),
+    ]);
+
+    const enabledValue = this.readEnabledValue(enabledRow?.value);
+
+    return {
+      delay_minutes: Number(delay?.value ?? delayMinutes),
+      enabled: enabledValue,
+      updated_at: delay?.updated_at ?? new Date(),
+      updated_by_id: delay?.updated_by_id ?? updatedById,
+    };
+  }
+
+  async upsertEnabledSetting(enabled: boolean, updatedById: number) {
+    const value = enabled as unknown as Prisma.InputJsonValue;
+
+    return prisma.appSetting.upsert({
+      where: { key: AUTO_ATTENDANCE_ENABLED_KEY },
+      create: {
+        key: AUTO_ATTENDANCE_ENABLED_KEY,
+        value,
+        updated_by_id: updatedById,
+      },
+      update: {
+        value,
+        updated_by_id: updatedById,
+      },
+    });
+  }
+
+  private readEnabledValue(value: unknown): boolean {
+    if (typeof value === 'boolean') return value;
+    if (value === null || value === undefined) return DEFAULT_AUTO_ATTENDANCE_ENABLED;
+    return Boolean(value);
   }
 
   findActiveSchedules() {

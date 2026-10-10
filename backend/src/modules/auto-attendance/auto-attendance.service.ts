@@ -3,6 +3,7 @@ import {
   AutoAttendanceCycleResult,
   AutoAttendanceSettings,
   DEFAULT_AUTO_ATTENDANCE_DELAY_MINUTES,
+  DEFAULT_AUTO_ATTENDANCE_ENABLED,
   UpdateAutoAttendanceSettingsDTO,
 } from './auto-attendance.types';
 import {
@@ -27,16 +28,22 @@ export class AutoAttendanceService {
   constructor(private readonly repository = new AutoAttendanceRepository()) {}
 
   async getSettings(): Promise<AutoAttendanceSettings> {
-    const setting = await this.repository.findDelaySetting();
+    const [setting, enabledSetting] = await Promise.all([
+      this.repository.findDelaySetting(),
+      this.repository.findEnabledSetting(),
+    ]);
+
     if (!setting) {
       return {
+        enabled: this.readEnabled(enabledSetting?.value),
         delay_minutes: DEFAULT_AUTO_ATTENDANCE_DELAY_MINUTES,
-        updated_at: new Date(0),
-        updated_by_id: null,
+        updated_at: enabledSetting?.updated_at ?? new Date(0),
+        updated_by_id: enabledSetting?.updated_by_id ?? null,
       };
     }
 
     return {
+      enabled: this.readEnabled(enabledSetting?.value),
       delay_minutes: this.readDelay(setting.value),
       updated_at: setting.updated_at,
       updated_by_id: setting.updated_by_id,
@@ -47,10 +54,15 @@ export class AutoAttendanceService {
     dto: UpdateAutoAttendanceSettingsDTO,
     updatedById: number,
   ): Promise<AutoAttendanceSettings> {
-    const setting = await this.repository.upsertDelaySetting(dto.delay_minutes, updatedById);
+    const setting = await this.repository.upsertDelaySetting(
+      dto.delay_minutes,
+      updatedById,
+      typeof dto.enabled === 'boolean' ? dto.enabled : undefined,
+    );
 
     return {
-      delay_minutes: this.readDelay(setting.value),
+      enabled: this.readEnabled(setting.enabled),
+      delay_minutes: this.readDelay(setting.delay_minutes),
       updated_at: setting.updated_at,
       updated_by_id: setting.updated_by_id,
     };
@@ -60,8 +72,24 @@ export class AutoAttendanceService {
    * Process a single auto-attendance check cycle for all active schedules.
    * Runs idempotently: one (class_schedule_id, session_date) is only processed once.
    */
-  async processAutoAttendance(now: Date = new Date(), retryFailed = false): Promise<AutoAttendanceCycleResult> {
+  async processAutoAttendance(
+    now: Date = new Date(),
+    retryFailed = false,
+    ignoreEnabled = false,
+  ): Promise<AutoAttendanceCycleResult> {
     const settings = await this.getSettings();
+
+    if (!ignoreEnabled && !settings.enabled) {
+      log.info('Auto attendance is disabled by admin settings, skipping cycle');
+      return {
+        processed_schedules: 0,
+        attended_count: 0,
+        skipped_count: 0,
+        failed_count: 0,
+        issues_created: 0,
+      };
+    }
+
     const delayMinutes = settings.delay_minutes ?? DEFAULT_AUTO_ATTENDANCE_DELAY_MINUTES;
 
     const year = now.getFullYear();
@@ -276,5 +304,10 @@ export class AutoAttendanceService {
     return Number.isInteger(value) && Number(value) >= 0 && Number(value) <= 1440
       ? Number(value)
       : DEFAULT_AUTO_ATTENDANCE_DELAY_MINUTES;
+  }
+
+  private readEnabled(value: unknown): boolean {
+    if (typeof value === 'boolean') return value;
+    return DEFAULT_AUTO_ATTENDANCE_ENABLED;
   }
 }

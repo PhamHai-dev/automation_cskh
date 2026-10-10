@@ -20,9 +20,9 @@ export class AttendanceController {
     try {
       const classId = parseInt(req.params.classId);
       const sessionId = parseInt(req.params.sessionId);
-      const userId = req.user?.id || 0;
+      const actor = { id: req.user!.id, roles: req.user!.roles };
       const validated = markAttendanceSchema.parse({ body: req.body });
-      const attendance = await attendanceService.markAttendance(classId, sessionId, validated.body, userId);
+      const attendance = await attendanceService.markAttendance(classId, sessionId, validated.body, actor);
       res.status(201).json({ data: attendance, meta: null });
     } catch (error: any) {
       if (error.name === 'ZodError') {
@@ -36,9 +36,9 @@ export class AttendanceController {
     try {
       const classId = parseInt(req.params.classId);
       const sessionId = parseInt(req.params.sessionId);
-      const userId = req.user?.id || 0;
+      const actor = { id: req.user!.id, roles: req.user!.roles };
       const validated = bulkMarkAttendanceSchema.parse({ body: req.body });
-      const attendances = await attendanceService.bulkMarkAttendance(classId, sessionId, validated.body, userId);
+      const attendances = await attendanceService.bulkMarkAttendance(classId, sessionId, validated.body, actor);
       res.status(201).json({ data: attendances, meta: null });
     } catch (error: any) {
       if (error.name === 'ZodError') {
@@ -53,9 +53,9 @@ export class AttendanceController {
       const classId = parseInt(req.params.classId);
       const sessionId = parseInt(req.params.sessionId);
       const attendanceId = parseInt(req.params.attendanceId);
-      const userId = req.user?.id || 0;
+      const actor = { id: req.user!.id, roles: req.user!.roles };
       const validated = updateAttendanceSchema.parse({ body: req.body });
-      const attendance = await attendanceService.updateAttendance(attendanceId, validated.body, userId, classId, sessionId);
+      const attendance = await attendanceService.updateAttendance(attendanceId, validated.body, actor, classId, sessionId);
       res.json({ data: attendance, meta: null });
     } catch (error: any) {
       if (error.name === 'ZodError') {
@@ -70,8 +70,9 @@ export class AttendanceController {
       const classId = parseInt(req.params.classId);
       const sessionId = parseInt(req.params.sessionId);
       const attendanceId = parseInt(req.params.attendanceId);
-      const userId = req.user?.id || 0;
-      await attendanceService.resetAttendance(attendanceId, userId, classId, sessionId);
+      const actor = { id: req.user!.id, roles: req.user!.roles };
+      const side = req.query.side === 'TEACHER' || req.query.side === 'CS' ? req.query.side : undefined;
+      await attendanceService.resetAttendance(attendanceId, actor, side, classId, sessionId);
       res.status(204).send();
     } catch (error) {
       next(error);

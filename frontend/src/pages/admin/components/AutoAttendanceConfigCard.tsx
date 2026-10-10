@@ -35,9 +35,11 @@ const PRESET_DELAYS = [
 export const AutoAttendanceConfigCard: React.FC = () => {
   const toast = useToast();
 
+  const [enabled, setEnabled] = useState<boolean>(true);
   const [delayMinutes, setDelayMinutes] = useState<number>(15);
   const [loading, setLoading] = useState<boolean>(true);
   const [saving, setSaving] = useState<boolean>(false);
+  const [toggling, setToggling] = useState<boolean>(false);
   const [running, setRunning] = useState<boolean>(false);
   const [updatedAt, setUpdatedAt] = useState<string | null>(null);
   const [lastResult, setLastResult] = useState<AutoAttendanceCycleResult | null>(null);
@@ -47,6 +49,7 @@ export const AutoAttendanceConfigCard: React.FC = () => {
       setLoading(true);
       const res = await apiClient.get('/settings/auto-attendance');
       if (res.data?.data) {
+        setEnabled(res.data.data.enabled ?? true);
         setDelayMinutes(res.data.data.delay_minutes ?? 15);
         setUpdatedAt(res.data.data.updated_at);
       }
@@ -61,6 +64,28 @@ export const AutoAttendanceConfigCard: React.FC = () => {
     fetchSettings();
   }, []);
 
+  const handleToggleEnabled = async (next: boolean) => {
+    const prev = enabled;
+    setEnabled(next);
+    try {
+      setToggling(true);
+      const res = await apiClient.patch('/settings/auto-attendance', {
+        delay_minutes: Number(delayMinutes),
+        enabled: next,
+      });
+      if (res.data?.data) {
+        setEnabled(res.data.data.enabled ?? next);
+        setUpdatedAt(res.data.data.updated_at);
+      }
+      toast.success(next ? 'Đã BẬT tự động điểm danh theo lịch học!' : 'Đã TẮT tự động điểm danh theo lịch học!');
+    } catch (err: any) {
+      setEnabled(prev);
+      toast.error(err.response?.data?.error?.message || err.response?.data?.message || 'Không thể cập nhật trạng thái');
+    } finally {
+      setToggling(false);
+    }
+  };
+
   const handleSave = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (delayMinutes < 0 || delayMinutes > 1440 || !Number.isInteger(delayMinutes)) {
@@ -72,6 +97,7 @@ export const AutoAttendanceConfigCard: React.FC = () => {
       setSaving(true);
       const res = await apiClient.patch('/settings/auto-attendance', {
         delay_minutes: Number(delayMinutes),
+        enabled,
       });
       if (res.data?.data) {
         setDelayMinutes(res.data.data.delay_minutes);
@@ -119,8 +145,8 @@ export const AutoAttendanceConfigCard: React.FC = () => {
               <div>
                 <CardTitle className="text-base sm:text-lg flex items-center gap-2">
                   Tự động Điểm danh theo Lịch học
-                  <Badge variant="success" size="sm" className="hidden sm:inline-flex">
-                    Cron ngầm: 1 phút/lần
+                  <Badge variant={loading ? 'neutral' : enabled ? 'success' : 'neutral'} size="sm" className="hidden sm:inline-flex">
+                    {loading ? 'Đang tải...' : enabled ? 'Cron ngầm: Đang bật' : 'Cron ngầm: Đã tắt'}
                   </Badge>
                 </CardTitle>
                 <CardDescription className="text-xs sm:text-sm mt-0.5">
@@ -129,17 +155,51 @@ export const AutoAttendanceConfigCard: React.FC = () => {
               </div>
             </div>
 
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleRunNow}
-              disabled={loading || running}
-              isLoading={running}
-              leftIcon={<Play className="w-3.5 h-3.5" />}
-              className="self-start sm:self-auto shrink-0 border-primary/30 text-primary hover:bg-primary/5"
-            >
-              Quét kiểm tra ngay
-            </Button>
+            <div className="flex items-center gap-4 self-start sm:self-auto shrink-0">
+              {/* Toggle bật/tắt điểm danh tự động */}
+              {loading ? (
+                // Placeholder khi chưa tải xong để không hiện sai trạng thái Bật/Tắt
+                <div className="flex items-center gap-2.5" aria-busy="true">
+                  <span className="h-3 w-8 rounded bg-slate-200 animate-pulse" />
+                  <span className="h-6 w-11 rounded-full bg-slate-200 animate-pulse" />
+                </div>
+              ) : (
+                <label className="flex items-center gap-2.5 cursor-pointer select-none" title={enabled ? 'Đang bật - nhấn để tắt' : 'Đang tắt - nhấn để bật'}>
+                  <span className={`text-xs font-semibold ${enabled ? 'text-emerald-700' : 'text-text-muted'}`}>
+                    {enabled ? 'Bật' : 'Tắt'}
+                  </span>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={enabled}
+                    disabled={toggling}
+                    onClick={() => handleToggleEnabled(!enabled)}
+                    className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-primary/40 disabled:opacity-60 ${
+                      enabled ? 'bg-emerald-500' : 'bg-slate-300'
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-sm transition-transform ${
+                        enabled ? 'translate-x-[22px]' : 'translate-x-[3px]'
+                      }`}
+                    />
+                  </button>
+                  {toggling && <RefreshCw className="w-3.5 h-3.5 animate-spin text-primary" />}
+                </label>
+              )}
+
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleRunNow}
+                disabled={loading || running}
+                isLoading={running}
+                leftIcon={<Play className="w-3.5 h-3.5" />}
+                className="shrink-0 border-primary/30 text-primary hover:bg-primary/5"
+              >
+                Quét kiểm tra ngay
+              </Button>
+            </div>
           </div>
         </CardHeader>
 

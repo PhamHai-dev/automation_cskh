@@ -30,7 +30,8 @@ export class AutoAttendanceController {
   }
 
   async runCycle(_req: Request, res: Response) {
-    const result = await service.processAutoAttendance(new Date(), true);
+    // Quét thủ công từ admin luôn chạy, bất kể cờ bật/tắt điểm danh tự động (chỉ chặn cron ngầm).
+    const result = await service.processAutoAttendance(new Date(), true, true);
     return res.json({ data: result, meta: null });
   }
 }

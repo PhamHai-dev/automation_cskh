@@ -5,11 +5,13 @@ import {
   ClassSession,
   Attendance,
   AttendanceStatus,
+  AttendanceSide,
 } from '../types/classes.types';
 import { Button } from '../../../components/ui/Button';
 import { Badge } from '../../../components/ui/Badge';
 import { useToast } from '../../../components/ui/Toast';
 import { attendanceApi, classSessionsApi } from '../api/sessions.api';
+import { useAuth } from '../../../contexts/AuthContext';
 import {
   ChevronLeft,
   ChevronRight,
@@ -58,7 +60,8 @@ export interface AttendanceMatrixProps {
   onSaveCustom?: (
     pendingEdits: Record<string, AttendanceStatus>,
     customValues?: Record<string, number>,
-    sessionIndex?: number
+    sessionIndex?: number,
+    side?: AttendanceSide
   ) => Promise<void>;
   activeTab?: AttendanceTab;
   titleHeader?: React.ReactNode;
@@ -338,6 +341,10 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
   titleHeader,
 }) => {
   const toast = useToast();
+  const { user } = useAuth();
+  const privilegedSideChoice = Boolean(user?.roles.some((role) => role === 'ADMIN' || role === 'MANAGE'));
+  const defaultSide: AttendanceSide = user?.roles.includes('TEACHER') && !user?.roles.includes('CS') ? 'TEACHER' : 'CS';
+  const [selectedSide, setSelectedSide] = useState<AttendanceSide>(defaultSide);
 
   const [internalActiveTab] = useState<AttendanceTab>('quick');
   const activeTab = controlledActiveTab ?? internalActiveTab;
@@ -467,11 +474,13 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
     const map = new Map<string, Attendance>();
     attendances.forEach((a) => {
       if ((a as any).deleted_at) return;
-      map.set(`${a.enrollment_class_id}_session_${a.class_session_id}`, a);
+      const visibleStatus = selectedSide === 'TEACHER' ? a.teacher_status : a.cs_status;
+      if (!visibleStatus) return;
+      map.set(`${a.enrollment_class_id}_session_${a.class_session_id}`, { ...a, status: visibleStatus });
     });
     attendanceOverrides.forEach((value, key) => map.set(key, value));
     return map;
-  }, [attendances, attendanceOverrides]);
+  }, [attendances, attendanceOverrides, selectedSide]);
 
 
 
@@ -561,7 +570,8 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
         if (!dStr || processedDates.has(dStr) || clearedKeys.has(`${s.enrollment_class_id}_${dStr}`)) return;
         processedDates.add(dStr);
 
-        const status = a.status;
+        const status = selectedSide === 'TEACHER' ? a.teacher_status : a.cs_status;
+        if (!status) return;
         const count = 1;
 
         if (status === 'ATTENDED') totalAttended += count;
@@ -594,7 +604,7 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
     });
 
     return statsMap;
-  }, [students, attendances, sessions, optimisticUpdates, currentDate, clearedKeys]);
+  }, [students, attendances, sessions, optimisticUpdates, currentDate, clearedKeys, selectedSide]);
 
   // Overall KPI cards computation for Tab 3
   const overallKPIs = useMemo(() => {
@@ -771,7 +781,7 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
       records.forEach((r) => {
         pendingMap[`${r.ecId}_${r.dateStr}`] = r.status;
       });
-      await onSaveCustom(pendingMap, undefined, bulkSessionIndex);
+      await onSaveCustom(pendingMap, undefined, bulkSessionIndex, selectedSide);
     } else if (cls) {
       const byDate = new Map<string, { ecId: number; status: AttendanceStatus }[]>();
       records.forEach((r) => {
@@ -790,6 +800,7 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
             enrollment_class_id: i.ecId,
             status: i.status,
           })),
+          side: selectedSide,
         });
       }
       onRefresh();
@@ -902,7 +913,7 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
     try {
       setBulkSaving(true);
       await Promise.all(toRemove.map((item) =>
-        attendanceApi.remove(item.classId, item.sessionId, item.attendanceId)
+        attendanceApi.remove(item.classId, item.sessionId, item.attendanceId, selectedSide)
       ));
       toast.info(`Đã xóa điểm danh Buổi ${bulkSessionIndex + 1} cho ${toRemove.length} học viên`);
       onRefresh();
@@ -939,14 +950,21 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
       const saved = await attendanceApi.mark(classId, target.id, {
         enrollment_class_id: enrollmentClassId,
         status,
+        side: selectedSide,
       });
       setAttendanceOverrides((current) => {
         const next = new Map(current);
-        next.set(`${enrollmentClassId}_session_${target!.id}`, saved);
+        const sideStatus = selectedSide === 'TEACHER' ? saved.teacher_status : saved.cs_status;
+        next.set(`${enrollmentClassId}_session_${target!.id}`, {
+          ...saved,
+          status: sideStatus || status,
+        });
         return next;
       });
       const localIndex = getSessionsForCell(enrollmentClassId, dateStr).findIndex((item) => item.id === target!.id);
       toast.success(`Đã lưu Buổi ${localIndex >= 0 ? localIndex + 1 : 1}`);
+      setActiveCell(null);
+      setActiveAnchorEl(null);
     } catch (err: any) {
       toast.error(err.response?.data?.message || err.response?.data?.error?.message || err.message || 'Không thể lưu điểm danh');
       onRefresh();
@@ -961,7 +979,7 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
     if (!attendance) return;
     setSavingSessionId(session.id);
     try {
-      await attendanceApi.remove(session.class_id, session.id, attendance.id);
+      await attendanceApi.remove(session.class_id, session.id, attendance.id, selectedSide);
       setAttendanceOverrides((current) => {
         const next = new Map(current);
         next.delete(key);
@@ -1070,6 +1088,20 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
       {/* Unified filters, save action and active-tab controls */}
       <div className="flex flex-wrap items-center gap-2.5 border-b border-border/80 bg-slate-50/60 p-3 sm:px-4">
         {titleHeader}
+        <div className="flex items-center gap-1 rounded-xl border border-border/70 bg-surface p-1" aria-label="Chọn phía điểm danh">
+          {(['TEACHER', 'CS'] as AttendanceSide[]).map((side) => (
+            <button
+              id={`attendance-side-${side.toLowerCase()}`}
+              key={side}
+              type="button"
+              disabled={!privilegedSideChoice && side !== defaultSide}
+              onClick={() => privilegedSideChoice && setSelectedSide(side)}
+              className={`rounded-lg px-3 py-1.5 text-xs font-extrabold transition ${selectedSide === side ? 'bg-primary text-white shadow-sm' : 'text-text-muted hover:bg-surface-muted disabled:hidden'}`}
+            >
+              {side === 'TEACHER' ? 'Phía Giáo viên' : 'Phía CSKH'}
+            </button>
+          ))}
+        </div>
         <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-2">
           {activeTab === 'quick' && (
             <>

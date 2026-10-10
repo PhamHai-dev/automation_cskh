@@ -11,8 +11,8 @@ export interface ParsedAttendance {
  * Parses raw cell value from Teacher or CSKH attendance sheet.
  * Supports:
  * - [Mã HV]-[Tên bài / Mã A,B,C,D,E] (e.g. "420289324-K2 L4", "420289324-A")
- * - Single codes: A, B, C, D, E, X, ĐÃ HỌC
- * - Numeric session counts: 1.0, 2.0, 0.5
+ * - Single codes: A, B, C, D, E, ĐÃ HỌC
+ * - Any positive numeric value represents one attended session
  * - Direct lesson topic string fallback: "K2 L4"
  */
 export function parseAttendanceValue(value: string | number | null | undefined): ParsedAttendance {
@@ -59,12 +59,12 @@ export function parseAttendanceValue(value: string | number | null | undefined):
   if (codeUpper === 'C') return { status: AttendanceStatus.ABSENT_UNAPPROVED_C, sessionCount: 1, lessonTopic: null };
   if (codeUpper === 'D') return { status: AttendanceStatus.TEACHER_ABSENT_D, sessionCount: 1, lessonTopic: null };
   if (codeUpper === 'E') return { status: AttendanceStatus.TECH_ERROR_E, sessionCount: 1, lessonTopic: null };
-  if (['X', 'ĐÃ HỌC'].includes(codeUpper)) return { status: AttendanceStatus.ATTENDED, sessionCount: 1, lessonTopic: null };
+  if (codeUpper === 'ĐÃ HỌC') return { status: AttendanceStatus.ATTENDED, sessionCount: 1, lessonTopic: null };
 
-  // 3. Numeric values: 1, 1.0, 2, 2.0, 0.5...
+  // 3. Any positive numeric value means attended for this single ClassSession.
   const num = Number(str);
   if (!isNaN(num) && num > 0) {
-    return { status: AttendanceStatus.ATTENDED, sessionCount: num, lessonTopic: null };
+    return { status: AttendanceStatus.ATTENDED, sessionCount: 1, lessonTopic: null };
   }
 
   // 4. Tolerant fallback for lesson topic without ID prefix (e.g. "K2 L4", "k1-l1")

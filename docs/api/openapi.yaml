@@ -785,6 +785,9 @@ paths:
                   type: integer
                   minimum: 0
                   maximum: 1440
+                enabled:
+                  type: boolean
+                  description: Bật/tắt chu kỳ điểm danh tự động ngầm (cron). Quét thủ công /run vẫn luôn chạy.
       responses:
         '200':
           description: Updated automatic attendance settings
@@ -802,6 +805,219 @@ paths:
           description: Invalid delay
         '403':
           description: Admin role required
+
+  /api/v1/attendance-reconciliation/teacher-sessions:
+    get:
+      summary: List teacher sessions and active students in actor scope
+      tags: [Attendance Reconciliation]
+      parameters:
+        - { name: startDate, in: query, required: true, schema: { type: string, format: date } }
+        - { name: endDate, in: query, required: true, schema: { type: string, format: date } }
+        - { name: teacherId, in: query, schema: { type: integer } }
+      responses:
+        '200':
+          description: Sessions in scope
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TeacherSessionListResponse' }
+        '400': { description: Invalid date range }
+        '403': { description: Teacher is outside actor scope }
+
+  /api/v1/attendance-reconciliation/pending:
+    get:
+      summary: List pending attendance reconciliations in actor scope
+      tags: [Attendance Reconciliation]
+      parameters:
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+        - { name: classId, in: query, schema: { type: integer } }
+        - { name: csId, in: query, schema: { type: integer } }
+        - { name: teacherId, in: query, schema: { type: integer } }
+        - { name: startDate, in: query, schema: { type: string, format: date } }
+        - { name: endDate, in: query, schema: { type: string, format: date } }
+        - { name: search, in: query, schema: { type: string, maxLength: 100 } }
+      responses:
+        '200':
+          description: Paginated pending items
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReconciliationListResponse' }
+
+  /api/v1/attendance-reconciliation/conflicts:
+    get:
+      summary: List attendance conflicts in actor scope
+      tags: [Attendance Reconciliation]
+      parameters:
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+        - { name: classId, in: query, schema: { type: integer } }
+        - { name: csId, in: query, schema: { type: integer } }
+        - { name: teacherId, in: query, schema: { type: integer } }
+        - { name: startDate, in: query, schema: { type: string, format: date } }
+        - { name: endDate, in: query, schema: { type: string, format: date } }
+      responses:
+        '200':
+          description: Paginated conflict items
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReconciliationListResponse' }
+
+  /api/v1/attendance-reconciliation/{attendanceId}/teacher-mark:
+    post:
+      summary: Record the teacher opinion for an attendance
+      tags: [Attendance Reconciliation]
+      parameters:
+        - { name: attendanceId, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AttendanceOpinionInput' }
+      responses:
+        '200':
+          description: Reconciliation updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReconciliationItemResponse' }
+        '403': { description: Attendance is outside teacher scope }
+        '409': { description: Invalid reconciliation transition }
+
+  /api/v1/attendance-reconciliation/{attendanceId}/cs-mark:
+    post:
+      summary: Record the customer-care opinion for an attendance
+      tags: [Attendance Reconciliation]
+      parameters:
+        - { name: attendanceId, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AttendanceOpinionInput' }
+      responses:
+        '200':
+          description: Reconciliation updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReconciliationItemResponse' }
+        '403': { description: Attendance is outside customer-care scope }
+        '409': { description: Invalid reconciliation transition }
+
+  /api/v1/attendance-reconciliation/bulk-approve:
+    post:
+      summary: Copy teacher opinions to customer-care opinions for selected PENDING_CS items
+      tags: [Attendance Reconciliation]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [attendanceIds]
+              properties:
+                attendanceIds:
+                  type: array
+                  minItems: 1
+                  maxItems: 100
+                  uniqueItems: true
+                  items: { type: integer }
+      responses:
+        '200':
+          description: All selected items approved atomically
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, meta]
+                properties:
+                  data:
+                    type: object
+                    required: [processed]
+                    properties:
+                      processed: { type: integer }
+                  meta: { type: [object, 'null'] }
+        '403': { description: At least one item is outside actor scope }
+        '409': { description: At least one item is not PENDING_CS }
+
+  /api/v1/attendance-reconciliation/{attendanceId}/resolve-conflict:
+    post:
+      summary: Resolve an attendance conflict with a mandatory reason
+      tags: [Attendance Reconciliation]
+      parameters:
+        - { name: attendanceId, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [finalStatus, resolutionNote]
+              properties:
+                finalStatus: { $ref: '#/components/schemas/AttendanceStatus' }
+                resolutionNote: { type: string, minLength: 1, maxLength: 1000 }
+      responses:
+        '200':
+          description: Conflict resolved
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReconciliationItemResponse' }
+        '403': { description: Attendance is outside actor scope }
+        '409': { description: Attendance is not in conflict }
+
+  /api/v1/attendance-reconciliation/{source}-workbook/preview:
+    post:
+      summary: Preview a teacher or customer-care attendance workbook without database writes
+      tags: [Attendance Reconciliation]
+      parameters:
+        - name: source
+          in: path
+          required: true
+          schema: { type: string, enum: [teacher, cs] }
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+                teacherId: { type: integer }
+      responses:
+        '200':
+          description: Workbook preview
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkbookPreviewResponse' }
+        '400': { description: Invalid workbook or MIME type }
+        '403': { description: Requested scope is not allowed }
+
+  /api/v1/attendance-reconciliation/{source}-workbook/{previewId}/commit:
+    post:
+      summary: Commit valid cells from an unexpired workbook preview
+      tags: [Attendance Reconciliation]
+      parameters:
+        - name: source
+          in: path
+          required: true
+          schema: { type: string, enum: [teacher, cs] }
+        - { name: previewId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [confirmOverwrite]
+              properties:
+                confirmOverwrite: { type: boolean, const: true }
+      responses:
+        '200':
+          description: Valid preview cells committed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkbookCommitResponse' }
+        '404': { description: Preview not found or expired }
+        '409': { description: Preview was already committed or source data changed }
 
 components:
   securitySchemes:
@@ -1099,8 +1315,11 @@ components:
 
     AutoAttendanceSettings:
       type: object
-      required: [delay_minutes, updated_at]
+      required: [enabled, delay_minutes, updated_at]
       properties:
+        enabled:
+          type: boolean
+          example: true
         delay_minutes:
           type: integer
           minimum: 0
@@ -1111,6 +1330,163 @@ components:
           format: date-time
         updated_by_id:
           type: [integer, 'null']
+
+    AttendanceStatus:
+      type: string
+      enum: [ATTENDED, ABSENT_APPROVED_A, LEAVE_B, ABSENT_UNAPPROVED_C, TEACHER_ABSENT_D, TECH_ERROR_E]
+
+    ReconciliationState:
+      type: string
+      enum: [PENDING_TEACHER, PENDING_CS, MATCHED, CONFLICT, RESOLVED]
+
+    AttendanceOpinionInput:
+      type: object
+      required: [status]
+      properties:
+        status: { $ref: '#/components/schemas/AttendanceStatus' }
+        rawValue: { type: [string, 'null'], maxLength: 100 }
+        lessonTopic: { type: [string, 'null'], maxLength: 500 }
+        note: { type: [string, 'null'], maxLength: 1000 }
+
+    ReconciliationItem:
+      type: object
+      required: [id, enrollmentClassId, classSessionId, reconciliationState]
+      properties:
+        id: { type: integer }
+        enrollmentClassId: { type: integer }
+        classSessionId: { type: integer }
+        studentId: { type: integer }
+        studentExternalId: { type: [string, 'null'] }
+        studentName: { type: string }
+        classId: { type: integer }
+        classCode: { type: string }
+        sessionDate: { type: string, format: date }
+        startTime: { type: [string, 'null'] }
+        teacherStatus:
+          oneOf:
+            - { $ref: '#/components/schemas/AttendanceStatus' }
+            - { type: 'null' }
+        csStatus:
+          oneOf:
+            - { $ref: '#/components/schemas/AttendanceStatus' }
+            - { type: 'null' }
+        finalStatus:
+          oneOf:
+            - { $ref: '#/components/schemas/AttendanceStatus' }
+            - { type: 'null' }
+        reconciliationState: { $ref: '#/components/schemas/ReconciliationState' }
+        resolutionNote: { type: [string, 'null'] }
+
+    PaginationMeta:
+      type: object
+      required: [page, pageSize, total, totalPages]
+      properties:
+        page: { type: integer }
+        pageSize: { type: integer }
+        total: { type: integer }
+        totalPages: { type: integer }
+
+    ReconciliationItemResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data: { $ref: '#/components/schemas/ReconciliationItem' }
+        meta: { type: [object, 'null'] }
+
+    ReconciliationListResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/ReconciliationItem' }
+        meta: { $ref: '#/components/schemas/PaginationMeta' }
+
+    TeacherSessionListResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            type: object
+            required: [id, classId, sessionDate, students]
+            properties:
+              id: { type: integer }
+              classId: { type: integer }
+              classCode: { type: string }
+              sessionDate: { type: string, format: date }
+              startTime: { type: [string, 'null'] }
+              endTime: { type: [string, 'null'] }
+              students:
+                type: array
+                items: { $ref: '#/components/schemas/ReconciliationItem' }
+        meta: { type: [object, 'null'] }
+
+    WorkbookPreviewCell:
+      type: object
+      required: [sheet, address, row, rawValue, category]
+      properties:
+        sheet: { type: string }
+        address: { type: string }
+        row: { type: integer }
+        sessionDate: { type: [string, 'null'], format: date }
+        startTime: { type: [string, 'null'] }
+        studentExternalId: { type: [string, 'null'] }
+        classCode: { type: [string, 'null'] }
+        rawValue: {}
+        oldStatus:
+          oneOf:
+            - { $ref: '#/components/schemas/AttendanceStatus' }
+            - { type: 'null' }
+        newStatus:
+          oneOf:
+            - { $ref: '#/components/schemas/AttendanceStatus' }
+            - { type: 'null' }
+        category: { type: string, enum: [NEW, UNCHANGED, OVERWRITE, ERROR, OUT_OF_SCOPE] }
+        message: { type: [string, 'null'] }
+
+    WorkbookPreviewResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: object
+          required: [previewId, expiresAt, summary, cells]
+          properties:
+            previewId: { type: string }
+            expiresAt: { type: string, format: date-time }
+            summary:
+              type: object
+              required: [new, unchanged, overwrite, error, outOfScope]
+              properties:
+                new: { type: integer }
+                unchanged: { type: integer }
+                overwrite: { type: integer }
+                error: { type: integer }
+                outOfScope: { type: integer }
+            cells:
+              type: array
+              items: { $ref: '#/components/schemas/WorkbookPreviewCell' }
+        meta: { type: [object, 'null'] }
+
+    WorkbookCommitResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: object
+          required: [processed, matched, pending, conflict, skipped, errors]
+          properties:
+            processed: { type: integer }
+            matched: { type: integer }
+            pending: { type: integer }
+            conflict: { type: integer }
+            skipped: { type: integer }
+            errors:
+              type: array
+              items: { $ref: '#/components/schemas/WorkbookPreviewCell' }
+        meta: { type: [object, 'null'] }
 
     EnrollmentSummaryStats:
       type: object
