@@ -888,6 +888,7 @@ paths:
         - { name: classId, in: query, schema: { type: integer } }
         - { name: csId, in: query, schema: { type: integer } }
         - { name: teacherId, in: query, schema: { type: integer } }
+        - { name: state, in: query, description: Filter to the side currently waiting, schema: { type: string, enum: [PENDING_CS, PENDING_TEACHER] } }
         - { name: startDate, in: query, schema: { type: string, format: date } }
         - { name: endDate, in: query, schema: { type: string, format: date } }
         - { name: search, in: query, schema: { type: string, maxLength: 100 } }

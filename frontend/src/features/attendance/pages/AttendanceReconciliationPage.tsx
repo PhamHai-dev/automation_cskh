@@ -418,111 +418,145 @@ export const AttendanceReconciliationPage: React.FC = () => {
     []
   );
 
-  // Columns for Pending Table
-  const pendingColumns: Column<AttendanceRecord>[] = useMemo(
-    () => [
-      {
-        header: (
-          <input
-            type="checkbox"
-            className="rounded border-border"
-            checked={pendingItems.length > 0 && selectedPendingIds.length === pendingItems.length}
-            onChange={toggleSelectAllPending}
-            aria-label="Chọn tất cả"
-          />
-        ),
-        width: '40px',
-        cell: (r) => (
-          <input
-            type="checkbox"
-            className="rounded border-border"
-            checked={selectedPendingIds.includes(r.id)}
-            onChange={() => toggleSelectPending(r.id)}
-            aria-label={`Chọn buổi ${r.class_session?.session_number}`}
-          />
-        ),
-      },
+  const teacherCell = (r: AttendanceRecord) => {
+    const teachers = r.assigned_teachers || [];
+    if (teachers.length === 0) {
+      return <span className="text-xs text-text-muted italic">Chưa phân công</span>;
+    }
+    return (
+      <div className="space-y-1">
+        {teachers.map((teacher) => (
+          <div key={teacher.id} className="text-xs">
+            <div className="font-medium text-text-primary">{teacher.name}</div>
+            <div className="text-text-muted">{teacher.code}{teacher.email ? ` • ${teacher.email}` : ''}</div>
+          </div>
+        ))}
+      </div>
+    );
+  };
+
+  const pendingColumns: Column<AttendanceRecord>[] = useMemo(() => {
+    const commonColumns: Column<AttendanceRecord>[] = [
       { header: 'Học viên', cell: studentCell },
       { header: 'Buổi học / Ngày', cell: sessionCell },
-      {
-        header: 'Giáo viên báo cáo',
-        cell: (r) => {
-          if (!r.teacher_status) {
-            return <span className="text-xs text-text-muted italic">Chưa nhập</span>;
-          }
-          const cfg = statusLabels[r.teacher_status];
-          return (
-            <div className="flex flex-col gap-0.5">
-              <Badge variant={cfg?.variant || 'neutral'} size="sm">
-                {cfg?.label || r.teacher_status}
-              </Badge>
-              {r.lesson_topic && (
-                <span className="text-xs text-teal-600 font-medium">Bài: {r.lesson_topic}</span>
-              )}
-            </div>
-          );
-        },
+      { header: 'Giáo viên', cell: teacherCell },
+    ];
+
+    const teacherReportColumn: Column<AttendanceRecord> = {
+      header: 'GV đã báo',
+      cell: (r) => {
+        const cfg = r.teacher_status ? statusLabels[r.teacher_status] : null;
+        return cfg ? (
+          <div className="flex flex-col gap-1">
+            <Badge variant={cfg.variant} size="sm">{cfg.label}</Badge>
+            {r.lesson_topic && <span className="text-xs text-teal-600 font-medium">Bài: {r.lesson_topic}</span>}
+            <span className="text-[11px] text-text-muted">{formatDateTime(r.teacher_submitted_at)}</span>
+          </div>
+        ) : <span className="text-xs text-text-muted italic">Chưa nhập</span>;
       },
-      {
-        header: 'CSKH',
-        cell: (r) => {
-          if (!r.cs_status) {
-            return (
-              <Badge variant="warning" size="sm">
-                Đang chờ CSKH
-              </Badge>
-            );
-          }
-          const cfg = statusLabels[r.cs_status];
-          return (
-            <Badge variant={cfg?.variant || 'neutral'} size="sm">
-              {cfg?.label || r.cs_status}
-            </Badge>
-          );
-        },
+    };
+
+    const csReportColumn: Column<AttendanceRecord> = {
+      header: 'CSKH đã ghi nhận',
+      cell: (r) => {
+        const cfg = r.cs_status ? statusLabels[r.cs_status] : null;
+        return cfg ? (
+          <div className="flex flex-col gap-1">
+            <Badge variant={cfg.variant} size="sm">{cfg.label}</Badge>
+            <span className="text-[11px] text-text-muted">{formatDateTime(r.cs_submitted_at)}</span>
+          </div>
+        ) : <span className="text-xs text-text-muted italic">Chưa ghi nhận</span>;
       },
-      {
-        header: 'Chờ bên nào',
-        cell: (r) =>
-          r.reconciliation_state === 'PENDING_TEACHER' ? (
-            <Badge variant="info" size="sm" dot>
-              Chờ giáo viên báo
-            </Badge>
-          ) : (
-            <Badge variant="accent" size="sm" dot>
-              Chờ CSKH duyệt
-            </Badge>
+    };
+
+    const csActionColumn: Column<AttendanceRecord> = {
+      header: 'Hành động',
+      cell: (r) => (
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => handleApproveOne(r)}
+            disabled={isSubmitting}
+          >
+            <CheckCircle2 className="w-3.5 h-3.5 mr-1 text-emerald-600" />
+            Duyệt theo GV
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => handleOpenCSMark(r)} disabled={isSubmitting}>
+            Ghi nhận khác
+          </Button>
+        </div>
+      ),
+    };
+
+    if (pendingFilter === 'PENDING_CS') {
+      return [
+        {
+          header: (
+            <input
+              type="checkbox"
+              className="rounded border-border"
+              checked={pendingItems.length > 0 && selectedPendingIds.length === pendingItems.length}
+              onChange={toggleSelectAllPending}
+              aria-label="Chọn tất cả chờ CSKH"
+            />
           ),
+          width: '40px',
+          cell: (r) => (
+            <input
+              type="checkbox"
+              className="rounded border-border"
+              checked={selectedPendingIds.includes(r.id)}
+              onChange={() => toggleSelectPending(r.id)}
+              aria-label={`Chọn buổi ${r.class_session?.session_number}`}
+            />
+          ),
+        },
+        ...commonColumns,
+        teacherReportColumn,
+        csActionColumn,
+      ];
+    }
+
+    if (pendingFilter === 'PENDING_TEACHER') {
+      return [
+        ...commonColumns,
+        csReportColumn,
+        {
+          header: 'Trạng thái',
+          cell: () => <Badge variant="info" size="sm" dot>Đang chờ giáo viên</Badge>,
+        },
+      ];
+    }
+
+    return [
+      ...commonColumns,
+      teacherReportColumn,
+      csReportColumn,
+      {
+        header: 'Đang chờ',
+        cell: (r) => r.reconciliation_state === 'PENDING_CS'
+          ? <Badge variant="accent" size="sm" dot>CSKH</Badge>
+          : <Badge variant="info" size="sm" dot>Giáo viên</Badge>,
       },
       {
         header: 'Hành động',
-        cell: (r) => (
-          <div className="flex items-center gap-2">
-            {r.teacher_status && r.reconciliation_state === 'PENDING_CS' && (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => handleApproveOne(r)}
-                disabled={isSubmitting}
-              >
+        cell: (r) => r.reconciliation_state === 'PENDING_CS'
+          ? (
+            <div className="flex items-center gap-2">
+              <Button size="sm" variant="outline" onClick={() => handleApproveOne(r)} disabled={isSubmitting}>
                 <CheckCircle2 className="w-3.5 h-3.5 mr-1 text-emerald-600" />
                 Duyệt theo GV
               </Button>
-            )}
-            {!r.cs_status && (
-              <Button size="sm" variant="ghost" onClick={() => handleOpenCSMark(r)}>
-                Ghi nhận CS
+              <Button size="sm" variant="ghost" onClick={() => handleOpenCSMark(r)} disabled={isSubmitting}>
+                Ghi nhận khác
               </Button>
-            )}
-            {!r.teacher_status && r.cs_status && (
-              <span className="text-xs text-text-muted italic">Chờ GV báo</span>
-            )}
-          </div>
-        ),
+            </div>
+          )
+          : <span className="text-xs text-text-muted italic">Chờ GV báo</span>,
       },
-    ],
-    [pendingItems, selectedPendingIds, isSubmitting]
-  );
+    ];
+  }, [pendingFilter, pendingItems, selectedPendingIds, isSubmitting]);
 
   // Columns for History Table
   const historyColumns: Column<ReconciliationHistoryItem>[] = useMemo(
@@ -768,7 +802,7 @@ export const AttendanceReconciliationPage: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
-            {activeTab === 'pending' && (
+            {activeTab === 'pending' && pendingFilter === 'PENDING_CS' && (
               <Button
                 variant="primary"
                 onClick={handleBulkApprove}

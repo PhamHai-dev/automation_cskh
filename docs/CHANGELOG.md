@@ -1,5 +1,12 @@
 # Project Changelog
 
+## 2026-10-11 — Đối soát điểm danh: giáo viên phụ trách và hàng chờ chính xác
+
+- Trang **Đối soát điểm danh** bổ sung cột **Giáo viên**, lấy từ danh sách `ClassTeacher` đang active của lớp; không dùng tài khoản đã thao tác điểm danh để tránh nhầm khi Admin/Manage hỗ trợ nhập thay.
+- Chuẩn hóa hàng chờ theo dữ liệu hai phía: Chờ CSKH chỉ nhận `teacher_status` đã có / `cs_status` chưa có; Chờ GV theo chiều ngược lại. Bản ghi chưa có ý kiến từ cả hai bên không còn lọt vào hàng chờ hoặc KPI.
+- Tách cột và thao tác theo từng bộ lọc: Chờ CSKH có duyệt theo GV hoặc ghi nhận khác; Chờ GV chỉ thể hiện kết quả CSKH và trạng thái chờ giáo viên. Duyệt hàng loạt chỉ hiện trong Chờ CSKH.
+- Bổ sung integration test cho invariant hai bên, thống kê và dữ liệu giáo viên phụ trách. Backend typecheck và frontend production build pass; suite reconciliation còn 2 lỗi fixture/teardown đã có trước thay đổi.
+
 ## 2026-10-06 — Audit actor cho điểm danh tự động
 
 - Theo xác nhận của user, scheduler sử dụng tài khoản audit riêng `auto-attendance@system.invalid`, tạo idempotently khi cần, không gán user ID=1.

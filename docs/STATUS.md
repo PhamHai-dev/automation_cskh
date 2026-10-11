@@ -1,5 +1,11 @@
 # Project Status
 
+## Cập nhật đối soát điểm danh — 2026-10-11
+
+- Hàng chờ đối soát giờ được xác định đồng thời từ `reconciliation_state` và trạng thái thực tế hai phía, tránh hiển thị nhầm bản ghi cả GV lẫn CSKH chưa nhập trong Chờ CSKH.
+- API pending trả danh sách giáo viên active được phân công theo lớp; giao diện thêm cột Giáo viên và tách cột/thao tác theo Chờ CSKH, Chờ GV và Tất cả.
+- Backend typecheck và frontend production build pass. Integration suite reconciliation: 11/12 flow pass, gồm flow mới; Flow 4 Excel fixture và teardown FK vẫn fail do dữ liệu/test cleanup có sẵn.
+
 ## Kiểm tra merge — 2026-10-06
 
 - Auto-attendance: đã thay user ID cố định bằng actor hệ thống riêng, inactive và không có role (user phê duyệt).

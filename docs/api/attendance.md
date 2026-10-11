@@ -48,7 +48,8 @@ Base: `/api/v1/attendance-reconciliation`.
 ### Danh sách
 
 - `GET /teacher-sessions?startDate&endDate&teacherId`: TEACHER xem lớp của mình; ADMIN/MANAGE có thể chọn giáo viên. Trả ClassSession và toàn bộ EnrollmentClass `ACTIVE`, kể cả chưa có Attendance.
-- `GET /pending?page&pageSize&classId&csId&teacherId&startDate&endDate&search`: CS/MANAGE/ADMIN; trả `PENDING_CS` và `PENDING_TEACHER` trong data scope.
+- `GET /pending?page&pageSize&classId&csId&teacherId&state&startDate&endDate&search`: CS/MANAGE/ADMIN; trả hàng chờ trong data scope, có thể lọc `state=PENDING_CS|PENDING_TEACHER`. Mỗi hàng kèm `assigned_teachers` là danh sách giáo viên active được phân công cho lớp, gồm mã/tên/email; đây là giáo viên phụ trách, không phải tài khoản đã thao tác nhập điểm danh.
+- `PENDING_CS` chỉ hợp lệ khi `teacher_status` đã có và `cs_status` chưa có; `PENDING_TEACHER` chỉ hợp lệ khi `cs_status` đã có và `teacher_status` chưa có. Bản ghi chưa có ý kiến từ cả hai bên không thuộc danh sách chờ.
 - `GET /conflicts?...`: CS/MANAGE/ADMIN; trả `CONFLICT` trong data scope.
 
 ### Ghi ý kiến và phân xử

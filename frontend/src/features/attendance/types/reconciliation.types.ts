@@ -27,6 +27,7 @@ export interface AttendanceRecord {
   teacher_submitted_at: string | null;
   teacher_user_id: number | null;
   teacher_user?: { id: number; name: string | null; email: string };
+  assigned_teachers?: AssignedTeacher[];
 
   cs_status: AttendanceStatus | null;
   cs_raw_value: string | null;
@@ -64,6 +65,14 @@ export interface AttendanceRecord {
     end_time: string | null;
     class: { id: number; class_name: string };
   };
+}
+
+export interface AssignedTeacher {
+  id: number;
+  user_id: number | null;
+  code: string;
+  name: string;
+  email: string | null;
 }
 
 export interface ReconciliationListResponse {

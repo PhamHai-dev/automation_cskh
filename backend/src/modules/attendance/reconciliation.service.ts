@@ -79,6 +79,29 @@ export class ReconciliationService {
     }
   }
 
+  /**
+   * Pending state must always be verified from both opinions as well as the
+   * persisted state. This keeps stale records created with the schema default
+   * out of the CSKH/teacher work queues.
+   */
+  private pendingStateWhere(state: ReconciliationState): Prisma.AttendanceWhereInput {
+    if (state === ReconciliationState.PENDING_CS) {
+      return {
+        reconciliation_state: ReconciliationState.PENDING_CS,
+        teacher_status: { not: null },
+        cs_status: null,
+      };
+    }
+    if (state === ReconciliationState.PENDING_TEACHER) {
+      return {
+        reconciliation_state: ReconciliationState.PENDING_TEACHER,
+        teacher_status: null,
+        cs_status: { not: null },
+      };
+    }
+    return { reconciliation_state: state };
+  }
+
   /** Build the shared reconciliation filter and enforce role-owned data scope. */
   private buildScopeWhere(
     query: ReconciliationQuery,
@@ -88,7 +111,9 @@ export class ReconciliationService {
     const where: Prisma.AttendanceWhereInput = {};
 
     if (stateFilter) {
-      where.reconciliation_state = Array.isArray(stateFilter) ? { in: stateFilter } : stateFilter;
+      where.AND = Array.isArray(stateFilter)
+        ? { OR: stateFilter.map((state) => this.pendingStateWhere(state)) }
+        : this.pendingStateWhere(stateFilter);
     }
 
     const classSessionWhere: Prisma.ClassSessionWhereInput = {};
@@ -133,6 +158,20 @@ export class ReconciliationService {
       where.enrollment_class = { enrollment: enrollmentWhere };
     }
     return where;
+  }
+
+  /** Attach the teachers currently assigned to the attendance class for CSKH context. */
+  private withAssignedTeachers(items: any[]) {
+    return items.map((item) => ({
+      ...item,
+      assigned_teachers: (item.class_session?.class?.class_teachers || []).map((assignment: any) => ({
+        id: assignment.teacher.id,
+        user_id: assignment.teacher.user_id,
+        code: assignment.teacher.code,
+        name: assignment.teacher.name,
+        email: assignment.teacher.email,
+      })),
+    }));
   }
 
   private assertTeacherTrackingContext(query: ReconciliationQuery, actor: Actor) {
@@ -425,7 +464,21 @@ export class ReconciliationService {
           },
           class_session: {
             include: {
-              class: { select: { id: true, class_name: true } },
+              class: {
+                select: {
+                  id: true,
+                  class_name: true,
+                  class_teachers: {
+                    where: { active: true, teacher: { active: true } },
+                    orderBy: { created_at: 'asc' },
+                    select: {
+                      teacher: {
+                        select: { id: true, user_id: true, code: true, name: true, email: true },
+                      },
+                    },
+                  },
+                },
+              },
             },
           },
           teacher_user: { select: { id: true, name: true, email: true } },
@@ -433,6 +486,8 @@ export class ReconciliationService {
         },
       }),
     ]);
+
+    const mappedItems = this.withAssignedTeachers(items);
 
     // Separate pending counts (independent of pagination) for KPI cards.
     const pendingCsWhere = this.buildScopeWhere(query, actor, ReconciliationState.PENDING_CS);
@@ -443,7 +498,7 @@ export class ReconciliationService {
     ]);
 
     return {
-      items,
+      items: mappedItems,
       total,
       page,
       limit,

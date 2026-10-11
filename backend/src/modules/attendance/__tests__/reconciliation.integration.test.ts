@@ -522,6 +522,57 @@ describe('Two-Party Attendance Reconciliation Integration Tests', () => {
     }
   });
 
+  it('Flow 8a: pending queues, counts and assigned teachers use the two-opinion invariant', async () => {
+    await prisma.attendance.update({
+      where: { id: attendance1.id },
+      data: {
+        teacher_status: AttendanceStatus.ATTENDED,
+        cs_status: null,
+        reconciliation_state: ReconciliationState.PENDING_CS,
+      },
+    });
+    await prisma.attendance.update({
+      where: { id: attendance2.id },
+      data: {
+        teacher_status: null,
+        cs_status: AttendanceStatus.ATTENDED,
+        reconciliation_state: ReconciliationState.PENDING_TEACHER,
+      },
+    });
+
+    const [pendingCs, pendingTeacher, stats] = await Promise.all([
+      request(app)
+        .get('/api/v1/attendance-reconciliation/pending?state=PENDING_CS')
+        .set('Authorization', `Bearer ${csToken}`),
+      request(app)
+        .get('/api/v1/attendance-reconciliation/pending?state=PENDING_TEACHER')
+        .set('Authorization', `Bearer ${csToken}`),
+      request(app)
+        .get('/api/v1/attendance-reconciliation/stats')
+        .set('Authorization', `Bearer ${csToken}`),
+    ]);
+
+    expect(pendingCs.status).toBe(200);
+    expect(pendingTeacher.status).toBe(200);
+    expect(stats.status).toBe(200);
+
+    const csItem = pendingCs.body.data.items.find((row: any) => row.id === attendance1.id);
+    const teacherItem = pendingTeacher.body.data.items.find((row: any) => row.id === attendance2.id);
+    expect(csItem).toBeDefined();
+    expect(csItem.teacher_status).toBe(AttendanceStatus.ATTENDED);
+    expect(csItem.cs_status).toBeNull();
+    expect(csItem.assigned_teachers).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: expect.any(Number), code: 'GV_RECON_99', name: 'Teacher Recon Test' }),
+    ]));
+    expect(teacherItem).toBeDefined();
+    expect(teacherItem.teacher_status).toBeNull();
+    expect(teacherItem.cs_status).toBe(AttendanceStatus.ATTENDED);
+    expect(pendingCs.body.data.items.some((row: any) => row.id === attendance2.id)).toBe(false);
+    expect(pendingTeacher.body.data.items.some((row: any) => row.id === attendance1.id)).toBe(false);
+    expect(stats.body.data.pendingCsCount).toBeGreaterThanOrEqual(1);
+    expect(stats.body.data.pendingTeacherCount).toBeGreaterThanOrEqual(1);
+  });
+
   it('Flow 9: GET /history lists only post-first-mark changes, scoped to assigned CS', async () => {
     // Re-create a conflict on attendance1 then resolve it to generate history rows.
     await request(app)

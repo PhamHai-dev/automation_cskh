@@ -89,6 +89,14 @@
 2. **Loại bỏ cột Chỉ số chuyên cần:** Bỏ cột *"Chỉ số chuyên cần ĐH % và BT %"* trên ma trận điểm danh theo yêu cầu người dùng.
 3. **Ma trận lọc theo Sale:** Áp dụng ma trận điểm danh vào Tab Quản lý Ghi danh (`/enrollments`) để nhân viên CSKH/Sale quản lý điểm danh học viên do mình phụ trách theo thời gian thực.
 
+## Reconciliation enhancement — 2026-10-11
+
+- [x] Hàng chờ kiểm tra đồng thời state lưu và cặp trạng thái GV/CSKH; không tính record chưa có ý kiến từ cả hai bên.
+- [x] API pending trả giáo viên active được phân công qua `ClassTeacher`.
+- [x] UI đối soát có cột Giáo viên và bảng/hành động tách theo Chờ CSKH, Chờ GV, Tất cả.
+- [x] Backend typecheck và frontend build pass.
+- [x] Integration flow mới cho invariant pending/assigned teacher pass; hai lỗi Flow 4 Excel fixture và cleanup FK là lỗi test có sẵn ngoài phạm vi.
+
 ## Agent notes
 
 Đọc `docs/product/business-rules.md` trước. Khi sửa Prisma dùng `prisma-schema-guard`; khi tạo/sửa API dùng `api-module-scaffold`.
