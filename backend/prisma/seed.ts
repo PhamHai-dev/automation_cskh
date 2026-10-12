@@ -195,7 +195,7 @@ async function main() {
     data: { name: `CSKH ${number}`, email: `cskh${number}@gmail.com`, password_hash: passwordHash, roles: ['CS'], active: true, created_by_id: admin.id },
   })));
   const defaultTeacher = await prisma.user.create({ data: { name: 'Giáo viên phụ trách', email: 'teacher@gmail.com', password_hash: passwordHash, roles: ['TEACHER'], active: true, created_by_id: admin.id } });
-  await prisma.teacherProfile.create({ data: { user_id: defaultTeacher.id, teacher_code: 'GV-MOCK', teacher_type: TeacherType.OTHER } });
+  await prisma.teacher.create({ data: { user_id: defaultTeacher.id, code: 'GV-MOCK', name: defaultTeacher.name ?? 'Giáo viên phụ trách', teacher_type: TeacherType.OTHER } });
   const group = await prisma.cSGroup.create({ data: { group_name: 'Nhóm CSKH', active: true } });
   await prisma.cSGroupMember.createMany({ data: csUsers.map((user) => ({ cs_group_id: group.id, user_id: user.id })) });
   await prisma.manageAssignment.create({ data: { manage_user_id: admin.id, cs_group_id: group.id } });
@@ -215,74 +215,84 @@ async function main() {
       update: { default_total_sessions: totalSessions },
       create: { code: packageCode, name: `Gói ${packageCode}`, default_total_sessions: totalSessions, active: true },
     });
-    const student = await prisma.student.create({ data: {
-      external_id: externalId,
-      full_name: field(row, 'Họ tên HV'),
-      gender: field(row, 'Giới tính') || null,
-      phone: field(row, 'SĐT') || null,
-      email: field(row, 'Email') || null,
-      date_of_birth: parseDate(field(row, 'DOB')),
-      occupation: field(row, 'Nghề nghiệp') || null,
-      note: field(row, 'Ghi chú sale', 'Ghi chú Sale') || null,
-    } });
+    const student = await prisma.student.create({
+      data: {
+        external_id: externalId,
+        full_name: field(row, 'Họ tên HV'),
+        gender: field(row, 'Giới tính') || null,
+        phone: field(row, 'SĐT') || null,
+        email: field(row, 'Email') || null,
+        date_of_birth: parseDate(field(row, 'DOB')),
+        occupation: field(row, 'Nghề nghiệp') || null,
+        note: field(row, 'Ghi chú sale', 'Ghi chú Sale') || null,
+      }
+    });
     const className = firstLine(field(row, 'Tên lớp')) || `${field(row, 'Họ tên HV')} - ${field(row, 'Trình độ') || packageCode}`;
     const classCode = `CLS-${externalId}-${index + 1}`;
-    const learningClass = await prisma.class.create({ data: {
-      class_code: classCode,
-      class_name: className,
-      level: field(row, 'Trình độ') || null,
-      model_type: classModel(field(row, 'Mô hình', 'Mô hình lớp')),
-      attendance_source: 'LEARNING_SYSTEM',
-      active: true,
-    } });
+    const learningClass = await prisma.class.create({
+      data: {
+        class_code: classCode,
+        class_name: className,
+        level: field(row, 'Trình độ') || null,
+        model_type: classModel(field(row, 'Mô hình', 'Mô hình lớp')),
+        attendance_source: 'LEARNING_SYSTEM',
+        active: true,
+      }
+    });
     await prisma.classTeacher.create({ data: { class_id: learningClass.id, teacher_id: defaultTeacher.id, role: 'MAIN', start_date: parseDate(field(row, 'Ngày bắt đầu học')), active: true } });
     const schedulePattern = firstLine(field(row, 'Lịch học (1)'));
     if (schedulePattern || field(row, 'Giờ học (1)')) {
-      await prisma.classSchedule.create({ data: {
-        class_id: learningClass.id,
-        schedule_pattern: schedulePattern || 'Theo lịch học viên',
-        start_time: timeValue(field(row, 'Giờ học (1)')),
-        duration_minutes: integer(field(row, 'Thời lượng buổi học (1)'), 30),
-        valid_from: parseDate(field(row, 'Ngày bắt đầu học')),
-        valid_to: parseDate(field(row, 'Ngày kết thúc/Bảo lưu')),
-        active: true,
-      } });
+      await prisma.classSchedule.create({
+        data: {
+          class_id: learningClass.id,
+          schedule_pattern: schedulePattern || 'Theo lịch học viên',
+          start_time: timeValue(field(row, 'Giờ học (1)')),
+          duration_minutes: integer(field(row, 'Thời lượng buổi học (1)'), 30),
+          valid_from: parseDate(field(row, 'Ngày bắt đầu học')),
+          valid_to: parseDate(field(row, 'Ngày kết thúc/Bảo lưu')),
+          active: true,
+        }
+      });
     }
-    const enrollment = await prisma.enrollment.create({ data: {
-      external_id: externalId,
-      student_id: student.id,
-      package_id: pkg.id,
-      cs_id: cs.id,
-      sale_id: sale.id,
-      sale_name: saleCode,
-      paid_at: parseDate(field(row, 'Ngày nộp học phí')),
-      student_source_status: field(row, 'Trạng thái HV') || null,
-      course_content: field(row, 'Nội dung khoá') || null,
-      payment_status: field(row, 'Trạng thái thanh toán') || null,
-      course_teacher_type: field(row, 'Khoá học') || null,
-      level: field(row, 'Trình độ') || null,
-      total_sessions: totalSessions,
-      class_model: field(row, 'Mô hình', 'Mô hình lớp') || null,
-      sales_note: field(row, 'Ghi chú sale', 'Ghi chú Sale') || null,
-      callback_note: field(row, 'Lịch hẹn gọi') || null,
-      hot_issue_note: field(row, 'Điểm nóng') || null,
-      start_date: parseDate(field(row, 'Ngày bắt đầu học')),
-      end_date: parseDate(field(row, 'Ngày kết thúc/Bảo lưu')),
-      status: enrollmentStatus(field(row, 'Trạng thái')),
-      external_remaining_sessions: integer(field(row, 'Số buổi còn lại'), totalSessions),
-      attended_previous_years: integer(field(row, 'Tổng số buổi đã học năm trước', 'Tổng số buổi đã học'), 0),
-      external_synced_at: new Date(),
-      handed_over_at: parseDate(field(row, 'Ngày bàn giao')),
-      account_created_at: parseDate(field(row, 'Ngày tạo tài khoản')),
-    } });
-    const enrollmentClass = await prisma.enrollmentClass.create({ data: {
-      enrollment_id: enrollment.id,
-      class_id: learningClass.id,
-      sequence_no: 1,
-      start_date: enrollment.start_date,
-      end_date: enrollment.end_date,
-      status: enrollment.status === EnrollmentStatus.FINISHED ? EnrollmentClassStatus.COMPLETED : enrollment.status === EnrollmentStatus.PAUSED ? EnrollmentClassStatus.TRANSFERRED : EnrollmentClassStatus.ACTIVE,
-    } });
+    const enrollment = await prisma.enrollment.create({
+      data: {
+        external_id: externalId,
+        student_id: student.id,
+        package_id: pkg.id,
+        cs_id: cs.id,
+        sale_id: sale.id,
+        sale_name: saleCode,
+        paid_at: parseDate(field(row, 'Ngày nộp học phí')),
+        student_source_status: field(row, 'Trạng thái HV') || null,
+        course_content: field(row, 'Nội dung khoá') || null,
+        payment_status: field(row, 'Trạng thái thanh toán') || null,
+        course_teacher_type: field(row, 'Khoá học') || null,
+        level: field(row, 'Trình độ') || null,
+        total_sessions: totalSessions,
+        class_model: field(row, 'Mô hình', 'Mô hình lớp') || null,
+        sales_note: field(row, 'Ghi chú sale', 'Ghi chú Sale') || null,
+        callback_note: field(row, 'Lịch hẹn gọi') || null,
+        hot_issue_note: field(row, 'Điểm nóng') || null,
+        start_date: parseDate(field(row, 'Ngày bắt đầu học')),
+        end_date: parseDate(field(row, 'Ngày kết thúc/Bảo lưu')),
+        status: enrollmentStatus(field(row, 'Trạng thái')),
+        external_remaining_sessions: integer(field(row, 'Số buổi còn lại'), totalSessions),
+        attended_previous_years: integer(field(row, 'Tổng số buổi đã học năm trước', 'Tổng số buổi đã học'), 0),
+        external_synced_at: new Date(),
+        handed_over_at: parseDate(field(row, 'Ngày bàn giao')),
+        account_created_at: parseDate(field(row, 'Ngày tạo tài khoản')),
+      }
+    });
+    const enrollmentClass = await prisma.enrollmentClass.create({
+      data: {
+        enrollment_id: enrollment.id,
+        class_id: learningClass.id,
+        sequence_no: 1,
+        start_date: enrollment.start_date,
+        end_date: enrollment.end_date,
+        status: enrollment.status === EnrollmentStatus.FINISHED ? EnrollmentClassStatus.COMPLETED : enrollment.status === EnrollmentStatus.PAUSED ? EnrollmentClassStatus.TRANSFERRED : EnrollmentClassStatus.ACTIVE,
+      }
+    });
     enrollmentByKey.set(`${externalId}::${packageCode}`, { id: enrollment.id, classId: learningClass.id, enrollmentClassId: enrollmentClass.id });
     const callback = field(row, 'Lịch hẹn gọi');
     const hotIssue = field(row, 'Điểm nóng');
@@ -301,44 +311,51 @@ async function main() {
       const parsed = attendance(item.value);
       if (!parsed) continue;
       sessionNumber++;
-      const session = await prisma.classSession.create({ data: {
-        class_id: target.classId,
-        session_number: sessionNumber,
-        session_date: item.date,
-        teacher_id: defaultTeacher.id,
-        status: 'COMPLETED',
-        created_by_id: admin.id,
-      } });
-      await prisma.attendance.create({ data: {
-        enrollment_class_id: target.enrollmentClassId,
-        class_session_id: session.id,
-        status: parsed.status,
-        session_count: parsed.count,
-        source: AttendanceSource.EXCEL_IMPORT,
-        created_by_id: admin.id,
-      } });
+      const session = await prisma.classSession.create({
+        data: {
+          class_id: target.classId,
+          session_number: sessionNumber,
+          session_date: item.date,
+          teacher_id: defaultTeacher.id,
+          status: 'COMPLETED',
+          created_by_id: admin.id,
+        }
+      });
+      await prisma.attendance.create({
+        data: {
+          enrollment_class_id: target.enrollmentClassId,
+          class_session_id: session.id,
+          status: parsed.status,
+          source: AttendanceSource.EXCEL_IMPORT,
+          created_by_id: admin.id,
+        }
+      });
       attendanceCount++;
     }
   }
 
-  const batch = await prisma.importBatch.create({ data: {
-    uploaded_by_id: admin.id,
-    file_name: path.basename(SOURCE_FILE),
-    import_type: 'WORKBOOK',
-    total_rows: careRows.length + attendanceRows.length,
-    success_rows: careRows.length + attendanceRows.length,
-    failed_rows: 0,
-    status: 'COMPLETED',
-    completed_at: new Date(),
-  } });
-  await prisma.importRow.createMany({ data: careRows.map((row) => ({
-    import_batch_id: batch.id,
-    row_number: row.rowNumber,
-    raw_data: row.values,
-    status: 'SUCCESS',
-    entity_type: 'Enrollment',
-    entity_id: enrollmentByKey.get(`${field(row, 'ID')}::${field(row, 'Gói học')}`)?.id.toString(),
-  })) });
+  const batch = await prisma.importBatch.create({
+    data: {
+      uploaded_by_id: admin.id,
+      file_name: path.basename(SOURCE_FILE),
+      import_type: 'WORKBOOK',
+      total_rows: careRows.length + attendanceRows.length,
+      success_rows: careRows.length + attendanceRows.length,
+      failed_rows: 0,
+      status: 'COMPLETED',
+      completed_at: new Date(),
+    }
+  });
+  await prisma.importRow.createMany({
+    data: careRows.map((row) => ({
+      import_batch_id: batch.id,
+      row_number: row.rowNumber,
+      raw_data: row.values,
+      status: 'SUCCESS',
+      entity_type: 'Enrollment',
+      entity_id: enrollmentByKey.get(`${field(row, 'ID')}::${field(row, 'Gói học')}`)?.id.toString(),
+    }))
+  });
   await prisma.auditLog.create({ data: { user_id: admin.id, action: 'SEED_WORKBOOK_SAMPLE', entity_type: 'ImportBatch', entity_id: String(batch.id), after_data: { source: path.basename(SOURCE_FILE), careRows: careRows.length, attendanceRows: attendanceRows.length, attendanceRecords: attendanceCount } } });
 
   const counts = {

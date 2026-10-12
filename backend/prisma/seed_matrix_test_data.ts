@@ -32,39 +32,39 @@ async function seedMatrixTestData() {
     });
   }
 
-  let teacher = await prisma.user.findFirst({
-    where: { OR: [{ email: 'tanaka@example.com' }, { email: 'teacher@gmail.com' }] },
+  const teacherUser = await prisma.user.upsert({
+    where: { email: 'tanaka@example.com' },
+    create: {
+      name: 'Sensei Tanaka Kenji',
+      email: 'tanaka@example.com',
+      password_hash: '$2b$10$wO3J2vA4X8gBf1u0J1zQ4OuX4Z4gBf1u0J1zQ4OuX4Z4gBf1u0J1z',
+      roles: ['TEACHER'],
+      active: true,
+    },
+    update: {},
   });
-  if (!teacher) {
-    teacher = await prisma.user.create({
-      data: {
-        name: 'Sensei Tanaka Kenji',
-        email: 'tanaka@example.com',
-        password_hash: '$2b$10$wO3J2vA4X8gBf1u0J1zQ4OuX4Z4gBf1u0J1zQ4OuX4Z4gBf1u0J1z',
-        roles: ['TEACHER'],
-        active: true,
-      },
-    });
-  }
 
-  // Teacher Profile
-  const existingTp = await prisma.teacherProfile.findUnique({
-    where: { teacher_code: 'GV_JP01' },
+  const teacher = await prisma.teacher.upsert({
+    where: { code: 'GV_JP01' },
+    create: {
+      code: 'GV_JP01',
+      name: 'Sensei Tanaka Kenji',
+      email: teacherUser.email,
+      teacher_type: 'JAPANESE',
+      user_id: teacherUser.id,
+      active: true,
+    },
+    update: {
+      name: 'Sensei Tanaka Kenji',
+      email: teacherUser.email,
+      teacher_type: 'JAPANESE',
+      user_id: teacherUser.id,
+      active: true,
+    },
   });
-  if (existingTp) {
-    teacher = (await prisma.user.findUnique({ where: { id: existingTp.user_id } })) || teacher;
-  } else {
-    await prisma.teacherProfile.create({
-      data: {
-        user_id: teacher.id,
-        teacher_code: 'GV_JP01',
-        teacher_type: 'JAPANESE',
-      },
-    });
-  }
 
   // Second Teacher
-  const teacher2 = await prisma.user.upsert({
+  const teacher2User = await prisma.user.upsert({
     where: { email: 'maianh@example.com' },
     create: {
       name: 'Cô Trần Mai Anh',
@@ -76,16 +76,22 @@ async function seedMatrixTestData() {
     update: {},
   });
 
-  await prisma.teacherProfile.upsert({
-    where: { user_id: teacher2.id },
+  const teacher2 = await prisma.teacher.upsert({
+    where: { code: 'GV_VN02' },
     create: {
-      user_id: teacher2.id,
-      teacher_code: 'GV_VN02',
+      code: 'GV_VN02',
+      name: 'Cô Trần Mai Anh',
+      email: teacher2User.email,
       teacher_type: 'VIETNAMESE',
+      user_id: teacher2User.id,
+      active: true,
     },
     update: {
-      teacher_code: 'GV_VN02',
+      name: 'Cô Trần Mai Anh',
+      email: teacher2User.email,
       teacher_type: 'VIETNAMESE',
+      user_id: teacher2User.id,
+      active: true,
     },
   });
 

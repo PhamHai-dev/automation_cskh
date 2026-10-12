@@ -98,10 +98,11 @@ async function seedNewAccounts() {
     },
   });
 
-  await prisma.teacherProfile.create({
+  const teacherRecord = await prisma.teacher.create({
     data: {
       user_id: teacher.id,
-      teacher_code: 'GV_JP01',
+      code: 'GV_JP01',
+      name: teacher.name ?? 'Sensei Tanaka Kenji',
       teacher_type: 'JAPANESE',
     },
   });
@@ -134,7 +135,7 @@ async function seedNewAccounts() {
       active: true,
       class_teachers: {
         create: {
-          teacher_id: teacher.id,
+          teacher_id: teacherRecord.id,
           role: 'MAIN',
           start_date: new Date('2026-08-01'),
         },
@@ -159,7 +160,7 @@ async function seedNewAccounts() {
       active: true,
       class_teachers: {
         create: {
-          teacher_id: teacher.id,
+          teacher_id: teacherRecord.id,
           role: 'MAIN',
           start_date: new Date('2026-08-15'),
         },
@@ -293,7 +294,7 @@ async function seedNewAccounts() {
         session_date: sessionDate,
         start_time: '08:00',
         end_time: '09:30',
-        teacher_id: teacher.id,
+        teacher_id: teacherRecord.id,
         status: isPast ? 'COMPLETED' : 'SCHEDULED',
         created_by_id: admin.id,
       },
@@ -350,7 +351,7 @@ async function seedNewAccounts() {
         session_date: sessionDate,
         start_time: '20:00',
         end_time: '20:45',
-        teacher_id: teacher.id,
+        teacher_id: teacherRecord.id,
         status: isPast ? 'COMPLETED' : 'SCHEDULED',
         created_by_id: admin.id,
       },
