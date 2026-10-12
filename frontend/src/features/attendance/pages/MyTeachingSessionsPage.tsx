@@ -152,15 +152,15 @@ export const MyTeachingSessionsPage: React.FC = () => {
     <PageContainer>
       <PageHeader
         title="Lịch Dạy & Điểm Danh Của Tôi"
-        description="Xem ca học hôm nay/tuần này, điểm danh nhanh bài học hoặc tải file Excel giao_vien.xlsx cả tháng."
+        description="Xem ca học hôm nay/tuần này, điểm danh nhanh bài học hoặc nhập workbook qua luồng preview/xác nhận an toàn."
         actions={
           <div className="flex items-center gap-2">
             <Button
               variant="primary"
-              onClick={() => setIsUploadModalOpen(true)}
+              onClick={() => { window.location.assign('/imports?tab=attendance'); }}
             >
               <Upload className="w-4 h-4 mr-1.5" />
-              Upload file giao_vien.xlsx
+              Nhập workbook điểm danh
             </Button>
           </div>
         }

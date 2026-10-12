@@ -25,7 +25,7 @@ Quyết định tracking: `OPEN_QUESTIONS.md` — Q-002 (RESOLVED, cập nhật 
 | `TEACHER_ABSENT_D` | GV xin nghỉ | Không |
 | `TECH_ERROR_E` | Lỗi kỹ thuật | Không |
 
-Mỗi Attendance đại diện đúng một `ClassSession`; không lưu hay nhân theo `session_count`. Mọi số dương trong ô ngày Excel chỉ được chuẩn hóa thành `ATTENDED` cho buổi đó.
+Mỗi Attendance đại diện đúng một `ClassSession`; không lưu `session_count`. Với import điểm danh, số nguyên dương `N` được biểu diễn bằng `N` ClassSession liên tiếp và N Attendance riêng biệt, không phải N trên một Attendance. `X`/`1` chỉ biểu diễn một session.
 
 ## 3. Source of truth cho số buổi và điều kiện final — CHỐT
 
@@ -156,7 +156,7 @@ Quyết định tracking: Q-010 & Quyết định 33 (RESOLVED, cập nhật 202
 - **Thao tác hàng loạt:** Có thể chọn nhiều học viên hoặc cả lớp, nhưng bắt buộc xác nhận trước khi lưu; thay đổi từng học viên được lưu ngay.
 - **Có mặt:** UI hiển thị `1` thay cho chữ `X`, nhưng đây chỉ là ký hiệu của một Attendance `ATTENDED`, không phải số lượng buổi có thể chỉnh thành `2`, `3`.
 - **Các trạng thái khác:** `A` (Nghỉ phép), `B` (Bảo lưu), `C` (Nghỉ sai QĐ), `D` (GV nghỉ), `E` (Lỗi KT).
-- **Excel:** Mọi giá trị số dương trong ô ngày được nhận diện là `ATTENDED`; không lưu trị số và không nhân số buổi.
+- **Excel attendance import:** `X`/`1` và số nguyên dương `N` được xử lý theo N ClassSession liên tiếp; `0`, âm và thập phân là lỗi. Điều này chỉ áp dụng cho luồng import workbook, không biến ô UI matrix thành trường nhập số buổi.
 - **Loại bỏ:** Cột *"Chỉ số chuyên cần ĐH % và BT %"* không sử dụng.
 - **Tab Quản lý Ghi danh (`/enrollments`):** Tổ chức theo dạng Ma trận Điểm danh theo Sale, tự động lọc học viên theo Sale phụ trách.
 
@@ -172,10 +172,11 @@ Quyết định tracking: Q-012 (RESOLVED).
 
 Quyết định tracking: Q-011 (RESOLVED, cập nhật 2026-10-10).
 
-- Cả workbook giáo viên và CSKH đều theo luồng `preview → xác nhận → commit`.
-- Preview phân loại ô mới, không đổi, ghi đè, lỗi và ngoài scope; hiển thị giá trị cũ/mới trước khi xác nhận.
-- Commit chỉ áp dụng dữ liệu hợp lệ đã preview; ô lỗi bị bỏ qua nhưng phải có báo cáo chi tiết. Ô trống giữ nguyên dữ liệu cũ.
-- Chỉ match duy nhất theo mã học viên + lớp trong scope + ngày + giờ với `ClassSession` đã tồn tại. Không tự tạo Student, Enrollment, EnrollmentClass hoặc ClassSession và không đoán bản ghi mới nhất.
+- Cả workbook giáo viên và CSKH đều theo luồng `preview → xác nhận → commit`, trong tab điểm danh riêng; Sheet 1 chỉ import hồ sơ.
+- Preview phân loại `CREATE`, `UNCHANGED`, `CONFLICT`, `INVALID`, `OUT_OF_SCOPE`, hiển thị ngày nguồn → năm đích, raw value, N session và action từng conflict.
+- Confirm upload lại workbook và server preview lại trước khi commit; ô lỗi/out-of-scope bị bỏ qua nhưng phải có báo cáo chi tiết. Ô trống giữ nguyên dữ liệu cũ.
+- CSKH match bằng mã HV + tên/mã lớp + ngày + giờ `Giờ học (1)`; duration cố định 30 phút. GV match mã HV + model + ngày + start/end. Match phải duy nhất.
+- Attendance import không tạo Student, Enrollment, Class, EnrollmentClass. Có thể tạo ClassSession còn thiếu và Attendance cần thiết; chỉ ghi `cs_status` cho CSKH hoặc `teacher_status` cho GV, rồi đi qua reconciliation hiện có.
 
 ## 19. Nhập & Xuất Excel cho Tất Cả Các Vai Trò & Cơ Chế Phân Công CSKH — CHỐT
 
@@ -199,11 +200,12 @@ Quyết định tracking: Q-013 & Quyết định 32 (RESOLVED).
   - Cột `Sale` ánh xạ vào bảng `Sale` (`code`), tự động tạo mới nếu chưa tồn tại.
   - Nếu đã có và được phép sửa: Ghi đè thông tin Student và Enrollment. Nếu ô trên Excel bị để trống, xóa trắng trường đó trong DB để đồng bộ tuyệt đối theo Excel. Lịch sử chăm sóc (`CareLog`, `CareTask`) giữ nguyên vẹn.
   - Nếu chưa có: Thêm mới trực tiếp vào Database (`Student`, `Package`, `Enrollment`, `Class`, `EnrollmentClass`) ngay khi xác nhận import, gán `cs_id` theo quy tắc phân công.
-- **Quy tắc Sheet 3 (`3.Chấm buổi`):**
-  - Khóa đối soát: `(ID, Gói học)`.
-  - Nếu đã có: Ghi đè điểm danh các ngày có ký hiệu (`X`, `A`, `B`, `C`, `D`, `E`). Ô ngày để trống trên Excel giữ nguyên điểm danh cũ đã có trong DB.
-  - Nếu chưa có ở Sheet 1 và chưa có trong hệ thống: Bỏ qua dòng điểm danh này và thông báo cảnh báo lỗi.
-- **Định dạng file:** Nhận diện linh hoạt file có cả 2 sheet hoặc chỉ riêng Sheet 1 hoặc chỉ riêng Sheet 3.
+- **Quy tắc Sheet 3 (`3.Chấm buổi`) và workbook GV:**
+  - Tách hoàn toàn khỏi Sheet 1; dùng tab **Điểm danh CSKH / GV**, chọn bắt buộc nguồn và năm đích.
+  - Không tạo/cập nhật hồ sơ học viên. Thiếu Student/EnrollmentClass/class hoặc match mơ hồ được preview `INVALID`.
+  - CSKH đọc lớp và `Giờ học (1)`, GV đọc model và cột thời gian. `X`/`1`, A/B/C/D/E hoặc `MãHV-Tên bài` là một session; integer N là N session liên tiếp.
+  - Re-upload khi dữ liệu đã phản ánh là `UNCHANGED`; commit ghi audit và không tạo duplicate Attendance.
+- **Định dạng file:** Sheet 1 profile và attendance workbook dùng luồng riêng; source phải phù hợp cấu trúc workbook đã chọn.
 
 ## 20. Checklist khi business rule thay đổi
 

@@ -8,7 +8,10 @@ import {
   ReconciliationQuerySchema,
   TeacherSessionsQuerySchema,
   HistoryQuerySchema,
+  AttendanceImportPreviewSchema,
+  AttendanceImportConfirmSchema,
 } from './reconciliation.schema';
+import { AttendanceImportService } from './attendance-import.service';
 import { AppError } from '../../middlewares/error.middleware';
 
 type Actor = { id: number; roles: string[] };
@@ -119,14 +122,28 @@ export class ReconciliationController {
     } catch (err) { next(err); }
   }
 
-  async uploadTeacherExcel(req: Request, res: Response, next: NextFunction) {
+  async previewAttendanceImport(req: Request, res: Response, next: NextFunction) {
     try {
-      if (!req.file?.buffer) {
-        throw new AppError(400, 'Vui lòng tải lên file Excel lịch dạy (giao_vien.xlsx)');
-      }
-      const result = await reconciliationService.uploadTeacherExcel(req.file.buffer, req.user as Actor);
-      res.json({ success: true, data: result });
+      if (!req.file?.buffer) throw new AppError(400, 'Vui lòng tải lên file Excel điểm danh');
+      const { source, targetYear } = AttendanceImportPreviewSchema.parse(req.body);
+      const data = await new AttendanceImportService().preview(req.file.buffer, source, targetYear, req.user as Actor);
+      res.json({ success: true, data });
     } catch (err) { next(err); }
+  }
+
+  async confirmAttendanceImport(req: Request, res: Response, next: NextFunction) {
+    try {
+      if (!req.file?.buffer) throw new AppError(400, 'Vui lòng tải lại file Excel để xác nhận nhập điểm danh');
+      const { source, targetYear, actions } = AttendanceImportConfirmSchema.parse(req.body);
+      const service = new AttendanceImportService();
+      const preview = await service.preview(req.file.buffer, source, targetYear, req.user as Actor);
+      const data = await service.commit(preview, req.user as Actor, actions);
+      res.json({ success: true, data });
+    } catch (err) { next(err); }
+  }
+
+  async uploadTeacherExcel(_req: Request, _res: Response, next: NextFunction) {
+    next(new AppError(410, 'Luồng upload giáo viên cũ đã ngừng. Hãy dùng /attendance-reconciliation/import-excel/preview rồi /confirm.'));
   }
 
   async getTeacherSessions(req: Request, res: Response, next: NextFunction) {

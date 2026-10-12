@@ -61,11 +61,13 @@ Base: `/api/v1/attendance-reconciliation`.
 
 ### Import workbook điểm danh
 
-- `POST /teacher-workbook/preview` và `POST /cs-workbook/preview`: nhận `.xlsx`, parse nhưng không ghi Attendance/ClassSession.
-- Preview trả `previewId`, thời hạn, thống kê `new/unchanged/overwrite/error/outOfScope`, và từng ô gồm sheet/address/row/date/time/student/class/rawValue/oldStatus/newStatus/category/message.
-- `POST /teacher-workbook/{previewId}/commit` và `POST /cs-workbook/{previewId}/commit`: body `{ confirmOverwrite: true }`; chỉ commit dữ liệu hợp lệ đã preview và thuộc scope actor.
-- Match bắt buộc duy nhất theo mã học viên + lớp trong scope + ngày + giờ vào ClassSession có sẵn. Không tự tạo Student, Enrollment, EnrollmentClass hay ClassSession; ô trống giữ nguyên dữ liệu cũ.
-- Mọi số dương trong ô ngày chuẩn hóa thành `ATTENDED`; không lưu trị số hay nhân số buổi. Import lặp lại cùng dữ liệu là idempotent.
+- `POST /import-excel/preview` nhận `multipart/form-data` gồm `file`, `source` (`CSKH|TEACHER`) và `targetYear` bắt buộc. Endpoint chỉ phân tích, không ghi dữ liệu.
+- `POST /import-excel/confirm` nhận lại chính workbook cùng `source`, `targetYear` và `actions` (JSON map `{ itemId: APPLY|KEEP_DATABASE|SKIP }`). Server tự preview lại trước khi commit, không tin payload preview từ client.
+- CSKH đọc `Giờ học (1)` và `Tên lớp`; mỗi session kéo dài 30 phút. GV match theo mã HV + model `1-1|1-2|1-n` + ngày + khung giờ. Các match không duy nhất là `INVALID`.
+- `X`, `1`, mã `A/B/C/D/E` và `MãHV-Tên bài` biểu diễn một ClassSession; số nguyên dương `N` biểu diễn `N` ClassSession liên tiếp. `0`, âm, thập phân hoặc mã lạ là lỗi preview.
+- Preview phân loại `CREATE`, `UNCHANGED`, `CONFLICT`, `INVALID`, `OUT_OF_SCOPE`; chỉ conflict chọn `APPLY` mới ghi đè phía nguồn tương ứng. Attendance-only không tạo Student, Enrollment, Class hay EnrollmentClass.
+- Import CSKH chỉ ghi `cs_status`; import GV chỉ ghi `teacher_status`, sau đó dùng reconciliation hiện có. Hệ thống re-check session trong transaction, ghi AuditLog và upload lại dữ liệu đã phản ánh sẽ thành `UNCHANGED`.
+- Endpoint cũ `POST /upload-teacher-excel` trả `410 Gone`; clients phải chuyển sang preview → confirm.
 
 Các endpoint write trả `400` khi request sai, `403` khi ngoài scope, `404` khi không tìm thấy trong scope, `409` khi invariant/state không hợp lệ. Response theo envelope `{ data, meta }`.
 

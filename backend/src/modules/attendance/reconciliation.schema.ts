@@ -74,3 +74,17 @@ export const TeacherSessionsQuerySchema = z.object({
   ({ startDate, endDate }) => !startDate || !endDate || startDate <= endDate,
   { message: 'startDate phải nhỏ hơn hoặc bằng endDate', path: ['endDate'] },
 );
+
+export const AttendanceImportPreviewSchema = z.object({
+  source: z.enum(['CSKH', 'TEACHER']),
+  targetYear: z.coerce.number().int().min(2020).max(2100),
+});
+
+export const AttendanceImportConfirmSchema = z.object({
+  source: z.enum(['CSKH', 'TEACHER']),
+  targetYear: z.coerce.number().int().min(2020).max(2100),
+  actions: z.preprocess((value) => {
+    if (typeof value !== 'string') return value;
+    try { return JSON.parse(value); } catch { return value; }
+  }, z.record(z.enum(['APPLY', 'KEEP_DATABASE', 'SKIP'])).optional()),
+});

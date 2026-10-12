@@ -18,7 +18,21 @@ router.get(
   reconciliationController.getTeacherSessions
 );
 
-// Teacher Excel upload (giao_vien.xlsx)
+// Attendance workbook preview → explicit confirmation (CSKH Sheet 3 or teacher schedule)
+router.post(
+  '/import-excel/preview',
+  requireRoles(['ADMIN', 'MANAGE', 'CS', 'TEACHER']),
+  upload.single('file'),
+  reconciliationController.previewAttendanceImport
+);
+router.post(
+  '/import-excel/confirm',
+  requireRoles(['ADMIN', 'MANAGE', 'CS', 'TEACHER']),
+  upload.single('file'),
+  reconciliationController.confirmAttendanceImport
+);
+
+// Teacher Excel upload (legacy endpoint; kept temporarily for compatibility)
 router.post(
   '/upload-teacher-excel',
   requireRoles(['ADMIN', 'MANAGE', 'TEACHER']),

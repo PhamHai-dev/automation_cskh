@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowRight, CheckCircle2, FileSpreadsheet, Upload, AlertTriangle, UserCheck, Calendar, Scale } from 'lucide-react';
+import { ArrowRight, CheckCircle2, FileSpreadsheet, Upload, AlertTriangle, UserCheck, Scale } from 'lucide-react';
 import { Button } from '../../../components/ui/Button';
 import { Badge } from '../../../components/ui/Badge';
 import { Card } from '../../../components/ui/Card';
@@ -18,37 +18,32 @@ interface CSUser {
 }
 
 interface Props { onImportComplete?: () => void }
-const fields: Record<LogicalSheet, { key: string; label: string }[]> = {
-  studentEnrollment: [
-    { key: 'external_id', label: 'ID học viên *' },
-    { key: 'full_name', label: 'Họ tên' },
-    { key: 'package_code', label: 'Gói học *' },
-    { key: 'phone', label: 'Số điện thoại' },
-    { key: 'email', label: 'Email' },
-    { key: 'total_sessions', label: 'Tổng số buổi' },
-    { key: 'remaining_sessions', label: 'Số buổi còn lại' },
-    { key: 'class_name', label: 'Tên lớp' },
-    { key: 'course_content', label: 'Nội dung khóa' },
-    { key: 'status', label: 'Trạng thái học' },
-    { key: 'student_source_status', label: 'Trạng thái HV' },
-    { key: 'payment_status', label: 'Trạng thái TT' },
-    { key: 'sale_name', label: 'Sale' },
-    { key: 'paid_at', label: 'Ngày nộp HP' },
-    { key: 'start_date', label: 'Ngày bắt đầu' },
-    { key: 'end_date', label: 'Ngày kết thúc' },
-    { key: 'study_report_url', label: 'Báo cáo học tập' },
-    { key: 'exchange_info', label: 'Thông tin trao đổi' },
-    { key: 'callback_note', label: 'Lịch hẹn gọi' },
-    { key: 'hot_issue_note', label: 'Điểm nóng' },
-    { key: 'post_course_care', label: 'CS sau kết thúc' },
-    { key: 'handed_over_at', label: 'Ngày bàn giao' },
-    { key: 'account_created_at', label: 'Ngày tạo TK' },
-  ],
-  attendance: [
-    { key: 'external_id', label: 'ID học viên *' }, { key: 'full_name', label: 'Họ tên' },
-    { key: 'package_code', label: 'Gói học *' }, { key: 'class_name', label: 'Tên lớp' },
-  ],
-};
+
+const profileFields: { key: string; label: string }[] = [
+  { key: 'external_id', label: 'ID học viên *' },
+  { key: 'full_name', label: 'Họ tên' },
+  { key: 'package_code', label: 'Gói học *' },
+  { key: 'phone', label: 'Số điện thoại' },
+  { key: 'email', label: 'Email' },
+  { key: 'total_sessions', label: 'Tổng số buổi' },
+  { key: 'remaining_sessions', label: 'Số buổi còn lại' },
+  { key: 'class_name', label: 'Tên lớp' },
+  { key: 'course_content', label: 'Nội dung khóa' },
+  { key: 'status', label: 'Trạng thái học' },
+  { key: 'student_source_status', label: 'Trạng thái HV' },
+  { key: 'payment_status', label: 'Trạng thái TT' },
+  { key: 'sale_name', label: 'Sale' },
+  { key: 'paid_at', label: 'Ngày nộp HP' },
+  { key: 'start_date', label: 'Ngày bắt đầu' },
+  { key: 'end_date', label: 'Ngày kết thúc' },
+  { key: 'study_report_url', label: 'Báo cáo học tập' },
+  { key: 'exchange_info', label: 'Thông tin trao đổi' },
+  { key: 'callback_note', label: 'Lịch hẹn gọi' },
+  { key: 'hot_issue_note', label: 'Điểm nóng' },
+  { key: 'post_course_care', label: 'CS sau kết thúc' },
+  { key: 'handed_over_at', label: 'Ngày bàn giao' },
+  { key: 'account_created_at', label: 'Ngày tạo TK' },
+];
 
 export const ImportWizard: React.FC<Props> = ({ onImportComplete }) => {
   const navigate = useNavigate();
@@ -59,17 +54,13 @@ export const ImportWizard: React.FC<Props> = ({ onImportComplete }) => {
   const [step, setStep] = useState(1);
   const [file, setFile] = useState<File | null>(null);
   const [upload, setUpload] = useState<UploadResponse | null>(null);
-  const [sheet, setSheet] = useState<LogicalSheet>('studentEnrollment');
   const [previews, setPreviews] = useState<Partial<Record<LogicalSheet, SheetPreviewData>> | null>(null);
   const [mappings, setMappings] = useState<Record<LogicalSheet, Record<string, string>>>({ studentEnrollment: {}, attendance: {} });
   const [report, setReport] = useState<ValidationReport | null>(null);
   const [result, setResult] = useState<ImportBatchSummary | null>(null);
   const [busy, setBusy] = useState(false);
-
   const [csUsers, setCsUsers] = useState<CSUser[]>([]);
   const [assignedCsId, setAssignedCsId] = useState<number | undefined>(undefined);
-  const [selectedMonth, setSelectedMonth] = useState<number | undefined>(undefined);
-  const [selectedYear, setSelectedYear] = useState<number | undefined>(undefined);
 
   useEffect(() => {
     if (isAdminOrManage) {
@@ -82,7 +73,7 @@ export const ImportWizard: React.FC<Props> = ({ onImportComplete }) => {
     }
   }, [isAdminOrManage]);
 
-  const current = previews?.[sheet];
+  const current = previews?.studentEnrollment;
 
   const run = async (action: () => Promise<void>) => {
     try {
@@ -105,31 +96,25 @@ export const ImportWizard: React.FC<Props> = ({ onImportComplete }) => {
     const sheetsMap: Partial<Record<LogicalSheet, SheetPreviewData>> = (data.sheets && typeof data.sheets === 'object' && !Array.isArray(data.sheets))
       ? data.sheets
       : {};
+    if (!sheetsMap.studentEnrollment) {
+      throw new Error('Luồng này chỉ nhập hồ sơ học viên (Sheet 1). Hãy dùng tab Điểm danh CSKH / GV cho Sheet 3 hoặc file giáo viên.');
+    }
 
-    setPreviews(sheetsMap);
-    const initialSheet = sheetsMap.studentEnrollment ? 'studentEnrollment' : 'attendance';
-    setSheet(initialSheet);
-    setMappings({
-      studentEnrollment: sheetsMap.studentEnrollment?.suggestedMapping || {},
-      attendance: sheetsMap.attendance?.suggestedMapping || {},
-    });
+    setPreviews({ studentEnrollment: sheetsMap.studentEnrollment });
+    setMappings({ studentEnrollment: sheetsMap.studentEnrollment.suggestedMapping || {}, attendance: {} });
     setStep(2);
     toast.success('Đã tải và phân tích cấu trúc file Excel');
   });
 
   const validate = () => run(async () => {
     if (!upload || !previews) return;
-    for (const logical of ['studentEnrollment', 'attendance'] as LogicalSheet[]) {
-      if (previews[logical]) {
-        await importsApi.saveMapping(upload.importId, {
-          sheet: logical,
-          headerRowIndex: previews[logical]!.headerRowIndex,
-          columnMapping: mappings[logical],
-          assignedCsId,
-          selectedMonth: logical === 'attendance' ? selectedMonth : undefined,
-          selectedYear: logical === 'attendance' ? selectedYear : undefined,
-        });
-      }
+    if (previews.studentEnrollment) {
+      await importsApi.saveMapping(upload.importId, {
+        sheet: 'studentEnrollment',
+        headerRowIndex: previews.studentEnrollment.headerRowIndex,
+        columnMapping: mappings.studentEnrollment,
+        assignedCsId,
+      });
     }
     const valReport = await importsApi.validate(upload.importId, assignedCsId);
     setReport(valReport);
@@ -144,10 +129,7 @@ export const ImportWizard: React.FC<Props> = ({ onImportComplete }) => {
     onImportComplete?.();
   });
 
-  const isValidateDisabled = Boolean(
-    (previews?.studentEnrollment && (!mappings.studentEnrollment.external_id || !mappings.studentEnrollment.package_code)) ||
-    (previews?.attendance && (!mappings.attendance.external_id || !mappings.attendance.package_code))
-  );
+  const isValidateDisabled = Boolean(previews?.studentEnrollment && (!mappings.studentEnrollment.external_id || !mappings.studentEnrollment.package_code));
 
   const selectedCsUser = csUsers.find((u) => u.id === (assignedCsId || report?.summary.assignedCsId));
 
@@ -164,9 +146,9 @@ export const ImportWizard: React.FC<Props> = ({ onImportComplete }) => {
       <div className="max-w-2xl mx-auto text-center space-y-5">
         <div className="w-16 h-16 mx-auto rounded-2xl bg-primary/10 text-primary flex items-center justify-center"><FileSpreadsheet className="w-8 h-8" /></div>
         <div>
-          <h2 className="text-xl font-bold text-text-primary">Nhập file Excel chăm sóc & điểm danh</h2>
+          <h2 className="text-xl font-bold text-text-primary">Nhập hồ sơ học viên từ Excel</h2>
           <p className="text-sm text-text-muted mt-2">
-            Hỗ trợ file gồm <b>Sheet 1 (Chăm sóc)</b> và <b>Sheet 3 (Chấm buổi)</b>, hoặc file lẻ từng sheet. Hệ thống tự động đối soát theo <b>ID học viên + Gói học</b>.
+            Dùng luồng này cho <b>Sheet 1 (Chăm sóc)</b> để đối soát theo <b>ID học viên + Gói học</b>. Điểm danh Sheet 3 và file giáo viên có quy trình preview/xác nhận riêng trong tab <b>Điểm danh CSKH / GV</b>.
           </p>
         </div>
 
@@ -209,77 +191,18 @@ export const ImportWizard: React.FC<Props> = ({ onImportComplete }) => {
     {step === 2 && current && <Card className="p-6 space-y-6">
       <div className="flex flex-wrap justify-between gap-3">
         <div>
-          <h2 className="font-bold text-text-primary">Ánh xạ cột dữ liệu</h2>
+          <h2 className="font-bold text-text-primary">Ánh xạ cột dữ liệu hồ sơ</h2>
           <p className="text-xs text-text-muted">Cột ID và Gói học là bắt buộc để đối soát và ghi đè / thêm mới. Cột Sale lưu thông tin nhân viên kinh doanh.</p>
         </div>
-        <div className="flex gap-2">
-          {(['studentEnrollment', 'attendance'] as LogicalSheet[]).map((s) => {
-            if (!previews?.[s]) return null;
-            return (
-              <Button key={s} id={`select-${s}-sheet`} size="sm" variant={sheet === s ? 'primary' : 'outline'} onClick={() => setSheet(s)}>
-                {s === 'studentEnrollment' ? '1. Chăm sóc học viên' : '3. Chấm buổi điểm danh'}
-              </Button>
-            );
-          })}
-        </div>
       </div>
-
-      {sheet === 'attendance' && previews?.attendance?.availableMonths && previews.attendance.availableMonths.length > 0 && (
-        <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 space-y-2">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <label htmlFor="attendance-month-filter" className="text-xs font-bold text-text-primary flex items-center gap-1.5">
-                <Calendar className="w-4 h-4 text-primary" />
-                Phạm vi import điểm danh theo Tháng / Năm:
-              </label>
-              <p className="text-[11px] text-text-muted mt-0.5">
-                File Excel chứa các cột điểm danh theo tháng ở Hàng 1. Chọn tháng cụ thể hoặc nhập tất cả các tháng.
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              <select
-                id="attendance-month-filter"
-                value={selectedMonth !== undefined ? `${selectedMonth}-${selectedYear || 2026}` : 'ALL'}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  if (val === 'ALL') {
-                    setSelectedMonth(undefined);
-                    setSelectedYear(undefined);
-                  } else {
-                    const [m, y] = val.split('-').map(Number);
-                    setSelectedMonth(m);
-                    setSelectedYear(y);
-                  }
-                }}
-                className="rounded-lg border border-primary/30 bg-white px-3 py-1.5 text-xs font-bold text-primary focus:border-primary focus:ring-1 focus:ring-primary shadow-sm"
-              >
-                <option value="ALL">✨ Nhập tất cả các tháng ({previews.attendance.availableMonths.length} tháng)</option>
-                {previews.attendance.availableMonths.map((bm) => (
-                  <option key={`${bm.month}-${bm.year}`} value={`${bm.month}-${bm.year}`}>
-                    {bm.label} ({bm.totalDays} ngày điểm danh)
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-          {selectedMonth !== undefined && (
-            <div className="flex items-center gap-2 pt-1 text-xs text-primary font-medium">
-              <Badge variant="info">Đang chọn: Tháng {selectedMonth}/{selectedYear || 2026}</Badge>
-              <span>
-                Chỉ import các buổi điểm danh trong Tháng {selectedMonth}/{selectedYear || 2026}. Các tháng khác được giữ nguyên an toàn.
-              </span>
-            </div>
-          )}
-        </div>
-      )}
       <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
-        {fields[sheet].map((f) => (
+        {profileFields.map((f) => (
           <label key={f.key} className="text-xs font-semibold text-text-secondary">
             {f.label}
             <select
-              id={`${sheet}-${f.key}-mapping`}
-              value={mappings[sheet][f.key] || ''}
-              onChange={(e) => setMappings((p) => ({ ...p, [sheet]: { ...p[sheet], [f.key]: e.target.value } }))}
+              id={`studentEnrollment-${f.key}-mapping`}
+              value={mappings.studentEnrollment[f.key] || ''}
+              onChange={(e) => setMappings((p) => ({ ...p, studentEnrollment: { ...p.studentEnrollment, [f.key]: e.target.value } }))}
               className="mt-1 w-full rounded-lg border border-border bg-white px-3 py-2 text-xs"
             >
               <option value="">Bỏ qua</option>

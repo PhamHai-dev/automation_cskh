@@ -1310,7 +1310,7 @@ export class ImportsService {
     }
     await this.repo.updateBatch(importId, { status: ImportBatchStatus.PROCESSING });
     await this.repo.clearPendingImportRows(importId);
-    let successRows = 0, failedRows = 0, totalConflictAttendances = 0;
+    let successRows = 0, failedRows = 0;
 
     const isCS = Boolean(actor?.roles?.includes('CS') && !actor?.roles?.includes('ADMIN') && !actor?.roles?.includes('MANAGE'));
     const targetCsId = isCS ? actor.id : (assignedCsId || meta.assignedCsId || actor.id);
@@ -1565,11 +1565,8 @@ export class ImportsService {
             }
           }
 
-          // 7. Attendance from Sheet 3
-          if (ec && snap.attendance?.length) {
-            const conflictsInSheet = await this.applyAttendance(tx, ec.id, ec.class_id, snap.attendance, actor.id);
-            totalConflictAttendances += conflictsInSheet;
-          }
+          // Attendance is deliberately excluded from this profile-only workbook flow.
+          // CSKH Sheet 3 and teacher workbooks must use the attendance preview → confirm API.
 
           // 8. Care Logs from Sheet 1 (Chăm sóc sau buổi 1, 3, 10, ...)
           const careLogs = snap.careLogs as Array<{ after_session_number: number; content: string }> | undefined;
@@ -1635,7 +1632,7 @@ export class ImportsService {
       this.cleanupTempFiles(importId, meta);
     }
 
-    return { ...updated, conflict_attendances: totalConflictAttendances };
+    return { ...updated, conflict_attendances: 0 };
   }
 
   // Execute import

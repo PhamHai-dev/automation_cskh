@@ -5,126 +5,100 @@ export interface ParsedAttendance {
   sessionCount: number;
   lessonTopic: string | null;
   studentExternalId?: string;
+  error?: string;
 }
 
-/**
- * Parses raw cell value from Teacher or CSKH attendance sheet.
- * Supports:
- * - [Mã HV]-[Tên bài / Mã A,B,C,D,E] (e.g. "420289324-K2 L4", "420289324-A")
- * - Single codes: A, B, C, D, E, ĐÃ HỌC
- * - Any positive numeric value represents one attended session
- * - Direct lesson topic string fallback: "K2 L4"
- */
+function parseStatusCode(code: string): AttendanceStatus | null {
+  switch (code.trim().toUpperCase()) {
+    case 'A': return AttendanceStatus.ABSENT_APPROVED_A;
+    case 'B': return AttendanceStatus.LEAVE_B;
+    case 'C': return AttendanceStatus.ABSENT_UNAPPROVED_C;
+    case 'D': return AttendanceStatus.TEACHER_ABSENT_D;
+    case 'E': return AttendanceStatus.TECH_ERROR_E;
+    case 'X':
+    case 'ĐÃ HỌC':
+    case 'DA HOC': return AttendanceStatus.ATTENDED;
+    default: return null;
+  }
+}
+
+/** Positive integer N means N actual sessions; X/1 and status codes mean one session. */
 export function parseAttendanceValue(value: string | number | null | undefined): ParsedAttendance {
-  if (value === null || value === undefined) {
-    return { status: null, sessionCount: 1, lessonTopic: null };
+  if (value === null || value === undefined || String(value).trim() === '') {
+    return { status: null, sessionCount: 0, lessonTopic: null };
   }
 
   const str = String(value).trim();
-  if (!str) {
-    return { status: null, sessionCount: 1, lessonTopic: null };
+  const match = str.match(/^([A-Za-z0-9_]+)\s*-\s*(.+)$/i);
+  const studentExternalId = match?.[1];
+  const content = (match?.[2] || str).trim();
+  const codeStatus = parseStatusCode(content);
+  if (codeStatus) return { status: codeStatus, sessionCount: 1, lessonTopic: null, studentExternalId };
+
+  if (/^[+-]?\d+(?:\.\d+)?$/.test(content)) {
+    const numberValue = Number(content);
+    if (!Number.isInteger(numberValue) || numberValue <= 0) {
+      return { status: null, sessionCount: 0, lessonTopic: null, studentExternalId, error: 'Giá trị điểm danh phải là số nguyên dương' };
+    }
+    return { status: AttendanceStatus.ATTENDED, sessionCount: numberValue, lessonTopic: null, studentExternalId };
   }
 
-  // 1. Check if format is [Mã HV]-[Tên bài / Mã A,B,C,D,E] (e.g. 420289324-K2 L4, HV_001-A)
-  const match = str.match(/^([A-Za-z0-9_]+)\s*[-]\s*(.+)$/i);
-  if (match) {
-    const studentExternalId = match[1];
-    const remainder = match[2].trim();
-    const codeUpper = remainder.toUpperCase();
-
-    if (codeUpper === 'A') {
-      return { status: AttendanceStatus.ABSENT_APPROVED_A, sessionCount: 1, lessonTopic: null, studentExternalId };
-    }
-    if (codeUpper === 'B') {
-      return { status: AttendanceStatus.LEAVE_B, sessionCount: 1, lessonTopic: null, studentExternalId };
-    }
-    if (codeUpper === 'C') {
-      return { status: AttendanceStatus.ABSENT_UNAPPROVED_C, sessionCount: 1, lessonTopic: null, studentExternalId };
-    }
-    if (codeUpper === 'D') {
-      return { status: AttendanceStatus.TEACHER_ABSENT_D, sessionCount: 1, lessonTopic: null, studentExternalId };
-    }
-    if (codeUpper === 'E') {
-      return { status: AttendanceStatus.TECH_ERROR_E, sessionCount: 1, lessonTopic: null, studentExternalId };
-    }
-
-    // Remainder is lesson topic (e.g. "K2 L4", "k1-l1")
-    return { status: AttendanceStatus.ATTENDED, sessionCount: 1, lessonTopic: remainder, studentExternalId };
+  if (studentExternalId && content.length >= 2) {
+    return { status: AttendanceStatus.ATTENDED, sessionCount: 1, lessonTopic: content, studentExternalId };
   }
 
-  // 2. Direct single letter / code
-  const codeUpper = str.toUpperCase();
-  if (codeUpper === 'A') return { status: AttendanceStatus.ABSENT_APPROVED_A, sessionCount: 1, lessonTopic: null };
-  if (codeUpper === 'B') return { status: AttendanceStatus.LEAVE_B, sessionCount: 1, lessonTopic: null };
-  if (codeUpper === 'C') return { status: AttendanceStatus.ABSENT_UNAPPROVED_C, sessionCount: 1, lessonTopic: null };
-  if (codeUpper === 'D') return { status: AttendanceStatus.TEACHER_ABSENT_D, sessionCount: 1, lessonTopic: null };
-  if (codeUpper === 'E') return { status: AttendanceStatus.TECH_ERROR_E, sessionCount: 1, lessonTopic: null };
-  if (codeUpper === 'ĐÃ HỌC') return { status: AttendanceStatus.ATTENDED, sessionCount: 1, lessonTopic: null };
-
-  // 3. Any positive numeric value means attended for this single ClassSession.
-  const num = Number(str);
-  if (!isNaN(num) && num > 0) {
-    return { status: AttendanceStatus.ATTENDED, sessionCount: 1, lessonTopic: null };
-  }
-
-  // 4. Tolerant fallback for lesson topic without ID prefix (e.g. "K2 L4", "k1-l1")
-  if (str.length >= 2 && isNaN(Number(str))) {
-    return { status: AttendanceStatus.ATTENDED, sessionCount: 1, lessonTopic: str };
-  }
-
-  return { status: null, sessionCount: 1, lessonTopic: null };
+  return { status: null, sessionCount: 0, lessonTopic: null, error: 'Giá trị điểm danh không hợp lệ' };
 }
 
-/**
- * Parses time slot strings like "19:00 - 19:30" or "19h00 - 19h30" into startTime and endTime.
- */
+/** Parses time slots such as "19:00 - 19:30" or "19h00 - 19h30". */
 export function parseTimeSlot(timeSlot?: string | null): { startTime?: string; endTime?: string } {
   if (!timeSlot || !timeSlot.trim()) return {};
   const cleaned = timeSlot.replace(/h/gi, ':').trim();
   const match = cleaned.match(/(\d{1,2}:\d{2})\s*[-~–]\s*(\d{1,2}:\d{2})/);
-  if (match) {
-    return { startTime: match[1], endTime: match[2] };
-  }
-  return {};
+  if (!match) return {};
+  return { startTime: match[1].padStart(5, '0'), endTime: match[2].padStart(5, '0') };
 }
 
-/**
- * Normalizes any Date or ISO date string to UTC midnight (00:00:00.000Z)
- * to ensure exact matching across MySQL @db.Date fields regardless of timezone.
- */
+export function addMinutes(time: string, minutes: number): string | null {
+  const match = time.match(/^(\d{1,2}):(\d{2})$/);
+  if (!match) return null;
+  const total = Number(match[1]) * 60 + Number(match[2]) + minutes;
+  if (total < 0 || total >= 24 * 60) return null;
+  return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
+}
+
+export function normalizeClassModel(value?: string | null): 'ONE_TO_ONE' | 'ONE_TO_TWO' | 'ONE_TO_N' | null {
+  const normalized = String(value || '').toLowerCase().replace(/\s+/g, '').replace(':', '-');
+  if (normalized === '1-1') return 'ONE_TO_ONE';
+  if (normalized === '1-2') return 'ONE_TO_TWO';
+  if (normalized === '1-n') return 'ONE_TO_N';
+  return null;
+}
+
+export function remapDateYear(source: Date, targetYear: number): Date | null {
+  const month = source.getUTCMonth();
+  const day = source.getUTCDate();
+  const result = new Date(Date.UTC(targetYear, month, day));
+  return result.getUTCMonth() === month ? result : null;
+}
+
+/** Normalizes a date to UTC midnight for MySQL @db.Date comparisons. */
 export function normalizeDateOnly(date: Date | string | null | undefined): Date | null {
   if (!date) return null;
-  const d = typeof date === 'string' ? new Date(date) : date;
-  if (isNaN(d.getTime())) return null;
-
-  // Use local calendar date from ISO or Date
   if (typeof date === 'string' && /^\d{4}-\d{2}-\d{2}/.test(date)) {
     const [y, m, day] = date.slice(0, 10).split('-').map(Number);
-    return new Date(Date.UTC(y, m - 1, day, 0, 0, 0, 0));
+    return new Date(Date.UTC(y, m - 1, day));
   }
-
-  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 0, 0, 0, 0));
+  const parsed = typeof date === 'string' ? new Date(date) : date;
+  if (Number.isNaN(parsed.getTime())) return null;
+  return new Date(Date.UTC(parsed.getUTCFullYear(), parsed.getUTCMonth(), parsed.getUTCDate()));
 }
 
-/**
- * Human-friendly Vietnamese label for AttendanceStatus.
- */
 export function attendanceStatusLabel(status: AttendanceStatus | null | undefined): string {
   if (!status) return 'Chưa điểm danh';
-  switch (status) {
-    case AttendanceStatus.ATTENDED:
-      return 'Có mặt (1)';
-    case AttendanceStatus.ABSENT_APPROVED_A:
-      return 'Nghỉ có phép (A)';
-    case AttendanceStatus.LEAVE_B:
-      return 'Bảo lưu (B)';
-    case AttendanceStatus.ABSENT_UNAPPROVED_C:
-      return 'Nghỉ không phép (C)';
-    case AttendanceStatus.TEACHER_ABSENT_D:
-      return 'GV nghỉ (D)';
-    case AttendanceStatus.TECH_ERROR_E:
-      return 'Lỗi kỹ thuật (E)';
-    default:
-      return String(status);
-  }
+  const labels: Record<AttendanceStatus, string> = {
+    ATTENDED: 'Có mặt', ABSENT_APPROVED_A: 'Nghỉ có phép (A)', LEAVE_B: 'Bảo lưu (B)',
+    ABSENT_UNAPPROVED_C: 'Nghỉ không phép (C)', TEACHER_ABSENT_D: 'GV nghỉ (D)', TECH_ERROR_E: 'Lỗi kỹ thuật (E)',
+  };
+  return labels[status];
 }

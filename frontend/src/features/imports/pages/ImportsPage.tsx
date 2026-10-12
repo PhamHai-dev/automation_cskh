@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { PageContainer } from '../../../components/common/PageContainer';
 import { PageHeader } from '../../../components/common/PageHeader';
 import { Button } from '../../../components/ui/Button';
@@ -6,14 +7,20 @@ import { useToast } from '../../../components/ui/Toast';
 import { HorizontalTabs } from '../../../components/ui/HorizontalTabs';
 import { ImportWizard } from '../components/ImportWizard';
 import { ImportHistoryTable } from '../components/ImportHistoryTable';
+import { AttendanceExcelImportPanel } from '../../attendance/components/AttendanceExcelImportPanel';
 import { importsApi } from '../api/imports.api';
-import { Download, UploadCloud, History } from 'lucide-react';
+import { CalendarCheck, Download, History, UploadCloud } from 'lucide-react';
 
 export const ImportsPage: React.FC = () => {
   const toast = useToast();
-  const [activeTab, setActiveTab] = useState<'wizard' | 'history'>('wizard');
+  const [searchParams] = useSearchParams();
+  const [activeTab, setActiveTab] = useState<'wizard' | 'attendance' | 'history'>(() => searchParams.get('tab') === 'attendance' ? 'attendance' : 'wizard');
   const [isExportingStudents, setIsExportingStudents] = useState(false);
   const [isExportingAttendance, setIsExportingAttendance] = useState(false);
+
+  useEffect(() => {
+    if (searchParams.get('tab') === 'attendance') setActiveTab('attendance');
+  }, [searchParams]);
 
   const handleExportStudents = async () => {
     try {
@@ -73,17 +80,15 @@ export const ImportsPage: React.FC = () => {
         onChange={setActiveTab}
         className="mb-6"
         items={[
-          { value: 'wizard', label: 'Nhập dữ liệu', icon: <UploadCloud /> },
+          { value: 'wizard', label: 'Hồ sơ học viên (Sheet 1)', icon: <UploadCloud /> },
+          { value: 'attendance', label: 'Điểm danh CSKH / GV', icon: <CalendarCheck /> },
           { value: 'history', label: 'Lịch sử nhập', icon: <History /> },
         ]}
       />
 
-      {/* Tab Content */}
-      {activeTab === 'wizard' ? (
-        <ImportWizard onImportComplete={() => setActiveTab('history')} />
-      ) : (
-        <ImportHistoryTable />
-      )}
+      {activeTab === 'wizard' && <ImportWizard onImportComplete={() => setActiveTab('history')} />}
+      {activeTab === 'attendance' && <AttendanceExcelImportPanel />}
+      {activeTab === 'history' && <ImportHistoryTable />}
     </PageContainer>
   );
 };

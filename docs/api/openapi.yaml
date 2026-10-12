@@ -1056,61 +1056,48 @@ paths:
         '403': { description: Attendance is outside actor scope }
         '409': { description: Attendance is not in conflict }
 
-  /api/v1/attendance-reconciliation/{source}-workbook/preview:
+  /api/v1/attendance-reconciliation/import-excel/preview:
     post:
-      summary: Preview a teacher or customer-care attendance workbook without database writes
+      summary: Preview a CSKH Sheet 3 or teacher schedule workbook without database writes
       tags: [Attendance Reconciliation]
-      parameters:
-        - name: source
-          in: path
-          required: true
-          schema: { type: string, enum: [teacher, cs] }
       requestBody:
         required: true
         content:
           multipart/form-data:
             schema:
               type: object
-              required: [file]
+              required: [file, source, targetYear]
               properties:
                 file: { type: string, format: binary }
-                teacherId: { type: integer }
+                source: { type: string, enum: [CSKH, TEACHER] }
+                targetYear: { type: integer, minimum: 2020, maximum: 2100 }
       responses:
-        '200':
-          description: Workbook preview
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/WorkbookPreviewResponse' }
-        '400': { description: Invalid workbook or MIME type }
+        '200': { description: Source-aware preview including CREATE, UNCHANGED, CONFLICT, INVALID and OUT_OF_SCOPE items }
+        '400': { description: Invalid workbook or import inputs }
         '403': { description: Requested scope is not allowed }
 
-  /api/v1/attendance-reconciliation/{source}-workbook/{previewId}/commit:
+  /api/v1/attendance-reconciliation/import-excel/confirm:
     post:
-      summary: Commit valid cells from an unexpired workbook preview
+      summary: Re-preview and commit approved CSKH or teacher attendance workbook items
       tags: [Attendance Reconciliation]
-      parameters:
-        - name: source
-          in: path
-          required: true
-          schema: { type: string, enum: [teacher, cs] }
-        - { name: previewId, in: path, required: true, schema: { type: string } }
       requestBody:
         required: true
         content:
-          application/json:
+          multipart/form-data:
             schema:
               type: object
-              required: [confirmOverwrite]
+              required: [file, source, targetYear]
               properties:
-                confirmOverwrite: { type: boolean, const: true }
+                file: { type: string, format: binary }
+                source: { type: string, enum: [CSKH, TEACHER] }
+                targetYear: { type: integer, minimum: 2020, maximum: 2100 }
+                actions:
+                  type: string
+                  description: JSON object mapping preview item IDs to APPLY, KEEP_DATABASE or SKIP
       responses:
-        '200':
-          description: Valid preview cells committed
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/WorkbookCommitResponse' }
-        '404': { description: Preview not found or expired }
-        '409': { description: Preview was already committed or source data changed }
+        '200': { description: Commit summary with created and updated session/attendance counts }
+        '400': { description: Invalid workbook or import inputs }
+        '403': { description: Requested scope is not allowed }
 
 components:
   securitySchemes:

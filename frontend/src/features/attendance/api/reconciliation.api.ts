@@ -120,3 +120,43 @@ export const reconciliationApi = {
     return res.data.data;
   },
 };
+
+export type AttendanceImportSource = 'CSKH' | 'TEACHER';
+export type AttendanceImportAction = 'APPLY' | 'KEEP_DATABASE' | 'SKIP';
+export interface AttendanceImportItem {
+  id: string;
+  externalId: string;
+  cellAddress: string;
+  sourceDate: string;
+  targetDate: string | null;
+  rawValue: string;
+  status: string | null;
+  sessionCount: number;
+  classification: string;
+  defaultAction: AttendanceImportAction;
+  messages: string[];
+  sessionPlans: Array<{ startTime: string; endTime: string; action: string }>;
+}
+export interface AttendanceImportPreview { source: AttendanceImportSource; targetYear: number; sheetName: string; totalItems: number; summary: Record<string, number>; items: AttendanceImportItem[] }
+export interface AttendanceImportResultItem { id: string; externalId: string; cellAddress: string; targetDate: string | null; rawValue: string; action: AttendanceImportAction; createdSessions: number; createdAttendances: number; updatedAttendances: number; skipped: boolean }
+export interface AttendanceImportResult { createdSessions: number; createdAttendances: number; updatedAttendances: number; skipped: number; items: AttendanceImportResultItem[] }
+
+export const attendanceImportApi = {
+  preview: async (file: File, source: AttendanceImportSource, targetYear: number): Promise<AttendanceImportPreview> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('source', source);
+    formData.append('targetYear', String(targetYear));
+    const res = await apiClient.post('/attendance-reconciliation/import-excel/preview', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+    return res.data.data;
+  },
+  confirm: async (file: File, source: AttendanceImportSource, targetYear: number, actions: Record<string, AttendanceImportAction>): Promise<AttendanceImportResult> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('source', source);
+    formData.append('targetYear', String(targetYear));
+    formData.append('actions', JSON.stringify(actions));
+    const res = await apiClient.post('/attendance-reconciliation/import-excel/confirm', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+    return res.data.data;
+  },
+};
