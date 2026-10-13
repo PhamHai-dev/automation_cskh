@@ -63,4 +63,50 @@ export class DashboardController {
       next(err);
     }
   };
+
+  // ---- New tab-composed endpoints ----
+
+  getOverview = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const user = (req as any).user;
+      const filters = this.extractFilters(req);
+      const data = await this.service.getOverview(filters, user.id, user.roles);
+      res.status(200).json({ data, meta: null });
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  getCare = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const user = (req as any).user;
+      const filters = this.extractFilters(req);
+      const data = await this.service.getCare(filters, user.id, user.roles);
+      res.status(200).json({ data, meta: null });
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  getAttendanceTab = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const user = (req as any).user;
+      const filters = this.extractFilters(req);
+      const data = await this.service.getAttendanceTab(filters, user.id, user.roles);
+      res.status(200).json({ data, meta: null });
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  getPerformance = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const user = (req as any).user;
+      const filters = this.extractFilters(req);
+      const data = await this.service.getPerformance(filters, user.id, user.roles);
+      res.status(200).json({ data, meta: null });
+    } catch (err) {
+      next(err);
+    }
+  };
 }

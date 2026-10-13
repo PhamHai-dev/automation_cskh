@@ -250,4 +250,85 @@ describe('Dashboard Module Integration Tests', () => {
       expect(res.body.data.urgent_hot_issues).toBe(2);
     });
   });
+
+  describe('GET /api/v1/dashboard/overview', () => {
+    it('Should return kpis, summary, trend and by-cs structures', async () => {
+      const res = await request(app)
+        .get('/api/v1/dashboard/overview')
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.data).toHaveProperty('kpis');
+      expect(res.body.data.kpis).toHaveProperty('total_enrollments');
+      expect(res.body.data).toHaveProperty('enrollment_trend');
+      expect(res.body.data.enrollment_trend).toHaveProperty('granularity');
+      expect(Array.isArray(res.body.data.enrollment_by_cs)).toBe(true);
+    });
+  });
+
+  describe('GET /api/v1/dashboard/care', () => {
+    it('Should return pivot, outcome breakdown, milestone coverage, at-risk', async () => {
+      const res = await request(app)
+        .get('/api/v1/dashboard/care')
+        .set('Authorization', `Bearer ${csToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.data).toHaveProperty('pivot');
+      expect(Array.isArray(res.body.data.outcome_breakdown)).toBe(true);
+      expect(Array.isArray(res.body.data.milestone_coverage)).toBe(true);
+      expect(Array.isArray(res.body.data.at_risk)).toBe(true);
+      expect(res.body.data).toHaveProperty('response_matrix');
+      expect(Array.isArray(res.body.data.response_matrix.rows)).toBe(true);
+      expect(res.body.data.response_matrix.buckets).toEqual(expect.arrayContaining([
+        'POSITIVE',
+        'NEED_SUPPORT_SYSTEM',
+        'TEMP_PAUSE',
+        'NEED_CURRICULUM_SUPPORT',
+        'NEED_STUDENT_WEAKNESS_FIX',
+        'NEED_TEACHER_SUPPORT',
+        'NEGATIVE_WANTS_TO_STOP',
+        'NO_RESPONSE',
+        'OTHER',
+        'NOT_ENTERED',
+      ]));
+    });
+  });
+
+  describe('GET /api/v1/dashboard/attendance-tab', () => {
+    it('Should return stats, trend and by-class structures', async () => {
+      const res = await request(app)
+        .get('/api/v1/dashboard/attendance-tab')
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.data).toHaveProperty('stats');
+      expect(res.body.data.stats).toHaveProperty('attendance_rate');
+      expect(res.body.data).toHaveProperty('trend');
+      expect(Array.isArray(res.body.data.by_class)).toBe(true);
+    });
+  });
+
+  describe('GET /api/v1/dashboard/performance', () => {
+    it('ADMIN should see a non-empty CS leaderboard', async () => {
+      const res = await request(app)
+        .get('/api/v1/dashboard/performance')
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.data).toHaveProperty('tasks');
+      expect(Array.isArray(res.body.data.tasks_by_type)).toBe(true);
+      expect(res.body.data).toHaveProperty('task_completion');
+      expect(Array.isArray(res.body.data.cs_leaderboard)).toBe(true);
+      expect(res.body.data.cs_leaderboard.length).toBeGreaterThan(0);
+    });
+
+    it('CS should get an empty leaderboard (gated)', async () => {
+      const res = await request(app)
+        .get('/api/v1/dashboard/performance')
+        .set('Authorization', `Bearer ${csToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.cs_leaderboard).toEqual([]);
+    });
+  });
 });

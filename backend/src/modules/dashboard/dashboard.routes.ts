@@ -31,4 +31,29 @@ router.get(
   controller.getTasksOverview
 );
 
+// ---- New tab-composed endpoints ----
+router.get(
+  '/overview',
+  requireRoles(['ADMIN', 'MANAGE', 'CS']),
+  controller.getOverview
+);
+
+router.get(
+  '/care',
+  requireRoles(['ADMIN', 'MANAGE', 'CS']),
+  controller.getCare
+);
+
+router.get(
+  '/attendance-tab',
+  requireRoles(['ADMIN', 'MANAGE', 'CS']),
+  controller.getAttendanceTab
+);
+
+router.get(
+  '/performance',
+  requireRoles(['ADMIN', 'MANAGE', 'CS']),
+  controller.getPerformance
+);
+
 export { router as dashboardRouter };
