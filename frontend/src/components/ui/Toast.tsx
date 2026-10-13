@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useCallback, useMemo, ReactNode } from 'react';
 import { CheckCircle2, AlertCircle, AlertTriangle, Info, X } from 'lucide-react';
 
 export type ToastType = 'success' | 'error' | 'warning' | 'info';
@@ -39,12 +39,15 @@ export const ToastProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     [removeToast]
   );
 
-  const toast = {
+  // Memoized so the `toast` reference stays stable across re-renders triggered by
+  // `setToasts`. Without this, any consumer `useCallback`/`useEffect` depending on
+  // `toast` would re-fire on every toast, causing infinite API refetch loops.
+  const toast = useMemo(() => ({
     success: (msg: string, title?: string) => addToast('success', msg, title),
     error: (msg: string, title?: string) => addToast('error', msg, title),
     warning: (msg: string, title?: string) => addToast('warning', msg, title),
     info: (msg: string, title?: string) => addToast('info', msg, title),
-  };
+  }), [addToast]);
 
   const icons = {
     success: <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />,

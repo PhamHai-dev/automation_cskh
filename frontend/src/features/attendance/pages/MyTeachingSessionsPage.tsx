@@ -8,6 +8,7 @@ import {
   User,
   FileSpreadsheet,
   Check,
+  UserRoundCheck,
 } from 'lucide-react';
 import { PageContainer } from '../../../components/common/PageContainer';
 import { PageHeader } from '../../../components/common/PageHeader';
@@ -16,8 +17,12 @@ import { Button } from '../../../components/ui/Button';
 import { Badge } from '../../../components/ui/Badge';
 import { Modal } from '../../../components/ui/Modal';
 import { Input } from '../../../components/ui/Input';
+import { Select } from '../../../components/ui/Select';
 import { Textarea } from '../../../components/ui/Textarea';
 import { useToast } from '../../../components/ui/Toast';
+import { useAuth } from '../../../contexts/AuthContext';
+import { teachersApi } from '../../teachers/api/teachers.api';
+import type { Teacher } from '../../teachers/types/teachers.types';
 import { reconciliationApi } from '../api/reconciliation.api';
 import { AttendanceStatus } from '../types/reconciliation.types';
 
@@ -25,8 +30,16 @@ export const MyTeachingSessionsPage: React.FC = () => {
   const toast = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const { user } = useAuth();
+  const isPrivileged = !!user?.roles.some((role) => role === 'ADMIN' || role === 'MANAGE');
+
   const [sessions, setSessions] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+
+  // Teacher scope (only for ADMIN/MANAGE — backend requires an explicit teacherId)
+  const [teachers, setTeachers] = useState<Teacher[]>([]);
+  const [selectedTeacherId, setSelectedTeacherId] = useState<number | undefined>();
+  const hasContext = !isPrivileged || !!selectedTeacherId;
 
   // Date filters
   const [dateRangeFilter, setDateRangeFilter] = useState<'today' | 'week' | 'month'>('today');
@@ -72,18 +85,34 @@ export const MyTeachingSessionsPage: React.FC = () => {
     };
   }, [dateRangeFilter]);
 
+  // Load teacher list once for ADMIN/MANAGE so they can pick whose schedule to view.
+  useEffect(() => {
+    if (!isPrivileged) return;
+    teachersApi.list()
+      .then((items) => setTeachers(items.filter((t) => t.active && t.user_id)))
+      .catch(() => toast.error('Không thể tải danh sách giáo viên'));
+  }, [isPrivileged, toast]);
+
   const loadSessions = useCallback(async () => {
+    if (!hasContext) {
+      setSessions([]);
+      return;
+    }
     setIsLoading(true);
     try {
       const { start, end } = calculateDates();
-      const data = await reconciliationApi.getTeacherSessions({ startDate: start, endDate: end });
+      const data = await reconciliationApi.getTeacherSessions({
+        startDate: start,
+        endDate: end,
+        ...(isPrivileged ? { teacherId: selectedTeacherId } : {}),
+      });
       setSessions(data || []);
     } catch (err: any) {
       toast.error(err.response?.data?.message || 'Không thể tải lịch dạy của bạn');
     } finally {
       setIsLoading(false);
     }
-  }, [calculateDates, toast]);
+  }, [calculateDates, hasContext, isPrivileged, selectedTeacherId, toast]);
 
   useEffect(() => {
     loadSessions();
@@ -166,6 +195,22 @@ export const MyTeachingSessionsPage: React.FC = () => {
         }
       />
 
+      {/* Teacher selector — only for ADMIN/MANAGE */}
+      {isPrivileged && (
+        <Card className="mb-5 p-4 sm:p-5 bg-gradient-to-r from-primary-soft/80 to-surface">
+          <div className="max-w-md">
+            <Select
+              id="sessions-teacher-select"
+              label="Giáo viên cần hỗ trợ"
+              value={selectedTeacherId || ''}
+              onChange={(event) => setSelectedTeacherId(event.target.value ? Number(event.target.value) : undefined)}
+              options={[{ value: '', label: 'Chọn giáo viên...' }, ...teachers.map((teacher) => ({ value: teacher.user_id!, label: `${teacher.name} · ${teacher.code}` }))]}
+              helperText="Lịch dạy và điểm danh sẽ được giới hạn theo giáo viên đã chọn."
+            />
+          </div>
+        </Card>
+      )}
+
       {/* Date Filter Bar */}
       <Card className="p-4 mb-6">
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
@@ -203,7 +248,13 @@ export const MyTeachingSessionsPage: React.FC = () => {
       </Card>
 
       {/* Sessions Grid */}
-      {isLoading ? (
+      {!hasContext ? (
+        <Card className="p-10 text-center">
+          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary-soft text-primary"><UserRoundCheck className="h-7 w-7" /></div>
+          <h2 className="font-bold text-text-primary">Chọn giáo viên để bắt đầu</h2>
+          <p className="mt-1 text-sm text-text-muted">Hệ thống không trộn lịch dạy của nhiều giáo viên trong cùng một danh sách.</p>
+        </Card>
+      ) : isLoading ? (
         <div className="py-12 text-center text-text-muted">Đang tải lịch dạy...</div>
       ) : sessions.length === 0 ? (
         <Card className="py-12 text-center">
