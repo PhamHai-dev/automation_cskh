@@ -20,6 +20,8 @@ import {
 import { classSessionsApi, attendanceApi } from '../../classes/api/sessions.api';
 import { ClassSession, Attendance, AttendanceStatus } from '../../classes/types/classes.types';
 import { BarChart3, Calendar, Zap } from 'lucide-react';
+import { useColumnVisibility } from '../../preferences/hooks/useColumnVisibility';
+import { PreferenceScope } from '../../preferences/columns';
 
 const DEFAULT_STATUS_BY_TAB: Record<AttendanceTab, string> = {
   quick: 'STUDYING',
@@ -37,6 +39,9 @@ export const EnrollmentsPage: React.FC = () => {
 
   // Tab & Filters state
   const [activeTab, setActiveTab] = useState<AttendanceTab>('quick');
+  const prefScope: PreferenceScope = `enrollments.${activeTab}`;
+  const { visible: visibleColumns } = useColumnVisibility(prefScope);
+
   const [filters, setFilters] = useState<EnrollmentFilterState>(() => ({
     ...INITIAL_ENROLLMENT_FILTERS,
     statusFilter: DEFAULT_STATUS_BY_TAB['quick'],
@@ -540,6 +545,7 @@ export const EnrollmentsPage: React.FC = () => {
             students={matrixStudents}
             sessions={allSessions}
             attendances={allAttendances}
+            visibleColumns={visibleColumns}
             onRefresh={fetchEnrollments}
             onSaveCustom={handleCustomSaveAll}
           />

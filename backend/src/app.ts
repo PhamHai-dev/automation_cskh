@@ -21,6 +21,7 @@ import { zaloRouter } from './modules/zalo/zalo.routes';
 
 import { automationRouter } from './modules/automation/automation.routes';
 import { autoAttendanceRouter } from './modules/auto-attendance/auto-attendance.routes';
+import { preferencesRouter } from './modules/preferences/preferences.routes';
 
 const app: Express = express();
 const httpLog = createLogger('HTTP');
@@ -75,6 +76,7 @@ app.use('/api/v1/dashboard', dashboardRouter);
 app.use('/api/v1/zalo', zaloRouter);
 app.use('/api/v1/automation', automationRouter);
 app.use('/api/v1/settings/auto-attendance', autoAttendanceRouter);
+app.use('/api/v1/me/preferences', preferencesRouter);
 
 // Error handling
 app.use(errorMiddleware);

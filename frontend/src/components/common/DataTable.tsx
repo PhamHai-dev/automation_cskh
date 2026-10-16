@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight, Inbox } from 'lucide-react';
 import { Button } from '../ui/Button';
 
 export interface Column<T> {
+  key?: string;
   header: string | ReactNode;
   accessorKey?: keyof T;
   cell?: (item: T) => ReactNode;

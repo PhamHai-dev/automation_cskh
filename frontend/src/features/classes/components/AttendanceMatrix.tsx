@@ -65,6 +65,7 @@ export interface AttendanceMatrixProps {
   ) => Promise<void>;
   activeTab?: AttendanceTab;
   titleHeader?: React.ReactNode;
+  visibleColumns?: Record<string, boolean>;
 }
 
 export type AttendanceTab = 'quick' | 'detailed' | 'stats';
@@ -339,7 +340,13 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
   onSaveCustom,
   activeTab: controlledActiveTab,
   titleHeader,
+  visibleColumns,
 }) => {
+  const isColVisible = (key: string): boolean => {
+    if (!visibleColumns) return true;
+    return visibleColumns[key] !== false;
+  };
+
   const toast = useToast();
   const { user } = useAuth();
   const privilegedSideChoice = Boolean(user?.roles.some((role) => role === 'ADMIN' || role === 'MANAGE'));
@@ -1359,33 +1366,51 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
                 <th className="px-2 py-3 border-r border-border/60 w-10 min-w-[40px] text-center bg-slate-100/90">
                   #
                 </th>
+                {isColVisible('external_id') && (
                 <th className="px-3 py-3 border-r border-border/60 whitespace-nowrap min-w-[90px]">
                   ID
                 </th>
+                )}
+                {isColVisible('full_name') && (
                 <th className="px-4 py-3 border-r border-border/60 whitespace-nowrap min-w-[160px]">
                   Họ tên HV
                 </th>
+                )}
+                {isColVisible('package_name') && (
                 <th className="px-3 py-3 border-r border-border/60 whitespace-nowrap min-w-[110px]">
                   Gói học
                 </th>
+                )}
+                {isColVisible('course_content') && (
                 <th className="px-3 py-3 border-r border-border/60 whitespace-nowrap min-w-[120px]">
                   Nội dung khoá
                 </th>
+                )}
+                {isColVisible('total_sessions') && (
                 <th className="px-3 py-3 border-r border-border/60 text-center whitespace-nowrap min-w-[90px]">
                   Tổng số buổi
                 </th>
+                )}
+                {isColVisible('level') && (
                 <th className="px-3 py-3 border-r border-border/60 whitespace-nowrap min-w-[100px]">
                   Khoá học
                 </th>
+                )}
+                {isColVisible('email') && (
                 <th className="px-3 py-3 border-r border-border/60 whitespace-nowrap min-w-[160px]">
                   Email
                 </th>
+                )}
+                {isColVisible('model_type') && (
                 <th className="px-3 py-3 border-r border-border/60 whitespace-nowrap min-w-[90px]">
                   Mô hình
                 </th>
+                )}
+                {isColVisible('status') && (
                 <th className="px-3 py-3 border-r-2 border-border/80 whitespace-nowrap min-w-[110px]">
                   Trạng thái
                 </th>
+                )}
 
                 {/* 1 Cột điểm danh ngày hiện tại (hoặc quickDate) */}
                 {(() => {
@@ -1448,48 +1473,65 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
                       </td>
 
                       {/* Cột A: Mã HV */}
+                      {isColVisible('external_id') && (
                       <td className="px-3 py-2.5 border-r border-border/60 font-mono font-bold text-text-primary whitespace-nowrap">
                         {st.external_id || `HV_${st.student_id}`}
                       </td>
+                      )}
 
                       {/* Cột B: Họ tên */}
+                      {isColVisible('full_name') && (
                       <td className="px-4 py-2.5 border-r border-border/60 font-bold text-text-primary whitespace-nowrap">
                         {st.full_name}
                       </td>
+                      )}
 
                       {/* Cột C: Gói học */}
+                      {isColVisible('package_name') && (
                       <td className="px-3 py-2.5 border-r border-border/60 text-text-secondary whitespace-nowrap">
                         <span className="font-semibold">{st.package_name || '-'}</span>
                       </td>
+                      )}
 
                       {/* Cột D: Nội dung khoá */}
+                      {isColVisible('course_content') && (
                       <td className="px-3 py-2.5 border-r border-border/60 text-text-muted whitespace-nowrap">
                         {st.course_content || '-'}
                       </td>
+                      )}
 
                       {/* Cột E: Tổng số buổi */}
+                      {isColVisible('total_sessions') && (
                       <td className="px-3 py-2.5 border-r border-border/60 text-center font-bold text-text-primary">
                         {st.total_sessions || 0}
                       </td>
+                      )}
 
                       {/* Cột F: Khoá học / Trình độ */}
+                      {isColVisible('level') && (
                       <td className="px-3 py-2.5 border-r border-border/60 text-text-secondary whitespace-nowrap">
                         {st.level || '-'}
                       </td>
+                      )}
 
                       {/* Cột G: Email */}
+                      {isColVisible('email') && (
                       <td className="px-3 py-2.5 border-r border-border/60 text-text-muted whitespace-nowrap">
                         {st.email || '-'}
                       </td>
+                      )}
 
                       {/* Cột H: Mô hình */}
+                      {isColVisible('model_type') && (
                       <td className="px-3 py-2.5 border-r border-border/60 text-text-secondary whitespace-nowrap">
                         <Badge variant="neutral" size="sm">
                           {formatClassModel(st.model_type)}
                         </Badge>
                       </td>
+                      )}
 
                       {/* Cột K: Trạng thái */}
+                      {isColVisible('status') && (
                       <td className="px-3 py-2.5 border-r-2 border-border/80 whitespace-nowrap">
                         <Badge
                           variant={
@@ -1518,6 +1560,7 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
                             : st.status}
                         </Badge>
                       </td>
+                      )}
 
                       {/* 1 Cột Ngày Điểm danh */}
                       <td className="px-2 py-1.5 border-r border-border/60 text-center bg-blue-50/20">
@@ -1544,64 +1587,100 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
                 <th className="px-2 py-3 border-r border-border/60 sticky left-0 bg-slate-100 z-20 w-10 min-w-[40px] text-center">
                   #
                 </th>
+                {isColVisible('external_id') && (
                 <th className="px-3 py-3 border-r border-border/60 sticky left-10 bg-slate-100 z-20 whitespace-nowrap min-w-[85px]">
                   ID
                 </th>
+                )}
+                {isColVisible('full_name') && (
                 <th className="px-4 py-3 border-r-2 border-border/80 sticky left-[125px] bg-slate-100 z-20 whitespace-nowrap min-w-[160px] shadow-[4px_0_6px_-2px_rgba(0,0,0,0.06)]">
                   Họ tên HV
                 </th>
+                )}
 
                 {/* Cột C -> O: Gói học & Lịch học */}
+                {isColVisible('package_name') && (
                 <th className="px-3 py-3 border-r border-border/60 whitespace-nowrap min-w-[110px]">
                   Gói học
                 </th>
+                )}
+                {isColVisible('course_content') && (
                 <th className="px-3 py-3 border-r border-border/60 whitespace-nowrap min-w-[110px]">
                   Nội dung khoá
                 </th>
+                )}
+                {isColVisible('total_sessions') && (
                 <th className="px-3 py-3 border-r border-border/60 text-center whitespace-nowrap min-w-[80px]">
                   Tổng số buổi
                 </th>
+                )}
+                {isColVisible('level') && (
                 <th className="px-3 py-3 border-r border-border/60 whitespace-nowrap min-w-[95px]">
                   Khoá học
                 </th>
+                )}
+                {isColVisible('email') && (
                 <th className="px-3 py-3 border-r border-border/60 whitespace-nowrap min-w-[150px]">
                   Email
                 </th>
+                )}
+                {isColVisible('model_type') && (
                 <th className="px-3 py-3 border-r border-border/60 whitespace-nowrap min-w-[85px]">
                   Mô hình
                 </th>
+                )}
+                {isColVisible('remaining_sessions') && (
                 <th className="px-3 py-3 border-r border-border/60 text-center whitespace-nowrap min-w-[95px] bg-amber-50/60 text-amber-900">
                   Số buổi còn lại
                 </th>
+                )}
+                {isColVisible('start_date') && (
                 <th className="px-3 py-3 border-r border-border/60 whitespace-nowrap min-w-[90px]">
                   Ngày bắt đầu học
                 </th>
+                )}
+                {isColVisible('status') && (
                 <th className="px-3 py-3 border-r border-border/60 whitespace-nowrap min-w-[100px]">
                   Trạng thái
                 </th>
+                )}
+                {isColVisible('end_date') && (
                 <th className="px-3 py-3 border-r border-border/60 whitespace-nowrap min-w-[95px]">
                   Ngày kết thúc/Bảo lưu
                 </th>
+                )}
+                {isColVisible('start_time') && (
                 <th className="px-3 py-3 border-r border-border/60 whitespace-nowrap min-w-[75px]">
                   Giờ học (1)
                 </th>
+                )}
+                {isColVisible('schedule_pattern') && (
                 <th className="px-3 py-3 border-r border-border/60 whitespace-nowrap min-w-[75px]">
                   Lịch học (1)
                 </th>
+                )}
+                {isColVisible('duration_minutes') && (
                 <th className="px-3 py-3 border-r-2 border-border/80 text-center whitespace-nowrap min-w-[80px]">
                   Thời lượng buổi học (1)
                 </th>
+                )}
 
                 {/* Cột U -> X: GV, Lớp & Đã học */}
+                {isColVisible('teacher_name') && (
                 <th className="px-3 py-3 border-r border-border/60 whitespace-nowrap min-w-[120px]">
                   Giáo viên
                 </th>
+                )}
+                {isColVisible('teacher_code') && (
                 <th className="px-3 py-3 border-r border-border/60 whitespace-nowrap min-w-[80px]">
                   Mã GV
                 </th>
+                )}
+                {isColVisible('class_name') && (
                 <th className="px-3 py-3 border-r border-border/60 whitespace-nowrap min-w-[130px]">
                   Tên lớp
                 </th>
+                )}
                 <th className="px-3 py-3 border-r-2 border-border/80 text-center whitespace-nowrap min-w-[95px] bg-emerald-50 text-emerald-900 font-extrabold">
                   Tổng số buổi đã học
                 </th>
@@ -1708,38 +1787,55 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
                       </td>
 
                       {/* Mã HV (A) */}
+                      {isColVisible('external_id') && (
                       <td className="px-3 py-2.5 border-r border-border/60 font-mono font-bold text-text-primary whitespace-nowrap sticky left-10 bg-slate-100 z-10">
                         {st.external_id || `HV_${st.student_id}`}
                       </td>
+                      )}
 
                       {/* Họ và tên (B) */}
+                      {isColVisible('full_name') && (
                       <td className="px-4 py-2.5 border-r-2 border-border/80 font-bold text-text-primary whitespace-nowrap sticky left-[125px] bg-slate-100 z-10 shadow-[4px_0_6px_-2px_rgba(0,0,0,0.06)]">
                         {st.full_name}
                       </td>
+                      )}
 
                       {/* Cột C -> O */}
+                      {isColVisible('package_name') && (
                       <td className="px-3 py-2.5 border-r border-border/60 text-text-secondary whitespace-nowrap">
                         {st.package_name || '-'}
                       </td>
+                      )}
+                      {isColVisible('course_content') && (
                       <td className="px-3 py-2.5 border-r border-border/60 text-text-muted whitespace-nowrap">
                         {st.course_content || '-'}
                       </td>
+                      )}
+                      {isColVisible('total_sessions') && (
                       <td className="px-3 py-2.5 border-r border-border/60 text-center font-bold text-text-primary">
                         {st.total_sessions || 0}
                       </td>
+                      )}
+                      {isColVisible('level') && (
                       <td className="px-3 py-2.5 border-r border-border/60 text-text-secondary whitespace-nowrap">
                         {st.level || '-'}
                       </td>
+                      )}
+                      {isColVisible('email') && (
                       <td className="px-3 py-2.5 border-r border-border/60 text-text-muted whitespace-nowrap">
                         {st.email || '-'}
                       </td>
+                      )}
+                      {isColVisible('model_type') && (
                       <td className="px-3 py-2.5 border-r border-border/60 text-text-secondary whitespace-nowrap">
                         <Badge variant="neutral" size="sm">
                           {formatClassModel(st.model_type)}
                         </Badge>
                       </td>
+                      )}
 
                       {/* Buổi còn lại (I) - Cảnh báo nợ âm */}
+                      {isColVisible('remaining_sessions') && (
                       <td className="px-3 py-2.5 border-r border-border/60 text-center font-extrabold whitespace-nowrap">
                         {isNegativeDebt ? (
                           <span className="px-2 py-0.5 rounded-md bg-red-100 text-red-800 border border-red-300 text-xs font-black shadow-2xs">
@@ -1749,10 +1845,14 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
                           <span className="text-text-primary font-bold">{remaining}</span>
                         )}
                       </td>
+                      )}
 
+                      {isColVisible('start_date') && (
                       <td className="px-3 py-2.5 border-r border-border/60 text-text-muted whitespace-nowrap">
                         {st.start_date ? new Date(st.start_date).toLocaleDateString('vi-VN') : '-'}
                       </td>
+                      )}
+                      {isColVisible('status') && (
                       <td className="px-3 py-2.5 border-r border-border/60 whitespace-nowrap">
                         <Badge
                           variant={
@@ -1781,29 +1881,44 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
                             : st.status}
                         </Badge>
                       </td>
+                      )}
+                      {isColVisible('end_date') && (
                       <td className="px-3 py-2.5 border-r border-border/60 text-text-muted whitespace-nowrap">
                         {st.end_date ? new Date(st.end_date).toLocaleDateString('vi-VN') : '-'}
                       </td>
+                      )}
+                      {isColVisible('start_time') && (
                       <td className="px-3 py-2.5 border-r border-border/60 text-text-muted whitespace-nowrap">
                         {st.start_time || '-'}
                       </td>
+                      )}
+                      {isColVisible('schedule_pattern') && (
                       <td className="px-3 py-2.5 border-r border-border/60 text-text-muted whitespace-nowrap">
                         {st.schedule_pattern || '-'}
                       </td>
+                      )}
+                      {isColVisible('duration_minutes') && (
                       <td className="px-3 py-2.5 border-r-2 border-border/80 text-center text-text-muted whitespace-nowrap">
                         {st.duration_minutes ? `${st.duration_minutes}p` : '-'}
                       </td>
+                      )}
 
                       {/* Cột U -> X: GV, Lớp & Đã học */}
+                      {isColVisible('teacher_name') && (
                       <td className="px-3 py-2.5 border-r border-border/60 text-text-primary font-semibold whitespace-nowrap">
                         {st.teacher_name || '-'}
                       </td>
+                      )}
+                      {isColVisible('teacher_code') && (
                       <td className="px-3 py-2.5 border-r border-border/60 font-mono text-text-muted whitespace-nowrap">
                         {st.teacher_code || '-'}
                       </td>
+                      )}
+                      {isColVisible('class_name') && (
                       <td className="px-3 py-2.5 border-r border-border/60 font-semibold text-text-primary whitespace-nowrap">
                         {st.class_name}
                       </td>
+                      )}
                       <td className="px-3 py-2.5 border-r-2 border-border/80 text-center font-extrabold text-emerald-800 bg-emerald-50/40">
                         {stat?.totalAttended || 0}
                       </td>
@@ -1948,30 +2063,46 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
                   <th className="px-2 py-3 border-r border-border/60 sticky left-0 bg-slate-100 z-20 w-10 min-w-[40px] text-center">
                     #
                   </th>
+                  {isColVisible('external_id') && (
                   <th className="px-3 py-3 border-r border-border/60 sticky left-10 bg-slate-100 z-20 whitespace-nowrap min-w-[85px]">
                     ID
                   </th>
+                  )}
+                  {isColVisible('full_name') && (
                   <th className="px-4 py-3 border-r-2 border-border/80 sticky left-[125px] bg-slate-100 z-20 whitespace-nowrap min-w-[160px] shadow-[4px_0_6px_-2px_rgba(0,0,0,0.06)]">
                     Họ tên HV
                   </th>
+                  )}
+                  {isColVisible('package_name') && (
                   <th className="px-3 py-3 border-r border-border/60 whitespace-nowrap min-w-[110px]">
                     Gói học
                   </th>
+                  )}
+                  {isColVisible('course_content') && (
                   <th className="px-3 py-3 border-r border-border/60 whitespace-nowrap min-w-[110px]">
                     Nội dung khoá
                   </th>
+                  )}
+                  {isColVisible('total_sessions') && (
                   <th className="px-3 py-3 border-r border-border/60 text-center whitespace-nowrap min-w-[90px]">
                     Tổng số buổi
                   </th>
+                  )}
+                  {isColVisible('level') && (
                   <th className="px-3 py-3 border-r border-border/60 whitespace-nowrap min-w-[95px]">
                     Khoá học
                   </th>
+                  )}
+                  {isColVisible('email') && (
                   <th className="px-3 py-3 border-r border-border/60 whitespace-nowrap min-w-[150px]">
                     Email
                   </th>
+                  )}
+                  {isColVisible('model_type') && (
                   <th className="px-3 py-3 border-r-2 border-border/80 whitespace-nowrap min-w-[85px]">
                     Mô hình
                   </th>
+                  )}
 
                   {/* Cột Y -> AH: Thống kê toàn bộ & theo tháng khớp Sheet 3 */}
                   <th className="px-3 py-3 border-r border-border/60 text-center whitespace-nowrap min-w-[105px] bg-emerald-50 text-emerald-900 font-extrabold">
@@ -2042,32 +2173,48 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
                         <td className="px-2 py-2.5 border-r border-border/60 text-center text-text-muted font-bold sticky left-0 bg-slate-100 z-10">
                           {idx + 1}
                         </td>
+                        {isColVisible('external_id') && (
                         <td className="px-3 py-2.5 border-r border-border/60 font-mono font-bold text-text-primary whitespace-nowrap sticky left-10 bg-slate-100 z-10">
                           {st.external_id || `HV_${st.student_id}`}
                         </td>
+                        )}
+                        {isColVisible('full_name') && (
                         <td className="px-4 py-2.5 border-r-2 border-border/80 font-bold text-text-primary whitespace-nowrap sticky left-[125px] bg-slate-100 z-10 shadow-[4px_0_6px_-2px_rgba(0,0,0,0.06)]">
                           {st.full_name}
                         </td>
+                        )}
+                        {isColVisible('package_name') && (
                         <td className="px-3 py-2.5 border-r border-border/60 text-text-secondary whitespace-nowrap">
                           {st.package_name || '-'}
                         </td>
+                        )}
+                        {isColVisible('course_content') && (
                         <td className="px-3 py-2.5 border-r border-border/60 text-text-muted whitespace-nowrap">
                           {st.course_content || '-'}
                         </td>
+                        )}
+                        {isColVisible('total_sessions') && (
                         <td className="px-3 py-2.5 border-r border-border/60 text-center font-bold text-text-primary">
                           {st.total_sessions || 0}
                         </td>
+                        )}
+                        {isColVisible('level') && (
                         <td className="px-3 py-2.5 border-r border-border/60 text-text-secondary whitespace-nowrap">
                           {st.level || '-'}
                         </td>
+                        )}
+                        {isColVisible('email') && (
                         <td className="px-3 py-2.5 border-r border-border/60 text-text-muted whitespace-nowrap">
                           {st.email || '-'}
                         </td>
+                        )}
+                        {isColVisible('model_type') && (
                         <td className="px-3 py-2.5 border-r-2 border-border/80 text-text-secondary whitespace-nowrap">
                           <Badge variant="neutral" size="sm">
                             {formatClassModel(st.model_type)}
                           </Badge>
                         </td>
+                        )}
 
                         {/* Cột Y -> AB */}
                         <td className="px-3 py-2.5 border-r border-border/60 text-center font-black text-emerald-800 bg-emerald-50/40">

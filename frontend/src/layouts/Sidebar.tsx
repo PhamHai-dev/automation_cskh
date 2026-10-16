@@ -19,6 +19,7 @@ import {
   MessageSquare,
   CalendarCheck,
   ClipboardCheck,
+  Settings,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -201,6 +202,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
           path: '/settings/users',
           icon: <ShieldCheck className="w-5 h-5 shrink-0" />,
           allowedRoles: ['ADMIN'],
+        },
+      ],
+    },
+    {
+      title: 'CÁ NHÂN',
+      items: [
+        {
+          name: 'Cấu hình cá nhân',
+          path: '/settings/preferences',
+          icon: <Settings className="w-5 h-5 shrink-0" />,
+          // All authenticated users
         },
       ],
     },

@@ -27,6 +27,7 @@ import { AutomationWorkflowDetailPage } from './features/automation/pages/Automa
 import { AttendanceReconciliationPage } from './features/attendance/pages/AttendanceReconciliationPage';
 import { MyTeachingSessionsPage } from './features/attendance/pages/MyTeachingSessionsPage';
 import { TeacherAttendanceTrackingPage } from './features/attendance/pages/TeacherAttendanceTrackingPage';
+import { PreferencesPage } from './features/preferences/pages/PreferencesPage';
 import './styles/globals.css';
 import './styles/tokens.css';
 
@@ -44,6 +45,10 @@ function App() {
           <Route element={<AppLayout />}>
             {/* Command Center / Home */}
             <Route path="/" element={<HomePage />} />
+
+            {/* Personal preferences — all authenticated users */}
+            <Route path="/settings/preferences" element={<PreferencesPage />} />
+            <Route path="/cai-dat/cau-hinh" element={<Navigate to="/settings/preferences" replace />} />
 
             {/* Admin Settings */}
             <Route element={<ProtectedRoute allowedRoles={['ADMIN']} />}>

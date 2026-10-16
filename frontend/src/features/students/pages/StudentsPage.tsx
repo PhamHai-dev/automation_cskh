@@ -15,6 +15,7 @@ import { Modal } from '../../../components/ui/Modal';
 import { useToast } from '../../../components/ui/Toast';
 import { HorizontalTabs } from '../../../components/ui/HorizontalTabs';
 import { useAuth } from '../../../contexts/AuthContext';
+import { useColumnVisibility } from '../../preferences/hooks/useColumnVisibility';
 import {
   Edit,
   Plus,
@@ -275,6 +276,15 @@ export const StudentsPage: React.FC = () => {
 
   // Active tab state: 'students' (Tab 1) | 'care_reports' (Tab 2)
   const [activeTab, setActiveTab] = useState<'students' | 'care_reports'>('students');
+
+  // Column visibility preference (per user, per tab)
+  const { visible: visibleColumns } = useColumnVisibility(
+    activeTab === 'students' ? 'students.tab1' : 'students.tab2',
+  );
+
+  // Helper: keep a column unless the user hid it (columns without key are always kept)
+  const keepColumn = (col: Column<Student>): boolean =>
+    !col.key || visibleColumns[col.key] !== false;
 
   const [students, setStudents] = useState<Student[]>([]);
   const [loading, setLoading] = useState(true);
@@ -660,6 +670,7 @@ export const StudentsPage: React.FC = () => {
   // --- CỘT CHUNG (A ➔ I): CỐ ĐỊNH Ở CẢ 2 TAB ---
   const commonColumnsAtoI: Column<Student>[] = [
     {
+      key: 'stt',
       header: '#',
       cell: (item) => (
         <span className="font-bold text-slate-400 text-xs text-center block w-6">
@@ -668,6 +679,7 @@ export const StudentsPage: React.FC = () => {
       ),
     },
     {
+      key: 'external_id',
       header: 'Mã học viên',
       cell: (item) => (
         <span className="font-mono font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded text-[11px] whitespace-nowrap">
@@ -676,6 +688,7 @@ export const StudentsPage: React.FC = () => {
       ),
     },
     {
+      key: 'paid_at',
       header: 'Ngày nộp học phí',
       cell: (item) => {
         const enr = item.enrollments?.[0];
@@ -688,6 +701,7 @@ export const StudentsPage: React.FC = () => {
       },
     },
     {
+      key: 'sale_name',
       header: 'Sale phụ trách',
       cell: (item) => {
         const enr = item.enrollments?.[0];
@@ -701,6 +715,7 @@ export const StudentsPage: React.FC = () => {
       },
     },
     {
+      key: 'student_source_status',
       header: 'Trạng thái học viên',
       cell: (item) => {
         const enr = item.enrollments?.[0];
@@ -713,6 +728,7 @@ export const StudentsPage: React.FC = () => {
       },
     },
     {
+      key: 'full_name',
       header: 'Họ và tên',
       cell: (item) => (
         <div className="flex items-center space-x-2 whitespace-nowrap">
@@ -729,6 +745,7 @@ export const StudentsPage: React.FC = () => {
       ),
     },
     {
+      key: 'gender',
       header: 'Giới tính',
       cell: (item) => (
         <span className="text-slate-600 text-xs whitespace-nowrap">
@@ -737,6 +754,7 @@ export const StudentsPage: React.FC = () => {
       ),
     },
     {
+      key: 'phone',
       header: 'Số điện thoại',
       cell: (item) => (
         <span className="font-mono text-slate-700 text-xs whitespace-nowrap">
@@ -745,6 +763,7 @@ export const StudentsPage: React.FC = () => {
       ),
     },
     {
+      key: 'email',
       header: 'Email',
       cell: (item) => (
         <span className="text-slate-600 text-xs max-w-[160px] truncate block" title={item.email || ''}>
@@ -753,6 +772,7 @@ export const StudentsPage: React.FC = () => {
       ),
     },
     {
+      key: 'course_content',
       header: 'Nội dung khóa học',
       cell: (item) => {
         const enr = item.enrollments?.[0];
@@ -767,6 +787,7 @@ export const StudentsPage: React.FC = () => {
 
   // --- CỘT THAO TÁC CUỐI BẢNG ---
   const actionColumn: Column<Student> = {
+    key: 'action',
     header: 'Thao tác',
     className: 'text-right sticky right-0 bg-white z-10 shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.06)]',
     cell: (item) => (
@@ -801,6 +822,7 @@ export const StudentsPage: React.FC = () => {
   const tab1Columns: Column<Student>[] = [
     ...commonColumnsAtoI,
     {
+      key: 'payment_status',
       header: 'Trạng thái thanh toán',
       cell: (item) => {
         const enr = item.enrollments?.[0];
@@ -813,6 +835,7 @@ export const StudentsPage: React.FC = () => {
       },
     },
     {
+      key: 'package_name',
       header: 'Gói học',
       cell: (item) => {
         const enr = item.enrollments?.[0];
@@ -824,6 +847,7 @@ export const StudentsPage: React.FC = () => {
       },
     },
     {
+      key: 'khoa_hoc',
       header: 'Khóa học',
       cell: (item) => {
         const enr = item.enrollments?.[0];
@@ -835,6 +859,7 @@ export const StudentsPage: React.FC = () => {
       },
     },
     {
+      key: 'level',
       header: 'Trình độ',
       cell: (item) => {
         const enr = item.enrollments?.[0];
@@ -846,6 +871,7 @@ export const StudentsPage: React.FC = () => {
       },
     },
     {
+      key: 'total_sessions',
       header: 'Tổng số buổi',
       cell: (item) => {
         const enr = item.enrollments?.[0];
@@ -857,6 +883,7 @@ export const StudentsPage: React.FC = () => {
       },
     },
     {
+      key: 'class_model',
       header: 'Mô hình lớp',
       cell: (item) => {
         const enr = item.enrollments?.[0];
@@ -868,6 +895,7 @@ export const StudentsPage: React.FC = () => {
       },
     },
     {
+      key: 'sales_note',
       header: 'Ghi chú sale',
       cell: (item) => {
         const enr = item.enrollments?.[0];
@@ -882,6 +910,7 @@ export const StudentsPage: React.FC = () => {
       },
     },
     {
+      key: 'date_of_birth',
       header: 'Ngày sinh',
       cell: (item) => (
         <span className="text-slate-600 text-xs whitespace-nowrap">
@@ -890,6 +919,7 @@ export const StudentsPage: React.FC = () => {
       ),
     },
     {
+      key: 'occupation',
       header: 'Nghề nghiệp',
       cell: (item) => (
         <span className="text-slate-600 text-xs whitespace-nowrap">
@@ -898,6 +928,7 @@ export const StudentsPage: React.FC = () => {
       ),
     },
     {
+      key: 'model_type',
       header: 'Mô hình',
       cell: (item) => {
         const enr = item.enrollments?.[0];
@@ -909,6 +940,7 @@ export const StudentsPage: React.FC = () => {
       },
     },
     {
+      key: 'remaining_sessions',
       header: 'Số buổi còn lại',
       cell: (item) => {
         const enr = item.enrollments?.[0];
@@ -991,6 +1023,7 @@ export const StudentsPage: React.FC = () => {
       },
     },
     {
+      key: 'start_date',
       header: 'Ngày bắt đầu học',
       cell: (item) => {
         const enr = item.enrollments?.[0];
@@ -1002,6 +1035,7 @@ export const StudentsPage: React.FC = () => {
       },
     },
     {
+      key: 'status',
       header: 'Trạng thái',
       cell: (item) => {
         const enr = item.enrollments?.[0];
@@ -1011,6 +1045,7 @@ export const StudentsPage: React.FC = () => {
       },
     },
     {
+      key: 'end_date',
       header: 'Ngày kết thúc / bảo lưu',
       cell: (item) => {
         const enr = item.enrollments?.[0];
@@ -1022,6 +1057,7 @@ export const StudentsPage: React.FC = () => {
       },
     },
     {
+      key: 'start_time',
       header: 'Giờ học',
       cell: (item) => {
         const ec = item.enrollments?.[0]?.enrollment_classes?.[0];
@@ -1036,6 +1072,7 @@ export const StudentsPage: React.FC = () => {
       },
     },
     {
+      key: 'schedule_pattern',
       header: 'Lịch học',
       cell: (item) => {
         const ec = item.enrollments?.[0]?.enrollment_classes?.[0];
@@ -1050,6 +1087,7 @@ export const StudentsPage: React.FC = () => {
       },
     },
     {
+      key: 'duration_minutes',
       header: 'Thời lượng',
       cell: (item) => {
         const ec = item.enrollments?.[0]?.enrollment_classes?.[0];
@@ -1067,10 +1105,12 @@ export const StudentsPage: React.FC = () => {
       },
     },
     {
+      key: 'recurring',
       header: 'Vòng lặp',
       cell: () => <span className="text-slate-500 text-xs whitespace-nowrap">Hàng tuần</span>,
     },
     {
+      key: 'ngay_hoc',
       header: 'Ngày học',
       cell: (item) => {
         const ec = item.enrollments?.[0]?.enrollment_classes?.[0];
@@ -1083,6 +1123,7 @@ export const StudentsPage: React.FC = () => {
       },
     },
     {
+      key: 'teacher_name',
       header: 'Giáo viên',
       cell: (item) => {
         const ec = item.enrollments?.[0]?.enrollment_classes?.[0];
@@ -1095,6 +1136,7 @@ export const StudentsPage: React.FC = () => {
       },
     },
     {
+      key: 'teacher_code',
       header: 'Mã giáo viên',
       cell: (item) => {
         const ec = item.enrollments?.[0]?.enrollment_classes?.[0];
@@ -1108,6 +1150,7 @@ export const StudentsPage: React.FC = () => {
       },
     },
     {
+      key: 'class_name',
       header: 'Tên lớp',
       cell: (item) => {
         const ec = item.enrollments?.[0]?.enrollment_classes?.[0];
@@ -1122,6 +1165,7 @@ export const StudentsPage: React.FC = () => {
       },
     },
     {
+      key: 'attended_prev',
       header: 'Đã học năm trước',
       cell: (item) => {
         const enr = item.enrollments?.[0];
@@ -1191,6 +1235,7 @@ export const StudentsPage: React.FC = () => {
       },
     },
     {
+      key: 'attended_this_year',
       header: 'Đã học 2026',
       cell: (item) => {
         const ec = item.enrollments?.[0]?.enrollment_classes?.[0];
@@ -1217,6 +1262,7 @@ export const StudentsPage: React.FC = () => {
   const tab2Columns: Column<Student>[] = [
     ...commonColumnsAtoI,
     {
+      key: 'study_report_url',
       header: 'Báo cáo học tập',
       cell: (item) => {
         const enr = item.enrollments?.[0];
@@ -1230,6 +1276,7 @@ export const StudentsPage: React.FC = () => {
       },
     },
     {
+      key: 'exchange_info',
       header: 'Trao đổi với học viên',
       cell: (item) => {
         const enr = item.enrollments?.[0];
@@ -1245,6 +1292,7 @@ export const StudentsPage: React.FC = () => {
       },
     },
     {
+      key: 'callback_note',
       header: 'Lịch hẹn gọi',
       cell: (item) => {
         const enr = item.enrollments?.[0];
@@ -1262,6 +1310,7 @@ export const StudentsPage: React.FC = () => {
       },
     },
     {
+      key: 'hot_issue_note',
       header: 'Điểm nóng',
       cell: (item) => {
         const enr = item.enrollments?.[0];
@@ -1304,6 +1353,7 @@ export const StudentsPage: React.FC = () => {
 
     // --- CÁC CỘT CUỐI (BD ➔ BH) ---
     {
+      key: 'post_course_care',
       header: 'Chăm sóc sau kết thúc',
       cell: (item) => {
         const enr = item.enrollments?.[0];
@@ -1319,6 +1369,7 @@ export const StudentsPage: React.FC = () => {
       },
     },
     {
+      key: 'end_date',
       header: 'Ngày kết thúc',
       cell: (item) => {
         const enr = item.enrollments?.[0];
@@ -1330,6 +1381,7 @@ export const StudentsPage: React.FC = () => {
       },
     },
     {
+      key: 'handed_over_at',
       header: 'Ngày bàn giao',
       cell: (item) => {
         const enr = item.enrollments?.[0];
@@ -1341,6 +1393,7 @@ export const StudentsPage: React.FC = () => {
       },
     },
     {
+      key: 'paid_month',
       header: 'Tháng nộp học phí',
       cell: (item) => {
         const enr = item.enrollments?.[0];
@@ -1355,6 +1408,7 @@ export const StudentsPage: React.FC = () => {
       },
     },
     {
+      key: 'account_created_at',
       header: 'Ngày tạo tài khoản',
       cell: (item) => {
         const enr = item.enrollments?.[0];
@@ -1513,7 +1567,7 @@ export const StudentsPage: React.FC = () => {
 
         <DataTable
           data={filteredStudents}
-          columns={activeTab === 'students' ? tab1Columns : tab2Columns}
+          columns={(activeTab === 'students' ? tab1Columns : tab2Columns).filter(keepColumn)}
           isLoading={loading}
           emptyMessage="Không tìm thấy học viên nào phù hợp với điều kiện lọc."
         />

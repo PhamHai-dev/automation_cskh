@@ -52,6 +52,7 @@ model User {
   attendances_as_teacher           Attendance[]          @relation("AttendanceTeacherUser")
   attendances_as_cs                Attendance[]          @relation("AttendanceCSUser")
   resolved_attendances             Attendance[]          @relation("AttendanceResolver")
+  user_preferences                 UserPreference[]
 
   @@map("users")
 }
@@ -876,6 +877,22 @@ model AppSetting {
   updated_by User? @relation("AppSettingUpdater", fields: [updated_by_id], references: [id])
 
   @@map("app_settings")
+}
+
+// Per-user UI preferences (column visibility per scope/tab)
+model UserPreference {
+  id         Int      @id @default(autoincrement())
+  user_id    Int
+  scope      String   @db.VarChar(64) // e.g. "enrollments.quick"
+  value      Json     // { [columnKey: string]: boolean } — only stores deltas from default
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@unique([user_id, scope])
+  @@index([user_id])
+  @@map("user_preferences")
 }
 
 enum ImportType {
