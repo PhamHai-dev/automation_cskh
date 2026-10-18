@@ -28,6 +28,7 @@ import { prisma } from '../../prisma/client';
 import { createLogger } from '../../shared/logger/logger';
 import { encryptJson, decryptJson } from '../../shared/crypto/aes-gcm';
 import { withProxy } from './proxy-util';
+import { createProxyFetch } from '../../shared/network/proxy-dispatcher';
 import { emitToAccount } from '../../shared/realtime/socket-singleton';
 import type { ZaloSessionData } from './types/zalo.types';
 import { PoolAccountStatus } from './types/zalo.types';
@@ -128,10 +129,17 @@ class ZaloAccountPool extends EventEmitter {
     this.teardownExisting(accountId);
     this.reconnecting.delete(accountId);
 
+    const accountRecord = await prisma.zaloAccount.findUnique({
+      where: { id: accountId },
+      select: { proxy_url: true },
+    }).catch(() => null);
+    const proxyUrl = accountRecord?.proxy_url ?? null;
+
     const epoch = this.nextEpoch();
     const zalo = new ZaloClass({
       logging: false,
       selfListen: true,
+      polyfill: createProxyFetch(proxyUrl),
       // F8: image metadata getter for send-image dimensions
       imageMetadataGetter: async (filePath: string) => {
         try {
@@ -156,7 +164,7 @@ class ZaloAccountPool extends EventEmitter {
     return new Promise((resolve, reject) => {
       const isCurrentEpoch = () => this.instances.get(accountId)?.epoch === epoch;
 
-      zalo.loginQR({}, (event: any) => {
+      withProxy(proxyUrl, () => zalo.loginQR({}, (event: any) => {
         if (!isCurrentEpoch()) return;
 
         switch (event.type) {
@@ -186,7 +194,7 @@ class ZaloAccountPool extends EventEmitter {
             this.saveSession(accountId, event.data);
             break;
         }
-      }).then((api: any) => {
+      })).then((api: any) => {
         if (!isCurrentEpoch()) {
           log.warn('loginQR resolved but epoch changed', { accountId });
           try { api?.listener?.stop?.(); } catch { /* ignore */ }
@@ -232,7 +240,7 @@ class ZaloAccountPool extends EventEmitter {
     // (copy từ ZaloCRM L338-349)
     const eligibility = await prisma.zaloAccount.findUnique({
       where: { id: accountId },
-      select: { zalo_uid: true, archived_at: true, disconnect_reason: true },
+      select: { zalo_uid: true, archived_at: true, disconnect_reason: true, proxy_url: true },
     });
     if (!eligibility || eligibility.archived_at !== null) {
       log.info(`[zalo:${accountId}] reconnect() skip — ghost/archived`);
@@ -250,6 +258,8 @@ class ZaloAccountPool extends EventEmitter {
     }
     this.reconnecting.add(accountId);
 
+    const proxyUrl = eligibility.proxy_url ?? null;
+
     try {
       // Teardown existing + fresh epoch
       this.teardownExisting(accountId);
@@ -257,6 +267,7 @@ class ZaloAccountPool extends EventEmitter {
       const zalo = new ZaloClass({
         logging: false,
         selfListen: true,
+        polyfill: createProxyFetch(proxyUrl),
         imageMetadataGetter: async (filePath: string) => {
           try {
             const { readFile } = await import('fs/promises');
@@ -277,7 +288,7 @@ class ZaloAccountPool extends EventEmitter {
       // Decrypt stored session
       const session = decryptJson<ZaloSessionData>(encryptedSession);
 
-      const api: any = await withProxy(null, () => zalo.login({
+      const api: any = await withProxy(proxyUrl, () => zalo.login({
         cookie: session.cookies,
         imei: session.imei,
         userAgent: session.userAgent,
@@ -359,7 +370,8 @@ class ZaloAccountPool extends EventEmitter {
    * Returns true if a live client is available after the attempt.
    * Mirrors autoReconnect(): skips manual-disconnect / archived / missing session.
    */
-  async tryReconnect(accountId: number): Promise<boolean> {
+  async tryReconnect(accountId: number | null | undefined): Promise<boolean> {
+    if (!accountId) return false;
     if (this.getApi(accountId)) return true;
 
     const account = await prisma.zaloAccount.findUnique({
@@ -608,16 +620,19 @@ class ZaloAccountPool extends EventEmitter {
     log.info('Disconnected', { accountId });
   }
 
-  getStatus(accountId: number): string {
+  getStatus(accountId: number | null | undefined): string {
+    if (!accountId) return 'disconnected';
     return this.instances.get(accountId)?.status ?? 'disconnected';
   }
 
-  getApi(accountId: number): any | null {
+  getApi(accountId: number | null | undefined): any | null {
+    if (!accountId) return null;
     const inst = this.instances.get(accountId);
     return inst?.status === 'connected' ? inst.api : null;
   }
 
-  getInstance(accountId: number): ZaloInstance | undefined {
+  getInstance(accountId: number | null | undefined): ZaloInstance | undefined {
+    if (!accountId) return undefined;
     return this.instances.get(accountId);
   }
 

@@ -25,19 +25,22 @@ export interface CategoryLimit {
   burstWindowMs: number;
 }
 
-// Fallback constants — last resort if DB has no row for category
+// Fallback constants — last resort if DB has no row for category.
+// Note: friend_lookup is strictly capped (daily: 60, burst: 4 / 5min) because Zalo
+// blocks phone searches with error -216 if >15-20 lookups/hour are attempted.
 export const DEFAULT_SDK_LIMITS: Record<OpCategory, CategoryLimit> = {
-  message:       { daily: 200,  burst: 20, burstWindowMs: 30_000 },
-  reaction:      { daily: 300,  burst: 10, burstWindowMs: 30_000 },
-  chat_action:   { daily: 500,  burst: 15, burstWindowMs: 30_000 },
-  group_admin:   { daily: 50,   burst: 5,  burstWindowMs: 60_000 },
-  group_read:    { daily: 1000, burst: 20, burstWindowMs: 30_000 },
-  friend_action: { daily: 30,   burst: 8,  burstWindowMs: 60_000 },
-  friend_read:   { daily: 500,  burst: 10, burstWindowMs: 30_000 },
-  profile:       { daily: 10,   burst: 3,  burstWindowMs: 60_000 },
-  query:         { daily: 2000, burst: 30, burstWindowMs: 30_000 },
-  friend_lookup: { daily: 1000, burst: 15, burstWindowMs: 30_000 },
-  contact_sync:  { daily: 100,  burst: 5,  burstWindowMs: 60_000 },
+  message:          { daily: 200,  burst: 20, burstWindowMs: 30_000 },
+  stranger_message: { daily: 40,   burst: 5,  burstWindowMs: 60_000 },
+  reaction:         { daily: 300,  burst: 10, burstWindowMs: 30_000 },
+  chat_action:      { daily: 500,  burst: 15, burstWindowMs: 30_000 },
+  group_admin:      { daily: 50,   burst: 5,  burstWindowMs: 60_000 },
+  group_read:       { daily: 1000, burst: 20, burstWindowMs: 30_000 },
+  friend_action:    { daily: 30,   burst: 8,  burstWindowMs: 60_000 },
+  friend_read:      { daily: 500,  burst: 10, burstWindowMs: 30_000 },
+  profile:          { daily: 10,   burst: 3,  burstWindowMs: 60_000 },
+  query:            { daily: 2000, burst: 30, burstWindowMs: 30_000 },
+  friend_lookup:    { daily: 60,   burst: 4,  burstWindowMs: 300_000 },
+  contact_sync:     { daily: 100,  burst: 5,  burstWindowMs: 60_000 },
 };
 
 export const ALL_CATEGORIES = Object.keys(DEFAULT_SDK_LIMITS) as OpCategory[];
@@ -84,6 +87,52 @@ export async function getEffectiveLimit(nickId: number, category: OpCategory): P
     log.warn('getEffectiveLimit failed', { nickId, category, error: String(err) });
     return fallback;
   }
+}
+
+/**
+ * Return effective limits across all categories for a given nick.
+ */
+export async function getAllEffectiveLimits(nickId: number): Promise<Record<OpCategory, CategoryLimit>> {
+  const entries = await Promise.all(
+    ALL_CATEGORIES.map(async (cat) => [cat, await getEffectiveLimit(nickId, cat)] as const),
+  );
+  return Object.fromEntries(entries) as Record<OpCategory, CategoryLimit>;
+}
+
+/**
+ * Upsert a category limit override for a specific nick (`nickId = number`) or global default (`nickId = null`),
+ * then invalidate the in-memory cache.
+ */
+export async function upsertAccountLimit(
+  nickId: number | null,
+  category: OpCategory,
+  data: { daily_limit: number; burst_limit: number; burst_window_ms: number },
+) {
+  const daily_limit = Math.max(1, Math.floor(data.daily_limit));
+  const burst_limit = Math.max(1, Math.floor(data.burst_limit));
+  const burst_window_ms = Math.max(1_000, Math.floor(data.burst_window_ms));
+
+  const existing = await prisma.sdkLimit.findFirst({
+    where: { zalo_account_id: nickId, category },
+  });
+
+  const saved = existing
+    ? await prisma.sdkLimit.update({
+        where: { id: existing.id },
+        data: { daily_limit, burst_limit, burst_window_ms },
+      })
+    : await prisma.sdkLimit.create({
+        data: {
+          zalo_account_id: nickId,
+          category,
+          daily_limit,
+          burst_limit,
+          burst_window_ms,
+        },
+      });
+
+  invalidateLimitCache(nickId ?? undefined);
+  return saved;
 }
 
 /**
