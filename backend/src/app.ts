@@ -78,13 +78,13 @@ app.use('/api/v1/classes/:classId/sessions', classSessionsRouter);
 app.use('/api/v1/classes/:classId/sessions/:sessionId/attendance', attendanceRouter);
 app.use('/api/v1/attendance-reconciliation', reconciliationRouter);
 app.use('/api/v1/imports', importsRouter);
-app.use('/api/v1', careRouter);
 app.use('/api/v1/dashboard', dashboardRouter);
 app.use('/api/v1/zalo', zaloRouter);
 app.use('/api/v1/line', lineRouter);
 app.use('/api/v1/automation', automationRouter);
 app.use('/api/v1/settings/auto-attendance', autoAttendanceRouter);
 app.use('/api/v1/me/preferences', preferencesRouter);
+app.use('/api/v1', careRouter);
 
 // Error handling
 app.use(errorMiddleware);
