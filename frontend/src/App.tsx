@@ -22,6 +22,11 @@ import { StudentZaloLinkPage } from './features/zalo/pages/StudentZaloLinkPage';
 import { ZaloContactsPage } from './features/zalo/pages/ZaloContactsPage';
 import { ZaloGroupsPage } from './features/zalo/pages/ZaloGroupsPage';
 import { ZaloChatPage } from './features/zalo/pages/ZaloChatPage';
+import { LineAccountsPage } from './features/line/pages/LineAccountsPage';
+import { LineContactsPage } from './features/line/pages/LineContactsPage';
+import { LineGroupsPage } from './features/line/pages/LineGroupsPage';
+import { LineChatPage } from './features/line/pages/LineChatPage';
+import { StudentLineLinkPage } from './features/line/pages/StudentLineLinkPage';
 import { AutomationWorkflowsPage } from './features/automation/pages/AutomationWorkflowsPage';
 import { AutomationWorkflowDetailPage } from './features/automation/pages/AutomationWorkflowDetailPage';
 import { AttendanceReconciliationPage } from './features/attendance/pages/AttendanceReconciliationPage';
@@ -86,6 +91,14 @@ function App() {
               <Route path="/zalo/danh-ba" element={<ZaloContactsPage />} />
               <Route path="/zalo/nhom" element={<ZaloGroupsPage />} />
               <Route path="/zalo/chat" element={<ZaloChatPage />} />
+
+              <Route path="/line" element={<LineAccountsPage />} />
+              <Route path="/line/tai-khoan" element={<Navigate to="/line" replace />} />
+              <Route path="/line/danh-ba" element={<LineContactsPage />} />
+              <Route path="/line/nhom" element={<LineGroupsPage />} />
+              <Route path="/line/chat" element={<LineChatPage />} />
+              <Route path="/line/lien-ket" element={<StudentLineLinkPage />} />
+
               <Route path="/automation" element={<AutomationWorkflowsPage />} />
               <Route path="/automation/:id" element={<AutomationWorkflowDetailPage />} />
 
