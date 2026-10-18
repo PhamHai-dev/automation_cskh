@@ -147,7 +147,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       ],
     },
     {
-      title: 'TỰ ĐỘNG HÓA',
+      title: 'TỰ ĐỘNG HÓA & ZALO',
       items: [
         {
           name: 'Tài khoản Zalo',
@@ -184,6 +184,42 @@ export const Sidebar: React.FC<SidebarProps> = ({
           name: 'Automation Workflow',
           path: '/automation',
           icon: <Zap className="w-5 h-5 shrink-0" />,
+          allowedRoles: ['ADMIN', 'MANAGE', 'CS'],
+        },
+      ],
+    },
+    {
+      title: 'TÍCH HỢP LINE',
+      items: [
+        {
+          name: 'Tài khoản LINE',
+          path: '/line',
+          icon: <MessageSquare className="w-5 h-5 shrink-0" />,
+          allowedRoles: ['ADMIN', 'MANAGE', 'CS'],
+          end: true,
+        },
+        {
+          name: 'Danh bạ LINE',
+          path: '/line/danh-ba',
+          icon: <Users className="w-5 h-5 shrink-0" />,
+          allowedRoles: ['ADMIN', 'MANAGE', 'CS'],
+        },
+        {
+          name: 'Nhóm LINE',
+          path: '/line/nhom',
+          icon: <Users className="w-5 h-5 shrink-0" />,
+          allowedRoles: ['ADMIN', 'MANAGE', 'CS'],
+        },
+        {
+          name: 'Tin nhắn LINE',
+          path: '/line/chat',
+          icon: <MessageSquare className="w-5 h-5 shrink-0" />,
+          allowedRoles: ['ADMIN', 'MANAGE', 'CS'],
+        },
+        {
+          name: 'Liên kết HV ↔ LINE',
+          path: '/line/lien-ket',
+          icon: <Link2 className="w-5 h-5 shrink-0" />,
           allowedRoles: ['ADMIN', 'MANAGE', 'CS'],
         },
       ],
