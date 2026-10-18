@@ -96,6 +96,14 @@ export class AutomationService {
     if (!['ADMIN', 'MANAGE'].includes(role) && step.workflow.owner_cs_id !== ownerCsId) {
       throw Object.assign(new Error('Forbidden'), { status: 403 });
     }
+    const effectiveChannel = dto.channel ?? step.channel;
+    const effectiveTargetGroupId = dto.target_group_id !== undefined ? dto.target_group_id : step.target_group_id;
+    if ((effectiveChannel === 'ZALO_GROUP' || effectiveChannel === 'LINE_GROUP') && !effectiveTargetGroupId) {
+      throw Object.assign(
+        new Error(`target_group_id is required for ${effectiveChannel} channel`),
+        { status: 422 },
+      );
+    }
     return automationRepository.updateStep(stepId, dto);
   }
 

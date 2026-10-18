@@ -141,7 +141,7 @@ router.post('/workflows/:id/steps', async (req: Request, res: Response) => {
       session_number: z.number().int().min(1, 'Session number >= 1'),
       trigger_event: z.enum(['ATTENDED', 'ABSENT_APPROVED_A', 'LEAVE_B', 'ABSENT_UNAPPROVED_C', 'TEACHER_ABSENT_D', 'TECH_ERROR_E']),
       delay_minutes: z.number().int().min(0).max(10080),
-      channel: z.enum(['ZALO_PERSONAL', 'ZALO_GROUP']).default('ZALO_PERSONAL'),
+      channel: z.enum(['ZALO_PERSONAL', 'ZALO_GROUP', 'LINE_PERSONAL', 'LINE_GROUP']).default('ZALO_PERSONAL'),
       target_group_id: z.number().int().optional().nullable(),
       message_content: z.string().min(1, 'Message content required').max(5000),
       message_variables: z.array(z.string()).default([]),
@@ -149,9 +149,9 @@ router.post('/workflows/:id/steps', async (req: Request, res: Response) => {
     });
     const dto = schema.parse(req.body);
 
-    // If ZALO_GROUP, target_group_id is required
-    if (dto.channel === 'ZALO_GROUP' && !dto.target_group_id) {
-      return res.status(422).json({ success: false, message: 'target_group_id is required for ZALO_GROUP channel' });
+    // If ZALO_GROUP or LINE_GROUP, target_group_id is required
+    if ((dto.channel === 'ZALO_GROUP' || dto.channel === 'LINE_GROUP') && !dto.target_group_id) {
+      return res.status(422).json({ success: false, message: `target_group_id is required for ${dto.channel} channel` });
     }
 
     const step = await automationService.addStep(workflowId, dto, req.user!.id, getRole(req));
@@ -169,13 +169,21 @@ router.patch('/steps/:stepId', async (req: Request, res: Response) => {
       session_number: z.number().int().min(1).optional(),
       trigger_event: z.enum(['ATTENDED', 'ABSENT_APPROVED_A', 'LEAVE_B', 'ABSENT_UNAPPROVED_C', 'TEACHER_ABSENT_D', 'TECH_ERROR_E']).optional(),
       delay_minutes: z.number().int().min(0).max(10080).optional(),
-      channel: z.enum(['ZALO_PERSONAL', 'ZALO_GROUP']).optional(),
+      channel: z.enum(['ZALO_PERSONAL', 'ZALO_GROUP', 'LINE_PERSONAL', 'LINE_GROUP']).optional(),
       target_group_id: z.number().int().optional().nullable(),
       message_content: z.string().min(1).max(5000).optional(),
       message_variables: z.array(z.string()).optional(),
       active: z.boolean().optional(),
     });
     const dto = schema.parse(req.body);
+
+    if (
+      (dto.channel === 'ZALO_GROUP' || dto.channel === 'LINE_GROUP') &&
+      dto.target_group_id === null
+    ) {
+      return res.status(422).json({ success: false, message: `target_group_id is required for ${dto.channel} channel` });
+    }
+
     const updated = await automationService.updateStep(Number(req.params.stepId), dto, req.user!.id, getRole(req));
     res.json({ success: true, step: updated });
   } catch (err: any) {

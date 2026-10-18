@@ -20,6 +20,13 @@ function attendanceToTriggerEvent(status: AttendanceStatus): AutomationTriggerEv
   return status as AutomationTriggerEvent;
 }
 
+export interface ResolvedDeliveryTarget {
+  zaloAccountId?: number | null;
+  zaloGroupId?: number | null;
+  lineAccountId?: number | null;
+  lineGroupId?: number | null;
+}
+
 export interface TriggerResult {
   attendanceId: number;
   deliveriesCreated: number;
@@ -149,7 +156,9 @@ export async function handleAttendanceEvent(attendanceId: number): Promise<Trigg
           stepId: step.id,
           workflowName: step.workflow.name,
           status: 'SKIPPED_NO_LINK',
-          reason: 'No linked Zalo account / not friend',
+          reason: step.channel.startsWith('LINE_')
+            ? 'No linked LINE account / not friend'
+            : 'No linked Zalo account / not friend',
         });
         continue;
       }
@@ -178,8 +187,10 @@ export async function handleAttendanceEvent(attendanceId: number): Promise<Trigg
         enrollment_id: enrollment.id,
         attendance_id: attendanceId,
         automation_step_id: step.id,
-        zalo_account_id: target.zaloAccountId,
-        zalo_group_id: target.zaloGroupId,
+        zalo_account_id: target.zaloAccountId ?? null,
+        zalo_group_id: target.zaloGroupId ?? null,
+        line_account_id: target.lineAccountId ?? null,
+        line_group_id: target.lineGroupId ?? null,
         scheduled_at: scheduledAt,
         rendered_content: renderedContent,
         variables_snapshot: vars as Record<string, any>,
@@ -258,25 +269,34 @@ async function resolveEnrollmentSessionNumber(
 }
 
 /**
- * Resolve delivery target (which Zalo nick to send from).
+ * Resolve delivery target (which Zalo or LINE account/group to send from).
  *
+ * ZALO_GROUP: Use step.target_group_id → verify group exists + account active.
  * ZALO_PERSONAL: Find ZaloContactRelation where:
  *   - student_id matches enrollment's student
  *   - relation_status = FRIEND
  *   - Prefer nick owned by enrollment.cs_id
  *   - Fallback: any FRIEND nick
  *
- * ZALO_GROUP: Use step.target_group_id → verify group exists + account active.
+ * LINE_GROUP: Use step.target_group_id → verify group exists in prisma.lineGroup + lineAccount is ACTIVE.
+ * LINE_PERSONAL:
+ *   - Priority 1: CS's own active LINE account (OA or PERSONAL) with relation_status = FRIEND
+ *   - Priority 2: Any active OA account linked with the student (relation_status = FRIEND)
+ *   - Priority 3: Any active LineAccount with relation_status = FRIEND
+ *   - Priority 4: Direct Student.line_uid + Active OA Fallback (preferring cs_id === csId)
  */
-async function resolveDeliveryTarget(
+export async function resolveDeliveryTarget(
   step: { channel: string; target_group_id: number | null; workflow: { owner_cs_id: number } },
   enrollmentId: number,
   csId: number,
-): Promise<{ zaloAccountId: number; zaloGroupId?: number } | null> {
+): Promise<ResolvedDeliveryTarget | null> {
   // Load enrollment student_id
   const enrollment = await prisma.enrollment.findUnique({
     where: { id: enrollmentId },
-    select: { student_id: true },
+    select: {
+      student_id: true,
+      student: { select: { id: true, line_uid: true } },
+    },
   });
   if (!enrollment) return null;
 
@@ -294,6 +314,94 @@ async function resolveDeliveryTarget(
     });
     if (!account || account.status !== 'ACTIVE') return null;
     return { zaloAccountId: group.zalo_account_id, zaloGroupId: step.target_group_id };
+  }
+
+  if (step.channel === 'LINE_GROUP') {
+    if (!step.target_group_id) return null;
+    const group = await prisma.lineGroup.findUnique({
+      where: { id: step.target_group_id },
+      select: {
+        line_account_id: true,
+        line_group_id: true,
+        line_account: { select: { status: true } },
+      },
+    });
+    if (!group) return null;
+    const accountStatus = group.line_account?.status ?? (
+      await prisma.lineAccount.findUnique({
+        where: { id: group.line_account_id },
+        select: { status: true },
+      })
+    )?.status;
+    if (accountStatus !== 'ACTIVE') return null;
+    return { lineAccountId: group.line_account_id, lineGroupId: step.target_group_id };
+  }
+
+  if (step.channel === 'LINE_PERSONAL') {
+    // Priority 1: CS's own active LINE account (OA or PERSONAL)
+    const csRelation = await prisma.lineContactRelation.findFirst({
+      where: {
+        student_id: enrollment.student_id,
+        relation_status: 'FRIEND',
+        line_account: { cs_id: csId, status: 'ACTIVE' },
+      },
+    });
+    if (csRelation) {
+      return { lineAccountId: csRelation.line_account_id };
+    }
+
+    // Priority 2: Any active OA account linked with the student
+    const oaRelation = await prisma.lineContactRelation.findFirst({
+      where: {
+        student_id: enrollment.student_id,
+        relation_status: 'FRIEND',
+        line_account: { account_type: 'OA', status: 'ACTIVE' },
+      },
+    });
+    if (oaRelation) {
+      return { lineAccountId: oaRelation.line_account_id };
+    }
+
+    // Priority 3: Any active LineAccount with relation_status === 'FRIEND'
+    const anyLineRelation = await prisma.lineContactRelation.findFirst({
+      where: {
+        student_id: enrollment.student_id,
+        relation_status: 'FRIEND',
+        line_account: { status: 'ACTIVE' },
+      },
+    });
+    if (anyLineRelation) {
+      return { lineAccountId: anyLineRelation.line_account_id };
+    }
+
+    // Priority 4: Direct Student.line_uid + Active OA Fallback
+    const studentLineUid = enrollment.student?.line_uid?.trim();
+    if (studentLineUid) {
+      const csOaAccount = await prisma.lineAccount.findFirst({
+        where: {
+          cs_id: csId,
+          account_type: 'OA',
+          status: 'ACTIVE',
+        },
+        select: { id: true },
+      });
+      if (csOaAccount) {
+        return { lineAccountId: csOaAccount.id };
+      }
+
+      const anyOaAccount = await prisma.lineAccount.findFirst({
+        where: {
+          account_type: 'OA',
+          status: 'ACTIVE',
+        },
+        select: { id: true },
+      });
+      if (anyOaAccount) {
+        return { lineAccountId: anyOaAccount.id };
+      }
+    }
+
+    return null;
   }
 
   // ZALO_PERSONAL: resolve via ZaloContactRelation
