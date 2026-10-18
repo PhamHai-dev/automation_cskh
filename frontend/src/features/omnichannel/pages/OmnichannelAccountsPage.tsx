@@ -1,0 +1,962 @@
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { zaloApi } from '../../zalo/api/zalo.api';
+import { lineApi } from '../../line/api/line.api';
+import type { ZaloAccount, CreateZaloAccountDTO, ZaloSocketStatusEvent } from '../../zalo/types/zalo.types';
+import { ZALO_STATUS_LABELS, ZALO_STATUS_COLORS } from '../../zalo/types/zalo.types';
+import type {
+  LineAccount,
+  CreateLineAccountDTO,
+  LineSocketStatusEvent,
+} from '../../line/types/line.types';
+import { LINE_STATUS_LABELS, LINE_STATUS_COLORS } from '../../line/types/line.types';
+import { PageContainer } from '../../../components/common/PageContainer';
+import { PageHeader } from '../../../components/common/PageHeader';
+import { Button } from '../../../components/ui/Button';
+import { Input } from '../../../components/ui/Input';
+import { useToast } from '../../../components/ui/Toast';
+import { QrLoginDialog } from '../../zalo/components/QrLoginDialog';
+import { LineQrLoginDialog } from '../../line/components/LineQrLoginDialog';
+import { LineOaConfigDialog } from '../../line/components/LineOaConfigDialog';
+import { ZaloAccountsPage } from '../../zalo/pages/ZaloAccountsPage';
+import { LineAccountsPage } from '../../line/pages/LineAccountsPage';
+import {
+  ChannelSecurityLimitsDialog,
+  type SecurityDialogTargetAccount,
+} from '../components/ChannelSecurityLimitsDialog';
+import { useSocket } from '../../../hooks/useSocket';
+import { useAuth } from '../../../contexts/AuthContext';
+import {
+  Plus,
+  QrCode,
+  Trash2,
+  WifiOff,
+  RefreshCw,
+  ShieldCheck,
+  Bot,
+  Smartphone,
+  Settings,
+  Server,
+  MessageSquare,
+  Layers,
+} from 'lucide-react';
+
+type ChannelFilterTab =
+  | 'ALL'
+  | 'ZALO_PERSONAL'
+  | 'LINE_OA'
+  | 'LINE_PERSONAL'
+  | 'ZALO_DETAIL'
+  | 'LINE_DETAIL';
+
+interface UnifiedAccountRow {
+  uidKey: string;
+  platform: 'ZALO' | 'LINE';
+  accountType: 'ZALO_PERSONAL' | 'OA' | 'PERSONAL';
+  id: number;
+  displayName: string;
+  uidOrMid: string | null;
+  phone: string | null;
+  avatarUrl: string | null;
+  csName: string;
+  status: string;
+  statusLabel: string;
+  statusColor: string;
+  proxyUrl: string | null;
+  monthlyQuota: number | null;
+  monthlyConsumption: number | null;
+  lastConnectedAt: string | null;
+  rawZalo?: ZaloAccount;
+  rawLine?: LineAccount;
+}
+
+export const OmnichannelAccountsPage: React.FC<{ initialChannel?: ChannelFilterTab }> = ({
+  initialChannel,
+}) => {
+  const { user } = useAuth();
+  const toast = useToast();
+  const [searchParams] = useSearchParams();
+
+  const initialTabFromQuery = useMemo<ChannelFilterTab>(() => {
+    if (initialChannel) return initialChannel;
+    const ch = searchParams.get('channel')?.toUpperCase();
+    if (ch === 'ZALO') return 'ZALO_PERSONAL';
+    if (ch === 'LINE_OA') return 'LINE_OA';
+    if (ch === 'LINE_PERSONAL') return 'LINE_PERSONAL';
+    if (ch === 'LINE') return 'LINE_DETAIL';
+    return 'ALL';
+  }, [initialChannel, searchParams]);
+
+  const [activeFilter, setActiveFilter] = useState<ChannelFilterTab>(initialTabFromQuery);
+  const [zaloAccounts, setZaloAccounts] = useState<ZaloAccount[]>([]);
+  const [lineAccounts, setLineAccounts] = useState<LineAccount[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // Dialogs
+  const [securityTarget, setSecurityTarget] = useState<SecurityDialogTargetAccount | null>(null);
+  const [zaloQrTarget, setZaloQrTarget] = useState<ZaloAccount | null>(null);
+  const [lineQrTarget, setLineQrTarget] = useState<LineAccount | null>(null);
+  const [lineOaTarget, setLineOaTarget] = useState<LineAccount | null>(null);
+
+  // Quick Add Account Modal
+  const [createChannelType, setCreateChannelType] = useState<
+    'ZALO' | 'LINE_OA' | 'LINE_PERSONAL' | null
+  >(null);
+  const [zaloForm, setZaloForm] = useState<CreateZaloAccountDTO>({
+    cs_id: user?.id || 0,
+    display_name: '',
+    zalo_phone: '',
+    proxy_url: '',
+  });
+  const [lineForm, setLineForm] = useState<CreateLineAccountDTO>({
+    cs_id: user?.id || 0,
+    account_type: 'OA',
+    display_name: '',
+    basic_id: '',
+    channel_id: '',
+    channel_secret: '',
+    channel_access_token: '',
+    line_phone: '',
+    proxy_url: '',
+  });
+  const [creating, setCreating] = useState(false);
+
+  const fetchAllAccounts = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [zRes, lRes] = await Promise.allSettled([
+        zaloApi.listAccounts(),
+        lineApi.listAccounts(),
+      ]);
+      if (zRes.status === 'fulfilled') {
+        setZaloAccounts(Array.isArray(zRes.value) ? zRes.value : []);
+      }
+      if (lRes.status === 'fulfilled') {
+        setLineAccounts(Array.isArray(lRes.value) ? lRes.value : []);
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchAllAccounts();
+  }, [fetchAllAccounts]);
+
+  // Socket.IO live status updates for both Zalo & LINE
+  const { on, off } = useSocket();
+  const handleZaloStatus = useCallback((evt: ZaloSocketStatusEvent) => {
+    setZaloAccounts((prev) =>
+      prev.map((a) =>
+        a.id === evt.accountId ? { ...a, liveStatus: evt.status as ZaloAccount['liveStatus'] } : a,
+      ),
+    );
+  }, []);
+
+  const handleLineStatus = useCallback((evt: LineSocketStatusEvent) => {
+    setLineAccounts((prev) =>
+      prev.map((a) =>
+        a.id === evt.accountId
+          ? {
+              ...a,
+              liveStatus: evt.status,
+              status: evt.status,
+              pin_code: evt.pinCode !== undefined ? evt.pinCode : a.pin_code,
+            }
+          : a,
+      ),
+    );
+  }, []);
+
+  useEffect(() => {
+    on('zalo:status', handleZaloStatus);
+    on('line:status', handleLineStatus);
+    return () => {
+      off('zalo:status', handleZaloStatus);
+      off('line:status', handleLineStatus);
+    };
+  }, [on, off, handleZaloStatus, handleLineStatus]);
+
+  // Build unified rows
+  const unifiedRows = useMemo<UnifiedAccountRow[]>(() => {
+    const zRows: UnifiedAccountRow[] = zaloAccounts.map((z) => {
+      const st = z.liveStatus || z.status;
+      return {
+        uidKey: `ZALO-${z.id}`,
+        platform: 'ZALO',
+        accountType: 'ZALO_PERSONAL',
+        id: z.id,
+        displayName: z.display_name || `Zalo Nick #${z.id}`,
+        uidOrMid: z.zalo_uid,
+        phone: z.zalo_phone,
+        avatarUrl: z.avatar_url,
+        csName: z.cs?.full_name || `CS #${z.cs_id}`,
+        status: st,
+        statusLabel: ZALO_STATUS_LABELS[st] || st,
+        statusColor: ZALO_STATUS_COLORS[st] || 'bg-gray-100 text-gray-600',
+        proxyUrl: z.proxy_url,
+        monthlyQuota: null,
+        monthlyConsumption: null,
+        lastConnectedAt: z.last_connected_at,
+        rawZalo: z,
+      };
+    });
+
+    const lRows: UnifiedAccountRow[] = lineAccounts.map((l) => {
+      const st = l.liveStatus || l.status;
+      return {
+        uidKey: `LINE-${l.id}`,
+        platform: 'LINE',
+        accountType: l.account_type,
+        id: l.id,
+        displayName:
+          l.display_name || (l.account_type === 'OA' ? `LINE OA #${l.id}` : `LINE Nick #${l.id}`),
+        uidOrMid: l.basic_id || l.line_mid,
+        phone: l.line_phone,
+        avatarUrl: l.avatar_url,
+        csName: l.cs?.full_name || l.cs?.name || `CS #${l.cs_id}`,
+        status: st,
+        statusLabel: LINE_STATUS_LABELS[st] || st,
+        statusColor: LINE_STATUS_COLORS[st] || 'bg-gray-100 text-gray-600',
+        proxyUrl: l.proxy_url,
+        monthlyQuota: l.monthly_quota ?? (l.account_type === 'OA' ? 200 : null),
+        monthlyConsumption: l.monthly_consumption ?? (l.account_type === 'OA' ? 0 : null),
+        lastConnectedAt: l.last_connected_at,
+        rawLine: l,
+      };
+    });
+
+    return [...zRows, ...lRows];
+  }, [zaloAccounts, lineAccounts]);
+
+  const filteredRows = useMemo(() => {
+    return unifiedRows.filter((row) => {
+      if (activeFilter === 'ZALO_PERSONAL' && row.accountType !== 'ZALO_PERSONAL') return false;
+      if (activeFilter === 'LINE_OA' && row.accountType !== 'OA') return false;
+      if (activeFilter === 'LINE_PERSONAL' && row.accountType !== 'PERSONAL') return false;
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        const matchName = row.displayName.toLowerCase().includes(q);
+        const matchPhone = (row.phone || '').toLowerCase().includes(q);
+        const matchUid = (row.uidOrMid || '').toLowerCase().includes(q);
+        const matchCs = row.csName.toLowerCase().includes(q);
+        return matchName || matchPhone || matchUid || matchCs;
+      }
+      return true;
+    });
+  }, [unifiedRows, activeFilter, searchQuery]);
+
+  // KPI metrics
+  const activeZaloCount = zaloAccounts.filter(
+    (a) => (a.liveStatus || a.status) === 'ACTIVE',
+  ).length;
+  const activeLineOaCount = lineAccounts.filter(
+    (a) => a.account_type === 'OA' && (a.liveStatus || a.status) === 'ACTIVE',
+  ).length;
+  const activeLinePersonalCount = lineAccounts.filter(
+    (a) => a.account_type === 'PERSONAL' && (a.liveStatus || a.status) === 'ACTIVE',
+  ).length;
+  const totalActiveAccounts = activeZaloCount + activeLineOaCount + activeLinePersonalCount;
+  const proxyPinnedCount = unifiedRows.filter((r) => Boolean(r.proxyUrl)).length;
+  const lineOaQuotaUsed = lineAccounts
+    .filter((a) => a.account_type === 'OA')
+    .reduce((s, a) => s + (a.monthly_consumption || 0), 0);
+  const lineOaQuotaMax = lineAccounts
+    .filter((a) => a.account_type === 'OA')
+    .reduce((s, a) => s + (a.monthly_quota || 200), 0);
+
+  const handleSyncRow = async (row: UnifiedAccountRow) => {
+    try {
+      if (row.platform === 'ZALO') {
+        const [frRes, grRes] = await Promise.allSettled([
+          zaloApi.syncFriends(row.id),
+          zaloApi.refreshGroups(row.id),
+        ]);
+        const grCount = grRes.status === 'fulfilled' ? grRes.value?.synced ?? 0 : 0;
+        const frLoaded = frRes.status === 'fulfilled';
+        toast.success(
+          `Đã đồng bộ Zalo (${frLoaded ? 'Danh bạ + ' : ''}${grCount} nhóm lớp)`,
+        );
+      } else {
+        const [frRes, grRes] = await Promise.allSettled([
+          lineApi.syncFriends(row.id),
+          lineApi.syncGroups(row.id),
+        ]);
+        const frCount =
+          frRes.status === 'fulfilled'
+            ? frRes.value?.synced ?? frRes.value?.upserted ?? 0
+            : 0;
+        const grCount = grRes.status === 'fulfilled' ? grRes.value?.synced ?? 0 : 0;
+        toast.success(`Đã đồng bộ LINE (${frCount} liên hệ, ${grCount} nhóm)`);
+      }
+      fetchAllAccounts();
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Đồng bộ thất bại');
+    }
+  };
+
+  const handleDisconnectRow = async (row: UnifiedAccountRow) => {
+    try {
+      if (row.platform === 'ZALO') {
+        await zaloApi.disconnect(row.id);
+      } else {
+        await lineApi.disconnectAccount(row.id);
+      }
+      toast.success(`Đã ngắt kết nối ${row.displayName}`);
+      fetchAllAccounts();
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Không thể ngắt kết nối');
+    }
+  };
+
+  const handleDeleteRow = async (row: UnifiedAccountRow) => {
+    if (!window.confirm(`Xác nhận xóa tài khoản "${row.displayName}"?`)) return;
+    try {
+      if (row.platform === 'ZALO') {
+        await zaloApi.removeAccount(row.id);
+      } else {
+        await lineApi.deleteAccount(row.id);
+      }
+      toast.success(`Đã xóa tài khoản ${row.displayName}`);
+      fetchAllAccounts();
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Không thể xóa tài khoản');
+    }
+  };
+
+  const handleCreateQuickAccount = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!createChannelType) return;
+    setCreating(true);
+    try {
+      if (createChannelType === 'ZALO') {
+        const created = await zaloApi.createAccount(zaloForm);
+        toast.success('Đã thêm tài khoản Zalo — hãy quét mã QR để kết nối');
+        setCreateChannelType(null);
+        await fetchAllAccounts();
+        if (created) setZaloQrTarget(created);
+      } else {
+        const created = await lineApi.createAccount({
+          ...lineForm,
+          account_type: createChannelType === 'LINE_OA' ? 'OA' : 'PERSONAL',
+        });
+        toast.success(
+          createChannelType === 'LINE_OA'
+            ? 'Đã thêm tài khoản LINE Official Account (OA)'
+            : 'Đã thêm tài khoản LINE Cá nhân — hãy quét mã QR + PIN 6 số',
+        );
+        setCreateChannelType(null);
+        await fetchAllAccounts();
+        if (createChannelType === 'LINE_PERSONAL' && created) {
+          setLineQrTarget(created);
+        } else if (createChannelType === 'LINE_OA' && created) {
+          setLineOaTarget(created);
+        }
+      }
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Không thể tạo tài khoản');
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  return (
+    <PageContainer>
+      <PageHeader
+        title="Tài khoản & Bảo mật Đa kênh (Zalo & LINE)"
+        description="Quản lý tập trung toàn bộ Nick Zalo Cá nhân, LINE Official Account (Bot OA) và LINE Cá nhân (QR + E2EE 6-Digit PIN) cùng cấu hình Proxy & Giới hạn chống khóa nick"
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={fetchAllAccounts}
+              isLoading={loading}
+              leftIcon={<RefreshCw className="w-4 h-4" />}
+            >
+              Làm mới
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => {
+                setZaloForm({ cs_id: user?.id || 0, display_name: '', zalo_phone: '', proxy_url: '' });
+                setCreateChannelType('ZALO');
+              }}
+              leftIcon={<Plus className="w-4 h-4" />}
+            >
+              + Thêm Zalo
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => {
+                setLineForm({
+                  cs_id: user?.id || 0,
+                  account_type: 'OA',
+                  display_name: '',
+                  basic_id: '',
+                  channel_id: '',
+                  channel_secret: '',
+                  channel_access_token: '',
+                  line_phone: '',
+                  proxy_url: '',
+                });
+                setCreateChannelType('LINE_OA');
+              }}
+              leftIcon={<Bot className="w-4 h-4" />}
+            >
+              + Thêm LINE OA
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                setLineForm({
+                  cs_id: user?.id || 0,
+                  account_type: 'PERSONAL',
+                  display_name: '',
+                  line_phone: '',
+                  proxy_url: '',
+                });
+                setCreateChannelType('LINE_PERSONAL');
+              }}
+              leftIcon={<Smartphone className="w-4 h-4" />}
+            >
+              + Thêm LINE Cá nhân (QR)
+            </Button>
+          </div>
+        }
+      />
+
+      {/* Unified KPI Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 mb-5">
+        <div className="bg-white rounded-2xl border border-gray-200 p-4 shadow-xs">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-gray-500">Tổng Kênh Hoạt Động</span>
+            <Layers className="w-4 h-4 text-indigo-600" />
+          </div>
+          <div className="mt-2 flex items-baseline gap-2">
+            <span className="text-2xl font-bold text-gray-900">{totalActiveAccounts}</span>
+            <span className="text-xs text-gray-500">/ {unifiedRows.length} tài khoản</span>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-2xl border border-blue-200 p-4 shadow-xs">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-blue-700">Zalo Cá nhân (Active)</span>
+            <MessageSquare className="w-4 h-4 text-blue-600" />
+          </div>
+          <div className="mt-2 flex items-baseline gap-2">
+            <span className="text-2xl font-bold text-blue-700">{activeZaloCount}</span>
+            <span className="text-xs text-gray-500">/ {zaloAccounts.length} nick</span>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-2xl border border-emerald-200 p-4 shadow-xs">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-emerald-700">LINE Official Account</span>
+            <Bot className="w-4 h-4 text-emerald-600" />
+          </div>
+          <div className="mt-2 flex items-baseline justify-between">
+            <span className="text-2xl font-bold text-emerald-700">{activeLineOaCount}</span>
+            <span className="text-[11px] font-medium text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-full">
+              Quota: {lineOaQuotaUsed}/{lineOaQuotaMax || 200}
+            </span>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-2xl border border-green-200 p-4 shadow-xs">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-green-700">LINE Cá nhân (E2EE)</span>
+            <Smartphone className="w-4 h-4 text-green-600" />
+          </div>
+          <div className="mt-2 flex items-baseline gap-2">
+            <span className="text-2xl font-bold text-green-700">{activeLinePersonalCount}</span>
+            <span className="text-xs text-gray-500">Letter Sealing PIN</span>
+          </div>
+        </div>
+
+        <div className="bg-gradient-to-br from-slate-900 to-indigo-950 text-white rounded-2xl p-4 shadow-xs">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-slate-300">Khiên Chống Khóa & Proxy</span>
+            <ShieldCheck className="w-4 h-4 text-emerald-400" />
+          </div>
+          <div className="mt-2 flex items-baseline justify-between">
+            <span className="text-lg font-bold text-emerald-400">AES-256-GCM</span>
+            <span className="text-[11px] text-slate-300">
+              {proxyPinnedCount}/{unifiedRows.length} gắn Proxy
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* Channel Filter Pills */}
+      <div className="bg-white rounded-2xl border border-gray-200 p-3 mb-5 flex flex-col md:flex-row md:items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-1.5">
+          {[
+            { key: 'ALL', label: `Tất cả kênh (${unifiedRows.length})` },
+            { key: 'ZALO_PERSONAL', label: `Zalo Cá nhân (${zaloAccounts.length})` },
+            {
+              key: 'LINE_OA',
+              label: `LINE Official Account (${lineAccounts.filter((a) => a.account_type === 'OA').length})`,
+            },
+            {
+              key: 'LINE_PERSONAL',
+              label: `LINE Cá nhân QR + E2EE (${lineAccounts.filter((a) => a.account_type === 'PERSONAL').length})`,
+            },
+            { key: 'ZALO_DETAIL', label: 'Quản lý chi tiết Zalo' },
+            { key: 'LINE_DETAIL', label: 'Quản lý chi tiết LINE' },
+          ].map((tab) => (
+            <button
+              key={tab.key}
+              type="button"
+              onClick={() => setActiveFilter(tab.key as ChannelFilterTab)}
+              className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${
+                activeFilter === tab.key
+                  ? 'bg-indigo-600 text-white shadow-xs'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        {activeFilter !== 'ZALO_DETAIL' && activeFilter !== 'LINE_DETAIL' && (
+          <div className="w-full md:w-64">
+            <Input
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Tìm tên nick, SĐT, UID/MID, CS..."
+            />
+          </div>
+        )}
+      </div>
+
+      {/* Mode Switch: Embedded Full Zalo or Full LINE Page vs Unified Table */}
+      {activeFilter === 'ZALO_DETAIL' ? (
+        <div className="bg-white rounded-2xl border border-gray-200 p-4">
+          <ZaloAccountsPage />
+        </div>
+      ) : activeFilter === 'LINE_DETAIL' ? (
+        <div className="bg-white rounded-2xl border border-gray-200 p-4">
+          <LineAccountsPage />
+        </div>
+      ) : (
+        <div className="bg-white rounded-2xl border border-gray-200 shadow-xs overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-gray-50/90 border-b border-gray-200 text-[11px] font-bold text-gray-500 uppercase tracking-wider">
+                  <th className="py-3.5 px-4">Tài khoản & Nền tảng</th>
+                  <th className="py-3.5 px-4">CS Phụ trách</th>
+                  <th className="py-3.5 px-4">Trạng thái</th>
+                  <th className="py-3.5 px-4">Mạng & Proxy Isolation</th>
+                  <th className="py-3.5 px-4">Hạn mức / Quota Tháng</th>
+                  <th className="py-3.5 px-4 text-right">Thao tác nhanh</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100 text-sm">
+                {loading ? (
+                  <tr>
+                    <td colSpan={6} className="py-12 text-center text-gray-500">
+                      Đang tải danh sách tài khoản đa kênh...
+                    </td>
+                  </tr>
+                ) : filteredRows.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="py-12 text-center text-gray-500">
+                      Chưa có tài khoản nào khớp bộ lọc. Hãy nhấn <strong>+ Thêm Zalo</strong> hoặc{' '}
+                      <strong>+ Thêm LINE</strong> ở góc trên.
+                    </td>
+                  </tr>
+                ) : (
+                  filteredRows.map((row) => {
+                    const quotaPct =
+                      row.accountType === 'OA' && row.monthlyQuota
+                        ? Math.min(
+                            100,
+                            Math.round(((row.monthlyConsumption || 0) / row.monthlyQuota) * 100),
+                          )
+                        : null;
+
+                    return (
+                      <tr key={row.uidKey} className="hover:bg-gray-50/70 transition-colors">
+                        {/* Account & Channel Badge */}
+                        <td className="py-3.5 px-4">
+                          <div className="flex items-center gap-3">
+                            {row.avatarUrl ? (
+                              <img
+                                src={row.avatarUrl}
+                                alt=""
+                                referrerPolicy="no-referrer"
+                                className="w-10 h-10 rounded-full object-cover border border-gray-200 shrink-0"
+                              />
+                            ) : (
+                              <div
+                                className={`w-10 h-10 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
+                                  row.platform === 'ZALO'
+                                    ? 'bg-blue-100 text-blue-700'
+                                    : 'bg-emerald-100 text-emerald-700'
+                                }`}
+                              >
+                                {row.displayName.charAt(0).toUpperCase()}
+                              </div>
+                            )}
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="font-bold text-gray-900">{row.displayName}</span>
+                                {row.accountType === 'ZALO_PERSONAL' && (
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-700">
+                                    Zalo
+                                  </span>
+                                )}
+                                {row.accountType === 'OA' && (
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                                    LINE OA
+                                  </span>
+                                )}
+                                {row.accountType === 'PERSONAL' && (
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-green-100 text-green-800">
+                                    LINE Personal
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-xs text-gray-500 mt-0.5">
+                                {row.uidOrMid || `ID #${row.id}`}
+                                {row.phone ? ` · ${row.phone}` : ''}
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+
+                        {/* Owner CS */}
+                        <td className="py-3.5 px-4 text-xs font-medium text-gray-700">
+                          {row.csName}
+                        </td>
+
+                        {/* Status */}
+                        <td className="py-3.5 px-4">
+                          <span
+                            className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${row.statusColor}`}
+                          >
+                            {row.statusLabel}
+                          </span>
+                        </td>
+
+                        {/* Proxy Status */}
+                        <td className="py-3.5 px-4">
+                          {row.proxyUrl ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                              <Server className="w-3.5 h-3.5" />
+                              Proxy Pinned
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium bg-gray-100 text-gray-600">
+                              Direct IP
+                            </span>
+                          )}
+                        </td>
+
+                        {/* Daily Rate Limit / Monthly Quota */}
+                        <td className="py-3.5 px-4">
+                          {row.accountType === 'OA' && quotaPct !== null ? (
+                            <div className="w-44">
+                              <div className="flex justify-between text-[11px] font-semibold text-emerald-800 mb-1">
+                                <span>Push Quota tháng</span>
+                                <span>
+                                  {row.monthlyConsumption || 0}/{row.monthlyQuota || 200} ({quotaPct}
+                                  %)
+                                </span>
+                              </div>
+                              <div className="w-full h-1.5 bg-emerald-100 rounded-full overflow-hidden">
+                                <div
+                                  className="h-full bg-emerald-600 rounded-full"
+                                  style={{ width: `${quotaPct}%` }}
+                                />
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="text-xs text-gray-600">
+                              <div className="font-semibold text-gray-800">
+                                {row.platform === 'ZALO'
+                                  ? 'SĐT: 60/ngày (4/5p)'
+                                  : 'SĐT: 20/ngày (2/10p)'}
+                              </div>
+                              <div className="text-[11px] text-gray-500">
+                                Chống khóa Sliding-Window
+                              </div>
+                            </div>
+                          )}
+                        </td>
+
+                        {/* Actions */}
+                        <td className="py-3.5 px-4 text-right">
+                          <div className="flex items-center justify-end gap-1.5">
+                            {/* Security / Proxy / Rate Limits */}
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() =>
+                                setSecurityTarget({
+                                  platform: row.platform,
+                                  accountId: row.id,
+                                  displayName: row.displayName,
+                                  uidOrMid: row.uidOrMid,
+                                  accountType: row.accountType,
+                                  proxyUrl: row.proxyUrl,
+                                  monthlyQuota: row.monthlyQuota,
+                                  monthlyConsumption: row.monthlyConsumption,
+                                  status: row.status,
+                                })
+                              }
+                              title="Bảo mật / Proxy / Hạn mức / Sao lưu AES-256-GCM"
+                              leftIcon={<ShieldCheck className="w-3.5 h-3.5 text-indigo-600" />}
+                            >
+                              Bảo mật & Hạn mức
+                            </Button>
+
+                            {/* QR Login for Zalo or LINE Personal */}
+                            {row.accountType === 'ZALO_PERSONAL' &&
+                              row.status !== 'ACTIVE' &&
+                              row.rawZalo && (
+                                <Button
+                                  variant="secondary"
+                                  size="sm"
+                                  onClick={() => setZaloQrTarget(row.rawZalo!)}
+                                  title="Đăng nhập QR Zalo"
+                                  leftIcon={<QrCode className="w-3.5 h-3.5" />}
+                                >
+                                  QR
+                                </Button>
+                              )}
+
+                            {row.accountType === 'PERSONAL' &&
+                              row.status !== 'ACTIVE' &&
+                              row.rawLine && (
+                                <Button
+                                  variant="secondary"
+                                  size="sm"
+                                  onClick={() => setLineQrTarget(row.rawLine!)}
+                                  title="Đăng nhập QR + Mã PIN E2EE 6 số LINE"
+                                  leftIcon={<QrCode className="w-3.5 h-3.5" />}
+                                >
+                                  QR + PIN
+                                </Button>
+                              )}
+
+                            {/* OA Webhook & Credentials Config */}
+                            {row.accountType === 'OA' && row.rawLine && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setLineOaTarget(row.rawLine!)}
+                                title="Cấu hình OA & Webhook"
+                              >
+                                <Settings className="w-4 h-4 text-emerald-700" />
+                              </Button>
+                            )}
+
+                            {/* Sync */}
+                            {row.status === 'ACTIVE' && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleSyncRow(row)}
+                                title="Đồng bộ danh bạ & nhóm"
+                              >
+                                <RefreshCw className="w-4 h-4 text-blue-600" />
+                              </Button>
+                            )}
+
+                            {/* Disconnect */}
+                            {row.status === 'ACTIVE' && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleDisconnectRow(row)}
+                                title="Ngắt kết nối"
+                              >
+                                <WifiOff className="w-4 h-4 text-amber-600" />
+                              </Button>
+                            )}
+
+                            {/* Delete */}
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleDeleteRow(row)}
+                              title="Xóa tài khoản"
+                            >
+                              <Trash2 className="w-4 h-4 text-red-500" />
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Quick Create Account Modal */}
+      {createChannelType && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl border border-gray-200 w-full max-w-lg p-6 space-y-4">
+            <h3 className="text-base font-bold text-gray-900">
+              {createChannelType === 'ZALO'
+                ? 'Thêm Tài khoản Zalo Cá nhân'
+                : createChannelType === 'LINE_OA'
+                  ? 'Thêm Tài khoản LINE Official Account (Bot OA)'
+                  : 'Thêm Tài khoản LINE Cá nhân (QR + E2EE 6-Digit PIN)'}
+            </h3>
+
+            <form onSubmit={handleCreateQuickAccount} className="space-y-3">
+              {createChannelType === 'ZALO' ? (
+                <>
+                  <Input
+                    label="Tên hiển thị (Gợi nhớ)"
+                    value={zaloForm.display_name || ''}
+                    onChange={(e) => setZaloForm({ ...zaloForm, display_name: e.target.value })}
+                    placeholder="VD: CSKH Edura - Nick 01"
+                  />
+                  <Input
+                    label="Số điện thoại Zalo"
+                    value={zaloForm.zalo_phone || ''}
+                    onChange={(e) => setZaloForm({ ...zaloForm, zalo_phone: e.target.value })}
+                    placeholder="0901234567"
+                  />
+                  <Input
+                    label="Proxy URL riêng (Tùy chọn — undici ProxyAgent)"
+                    value={zaloForm.proxy_url || ''}
+                    onChange={(e) => setZaloForm({ ...zaloForm, proxy_url: e.target.value })}
+                    placeholder="http://user:pass@ip:port"
+                  />
+                </>
+              ) : createChannelType === 'LINE_OA' ? (
+                <>
+                  <Input
+                    label="Tên LINE Official Account"
+                    value={lineForm.display_name || ''}
+                    onChange={(e) => setLineForm({ ...lineForm, display_name: e.target.value })}
+                    placeholder="VD: Edura Official OA"
+                    required
+                  />
+                  <Input
+                    label="LINE Basic ID (VD: @edura)"
+                    value={lineForm.basic_id || ''}
+                    onChange={(e) => setLineForm({ ...lineForm, basic_id: e.target.value })}
+                    placeholder="@edura"
+                  />
+                  <Input
+                    label="Channel ID"
+                    value={lineForm.channel_id || ''}
+                    onChange={(e) => setLineForm({ ...lineForm, channel_id: e.target.value })}
+                    placeholder="2001234567"
+                  />
+                  <Input
+                    label="Channel Secret"
+                    value={lineForm.channel_secret || ''}
+                    onChange={(e) => setLineForm({ ...lineForm, channel_secret: e.target.value })}
+                    placeholder="Nhập Channel Secret từ LINE Developers Console"
+                  />
+                  <Input
+                    label="Channel Access Token (Long-lived)"
+                    value={lineForm.channel_access_token || ''}
+                    onChange={(e) =>
+                      setLineForm({ ...lineForm, channel_access_token: e.target.value })
+                    }
+                    placeholder="Nhập Channel Access Token"
+                  />
+                </>
+              ) : (
+                <>
+                  <Input
+                    label="Tên hiển thị LINE Cá nhân"
+                    value={lineForm.display_name || ''}
+                    onChange={(e) => setLineForm({ ...lineForm, display_name: e.target.value })}
+                    placeholder="VD: CSKH LINE Personal 01"
+                  />
+                  <Input
+                    label="Số điện thoại LINE"
+                    value={lineForm.line_phone || ''}
+                    onChange={(e) => setLineForm({ ...lineForm, line_phone: e.target.value })}
+                    placeholder="0901234567"
+                  />
+                  <Input
+                    label="Proxy URL riêng (Tùy chọn)"
+                    value={lineForm.proxy_url || ''}
+                    onChange={(e) => setLineForm({ ...lineForm, proxy_url: e.target.value })}
+                    placeholder="http://user:pass@ip:port"
+                  />
+                </>
+              )}
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-gray-100">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setCreateChannelType(null)}
+                >
+                  Hủy
+                </Button>
+                <Button type="submit" isLoading={creating}>
+                  Tạo tài khoản
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Security / Proxy / Rate Limit Modal */}
+      {securityTarget && (
+        <ChannelSecurityLimitsDialog
+          account={securityTarget}
+          onClose={() => setSecurityTarget(null)}
+          onUpdated={fetchAllAccounts}
+        />
+      )}
+
+      {/* Zalo QR Login Dialog */}
+      {zaloQrTarget && (
+        <QrLoginDialog
+          account={zaloQrTarget}
+          onClose={() => setZaloQrTarget(null)}
+          onSuccess={() => {
+            setZaloQrTarget(null);
+            fetchAllAccounts();
+          }}
+        />
+      )}
+
+      {/* LINE Personal QR + 6-Digit E2EE PIN Dialog */}
+      {lineQrTarget && (
+        <LineQrLoginDialog
+          account={lineQrTarget}
+          onClose={() => setLineQrTarget(null)}
+          onSuccess={() => {
+            setLineQrTarget(null);
+            fetchAllAccounts();
+          }}
+        />
+      )}
+
+      {/* LINE OA Webhook & Credentials Dialog */}
+      {lineOaTarget && (
+        <LineOaConfigDialog
+          account={lineOaTarget}
+          onClose={() => setLineOaTarget(null)}
+          onSuccess={() => {
+            setLineOaTarget(null);
+            fetchAllAccounts();
+          }}
+        />
+      )}
+    </PageContainer>
+  );
+};
