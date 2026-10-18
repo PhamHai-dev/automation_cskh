@@ -16,6 +16,8 @@
     "postinstall": "prisma generate"
   },
   "dependencies": {
+    "@evex/linejs": "npm:@jsr/evex__linejs@^3.5.0",
+    "@line/bot-sdk": "^11.3.0",
     "@prisma/client": "^5.0.0",
     "@types/socket.io": "^3.0.1",
     "bcrypt": "^6.0.0",

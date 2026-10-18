@@ -80,13 +80,14 @@ export async function processDeliveryJob(job: Job<SendJobData>): Promise<void> {
     }
 
     // 4. Get Zalo API from pool (try reconnect if not connected)
-    let api = zaloPool.getApi(delivery.zalo_account_id);
+    const zaloAccountId = delivery.zalo_account_id!;
+    let api = zaloPool.getApi(zaloAccountId);
     if (!api) {
       // Attempt auto-reconnect before giving up
-      const reconnected = await zaloPool.tryReconnect(delivery.zalo_account_id);
+      const reconnected = await zaloPool.tryReconnect(zaloAccountId);
       if (reconnected) {
-        api = zaloPool.getApi(delivery.zalo_account_id);
-        log.info('Zalo account auto-reconnected before send', { deliveryId, zaloAccountId: delivery.zalo_account_id });
+        api = zaloPool.getApi(zaloAccountId);
+        log.info('Zalo account auto-reconnected before send', { deliveryId, zaloAccountId });
       }
     }
     if (!api) {
