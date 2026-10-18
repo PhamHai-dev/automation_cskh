@@ -11,7 +11,12 @@
 
 import { getRedisClient } from '../../shared/queue/redis-connection';
 import { createLogger } from '../../shared/logger/logger';
-import { getEffectiveLimit, type CategoryLimit } from './sdk-limit.service';
+import {
+  ALL_CATEGORIES,
+  getAllEffectiveLimits,
+  getEffectiveLimit,
+  type CategoryLimit,
+} from './sdk-limit.service';
 import type { OpCategory } from './zalo-operations';
 
 const log = createLogger('ZaloRateLimiter');
@@ -22,6 +27,28 @@ const BURST_KEY = (acctId: number, cat: string) => `rl:burst:${acctId}:${cat}`;
 interface DailyCounter {
   date: string;
   count: number;
+}
+
+export interface RateLimitCategorySummary {
+  category: OpCategory;
+  usedToday: number;
+  dailyLimit: number;
+  burstLimit: number;
+  burstWindowMs: number;
+  remainingToday: number;
+  usagePct: number;
+}
+
+export class RateLimitExceededError extends Error {
+  public readonly statusCode = 429;
+  public readonly code = 'RATE_LIMIT_EXCEEDED';
+  public readonly category: OpCategory;
+
+  constructor(message: string, category: OpCategory) {
+    super(message);
+    this.name = 'RateLimitExceededError';
+    this.category = category;
+  }
 }
 
 export class ZaloRateLimiter {
@@ -62,6 +89,20 @@ export class ZaloRateLimiter {
     const r = await this.getRedis();
     if (r) return this.checkRedis(r, accountId, category, limits);
     return this.checkMemory(accountId, category, limits);
+  }
+
+  /**
+   * Check limits and record the operation in one call; throws a 429 error if rate-limited.
+   */
+  async consumeOrThrow(accountId: number, category: OpCategory = 'message'): Promise<void> {
+    const check = await this.checkLimits(accountId, category);
+    if (!check.allowed) {
+      throw new RateLimitExceededError(
+        check.reason ?? `Đã vượt giới hạn thao tác (${category})`,
+        category,
+      );
+    }
+    await this.recordSend(accountId, category);
   }
 
   private checkMemory(
@@ -132,8 +173,8 @@ export class ZaloRateLimiter {
 
         const burstKey = BURST_KEY(accountId, category);
         const now = Date.now();
-        await r.zadd(burstKey, String(now), `${now}`);
-        await r.pexpire(burstKey, 120_000);
+        await r.zadd(burstKey, String(now), `${now}:${Math.random().toString(36).slice(2, 7)}`);
+        await r.pexpire(burstKey, 360_000);
         return;
       } catch {
         /* fall through to in-memory */
@@ -144,7 +185,8 @@ export class ZaloRateLimiter {
     const now = Date.now();
     const today = new Date().toISOString().split('T')[0];
 
-    const recent = (this.recentSends.get(key) || []).filter((t) => now - t < 60_000);
+    // Keep up to 10 minutes of recent timestamps for burst windows up to 5+ minutes
+    const recent = (this.recentSends.get(key) || []).filter((t) => now - t < 600_000);
     recent.push(now);
     this.recentSends.set(key, recent);
 
@@ -183,22 +225,8 @@ export class ZaloRateLimiter {
     const today = new Date().toISOString().split('T')[0];
     const result: Record<string, number> = {};
 
-    const categories: OpCategory[] = [
-      'message',
-      'reaction',
-      'chat_action',
-      'group_admin',
-      'group_read',
-      'friend_action',
-      'friend_read',
-      'profile',
-      'query',
-      'friend_lookup',
-      'contact_sync',
-    ];
-
     if (r) {
-      for (const cat of categories) {
+      for (const cat of ALL_CATEGORIES) {
         try {
           const val = await r.hget(DAILY_KEY(accountId, cat), today);
           result[cat] = val ? parseInt(val, 10) : 0;
@@ -209,12 +237,55 @@ export class ZaloRateLimiter {
       return result;
     }
 
-    for (const cat of categories) {
+    for (const cat of ALL_CATEGORIES) {
       const key = `${accountId}:${cat}`;
       const daily = this.dailyCounts.get(key);
       result[cat] = daily && daily.date === today ? daily.count : 0;
     }
     return result;
+  }
+
+  /**
+   * Full rate-limit summary across all categories for an account.
+   */
+  async getAccountRateLimitSummary(accountId: number): Promise<RateLimitCategorySummary[]> {
+    const [effectiveMap, countsMap] = await Promise.all([
+      getAllEffectiveLimits(accountId),
+      this.getDailyCountsForAccount(accountId),
+    ]);
+
+    return ALL_CATEGORIES.map((category) => {
+      const lim = effectiveMap[category];
+      const usedToday = countsMap[category] ?? 0;
+      const dailyLimit = lim.daily;
+      const remainingToday = Math.max(0, dailyLimit - usedToday);
+      const usagePct = dailyLimit > 0 ? Math.min(100, Math.round((usedToday / dailyLimit) * 100)) : 0;
+
+      return {
+        category,
+        usedToday,
+        dailyLimit,
+        burstLimit: lim.burst,
+        burstWindowMs: lim.burstWindowMs,
+        remainingToday,
+        usagePct,
+      };
+    });
+  }
+
+  /** Reset in-memory counters for an account (or all accounts when omitted) — useful in tests. */
+  resetMemory(accountId?: number): void {
+    if (accountId == null) {
+      this.dailyCounts.clear();
+      this.recentSends.clear();
+      return;
+    }
+    for (const k of this.dailyCounts.keys()) {
+      if (k.startsWith(`${accountId}:`)) this.dailyCounts.delete(k);
+    }
+    for (const k of this.recentSends.keys()) {
+      if (k.startsWith(`${accountId}:`)) this.recentSends.delete(k);
+    }
   }
 }
 

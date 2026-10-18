@@ -14,6 +14,7 @@ import { Router, Request, Response } from 'express';
 import { prisma } from '../../prisma/client';
 import { createLogger } from '../../shared/logger/logger';
 import { zaloPool } from './zalo-pool';
+import { zaloRateLimiter } from './zalo-rate-limiter';
 import { checkAccess, resolveAccount, handleError } from './zalo-route-helpers';
 
 const log = createLogger('ZaloChatRoutes');
@@ -409,6 +410,14 @@ router.post('/accounts/:accountId/conversations/:threadId/messages', async (req:
     const isGroup = conversation.thread_type === 'group';
     let sendResult: any;
 
+    const limitCheck = await zaloRateLimiter.checkLimits(accountId, 'message');
+    if (!limitCheck.allowed) {
+      return res.status(429).json({
+        error: limitCheck.reason,
+        code: 'RATE_LIMIT_EXCEEDED',
+      });
+    }
+
     try {
       // zca-js SDK: sendMessage(message, threadId, type?) where type: 0=User, 1=Group
       const threadType = isGroup ? 1 : 0;
@@ -417,6 +426,8 @@ router.post('/accounts/:accountId/conversations/:threadId/messages', async (req:
       log.warn(`SDK send failed for thread ${threadId}: ${sdkErr.message}`);
       return res.status(502).json({ error: 'Gửi tin nhắn thất bại từ Zalo SDK', detail: sdkErr.message });
     }
+
+    await zaloRateLimiter.recordSend(accountId, 'message');
 
     const msg = await prisma.message.create({
       data: {
