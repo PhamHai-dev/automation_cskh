@@ -21,11 +21,23 @@ export interface Class {
   attendance_source: 'LEARNING_SYSTEM' | 'ZOOM';
   active: boolean;
   class_teachers?: ClassTeacher[];
+  class_sessions?: ClassSession[];
   enrollment_classes?: any[];
   class_schedules?: any[];
   created_at: string;
   updated_at: string;
 }
+
+export const formatClassCode = (code?: string | null, id?: number): string => {
+  const trimmed = code ? code.trim() : '';
+  if (trimmed && !/^(CLS_|id\d+$)/i.test(trimmed)) {
+    return trimmed;
+  }
+  if (id && id > 0) {
+    return `class_${String(id).padStart(4, '0')}`;
+  }
+  return trimmed || '—';
+};
 
 export interface CreateClassDTO {
   class_code?: string;
@@ -64,6 +76,7 @@ export interface ClassSession {
   end_time?: string;
   teacher_id?: number;
   status: ClassSessionStatus;
+  attendance?: Attendance[];
   created_by_id: number;
   created_by?: { id: number; name: string; email: string };
   created_at: string;
@@ -99,6 +112,11 @@ export interface Attendance {
   source: AttendanceSource;
   teacher_status?: AttendanceStatus | null;
   cs_status?: AttendanceStatus | null;
+  lesson_topic?: string | null;
+  teacher_note?: string | null;
+  cs_note?: string | null;
+  teacher_submitted_at?: string | null;
+  cs_submitted_at?: string | null;
   reconciliation_state?: ReconciliationState;
   created_by_id: number;
   created_by?: { id: number; name: string; email: string };
@@ -120,16 +138,28 @@ export interface MarkAttendanceDTO {
   enrollment_class_id: number;
   status: AttendanceStatus;
   side?: AttendanceSide;
+  lesson_topic?: string | null;
+  teacher_note?: string | null;
+  cs_note?: string | null;
 }
 
 export interface BulkMarkAttendanceDTO {
-  items: Array<{ enrollment_class_id: number; status: AttendanceStatus }>;
+  items: Array<{
+    enrollment_class_id: number;
+    status: AttendanceStatus;
+    lesson_topic?: string | null;
+    teacher_note?: string | null;
+    cs_note?: string | null;
+  }>;
   side?: AttendanceSide;
 }
 
 export interface UpdateAttendanceDTO {
-  status: AttendanceStatus;
+  status?: AttendanceStatus;
   side?: AttendanceSide;
+  lesson_topic?: string | null;
+  teacher_note?: string | null;
+  cs_note?: string | null;
 }
 
 export const ATTENDANCE_STATUS_LABELS: Record<AttendanceStatus, string> = {

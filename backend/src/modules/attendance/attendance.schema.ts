@@ -8,6 +8,9 @@ export const markAttendanceSchema = z.object({
     enrollment_class_id: z.number().int().positive(),
     status: z.nativeEnum(AttendanceStatus),
     side: attendanceSideSchema.optional(),
+    lesson_topic: z.string().nullable().optional(),
+    teacher_note: z.string().nullable().optional(),
+    cs_note: z.string().nullable().optional(),
   }),
 });
 
@@ -16,6 +19,9 @@ export const bulkMarkAttendanceSchema = z.object({
     items: z.array(z.object({
       enrollment_class_id: z.number().int().positive(),
       status: z.nativeEnum(AttendanceStatus),
+      lesson_topic: z.string().nullable().optional(),
+      teacher_note: z.string().nullable().optional(),
+      cs_note: z.string().nullable().optional(),
     })).min(1),
     side: attendanceSideSchema.optional(),
   }),
@@ -23,8 +29,11 @@ export const bulkMarkAttendanceSchema = z.object({
 
 export const updateAttendanceSchema = z.object({
   body: z.object({
-    status: z.nativeEnum(AttendanceStatus),
+    status: z.nativeEnum(AttendanceStatus).optional(),
     side: attendanceSideSchema.optional(),
+    lesson_topic: z.string().nullable().optional(),
+    teacher_note: z.string().nullable().optional(),
+    cs_note: z.string().nullable().optional(),
   }),
 });
 

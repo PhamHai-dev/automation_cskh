@@ -68,19 +68,24 @@ export interface Enrollment {
       id: number;
       class_name: string;
       class_code?: string;
+      model_type?: string;
+      level?: string;
       class_teachers?: Array<{ teacher?: { name: string }; teacher_code?: string }>;
       class_schedules?: Array<{ schedule_pattern: string; start_time?: string; duration_minutes?: number }>;
-      class_sessions?: Array<{ id: number; session_date: string; session_number: number; status: string }>;
+      class_sessions?: Array<{ id: number; session_date: string; session_number: number; start_time?: string; end_time?: string; status: string }>;
     };
     attendance?: Array<{
       id: number;
       status: string;
       teacher_status?: string | null;
       cs_status?: string | null;
+      lesson_topic?: string | null;
+      teacher_note?: string | null;
+      cs_note?: string | null;
       reconciliation_state?: 'PENDING_TEACHER' | 'PENDING_CS' | 'MATCHED' | 'CONFLICT' | 'RESOLVED';
       deleted_at?: string | null;
       class_session_id: number;
-      class_session?: { id: number; session_date: string; session_number: number };
+      class_session?: { id: number; session_date: string; session_number: number; start_time?: string; end_time?: string };
     }>;
   }>;
 }

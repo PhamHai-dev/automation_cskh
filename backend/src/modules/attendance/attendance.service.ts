@@ -76,7 +76,19 @@ export class AttendanceService {
     await this.assertWriteScope(actor, side, classId, data.enrollment_class_id);
 
     const before = await this.repository.findByEnrollmentClassAndSession(data.enrollment_class_id, sessionId);
-    const result = await this.repository.mark(data.enrollment_class_id, sessionId, data.status, 'MANUAL', actor.id, side);
+    const result = await this.repository.mark(
+      data.enrollment_class_id,
+      sessionId,
+      data.status,
+      'MANUAL',
+      actor.id,
+      side,
+      {
+        lesson_topic: data.lesson_topic,
+        teacher_note: data.teacher_note,
+        cs_note: data.cs_note,
+      },
+    );
     await this.logAudit(actor.id, before ? 'UPDATE' : 'CREATE', 'Attendance', String(result.id), before, result);
     await this.runDownstream(result);
     return result;

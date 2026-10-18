@@ -16,16 +16,18 @@ import {
   AttendanceTab,
   StudentRow,
   formatSessionDate,
+  formatClassCode,
 } from '../../classes/components/AttendanceMatrix';
 import { classSessionsApi, attendanceApi } from '../../classes/api/sessions.api';
 import { ClassSession, Attendance, AttendanceStatus } from '../../classes/types/classes.types';
-import { BarChart3, Calendar, Zap } from 'lucide-react';
+import { BarChart3, BookOpen, Calendar, Zap } from 'lucide-react';
 import { useColumnVisibility } from '../../preferences/hooks/useColumnVisibility';
 import { PreferenceScope } from '../../preferences/columns';
 
 const DEFAULT_STATUS_BY_TAB: Record<AttendanceTab, string> = {
   quick: 'STUDYING',
   detailed: 'STUDYING',
+  sessions: 'STUDYING',
   stats: '',
 };
 
@@ -39,7 +41,8 @@ export const EnrollmentsPage: React.FC = () => {
 
   // Tab & Filters state
   const [activeTab, setActiveTab] = useState<AttendanceTab>('quick');
-  const prefScope: PreferenceScope = `enrollments.${activeTab}`;
+  const prefScope: PreferenceScope =
+    activeTab === 'sessions' ? 'enrollments.quick' : `enrollments.${activeTab}`;
   const { visible: visibleColumns } = useColumnVisibility(prefScope);
 
   const [filters, setFilters] = useState<EnrollmentFilterState>(() => ({
@@ -101,6 +104,11 @@ export const EnrollmentsPage: React.FC = () => {
           list.push({
             enrollment_class_id: ec.id,
             class_id: ec.class_id,
+            class_code: cls?.class_code
+              ? formatClassCode(cls.class_code, cls.id)
+              : cls?.id
+              ? formatClassCode(null, cls.id)
+              : '—',
             student_id: student.id,
             external_id: student.external_id || enr.external_id || `HV_${student.id}`,
             full_name: student.full_name,
@@ -134,6 +142,7 @@ export const EnrollmentsPage: React.FC = () => {
         list.push({
           enrollment_class_id: -enr.id,
           class_id: 0,
+          class_code: '—',
           student_id: student.id,
           external_id: student.external_id || enr.external_id || `HV_${student.id}`,
           full_name: student.full_name,
@@ -487,6 +496,7 @@ export const EnrollmentsPage: React.FC = () => {
         items={[
           { value: 'quick', label: 'Điểm danh nhanh', icon: <Zap /> },
           { value: 'detailed', label: 'Điểm danh chi tiết', icon: <Calendar /> },
+          { value: 'sessions', label: 'Buổi học', icon: <BookOpen /> },
           { value: 'stats', label: 'Thống kê', icon: <BarChart3 /> },
         ]}
       />

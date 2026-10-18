@@ -34,30 +34,50 @@ export class ClassesService {
     return '1:1';
   }
 
-  formatClass<T extends { model_type: any }>(cls: T): T {
+  formatCompactClassCode(id: number): string {
+    return `class_${String(id).padStart(4, '0')}`;
+  }
+
+  formatClass<T extends { id?: number; class_code?: string | null; model_type: any }>(cls: T): T {
     if (!cls) return cls;
+    const rawCode = cls.class_code ? String(cls.class_code).trim() : '';
+    const shouldCompact = !rawCode || /^(CLS_|id\d+$)/i.test(rawCode);
+    const normalizedCode = shouldCompact && cls.id ? this.formatCompactClassCode(cls.id) : (rawCode || cls.class_code);
     return {
       ...cls,
+      class_code: normalizedCode,
       model_type: this.formatModelType(cls.model_type),
     };
   }
 
   async generateUniqueClassCode(): Promise<string> {
-    const chars = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
-    for (let attempts = 0; attempts < 50; attempts++) {
-      let code = 'CLS_';
-      for (let i = 0; i < 6; i++) {
-        code += chars.charAt(Math.floor(Math.random() * chars.length));
-      }
+    const lastClass = await prisma.class.findFirst({
+      orderBy: { id: 'desc' },
+      select: { id: true },
+    });
+    let nextNum = (lastClass?.id || 0) + 1;
+    for (let attempts = 0; attempts < 100; attempts++) {
+      const code = this.formatCompactClassCode(nextNum);
       const existing = await this.repository.findByCode(code);
       if (!existing) return code;
+      nextNum++;
     }
-    return `CLS_${Date.now().toString(36).toUpperCase()}`;
+    return this.formatCompactClassCode(nextNum);
   }
 
   async getAllClasses(user?: AuthUser) {
     const accessibleIds = user ? await getAccessibleClassIds(user) : null;
     const classes = await this.repository.findAll(accessibleIds);
+    for (const c of classes) {
+      if (!c.class_code || /^(CLS_|id\d+$)/i.test(c.class_code)) {
+        const targetCode = this.formatCompactClassCode(c.id);
+        const existingWithCode = await this.repository.findByCode(targetCode);
+        if (!existingWithCode || existingWithCode.id === c.id) {
+          await this.repository.update(c.id, { class_code: targetCode });
+          c.class_code = targetCode;
+        }
+      }
+    }
     return classes.map((c) => this.formatClass(c));
   }
 
@@ -67,11 +87,20 @@ export class ClassesService {
     }
     const cls = await this.repository.findById(id);
     if (!cls) throw new CustomError('Class not found', 404);
+    if (!cls.class_code || /^(CLS_|id\d+$)/i.test(cls.class_code)) {
+      const targetCode = this.formatCompactClassCode(cls.id);
+      const existingWithCode = await this.repository.findByCode(targetCode);
+      if (!existingWithCode || existingWithCode.id === cls.id) {
+        await this.repository.update(cls.id, { class_code: targetCode });
+        cls.class_code = targetCode;
+      }
+    }
     return this.formatClass(cls);
   }
 
   async createClass(data: CreateClassDTO) {
-    let classCode = data.class_code ? data.class_code.trim() : '';
+    const customCode = data.class_code ? data.class_code.trim() : '';
+    let classCode = customCode;
     if (!classCode) {
       classCode = await this.generateUniqueClassCode();
     }
@@ -79,13 +108,24 @@ export class ClassesService {
     const modelType = this.normalizeModelType(data.model_type);
     const attendanceSource = (data.attendance_source as AttendanceSourceType) || AttendanceSourceType.LEARNING_SYSTEM;
 
-    const created = await this.repository.create({
+    let created = await this.repository.create({
       class_code: classCode,
       class_name: data.class_name.trim(),
       level: data.level?.trim() || undefined,
       model_type: modelType,
       attendance_source: attendanceSource,
     });
+
+    if (!customCode) {
+      const compactCode = this.formatCompactClassCode(created.id);
+      if (created.class_code !== compactCode) {
+        const existingWithCode = await this.repository.findByCode(compactCode);
+        if (!existingWithCode || existingWithCode.id === created.id) {
+          created = await this.repository.update(created.id, { class_code: compactCode });
+        }
+      }
+    }
+
     return this.formatClass(created);
   }
 
