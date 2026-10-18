@@ -8,7 +8,11 @@ export type AutomationTriggerEvent =
   | 'TEACHER_ABSENT_D'
   | 'TECH_ERROR_E';
 
-export type AutomationChannel = 'ZALO_PERSONAL' | 'ZALO_GROUP';
+export type AutomationChannel =
+  | 'ZALO_PERSONAL'
+  | 'ZALO_GROUP'
+  | 'LINE_PERSONAL'
+  | 'LINE_GROUP';
 
 export type MessageDeliveryStatus =
   | 'SCHEDULED'
@@ -37,8 +41,10 @@ export const TRIGGER_EVENT_LABELS: Record<string, string> = Object.fromEntries(
 );
 
 export const CHANNEL_LABELS: Record<AutomationChannel, string> = {
-  ZALO_PERSONAL: 'Nhắn riêng (Zalo cá nhân)',
-  ZALO_GROUP: 'Gửi vào nhóm Zalo',
+  ZALO_PERSONAL: 'Zalo cá nhân',
+  ZALO_GROUP: 'Nhóm Zalo',
+  LINE_PERSONAL: 'LINE cá nhân / OA (1-1)',
+  LINE_GROUP: 'Nhóm LINE',
 };
 
 export const DELIVERY_STATUS_LABELS: Record<string, { label: string; variant: string }> = {
@@ -121,8 +127,10 @@ export interface MessageDelivery {
   enrollment_id: number;
   attendance_id: number;
   automation_step_id: number;
-  zalo_account_id: number;
+  zalo_account_id: number | null;
   zalo_group_id: number | null;
+  line_account_id?: number | null;
+  line_group_id?: number | null;
   scheduled_at: string;
   sent_at: string | null;
   status: MessageDeliveryStatus;

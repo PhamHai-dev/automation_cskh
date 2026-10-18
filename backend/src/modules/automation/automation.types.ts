@@ -25,7 +25,7 @@ export type TriggerEvent =
   | 'TEACHER_ABSENT_D'
   | 'TECH_ERROR_E';
 
-export type AutomationChannel = 'ZALO_PERSONAL' | 'ZALO_GROUP';
+export type AutomationChannel = 'ZALO_PERSONAL' | 'ZALO_GROUP' | 'LINE_PERSONAL' | 'LINE_GROUP';
 
 export interface CreateStepDTO {
   session_number: number;

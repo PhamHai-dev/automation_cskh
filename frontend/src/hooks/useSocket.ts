@@ -68,3 +68,19 @@ export function useZaloAccountSocket(accountId: number | null) {
 
   return { connected, on, off, emit };
 }
+
+/**
+ * useLineAccountSocket - join/leave LINE account room + subscribe to events.
+ */
+export function useLineAccountSocket(accountId: number | null) {
+  const { connected, on, off, emit } = useSocket();
+
+  useEffect(() => {
+    if (!accountId || !connected) return;
+    emit('line:subscribe', { accountId });
+    return () => { emit('line:unsubscribe', { accountId }); };
+  }, [accountId, connected, emit]);
+
+  return { connected, on, off, emit };
+}
+

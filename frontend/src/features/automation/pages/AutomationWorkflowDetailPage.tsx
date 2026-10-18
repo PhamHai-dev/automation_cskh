@@ -1,6 +1,9 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { automationApi } from '../api/automation.api';
+import { zaloApi } from '../../zalo/api/zalo.api';
+import { lineApi } from '../../line/api/line.api';
+import type { LineGroupInfo } from '../../line/types/line.types';
 import type {
   AutomationWorkflow,
   AutomationStep,
@@ -61,6 +64,10 @@ export const AutomationWorkflowDetailPage: React.FC = () => {
     message_content: '',
   });
   const [stepSubmitting, setStepSubmitting] = useState(false);
+
+  // Groups for ZALO_GROUP and LINE_GROUP dropdowns
+  const [zaloGroups, setZaloGroups] = useState<Array<{ id: number; name: string | null; zalo_group_id?: string; zalo_account_id?: number }>>([]);
+  const [lineGroups, setLineGroups] = useState<LineGroupInfo[]>([]);
 
   // Enrollment modal (popup chọn HV)
   const [isEnrollModalOpen, setIsEnrollModalOpen] = useState(false);
@@ -142,7 +149,28 @@ export const AutomationWorkflowDetailPage: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workflowId]);
 
+  useEffect(() => {
+    // Load Zalo groups across accounts + all LINE groups for step modal dropdowns
+    zaloApi
+      .listAccounts()
+      .then(async (accs) => {
+        const lists = await Promise.all(
+          accs.map((a) => zaloApi.getGroupsDb(a.id).catch(() => [])),
+        );
+        setZaloGroups(lists.flat());
+      })
+      .catch(() => {});
+
+    lineApi
+      .listAllGroups()
+      .then((grs) => setLineGroups(Array.isArray(grs) ? grs : []))
+      .catch(() => {});
+  }, []);
+
   // ─── Add Step ──────────────────────────────────────────────────────
+
+  const isGroupChannel = (ch: AutomationChannel) =>
+    ch === 'ZALO_GROUP' || ch === 'LINE_GROUP';
 
   const handleAddStep = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -150,9 +178,10 @@ export const AutomationWorkflowDetailPage: React.FC = () => {
       setStepSubmitting(true);
       await automationApi.addStep(workflowId, {
         ...stepForm,
-        target_group_id: stepForm.channel === 'ZALO_GROUP' && stepForm.target_group_id
-          ? Number(stepForm.target_group_id)
-          : undefined,
+        target_group_id:
+          isGroupChannel(stepForm.channel) && stepForm.target_group_id
+            ? Number(stepForm.target_group_id)
+            : undefined,
       } as any);
       toast.success('Đã thêm cụm trigger');
       setIsStepModalOpen(false);
@@ -198,9 +227,10 @@ export const AutomationWorkflowDetailPage: React.FC = () => {
       setStepSubmitting(true);
       await automationApi.updateStep(editingStepId, {
         ...stepForm,
-        target_group_id: stepForm.channel === 'ZALO_GROUP' && stepForm.target_group_id
-          ? Number(stepForm.target_group_id)
-          : null,
+        target_group_id:
+          isGroupChannel(stepForm.channel) && stepForm.target_group_id
+            ? Number(stepForm.target_group_id)
+            : null,
       } as any);
       toast.success('Đã cập nhật cụm trigger');
       setIsStepModalOpen(false);
@@ -432,8 +462,14 @@ export const AutomationWorkflowDetailPage: React.FC = () => {
                             <Clock className="w-3 h-3" />
                             +{step.delay_minutes} phút
                           </span>
-                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-surface-muted text-text-secondary font-medium">
-                            {CHANNEL_LABELS[step.channel]}
+                          <span
+                            className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+                              step.channel.startsWith('LINE_')
+                                ? 'bg-[#06C755]/15 text-[#06C755] border border-[#06C755]/30'
+                                : 'bg-blue-50 text-blue-700 border border-blue-200'
+                            }`}
+                          >
+                            {CHANNEL_LABELS[step.channel] || step.channel}
                           </span>
                         </div>
                         <p className="mt-1.5 text-xs text-text-secondary line-clamp-2 whitespace-pre-wrap">
@@ -646,24 +682,85 @@ export const AutomationWorkflowDetailPage: React.FC = () => {
               <label className="block text-xs font-semibold text-text-secondary mb-1.5">Kênh gửi *</label>
               <select
                 value={stepForm.channel}
-                onChange={(e) => setStepForm({ ...stepForm, channel: e.target.value as AutomationChannel })}
+                onChange={(e) =>
+                  setStepForm({
+                    ...stepForm,
+                    channel: e.target.value as AutomationChannel,
+                    target_group_id: '',
+                  })
+                }
                 className="w-full px-3.5 py-2.5 text-sm bg-surface-muted border border-border/80 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20"
               >
-                <option value="ZALO_PERSONAL">Nhắn riêng (Zalo cá nhân)</option>
-                <option value="ZALO_GROUP">Gửi vào nhóm Zalo</option>
+                <option value="ZALO_PERSONAL">Zalo cá nhân</option>
+                <option value="ZALO_GROUP">Nhóm Zalo</option>
+                <option value="LINE_PERSONAL">LINE cá nhân / OA (1-1)</option>
+                <option value="LINE_GROUP">Nhóm LINE</option>
               </select>
             </div>
           </div>
 
           {stepForm.channel === 'ZALO_GROUP' && (
-            <Input
-              label="Nhóm Zalo ID *"
-              type="number"
-              value={stepForm.target_group_id}
-              onChange={(e) => setStepForm({ ...stepForm, target_group_id: e.target.value })}
-              placeholder="ID nhóm Zalo"
-              required
-            />
+            <div>
+              <label className="block text-xs font-semibold text-text-secondary mb-1.5">
+                Chọn Nhóm Zalo *
+              </label>
+              {zaloGroups.length > 0 ? (
+                <select
+                  value={stepForm.target_group_id}
+                  onChange={(e) => setStepForm({ ...stepForm, target_group_id: e.target.value })}
+                  required
+                  className="w-full px-3.5 py-2.5 text-sm bg-surface-muted border border-border/80 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20"
+                >
+                  <option value="">— Chọn nhóm Zalo —</option>
+                  {zaloGroups.map((g) => (
+                    <option key={g.id} value={String(g.id)}>
+                      {g.name || `Nhóm Zalo #${g.id}`} (ID: {g.id})
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <Input
+                  label="Nhóm Zalo ID *"
+                  type="number"
+                  value={stepForm.target_group_id}
+                  onChange={(e) => setStepForm({ ...stepForm, target_group_id: e.target.value })}
+                  placeholder="ID nhóm Zalo"
+                  required
+                />
+              )}
+            </div>
+          )}
+
+          {stepForm.channel === 'LINE_GROUP' && (
+            <div>
+              <label className="block text-xs font-semibold text-text-secondary mb-1.5">
+                Chọn Nhóm LINE *
+              </label>
+              {lineGroups.length > 0 ? (
+                <select
+                  value={stepForm.target_group_id}
+                  onChange={(e) => setStepForm({ ...stepForm, target_group_id: e.target.value })}
+                  required
+                  className="w-full px-3.5 py-2.5 text-sm bg-surface-muted border border-border/80 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                >
+                  <option value="">— Chọn nhóm LINE —</option>
+                  {lineGroups.map((g) => (
+                    <option key={g.id} value={String(g.id)}>
+                      {g.name || `Nhóm LINE #${g.id}`} ({g.line_group_id})
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <Input
+                  label="Nhóm LINE ID (DB ID) *"
+                  type="number"
+                  value={stepForm.target_group_id}
+                  onChange={(e) => setStepForm({ ...stepForm, target_group_id: e.target.value })}
+                  placeholder="Nhập ID nhóm LINE trong hệ thống"
+                  required
+                />
+              )}
+            </div>
           )}
 
           <div>

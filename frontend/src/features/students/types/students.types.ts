@@ -13,6 +13,7 @@ export interface Student {
   school?: string | null;
   occupation?: string | null;
   zalo_uid?: string | null;
+  line_uid?: string | null;
   note?: string | null;
   enrollments?: Enrollment[];
   created_at: string;
@@ -32,6 +33,7 @@ export interface CreateStudentDTO {
   school?: string;
   occupation?: string;
   zalo_uid?: string;
+  line_uid?: string;
   note?: string;
 
   // 2. Enrollment, Course & Finance (J -> U)
