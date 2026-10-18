@@ -10,6 +10,7 @@ import { registerZaloSocketHandlers } from './modules/zalo/zalo-socket';
 import { registerLineSocketHandlers } from './modules/line/line-socket';
 import { startAutomationWorker, stopAutomationWorker } from './modules/automation/automation-worker';
 import { startZaloHealthCheck } from './modules/zalo/zalo-health-check';
+import { startLineHealthCheck } from './modules/line/line-health-check';
 import { startAutoAttendanceScheduler, stopAutoAttendanceScheduler } from './modules/auto-attendance/auto-attendance-scheduler';
 
 const log = createLogger('Server');
@@ -45,12 +46,13 @@ const server = app.listen(PORT, async () => {
     });
   }
 
-  // Start Zalo health check cron (every 5 min reconnect + daily refresh + hourly ghost cleanup)
+  // Start Zalo & LINE health check crons (every 5 min reconnect + quota refresh + hourly ghost cleanup)
   try {
     startZaloHealthCheck();
-    log.info('Zalo health check started');
+    startLineHealthCheck();
+    log.info('Zalo & LINE health checks started');
   } catch (err) {
-    log.warn('Zalo health check start failed (continuing)', {
+    log.warn('Health check start failed (continuing)', {
       error: err instanceof Error ? err.message : String(err),
     });
   }
