@@ -7,7 +7,8 @@
  *   - `sendMessageWithReplyFallback(params)`:
  *       1. Checks `LineConversation` for an unexpired `reply_token` (`reply_token_expires_at > now`).
  *       2. Reply-First (0 quota): calls `replyMessage` and clears `reply_token`. Falls back to `pushMessage` on HTTP 400.
- *       3. Push-Fallback with Idempotency: calls `pushMessage` with `X-Line-Retry-Key` UUID.
+ *       3. Monthly Quota Guardrail (`checkOaQuotaGuardrail`): blocks `pushMessage` when OA monthly quota reaches 100% (`EXHAUSTED_100`), while still allowing free `reply_token` replies.
+ *       4. Push-Fallback with Idempotency: calls `pushMessage` with `X-Line-Retry-Key` UUID, and increments `LineAccount.monthly_consumption` on success.
  *          Handles HTTP 409 Conflict gracefully as already-delivered.
  *          Retries without `quoteToken` if `quoteToken` triggers HTTP 400.
  *   - `verifyWebhookSignature(rawBody, signature, channelSecret)`: HMAC-SHA256 signature verification.
@@ -17,6 +18,7 @@ import crypto from 'node:crypto';
 import { messagingApi, validateSignature } from '@line/bot-sdk';
 import { prisma } from '../../prisma/client';
 import { createLogger } from '../../shared/logger/logger';
+import { lineRateLimiter } from './line-rate-limiter';
 import type { LineBotProfileInfo, LineOaSessionData } from './types/line.types';
 import type { LineSendResult } from './line-dispatcher.contract';
 
@@ -110,6 +112,44 @@ export class LineOaAdapter {
   }
 
   /**
+   * Check OA monthly quota guardrail before sending a paid/quota-consuming Push message.
+   */
+  private async enforcePushQuotaGuardrail(lineAccountId: number): Promise<void> {
+    const account = await prisma.lineAccount
+      ?.findUnique?.({
+        where: { id: lineAccountId },
+        select: { monthly_quota: true, monthly_consumption: true },
+      })
+      .catch(() => null);
+
+    if (!account) return;
+
+    const guardrail = lineRateLimiter.checkOaQuotaGuardrail(account);
+    if (guardrail.status === 'EXHAUSTED_100' || !guardrail.allowPush) {
+      const err: any = new Error(
+        'Đã chạm 100% hạn mức tin nhắn Push tháng của LINE OA (Chỉ có thể gửi qua Reply Token miễn phí)',
+      );
+      err.statusCode = 429;
+      err.code = 'LINE_OA_QUOTA_EXHAUSTED';
+      throw err;
+    }
+  }
+
+  private async incrementMonthlyConsumption(lineAccountId: number): Promise<void> {
+    try {
+      await prisma.lineAccount?.update?.({
+        where: { id: lineAccountId },
+        data: {
+          monthly_consumption: { increment: 1 },
+          last_active_at: new Date(),
+        },
+      });
+    } catch {
+      // ignore if mocked or offline in unit test
+    }
+  }
+
+  /**
    * Send a text message using Reply-First (0 quota) when an unexpired reply_token exists
    * on LineConversation, falling back to Push API with X-Line-Retry-Key idempotency.
    */
@@ -174,10 +214,14 @@ export class LineOaAdapter {
       }
     }
 
+    // Before calling invokePushMessage, enforce OA monthly quota guardrail
+    await this.enforcePushQuotaGuardrail(lineAccountId);
+
     const retryKey = params.retryKey || crypto.randomUUID();
 
     try {
       const pushRes = await this.invokePushMessage(to, text, retryKey, quoteToken);
+      await this.incrementMonthlyConsumption(lineAccountId);
       const firstSent = pushRes?.sentMessages?.[0];
       return {
         providerMessageId: firstSent?.id ?? `push_${retryKey}`,
@@ -204,6 +248,7 @@ export class LineOaAdapter {
         const fallbackRetryKey = crypto.randomUUID();
         try {
           const retryRes = await this.invokePushMessage(to, text, fallbackRetryKey, undefined);
+          await this.incrementMonthlyConsumption(lineAccountId);
           const firstSent = retryRes?.sentMessages?.[0];
           return {
             providerMessageId: firstSent?.id ?? `push_${fallbackRetryKey}`,

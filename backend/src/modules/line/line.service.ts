@@ -1,23 +1,52 @@
 /**
  * line.service.ts — Business logic for the Hybrid LINE module:
  *   - Account CRUD (OA & PERSONAL), QR Login, OA Token update
- *   - Friends listing, sync, phone lookup, friend request
- *   - Groups listing & sync
+ *   - Rate-limit inspection & custom overrides, per-account Proxy configuration
+ *   - AES-256-GCM Credential Export & Import with structural validation
+ *   - Friends listing, sync, phone lookup, friend request (rate-limited against TalkException Code 35)
+ *   - Groups listing & sync (rate-limited)
  *   - Conversations & Messages listing, send, mark-read
  *   - Student ↔ LINE linking (manual, 2-tap deep-link code generation, phone suffix auto-suggest)
  */
 
 import crypto from 'node:crypto';
 import { prisma } from '../../prisma/client';
-import { encryptJson } from '../../shared/crypto/aes-gcm';
+import { decryptJson, encryptJson } from '../../shared/crypto/aes-gcm';
 import { lineRepository } from './line-repository';
 import { linePool } from './line-pool';
+import {
+  lineRateLimiter,
+  type LineCategoryLimit,
+  type LineOpCategory,
+} from './line-rate-limiter';
 import type { ZaloContactRelationStatus } from '@prisma/client';
-import type { LineOaSessionData } from './types/line.types';
+import type {
+  LineOaSessionData,
+  LinePersonalSessionData,
+  LineSessionData,
+} from './types/line.types';
 
 function normalizePhoneLast9(phone?: string | null): string {
   if (!phone) return '';
   return phone.replace(/\D/g, '').slice(-9);
+}
+
+/**
+ * Mask proxy credentials (`http://user:pass@host:port` -> `http://***:***@host:port`)
+ * for safe display in API responses.
+ */
+export function maskProxyUrl(proxyUrl?: string | null): string | null {
+  if (!proxyUrl || !proxyUrl.trim()) return null;
+  try {
+    const parsed = new URL(proxyUrl.trim());
+    if (parsed.username || parsed.password) {
+      parsed.username = '***';
+      parsed.password = '***';
+    }
+    return parsed.toString().replace(/\/$/, '');
+  } catch {
+    return proxyUrl.replace(/\/\/([^:@]+):([^@]+)@/, '//***:***@');
+  }
 }
 
 export class LineService {
@@ -101,7 +130,6 @@ export class LineService {
       try {
         await linePool.connectOaAccount(created.id, oaSession);
       } catch {
-        // Keep created account even if live verification fails in offline/dev env; mark ACTIVE if token present
         await lineRepository.updateAccount(created.id, {
           status: 'ACTIVE',
           last_connected_at: new Date(),
@@ -221,6 +249,195 @@ export class LineService {
     return { deleted: true };
   }
 
+  // ─── Security, Rate-Limit, Proxy & Credential Backup ──────────────────────
+
+  async getAccountLimitsAndHealth(accountId: number) {
+    const account = await this.getAccount(accountId);
+    const summary = await lineRateLimiter.getAccountLimitSummary(
+      accountId,
+      account.account_type,
+    );
+    const oaQuotaGuardrail =
+      account.account_type === 'OA'
+        ? lineRateLimiter.checkOaQuotaGuardrail(account)
+        : null;
+    const personalAdapter = linePool.getPersonalAdapter(accountId);
+
+    return {
+      accountId: account.id,
+      accountType: account.account_type,
+      status: account.status,
+      rateLimits: summary.categories,
+      oaQuotaGuardrail,
+      proxy_url: maskProxyUrl(account.proxy_url),
+      hasProxy: Boolean(account.proxy_url),
+      session_epoch: personalAdapter?.epoch ?? account.session_epoch ?? 0,
+      disconnect_reason: account.disconnect_reason ?? null,
+      circuitBroken: personalAdapter?.circuitBroken ?? account.disconnect_reason === 'circuit_breaker',
+    };
+  }
+
+  async updateAccountLimits(
+    accountId: number,
+    overrides: Partial<Record<LineOpCategory, Partial<LineCategoryLimit>>>,
+  ) {
+    const account = await this.getAccount(accountId);
+    const updatedLimits = await lineRateLimiter.setAccountLimitOverride(
+      accountId,
+      overrides,
+      account.account_type,
+    );
+    const summary = await lineRateLimiter.getAccountLimitSummary(
+      accountId,
+      account.account_type,
+    );
+    return {
+      accountId,
+      accountType: account.account_type,
+      limits: updatedLimits,
+      rateLimits: summary.categories,
+    };
+  }
+
+  async updateAccountProxy(accountId: number, proxyUrl?: string | null) {
+    const account = await this.getAccount(accountId);
+    const normalizedProxy = proxyUrl && proxyUrl.trim() ? proxyUrl.trim() : null;
+
+    if (normalizedProxy) {
+      try {
+        const parsed = new URL(normalizedProxy);
+        if (!['http:', 'https:', 'socks5:'].includes(parsed.protocol)) {
+          const err: any = new Error('Proxy URL must use http://, https://, or socks5://');
+          err.statusCode = 400;
+          throw err;
+        }
+      } catch (err: any) {
+        if (err?.statusCode === 400) throw err;
+        const badUrlErr: any = new Error('Invalid proxy_url format');
+        badUrlErr.statusCode = 400;
+        throw badUrlErr;
+      }
+    }
+
+    const updated = await lineRepository.updateAccount(accountId, {
+      proxy_url: normalizedProxy,
+    });
+
+    const existingPersonal = linePool.getPersonalAdapter(accountId);
+    let reconnected = false;
+    if (existingPersonal) {
+      existingPersonal.setProxyUrl(normalizedProxy);
+      if (account.status === 'ACTIVE' && account.encrypted_session_data) {
+        await linePool.disconnectAccount(accountId, 'proxy_updated').catch(() => undefined);
+        reconnected = await linePool.ensureAccountReady(accountId).catch(() => false);
+      }
+    }
+
+    return {
+      accountId,
+      proxy_url: maskProxyUrl(updated.proxy_url),
+      reconnected,
+      account: updated,
+    };
+  }
+
+  async exportCredentials(accountId: number) {
+    const account = await this.getAccount(accountId);
+    if (!account.encrypted_session_data) {
+      const err: any = new Error('No credentials saved for this LINE account');
+      err.statusCode = 404;
+      throw err;
+    }
+
+    return {
+      account_id: account.id,
+      account_type: account.account_type,
+      display_name: account.display_name,
+      encrypted_session_data: account.encrypted_session_data,
+      exported_at: new Date().toISOString(),
+    };
+  }
+
+  async importCredentials(accountId: number, encryptedSessionData: string) {
+    const account = await this.getAccount(accountId);
+    if (typeof encryptedSessionData !== 'string' || !encryptedSessionData.trim()) {
+      const err: any = new Error(
+        'Invalid credential format. Expected non-empty encrypted_session_data',
+      );
+      err.statusCode = 400;
+      throw err;
+    }
+
+    let decrypted: LineSessionData;
+    try {
+      decrypted = decryptJson<LineSessionData>(encryptedSessionData.trim());
+    } catch {
+      const err: any = new Error(
+        'Cannot decrypt encrypted_session_data: invalid AES-256-GCM payload or mismatched secret key',
+      );
+      err.statusCode = 400;
+      throw err;
+    }
+
+    if (!decrypted || typeof decrypted !== 'object') {
+      const err: any = new Error('Decrypted session payload is not a valid JSON object');
+      err.statusCode = 400;
+      throw err;
+    }
+
+    const rawObj = decrypted as unknown as Record<string, unknown>;
+    const isOaPayload =
+      rawObj.mode === 'OA' ||
+      (typeof rawObj.channelId === 'string' &&
+        typeof rawObj.channelSecret === 'string' &&
+        typeof rawObj.channelAccessToken === 'string');
+
+    const isPersonalPayload =
+      rawObj.mode === 'PERSONAL' ||
+      typeof rawObj.authToken === 'string';
+
+    if (!isOaPayload && !isPersonalPayload) {
+      const err: any = new Error(
+        'Decrypted session data does not match LINE OA (channelId/channelSecret/channelAccessToken) or PERSONAL (authToken) credential structure',
+      );
+      err.statusCode = 400;
+      throw err;
+    }
+
+    if (account.account_type === 'OA' && !isOaPayload) {
+      const err: any = new Error(
+        'Cannot import PERSONAL session credentials into a LINE OA account',
+      );
+      err.statusCode = 400;
+      throw err;
+    }
+
+    if (account.account_type === 'PERSONAL' && !isPersonalPayload) {
+      const err: any = new Error(
+        'Cannot import LINE OA credentials into a PERSONAL LINE account',
+      );
+      err.statusCode = 400;
+      throw err;
+    }
+
+    const updated = await lineRepository.updateAccount(accountId, {
+      encrypted_session_data: encryptedSessionData.trim(),
+      status: 'NOT_LOGGED_IN',
+      disconnect_reason: 'credentials_imported',
+      ...(isOaPayload
+        ? { webhook_secret: (decrypted as LineOaSessionData).channelSecret }
+        : {}),
+    });
+
+    return {
+      success: true,
+      accountId: updated.id,
+      accountType: updated.account_type,
+      mode: isOaPayload ? 'OA' : 'PERSONAL',
+      message: 'Credentials imported successfully. Use reconnect to activate.',
+    };
+  }
+
   // ─── Friends & Followers ──────────────────────────────────────────────────
 
   async listFriends(
@@ -232,6 +449,7 @@ export class LineService {
 
   async syncFriends(accountId: number) {
     const account = await this.getAccount(accountId);
+    await lineRateLimiter.consumeOrThrow(accountId, 'contact_sync', account.account_type);
     await linePool.ensureAccountReady(accountId);
 
     if (account.account_type === 'PERSONAL') {
@@ -248,8 +466,9 @@ export class LineService {
 
   async lookupByPhone(accountId: number, phone: string) {
     const account = await this.getAccount(accountId);
+    await lineRateLimiter.consumeOrThrow(accountId, 'friend_lookup', account.account_type);
+
     if (account.account_type === 'OA') {
-      // Check if any known friend/follower in DB already has this phone
       const norm = normalizePhoneLast9(phone);
       const friends = await prisma.lineFriend.findMany({
         where: { line_account_id: accountId, phone_from_sdk: { not: null } },
@@ -276,7 +495,8 @@ export class LineService {
   }
 
   async sendFriendRequest(accountId: number, targetMid: string) {
-    await this.getAccount(accountId);
+    const account = await this.getAccount(accountId);
+    await lineRateLimiter.consumeOrThrow(accountId, 'friend_action', account.account_type);
     await linePool.ensureAccountReady(accountId);
     const adapter = linePool.getPersonalAdapter(accountId);
     if (adapter?.client) {
@@ -302,6 +522,7 @@ export class LineService {
 
   async syncGroups(accountId: number) {
     const account = await this.getAccount(accountId);
+    await lineRateLimiter.consumeOrThrow(accountId, 'group_sync', account.account_type);
     await linePool.ensureAccountReady(accountId);
 
     if (account.account_type === 'PERSONAL') {

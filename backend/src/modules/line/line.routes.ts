@@ -9,6 +9,20 @@ import { lineWebhookHandler } from './line-webhook.handler';
 
 export const lineRouter = Router();
 
+function handleLineError(err: any, res: Response, next: NextFunction): void {
+  const status = err?.statusCode ?? err?.status;
+  if (typeof status === 'number' && status >= 400 && status < 600) {
+    res.status(status).json({
+      error: err.message || 'LINE operation error',
+      message: err.message || 'LINE operation error',
+      code: err.code,
+      ...(err.retryAfterMs ? { retryAfterMs: err.retryAfterMs } : {}),
+    });
+    return;
+  }
+  next(err);
+}
+
 // ─── Public Webhook Endpoints (authenticated via LINE HMAC-SHA256 signature) ──
 
 lineRouter.post('/webhook/:accountId', async (req: Request, res: Response, next: NextFunction) => {
@@ -28,7 +42,7 @@ lineRouter.post('/webhook/:accountId', async (req: Request, res: Response, next:
       res.status(401).json({ error: err.message });
       return;
     }
-    next(err);
+    handleLineError(err, res, next);
   }
 });
 
@@ -47,7 +61,7 @@ lineRouter.post('/webhook', async (req: Request, res: Response, next: NextFuncti
       res.status(401).json({ error: err.message });
       return;
     }
-    next(err);
+    handleLineError(err, res, next);
   }
 });
 
@@ -63,7 +77,7 @@ lineRouter.get('/accounts', async (req: Request, res: Response, next: NextFuncti
     const accounts = await lineService.listAccounts(csId);
     res.json({ data: accounts, accounts });
   } catch (err) {
-    next(err);
+    handleLineError(err, res, next);
   }
 });
 
@@ -72,7 +86,7 @@ lineRouter.get('/accounts/:id', async (req: Request, res: Response, next: NextFu
     const account = await lineService.getAccount(Number(req.params.id));
     res.json({ data: account, account });
   } catch (err) {
-    next(err);
+    handleLineError(err, res, next);
   }
 });
 
@@ -85,7 +99,7 @@ lineRouter.post('/accounts', async (req: Request, res: Response, next: NextFunct
     });
     res.status(201).json({ data: account, account });
   } catch (err) {
-    next(err);
+    handleLineError(err, res, next);
   }
 });
 
@@ -95,7 +109,7 @@ lineRouter.delete('/accounts/:id', async (req: Request, res: Response, next: Nex
     const result = await lineService.deleteAccount(Number(req.params.id), userId);
     res.json({ data: result, ...result });
   } catch (err) {
-    next(err);
+    handleLineError(err, res, next);
   }
 });
 
@@ -104,7 +118,7 @@ lineRouter.post('/accounts/:id/disconnect', async (req: Request, res: Response, 
     const result = await lineService.disconnectAccount(Number(req.params.id));
     res.json({ data: result, ...result });
   } catch (err) {
-    next(err);
+    handleLineError(err, res, next);
   }
 });
 
@@ -113,7 +127,7 @@ lineRouter.post('/accounts/:id/reconnect', async (req: Request, res: Response, n
     const result = await lineService.reconnectAccount(Number(req.params.id));
     res.json({ data: result, ...result });
   } catch (err) {
-    next(err);
+    handleLineError(err, res, next);
   }
 });
 
@@ -122,7 +136,7 @@ lineRouter.post('/accounts/:id/qr-login', async (req: Request, res: Response, ne
     const result = await lineService.startQrLogin(Number(req.params.id));
     res.json({ data: result, ...result });
   } catch (err) {
-    next(err);
+    handleLineError(err, res, next);
   }
 });
 
@@ -131,7 +145,7 @@ lineRouter.patch('/accounts/:id/oa-credentials', async (req: Request, res: Respo
     const account = await lineService.updateOaCredentials(Number(req.params.id), req.body);
     res.json({ data: account, account });
   } catch (err) {
-    next(err);
+    handleLineError(err, res, next);
   }
 });
 
@@ -140,9 +154,71 @@ lineRouter.post('/accounts/:id/oa-credentials', async (req: Request, res: Respon
     const account = await lineService.updateOaCredentials(Number(req.params.id), req.body);
     res.json({ data: account, account });
   } catch (err) {
-    next(err);
+    handleLineError(err, res, next);
   }
 });
+
+// ─── Security, Rate-Limit, Proxy & Credential Backup Endpoints ───────────────
+
+lineRouter.get('/accounts/:id/limits', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const result = await lineService.getAccountLimitsAndHealth(Number(req.params.id));
+    res.json({ data: result, ...result });
+  } catch (err) {
+    handleLineError(err, res, next);
+  }
+});
+
+lineRouter.put('/accounts/:id/limits', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const overrides = req.body?.limits ?? req.body ?? {};
+    const result = await lineService.updateAccountLimits(Number(req.params.id), overrides);
+    res.json({ data: result, ...result });
+  } catch (err) {
+    handleLineError(err, res, next);
+  }
+});
+
+lineRouter.patch('/accounts/:id/proxy', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const proxyUrl = req.body?.proxy_url ?? req.body?.proxyUrl ?? null;
+    const result = await lineService.updateAccountProxy(Number(req.params.id), proxyUrl);
+    res.json({ data: result, ...result });
+  } catch (err) {
+    handleLineError(err, res, next);
+  }
+});
+
+lineRouter.get(
+  '/accounts/:id/credentials/export',
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const accountId = Number(req.params.id);
+      const result = await lineService.exportCredentials(accountId);
+      const filename = `line-credentials-${result.display_name ?? accountId}-${Date.now()}.json`;
+      res.setHeader('Content-Type', 'application/json');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      res.json(result);
+    } catch (err) {
+      handleLineError(err, res, next);
+    }
+  },
+);
+
+lineRouter.post(
+  '/accounts/:id/credentials/import',
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const accountId = Number(req.params.id);
+      const encryptedSessionData =
+        req.body?.encrypted_session_data ?? req.body?.encryptedSessionData ?? '';
+      const result = await lineService.importCredentials(accountId, String(encryptedSessionData));
+      res.json({ data: result, ...result });
+    } catch (err) {
+      handleLineError(err, res, next);
+    }
+  },
+);
 
 // Friends
 lineRouter.get('/accounts/:id/friends', async (req: Request, res: Response, next: NextFunction) => {
@@ -155,7 +231,7 @@ lineRouter.get('/accounts/:id/friends', async (req: Request, res: Response, next
     });
     res.json({ data: result, ...result });
   } catch (err) {
-    next(err);
+    handleLineError(err, res, next);
   }
 });
 
@@ -164,7 +240,7 @@ lineRouter.post('/accounts/:id/friends/sync', async (req: Request, res: Response
     const result = await lineService.syncFriends(Number(req.params.id));
     res.json({ data: result, ...result });
   } catch (err) {
-    next(err);
+    handleLineError(err, res, next);
   }
 });
 
@@ -173,7 +249,7 @@ lineRouter.post('/accounts/:id/friends/lookup-phone', async (req: Request, res: 
     const result = await lineService.lookupByPhone(Number(req.params.id), String(req.body.phone ?? ''));
     res.json({ data: result, ...result });
   } catch (err) {
-    next(err);
+    handleLineError(err, res, next);
   }
 });
 
@@ -183,7 +259,7 @@ lineRouter.post('/accounts/:id/friends/add', async (req: Request, res: Response,
     const result = await lineService.sendFriendRequest(Number(req.params.id), targetMid);
     res.json({ data: result, ...result });
   } catch (err) {
-    next(err);
+    handleLineError(err, res, next);
   }
 });
 
@@ -193,7 +269,7 @@ lineRouter.post('/accounts/:id/friends/request', async (req: Request, res: Respo
     const result = await lineService.sendFriendRequest(Number(req.params.id), targetMid);
     res.json({ data: result, ...result });
   } catch (err) {
-    next(err);
+    handleLineError(err, res, next);
   }
 });
 
@@ -204,7 +280,7 @@ lineRouter.get('/groups', async (req: Request, res: Response, next: NextFunction
     const groups = await lineService.listAllGroups(csId);
     res.json({ data: groups, groups });
   } catch (err) {
-    next(err);
+    handleLineError(err, res, next);
   }
 });
 
@@ -213,7 +289,7 @@ lineRouter.get('/accounts/:id/groups', async (req: Request, res: Response, next:
     const groups = await lineService.listAccountGroups(Number(req.params.id));
     res.json({ data: groups, groups });
   } catch (err) {
-    next(err);
+    handleLineError(err, res, next);
   }
 });
 
@@ -222,7 +298,7 @@ lineRouter.post('/accounts/:id/groups/sync', async (req: Request, res: Response,
     const result = await lineService.syncGroups(Number(req.params.id));
     res.json({ data: result, ...result });
   } catch (err) {
-    next(err);
+    handleLineError(err, res, next);
   }
 });
 
@@ -237,7 +313,7 @@ lineRouter.get('/accounts/:id/conversations', async (req: Request, res: Response
     });
     res.json({ data: result, ...result });
   } catch (err) {
-    next(err);
+    handleLineError(err, res, next);
   }
 });
 
@@ -255,7 +331,7 @@ lineRouter.get(
       );
       res.json({ data: result, ...result });
     } catch (err) {
-      next(err);
+      handleLineError(err, res, next);
     }
   },
 );
@@ -271,7 +347,7 @@ lineRouter.post(
       );
       res.json({ data: result, ...result });
     } catch (err) {
-      next(err);
+      handleLineError(err, res, next);
     }
   },
 );
@@ -287,7 +363,7 @@ lineRouter.post(
       );
       res.json({ data: result, ...result });
     } catch (err) {
-      next(err);
+      handleLineError(err, res, next);
     }
   },
 );
@@ -302,7 +378,7 @@ lineRouter.post(
       );
       res.json({ data: result, ...result });
     } catch (err) {
-      next(err);
+      handleLineError(err, res, next);
     }
   },
 );
@@ -318,7 +394,7 @@ lineRouter.get('/students/unlinked', async (req: Request, res: Response, next: N
     });
     res.json({ data: result, ...result });
   } catch (err) {
-    next(err);
+    handleLineError(err, res, next);
   }
 });
 
@@ -332,7 +408,7 @@ lineRouter.get('/links/unlinked-students', async (req: Request, res: Response, n
     });
     res.json({ data: result, ...result });
   } catch (err) {
-    next(err);
+    handleLineError(err, res, next);
   }
 });
 
@@ -344,7 +420,7 @@ lineRouter.get('/:accountId/students-linked', async (req: Request, res: Response
     );
     res.json({ data: result, ...result });
   } catch (err) {
-    next(err);
+    handleLineError(err, res, next);
   }
 });
 
@@ -356,7 +432,7 @@ lineRouter.get('/links/by-account/:accountId', async (req: Request, res: Respons
     );
     res.json({ data: result, ...result });
   } catch (err) {
-    next(err);
+    handleLineError(err, res, next);
   }
 });
 
@@ -365,7 +441,7 @@ lineRouter.get('/students/:studentId/links', async (req: Request, res: Response,
     const result = await lineService.listLinksByStudent(Number(req.params.studentId));
     res.json({ data: result, ...result });
   } catch (err) {
-    next(err);
+    handleLineError(err, res, next);
   }
 });
 
@@ -374,7 +450,7 @@ lineRouter.get('/links/by-student/:studentId', async (req: Request, res: Respons
     const result = await lineService.listLinksByStudent(Number(req.params.studentId));
     res.json({ data: result, ...result });
   } catch (err) {
-    next(err);
+    handleLineError(err, res, next);
   }
 });
 
@@ -390,7 +466,7 @@ lineRouter.post('/links', async (req: Request, res: Response, next: NextFunction
     });
     res.status(201).json({ data: result, ...result });
   } catch (err) {
-    next(err);
+    handleLineError(err, res, next);
   }
 });
 
@@ -399,7 +475,7 @@ lineRouter.patch('/links/:id', async (req: Request, res: Response, next: NextFun
     const result = await lineService.updateLinkById(Number(req.params.id), req.body);
     res.json({ data: result, ...result });
   } catch (err) {
-    next(err);
+    handleLineError(err, res, next);
   }
 });
 
@@ -408,7 +484,7 @@ lineRouter.put('/links/:id', async (req: Request, res: Response, next: NextFunct
     const result = await lineService.updateLinkById(Number(req.params.id), req.body);
     res.json({ data: result, ...result });
   } catch (err) {
-    next(err);
+    handleLineError(err, res, next);
   }
 });
 
@@ -417,7 +493,7 @@ lineRouter.delete('/links/:id', async (req: Request, res: Response, next: NextFu
     const result = await lineService.deleteLink(Number(req.params.id));
     res.json({ data: result, ...result });
   } catch (err) {
-    next(err);
+    handleLineError(err, res, next);
   }
 });
 
@@ -429,7 +505,7 @@ lineRouter.post('/links/deep-link', async (req: Request, res: Response, next: Ne
     );
     res.json({ data: result, ...result });
   } catch (err) {
-    next(err);
+    handleLineError(err, res, next);
   }
 });
 
@@ -441,7 +517,7 @@ lineRouter.post('/links/generate-deep-link', async (req: Request, res: Response,
     );
     res.json({ data: result, ...result });
   } catch (err) {
-    next(err);
+    handleLineError(err, res, next);
   }
 });
 
@@ -453,6 +529,6 @@ lineRouter.post('/auto-suggest-links', async (req: Request, res: Response, next:
     });
     res.json({ data: result, ...result });
   } catch (err) {
-    next(err);
+    handleLineError(err, res, next);
   }
 });
