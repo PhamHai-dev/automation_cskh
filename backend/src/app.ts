@@ -18,6 +18,7 @@ import { importsRouter } from './modules/imports/imports.routes';
 import { careRouter } from './modules/care/care.routes';
 import { dashboardRouter } from './modules/dashboard/dashboard.routes';
 import { zaloRouter } from './modules/zalo/zalo.routes';
+import { lineRouter } from './modules/line/line.routes';
 
 import { automationRouter } from './modules/automation/automation.routes';
 import { autoAttendanceRouter } from './modules/auto-attendance/auto-attendance.routes';
@@ -32,7 +33,13 @@ app.use(cors({
   origin: 'http://localhost:5173', // or frontend origin
   credentials: true,
 }));
-app.use(express.json());
+app.use(express.json({
+  verify: (req: any, _res, buf) => {
+    if (req.originalUrl?.startsWith('/api/v1/line/webhook')) {
+      req.rawBody = buf;
+    }
+  },
+}));
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 app.use((req: Request, res: Response, next: NextFunction) => {
@@ -74,6 +81,7 @@ app.use('/api/v1/imports', importsRouter);
 app.use('/api/v1', careRouter);
 app.use('/api/v1/dashboard', dashboardRouter);
 app.use('/api/v1/zalo', zaloRouter);
+app.use('/api/v1/line', lineRouter);
 app.use('/api/v1/automation', automationRouter);
 app.use('/api/v1/settings/auto-attendance', autoAttendanceRouter);
 app.use('/api/v1/me/preferences', preferencesRouter);
