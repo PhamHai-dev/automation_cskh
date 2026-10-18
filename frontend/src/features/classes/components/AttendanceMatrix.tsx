@@ -169,12 +169,12 @@ interface AttendancePickerPopoverProps {
   anchorEl: HTMLElement;
   studentName: string;
   dateStr: string;
-  sessions: ClassSession[];
-  attendanceBySession: Map<number, Attendance>;
-  savingSessionId: number | 'draft' | null;
+  targetSession: ClassSession | undefined;
+  targetSessionNumber: number;
+  attendance: Attendance | undefined;
+  saving: boolean;
   onSelectStatus: (session: ClassSession | undefined, status: AttendanceStatus) => void;
   onClear: (session: ClassSession) => void;
-  onAddSession: () => void;
   onDeleteSession: (session: ClassSession) => void;
   onClose: () => void;
 }
@@ -188,8 +188,8 @@ interface PopoverPositionState {
 
 function computePopoverCoords(anchorRect: DOMRect, popoverEl: HTMLElement | null): PopoverPositionState {
   const viewportPadding = 12;
-  const popoverWidth = popoverEl?.offsetWidth || 360;
-  const popoverHeight = Math.min(popoverEl?.offsetHeight || 420, window.innerHeight - 100);
+  const popoverWidth = popoverEl?.offsetWidth || 240;
+  const popoverHeight = Math.min(popoverEl?.offsetHeight || 320, window.innerHeight - 100);
   const headerEl = document.querySelector('header');
   const safeTopLimit = Math.max(headerEl?.getBoundingClientRect().bottom || 64, 0) + 8;
   const anchorCenterX = anchorRect.left + anchorRect.width / 2;
@@ -207,16 +207,25 @@ function computePopoverCoords(anchorRect: DOMRect, popoverEl: HTMLElement | null
   };
 }
 
+const POPOVER_STATUS_OPTIONS: Array<{ status: AttendanceStatus; label: string }> = [
+  { status: 'ATTENDED', label: '1 · Có mặt' },
+  { status: 'ABSENT_APPROVED_A', label: 'A · Nghỉ có phép (A)' },
+  { status: 'LEAVE_B', label: 'B · Bảo lưu (B)' },
+  { status: 'ABSENT_UNAPPROVED_C', label: 'C · Nghỉ sai QĐ (C)' },
+  { status: 'TEACHER_ABSENT_D', label: 'D · Giáo viên nghỉ (D)' },
+  { status: 'TECH_ERROR_E', label: 'E · Lỗi kỹ thuật (E)' },
+];
+
 const AttendancePickerPopover: React.FC<AttendancePickerPopoverProps> = ({
   anchorEl,
   studentName,
   dateStr,
-  sessions,
-  attendanceBySession,
-  savingSessionId,
+  targetSession,
+  targetSessionNumber,
+  attendance,
+  saving,
   onSelectStatus,
   onClear,
-  onAddSession,
   onDeleteSession,
   onClose,
 }) => {
@@ -243,7 +252,7 @@ const AttendancePickerPopover: React.FC<AttendancePickerPopoverProps> = ({
       window.removeEventListener('scroll', handleScrollOrResize, true);
       window.removeEventListener('resize', handleScrollOrResize);
     };
-  }, [anchorEl, onClose, sessions.length]);
+  }, [anchorEl, onClose, targetSessionNumber, Boolean(attendance)]);
 
   useEffect(() => {
     const handlePointerDown = (event: PointerEvent) => {
@@ -262,70 +271,74 @@ const AttendancePickerPopover: React.FC<AttendancePickerPopoverProps> = ({
   const formattedDate = new Date(`${dateStr}T00:00:00`).toLocaleDateString('vi-VN', {
     weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric',
   });
-  const rows: Array<ClassSession | undefined> = sessions.length ? sessions : [undefined];
-  const statusOrder: AttendanceStatus[] = ['ATTENDED', 'ABSENT_APPROVED_A', 'LEAVE_B', 'ABSENT_UNAPPROVED_C', 'TEACHER_ABSENT_D', 'TECH_ERROR_E'];
+  const currentStatus = attendance?.status;
 
   return createPortal(
     <div
       ref={popoverRef}
       role="dialog"
-      aria-label={`Điểm danh cho ${studentName} ngày ${formattedDate}`}
-      className="fixed z-[100] w-[min(360px,calc(100vw-24px))] rounded-2xl border border-border bg-surface p-3 text-left shadow-soft-xl animate-in fade-in-0 zoom-in-95 duration-100 select-none"
+      aria-label={`Điểm danh cho ${studentName} ngày ${formattedDate} Buổi ${targetSessionNumber}`}
+      className="fixed z-[100] w-[min(240px,calc(100vw-24px))] rounded-xl border border-border bg-surface p-2 text-left shadow-soft-xl animate-in fade-in-0 zoom-in-95 duration-100 select-none"
       style={{ top: position.top, left: position.left }}
     >
-      <span aria-hidden="true" className={`absolute h-3 w-3 -translate-x-1/2 rotate-45 border-border bg-surface ${position.placement === 'top' ? '-bottom-1.5 border-b border-r' : '-top-1.5 border-l border-t'}`} style={{ left: position.arrowLeft }} />
-      <div className="mb-3 flex items-start justify-between border-b border-border/60 pb-2">
+      <span aria-hidden="true" className={`absolute h-2.5 w-2.5 -translate-x-1/2 rotate-45 border-border bg-surface ${position.placement === 'top' ? '-bottom-1.5 border-b border-r' : '-top-1.5 border-l border-t'}`} style={{ left: position.arrowLeft }} />
+      <div className="mb-1.5 flex items-start justify-between gap-2 border-b border-border/60 pb-1.5">
         <div className="min-w-0">
           <div className="truncate text-xs font-extrabold text-text-primary" title={studentName}>{studentName}</div>
-          <div className="mt-0.5 text-[11px] font-semibold text-primary">{formattedDate}</div>
+          <div className="mt-0.5 flex flex-wrap items-center gap-1 text-[11px] font-semibold text-primary">
+            <span>{formattedDate}</span>
+            <span>·</span>
+            <span className="font-extrabold">Buổi {targetSessionNumber}</span>
+            {targetSession?.start_time && <span className="text-[10px] text-text-muted">({targetSession.start_time})</span>}
+          </div>
         </div>
-        <button id="attendance-popover-close" type="button" onClick={onClose} aria-label="Đóng bảng điểm danh" className="rounded-lg px-2 py-1 text-xs text-text-muted hover:bg-surface-muted">Đóng</button>
+        {targetSession && (
+          <button
+            id={`delete-session-${targetSession.id}`}
+            type="button"
+            disabled={saving}
+            onClick={() => onDeleteSession(targetSession)}
+            className="shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-bold text-rose-600 hover:bg-rose-50 disabled:opacity-50"
+            aria-label={`Xóa buổi ${targetSessionNumber}`}
+          >
+            Xóa buổi
+          </button>
+        )}
       </div>
 
-      <div className="max-h-[min(58vh,430px)] space-y-2 overflow-y-auto pr-1">
-        {rows.map((session, index) => {
-          const attendance = session ? attendanceBySession.get(session.id) : undefined;
-          const currentStatus = attendance?.status;
-          const rowSaving = savingSessionId === (session?.id ?? 'draft');
+      <div className="flex flex-col gap-1" role="listbox" aria-label={`Danh sách trạng thái Buổi ${targetSessionNumber}`}>
+        {POPOVER_STATUS_OPTIONS.map(({ status, label }) => {
+          const option = STATUS_CONFIG[status];
+          const active = currentStatus === status;
           return (
-            <section key={session?.id ?? 'draft'} className={`rounded-xl border p-2.5 ${rowSaving ? 'border-primary/40 opacity-70' : 'border-border/70'}`} aria-label={`Buổi ${index + 1}`}>
-              <div className="mb-2 flex items-center justify-between gap-2">
-                <div>
-                  <span className="text-xs font-extrabold text-text-primary">Buổi {index + 1}</span>
-                  {session?.start_time && <span className="ml-2 text-[10px] text-text-muted">{session.start_time}</span>}
-                  {!session && <span className="ml-2 rounded bg-amber-50 px-1.5 py-0.5 text-[9px] font-bold text-amber-700">Chưa lưu</span>}
-                </div>
-                {session && (
-                  <button id={`delete-session-${session.id}`} type="button" onClick={() => onDeleteSession(session)} className="rounded-lg px-2 py-1 text-[10px] font-bold text-rose-600 hover:bg-rose-50" aria-label={`Xóa buổi ${index + 1}`}>Xóa buổi</button>
-                )}
-              </div>
-              <div className="grid grid-cols-3 gap-1.5">
-                {statusOrder.map((status) => {
-                  const option = STATUS_CONFIG[status];
-                  const active = currentStatus === status;
-                  return (
-                    <button
-                      id={`attendance-${session?.id ?? 'draft'}-${status}`}
-                      key={status}
-                      type="button"
-                      disabled={rowSaving}
-                      onClick={() => onSelectStatus(session, status)}
-                      aria-pressed={active}
-                      className={`h-8 rounded-lg border px-1 text-[10px] font-extrabold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 ${active ? 'ring-2 ring-primary ring-offset-1' : ''} ${option.bg} ${option.text} ${option.border}`}
-                      title={option.label}
-                    >{status === 'ATTENDED' ? '1 · Có mặt' : option.short}</button>
-                  );
-                })}
-              </div>
-              {session && attendance && (
-                <button type="button" onClick={() => onClear(session)} className="mt-2 w-full rounded-lg border border-border py-1.5 text-[10px] font-bold text-text-muted hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600">Chưa điểm danh</button>
-              )}
-            </section>
+            <button
+              id={`attendance-${targetSession?.id ?? 'draft'}-${status}`}
+              key={status}
+              type="button"
+              role="option"
+              aria-selected={active}
+              disabled={saving}
+              onClick={() => onSelectStatus(targetSession, status)}
+              className={`flex h-8 w-full items-center justify-between rounded-lg border px-2.5 text-left text-xs font-extrabold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 disabled:cursor-not-allowed disabled:opacity-60 ${active ? 'ring-2 ring-primary ring-offset-1' : ''} ${option.bg} ${option.text} ${option.border}`}
+            >
+              <span>{label}</span>
+              {active && <Check className="h-3.5 w-3.5 shrink-0" />}
+            </button>
           );
         })}
+
+        {targetSession && attendance && (
+          <button
+            id={`clear-attendance-${targetSession.id}`}
+            type="button"
+            disabled={saving}
+            onClick={() => onClear(targetSession)}
+            className="mt-0.5 flex h-8 w-full items-center justify-center rounded-lg border border-border bg-surface-muted/60 px-2.5 text-[11px] font-bold text-text-muted transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            Chưa điểm danh (Xóa trạng thái)
+          </button>
+        )}
       </div>
-      <button id="add-attendance-session" type="button" onClick={onAddSession} disabled={savingSessionId !== null || !sessions.length} className="mt-3 flex h-9 w-full items-center justify-center rounded-xl border border-dashed border-primary/40 bg-primary-soft/40 text-xs font-extrabold text-primary transition hover:bg-primary-soft disabled:cursor-not-allowed disabled:opacity-50">+ Thêm buổi</button>
-      {!sessions.length && <p className="mt-1.5 text-center text-[10px] text-text-muted">Buổi 1 chỉ được tạo khi bạn chọn trạng thái.</p>}
     </div>,
     document.body
   );
@@ -397,6 +410,8 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
     dateStr: string;
     studentName: string;
     cellKey: string;
+    session: ClassSession | undefined;
+    sessionNumber: number;
   } | null>(null);
   const [activeAnchorEl, setActiveAnchorEl] = useState<HTMLElement | null>(null);
   const [savingSessionId, setSavingSessionId] = useState<number | 'draft' | null>(null);
@@ -939,7 +954,8 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
     enrollmentClassId: number,
     dateStr: string,
     session: ClassSession | undefined,
-    status: AttendanceStatus
+    status: AttendanceStatus,
+    fallbackSessionNumber?: number
   ) => {
     const student = students.find((item) => item.enrollment_class_id === enrollmentClassId);
     if (student && !isDateInSchedule(dateStr, student.schedule_pattern) &&
@@ -947,9 +963,13 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
     const classId = resolveClassId(enrollmentClassId, session);
     if (!classId) return toast.error('Không xác định được lớp học');
 
+    // Tự động đóng popup ngay khi chọn trạng thái
+    setActiveCell(null);
+    setActiveAnchorEl(null);
     setSavingSessionId(session?.id ?? 'draft');
     try {
       let target = session;
+      const existingCount = getSessionsForCell(enrollmentClassId, dateStr).length;
       if (!target) {
         target = await classSessionsApi.create(classId, { session_date: dateStr });
         setCreatedSessions((current) => [...current, target!]);
@@ -969,9 +989,8 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
         return next;
       });
       const localIndex = getSessionsForCell(enrollmentClassId, dateStr).findIndex((item) => item.id === target!.id);
-      toast.success(`Đã lưu Buổi ${localIndex >= 0 ? localIndex + 1 : 1}`);
-      setActiveCell(null);
-      setActiveAnchorEl(null);
+      const displaySessionNo = localIndex >= 0 ? localIndex + 1 : (fallbackSessionNumber || existingCount + 1);
+      toast.success(`Đã lưu Buổi ${displaySessionNo}`);
     } catch (err: any) {
       toast.error(err.response?.data?.message || err.response?.data?.error?.message || err.message || 'Không thể lưu điểm danh');
       onRefresh();
@@ -984,6 +1003,8 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
     const key = `${enrollmentClassId}_session_${session.id}`;
     const attendance = attendanceMap.get(key);
     if (!attendance) return;
+    setActiveCell(null);
+    setActiveAnchorEl(null);
     setSavingSessionId(session.id);
     try {
       await attendanceApi.remove(session.class_id, session.id, attendance.id, selectedSide);
@@ -1001,24 +1022,11 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
     }
   };
 
-  const handleAddSession = async (enrollmentClassId: number, dateStr: string) => {
-    const classId = resolveClassId(enrollmentClassId);
-    if (!classId) return toast.error('Không xác định được lớp học');
-    setSavingSessionId('draft');
-    try {
-      const created = await classSessionsApi.create(classId, { session_date: dateStr });
-      setCreatedSessions((current) => [...current, created]);
-      toast.success('Đã thêm buổi học cho toàn lớp');
-    } catch (err: any) {
-      toast.error(err.response?.data?.message || err.message || 'Không thể thêm buổi');
-    } finally {
-      setSavingSessionId(null);
-    }
-  };
-
   const handleDeleteSession = async (session: ClassSession) => {
     const activeCount = Array.from(attendanceMap.values()).filter((item) => item.class_session_id === session.id).length;
     if (activeCount > 0 && !window.confirm(`Buổi này có ${activeCount} bản ghi điểm danh. Xóa buổi sẽ xóa dữ liệu của toàn lớp. Tiếp tục?`)) return;
+    setActiveCell(null);
+    setActiveAnchorEl(null);
     setSavingSessionId(session.id);
     try {
       await classSessionsApi.remove(session.class_id, session.id, activeCount > 0);
@@ -1047,46 +1055,111 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
     return `Năm ${year}`;
   }, [currentDate, filterMode, datesList]);
 
-  // Reusable date cell: one compact badge for every real session in the day.
+  // Reusable date cell: one compact badge for every real session in the day, plus '+' button for next session.
   const renderAttendanceCell = (st: StudentRow, dateStr: string) => {
     if (st.enrollment_class_id <= 0) {
       return <span className="whitespace-nowrap rounded bg-slate-100/80 px-2 py-0.5 text-[10px] italic text-text-muted">Chưa xếp lớp</span>;
     }
     const daySessions = getSessionsForCell(st.enrollment_class_id, dateStr);
-    const isActive = activeCell?.enrollmentClassId === st.enrollment_class_id && activeCell.dateStr === dateStr;
+    const formattedDateLabel = new Date(`${dateStr}T00:00:00`).toLocaleDateString('vi-VN');
+
+    const openPickerForSession = (
+      anchor: HTMLElement,
+      session: ClassSession | undefined,
+      sessionNumber: number
+    ) => {
+      const cellKey = `${st.enrollment_class_id}_${dateStr}_s${sessionNumber}`;
+      if (activeCell?.cellKey === cellKey) {
+        setActiveCell(null);
+        setActiveAnchorEl(null);
+      } else {
+        setActiveAnchorEl(anchor);
+        setActiveCell({
+          enrollmentClassId: st.enrollment_class_id,
+          dateStr,
+          studentName: st.full_name,
+          cellKey,
+          session,
+          sessionNumber,
+        });
+      }
+    };
+
+    if (daySessions.length === 0) {
+      const cellKey = `${st.enrollment_class_id}_${dateStr}_s1`;
+      const isActive = activeCell?.cellKey === cellKey;
+      return (
+        <div className="flex min-h-9 w-full min-w-[52px] items-center justify-center px-1 py-1">
+          <button
+            id={`attendance-cell-${st.enrollment_class_id}-${dateStr}`}
+            type="button"
+            onClick={(event) => openPickerForSession(event.currentTarget, undefined, 1)}
+            aria-expanded={isActive}
+            aria-label={`Điểm danh ${st.full_name} ngày ${formattedDateLabel}, Buổi 1`}
+            title="Điểm danh Buổi 1"
+            className={`inline-flex h-6 min-w-6 items-center justify-center rounded-md border px-2 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${
+              isActive
+                ? 'border-primary bg-primary-soft text-primary ring-2 ring-primary/30'
+                : 'border-border/60 bg-surface text-text-muted hover:border-primary/50 hover:bg-surface-muted hover:text-text-primary'
+            }`}
+          >
+            —
+          </button>
+        </div>
+      );
+    }
+
+    const nextSessionNumber = daySessions.length + 1;
+    const plusCellKey = `${st.enrollment_class_id}_${dateStr}_s${nextSessionNumber}`;
+    const isPlusActive = activeCell?.cellKey === plusCellKey;
+
     return (
-      <button
+      <div
         id={`attendance-cell-${st.enrollment_class_id}-${dateStr}`}
-        type="button"
-        onClick={(event) => {
-          if (isActive) {
-            setActiveCell(null);
-            setActiveAnchorEl(null);
-          } else {
-            setActiveAnchorEl(event.currentTarget);
-            setActiveCell({ enrollmentClassId: st.enrollment_class_id, dateStr, studentName: st.full_name, cellKey: `${st.enrollment_class_id}_${dateStr}` });
-          }
-        }}
-        aria-expanded={isActive}
-        aria-label={`Điểm danh ${st.full_name} ngày ${new Date(`${dateStr}T00:00:00`).toLocaleDateString('vi-VN')}, ${daySessions.length || 1} buổi`}
-        className={`flex min-h-9 w-full min-w-[52px] flex-wrap items-center justify-center gap-1 rounded-lg border px-1 py-1 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${isActive ? 'border-primary bg-primary-soft ring-2 ring-primary/30' : 'border-transparent hover:border-border hover:bg-surface-muted'}`}
+        className="flex min-h-9 w-full min-w-[60px] flex-wrap items-center justify-center gap-1 px-1 py-1"
       >
-        {daySessions.length === 0 ? (
-          <span className="text-xs font-semibold text-text-muted">—</span>
-        ) : daySessions.map((session, index) => {
+        {daySessions.map((session, index) => {
+          const sessionNumber = index + 1;
+          const cellKey = `${st.enrollment_class_id}_${dateStr}_s${sessionNumber}`;
+          const isBadgeActive = activeCell?.cellKey === cellKey;
           const attendance = attendanceMap.get(`${st.enrollment_class_id}_session_${session.id}`);
           const cfg = attendance ? STATUS_CONFIG[attendance.status] : null;
           return (
-            <span
+            <button
+              id={`attendance-badge-${st.enrollment_class_id}-${dateStr}-${sessionNumber}`}
               key={session.id}
-              title={`Buổi ${index + 1}${session.start_time ? ` · ${session.start_time}` : ''}: ${cfg?.label || 'Chưa điểm danh'}`}
-              className={`inline-flex h-6 min-w-6 items-center justify-center rounded-md border px-1 text-[10px] font-extrabold ${cfg ? `${cfg.bg} ${cfg.text} ${cfg.border}` : 'border-border bg-surface text-text-muted'}`}
+              type="button"
+              onClick={(event) => openPickerForSession(event.currentTarget, session, sessionNumber)}
+              aria-expanded={isBadgeActive}
+              aria-label={`Điểm danh ${st.full_name} ngày ${formattedDateLabel}, Buổi ${sessionNumber}`}
+              title={`Buổi ${sessionNumber}${session.start_time ? ` · ${session.start_time}` : ''}: ${cfg?.label || 'Chưa điểm danh'}`}
+              className={`inline-flex h-6 min-w-6 items-center justify-center rounded-md border px-1.5 text-[10px] font-extrabold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${
+                cfg
+                  ? `${cfg.bg} ${cfg.text} ${cfg.border}`
+                  : 'border-border bg-surface text-text-muted hover:border-primary/50 hover:bg-surface-muted'
+              } ${isBadgeActive ? 'ring-2 ring-primary ring-offset-1' : ''}`}
             >
-              {cfg ? cfg.short : index + 1}
-            </span>
+              {cfg ? cfg.short : sessionNumber}
+            </button>
           );
         })}
-      </button>
+
+        <button
+          id={`attendance-add-session-${st.enrollment_class_id}-${dateStr}`}
+          type="button"
+          onClick={(event) => openPickerForSession(event.currentTarget, undefined, nextSessionNumber)}
+          aria-expanded={isPlusActive}
+          aria-label={`Thêm Buổi ${nextSessionNumber} cho ${st.full_name} ngày ${formattedDateLabel}`}
+          title={`Thêm buổi tiếp theo (Buổi ${nextSessionNumber})`}
+          className={`inline-flex h-6 w-6 items-center justify-center rounded-md border border-dashed text-xs font-extrabold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${
+            isPlusActive
+              ? 'border-primary bg-primary-soft text-primary ring-2 ring-primary/30'
+              : 'border-primary/50 text-primary hover:bg-primary-soft'
+          }`}
+        >
+          +
+        </button>
+      </div>
     );
   };
 
@@ -2285,22 +2358,32 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
       {/* Floating Attendance Picker Popover */}
       {activeCell && activeAnchorEl && (() => {
         const daySessions = getSessionsForCell(activeCell.enrollmentClassId, activeCell.dateStr);
-        const attendanceBySession = new Map<number, Attendance>();
-        daySessions.forEach((session) => {
-          const attendance = attendanceMap.get(`${activeCell.enrollmentClassId}_session_${session.id}`);
-          if (attendance) attendanceBySession.set(session.id, attendance);
-        });
+        const resolvedSession = activeCell.session
+          ? daySessions.find((item) => item.id === activeCell.session?.id) || activeCell.session
+          : undefined;
+        const attendance = resolvedSession
+          ? attendanceMap.get(`${activeCell.enrollmentClassId}_session_${resolvedSession.id}`)
+          : undefined;
+        const isSaving = savingSessionId !== null && savingSessionId === (resolvedSession?.id ?? 'draft');
         return (
           <AttendancePickerPopover
             anchorEl={activeAnchorEl}
             studentName={activeCell.studentName}
             dateStr={activeCell.dateStr}
-            sessions={daySessions}
-            attendanceBySession={attendanceBySession}
-            savingSessionId={savingSessionId}
-            onSelectStatus={(session, status) => handleStatusSelect(activeCell.enrollmentClassId, activeCell.dateStr, session, status)}
+            targetSession={resolvedSession}
+            targetSessionNumber={activeCell.sessionNumber}
+            attendance={attendance}
+            saving={isSaving}
+            onSelectStatus={(session, status) =>
+              handleStatusSelect(
+                activeCell.enrollmentClassId,
+                activeCell.dateStr,
+                session,
+                status,
+                activeCell.sessionNumber
+              )
+            }
             onClear={(session) => handleClearCell(activeCell.enrollmentClassId, session)}
-            onAddSession={() => handleAddSession(activeCell.enrollmentClassId, activeCell.dateStr)}
             onDeleteSession={handleDeleteSession}
             onClose={() => {
               setActiveCell(null);

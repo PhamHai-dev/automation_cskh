@@ -15,3 +15,5 @@ backend/uploads/
 backend/scratch-*.js
 src_code_ZaloCRM_tham_khao/
 backups/
+.claude/
+
