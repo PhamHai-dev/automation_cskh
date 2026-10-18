@@ -1,20 +1,34 @@
 /**
- * Unit & integration tests for the Hybrid LINE module:
- *   - LineOaAdapter (HMAC-SHA256 signature verification, Reply-First 0-quota, Push-Fallback, HTTP 409 idempotency)
- *   - LineWebhookHandler (2-tap `LK-xxxxxx` student binding, `join` class group event, synthetic ping skip)
- *   - LineAccountPool (`ILineDeliveryDispatcher` registration & routing between OA and PERSONAL)
+ * Unit & integration tests for the Hardened Hybrid LINE module:
+ *   - LineOaAdapter (HMAC-SHA256 signature verification, Reply-First 0-quota, Push-Fallback, HTTP 409 idempotency, Monthly Quota Guardrail at 100%)
+ *   - LineRateLimiter (anti-ban burst/daily limits for friend_lookup protecting against TalkException Code 35, custom overrides, OA quota guardrail)
+ *   - LinePersonalAdapter (per-account Proxy custom fetch, Epoch Guard & AbortController signal, debounced reqseq persistence, TalkException Code 35/107, circuit breaker)
+ *   - LineService (AES-256-GCM credential export/import validation, rate-limited phone lookup)
+ *   - LineWebhookHandler (2-tap `LK-xxxxxx` student binding, `join` class group event)
+ *   - LineAccountPool (`ILineDeliveryDispatcher` registration & routing)
  */
 
 import crypto from 'node:crypto';
 import { LineOaAdapter } from '../line-oa.adapter';
+import { LinePersonalAdapter } from '../line-personal.adapter';
+import { lineRateLimiter } from '../line-rate-limiter';
+import { lineService } from '../line.service';
 import { lineWebhookHandler } from '../line-webhook.handler';
 import { linePool } from '../line-pool';
 import { getLineDeliveryDispatcher } from '../line-dispatcher.contract';
+import { encryptJson } from '../../../shared/crypto/aes-gcm';
 import { prisma } from '../../../prisma/client';
 import { lineRepository } from '../line-repository';
 
+process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-jwt-secret-key-for-line-hybrid-32bytes';
+
 jest.mock('../../../prisma/client', () => ({
   prisma: {
+    lineAccount: {
+      findUnique: jest.fn(),
+      update: jest.fn(),
+      findMany: jest.fn(),
+    },
     lineConversation: {
       findUnique: jest.fn(),
       update: jest.fn(),
@@ -36,9 +50,12 @@ jest.mock('../../../shared/realtime/socket-singleton', () => ({
   getIo: jest.fn(() => null),
 }));
 
-describe('LINE Hybrid Module (Official Account + Personal E2EE)', () => {
+describe('LINE Hybrid Module (Official Account + Personal E2EE + Anti-Ban Hardening)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    lineRateLimiter.resetMemory();
+    (prisma.lineAccount.findUnique as jest.Mock).mockResolvedValue(null);
+    (prisma.lineAccount.update as jest.Mock).mockResolvedValue({});
   });
 
   describe('LineOaAdapter', () => {
@@ -140,6 +157,249 @@ describe('LINE Hybrid Module (Official Account + Personal E2EE)', () => {
 
       expect(res.sentVia).toBe('push_api');
       expect(res.providerMessageId).toBe(`push_idempotent_${retryKey}`);
+    });
+
+    it('blocks pushMessage at 100% monthly quota while still allowing free reply_token replies', async () => {
+      const adapter = new LineOaAdapter(10, credentials);
+      const replySpy = jest
+        .spyOn(adapter.client, 'replyMessage')
+        .mockResolvedValue({ sentMessages: [{ id: 'msg_free_reply_99' }] } as any);
+      const pushSpy = jest
+        .spyOn(adapter.client, 'pushMessage')
+        .mockResolvedValue({ sentMessages: [{ id: 'msg_push_blocked' }] } as any);
+
+      // Account is at 100% monthly quota (200 / 200)
+      (prisma.lineAccount.findUnique as jest.Mock).mockResolvedValue({
+        id: 10,
+        monthly_quota: 200,
+        monthly_consumption: 200,
+      });
+
+      // 1. When no reply_token exists, pushMessage must be blocked by monthly quota guardrail
+      (prisma.lineConversation.findUnique as jest.Mock).mockResolvedValue(null);
+
+      await expect(
+        adapter.sendMessageWithReplyFallback({
+          lineAccountId: 10,
+          to: 'U_student_001',
+          text: 'Push message vượt quota',
+        }),
+      ).rejects.toThrow(/100% hạn mức tin nhắn Push tháng của LINE OA/);
+      expect(pushSpy).not.toHaveBeenCalled();
+
+      // 2. When a fresh reply_token exists, free reply still succeeds despite 100% quota
+      (prisma.lineConversation.findUnique as jest.Mock).mockResolvedValue({
+        id: 55,
+        reply_token: 'free_reply_token_still_works',
+        reply_token_expires_at: new Date(Date.now() + 30_000),
+      });
+
+      const freeReplyRes = await adapter.sendMessageWithReplyFallback({
+        lineAccountId: 10,
+        to: 'U_student_001',
+        text: 'Phản hồi miễn phí qua Reply Token',
+      });
+
+      expect(freeReplyRes.sentVia).toBe('reply_token');
+      expect(freeReplyRes.providerMessageId).toBe('msg_free_reply_99');
+      expect(replySpy).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('LineRateLimiter (Anti-Ban & TalkException Code 35 Protection)', () => {
+    it('blocks friend_lookup after 2 burst lookups in 10 minutes on PERSONAL account', async () => {
+      const accountId = 501;
+
+      // 1st lookup allowed
+      await expect(
+        lineRateLimiter.consumeOrThrow(accountId, 'friend_lookup', 'PERSONAL'),
+      ).resolves.toBeUndefined();
+
+      // 2nd lookup allowed
+      await expect(
+        lineRateLimiter.consumeOrThrow(accountId, 'friend_lookup', 'PERSONAL'),
+      ).resolves.toBeUndefined();
+
+      // 3rd lookup within 10 mins blocked with HTTP 429
+      await expect(
+        lineRateLimiter.consumeOrThrow(accountId, 'friend_lookup', 'PERSONAL'),
+      ).rejects.toMatchObject({
+        statusCode: 429,
+        code: 'LINE_RATE_LIMIT_EXCEEDED',
+      });
+    });
+
+    it('computes OA quota guardrail statuses (OK, WARN_80, CRITICAL_95, EXHAUSTED_100)', () => {
+      expect(
+        lineRateLimiter.checkOaQuotaGuardrail({ monthly_quota: 1000, monthly_consumption: 250 }),
+      ).toMatchObject({ status: 'OK', usagePct: 25, allowPush: true, allowFreeReplyToken: true });
+
+      expect(
+        lineRateLimiter.checkOaQuotaGuardrail({ monthly_quota: 1000, monthly_consumption: 820 }),
+      ).toMatchObject({
+        status: 'WARN_80',
+        usagePct: 82,
+        allowPush: true,
+        allowFreeReplyToken: true,
+      });
+
+      expect(
+        lineRateLimiter.checkOaQuotaGuardrail({ monthly_quota: 1000, monthly_consumption: 960 }),
+      ).toMatchObject({
+        status: 'CRITICAL_95',
+        usagePct: 96,
+        allowPush: true,
+        allowFreeReplyToken: true,
+      });
+
+      expect(
+        lineRateLimiter.checkOaQuotaGuardrail({ monthly_quota: 1000, monthly_consumption: 1000 }),
+      ).toMatchObject({
+        status: 'EXHAUSTED_100',
+        usagePct: 100,
+        allowPush: false,
+        allowFreeReplyToken: true,
+      });
+    });
+  });
+
+  describe('LinePersonalAdapter (Proxy Isolation, AbortController Signal, reqseq Persistence)', () => {
+    it('passes custom proxy fetch and AbortController signal to @evex/linejs and persists reqseq updates', async () => {
+      jest.useFakeTimers();
+      try {
+        const updateAccountSpy = jest
+          .spyOn(lineRepository, 'updateAccount')
+          .mockResolvedValue({
+            id: 77,
+            account_type: 'PERSONAL',
+            status: 'ACTIVE',
+            display_name: 'CSKH Personal',
+            line_mid: 'u_mid_77',
+            avatar_url: null,
+          } as any);
+
+        const listenMock = jest.fn().mockResolvedValue(undefined);
+        const loginWithAuthTokenMock = jest.fn().mockResolvedValue({
+          authToken: 'saved_auth_token_77',
+          getMyProfile: jest.fn().mockResolvedValue({
+            mid: 'u_mid_77',
+            displayName: 'CSKH Personal',
+          }),
+          on: jest.fn(),
+          listen: listenMock,
+        });
+
+        const adapter = new LinePersonalAdapter(
+          77,
+          {
+            mode: 'PERSONAL',
+            authToken: 'saved_auth_token_77',
+            e2eeKeychain: { reqseq: 12 },
+          },
+          'http://proxy.edura.local:8080',
+        );
+
+        jest.spyOn(adapter as any, 'loadLineJs').mockResolvedValue({
+          loginWithAuthToken: loginWithAuthTokenMock,
+        });
+        jest.spyOn(adapter, 'syncFriends').mockResolvedValue({ synced: 0 });
+        jest.spyOn(adapter, 'syncGroups').mockResolvedValue({ synced: 0 });
+
+        const connected = await adapter.connectWithSavedSession();
+        expect(connected).toBe(true);
+
+        // Verify custom proxy fetch was passed in InitOptions to loginWithAuthToken
+        expect(loginWithAuthTokenMock).toHaveBeenCalledWith(
+          'saved_auth_token_77',
+          expect.objectContaining({
+            device: 'DESKTOPWIN',
+            storage: adapter.storage,
+            fetch: expect.any(Function),
+          }),
+        );
+
+        // Verify AbortController signal was passed to client.listen({ talk: true, signal })
+        expect(listenMock).toHaveBeenCalledWith(
+          expect.objectContaining({
+            talk: true,
+            signal: expect.any(AbortSignal),
+          }),
+        );
+        const passedSignal: AbortSignal = listenMock.mock.calls[0][0].signal;
+        expect(passedSignal.aborted).toBe(false);
+
+        // Clear calls from initial login and mutate storage ("reqseq")
+        updateAccountSpy.mockClear();
+        await adapter.storage.set('reqseq', 42);
+
+        // Advance debounce timer (2000ms) -> should persist encrypted_session_data with reqseq=42
+        jest.advanceTimersByTime(2100);
+        await Promise.resolve();
+
+        expect(updateAccountSpy).toHaveBeenCalledWith(
+          77,
+          expect.objectContaining({
+            encrypted_session_data: expect.any(String),
+            session_epoch: adapter.epoch,
+          }),
+        );
+
+        // Disconnect should abort the signal and increment epoch
+        const prevEpoch = adapter.epoch;
+        adapter.disconnect();
+        expect(passedSignal.aborted).toBe(true);
+        expect(adapter.epoch).toBe(prevEpoch + 1);
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+  });
+
+  describe('LineService Credential Export & Import Validation', () => {
+    it('exports encrypted session blob and validates decrypted structure on import', async () => {
+      const validPersonalBlob = encryptJson({
+        mode: 'PERSONAL',
+        authToken: 'token_abc_123',
+        e2eeKeychain: { reqseq: 99 },
+      });
+      const validOaBlob = encryptJson({
+        mode: 'OA',
+        channelId: '2000999',
+        channelSecret: 'sec_999',
+        channelAccessToken: 'tok_999',
+      });
+
+      jest.spyOn(lineRepository, 'findAccountById').mockResolvedValue({
+        id: 88,
+        account_type: 'PERSONAL',
+        display_name: 'Nick CS 01',
+        encrypted_session_data: validPersonalBlob,
+      } as any);
+      const updateSpy = jest.spyOn(lineRepository, 'updateAccount').mockResolvedValue({
+        id: 88,
+        account_type: 'PERSONAL',
+      } as any);
+
+      // Export
+      const exported = await lineService.exportCredentials(88);
+      expect(exported.encrypted_session_data).toBe(validPersonalBlob);
+      expect(exported.account_type).toBe('PERSONAL');
+
+      // Import valid PERSONAL blob into PERSONAL account
+      const imported = await lineService.importCredentials(88, validPersonalBlob);
+      expect(imported.success).toBe(true);
+      expect(imported.mode).toBe('PERSONAL');
+      expect(updateSpy).toHaveBeenCalled();
+
+      // Reject corrupted / non-decryptable blob
+      await expect(lineService.importCredentials(88, 'not-valid-base64-gcm')).rejects.toMatchObject(
+        { statusCode: 400 },
+      );
+
+      // Reject OA credentials imported into a PERSONAL account
+      await expect(lineService.importCredentials(88, validOaBlob)).rejects.toMatchObject({
+        statusCode: 400,
+      });
     });
   });
 

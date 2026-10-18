@@ -5,8 +5,8 @@
  *   - `LineAccountType.OA` instances (`LineOaAdapter` wrapping `@line/bot-sdk`)
  *   - `LineAccountType.PERSONAL` instances (`LinePersonalAdapter` wrapping `@evex/linejs`)
  *
- * Implements `ILineDeliveryDispatcher` and registers itself via `registerLineDeliveryDispatcher(this)`
- * on module load so `automation-worker.ts` can dispatch `LINE_PERSONAL` and `LINE_GROUP` deliveries.
+ * Enforces `lineRateLimiter` on outbound personal/group messages and passes
+ * `account.proxy_url` into `LinePersonalAdapter` for per-account IP isolation.
  */
 
 import { createLogger } from '../../shared/logger/logger';
@@ -14,6 +14,7 @@ import { decryptJson, encryptJson } from '../../shared/crypto/aes-gcm';
 import { lineRepository } from './line-repository';
 import { LineOaAdapter } from './line-oa.adapter';
 import { LinePersonalAdapter } from './line-personal.adapter';
+import { lineRateLimiter } from './line-rate-limiter';
 import {
   registerLineDeliveryDispatcher,
   type ILineDeliveryDispatcher,
@@ -56,6 +57,7 @@ export class LineAccountPool implements ILineDeliveryDispatcher {
 
   async shutdown(): Promise<void> {
     for (const adapter of this.personalAdapters.values()) {
+      await adapter.flushSessionPersistence().catch(() => undefined);
       adapter.disconnect();
     }
     this.personalAdapters.clear();
@@ -136,10 +138,15 @@ export class LineAccountPool implements ILineDeliveryDispatcher {
     pinCode?: string;
     status: string;
   }> {
+    const account = await lineRepository.findAccountById(accountId);
+    const proxyUrl = account?.proxy_url ?? null;
+
     let adapter = this.personalAdapters.get(accountId);
     if (!adapter) {
-      adapter = new LinePersonalAdapter(accountId);
+      adapter = new LinePersonalAdapter(accountId, undefined, proxyUrl);
       this.personalAdapters.set(accountId, adapter);
+    } else {
+      adapter.setProxyUrl(proxyUrl);
     }
     return adapter.startQrLogin();
   }
@@ -151,6 +158,7 @@ export class LineAccountPool implements ILineDeliveryDispatcher {
     this.oaAdapters.delete(accountId);
     const personal = this.personalAdapters.get(accountId);
     if (personal) {
+      await personal.flushSessionPersistence().catch(() => undefined);
       personal.disconnect();
       this.personalAdapters.delete(accountId);
     }
@@ -196,7 +204,11 @@ export class LineAccountPool implements ILineDeliveryDispatcher {
         return true;
       } else {
         const personalCreds = session as LinePersonalSessionData;
-        const adapter = new LinePersonalAdapter(lineAccountId, personalCreds);
+        const adapter = new LinePersonalAdapter(
+          lineAccountId,
+          personalCreds,
+          account.proxy_url,
+        );
         const connected = await adapter.connectWithSavedSession();
         if (connected) {
           this.personalAdapters.set(lineAccountId, adapter);
@@ -224,8 +236,12 @@ export class LineAccountPool implements ILineDeliveryDispatcher {
       throw new Error(`LINE account ${params.lineAccountId} is not ready`);
     }
 
-    let result: LineSendResult;
     const oaAdapter = this.oaAdapters.get(params.lineAccountId);
+    const accountType = oaAdapter ? 'OA' : 'PERSONAL';
+
+    await lineRateLimiter.consumeOrThrow(params.lineAccountId, 'message', accountType);
+
+    let result: LineSendResult;
     if (oaAdapter) {
       result = await oaAdapter.sendMessageWithReplyFallback({
         lineAccountId: params.lineAccountId,
@@ -265,8 +281,12 @@ export class LineAccountPool implements ILineDeliveryDispatcher {
       throw new Error(`LINE account ${params.lineAccountId} is not ready`);
     }
 
-    let result: LineSendResult;
     const oaAdapter = this.oaAdapters.get(params.lineAccountId);
+    const accountType = oaAdapter ? 'OA' : 'PERSONAL';
+
+    await lineRateLimiter.consumeOrThrow(params.lineAccountId, 'group_message', accountType);
+
+    let result: LineSendResult;
     if (oaAdapter) {
       result = await oaAdapter.sendMessageWithReplyFallback({
         lineAccountId: params.lineAccountId,
