@@ -80,6 +80,7 @@ export class StudentsRepository {
           date_of_birth: dob,
           occupation: data.occupation || undefined,
           zalo_uid: data.zalo_uid || undefined,
+          line_uid: data.line_uid || undefined,
           note: data.note || undefined,
         },
       });
@@ -258,6 +259,7 @@ export class StudentsRepository {
           ...(data.date_of_birth !== undefined ? { date_of_birth: dob || null } : {}),
           ...(data.occupation !== undefined ? { occupation: data.occupation || null } : {}),
           ...(data.zalo_uid !== undefined ? { zalo_uid: data.zalo_uid || null } : {}),
+          ...(data.line_uid !== undefined ? { line_uid: data.line_uid || null } : {}),
           ...(data.note !== undefined ? { note: data.note || null } : {}),
         },
       });

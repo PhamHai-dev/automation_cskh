@@ -11,6 +11,7 @@ export const createStudentSchema = z.object({
     date_of_birth: z.string().optional(),
     occupation: z.string().optional(),
     zalo_uid: z.string().optional(),
+    line_uid: z.string().optional(),
     note: z.string().optional(),
 
     // Enrollment & Course fields
@@ -60,6 +61,7 @@ export const updateStudentSchema = z.object({
     date_of_birth: z.string().optional(),
     occupation: z.string().optional(),
     zalo_uid: z.string().optional(),
+    line_uid: z.string().optional(),
     note: z.string().optional(),
 
     // Enrollment & Course fields

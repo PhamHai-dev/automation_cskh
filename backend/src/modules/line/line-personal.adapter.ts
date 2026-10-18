@@ -85,9 +85,11 @@ export class LinePersonalAdapter {
   }
 
   private async loadLineJs(): Promise<any> {
-    // Load @evex/linejs dynamically (same pattern as zca-js in zalo-pool.ts)
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    return require('@evex/linejs');
+    // @evex/linejs is an ESM-only package ("type": "module").
+    // Use dynamic import via Function constructor so TypeScript ("module": "commonjs")
+    // preserves native ESM import() at runtime in Node.js 22.
+    const dynamicImport = new Function('specifier', 'return import(specifier)');
+    return dynamicImport('@evex/linejs');
   }
 
   /**
@@ -141,51 +143,58 @@ export class LinePersonalAdapter {
   }): Promise<void> {
     try {
       const linejs = await this.loadLineJs();
-      const loginWithQrCode = linejs.loginWithQrCode;
+      const loginFn = linejs.loginWithQR ?? linejs.loginWithQrCode;
 
-      if (typeof loginWithQrCode !== 'function') {
-        throw new Error('@evex/linejs loginWithQrCode not available');
+      if (typeof loginFn !== 'function') {
+        throw new Error('@evex/linejs loginWithQR not available');
       }
 
-      const client = await loginWithQrCode(
+      const handleQrUrl = async (qrUrl: string) => {
+        const qrDataUri = `https://api.qrserver.com/v1/create-qr-code/?size=280x280&data=${encodeURIComponent(
+          qrUrl,
+        )}`;
+        await lineRepository.updateAccount(this.accountId, {
+          status: 'QR_PENDING',
+          qr_code: qrDataUri,
+          pin_code: null,
+          qr_pending_at: new Date(),
+        });
+        emitLineQr({
+          accountId: this.accountId,
+          qrUrl,
+          qrCodeDataUri: qrDataUri,
+          status: 'QR_PENDING',
+          timestamp: new Date().toISOString(),
+        });
+        callbacks?.onQr?.(qrUrl, qrDataUri);
+      };
+
+      const handlePinCode = async (pin: string) => {
+        await lineRepository.updateAccount(this.accountId, {
+          status: 'PIN_REQUIRED',
+          pin_code: pin,
+        });
+        emitLinePin({
+          accountId: this.accountId,
+          pinCode: pin,
+          status: 'PIN_REQUIRED',
+          timestamp: new Date().toISOString(),
+        });
+        callbacks?.onPin?.(pin);
+      };
+
+      // @evex/linejs v2.7 signature: loginWithQR(opts: WithQROptions, init: InitOptions)
+      const client = await loginFn(
+        {
+          onReceiveQRUrl: handleQrUrl,
+          onReceiveQrUrl: handleQrUrl,
+          onPincodeRequest: handlePinCode,
+          onReceivePinCode: handlePinCode,
+        },
         {
           device: (this.sessionData.device as any) || 'DESKTOPWIN',
           storage: this.storage as any,
         },
-        {
-          onReceiveQrUrl: async (qrUrl: string) => {
-            const qrDataUri = `https://api.qrserver.com/v1/create-qr-code/?size=280x280&data=${encodeURIComponent(
-              qrUrl,
-            )}`;
-            await lineRepository.updateAccount(this.accountId, {
-              status: 'QR_PENDING',
-              qr_code: qrDataUri,
-              pin_code: null,
-              qr_pending_at: new Date(),
-            });
-            emitLineQr({
-              accountId: this.accountId,
-              qrUrl,
-              qrCodeDataUri: qrDataUri,
-              status: 'QR_PENDING',
-              timestamp: new Date().toISOString(),
-            });
-            callbacks?.onQr?.(qrUrl, qrDataUri);
-          },
-          onReceivePinCode: async (pin: string) => {
-            await lineRepository.updateAccount(this.accountId, {
-              status: 'PIN_REQUIRED',
-              pin_code: pin,
-            });
-            emitLinePin({
-              accountId: this.accountId,
-              pinCode: pin,
-              status: 'PIN_REQUIRED',
-              timestamp: new Date().toISOString(),
-            });
-            callbacks?.onPin?.(pin);
-          },
-        } as any,
       );
 
       await this.finalizeConnectedClient(client);
@@ -256,7 +265,8 @@ export class LinePersonalAdapter {
     let pictureUrl: string | null = null;
 
     try {
-      const profile = await client.base?.talk?.getProfile?.();
+      const profile =
+        (await client.getMyProfile?.()) ?? (await client.base?.talk?.getProfile?.());
       mid = profile?.mid ?? null;
       displayName = profile?.displayName ?? null;
       pictureUrl = profile?.pictureStatus
@@ -395,7 +405,17 @@ export class LinePersonalAdapter {
     }
 
     let sent: any;
-    if (this.client.base?.talk?.sendMessage) {
+    if (typeof this.client.sendCompactMessage === 'function') {
+      try {
+        sent = await this.client.sendCompactMessage(toMid, text);
+      } catch {
+        sent = await this.client.base?.talk?.sendMessage?.({
+          to: toMid,
+          text,
+          e2ee: false,
+        });
+      }
+    } else if (this.client.base?.talk?.sendMessage) {
       try {
         sent = await this.client.base.talk.sendMessage({
           to: toMid,
@@ -425,28 +445,35 @@ export class LinePersonalAdapter {
    * Sync all contacts (`LineFriend`) for this Personal LINE account.
    */
   async syncFriends(): Promise<{ synced: number }> {
-    if (!this.client?.base?.talk) return { synced: 0 };
+    if (!this.client) return { synced: 0 };
 
-    const contactIds: string[] =
-      (await this.client.base.talk.getAllContactIds?.()) ?? [];
-    if (!contactIds.length) return { synced: 0 };
-
-    const contacts: any[] =
-      (await this.client.base.talk.getContacts?.({ mids: contactIds })) ?? [];
+    let contacts: any[] = [];
+    if (typeof this.client.fetchUsers === 'function') {
+      contacts = (await this.client.fetchUsers()) ?? [];
+    } else if (this.client.base?.talk) {
+      const contactIds: string[] =
+        (await this.client.base.talk.getAllContactIds?.()) ?? [];
+      if (contactIds.length) {
+        contacts =
+          (await this.client.base.talk.getContacts?.({ mids: contactIds })) ?? [];
+      }
+    }
 
     let synced = 0;
     for (const c of contacts) {
-      const mid = c?.mid;
+      const raw = c?.raw ?? c;
+      const mid = c?.mid ?? raw?.mid;
       if (!mid) continue;
       await lineRepository.upsertFriend(this.accountId, mid, {
         friendship_status: 'friend',
         relationship_kind: 'friend',
-        line_display_name: c.displayName ?? c.overriddenDisplayName ?? null,
-        alias_in_nick: c.overriddenDisplayName ?? null,
-        line_avatar_url: c.pictureStatus
-          ? `https://obs.line-scdn.net/${c.pictureStatus}`
+        line_display_name:
+          c?.displayName ?? raw?.displayName ?? raw?.overriddenDisplayName ?? null,
+        alias_in_nick: raw?.overriddenDisplayName ?? null,
+        line_avatar_url: raw?.pictureStatus
+          ? `https://obs.line-scdn.net/${raw.pictureStatus}`
           : null,
-        status_message: c.statusMessage ?? null,
+        status_message: c?.statusMessage ?? raw?.statusMessage ?? null,
       });
       synced++;
     }
