@@ -75,6 +75,10 @@ export interface Enrollment {
     attendance?: Array<{
       id: number;
       status: string;
+      teacher_status?: string | null;
+      cs_status?: string | null;
+      reconciliation_state?: 'PENDING_TEACHER' | 'PENDING_CS' | 'MATCHED' | 'CONFLICT' | 'RESOLVED';
+      deleted_at?: string | null;
       class_session_id: number;
       class_session?: { id: number; session_date: string; session_number: number };
     }>;

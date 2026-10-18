@@ -155,16 +155,6 @@ export const formatSessionDate = (raw: string | Date | null | undefined): string
   return `${year}-${month}-${day}`;
 };
 
-const isDateInSchedule = (dateStr: string, pattern?: string | null): boolean => {
-  if (!pattern) return true;
-  if (pattern.toUpperCase() === 'LKCD') return true;
-  const d = new Date(dateStr);
-  const day = d.getDay();
-  const map: Record<number, string> = { 0: 'CN', 1: '2', 2: '3', 3: '4', 4: '5', 5: '6', 6: '7' };
-  const char = map[day];
-  return pattern.toUpperCase().includes(char);
-};
-
 interface AttendancePickerPopoverProps {
   anchorEl: HTMLElement;
   studentName: string;
@@ -368,6 +358,7 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
 
   const [internalActiveTab] = useState<AttendanceTab>('quick');
   const activeTab = controlledActiveTab ?? internalActiveTab;
+  const activeSide: AttendanceSide = activeTab === 'quick' ? 'CS' : selectedSide;
 
   // Tab 1 (Quick Attendance) specific date state (Default: Today)
   const [quickDate, setQuickDate] = useState<string>(() => toLocalDateString(new Date()));
@@ -491,18 +482,33 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
     return classId ? sessionsByClassAndDate.get(`${classId}_${dateStr}`) || [] : [];
   };
 
-  // Map existing attendances by enrollment + concrete session (never by date).
-  const attendanceMap = useMemo(() => {
+  // Map toàn bộ bản ghi Attendance (cả GV & CSKH) chưa xóa theo enrollment + session
+  const rawAttendanceMap = useMemo(() => {
     const map = new Map<string, Attendance>();
     attendances.forEach((a) => {
       if ((a as any).deleted_at) return;
-      const visibleStatus = selectedSide === 'TEACHER' ? a.teacher_status : a.cs_status;
-      if (!visibleStatus) return;
-      map.set(`${a.enrollment_class_id}_session_${a.class_session_id}`, { ...a, status: visibleStatus });
+      map.set(`${a.enrollment_class_id}_session_${a.class_session_id}`, a);
     });
-    attendanceOverrides.forEach((value, key) => map.set(key, value));
+    attendanceOverrides.forEach((value, key) => {
+      if ((value as any).deleted_at) {
+        map.delete(key);
+      } else {
+        map.set(key, value);
+      }
+    });
     return map;
-  }, [attendances, attendanceOverrides, selectedSide]);
+  }, [attendances, attendanceOverrides]);
+
+  // Map existing attendances by enrollment + concrete session (never by date) filtered by activeSide.
+  const attendanceMap = useMemo(() => {
+    const map = new Map<string, Attendance>();
+    rawAttendanceMap.forEach((a, key) => {
+      const visibleStatus = activeSide === 'TEACHER' ? a.teacher_status : a.cs_status;
+      if (!visibleStatus) return;
+      map.set(key, { ...a, status: visibleStatus });
+    });
+    return map;
+  }, [rawAttendanceMap, activeSide]);
 
 
 
@@ -803,7 +809,7 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
       records.forEach((r) => {
         pendingMap[`${r.ecId}_${r.dateStr}`] = r.status;
       });
-      await onSaveCustom(pendingMap, undefined, bulkSessionIndex, selectedSide);
+      await onSaveCustom(pendingMap, undefined, bulkSessionIndex, activeSide);
     } else if (cls) {
       const byDate = new Map<string, { ecId: number; status: AttendanceStatus }[]>();
       records.forEach((r) => {
@@ -822,7 +828,7 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
             enrollment_class_id: i.ecId,
             status: i.status,
           })),
-          side: selectedSide,
+          side: activeSide,
         });
       }
       onRefresh();
@@ -833,20 +839,6 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
   const handleBulkApplyAttended = async () => {
     const targetDate = activeTab === 'quick' ? quickDate : bulkDate;
     if (selectedStudents.size === 0 || !targetDate) return;
-
-    let outOfScheduleCount = 0;
-    selectedStudents.forEach((ecId) => {
-      const student = students.find((s) => s.enrollment_class_id === ecId);
-      if (student && !isDateInSchedule(targetDate, student.schedule_pattern)) {
-        outOfScheduleCount++;
-      }
-    });
-
-    if (outOfScheduleCount > 0) {
-      if (!window.confirm(`Có ${outOfScheduleCount} học viên được chọn không có lịch học vào ngày này. Bạn có chắc chắn muốn điểm danh?`)) {
-        return;
-      }
-    }
 
     const records = Array.from(selectedStudents)
       .filter((ecId) => ecId > 0)
@@ -874,20 +866,6 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
   const handleBulkApplyAbsent = async (status: AttendanceStatus) => {
     const targetDate = activeTab === 'quick' ? quickDate : bulkDate;
     if (selectedStudents.size === 0 || !targetDate) return;
-
-    let outOfScheduleCount = 0;
-    selectedStudents.forEach((ecId) => {
-      const student = students.find(s => s.enrollment_class_id === ecId);
-      if (student && !isDateInSchedule(targetDate, student.schedule_pattern)) {
-        outOfScheduleCount++;
-      }
-    });
-
-    if (outOfScheduleCount > 0) {
-      if (!window.confirm(`Có ${outOfScheduleCount} học viên được chọn không có lịch học vào ngày này. Bạn có chắc chắn muốn điểm danh?`)) {
-        return;
-      }
-    }
 
     const records = Array.from(selectedStudents)
       .filter((ecId) => ecId > 0)
@@ -924,7 +902,10 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
       if (!classId) return;
       const session = (sessionsByClassAndDate.get(`${classId}_${targetDate}`) || [])[bulkSessionIndex];
       if (!session) return;
-      const existing = attendanceMap.get(`${ecId}_session_${session.id}`);
+      const key = `${ecId}_session_${session.id}`;
+      const existing = activeTab === 'quick'
+        ? (rawAttendanceMap.get(key)?.cs_status ? rawAttendanceMap.get(key) : undefined)
+        : attendanceMap.get(key);
       if (existing) toRemove.push({ classId, sessionId: session.id, attendanceId: existing.id });
     });
 
@@ -935,7 +916,7 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
     try {
       setBulkSaving(true);
       await Promise.all(toRemove.map((item) =>
-        attendanceApi.remove(item.classId, item.sessionId, item.attendanceId, selectedSide)
+        attendanceApi.remove(item.classId, item.sessionId, item.attendanceId, activeSide)
       ));
       toast.info(`Đã xóa điểm danh Buổi ${bulkSessionIndex + 1} cho ${toRemove.length} học viên`);
       onRefresh();
@@ -957,9 +938,6 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
     status: AttendanceStatus,
     fallbackSessionNumber?: number
   ) => {
-    const student = students.find((item) => item.enrollment_class_id === enrollmentClassId);
-    if (student && !isDateInSchedule(dateStr, student.schedule_pattern) &&
-      !window.confirm(`${student.full_name} không có lịch học ngày này. Vẫn điểm danh?`)) return;
     const classId = resolveClassId(enrollmentClassId, session);
     if (!classId) return toast.error('Không xác định được lớp học');
 
@@ -977,14 +955,14 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
       const saved = await attendanceApi.mark(classId, target.id, {
         enrollment_class_id: enrollmentClassId,
         status,
-        side: selectedSide,
+        side: activeSide,
       });
       setAttendanceOverrides((current) => {
         const next = new Map(current);
-        const sideStatus = selectedSide === 'TEACHER' ? saved.teacher_status : saved.cs_status;
+        const sideStatus = activeSide === 'TEACHER' ? saved.teacher_status : saved.cs_status;
         next.set(`${enrollmentClassId}_session_${target!.id}`, {
           ...saved,
-          status: sideStatus || status,
+          status: sideStatus || saved.status || status,
         });
         return next;
       });
@@ -1001,16 +979,36 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
 
   const handleClearCell = async (enrollmentClassId: number, session: ClassSession) => {
     const key = `${enrollmentClassId}_session_${session.id}`;
-    const attendance = attendanceMap.get(key);
+    const rawAtt = rawAttendanceMap.get(key);
+    const attendance = activeTab === 'quick'
+      ? (rawAtt?.cs_status ? rawAtt : undefined)
+      : attendanceMap.get(key);
     if (!attendance) return;
     setActiveCell(null);
     setActiveAnchorEl(null);
     setSavingSessionId(session.id);
     try {
-      await attendanceApi.remove(session.class_id, session.id, attendance.id, selectedSide);
+      await attendanceApi.remove(session.class_id, session.id, attendance.id, activeSide);
       setAttendanceOverrides((current) => {
         const next = new Map(current);
-        next.delete(key);
+        const existing = rawAtt || attendance;
+        const nextTeacherStatus = activeSide === 'TEACHER' ? null : (existing.teacher_status ?? null);
+        const nextCsStatus = activeSide === 'CS' ? null : (existing.cs_status ?? null);
+        if (!nextTeacherStatus && !nextCsStatus) {
+          next.set(key, {
+            ...existing,
+            teacher_status: null,
+            cs_status: null,
+            deleted_at: new Date().toISOString(),
+          } as any);
+        } else {
+          next.set(key, {
+            ...existing,
+            teacher_status: nextTeacherStatus,
+            cs_status: nextCsStatus,
+            reconciliation_state: nextTeacherStatus ? 'PENDING_CS' : 'PENDING_TEACHER',
+          });
+        }
         return next;
       });
       toast.info('Đã chuyển sang Chưa điểm danh');
@@ -1163,25 +1161,178 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
     );
   };
 
+  // Ô chỉ đọc: Điểm danh phía Giáo viên (dùng trong Tab Điểm danh nhanh)
+  const renderTeacherReadonlyCell = (st: StudentRow, dateStr: string) => {
+    if (st.enrollment_class_id <= 0) {
+      return <span className="whitespace-nowrap rounded bg-slate-100/80 px-2 py-0.5 text-[10px] italic text-text-muted">Chưa xếp lớp</span>;
+    }
+    const daySessions = getSessionsForCell(st.enrollment_class_id, dateStr);
+    if (daySessions.length === 0) {
+      return (
+        <div className="flex min-h-9 w-full min-w-[52px] items-center justify-center px-1 py-1">
+          <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-md border border-border/50 bg-slate-50 px-2 text-xs font-semibold text-text-muted">
+            —
+          </span>
+        </div>
+      );
+    }
+
+    return (
+      <div className="flex min-h-9 w-full min-w-[60px] flex-wrap items-center justify-center gap-1 px-1 py-1">
+        {daySessions.map((session, index) => {
+          const sessionNumber = index + 1;
+          const att = rawAttendanceMap.get(`${st.enrollment_class_id}_session_${session.id}`);
+          const tStatus = att?.teacher_status as AttendanceStatus | null | undefined;
+          const cfg = tStatus ? STATUS_CONFIG[tStatus] : null;
+          return (
+            <span
+              key={session.id}
+              title={
+                cfg
+                  ? `Buổi ${sessionNumber} (GV): ${cfg.label}`
+                  : `Buổi ${sessionNumber}: Giáo viên chưa điểm danh`
+              }
+              className={`inline-flex h-6 min-w-6 items-center justify-center rounded-md border px-1.5 text-[10px] font-extrabold ${
+                cfg
+                  ? `${cfg.bg.replace(/\s*hover:\S+/g, '')} ${cfg.text} ${cfg.border}`
+                  : 'border-border/60 bg-slate-100/80 text-text-muted'
+              }`}
+            >
+              {cfg ? cfg.short : '—'}
+            </span>
+          );
+        })}
+      </div>
+    );
+  };
+
+  // Ô chỉ đọc: Điểm danh chốt / Trạng thái cuối (dùng trong Tab Điểm danh nhanh)
+  const renderFinalStatusCell = (st: StudentRow, dateStr: string) => {
+    if (st.enrollment_class_id <= 0) {
+      return <span className="whitespace-nowrap rounded bg-slate-100/80 px-2 py-0.5 text-[10px] italic text-text-muted">Chưa xếp lớp</span>;
+    }
+    const daySessions = getSessionsForCell(st.enrollment_class_id, dateStr);
+    if (daySessions.length === 0) {
+      return (
+        <div className="flex min-h-9 w-full min-w-[52px] items-center justify-center px-1 py-1">
+          <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-md border border-border/50 bg-slate-50 px-2 text-xs font-semibold text-text-muted">
+            —
+          </span>
+        </div>
+      );
+    }
+
+    return (
+      <div className="flex min-h-9 w-full min-w-[60px] flex-wrap items-center justify-center gap-1 px-1 py-1">
+        {daySessions.map((session, index) => {
+          const sessionNumber = index + 1;
+          const att = rawAttendanceMap.get(`${st.enrollment_class_id}_session_${session.id}`);
+          if (!att || (!att.teacher_status && !att.cs_status)) {
+            return (
+              <span
+                key={session.id}
+                title={`Buổi ${sessionNumber}: Chưa có dữ liệu điểm danh`}
+                className="inline-flex h-6 min-w-6 items-center justify-center rounded-md border border-border/60 bg-slate-100/80 px-1.5 text-[10px] font-semibold text-text-muted"
+              >
+                —
+              </span>
+            );
+          }
+
+          if (att.reconciliation_state === 'RESOLVED') {
+            const finalSt = (att.status || att.cs_status || att.teacher_status) as AttendanceStatus | undefined;
+            const cfg = finalSt ? STATUS_CONFIG[finalSt] : null;
+            return (
+              <span
+                key={session.id}
+                title={`Buổi ${sessionNumber} (Đã phân xử): ${cfg?.label || finalSt || ''}`}
+                className={`inline-flex h-6 min-w-6 items-center justify-center rounded-md border px-1.5 text-[10px] font-extrabold ${
+                  cfg
+                    ? `${cfg.bg.replace(/\s*hover:\S+/g, '')} ${cfg.text} ${cfg.border}`
+                    : 'border-border bg-surface text-text-primary'
+                }`}
+              >
+                {cfg ? cfg.short : '—'}
+              </span>
+            );
+          }
+
+          const isMatched =
+            att.reconciliation_state === 'MATCHED' ||
+            Boolean(att.teacher_status && att.cs_status && att.teacher_status === att.cs_status);
+
+          if (isMatched) {
+            const finalSt = (att.status || att.cs_status || att.teacher_status) as AttendanceStatus | undefined;
+            const cfg = finalSt ? STATUS_CONFIG[finalSt] : null;
+            return (
+              <span
+                key={session.id}
+                title={`Buổi ${sessionNumber} (Đã khớp): ${cfg?.label || finalSt || ''}`}
+                className={`inline-flex h-6 min-w-6 items-center justify-center rounded-md border px-1.5 text-[10px] font-extrabold ${
+                  cfg
+                    ? `${cfg.bg.replace(/\s*hover:\S+/g, '')} ${cfg.text} ${cfg.border}`
+                    : 'border-border bg-surface text-text-primary'
+                }`}
+              >
+                {cfg ? cfg.short : '—'}
+              </span>
+            );
+          }
+
+          const isConflict =
+            att.reconciliation_state === 'CONFLICT' ||
+            Boolean(att.teacher_status && att.cs_status && att.teacher_status !== att.cs_status);
+
+          if (isConflict) {
+            const tShort = att.teacher_status ? STATUS_CONFIG[att.teacher_status as AttendanceStatus]?.short || '?' : '?';
+            const csShort = att.cs_status ? STATUS_CONFIG[att.cs_status as AttendanceStatus]?.short || '?' : '?';
+            return (
+              <span
+                key={session.id}
+                title={`Buổi ${sessionNumber}: Lệch điểm danh (GV: ${tShort} | CSKH: ${csShort})`}
+                className="inline-flex h-6 min-w-6 items-center justify-center rounded-md border border-rose-300 bg-rose-100 px-1.5 text-[10px] font-extrabold text-rose-800"
+              >
+                Lệch
+              </span>
+            );
+          }
+
+          // Chỉ mới 1 bên điểm danh (PENDING_CS hoặc PENDING_TEACHER)
+          return (
+            <span
+              key={session.id}
+              title={`Buổi ${sessionNumber}: ${att.teacher_status ? 'Chờ CSKH điểm danh' : 'Chờ Giáo viên điểm danh'}`}
+              className="inline-flex h-6 min-w-6 items-center justify-center rounded-md border border-amber-200 bg-amber-50 px-1.5 text-[10px] font-bold text-amber-700"
+            >
+              Chờ
+            </span>
+          );
+        })}
+      </div>
+    );
+  };
+
   return (
     <div className="bg-surface rounded-2xl border border-border/80 shadow-soft overflow-hidden">
       {/* Unified filters, save action and active-tab controls */}
       <div className="flex flex-wrap items-center gap-2.5 border-b border-border/80 bg-slate-50/60 p-3 sm:px-4">
         {titleHeader}
-        <div className="flex items-center gap-1 rounded-xl border border-border/70 bg-surface p-1" aria-label="Chọn phía điểm danh">
-          {(['TEACHER', 'CS'] as AttendanceSide[]).map((side) => (
-            <button
-              id={`attendance-side-${side.toLowerCase()}`}
-              key={side}
-              type="button"
-              disabled={!privilegedSideChoice && side !== defaultSide}
-              onClick={() => privilegedSideChoice && setSelectedSide(side)}
-              className={`rounded-lg px-3 py-1.5 text-xs font-extrabold transition ${selectedSide === side ? 'bg-primary text-white shadow-sm' : 'text-text-muted hover:bg-surface-muted disabled:hidden'}`}
-            >
-              {side === 'TEACHER' ? 'Phía Giáo viên' : 'Phía CSKH'}
-            </button>
-          ))}
-        </div>
+        {activeTab !== 'quick' && (
+          <div className="flex items-center gap-1 rounded-xl border border-border/70 bg-surface p-1" aria-label="Chọn phía điểm danh">
+            {(['TEACHER', 'CS'] as AttendanceSide[]).map((side) => (
+              <button
+                id={`attendance-side-${side.toLowerCase()}`}
+                key={side}
+                type="button"
+                disabled={!privilegedSideChoice && side !== defaultSide}
+                onClick={() => privilegedSideChoice && setSelectedSide(side)}
+                className={`rounded-lg px-3 py-1.5 text-xs font-extrabold transition ${selectedSide === side ? 'bg-primary text-white shadow-sm' : 'text-text-muted hover:bg-surface-muted disabled:hidden'}`}
+              >
+                {side === 'TEACHER' ? 'Phía Giáo viên' : 'Phía CSKH'}
+              </button>
+            ))}
+          </div>
+        )}
         <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-2">
           {activeTab === 'quick' && (
             <>
@@ -1485,26 +1636,45 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
                 </th>
                 )}
 
-                {/* 1 Cột điểm danh ngày hiện tại (hoặc quickDate) */}
+                {/* 3 Cột điểm danh ngày hiện tại (hoặc quickDate): GV -> CSKH -> Chốt */}
                 {(() => {
                   const [y, m, day] = quickDate.split('-').map(Number);
                   const d = new Date(y, m - 1, day);
-                  const isToday = toLocalDateString(new Date()) === quickDate;
+                  const dateFormatted = `${d.getDate() < 10 ? `0${d.getDate()}` : d.getDate()}/${
+                    d.getMonth() + 1 < 10 ? `0${d.getMonth() + 1}` : d.getMonth() + 1
+                  }/${d.getFullYear()}`;
+                  const dayOfWeek = DAY_OF_WEEK_NAMES[d.getDay()];
 
                   return (
-                    <th className="px-4 py-2 border-r border-border/60 text-center min-w-[140px] bg-blue-50/90 text-primary border-primary/40">
-                      <div className="text-[10px] font-bold text-primary/80 uppercase">
-                        {isToday ? 'Hôm nay' : 'Ngày chọn'} • {DAY_OF_WEEK_NAMES[d.getDay()]}
-                      </div>
-                      <div className="text-[13px] font-extrabold text-primary flex items-center justify-center gap-1">
-                        <CalendarDays className="w-3.5 h-3.5" />
-                        <span>
-                          {d.getDate() < 10 ? `0${d.getDate()}` : d.getDate()}/
-                          {d.getMonth() + 1 < 10 ? `0${d.getMonth() + 1}` : d.getMonth() + 1}/
-                          {d.getFullYear()}
-                        </span>
-                      </div>
-                    </th>
+                    <>
+                      <th className="px-3 py-2 border-r border-border/60 text-center min-w-[130px] bg-slate-100/90 text-text-secondary">
+                        <div className="text-[12px] font-extrabold text-text-primary">
+                          Điểm danh GV
+                        </div>
+                        <div className="mt-0.5 text-[10px] font-semibold text-text-muted flex items-center justify-center gap-1 whitespace-nowrap">
+                          <CalendarDays className="w-3 h-3 shrink-0" />
+                          <span>{dayOfWeek} {dateFormatted} • Chỉ xem</span>
+                        </div>
+                      </th>
+                      <th className="px-3 py-2 border-r border-border/60 text-center min-w-[145px] bg-blue-50/90 text-primary border-primary/40">
+                        <div className="text-[12px] font-extrabold text-primary">
+                          Điểm danh CSKH
+                        </div>
+                        <div className="mt-0.5 text-[10px] font-bold text-primary/80 flex items-center justify-center gap-1 whitespace-nowrap">
+                          <CalendarDays className="w-3 h-3 shrink-0" />
+                          <span>{dayOfWeek} {dateFormatted} • Chấm điểm danh</span>
+                        </div>
+                      </th>
+                      <th className="px-3 py-2 border-r border-border/60 text-center min-w-[135px] bg-emerald-50/70 text-emerald-900">
+                        <div className="text-[12px] font-extrabold text-emerald-900">
+                          Điểm danh (Chốt)
+                        </div>
+                        <div className="mt-0.5 text-[10px] font-semibold text-emerald-700 flex items-center justify-center gap-1 whitespace-nowrap">
+                          <CalendarDays className="w-3 h-3 shrink-0" />
+                          <span>{dayOfWeek} {dateFormatted} • Trạng thái cuối</span>
+                        </div>
+                      </th>
+                    </>
                   );
                 })()}
               </tr>
@@ -1513,7 +1683,7 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
             <tbody>
               {students.length === 0 ? (
                 <tr>
-                  <td colSpan={12} className="text-center py-10 text-text-muted">
+                  <td colSpan={14} className="text-center py-10 text-text-muted">
                     Không có học viên nào để điểm danh.
                   </td>
                 </tr>
@@ -1635,9 +1805,19 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
                       </td>
                       )}
 
-                      {/* 1 Cột Ngày Điểm danh */}
+                      {/* Cột 1: Điểm danh GV (Chỉ đọc) */}
+                      <td className="px-2 py-1.5 border-r border-border/60 text-center bg-slate-50/40">
+                        {renderTeacherReadonlyCell(st, quickDate)}
+                      </td>
+
+                      {/* Cột 2: Điểm danh CSKH (Chấm điểm danh) */}
                       <td className="px-2 py-1.5 border-r border-border/60 text-center bg-blue-50/20">
                         {renderAttendanceCell(st, quickDate)}
+                      </td>
+
+                      {/* Cột 3: Điểm danh Chốt / Trạng thái cuối (Chỉ đọc) */}
+                      <td className="px-2 py-1.5 border-r border-border/60 text-center bg-emerald-50/20">
+                        {renderFinalStatusCell(st, quickDate)}
                       </td>
                     </tr>
                   );
