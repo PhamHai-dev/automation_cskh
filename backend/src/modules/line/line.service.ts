@@ -279,9 +279,44 @@ export class LineService {
 
   async updateAccountLimits(
     accountId: number,
-    overrides: Partial<Record<LineOpCategory, Partial<LineCategoryLimit>>>,
+    overridesInput: any,
   ) {
     const account = await this.getAccount(accountId);
+    let overrides: Partial<Record<LineOpCategory, Partial<LineCategoryLimit>>> = {};
+
+    if (Array.isArray(overridesInput?.categories)) {
+      for (const item of overridesInput.categories) {
+        if (!item?.category) continue;
+        const windowMs =
+          item.burst_window_ms ??
+          (item.burst_window_minutes ? Number(item.burst_window_minutes) * 60_000 : undefined);
+        overrides[item.category as LineOpCategory] = {
+          daily: Number(item.daily_limit ?? item.dailyLimit ?? 200),
+          burst: Number(item.burst_limit ?? item.burstLimit ?? 10),
+          ...(windowMs ? { burstWindowMs: Number(windowMs) } : {}),
+        };
+      }
+      if (overridesInput.monthly_quota !== undefined) {
+        await lineRepository.updateAccount(accountId, {
+          monthly_quota: Number(overridesInput.monthly_quota),
+        });
+      }
+    } else if (Array.isArray(overridesInput)) {
+      for (const item of overridesInput) {
+        if (!item?.category) continue;
+        const windowMs =
+          item.burst_window_ms ??
+          (item.burst_window_minutes ? Number(item.burst_window_minutes) * 60_000 : undefined);
+        overrides[item.category as LineOpCategory] = {
+          daily: Number(item.daily_limit ?? item.dailyLimit ?? 200),
+          burst: Number(item.burst_limit ?? item.burstLimit ?? 10),
+          ...(windowMs ? { burstWindowMs: Number(windowMs) } : {}),
+        };
+      }
+    } else if (overridesInput && typeof overridesInput === 'object') {
+      overrides = overridesInput;
+    }
+
     const updatedLimits = await lineRateLimiter.setAccountLimitOverride(
       accountId,
       overrides,
@@ -296,6 +331,7 @@ export class LineService {
       accountType: account.account_type,
       limits: updatedLimits,
       rateLimits: summary.categories,
+      categories: summary.categories,
     };
   }
 
@@ -349,12 +385,20 @@ export class LineService {
       throw err;
     }
 
+    const nowIso = new Date().toISOString();
     return {
+      version: 1,
+      platform: 'LINE',
+      accountId: account.id,
       account_id: account.id,
       account_type: account.account_type,
+      displayName: account.display_name,
       display_name: account.display_name,
+      cipher: 'AES-256-GCM',
       encrypted_session_data: account.encrypted_session_data,
-      exported_at: new Date().toISOString(),
+      payload: account.encrypted_session_data,
+      exported_at: nowIso,
+      exportedAt: nowIso,
     };
   }
 

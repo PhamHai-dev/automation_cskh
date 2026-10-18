@@ -103,6 +103,20 @@ lineRouter.post('/accounts', async (req: Request, res: Response, next: NextFunct
   }
 });
 
+lineRouter.patch('/accounts/:id', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const accountId = Number(req.params.id);
+    const body = req.body ?? {};
+    const updated = await lineService.updateAccountProxy(
+      accountId,
+      body.proxy_url ?? body.proxyUrl,
+    );
+    res.json({ data: updated.account, account: updated.account });
+  } catch (err) {
+    handleLineError(err, res, next);
+  }
+});
+
 lineRouter.delete('/accounts/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const userId = (req as any).user?.id ?? (req as any).user?.userId;
@@ -169,11 +183,33 @@ lineRouter.get('/accounts/:id/limits', async (req: Request, res: Response, next:
   }
 });
 
-lineRouter.put('/accounts/:id/limits', async (req: Request, res: Response, next: NextFunction) => {
+const updateLineLimitsHandler = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const overrides = req.body?.limits ?? req.body ?? {};
     const result = await lineService.updateAccountLimits(Number(req.params.id), overrides);
     res.json({ data: result, ...result });
+  } catch (err) {
+    handleLineError(err, res, next);
+  }
+};
+
+lineRouter.put('/accounts/:id/limits', updateLineLimitsHandler);
+lineRouter.patch('/accounts/:id/limits', updateLineLimitsHandler);
+
+lineRouter.get('/accounts/:id/proxy', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const result = await lineService.getAccountLimitsAndHealth(Number(req.params.id));
+    res.json({
+      data: {
+        accountId: result.accountId,
+        proxyUrl: result.proxy_url ?? null,
+        proxy_url: result.proxy_url ?? null,
+        proxyPinned: result.hasProxy,
+        hasProxy: result.hasProxy,
+        epochId: result.session_epoch,
+        circuitBreakerState: result.circuitBroken ? 'OPEN' : 'CLOSED',
+      },
+    });
   } catch (err) {
     handleLineError(err, res, next);
   }
@@ -211,7 +247,10 @@ lineRouter.post(
     try {
       const accountId = Number(req.params.id);
       const encryptedSessionData =
-        req.body?.encrypted_session_data ?? req.body?.encryptedSessionData ?? '';
+        req.body?.encrypted_session_data ??
+        req.body?.encryptedSessionData ??
+        req.body?.payload ??
+        '';
       const result = await lineService.importCredentials(accountId, String(encryptedSessionData));
       res.json({ data: result, ...result });
     } catch (err) {

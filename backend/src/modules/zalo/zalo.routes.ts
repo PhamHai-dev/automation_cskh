@@ -87,7 +87,7 @@ router.get('/accounts/:accountId/limits', async (req: Request, res: Response) =>
   }
 });
 
-router.put('/accounts/:accountId/limits', async (req: Request, res: Response) => {
+const updateZaloLimitsHandler = async (req: Request, res: Response) => {
   const accountId = parseInt(req.params.accountId, 10);
   const user = req.user!;
   const isAdmin = user.roles.includes('ADMIN') || user.roles.includes('MANAGE');
@@ -100,47 +100,79 @@ router.put('/accounts/:accountId/limits', async (req: Request, res: Response) =>
       daily_limit?: number;
       burst_limit?: number;
       burst_window_ms?: number;
+      burst_window_minutes?: number;
       limits?: Array<{
         category: string;
         daily_limit: number;
         burst_limit: number;
         burst_window_ms?: number;
+        burst_window_minutes?: number;
+      }>;
+      categories?: Array<{
+        category: string;
+        daily_limit: number;
+        burst_limit: number;
+        burst_window_ms?: number;
+        burst_window_minutes?: number;
       }>;
     };
 
-    const items = Array.isArray(body.limits)
+    const rawList = Array.isArray(body.limits)
       ? body.limits
-      : body.category
-        ? [
-            {
-              category: body.category,
-              daily_limit: Number(body.daily_limit ?? 200),
-              burst_limit: Number(body.burst_limit ?? 20),
-              burst_window_ms: Number(body.burst_window_ms ?? 30_000),
-            },
-          ]
-        : [];
+      : Array.isArray(body.categories)
+        ? body.categories
+        : body.category
+          ? [body]
+          : [];
 
-    if (items.length === 0) {
-      return res.status(400).json({ error: 'Cần truyền category hoặc mảng limits[] để cập nhật' });
+    if (rawList.length === 0) {
+      return res.status(400).json({ error: 'Cần truyền category hoặc mảng limits[]/categories[] để cập nhật' });
     }
 
-    for (const item of items) {
+    for (const item of rawList) {
       if (!ALL_CATEGORIES.includes(item.category as OpCategory)) {
         return res.status(400).json({ error: `Category không hợp lệ: ${item.category}` });
       }
+      const windowMs =
+        item.burst_window_ms ??
+        (item.burst_window_minutes ? Number(item.burst_window_minutes) * 60_000 : 30_000);
       await upsertAccountLimit(accountId, item.category as OpCategory, {
         daily_limit: Number(item.daily_limit),
         burst_limit: Number(item.burst_limit),
-        burst_window_ms: Number(item.burst_window_ms ?? 30_000),
+        burst_window_ms: Number(windowMs),
       });
     }
 
     invalidateLimitCache(accountId);
     const updatedLimits = await zaloRateLimiter.getAccountRateLimitSummary(accountId);
-    return res.json({ data: { accountId, limits: updatedLimits }, meta: null });
+    return res.json({ data: { accountId, limits: updatedLimits, categories: updatedLimits }, meta: null });
   } catch (err) {
     return handleError(res, err, 'update-account-limits');
+  }
+};
+
+router.put('/accounts/:accountId/limits', updateZaloLimitsHandler);
+router.patch('/accounts/:accountId/limits', updateZaloLimitsHandler);
+
+router.get('/accounts/:accountId/proxy', async (req: Request, res: Response) => {
+  const accountId = parseInt(req.params.accountId, 10);
+  const user = req.user!;
+  const isAdmin = user.roles.includes('ADMIN') || user.roles.includes('MANAGE');
+  try {
+    if (!(await checkAccess(req, res, accountId, 'read'))) return;
+    const account = await resolveAccount(accountId, user.id, isAdmin);
+    return res.json({
+      data: {
+        accountId: account.id,
+        proxyUrl: maskProxyUrl(account.proxy_url) || null,
+        proxy_url: maskProxyUrl(account.proxy_url) || null,
+        proxyPinned: Boolean(account.proxy_url),
+        hasProxy: Boolean(account.proxy_url),
+      },
+      meta: null,
+    });
+  } catch (err) {
+    return handleError(res, err, 'get-account-proxy');
   }
 });
 
@@ -152,8 +184,8 @@ router.patch('/accounts/:accountId/proxy', async (req: Request, res: Response) =
     if (!(await checkAccess(req, res, accountId, 'admin'))) return;
     await resolveAccount(accountId, user.id, isAdmin);
 
-    const { proxy_url } = req.body as { proxy_url?: string | null };
-    const validation = validateProxyUrl(proxy_url);
+    const rawProxy = (req.body as any)?.proxy_url ?? (req.body as any)?.proxyUrl ?? null;
+    const validation = validateProxyUrl(rawProxy);
     if (!validation.valid) {
       return res.status(400).json({ error: validation.error, code: 'INVALID_PROXY_URL' });
     }

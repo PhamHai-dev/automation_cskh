@@ -63,8 +63,8 @@ router.get('/accounts/:accountId/conversations', async (req: Request, res: Respo
     if (search.trim()) {
       const q = search.trim();
       where.OR = [
-        { display_name: { contains: q, mode: 'insensitive' } },
-        { group_name: { contains: q, mode: 'insensitive' } },
+        { display_name: { contains: q } },
+        { group_name: { contains: q } },
         { external_thread_id: { contains: q } },
       ];
     }

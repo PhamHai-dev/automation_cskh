@@ -60,9 +60,16 @@ router.get(`${BASE}/export`, async (req: Request, res: Response) => {
 
     // Export as encrypted blob — no decryption, client stores as-is
     return res.json({
+      version: 1,
+      platform: 'ZALO',
+      accountId,
+      cipher: 'AES-256-GCM',
       encrypted_session_data: account.encrypted_session_data,
+      payload: account.encrypted_session_data,
       display_name: account.display_name,
+      displayName: account.display_name,
       exported_at: new Date().toISOString(),
+      exportedAt: new Date().toISOString(),
     });
   } catch (err) {
     log.error(`Export failed for account ${accountId}`, { error: String(err) });
@@ -96,7 +103,7 @@ router.post(`${BASE}/import`, async (req: Request, res: Response) => {
     }
 
     const body = req.body as Record<string, unknown> | undefined;
-    const encryptedData = body?.encrypted_session_data;
+    const encryptedData = (body?.encrypted_session_data ?? body?.payload) as string | undefined;
 
     if (typeof encryptedData !== 'string' || encryptedData.length === 0) {
       return res.status(400).json({
