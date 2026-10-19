@@ -16,6 +16,7 @@ import { formatSessionDate, toLocalDateString } from '../components/AttendanceMa
 import { PageContainer } from '../../../components/common/PageContainer';
 import { PageHeader } from '../../../components/common/PageHeader';
 import { FilterBar } from '../../../components/common/FilterBar';
+import { HorizontalTabs } from '../../../components/ui/HorizontalTabs';
 import { Button } from '../../../components/ui/Button';
 import { Badge } from '../../../components/ui/Badge';
 import { Input } from '../../../components/ui/Input';
@@ -27,6 +28,8 @@ import {
   Edit,
   Plus,
   Calendar,
+  CalendarDays,
+  Zap,
   Search,
   Sparkles,
   ChevronLeft,
@@ -35,7 +38,6 @@ import {
   ChevronUp,
   Check,
   BookOpen,
-  Save,
   Users,
 } from 'lucide-react';
 
@@ -108,7 +110,8 @@ const POPOVER_STATUS_OPTIONS: Array<{ status: AttendanceStatus; label: string }>
 
 const DAY_OF_WEEK_NAMES = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
 
-type CalendarViewMode = 'day' | 'week' | 'month';
+type ClassAttendanceTab = 'quick' | 'detailed';
+type DetailedFilterMode = 'week' | 'month' | 'year';
 
 interface EnrolledStudentItem {
   enrollment_class_id: number;
@@ -119,6 +122,7 @@ interface EnrolledStudentItem {
   phone?: string;
   package_name?: string;
   total_sessions?: number;
+  attended_previous_years?: number;
 }
 
 export const ClassesPage: React.FC = () => {
@@ -137,25 +141,33 @@ export const ClassesPage: React.FC = () => {
   const [classes, setClasses] = useState<Class[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // 2 Tab lớn ở đầu trang: 'quick' (Điểm danh nhanh - 1 ngày) & 'detailed' (Điểm danh chi tiết - Ma trận tháng)
+  const [activeTab, setActiveTab] = useState<ClassAttendanceTab>('quick');
+
   // Filters
   const [searchTerm, setSearchTerm] = useState('');
   const [modelFilter, setModelFilter] = useState('');
 
-  // Calendar view state
-  const [viewMode, setViewMode] = useState<CalendarViewMode>('day');
+  // Tab 1 (Điểm danh nhanh): 1 ngày đang chọn (mặc định Hôm nay)
   const [selectedDate, setSelectedDate] = useState<string>(() => toLocalDateString(new Date()));
+
+  // Tab 2 (Điểm danh chi tiết): Chế độ lọc kỳ (Theo tuần | Theo tháng | Theo năm, mặc định Theo tháng)
+  const [detailedFilterMode, setDetailedFilterMode] = useState<DetailedFilterMode>('month');
   const [currentPeriodDate, setCurrentPeriodDate] = useState<Date>(() => new Date());
 
-  // Collapsed state for 1:2 / 1:n classes (empty set = all expanded by default!)
+  // Collapsed state for 1:2 / 1:n classes (empty set = all expanded by default)
   const [collapsedClassIds, setCollapsedClassIds] = useState<Set<number>>(new Set());
 
-  // Inline note/lesson draft edits keyed by `${enrollment_class_id}_${dateStr}` or `${enrollment_class_id}_session_${sessionId}`
+  // Inline note/lesson draft edits keyed by `${enrollment_class_id}_${dateStr}`
   const [inlineDrafts, setInlineDrafts] = useState<
     Record<string, { lesson_topic?: string; teacher_note?: string; status?: AttendanceStatus }>
   >({});
   const [savingKey, setSavingKey] = useState<string | null>(null);
+  const inlineTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const lastSavedNoteRef = useRef<Record<string, { lesson: string; note: string }>>({});
+  const popoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Popover state for Week / Month matrix cells (or Day multiple sessions)
+  // Popover state for attendance cells
   const [activePopover, setActivePopover] = useState<{
     anchorEl: HTMLElement;
     classId: number;
@@ -265,21 +277,24 @@ export const ClassesPage: React.FC = () => {
         phone: st?.phone || '',
         package_name: pkg?.name || pkg?.code || '',
         total_sessions: ec.enrollment?.total_sessions || 0,
+        attended_previous_years: ec.enrollment?.attended_previous_years || 0,
       });
     });
     return list;
   };
 
   // Build lookup maps from classes payload
-  const { sessionsByClassAndDate, attendanceByEcAndSession } = useMemo(() => {
+  const { sessionsByClassAndDate, attendanceByEcAndSession, sessionsById } = useMemo(() => {
     const sessMap = new Map<string, ClassSession[]>();
     const attMap = new Map<string, Attendance>();
+    const sessIdMap = new Map<number, ClassSession>();
 
     classes.forEach((cls) => {
       const classSessById = new Map<number, ClassSession>();
 
       cls.class_sessions?.forEach((s: any) => {
         classSessById.set(s.id, s);
+        sessIdMap.set(s.id, s);
         s.attendance?.forEach((a: any) => {
           if (!a.deleted_at) {
             attMap.set(`${a.enrollment_class_id}_session_${s.id}`, a);
@@ -293,6 +308,7 @@ export const ClassesPage: React.FC = () => {
             attMap.set(`${ec.id}_session_${a.class_session_id}`, a);
             if (a.class_session && !classSessById.has(a.class_session.id)) {
               classSessById.set(a.class_session.id, a.class_session);
+              sessIdMap.set(a.class_session.id, a.class_session);
             }
           }
         });
@@ -319,8 +335,37 @@ export const ClassesPage: React.FC = () => {
     return {
       sessionsByClassAndDate: sessMap,
       attendanceByEcAndSession: attMap,
+      sessionsById: sessIdMap,
     };
   }, [classes]);
+
+  // Tính toán thống kê cho từng học viên (Tổng buổi đã học & Đã học trong tháng đang xem)
+  const studentAttendanceStats = useMemo(() => {
+    const stats = new Map<number, { totalAttended: number; monthAttended: number }>();
+    const currentYear = currentPeriodDate.getFullYear();
+    const currentMonth = currentPeriodDate.getMonth() + 1;
+    const monthPrefix = `${currentYear}-${String(currentMonth).padStart(2, '0')}`;
+
+    attendanceByEcAndSession.forEach((att) => {
+      const ecId = att.enrollment_class_id;
+      const effectiveStatus = isTeacher
+        ? att.teacher_status || att.status
+        : att.status || att.teacher_status;
+      if (effectiveStatus !== 'ATTENDED') return;
+
+      const sess = att.class_session || sessionsById.get(att.class_session_id);
+      const dStr = formatSessionDate(sess?.session_date);
+
+      const cur = stats.get(ecId) || { totalAttended: 0, monthAttended: 0 };
+      cur.totalAttended += 1;
+      if (dStr && dStr.startsWith(monthPrefix)) {
+        cur.monthAttended += 1;
+      }
+      stats.set(ecId, cur);
+    });
+
+    return stats;
+  }, [attendanceByEcAndSession, sessionsById, currentPeriodDate, isTeacher]);
 
   // Filtered classes
   const filteredClasses = useMemo(() => {
@@ -346,15 +391,20 @@ export const ClassesPage: React.FC = () => {
     });
   }, [classes, searchTerm, modelFilter]);
 
+  const totalVisibleStudentsCount = useMemo(
+    () => filteredClasses.reduce((acc, c) => acc + getStudentsOfClass(c).length, 0),
+    [filteredClasses]
+  );
+
   const activeFiltersCount = (searchTerm ? 1 : 0) + (modelFilter ? 1 : 0);
 
-  // Dates list for Week / Month view
+  // Dates list for Tab 2 (Điểm danh chi tiết: Theo tuần | Theo tháng | Theo năm)
   const periodDates = useMemo(() => {
     const dates: Date[] = [];
     const year = currentPeriodDate.getFullYear();
     const month = currentPeriodDate.getMonth();
 
-    if (viewMode === 'week') {
+    if (detailedFilterMode === 'week') {
       const day = currentPeriodDate.getDay();
       const diff = currentPeriodDate.getDate() - day + (day === 0 ? -6 : 1);
       const monday = new Date(year, month, diff);
@@ -363,16 +413,30 @@ export const ClassesPage: React.FC = () => {
         d.setDate(monday.getDate() + i);
         dates.push(d);
       }
-    } else if (viewMode === 'month') {
+    } else {
       const daysInMonth = new Date(year, month + 1, 0).getDate();
       for (let i = 1; i <= daysInMonth; i++) {
         dates.push(new Date(year, month, i));
       }
     }
     return dates;
-  }, [currentPeriodDate, viewMode]);
+  }, [currentPeriodDate, detailedFilterMode]);
 
-  // Stepper handlers for Day / Week / Month
+  const detailedPeriodTitle = useMemo(() => {
+    const month = currentPeriodDate.getMonth() + 1;
+    const year = currentPeriodDate.getFullYear();
+    if (detailedFilterMode === 'week') {
+      const first = periodDates[0]?.toLocaleDateString('vi-VN') || '';
+      const last = periodDates[periodDates.length - 1]?.toLocaleDateString('vi-VN') || '';
+      return `Tuần: ${first} — ${last}`;
+    }
+    if (detailedFilterMode === 'month') {
+      return `Tháng ${month} / ${year}`;
+    }
+    return `Năm ${year} (Tháng ${month})`;
+  }, [currentPeriodDate, detailedFilterMode, periodDates]);
+
+  // Stepper handlers for Tab 1 (Quick Day) and Tab 2 (Detailed Period)
   const handleStepDay = (delta: number) => {
     const [y, m, d] = selectedDate.split('-').map(Number);
     const next = new Date(y, m - 1, d + delta);
@@ -381,10 +445,12 @@ export const ClassesPage: React.FC = () => {
 
   const handleStepPeriod = (delta: number) => {
     const next = new Date(currentPeriodDate);
-    if (viewMode === 'week') {
+    if (detailedFilterMode === 'week') {
       next.setDate(next.getDate() + delta * 7);
-    } else {
+    } else if (detailedFilterMode === 'month') {
       next.setMonth(next.getMonth() + delta);
+    } else {
+      next.setFullYear(next.getFullYear() + delta);
     }
     setCurrentPeriodDate(next);
   };
@@ -466,7 +532,7 @@ export const ClassesPage: React.FC = () => {
     }
   };
 
-  // Save only Lesson & Teacher Note (or create attendance if not yet marked)
+  // Save only Lesson & Teacher Note (auto-save without closing popover or spamming toast)
   const handleSaveLessonAndNote = async (params: {
     classId: number;
     enrollmentClassId: number;
@@ -475,19 +541,44 @@ export const ClassesPage: React.FC = () => {
     lessonTopic: string | null;
     teacherNote: string | null;
     studentName?: string;
+    fromPopover?: boolean;
   }) => {
     if (!isTeacher) return;
-    const { classId, enrollmentClassId, dateStr, lessonTopic, teacherNote, studentName } = params;
+    const { classId, enrollmentClassId, dateStr, lessonTopic, teacherNote, fromPopover } = params;
     const key = `${enrollmentClassId}_${dateStr}`;
+    const normLesson = (lessonTopic || '').trim();
+    const normNote = (teacherNote || '').trim();
+
+    const targetSessionFromMap =
+      params.session || (sessionsByClassAndDate.get(`${classId}_${dateStr}`) || [])[0];
+    const existingAttBefore = targetSessionFromMap
+      ? attendanceByEcAndSession.get(`${enrollmentClassId}_session_${targetSessionFromMap.id}`)
+      : undefined;
+
+    const origLesson = (existingAttBefore?.lesson_topic || '').trim();
+    const origNote = (existingAttBefore?.teacher_note || '').trim();
+    const lastSaved = lastSavedNoteRef.current[key];
+
+    if (
+      (lastSaved && lastSaved.lesson === normLesson && lastSaved.note === normNote) ||
+      (!lastSaved && origLesson === normLesson && origNote === normNote)
+    ) {
+      return;
+    }
+
+    lastSavedNoteRef.current[key] = { lesson: normLesson, note: normNote };
     setSavingKey(key);
     try {
-      let targetSession = params.session;
-      if (!targetSession) {
-        const existing = sessionsByClassAndDate.get(`${classId}_${dateStr}`) || [];
-        targetSession = existing[0];
-      }
+      let targetSession = targetSessionFromMap;
       if (!targetSession) {
         targetSession = await classSessionsApi.create(classId, { session_date: dateStr });
+        if (fromPopover) {
+          setActivePopover((prev) =>
+            prev && prev.classId === classId && prev.dateStr === dateStr && !prev.session
+              ? { ...prev, session: targetSession }
+              : prev
+          );
+        }
       }
 
       const existingAtt = attendanceByEcAndSession.get(
@@ -497,41 +588,38 @@ export const ClassesPage: React.FC = () => {
       if (existingAtt) {
         await attendanceApi.update(classId, targetSession.id, existingAtt.id, {
           side: 'TEACHER',
-          lesson_topic: lessonTopic,
-          teacher_note: teacherNote,
+          lesson_topic: normLesson || null,
+          teacher_note: normNote || null,
         });
       } else {
         await attendanceApi.mark(classId, targetSession.id, {
           enrollment_class_id: enrollmentClassId,
           status: 'ATTENDED',
           side: 'TEACHER',
-          lesson_topic: lessonTopic,
-          teacher_note: teacherNote,
+          lesson_topic: normLesson || null,
+          teacher_note: normNote || null,
         });
       }
 
-      setInlineDrafts((prev) => {
-        const next = { ...prev };
-        delete next[key];
-        delete next[`${enrollmentClassId}_session_${targetSession!.id}`];
-        return next;
-      });
-      setActivePopover(null);
-      toast.success(`Đã lưu Bài học & Ghi chú GV${studentName ? ` cho ${studentName}` : ''}`);
       await fetchClasses(true);
     } catch (err: any) {
+      delete lastSavedNoteRef.current[key];
       toast.error(
         err.response?.data?.message ||
           err.response?.data?.error?.message ||
           'Không thể lưu ghi chú buổi học'
       );
     } finally {
-      setSavingKey(null);
+      setSavingKey((prev) => (prev === key ? null : prev));
     }
   };
 
   // Chấm cả lớp 1:2 / 1:n Có mặt trong 1 chạm (dành riêng cho Giáo viên)
-  const handleBulkMarkWholeClass = async (cls: Class, dateStr: string, status: AttendanceStatus = 'ATTENDED') => {
+  const handleBulkMarkWholeClass = async (
+    cls: Class,
+    dateStr: string,
+    status: AttendanceStatus = 'ATTENDED'
+  ) => {
     if (!isTeacher) return;
     const students = getStudentsOfClass(cls);
     if (students.length === 0) {
@@ -553,15 +641,22 @@ export const ClassesPage: React.FC = () => {
           return {
             enrollment_class_id: s.enrollment_class_id,
             status,
-            ...(draft?.lesson_topic !== undefined ? { lesson_topic: draft.lesson_topic.trim() || null } : {}),
-            ...(draft?.teacher_note !== undefined ? { teacher_note: draft.teacher_note.trim() || null } : {}),
+            ...(draft?.lesson_topic !== undefined
+              ? { lesson_topic: draft.lesson_topic.trim() || null }
+              : {}),
+            ...(draft?.teacher_note !== undefined
+              ? { teacher_note: draft.teacher_note.trim() || null }
+              : {}),
           };
         }),
         side: 'TEACHER',
       });
 
       toast.success(
-        `Đã chấm ${STATUS_CONFIG[status].label} cho toàn bộ ${students.length} học viên lớp ${formatClassCode(cls.class_code, cls.id)}`
+        `Đã chấm ${STATUS_CONFIG[status].label} cho toàn bộ ${students.length} học viên lớp ${formatClassCode(
+          cls.class_code,
+          cls.id
+        )}`
       );
       await fetchClasses(true);
     } catch (err: any) {
@@ -597,7 +692,7 @@ export const ClassesPage: React.FC = () => {
     }
   };
 
-  // Render Lesson input inline on Day View (Teacher only)
+  // Render Lesson input inline on Quick Tab (Teacher only - auto-save on debounce / blur / Enter)
   const renderDayLessonInput = (cls: Class, st: EnrolledStudentItem, dateStr: string) => {
     const daySessions = sessionsByClassAndDate.get(`${cls.id}_${dateStr}`) || [];
     const primarySession = daySessions[0];
@@ -610,16 +705,38 @@ export const ClassesPage: React.FC = () => {
     const lessonVal = draft?.lesson_topic !== undefined ? draft.lesson_topic : att?.lesson_topic || '';
     const noteVal = draft?.teacher_note !== undefined ? draft.teacher_note : att?.teacher_note || '';
 
-    const triggerSave = () => {
+    const triggerSaveNow = (nextLesson: string, nextNote: string) => {
+      if (inlineTimersRef.current[draftKey]) {
+        clearTimeout(inlineTimersRef.current[draftKey]);
+        delete inlineTimersRef.current[draftKey];
+      }
       handleSaveLessonAndNote({
         classId: cls.id,
         enrollmentClassId: st.enrollment_class_id,
         dateStr,
         session: primarySession,
-        lessonTopic: lessonVal.trim() || null,
-        teacherNote: noteVal.trim() || null,
+        lessonTopic: nextLesson.trim() || null,
+        teacherNote: nextNote.trim() || null,
         studentName: st.full_name,
       });
+    };
+
+    const scheduleAutoSave = (nextLesson: string, nextNote: string) => {
+      if (inlineTimersRef.current[draftKey]) {
+        clearTimeout(inlineTimersRef.current[draftKey]);
+      }
+      inlineTimersRef.current[draftKey] = setTimeout(() => {
+        delete inlineTimersRef.current[draftKey];
+        handleSaveLessonAndNote({
+          classId: cls.id,
+          enrollmentClassId: st.enrollment_class_id,
+          dateStr,
+          session: primarySession,
+          lessonTopic: nextLesson.trim() || null,
+          teacherNote: nextNote.trim() || null,
+          studentName: st.full_name,
+        });
+      }, 600);
     };
 
     return (
@@ -635,11 +752,13 @@ export const ClassesPage: React.FC = () => {
               lesson_topic: val,
             },
           }));
+          scheduleAutoSave(val, noteVal);
         }}
+        onBlur={() => triggerSaveNow(lessonVal, noteVal)}
         onKeyDown={(e) => {
           if (e.key === 'Enter') {
             e.preventDefault();
-            triggerSave();
+            triggerSaveNow(lessonVal, noteVal);
           }
         }}
         placeholder="Nhập bài học..."
@@ -648,7 +767,7 @@ export const ClassesPage: React.FC = () => {
     );
   };
 
-  // Render Teacher Note input + Save button inline on Day View (Teacher only)
+  // Render Teacher Note input inline on Quick Tab (Teacher only - auto-save on debounce / blur / Enter)
   const renderDayNoteInput = (cls: Class, st: EnrolledStudentItem, dateStr: string) => {
     const daySessions = sessionsByClassAndDate.get(`${cls.id}_${dateStr}`) || [];
     const primarySession = daySessions[0];
@@ -660,25 +779,43 @@ export const ClassesPage: React.FC = () => {
     const draft = inlineDrafts[draftKey];
     const lessonVal = draft?.lesson_topic !== undefined ? draft.lesson_topic : att?.lesson_topic || '';
     const noteVal = draft?.teacher_note !== undefined ? draft.teacher_note : att?.teacher_note || '';
-    const isDirty =
-      (draft?.lesson_topic !== undefined && draft.lesson_topic !== (att?.lesson_topic || '')) ||
-      (draft?.teacher_note !== undefined && draft.teacher_note !== (att?.teacher_note || ''));
-    const isSaving = savingKey === draftKey;
 
-    const triggerSave = () => {
+    const triggerSaveNow = (nextLesson: string, nextNote: string) => {
+      if (inlineTimersRef.current[draftKey]) {
+        clearTimeout(inlineTimersRef.current[draftKey]);
+        delete inlineTimersRef.current[draftKey];
+      }
       handleSaveLessonAndNote({
         classId: cls.id,
         enrollmentClassId: st.enrollment_class_id,
         dateStr,
         session: primarySession,
-        lessonTopic: lessonVal.trim() || null,
-        teacherNote: noteVal.trim() || null,
+        lessonTopic: nextLesson.trim() || null,
+        teacherNote: nextNote.trim() || null,
         studentName: st.full_name,
       });
     };
 
+    const scheduleAutoSave = (nextLesson: string, nextNote: string) => {
+      if (inlineTimersRef.current[draftKey]) {
+        clearTimeout(inlineTimersRef.current[draftKey]);
+      }
+      inlineTimersRef.current[draftKey] = setTimeout(() => {
+        delete inlineTimersRef.current[draftKey];
+        handleSaveLessonAndNote({
+          classId: cls.id,
+          enrollmentClassId: st.enrollment_class_id,
+          dateStr,
+          session: primarySession,
+          lessonTopic: nextLesson.trim() || null,
+          teacherNote: nextNote.trim() || null,
+          studentName: st.full_name,
+        });
+      }, 600);
+    };
+
     return (
-      <div className="flex items-center gap-1.5 min-w-[190px]">
+      <div className="flex items-center min-w-[160px]">
         <input
           type="text"
           value={noteVal}
@@ -691,30 +828,18 @@ export const ClassesPage: React.FC = () => {
                 teacher_note: val,
               },
             }));
+            scheduleAutoSave(lessonVal, val);
           }}
+          onBlur={() => triggerSaveNow(lessonVal, noteVal)}
           onKeyDown={(e) => {
             if (e.key === 'Enter') {
               e.preventDefault();
-              triggerSave();
+              triggerSaveNow(lessonVal, noteVal);
             }
           }}
           placeholder="Nhập ghi chú..."
-          className="flex-1 min-w-[130px] h-8 px-2.5 rounded-lg border border-border/80 bg-white text-xs text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/40"
+          className="w-full min-w-[150px] h-8 px-2.5 rounded-lg border border-border/80 bg-white text-xs text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/40"
         />
-        <button
-          type="button"
-          disabled={isSaving}
-          onClick={triggerSave}
-          title="Lưu bài học & ghi chú"
-          className={`inline-flex h-8 shrink-0 items-center gap-1 rounded-lg px-2.5 text-xs font-bold transition ${
-            isDirty
-              ? 'bg-primary text-white shadow-2xs hover:bg-primary/90'
-              : 'border border-border bg-surface-muted/70 text-text-secondary hover:bg-surface-muted'
-          } disabled:opacity-50`}
-        >
-          <Save className="w-3.5 h-3.5" />
-          <span>{isSaving ? '...' : 'Lưu'}</span>
-        </button>
       </div>
     );
   };
@@ -1040,6 +1165,18 @@ export const ClassesPage: React.FC = () => {
         </div>
       )}
 
+      {/* 2 Tab lớn ở đầu trang giống giao diện điểm danh bên CSKH */}
+      <HorizontalTabs
+        ariaLabel="Chế độ điểm danh lớp học"
+        value={activeTab}
+        onChange={setActiveTab}
+        className="mb-4"
+        items={[
+          { value: 'quick', label: 'Điểm danh nhanh', icon: <Zap /> },
+          { value: 'detailed', label: 'Điểm danh chi tiết', icon: <Calendar /> },
+        ]}
+      />
+
       <FilterBar
         title="Tìm kiếm & Lọc nhanh"
         activeCount={activeFiltersCount}
@@ -1084,141 +1221,171 @@ export const ClassesPage: React.FC = () => {
 
       {/* DANH SÁCH LỚP & ĐIỂM DANH */}
       <div className="bg-surface rounded-2xl border border-border/80 shadow-soft overflow-hidden">
-        {/* Thanh điều khiển Lịch (Theo ngày / Theo tuần / Theo tháng) */}
-        <div className="p-3 sm:px-4 border-b border-border/80 bg-slate-50/70 flex flex-wrap items-center justify-between gap-3 text-xs">
-          <div className="flex flex-wrap items-center gap-2.5">
-            <div className="flex p-0.5 bg-surface-muted rounded-xl border border-border/70 font-semibold">
-              <button
-                type="button"
-                onClick={() => setViewMode('day')}
-                className={`px-3 py-1.5 rounded-lg transition-all ${
-                  viewMode === 'day'
-                    ? 'bg-primary text-white shadow-xs font-bold'
-                    : 'text-text-secondary hover:text-text-primary'
-                }`}
-              >
-                Theo ngày
-              </button>
-              <button
-                type="button"
-                onClick={() => setViewMode('week')}
-                className={`px-3 py-1.5 rounded-lg transition-all ${
-                  viewMode === 'week'
-                    ? 'bg-primary text-white shadow-xs font-bold'
-                    : 'text-text-secondary hover:text-text-primary'
-                }`}
-              >
-                Theo tuần
-              </button>
-              <button
-                type="button"
-                onClick={() => setViewMode('month')}
-                className={`px-3 py-1.5 rounded-lg transition-all ${
-                  viewMode === 'month'
-                    ? 'bg-primary text-white shadow-xs font-bold'
-                    : 'text-text-secondary hover:text-text-primary'
-                }`}
-              >
-                Theo tháng
-              </button>
-            </div>
+        {/* Thanh điều khiển trên đầu bảng tùy theo Tab đang chọn */}
+        <div className="flex flex-wrap items-center justify-between gap-2.5 border-b border-border/80 bg-slate-50/60 p-3 sm:px-4 text-xs">
+          <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-text-secondary">
+            <span className="inline-flex items-center gap-1.5 rounded-lg border border-border/80 bg-surface px-2.5 py-1.5 shadow-2xs">
+              <span>Hiển thị:</span>
+              <span className="font-extrabold text-primary">{filteredClasses.length}</span>
+              <span className="text-text-muted">/ {classes.length} lớp học</span>
+              <span className="text-border">•</span>
+              <span className="font-bold text-text-primary">{totalVisibleStudentsCount}</span>
+              <span className="text-text-muted">học viên</span>
+            </span>
 
-            {viewMode === 'day' ? (
-              <div className="flex items-center gap-1.5">
-                <div className="flex h-9 items-center gap-1 rounded-xl border border-border/70 bg-white px-1.5 shadow-2xs">
-                  <button
-                    type="button"
-                    onClick={() => handleStepDay(-1)}
-                    className="rounded-lg p-1 text-text-muted hover:bg-surface-muted hover:text-text-primary"
-                    title="Ngày hôm trước"
-                  >
-                    <ChevronLeft className="w-4 h-4" />
-                  </button>
-                  <input
-                    type="date"
-                    value={selectedDate}
-                    onChange={(e) => e.target.value && setSelectedDate(e.target.value)}
-                    className="w-[130px] border-0 bg-transparent px-1 text-xs font-extrabold text-text-primary outline-none"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => handleStepDay(1)}
-                    className="rounded-lg p-1 text-text-muted hover:bg-surface-muted hover:text-text-primary"
-                    title="Ngày hôm sau"
-                  >
-                    <ChevronRight className="w-4 h-4" />
-                  </button>
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setSelectedDate(toLocalDateString(new Date()))}
-                  className="h-9 text-xs font-bold"
-                >
-                  Hôm nay
-                </Button>
-              </div>
-            ) : (
-              <div className="flex items-center gap-1.5">
-                <div className="flex h-9 items-center gap-1 rounded-xl border border-border/70 bg-white px-1.5 shadow-2xs">
-                  <button
-                    type="button"
-                    onClick={() => handleStepPeriod(-1)}
-                    className="rounded-lg p-1 text-text-muted hover:bg-surface-muted hover:text-text-primary"
-                  >
-                    <ChevronLeft className="w-4 h-4" />
-                  </button>
-                  <span className="px-2.5 text-xs font-extrabold text-text-primary">
-                    {viewMode === 'week'
-                      ? `Tuần: ${periodDates[0]?.toLocaleDateString('vi-VN')} — ${periodDates[
-                          periodDates.length - 1
-                        ]?.toLocaleDateString('vi-VN')}`
-                      : `Tháng ${currentPeriodDate.getMonth() + 1} / ${currentPeriodDate.getFullYear()}`}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => handleStepPeriod(1)}
-                    className="rounded-lg p-1 text-text-muted hover:bg-surface-muted hover:text-text-primary"
-                  >
-                    <ChevronRight className="w-4 h-4" />
-                  </button>
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setCurrentPeriodDate(new Date())}
-                  className="h-9 text-xs font-bold"
-                >
-                  {viewMode === 'week' ? 'Tuần này' : 'Tháng này'}
-                </Button>
-              </div>
-            )}
-          </div>
-
-          <div className="flex items-center gap-2">
             {multiStudentClasses.length > 0 && (
               <Button
                 variant="outline"
                 size="sm"
                 onClick={handleToggleExpandAll}
-                leftIcon={allExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                leftIcon={
+                  allExpanded ? (
+                    <ChevronUp className="w-3.5 h-3.5" />
+                  ) : (
+                    <ChevronDown className="w-3.5 h-3.5" />
+                  )
+                }
                 className="h-8 text-xs font-semibold"
               >
                 {allExpanded ? 'Thu gọn lớp 1:n' : 'Mở rộng tất cả lớp 1:n'}
               </Button>
             )}
           </div>
+
+          {/* Điều khiển ngày / kỳ bên phải giống bên CSKH */}
+          <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-2">
+            {activeTab === 'quick' ? (
+              <>
+                <div className="flex h-10 items-center gap-1 rounded-xl border border-border/60 bg-surface p-1">
+                  <button
+                    type="button"
+                    onClick={() => handleStepDay(-1)}
+                    className="rounded-lg p-1 text-text-muted transition-colors hover:bg-surface-muted hover:text-text-primary"
+                    title="Ngày hôm trước"
+                    aria-label="Chuyển đến ngày hôm trước"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </button>
+                  <input
+                    type="date"
+                    value={selectedDate}
+                    onChange={(e) => e.target.value && setSelectedDate(e.target.value)}
+                    className="w-[132px] rounded-lg border-0 bg-transparent px-1 py-1 text-xs font-bold text-text-primary outline-none focus:ring-1 focus:ring-primary"
+                    aria-label="Ngày điểm danh"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => handleStepDay(1)}
+                    className="rounded-lg p-1 text-text-muted transition-colors hover:bg-surface-muted hover:text-text-primary"
+                    title="Ngày hôm sau"
+                    aria-label="Chuyển đến ngày hôm sau"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </button>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setSelectedDate(toLocalDateString(new Date()))}
+                  className="h-10 whitespace-nowrap px-3 text-xs font-bold"
+                >
+                  Hôm nay
+                </Button>
+              </>
+            ) : (
+              <div className="flex flex-wrap items-center gap-2">
+                {/* Bộ chọn chế độ kỳ: Theo tuần | Theo tháng | Theo năm */}
+                <div className="flex p-0.5 bg-surface-muted rounded-xl border border-border/60 text-xs font-semibold">
+                  <button
+                    type="button"
+                    onClick={() => setDetailedFilterMode('week')}
+                    className={`px-3 py-1 rounded-lg transition-all ${
+                      detailedFilterMode === 'week'
+                        ? 'bg-surface text-primary shadow-xs font-bold'
+                        : 'text-text-muted hover:text-text-primary'
+                    }`}
+                  >
+                    Theo tuần
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDetailedFilterMode('month')}
+                    className={`px-3 py-1 rounded-lg transition-all ${
+                      detailedFilterMode === 'month'
+                        ? 'bg-surface text-primary shadow-xs font-bold'
+                        : 'text-text-muted hover:text-text-primary'
+                    }`}
+                  >
+                    Theo tháng
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDetailedFilterMode('year')}
+                    className={`px-3 py-1 rounded-lg transition-all ${
+                      detailedFilterMode === 'year'
+                        ? 'bg-surface text-primary shadow-xs font-bold'
+                        : 'text-text-muted hover:text-text-primary'
+                    }`}
+                  >
+                    Theo năm
+                  </button>
+                </div>
+
+                {/* Bộ điều hướng kỳ */}
+                <div className="flex items-center gap-1 bg-surface-muted p-1 rounded-xl border border-border/60">
+                  <button
+                    type="button"
+                    onClick={() => handleStepPeriod(-1)}
+                    className="p-1 rounded-lg text-text-muted hover:text-text-primary hover:bg-surface transition-colors"
+                    title="Kỳ trước"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+                  <span className="px-2.5 text-xs font-bold text-text-primary select-none">
+                    {detailedPeriodTitle}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => handleStepPeriod(1)}
+                    className="p-1 rounded-lg text-text-muted hover:text-text-primary hover:bg-surface transition-colors"
+                    title="Kỳ sau"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
+
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPeriodDate(new Date())}
+                  className="text-xs h-8 px-2.5 font-bold"
+                >
+                  Hôm nay
+                </Button>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Bảng Lớp học & Điểm danh */}
-        <div className="w-full overflow-x-auto">
+        <div className="w-full overflow-x-auto select-none">
           <table className="w-full text-xs text-left border-collapse">
             <thead>
               <tr className="bg-surface-muted/90 text-text-secondary border-b border-border/80 text-[11px] font-bold">
-                <th className="px-3 py-3 border-r border-border/60 whitespace-nowrap w-28">
+                <th
+                  className={`px-3 py-3 border-r border-border/60 whitespace-nowrap w-28 min-w-[112px] ${
+                    activeTab === 'detailed' ? 'sticky left-0 z-20 bg-slate-100' : ''
+                  }`}
+                >
                   Mã lớp
                 </th>
-                <th className="px-3 py-3 border-r border-border/60 whitespace-nowrap min-w-[150px]">
+                <th
+                  className={`px-3 py-3 border-r border-border/60 whitespace-nowrap min-w-[155px] ${
+                    activeTab === 'detailed'
+                      ? 'sticky left-[112px] z-20 bg-slate-100 shadow-[4px_0_6px_-2px_rgba(0,0,0,0.06)]'
+                      : ''
+                  }`}
+                >
                   Tên lớp
                 </th>
                 <th className="px-2.5 py-3 border-r border-border/60 text-center whitespace-nowrap w-24">
@@ -1240,50 +1407,81 @@ export const ClassesPage: React.FC = () => {
                   Học viên
                 </th>
 
-                {viewMode === 'day' ? (
+                {activeTab === 'quick' ? (
                   <>
-                    <th className="px-3 py-2.5 border-r border-border/60 text-center bg-teal-50/70 text-teal-950 min-w-[135px]">
-                      <div className="text-[12px] font-extrabold">
-                        {isTeacher ? 'Điểm danh' : 'Điểm danh GV'}
-                      </div>
-                      <div className="mt-0.5 text-[10px] font-semibold text-teal-700">
-                        {new Date(`${selectedDate}T00:00:00`).toLocaleDateString('vi-VN')}
-                      </div>
-                    </th>
+                    {(() => {
+                      const [y, m, day] = selectedDate.split('-').map(Number);
+                      const d = new Date(y, m - 1, day);
+                      const dateFormatted = `${d.getDate() < 10 ? `0${d.getDate()}` : d.getDate()}/${
+                        d.getMonth() + 1 < 10 ? `0${d.getMonth() + 1}` : d.getMonth() + 1
+                      }/${d.getFullYear()}`;
+                      const dayOfWeek = DAY_OF_WEEK_NAMES[d.getDay()];
+
+                      return (
+                        <th className="px-3 py-2 border-r border-border/60 text-center bg-teal-50/70 text-teal-950 min-w-[140px]">
+                          <div className="text-[12px] font-extrabold text-teal-950">
+                            {isTeacher ? 'Điểm danh' : 'Điểm danh GV'}
+                          </div>
+                          <div className="mt-0.5 text-[10px] font-semibold text-teal-700 flex items-center justify-center gap-1 whitespace-nowrap">
+                            <CalendarDays className="w-3 h-3 shrink-0" />
+                            <span>
+                              {dayOfWeek} {dateFormatted}
+                            </span>
+                          </div>
+                        </th>
+                      );
+                    })()}
                     {isTeacher && (
                       <>
                         <th className="px-3 py-2.5 border-r border-border/60 bg-indigo-50/50 text-indigo-950 min-w-[160px]">
-                          <div className="text-[12px] font-extrabold">
-                            Bài học
-                          </div>
+                          <div className="text-[12px] font-extrabold">Bài học</div>
                         </th>
                         <th className="px-3 py-2.5 border-r border-border/60 bg-indigo-50/50 text-indigo-950 min-w-[210px]">
-                          <div className="text-[12px] font-extrabold">
-                            Ghi chú GV
-                          </div>
+                          <div className="text-[12px] font-extrabold">Ghi chú GV</div>
                         </th>
                       </>
                     )}
                   </>
                 ) : (
-                  periodDates.map((d) => {
-                    const dStr = toLocalDateString(d);
-                    const isToday = toLocalDateString(new Date()) === dStr;
-                    const dayOfWeek = DAY_OF_WEEK_NAMES[d.getDay()];
-                    return (
-                      <th
-                        key={dStr}
-                        className={`px-1.5 py-2 border-r border-border/60 text-center min-w-[54px] ${
-                          isToday ? 'bg-blue-50 text-primary font-extrabold' : ''
-                        }`}
-                      >
-                        <div className="text-[10px] text-text-muted">{dayOfWeek}</div>
-                        <div className="text-xs font-extrabold text-text-primary">
-                          {String(d.getDate()).padStart(2, '0')}
-                        </div>
-                      </th>
-                    );
-                  })
+                  <>
+                    {/* 2 Cột thống kê nhanh trong Tab Điểm danh chi tiết */}
+                    <th className="px-3 py-2.5 border-r border-border/60 text-center whitespace-nowrap min-w-[95px] bg-emerald-50 text-emerald-900 font-extrabold">
+                      Tổng buổi đã học
+                    </th>
+                    <th className="px-3 py-2.5 border-r-2 border-border/80 text-center whitespace-nowrap min-w-[105px] bg-emerald-100/70 text-emerald-950 font-extrabold">
+                      <div className="text-[10px] text-emerald-800 uppercase font-semibold">
+                        Tháng {currentPeriodDate.getMonth() + 1}
+                      </div>
+                      <div>Đã học trong tháng</div>
+                    </th>
+
+                    {/* Các cột Lịch Ngày của tháng đang chọn */}
+                    {periodDates.map((d) => {
+                      const dStr = toLocalDateString(d);
+                      const isToday = toLocalDateString(new Date()) === dStr;
+                      const isWeekend = d.getDay() === 0 || d.getDay() === 6;
+                      const dayOfWeek = DAY_OF_WEEK_NAMES[d.getDay()];
+                      return (
+                        <th
+                          key={dStr}
+                          className={`px-1.5 py-2 border-r border-border/60 text-center min-w-[58px] transition-colors ${
+                            isToday
+                              ? 'bg-blue-50/90 text-primary border-primary/40 font-extrabold'
+                              : isWeekend
+                              ? 'bg-slate-100/50 text-text-muted'
+                              : ''
+                          }`}
+                        >
+                          <div className="font-bold text-[10px] text-text-muted leading-tight">
+                            {dayOfWeek}
+                          </div>
+                          <div className="text-[12px] font-extrabold text-text-primary">
+                            {String(d.getDate()).padStart(2, '0')}
+                          </div>
+                        </th>
+                      );
+                    })}
+                  </>
                 )}
 
                 <th className="px-3 py-3 text-right whitespace-nowrap min-w-[110px]">
@@ -1296,7 +1494,13 @@ export const ClassesPage: React.FC = () => {
               {loading ? (
                 <tr>
                   <td
-                    colSpan={viewMode === 'day' ? (isTeacher ? 12 : 10) : 9 + periodDates.length}
+                    colSpan={
+                      activeTab === 'quick'
+                        ? isTeacher
+                          ? 12
+                          : 10
+                        : 11 + periodDates.length
+                    }
                     className="py-12 text-center text-text-muted"
                   >
                     Đang tải danh sách lớp học & điểm danh...
@@ -1305,7 +1509,13 @@ export const ClassesPage: React.FC = () => {
               ) : filteredClasses.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={viewMode === 'day' ? (isTeacher ? 12 : 10) : 9 + periodDates.length}
+                    colSpan={
+                      activeTab === 'quick'
+                        ? isTeacher
+                          ? 12
+                          : 10
+                        : 11 + periodDates.length
+                    }
                     className="py-12 text-center text-text-muted"
                   >
                     {isTeacher
@@ -1327,6 +1537,23 @@ export const ClassesPage: React.FC = () => {
                     cls.class_teachers?.[0]?.teacher;
                   const schedule = cls.class_schedules?.[0];
 
+                  const singleStudentStat = singleStudent
+                    ? studentAttendanceStats.get(singleStudent.enrollment_class_id)
+                    : undefined;
+                  const singleTotalAttended =
+                    (singleStudent?.attended_previous_years || 0) +
+                    (singleStudentStat?.totalAttended || 0);
+                  const singleMonthAttended = singleStudentStat?.monthAttended || 0;
+
+                  const classSumTotalAttended = students.reduce((acc, s) => {
+                    const stStat = studentAttendanceStats.get(s.enrollment_class_id);
+                    return acc + (s.attended_previous_years || 0) + (stStat?.totalAttended || 0);
+                  }, 0);
+                  const classSumMonthAttended = students.reduce((acc, s) => {
+                    const stStat = studentAttendanceStats.get(s.enrollment_class_id);
+                    return acc + (stStat?.monthAttended || 0);
+                  }, 0);
+
                   return (
                     <React.Fragment key={cls.id}>
                       {/* DÒNG LỚP HỌC CHÍNH */}
@@ -1338,14 +1565,28 @@ export const ClassesPage: React.FC = () => {
                         }`}
                       >
                         {/* Mã lớp chuẩn class_0001 */}
-                        <td className="px-3 py-2.5 border-r border-border/60 whitespace-nowrap">
+                        <td
+                          className={`px-3 py-2.5 border-r border-border/60 whitespace-nowrap w-28 min-w-[112px] ${
+                            activeTab === 'detailed'
+                              ? `sticky left-0 z-10 ${isOneToOne ? 'bg-surface' : 'bg-slate-100'}`
+                              : ''
+                          }`}
+                        >
                           <span className="font-mono text-xs font-extrabold px-2 py-0.5 rounded-md bg-slate-100 text-slate-900 border border-slate-300 shadow-2xs">
                             {formattedCode}
                           </span>
                         </td>
 
                         {/* Tên lớp */}
-                        <td className="px-3 py-2.5 border-r border-border/60 font-bold text-slate-900 text-xs whitespace-nowrap">
+                        <td
+                          className={`px-3 py-2.5 border-r border-border/60 font-bold text-slate-900 text-xs whitespace-nowrap min-w-[155px] ${
+                            activeTab === 'detailed'
+                              ? `sticky left-[112px] z-10 shadow-[4px_0_6px_-2px_rgba(0,0,0,0.06)] ${
+                                  isOneToOne ? 'bg-surface' : 'bg-slate-100'
+                                }`
+                              : ''
+                          }`}
+                        >
                           {cls.class_name}
                         </td>
 
@@ -1371,7 +1612,11 @@ export const ClassesPage: React.FC = () => {
 
                         {/* Giáo viên */}
                         <td className="px-3 py-2.5 border-r border-border/60 font-semibold text-slate-800 text-xs whitespace-nowrap">
-                          {mainTeacher ? mainTeacher.name : <span className="italic text-slate-400">Chưa phân công</span>}
+                          {mainTeacher ? (
+                            mainTeacher.name
+                          ) : (
+                            <span className="italic text-slate-400">Chưa phân công</span>
+                          )}
                         </td>
 
                         {/* Lịch học */}
@@ -1398,13 +1643,17 @@ export const ClassesPage: React.FC = () => {
                           {isOneToOne ? (
                             singleStudent ? (
                               <div>
-                                <div className="font-bold text-text-primary">{singleStudent.full_name}</div>
+                                <div className="font-bold text-text-primary">
+                                  {singleStudent.full_name}
+                                </div>
                                 <div className="font-mono text-[10px] text-text-muted">
                                   {singleStudent.external_id}
                                 </div>
                               </div>
                             ) : (
-                              <span className="text-xs italic text-slate-400">Chưa xếp học viên</span>
+                              <span className="text-xs italic text-slate-400">
+                                Chưa xếp học viên
+                              </span>
                             )
                           ) : (
                             <button
@@ -1423,8 +1672,8 @@ export const ClassesPage: React.FC = () => {
                           )}
                         </td>
 
-                        {/* Cột Điểm danh & Bài học & Ghi chú theo chế độ xem */}
-                        {viewMode === 'day' ? (
+                        {/* Cột Điểm danh & Bài học & Ghi chú tùy theo Tab */}
+                        {activeTab === 'quick' ? (
                           <>
                             <td className="px-2 py-1.5 border-r border-border/60 text-center bg-teal-50/20">
                               {isOneToOne ? (
@@ -1442,7 +1691,9 @@ export const ClassesPage: React.FC = () => {
                                       students.length === 0 ||
                                       savingKey === `class_${cls.id}_${selectedDate}`
                                     }
-                                    onClick={() => handleBulkMarkWholeClass(cls, selectedDate, 'ATTENDED')}
+                                    onClick={() =>
+                                      handleBulkMarkWholeClass(cls, selectedDate, 'ATTENDED')
+                                    }
                                     leftIcon={<Check className="w-3.5 h-3.5 text-emerald-600" />}
                                     className="h-7 text-[11px] font-bold border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100"
                                   >
@@ -1456,7 +1707,7 @@ export const ClassesPage: React.FC = () => {
 
                             {isTeacher && (
                               <>
-                                <td className="px-2.5 py-1.5 border-r border-border/60 bg-indigo-50/15">
+                                <td className="px-2.5 py-1.5 border-r border-border/60 bg-indigo-50/15 select-text">
                                   {isOneToOne && singleStudent ? (
                                     renderDayLessonInput(cls, singleStudent, selectedDate)
                                   ) : (
@@ -1464,7 +1715,7 @@ export const ClassesPage: React.FC = () => {
                                   )}
                                 </td>
 
-                                <td className="px-2.5 py-1.5 border-r border-border/60 bg-indigo-50/15">
+                                <td className="px-2.5 py-1.5 border-r border-border/60 bg-indigo-50/15 select-text">
                                   {isOneToOne && singleStudent ? (
                                     renderDayNoteInput(cls, singleStudent, selectedDate)
                                   ) : (
@@ -1475,21 +1726,53 @@ export const ClassesPage: React.FC = () => {
                             )}
                           </>
                         ) : (
-                          periodDates.map((d) => {
-                            const dStr = toLocalDateString(d);
-                            return (
-                              <td
-                                key={dStr}
-                                className="px-1 py-1.5 border-r border-border/60 text-center"
-                              >
-                                {isOneToOne && singleStudent ? (
-                                  renderMatrixDateCell(cls, singleStudent, dStr)
-                                ) : (
-                                  <span className="text-[10px] text-slate-400">↓</span>
-                                )}
-                              </td>
-                            );
-                          })
+                          <>
+                            {/* 2 Cột thống kê trong Tab Điểm danh chi tiết */}
+                            <td className="px-3 py-2.5 border-r border-border/60 text-center font-extrabold text-emerald-800 bg-emerald-50/40">
+                              {isOneToOne
+                                ? singleStudent
+                                  ? singleTotalAttended
+                                  : 0
+                                : classSumTotalAttended}
+                            </td>
+                            <td className="px-3 py-2.5 border-r-2 border-border/80 text-center font-extrabold text-emerald-800 bg-emerald-100/30">
+                              {isOneToOne
+                                ? singleStudent
+                                  ? singleMonthAttended
+                                  : 0
+                                : classSumMonthAttended}
+                            </td>
+
+                            {/* Các Cột Lịch Ngày của tháng đang chọn */}
+                            {periodDates.map((d) => {
+                              const dStr = toLocalDateString(d);
+                              return (
+                                <td
+                                  key={dStr}
+                                  className="px-1 py-1.5 border-r border-border/60 text-center"
+                                >
+                                  {isOneToOne && singleStudent ? (
+                                    renderMatrixDateCell(cls, singleStudent, dStr)
+                                  ) : isTeacher && students.length > 0 ? (
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        handleBulkMarkWholeClass(cls, dStr, 'ATTENDED')
+                                      }
+                                      disabled={savingKey === `class_${cls.id}_${dStr}`}
+                                      title={`Chấm Có mặt cả lớp (${students.length} HV) ngày ${dStr}`}
+                                      className="inline-flex h-6 items-center justify-center gap-0.5 rounded-md border border-emerald-300 bg-emerald-50/80 px-1.5 text-[10px] font-bold text-emerald-800 transition hover:bg-emerald-100 disabled:opacity-50"
+                                    >
+                                      <Check className="h-3 w-3 shrink-0" />
+                                      <span>Lớp</span>
+                                    </button>
+                                  ) : (
+                                    <span className="text-[10px] text-slate-400">↓</span>
+                                  )}
+                                </td>
+                              );
+                            })}
+                          </>
                         )}
 
                         {/* Cột Thao tác (GIỮ NGUYÊN nút Buổi học) */}
@@ -1510,7 +1793,9 @@ export const ClassesPage: React.FC = () => {
                                 variant="ghost"
                                 size="sm"
                                 onClick={() => openModal(cls)}
-                                leftIcon={<Edit className="w-3.5 h-3.5 text-slate-500 hover:text-blue-600" />}
+                                leftIcon={
+                                  <Edit className="w-3.5 h-3.5 text-slate-500 hover:text-blue-600" />
+                                }
                                 title="Chỉnh sửa thông tin lớp học"
                                 className="h-7 px-1.5"
                               />
@@ -1526,90 +1811,123 @@ export const ClassesPage: React.FC = () => {
                           <tr className="border-b border-border/50 bg-slate-50/40">
                             <td colSpan={7} className="px-3 py-2 border-r border-border/50" />
                             <td
-                              colSpan={viewMode === 'day' ? (isTeacher ? 5 : 3) : 2 + periodDates.length}
+                              colSpan={
+                                activeTab === 'quick'
+                                  ? isTeacher
+                                    ? 5
+                                    : 3
+                                  : 4 + periodDates.length
+                              }
                               className="px-3 py-2 text-xs italic text-slate-400"
                             >
                               Lớp chưa có học viên nào được gán.
                             </td>
                           </tr>
                         ) : (
-                          students.map((st, sIdx) => (
-                            <tr
-                              key={st.enrollment_class_id}
-                              className="border-b border-border/50 bg-white hover:bg-blue-50/30 transition-colors"
-                            >
-                              <td className="px-3 py-2 border-r border-border/50 text-right font-mono text-[10px] text-slate-400">
-                                {formattedCode}.{sIdx + 1}
-                              </td>
-                              <td className="px-3 py-2 border-r border-border/50 text-[11px] text-slate-500 whitespace-nowrap">
-                                {cls.class_name}
-                              </td>
-                              <td className="px-2.5 py-2 border-r border-border/50 text-center text-[11px] text-slate-400">
-                                {cls.level || '—'}
-                              </td>
-                              <td className="px-2.5 py-2 border-r border-border/50 text-center text-[11px] text-slate-400">
-                                {conf.label}
-                              </td>
-                              <td className="px-3 py-2 border-r border-border/50 text-[11px] text-slate-400 whitespace-nowrap">
-                                {mainTeacher?.name || '—'}
-                              </td>
-                              <td className="px-3 py-2 border-r border-border/50 text-[11px] text-slate-400 whitespace-nowrap">
-                                {schedule?.schedule_pattern || '—'}
-                              </td>
-                              <td className="px-2.5 py-2 border-r border-border/50 text-center text-[11px] text-slate-400">
-                                —
-                              </td>
-                              <td className="px-3 py-2 border-r-2 border-border/80 bg-purple-50/20">
-                                <div className="flex items-center justify-between gap-2">
-                                  <div>
-                                    <div className="font-bold text-text-primary">{st.full_name}</div>
-                                    <div className="font-mono text-[10px] text-text-muted">
-                                      {st.external_id}
+                          students.map((st, sIdx) => {
+                            const stStat = studentAttendanceStats.get(st.enrollment_class_id);
+                            const stTotalAttended =
+                              (st.attended_previous_years || 0) + (stStat?.totalAttended || 0);
+                            const stMonthAttended = stStat?.monthAttended || 0;
+
+                            return (
+                              <tr
+                                key={st.enrollment_class_id}
+                                className="border-b border-border/50 bg-white hover:bg-blue-50/30 transition-colors"
+                              >
+                                <td
+                                  className={`px-3 py-2 border-r border-border/50 text-right font-mono text-[10px] text-slate-400 w-28 min-w-[112px] ${
+                                    activeTab === 'detailed' ? 'sticky left-0 z-10 bg-white' : ''
+                                  }`}
+                                >
+                                  {formattedCode}.{sIdx + 1}
+                                </td>
+                                <td
+                                  className={`px-3 py-2 border-r border-border/50 text-[11px] text-slate-500 whitespace-nowrap min-w-[155px] ${
+                                    activeTab === 'detailed'
+                                      ? 'sticky left-[112px] z-10 bg-white shadow-[4px_0_6px_-2px_rgba(0,0,0,0.06)]'
+                                      : ''
+                                  }`}
+                                >
+                                  {cls.class_name}
+                                </td>
+                                <td className="px-2.5 py-2 border-r border-border/50 text-center text-[11px] text-slate-400">
+                                  {cls.level || '—'}
+                                </td>
+                                <td className="px-2.5 py-2 border-r border-border/50 text-center text-[11px] text-slate-400">
+                                  {conf.label}
+                                </td>
+                                <td className="px-3 py-2 border-r border-border/50 text-[11px] text-slate-400 whitespace-nowrap">
+                                  {mainTeacher?.name || '—'}
+                                </td>
+                                <td className="px-3 py-2 border-r border-border/50 text-[11px] text-slate-400 whitespace-nowrap">
+                                  {schedule?.schedule_pattern || '—'}
+                                </td>
+                                <td className="px-2.5 py-2 border-r border-border/50 text-center text-[11px] text-slate-400">
+                                  —
+                                </td>
+                                <td className="px-3 py-2 border-r-2 border-border/80 bg-purple-50/20">
+                                  <div className="flex items-center justify-between gap-2">
+                                    <div>
+                                      <div className="font-bold text-text-primary">
+                                        {st.full_name}
+                                      </div>
+                                      <div className="font-mono text-[10px] text-text-muted">
+                                        {st.external_id}
+                                      </div>
                                     </div>
+                                    {st.package_name && (
+                                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-medium">
+                                        {st.package_name}
+                                      </span>
+                                    )}
                                   </div>
-                                  {st.package_name && (
-                                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-medium">
-                                      {st.package_name}
-                                    </span>
-                                  )}
-                                </div>
-                              </td>
+                                </td>
 
-                              {viewMode === 'day' ? (
-                                <>
-                                  <td className="px-2 py-1 border-r border-border/60 text-center bg-teal-50/10">
-                                    {renderMatrixDateCell(cls, st, selectedDate)}
-                                  </td>
-                                  {isTeacher && (
-                                    <>
-                                      <td className="px-2.5 py-1.5 border-r border-border/60 bg-indigo-50/10">
-                                        {renderDayLessonInput(cls, st, selectedDate)}
-                                      </td>
-                                      <td className="px-2.5 py-1.5 border-r border-border/60 bg-indigo-50/10">
-                                        {renderDayNoteInput(cls, st, selectedDate)}
-                                      </td>
-                                    </>
-                                  )}
-                                </>
-                              ) : (
-                                periodDates.map((d) => {
-                                  const dStr = toLocalDateString(d);
-                                  return (
-                                    <td
-                                      key={dStr}
-                                      className="px-1 py-1 border-r border-border/60 text-center"
-                                    >
-                                      {renderMatrixDateCell(cls, st, dStr)}
+                                {activeTab === 'quick' ? (
+                                  <>
+                                    <td className="px-2 py-1 border-r border-border/60 text-center bg-teal-50/10">
+                                      {renderMatrixDateCell(cls, st, selectedDate)}
                                     </td>
-                                  );
-                                })
-                              )}
+                                    {isTeacher && (
+                                      <>
+                                        <td className="px-2.5 py-1.5 border-r border-border/60 bg-indigo-50/10 select-text">
+                                          {renderDayLessonInput(cls, st, selectedDate)}
+                                        </td>
+                                        <td className="px-2.5 py-1.5 border-r border-border/60 bg-indigo-50/10 select-text">
+                                          {renderDayNoteInput(cls, st, selectedDate)}
+                                        </td>
+                                      </>
+                                    )}
+                                  </>
+                                ) : (
+                                  <>
+                                    <td className="px-3 py-2 border-r border-border/60 text-center font-extrabold text-emerald-800 bg-emerald-50/40">
+                                      {stTotalAttended}
+                                    </td>
+                                    <td className="px-3 py-2 border-r-2 border-border/80 text-center font-extrabold text-emerald-800 bg-emerald-100/30">
+                                      {stMonthAttended}
+                                    </td>
+                                    {periodDates.map((d) => {
+                                      const dStr = toLocalDateString(d);
+                                      return (
+                                        <td
+                                          key={dStr}
+                                          className="px-1 py-1 border-r border-border/60 text-center"
+                                        >
+                                          {renderMatrixDateCell(cls, st, dStr)}
+                                        </td>
+                                      );
+                                    })}
+                                  </>
+                                )}
 
-                              <td className="px-3 py-1.5 text-right text-[11px] text-text-muted">
-                                —
-                              </td>
-                            </tr>
-                          ))
+                                <td className="px-3 py-1.5 text-right text-[11px] text-text-muted">
+                                  —
+                                </td>
+                              </tr>
+                            );
+                          })
                         ))}
                     </React.Fragment>
                   );
@@ -1618,6 +1936,30 @@ export const ClassesPage: React.FC = () => {
             </tbody>
           </table>
         </div>
+
+        {/* Chú thích mã trạng thái ở chân bảng giống bên CSKH */}
+        <div className="p-3.5 px-4 border-t border-border/80 bg-surface-muted/30 flex flex-wrap items-center justify-between gap-4 text-xs text-text-secondary">
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="font-bold text-text-primary">Chú thích mã trạng thái:</span>
+            {Object.entries(STATUS_CONFIG).map(([key, opt]) => (
+              <div key={key} className="flex items-center gap-1.5">
+                <span
+                  className={`w-5 h-5 rounded flex items-center justify-center text-[10px] font-extrabold border ${opt.bg.replace(
+                    /\s*hover:\S+/g,
+                    ''
+                  )} ${opt.text} ${opt.border}`}
+                >
+                  {opt.short}
+                </span>
+                <span>{key === 'ATTENDED' ? 'Có mặt (Điền số buổi: 1, 2...)' : opt.label}</span>
+              </div>
+            ))}
+            <div className="flex items-center gap-1.5">
+              <span className="inline-block w-2.5 h-2.5 rounded-full bg-indigo-600 border border-white shadow-2xs" />
+              <span>Có Bài học / Ghi chú GV</span>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Popover chọn điểm danh + Bài học + Ghi chú GV (dành riêng cho Giáo viên) */}
@@ -1625,7 +1967,7 @@ export const ClassesPage: React.FC = () => {
         activePopover &&
         (() => {
           const rect = activePopover.anchorEl.getBoundingClientRect();
-          const top = Math.min(rect.bottom + 8, window.innerHeight - 380);
+          const top = Math.min(rect.bottom + 8, window.innerHeight - 360);
           const left = Math.min(Math.max(rect.left - 110, 12), window.innerWidth - 295);
           const existingAtt = activePopover.session
             ? attendanceByEcAndSession.get(
@@ -1633,6 +1975,43 @@ export const ClassesPage: React.FC = () => {
               )
             : undefined;
           const currentStatus = existingAtt?.teacher_status as AttendanceStatus | undefined;
+
+          const triggerPopoverSaveNow = (nextLesson: string, nextNote: string) => {
+            if (popoverTimerRef.current) {
+              clearTimeout(popoverTimerRef.current);
+              popoverTimerRef.current = null;
+            }
+            handleSaveLessonAndNote({
+              classId: activePopover.classId,
+              enrollmentClassId: activePopover.enrollmentClassId,
+              dateStr: activePopover.dateStr,
+              session: activePopover.session,
+              lessonTopic: nextLesson.trim() || null,
+              teacherNote: nextNote.trim() || null,
+              studentName: activePopover.studentName,
+              fromPopover: true,
+            });
+          };
+
+          const schedulePopoverAutoSave = (nextLesson: string, nextNote: string) => {
+            if (popoverTimerRef.current) {
+              clearTimeout(popoverTimerRef.current);
+            }
+            const snap = activePopover;
+            popoverTimerRef.current = setTimeout(() => {
+              popoverTimerRef.current = null;
+              handleSaveLessonAndNote({
+                classId: snap.classId,
+                enrollmentClassId: snap.enrollmentClassId,
+                dateStr: snap.dateStr,
+                session: snap.session,
+                lessonTopic: nextLesson.trim() || null,
+                teacherNote: nextNote.trim() || null,
+                studentName: snap.studentName,
+                fromPopover: true,
+              });
+            }, 600);
+          };
 
           return createPortal(
             <div
@@ -1650,7 +2029,10 @@ export const ClassesPage: React.FC = () => {
                 </div>
                 <button
                   type="button"
-                  onClick={() => setActivePopover(null)}
+                  onClick={() => {
+                    triggerPopoverSaveNow(popoverLesson, popoverNote);
+                    setActivePopover(null);
+                  }}
                   className="text-text-muted hover:text-text-primary text-xs font-bold px-1"
                 >
                   ✕
@@ -1665,7 +2047,11 @@ export const ClassesPage: React.FC = () => {
                     <button
                       key={status}
                       type="button"
-                      onClick={() =>
+                      onClick={() => {
+                        if (popoverTimerRef.current) {
+                          clearTimeout(popoverTimerRef.current);
+                          popoverTimerRef.current = null;
+                        }
                         handleMarkAttendanceAndNote({
                           classId: activePopover.classId,
                           enrollmentClassId: activePopover.enrollmentClassId,
@@ -1675,8 +2061,8 @@ export const ClassesPage: React.FC = () => {
                           lesson_topic: popoverLesson.trim() || null,
                           teacher_note: popoverNote.trim() || null,
                           studentName: activePopover.studentName,
-                        })
-                      }
+                        });
+                      }}
                       className={`flex h-7 w-full items-center justify-between rounded-lg border px-2.5 text-xs font-extrabold transition ${
                         active ? 'ring-2 ring-primary ring-offset-1' : ''
                       } ${cfg.bg} ${cfg.text} ${cfg.border}`}
@@ -1712,7 +2098,18 @@ export const ClassesPage: React.FC = () => {
                   <input
                     type="text"
                     value={popoverLesson}
-                    onChange={(e) => setPopoverLesson(e.target.value)}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setPopoverLesson(val);
+                      schedulePopoverAutoSave(val, popoverNote);
+                    }}
+                    onBlur={() => triggerPopoverSaveNow(popoverLesson, popoverNote)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        triggerPopoverSaveNow(popoverLesson, popoverNote);
+                      }
+                    }}
                     placeholder="VD: Bài 4, Kaiwa 2..."
                     className="w-full h-7 px-2 rounded-lg border border-border bg-white text-xs text-text-primary focus:outline-none focus:ring-1 focus:ring-primary"
                   />
@@ -1724,29 +2121,16 @@ export const ClassesPage: React.FC = () => {
                   <textarea
                     rows={2}
                     value={popoverNote}
-                    onChange={(e) => setPopoverNote(e.target.value)}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setPopoverNote(val);
+                      schedulePopoverAutoSave(popoverLesson, val);
+                    }}
+                    onBlur={() => triggerPopoverSaveNow(popoverLesson, popoverNote)}
                     placeholder="Nhận xét buổi học, BTVN..."
                     className="w-full px-2 py-1 rounded-lg border border-border bg-white text-xs text-text-primary focus:outline-none focus:ring-1 focus:ring-primary resize-none"
                   />
                 </div>
-                <button
-                  type="button"
-                  onClick={() =>
-                    handleSaveLessonAndNote({
-                      classId: activePopover.classId,
-                      enrollmentClassId: activePopover.enrollmentClassId,
-                      dateStr: activePopover.dateStr,
-                      session: activePopover.session,
-                      lessonTopic: popoverLesson.trim() || null,
-                      teacherNote: popoverNote.trim() || null,
-                      studentName: activePopover.studentName,
-                    })
-                  }
-                  className="flex h-7 w-full items-center justify-center gap-1 rounded-lg bg-primary text-white text-[11px] font-bold hover:bg-primary/90"
-                >
-                  <Save className="w-3 h-3" />
-                  <span>Lưu bài học & ghi chú</span>
-                </button>
               </div>
             </div>,
             document.body

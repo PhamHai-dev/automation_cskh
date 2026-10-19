@@ -23,7 +23,6 @@ import {
   Clock,
   Users,
   BarChart3,
-  Save,
 } from 'lucide-react';
 
 export { formatClassCode };
@@ -243,11 +242,56 @@ const AttendancePickerPopover: React.FC<AttendancePickerPopoverProps> = ({
   const [lessonTopic, setLessonTopic] = useState<string>(() => sourceAtt?.lesson_topic || '');
   const [teacherNote, setTeacherNote] = useState<string>(() => sourceAtt?.teacher_note || '');
   const [position, setPosition] = useState(() => computePopoverCoords(anchorEl.getBoundingClientRect(), null));
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastSavedRef = useRef<{ lesson: string; note: string }>({
+    lesson: (sourceAtt?.lesson_topic || '').trim(),
+    note: (sourceAtt?.teacher_note || '').trim(),
+  });
 
   useEffect(() => {
-    setLessonTopic(sourceAtt?.lesson_topic || '');
-    setTeacherNote(sourceAtt?.teacher_note || '');
-  }, [sourceAtt?.id, sourceAtt?.lesson_topic, sourceAtt?.teacher_note, targetSession?.id]);
+    const initLesson = sourceAtt?.lesson_topic || '';
+    const initNote = sourceAtt?.teacher_note || '';
+    setLessonTopic(initLesson);
+    setTeacherNote(initNote);
+    lastSavedRef.current = { lesson: initLesson.trim(), note: initNote.trim() };
+  }, [sourceAtt?.id, targetSession?.id]);
+
+  useEffect(() => {
+    return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+    };
+  }, []);
+
+  const triggerNoteSaveNow = (nextLesson: string, nextNote: string) => {
+    if (!canEditTeacherNote) return;
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = null;
+    }
+    const normLesson = nextLesson.trim();
+    const normNote = nextNote.trim();
+    if (
+      lastSavedRef.current.lesson === normLesson &&
+      lastSavedRef.current.note === normNote
+    ) {
+      return;
+    }
+    lastSavedRef.current = { lesson: normLesson, note: normNote };
+    onSaveNote(targetSession, normLesson || null, normNote || null);
+  };
+
+  const scheduleNoteAutoSave = (nextLesson: string, nextNote: string) => {
+    if (!canEditTeacherNote) return;
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+    debounceTimerRef.current = setTimeout(() => {
+      debounceTimerRef.current = null;
+      triggerNoteSaveNow(nextLesson, nextNote);
+    }, 600);
+  };
 
   useEffect(() => {
     let rafId: number | null = null;
@@ -368,7 +412,7 @@ const AttendancePickerPopover: React.FC<AttendancePickerPopoverProps> = ({
         )}
       </div>
 
-      {/* Khu vực nhập Bài học & Ghi chú GV theo buổi — chỉ hiển thị cho Giáo viên */}
+      {/* Khu vực nhập Bài học & Ghi chú GV theo buổi — chỉ hiển thị cho Giáo viên (auto-save) */}
       {canEditTeacherNote && (
         <div className="mt-2 border-t border-border/70 pt-2 space-y-1.5">
           <div>
@@ -378,7 +422,18 @@ const AttendancePickerPopover: React.FC<AttendancePickerPopoverProps> = ({
             <input
               type="text"
               value={lessonTopic}
-              onChange={(e) => setLessonTopic(e.target.value)}
+              onChange={(e) => {
+                const val = e.target.value;
+                setLessonTopic(val);
+                scheduleNoteAutoSave(val, teacherNote);
+              }}
+              onBlur={() => triggerNoteSaveNow(lessonTopic, teacherNote)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  triggerNoteSaveNow(lessonTopic, teacherNote);
+                }
+              }}
               placeholder="VD: Bài 4, Kaiwa 2..."
               className="w-full h-7 px-2 rounded-lg border border-border text-xs bg-white text-text-primary focus:outline-none focus:ring-1 focus:ring-primary select-text"
             />
@@ -390,26 +445,16 @@ const AttendancePickerPopover: React.FC<AttendancePickerPopoverProps> = ({
             <textarea
               rows={2}
               value={teacherNote}
-              onChange={(e) => setTeacherNote(e.target.value)}
+              onChange={(e) => {
+                const val = e.target.value;
+                setTeacherNote(val);
+                scheduleNoteAutoSave(lessonTopic, val);
+              }}
+              onBlur={() => triggerNoteSaveNow(lessonTopic, teacherNote)}
               placeholder="Nhận xét buổi học, BTVN..."
               className="w-full px-2 py-1 rounded-lg border border-border text-xs bg-white text-text-primary focus:outline-none focus:ring-1 focus:ring-primary resize-none select-text"
             />
           </div>
-          <button
-            type="button"
-            disabled={saving}
-            onClick={() =>
-              onSaveNote(
-                targetSession,
-                lessonTopic.trim() || null,
-                teacherNote.trim() || null
-              )
-            }
-            className="flex h-7 w-full items-center justify-center gap-1 rounded-lg bg-primary px-2.5 text-[11px] font-bold text-white shadow-2xs transition hover:bg-primary/90 disabled:opacity-50"
-          >
-            <Save className="h-3 w-3" />
-            <span>Lưu bài học & ghi chú</span>
-          </button>
         </div>
       )}
     </div>,
@@ -1087,14 +1132,17 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
     const classId = resolveClassId(enrollmentClassId, session);
     if (!classId) return toast.error('Không xác định được lớp học');
 
-    setActiveCell(null);
-    setActiveAnchorEl(null);
     setSavingSessionId(session?.id ?? 'draft');
     try {
       let target = session;
       if (!target) {
         target = await classSessionsApi.create(classId, { session_date: dateStr });
         setCreatedSessions((current) => [...current, target!]);
+        setActiveCell((prev) =>
+          prev && prev.enrollmentClassId === enrollmentClassId && prev.dateStr === dateStr && !prev.session
+            ? { ...prev, session: target }
+            : prev
+        );
       }
       const key = `${enrollmentClassId}_session_${target.id}`;
       const existingRaw = rawAttendanceMap.get(key);
@@ -1128,7 +1176,6 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
         });
         return next;
       });
-      toast.success('Đã lưu bài học & ghi chú buổi học');
     } catch (err: any) {
       toast.error(err.response?.data?.message || err.response?.data?.error?.message || err.message || 'Không thể lưu ghi chú');
       onRefresh();
