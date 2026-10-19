@@ -2352,7 +2352,7 @@ export class ImportsService {
     if (existing && existing.enrollments.length > 0) {
       // Approved transfer of existing enrollment
       const enrollment = existing.enrollments[0];
-      return prisma.$transaction(async (tx) => {
+      const transferResult = await prisma.$transaction(async (tx) => {
         const updateData: any = {
           cs_id: csId,
           external_synced_at: new Date(),
@@ -2390,9 +2390,17 @@ export class ImportsService {
 
         return { student: existing, enrollment: updatedEnrollment, request };
       });
+
+      await runStudentCareGroupAutoSync({
+        triggeredBy: 'import',
+        refreshLiveGroups: false,
+        studentIds: [existing.id],
+      }).catch(() => null);
+
+      return transferResult;
     }
 
-    return prisma.$transaction(async (tx) => {
+    const createResult = await prisma.$transaction(async (tx) => {
       let studentId = existing?.id;
       let student = existing as any;
       if (!studentId) {
@@ -2441,6 +2449,16 @@ export class ImportsService {
       await tx.auditLog.create({ data: { user_id: actor.id, action: 'IMPORT_REQUEST_APPROVED', entity_type: 'ImportCreateRequest', entity_id: String(id), before_data: before as any, after_data: request as any } });
       return { student, enrollment, enrollmentClass, request };
     });
+
+    if (createResult?.student?.id) {
+      await runStudentCareGroupAutoSync({
+        triggeredBy: 'import',
+        refreshLiveGroups: false,
+        studentIds: [createResult.student.id],
+      }).catch(() => null);
+    }
+
+    return createResult;
   }
 
 }
