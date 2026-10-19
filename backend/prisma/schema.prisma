@@ -575,19 +575,24 @@ model ZaloContactRelation {
   student_id      Int
   zalo_account_id Int
   relation_status ZaloContactRelationStatus @default(UNKNOWN)
-  display_name    String? // cached Zalo display name
+  target_type     String                    @default("USER") // "USER" | "GROUP"
+  zalo_group_id   Int? // FK to ZaloGroup when linked to a Student Care Group ("01 - 427901798 ...")
+  matched_by      String? // "AUTO_GROUP_NAME" | "AUTO_PHONE" | "MANUAL"
+  display_name    String? // cached Zalo display name or Group name
   avatar_url      String? // cached Zalo avatar URL
-  friend_zalo_uid String? // Friend.zalo_uid_in_nick — direct UID for worker send target
+  friend_zalo_uid String? // Friend.zalo_uid_in_nick or ZaloGroup.zalo_group_id — direct target for worker send
   last_checked_at DateTime?
   created_at      DateTime                  @default(now())
   updated_at      DateTime                  @updatedAt
 
   student      Student     @relation(fields: [student_id], references: [id])
   zalo_account ZaloAccount @relation(fields: [zalo_account_id], references: [id])
+  zalo_group   ZaloGroup?  @relation(fields: [zalo_group_id], references: [id], onDelete: SetNull)
 
   @@unique([student_id, zalo_account_id])
   @@index([student_id])
   @@index([zalo_account_id])
+  @@index([zalo_group_id])
   @@index([friend_zalo_uid])
   @@map("zalo_contact_relations")
 }
@@ -608,9 +613,10 @@ model ZaloGroup {
   created_at      DateTime  @default(now())
   updated_at      DateTime  @updatedAt
 
-  zalo_account       ZaloAccount       @relation(fields: [zalo_account_id], references: [id])
-  members            ZaloGroupMember[]
-  message_deliveries MessageDelivery[]
+  zalo_account           ZaloAccount           @relation(fields: [zalo_account_id], references: [id])
+  members                ZaloGroupMember[]
+  message_deliveries     MessageDelivery[]
+  zalo_contact_relations ZaloContactRelation[]
 
   @@index([zalo_account_id])
   @@map("zalo_groups")
@@ -1384,9 +1390,12 @@ model LineContactRelation {
   student_id      Int
   line_account_id Int
   relation_status ZaloContactRelationStatus @default(UNKNOWN)
+  target_type     String                    @default("USER") // "USER" | "GROUP"
+  line_group_id   Int? // FK to LineGroup when linked to a Student Care Group ("01 - 427901798 ...")
+  matched_by      String? // "AUTO_GROUP_NAME" | "AUTO_PHONE" | "DEEP_LINK" | "MANUAL"
   display_name    String?
   avatar_url      String?
-  friend_line_uid String? // Target LINE userId (U...) or MID for worker send
+  friend_line_uid String? // Target LINE userId (U...) or groupId (C...) for worker send
   link_code       String?                   @unique // Short code (e.g., LK-893412) for 2-tap oaMessage deep-link binding
   last_checked_at DateTime?
   created_at      DateTime                  @default(now())
@@ -1394,10 +1403,12 @@ model LineContactRelation {
 
   student      Student     @relation(fields: [student_id], references: [id])
   line_account LineAccount @relation(fields: [line_account_id], references: [id])
+  line_group   LineGroup?  @relation(fields: [line_group_id], references: [id], onDelete: SetNull)
 
   @@unique([student_id, line_account_id])
   @@index([student_id])
   @@index([line_account_id])
+  @@index([line_group_id])
   @@index([friend_line_uid])
   @@map("line_contact_relations")
 }
@@ -1414,9 +1425,10 @@ model LineGroup {
   created_at      DateTime  @default(now())
   updated_at      DateTime  @updatedAt
 
-  line_account       LineAccount       @relation(fields: [line_account_id], references: [id])
-  members            LineGroupMember[]
-  message_deliveries MessageDelivery[]
+  line_account           LineAccount           @relation(fields: [line_account_id], references: [id])
+  members                LineGroupMember[]
+  message_deliveries     MessageDelivery[]
+  line_contact_relations LineContactRelation[]
 
   @@index([line_account_id])
   @@map("line_groups")
