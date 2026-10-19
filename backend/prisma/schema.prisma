@@ -756,6 +756,82 @@ model MessageDelivery {
   @@map("message_deliveries")
 }
 
+// -----------------------------------------------------------------------------
+// 4b-2. Broadcast / Scheduled Campaigns (Multi-Channel Zalo & LINE)
+// -----------------------------------------------------------------------------
+
+enum BroadcastCampaignStatus {
+  DRAFT
+  SCHEDULED
+  SENDING
+  COMPLETED
+  PARTIAL_FAILED
+  FAILED
+  CANCELLED
+}
+
+enum BroadcastTargetType {
+  STUDENT
+  ZALO_GROUP
+  LINE_GROUP
+  ZALO_USER
+  LINE_USER
+}
+
+model BroadcastCampaign {
+  id               Int                     @id @default(autoincrement())
+  name             String
+  description      String?                 @db.Text
+  message_content  String                  @db.Text
+  channel_mode     String                  @default("AUTO") // "AUTO" | "ZALO_ONLY" | "LINE_ONLY" | "BOTH"
+  schedule_type    String                  @default("IMMEDIATE") // "IMMEDIATE" | "SCHEDULED"
+  scheduled_at     DateTime?
+  started_at       DateTime?
+  completed_at     DateTime?
+  status           BroadcastCampaignStatus @default(DRAFT)
+  total_recipients Int                     @default(0)
+  sent_count       Int                     @default(0)
+  failed_count     Int                     @default(0)
+  skipped_count    Int                     @default(0)
+  queue_job_id     String?
+  created_by_id    Int
+  created_at       DateTime                @default(now())
+  updated_at       DateTime                @updatedAt
+
+  recipients BroadcastRecipient[]
+
+  @@index([status, scheduled_at])
+  @@index([created_by_id])
+  @@map("broadcast_campaigns")
+}
+
+model BroadcastRecipient {
+  id                  Int                   @id @default(autoincrement())
+  campaign_id         Int
+  target_type         BroadcastTargetType
+  platform            String // "ZALO" | "LINE"
+  student_id          Int?
+  zalo_account_id     Int?
+  zalo_group_id       Int?
+  line_account_id     Int?
+  line_group_id       Int?
+  external_target_id  String? // Zalo UID / Group ID or LINE userId / groupId
+  target_display_name String?
+  rendered_content    String                @db.Text
+  status              MessageDeliveryStatus @default(SCHEDULED)
+  sent_at             DateTime?
+  provider_message_id String?
+  error_message       String?               @db.Text
+  created_at          DateTime              @default(now())
+  updated_at          DateTime              @updatedAt
+
+  campaign BroadcastCampaign @relation(fields: [campaign_id], references: [id], onDelete: Cascade)
+
+  @@index([campaign_id, status])
+  @@index([student_id])
+  @@map("broadcast_recipients")
+}
+
 enum OutboxEventStatus {
   PENDING
   PUBLISHED

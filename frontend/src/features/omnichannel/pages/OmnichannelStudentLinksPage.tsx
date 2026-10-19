@@ -157,12 +157,14 @@ export const OmnichannelStudentLinksPage: React.FC<{ initialTab?: string }> = ({
     deepLinkUrl: string;
   } | null>(null);
 
-  const loadWorkspaceData = useCallback(async () => {
-    setLoading(true);
+  const loadWorkspaceData = useCallback(async (opts?: { silent?: boolean; skipReport?: boolean }) => {
+    if (!opts?.silent) {
+      setLoading(true);
+    }
     try {
       const [studentsRes, reportRes, zAccs, lAccs] = await Promise.all([
         apiClient.get('/students').catch(() => ({ data: { data: [] } })),
-        omnichannelApi.getCareGroupReport().catch(() => null),
+        opts?.skipReport ? Promise.resolve(null) : omnichannelApi.getCareGroupReport().catch(() => null),
         zaloApi.listAccounts().catch(() => [] as ZaloAccount[]),
         lineApi.listAccounts().catch(() => [] as LineAccount[]),
       ]);
@@ -459,7 +461,7 @@ export const OmnichannelStudentLinksPage: React.FC<{ initialTab?: string }> = ({
       if (reportPayload && typeof reportPayload.totalEligibleStudents === 'number') {
         setCareReport(reportPayload as CareGroupSyncReport);
       }
-      loadWorkspaceData();
+      loadWorkspaceData({ silent: true, skipReport: true });
     };
 
     on('omnichannel:sync-progress', onSyncProgress);

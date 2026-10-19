@@ -77,6 +77,7 @@ router.get('/care-groups/report', async (req: Request, res: Response) => {
     const report = await syncAndMatchCareGroups({
       triggeredBy: 'manual',
       refreshLiveGroups: false,
+      silent: true,
       csId: effectiveCsId,
     });
 

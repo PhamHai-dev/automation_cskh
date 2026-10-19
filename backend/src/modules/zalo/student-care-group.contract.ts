@@ -69,6 +69,7 @@ export interface CareGroupSyncReport {
 export interface SyncCareGroupsOptions {
   triggeredBy?: 'login' | 'import' | 'cron' | 'manual' | 'group_event';
   refreshLiveGroups?: boolean;
+  silent?: boolean;
   studentIds?: number[];
   csId?: number;
   zaloAccountId?: number;

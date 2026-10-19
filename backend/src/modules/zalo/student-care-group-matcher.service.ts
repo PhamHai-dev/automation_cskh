@@ -225,14 +225,17 @@ export async function syncAndMatchCareGroups(
   options?: SyncCareGroupsOptions,
 ): Promise<CareGroupSyncReport> {
   const triggeredBy = options?.triggeredBy ?? 'manual';
+  const isSilent = Boolean(options?.silent);
   const startedAtDate = new Date();
   const startedAtMs = startedAtDate.getTime();
 
-  getIo()?.emit('omnichannel:sync-progress', {
-    status: 'PROCESSING',
-    stage: 'SYNCING_GROUPS',
-    triggeredBy,
-  });
+  if (!isSilent) {
+    getIo()?.emit('omnichannel:sync-progress', {
+      status: 'PROCESSING',
+      stage: 'SYNCING_GROUPS',
+      triggeredBy,
+    });
+  }
 
   let refreshedZaloAccounts = 0;
   let refreshedLineAccounts = 0;
@@ -765,7 +768,9 @@ export async function syncAndMatchCareGroups(
     unlinkedItems,
   };
 
-  getIo()?.emit('omnichannel:sync-complete', report);
+  if (!isSilent) {
+    getIo()?.emit('omnichannel:sync-complete', report);
+  }
 
   log.info('Student care group sync & match completed', {
     triggeredBy,
