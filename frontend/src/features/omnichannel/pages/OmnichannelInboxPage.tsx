@@ -107,7 +107,7 @@ export const OmnichannelInboxPage: React.FC<{ initialMode?: WorkspaceMode }> = (
             platform: 'ZALO',
             accountId: acc.id,
             accountName: acc.display_name || `Zalo #${acc.id}`,
-            accountTypeLabel: 'Zalo Personal',
+            accountTypeLabel: 'Zalo Cá nhân',
             externalThreadId: String(c.externalThreadId || ''),
             threadType: c.threadType === 'group' ? 'group' : 'user',
             displayName: String(c.groupName || c.displayName || c.externalThreadId || ''),
@@ -133,7 +133,7 @@ export const OmnichannelInboxPage: React.FC<{ initialMode?: WorkspaceMode }> = (
               platform: 'LINE',
               accountId: acc.id,
               accountName: acc.display_name || `LINE #${acc.id}`,
-              accountTypeLabel: acc.account_type === 'OA' ? 'LINE OA' : 'LINE Personal',
+              accountTypeLabel: acc.account_type === 'OA' ? 'LINE Official Account' : 'LINE Cá nhân',
               externalThreadId: extId,
               threadType: c.thread_type === 'group' ? 'group' : 'user',
               displayName: String(c.group_name || c.display_name || extId),
@@ -150,11 +150,13 @@ export const OmnichannelInboxPage: React.FC<{ initialMode?: WorkspaceMode }> = (
       });
 
       const allNested = await Promise.all([...zaloPromises, ...linePromises]);
-      const merged = allNested.flat().sort((a: UnifiedConversationItem, b: UnifiedConversationItem) => {
-        const ta = a.lastMessageAt ? new Date(a.lastMessageAt).getTime() : 0;
-        const tb = b.lastMessageAt ? new Date(b.lastMessageAt).getTime() : 0;
-        return tb - ta;
-      });
+      const merged = allNested
+        .flat()
+        .sort((a: UnifiedConversationItem, b: UnifiedConversationItem) => {
+          const ta = a.lastMessageAt ? new Date(a.lastMessageAt).getTime() : 0;
+          const tb = b.lastMessageAt ? new Date(b.lastMessageAt).getTime() : 0;
+          return tb - ta;
+        });
 
       setConversations(merged);
       if (!selectedConv && merged.length > 0) {
@@ -278,14 +280,14 @@ export const OmnichannelInboxPage: React.FC<{ initialMode?: WorkspaceMode }> = (
       await loadMessagesForSelected(selectedConv);
     } catch (err: any) {
       toast.error(
-        err?.response?.data?.error || err?.message || 'Không thể gửi tin nhắn (kiểm tra hạn mức)',
+        err?.response?.data?.error || err?.message || 'Không thể gửi tin nhắn (kiểm tra giới hạn)',
       );
     } finally {
       setSending(false);
     }
   };
 
-  const hasFreeReplyToken = useMemo(() => {
+  const hasFreeReplyWindow = useMemo(() => {
     if (!selectedConv?.replyTokenExpiresAt) return false;
     return new Date(selectedConv.replyTokenExpiresAt).getTime() > Date.now();
   }, [selectedConv]);
@@ -300,16 +302,18 @@ export const OmnichannelInboxPage: React.FC<{ initialMode?: WorkspaceMode }> = (
           </div>
           <div>
             <h1 className="text-sm font-bold text-text-primary leading-tight">
-              Hộp thư Đa kênh (Omnichannel Inbox)
+              Hộp thư Đa kênh (Zalo & LINE)
             </h1>
             <p className="text-[11px] text-text-muted">
-              Hợp nhất hội thoại Zalo Personal, LINE Official Account & LINE Personal E2EE
+              Theo dõi và phản hồi tin nhắn học viên tập trung từ Zalo Cá nhân, LINE Official Account
+              & LINE Cá nhân
             </p>
           </div>
         </div>
 
         <div className="flex items-center gap-1.5 bg-surface-muted p-1 rounded-xl border border-border">
           <button
+            type="button"
             onClick={() => setMode('UNIFIED')}
             className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${
               mode === 'UNIFIED'
@@ -318,9 +322,10 @@ export const OmnichannelInboxPage: React.FC<{ initialMode?: WorkspaceMode }> = (
             }`}
           >
             <Sparkles className="w-3.5 h-3.5" />
-            Luồng Hợp nhất (Zalo + LINE)
+            Tất cả tin nhắn (Zalo + LINE)
           </button>
           <button
+            type="button"
             onClick={() => setMode('ZALO')}
             className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${
               mode === 'ZALO'
@@ -329,9 +334,10 @@ export const OmnichannelInboxPage: React.FC<{ initialMode?: WorkspaceMode }> = (
             }`}
           >
             <Smartphone className="w-3.5 h-3.5" />
-            Không gian Zalo (Reactions / Polls / Nhãn)
+            Hộp thư Zalo chi tiết
           </button>
           <button
+            type="button"
             onClick={() => setMode('LINE')}
             className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${
               mode === 'LINE'
@@ -340,7 +346,7 @@ export const OmnichannelInboxPage: React.FC<{ initialMode?: WorkspaceMode }> = (
             }`}
           >
             <Bot className="w-3.5 h-3.5" />
-            Không gian LINE (OA / E2EE)
+            Hộp thư LINE chi tiết
           </button>
         </div>
       </div>
@@ -365,6 +371,7 @@ export const OmnichannelInboxPage: React.FC<{ initialMode?: WorkspaceMode }> = (
                   {(['ALL', 'ZALO', 'LINE'] as PlatformFilter[]).map((pf) => (
                     <button
                       key={pf}
+                      type="button"
                       onClick={() => setPlatformFilter(pf)}
                       className={`flex-1 py-1 rounded-md text-[11px] font-bold transition-colors ${
                         platformFilter === pf
@@ -379,15 +386,16 @@ export const OmnichannelInboxPage: React.FC<{ initialMode?: WorkspaceMode }> = (
                       {pf === 'ALL'
                         ? `Tất cả (${conversations.length})`
                         : pf === 'ZALO'
-                          ? `Zalo (${zaloAccounts.filter((a) => a.status === 'ACTIVE').length} nick)`
-                          : `LINE (${lineAccounts.filter((a) => a.status === 'ACTIVE').length} kênh)`}
+                          ? `Zalo (${zaloAccounts.filter((a) => a.status === 'ACTIVE').length} tài khoản)`
+                          : `LINE (${lineAccounts.filter((a) => a.status === 'ACTIVE').length} tài khoản)`}
                     </button>
                   ))}
                 </div>
                 <button
+                  type="button"
                   onClick={loadUnifiedConversations}
                   className="p-1.5 rounded-lg border border-border text-text-muted hover:text-text-primary hover:bg-surface-muted"
-                  title="Làm mới hội thoại"
+                  title="Làm mới danh sách hội thoại"
                 >
                   <RefreshCw className={`w-4 h-4 ${loadingList ? 'animate-spin' : ''}`} />
                 </button>
@@ -400,7 +408,7 @@ export const OmnichannelInboxPage: React.FC<{ initialMode?: WorkspaceMode }> = (
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Tìm tên HV, nhóm lớp, tài khoản..."
+                  placeholder="Tìm tên học viên, nhóm chăm sóc, tài khoản..."
                   className="w-full pl-9 pr-3 py-1.5 text-xs rounded-lg border border-border bg-surface-muted/60 focus:bg-surface focus:outline-none focus:ring-2 focus:ring-primary/20"
                 />
               </div>
@@ -411,10 +419,11 @@ export const OmnichannelInboxPage: React.FC<{ initialMode?: WorkspaceMode }> = (
                   { id: 'all', label: 'Tất cả' },
                   { id: 'unread', label: 'Chưa đọc' },
                   { id: 'user', label: 'Cá nhân 1-1' },
-                  { id: 'group', label: 'Nhóm lớp' },
+                  { id: 'group', label: 'Nhóm chăm sóc' },
                 ].map((t) => (
                   <button
                     key={t.id}
+                    type="button"
                     onClick={() => setThreadFilter(t.id as ThreadFilter)}
                     className={`px-2.5 py-1 rounded-md font-medium transition-colors ${
                       threadFilter === t.id
@@ -432,7 +441,7 @@ export const OmnichannelInboxPage: React.FC<{ initialMode?: WorkspaceMode }> = (
             <div className="flex-1 overflow-y-auto divide-y divide-border/60">
               {loadingList && conversations.length === 0 ? (
                 <div className="p-8 text-center text-xs text-text-muted">
-                  Đang đồng bộ hội thoại Zalo & LINE...
+                  Đang tải danh sách hội thoại Zalo & LINE...
                 </div>
               ) : filteredConversations.length === 0 ? (
                 <div className="p-8 text-center text-xs text-text-muted">
@@ -444,6 +453,7 @@ export const OmnichannelInboxPage: React.FC<{ initialMode?: WorkspaceMode }> = (
                   return (
                     <button
                       key={conv.uidKey}
+                      type="button"
                       onClick={() => setSelectedConv(conv)}
                       className={`w-full text-left p-3 flex items-start gap-3 transition-colors ${
                         isSelected ? 'bg-primary-soft/60' : 'hover:bg-surface-muted/60'
@@ -533,7 +543,7 @@ export const OmnichannelInboxPage: React.FC<{ initialMode?: WorkspaceMode }> = (
                         {selectedConv.displayName}
                       </div>
                       <div className="text-[11px] text-text-muted truncate">
-                        Tài khoản: {selectedConv.accountName} · ID: {selectedConv.externalThreadId}
+                        Tài khoản: {selectedConv.accountName}
                       </div>
                     </div>
                   </div>
@@ -542,26 +552,27 @@ export const OmnichannelInboxPage: React.FC<{ initialMode?: WorkspaceMode }> = (
                     {selectedConv.platform === 'LINE' && (
                       <span
                         className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold ${
-                          hasFreeReplyToken
+                          hasFreeReplyWindow
                             ? 'bg-emerald-500/15 text-emerald-700 border border-emerald-500/30'
                             : 'bg-amber-500/10 text-amber-700 border border-amber-500/20'
                         }`}
                       >
                         <Clock className="w-3 h-3" />
-                        {hasFreeReplyToken
-                          ? 'Reply Token miễn phí (0 Quota) khả dụng'
-                          : 'Push API / E2EE (Có kiểm soát Quota)'}
+                        {hasFreeReplyWindow
+                          ? 'Đang trong phiên phản hồi miễn phí'
+                          : 'Gửi tin nhắn chủ động'}
                       </span>
                     )}
                     <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-surface-muted text-[11px] text-text-secondary">
                       <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                      Rate-Limit Active
+                      Bảo vệ chống khóa
                     </span>
                     <button
+                      type="button"
                       onClick={() => setMode(selectedConv.platform)}
                       className="px-2.5 py-1 rounded-lg border border-border text-xs font-medium hover:bg-surface-muted text-text-secondary"
                     >
-                      Mở công cụ chuyên sâu {selectedConv.platform}
+                      Mở hộp thư {selectedConv.platform} đầy đủ
                     </button>
                   </div>
                 </div>
@@ -603,7 +614,7 @@ export const OmnichannelInboxPage: React.FC<{ initialMode?: WorkspaceMode }> = (
                             }`}
                           >
                             {m.sentVia === 'reply_token' && (
-                              <span className="underline">0đ ReplyToken</span>
+                              <span className="underline">Phản hồi miễn phí</span>
                             )}
                             <span>
                               {new Date(m.timestamp).toLocaleTimeString('vi-VN', {

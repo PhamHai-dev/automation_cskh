@@ -81,6 +81,41 @@ export const zaloApi = {
     return res.data.data;
   },
 
+  listAllGroups: async (): Promise<any[]> => {
+    const res = await apiClient.get('/zalo/groups');
+    return res.data?.data ?? res.data?.groups ?? [];
+  },
+
+  // ─── Student Linking ────────────────────────────────────────────────────────
+  listStudentLinks: async (studentId: number): Promise<any[]> => {
+    const res = await apiClient.get(`/zalo/students/${studentId}/links`);
+    return res.data?.items ?? res.data?.data ?? [];
+  },
+
+  listAccountStudentLinks: async (accountId: number, q?: string): Promise<any[]> => {
+    const res = await apiClient.get(`/zalo/${accountId}/students-linked`, {
+      params: q ? { q } : undefined,
+    });
+    return res.data?.items ?? res.data?.data ?? [];
+  },
+
+  createStudentLink: async (data: {
+    student_id: number;
+    zalo_account_id: number;
+    zalo_group_id?: number | null;
+    target_type?: 'USER' | 'GROUP';
+    friend_zalo_uid?: string;
+    display_name?: string;
+    relation_status?: string;
+  }) => {
+    const res = await apiClient.post('/zalo/links', data);
+    return res.data;
+  },
+
+  deleteStudentLink: async (linkId: number) => {
+    await apiClient.delete(`/zalo/links/${linkId}`);
+  },
+
   // ─── Group detail (SDK live) ───────────────────────────────────────────────
   getGroupDetail: async (accountId: number, groupId: string): Promise<any> => {
     const res = await apiClient.get(`/zalo/accounts/${accountId}/groups/${groupId}`);

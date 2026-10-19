@@ -140,7 +140,7 @@ const DEFAULT_ZALO_CATEGORIES: CategoryRateLimitBound[] = [
   },
   {
     category: 'friend_lookup',
-    label: 'Tìm kiếm SĐT (Phone Lookup)',
+    label: 'Tra cứu tài khoản qua số điện thoại',
     usedToday: 8,
     dailyLimit: 60,
     burstUsed: 1,
@@ -158,7 +158,7 @@ const DEFAULT_ZALO_CATEGORIES: CategoryRateLimitBound[] = [
   },
   {
     category: 'contact_sync',
-    label: 'Đồng bộ danh bạ toàn phần',
+    label: 'Đồng bộ danh bạ bạn bè',
     usedToday: 2,
     dailyLimit: 12,
     burstUsed: 0,
@@ -167,7 +167,7 @@ const DEFAULT_ZALO_CATEGORIES: CategoryRateLimitBound[] = [
   },
   {
     category: 'group_read',
-    label: 'Quét thành viên & thông tin nhóm',
+    label: 'Cập nhật danh sách nhóm & thành viên',
     usedToday: 14,
     dailyLimit: 120,
     burstUsed: 1,
@@ -179,7 +179,7 @@ const DEFAULT_ZALO_CATEGORIES: CategoryRateLimitBound[] = [
 const DEFAULT_LINE_CATEGORIES: CategoryRateLimitBound[] = [
   {
     category: 'message',
-    label: 'Gửi tin nhắn (E2EE / Push)',
+    label: 'Gửi tin nhắn LINE (Cá nhân & Kênh chính thức)',
     usedToday: 28,
     dailyLimit: 300,
     burstUsed: 1,
@@ -188,7 +188,7 @@ const DEFAULT_LINE_CATEGORIES: CategoryRateLimitBound[] = [
   },
   {
     category: 'friend_lookup',
-    label: 'Tìm kiếm SĐT (findAndAddContactsByPhone)',
+    label: 'Tra cứu tài khoản LINE qua số điện thoại',
     usedToday: 3,
     dailyLimit: 20,
     burstUsed: 0,
@@ -206,7 +206,7 @@ const DEFAULT_LINE_CATEGORIES: CategoryRateLimitBound[] = [
   },
   {
     category: 'contact_sync',
-    label: 'Đồng bộ danh bạ & Followers',
+    label: 'Đồng bộ danh bạ & người theo dõi',
     usedToday: 1,
     dailyLimit: 10,
     burstUsed: 0,
@@ -215,7 +215,7 @@ const DEFAULT_LINE_CATEGORIES: CategoryRateLimitBound[] = [
   },
   {
     category: 'group_read',
-    label: 'Đồng bộ nhóm lớp & thành viên',
+    label: 'Đồng bộ danh sách nhóm lớp & thành viên',
     usedToday: 6,
     dailyLimit: 80,
     burstUsed: 0,

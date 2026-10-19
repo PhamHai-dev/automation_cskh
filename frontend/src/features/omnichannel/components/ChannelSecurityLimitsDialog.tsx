@@ -119,8 +119,8 @@ export const ChannelSecurityLimitsDialog: React.FC<ChannelSecurityLimitsDialogPr
       );
       toast.success(
         updated.proxyUrl
-          ? 'Đã gắn kết Proxy riêng (undici ProxyAgent) cho tài khoản'
-          : 'Đã chuyển về chế độ kết nối Direct IP',
+          ? 'Đã gắn địa chỉ Proxy riêng cho tài khoản'
+          : 'Đã chuyển về chế độ kết nối mạng trực tiếp',
       );
       onUpdated?.();
     } catch (err: any) {
@@ -156,10 +156,10 @@ export const ChannelSecurityLimitsDialog: React.FC<ChannelSecurityLimitsDialogPr
             ? monthlyQuotaInput
             : undefined,
       });
-      toast.success('Đã lưu hạn mức chống khóa nick & bảo vệ tài khoản');
+      toast.success('Đã lưu cài đặt giới hạn gửi tin & chống khóa tài khoản');
       onUpdated?.();
     } catch (err: any) {
-      toast.error(err.response?.data?.message || 'Không thể cập nhật hạn mức');
+      toast.error(err.response?.data?.message || 'Không thể cập nhật giới hạn');
     } finally {
       setSavingLimits(false);
     }
@@ -180,12 +180,12 @@ export const ChannelSecurityLimitsDialog: React.FC<ChannelSecurityLimitsDialogPr
       const a = document.createElement('a');
       const slug = account.platform.toLowerCase();
       a.href = url;
-      a.download = `${slug}-account-${account.accountId}-aes256gcm-session.json`;
+      a.download = `${slug}-account-${account.accountId}-backup.json`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-      toast.success('Đã xuất file phiên đăng nhập mã hóa AES-256-GCM');
+      toast.success('Đã tải xuống file sao lưu phiên đăng nhập');
     } catch (err: any) {
       toast.error(err.response?.data?.message || 'Không thể xuất phiên đăng nhập');
     } finally {
@@ -207,20 +207,20 @@ export const ChannelSecurityLimitsDialog: React.FC<ChannelSecurityLimitsDialogPr
 
   const handleImportCredentials = async () => {
     if (!importJsonText.trim()) {
-      toast.error('Vui lòng chọn file JSON hoặc dán nội dung phiên mã hóa AES-256-GCM');
+      toast.error('Vui lòng chọn file sao lưu hoặc dán nội dung vào ô bên dưới');
       return;
     }
     setImporting(true);
     try {
       const parsed = JSON.parse(importJsonText);
       await omnichannelApi.importCredentials(account.platform, account.accountId, parsed);
-      toast.success('Đã khôi phục phiên đăng nhập mã hóa AES-256-GCM thành công');
+      toast.success('Đã khôi phục phiên đăng nhập thành công');
       setImportJsonText('');
       onUpdated?.();
       onClose();
     } catch (err: any) {
       toast.error(
-        err.response?.data?.message || 'File JSON phiên đăng nhập không hợp lệ hoặc giải mã thất bại',
+        err.response?.data?.message || 'File sao lưu không hợp lệ hoặc không thể khôi phục',
       );
     } finally {
       setImporting(false);
@@ -245,7 +245,7 @@ export const ChannelSecurityLimitsDialog: React.FC<ChannelSecurityLimitsDialogPr
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-base font-bold">
-                  Bảo mật, Proxy & Giới hạn chống khóa nick
+                  Cài đặt Proxy, Giới hạn Gửi tin & Sao lưu Phiên
                 </h2>
                 <span
                   className={`px-2 py-0.5 rounded-full text-[11px] font-bold ${
@@ -258,11 +258,11 @@ export const ChannelSecurityLimitsDialog: React.FC<ChannelSecurityLimitsDialogPr
                     ? 'Zalo Cá nhân'
                     : account.accountType === 'OA'
                       ? 'LINE Official Account (OA)'
-                      : 'LINE Cá nhân (E2EE)'}
+                      : 'LINE Cá nhân'}
                 </span>
               </div>
               <p className="text-xs text-slate-300 mt-0.5">
-                {account.displayName} · ID #{account.accountId}{' '}
+                {account.displayName} · Mã #{account.accountId}{' '}
                 {account.uidOrMid ? `(${account.uidOrMid})` : ''}
               </p>
             </div>
@@ -287,7 +287,7 @@ export const ChannelSecurityLimitsDialog: React.FC<ChannelSecurityLimitsDialogPr
             }`}
           >
             <Globe className="w-4 h-4" />
-            1. Mạng & Proxy (Isolation)
+            Cấu hình Proxy & Kết nối
           </button>
           <button
             type="button"
@@ -299,7 +299,7 @@ export const ChannelSecurityLimitsDialog: React.FC<ChannelSecurityLimitsDialogPr
             }`}
           >
             <Gauge className="w-4 h-4" />
-            2. Giới hạn chống khóa nick
+            Giới hạn Gửi tin & Chống khóa
           </button>
           <button
             type="button"
@@ -311,7 +311,7 @@ export const ChannelSecurityLimitsDialog: React.FC<ChannelSecurityLimitsDialogPr
             }`}
           >
             <KeyRound className="w-4 h-4" />
-            3. Sao lưu Phiên mã hóa (AES-256-GCM)
+            Sao lưu & Khôi phục Phiên
           </button>
         </div>
 
@@ -320,11 +320,11 @@ export const ChannelSecurityLimitsDialog: React.FC<ChannelSecurityLimitsDialogPr
           {loading ? (
             <div className="py-12 flex flex-col items-center justify-center gap-2 text-gray-500">
               <RefreshCw className="w-6 h-6 animate-spin text-indigo-600" />
-              <span className="text-sm">Đang tải thông số bảo mật & hạn mức...</span>
+              <span className="text-sm">Đang tải cài đặt kết nối và giới hạn...</span>
             </div>
           ) : (
             <>
-              {/* TAB 1: MẠNG & PROXY */}
+              {/* TAB 1: CẤU HÌNH PROXY & KẾT NỐI */}
               {activeTab === 'proxy' && (
                 <form onSubmit={handleSaveProxy} className="space-y-5">
                   {/* Live Network Telemetry Cards */}
@@ -335,35 +335,35 @@ export const ChannelSecurityLimitsDialog: React.FC<ChannelSecurityLimitsDialogPr
                         {isProxyPinned ? (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800">
                             <Server className="w-3 h-3" />
-                            Proxy Pinned (undici ProxyAgent)
+                            Dùng Proxy riêng
                           </span>
                         ) : (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-800">
-                            Direct IP
+                            Mạng trực tiếp
                           </span>
                         )}
                       </div>
                     </div>
 
                     <div className="p-3.5 rounded-xl border border-gray-200 bg-gray-50/70">
-                      <div className="text-[11px] font-medium text-gray-500">Circuit Breaker</div>
+                      <div className="text-[11px] font-medium text-gray-500">Trạng thái bảo vệ</div>
                       <div className="mt-1 flex items-center gap-1.5">
                         <span className="w-2 h-2 rounded-full bg-emerald-500" />
                         <span className="text-sm font-bold text-gray-900">
-                          {snapshot?.circuitBreakerState || 'CLOSED'} (An toàn)
+                          {snapshot?.circuitBreakerState === 'OPEN' ? 'Tạm ngắt bảo vệ' : 'Hoạt động an toàn'}
                         </span>
                       </div>
                     </div>
 
                     <div className="p-3.5 rounded-xl border border-gray-200 bg-gray-50/70">
-                      <div className="text-[11px] font-medium text-gray-500">Epoch / Listener ID</div>
-                      <div className="mt-1 text-sm font-bold text-indigo-700 font-mono">
-                        Epoch #{snapshot?.epochId ?? 1}
+                      <div className="text-[11px] font-medium text-gray-500">Phiên kết nối</div>
+                      <div className="mt-1 text-sm font-bold text-indigo-700">
+                        Phiên #{snapshot?.epochId ?? 1}
                       </div>
                     </div>
 
                     <div className="p-3.5 rounded-xl border border-gray-200 bg-gray-50/70">
-                      <div className="text-[11px] font-medium text-gray-500">Uptime 7 ngày</div>
+                      <div className="text-[11px] font-medium text-gray-500">Độ ổn định 7 ngày</div>
                       <div className="mt-1 flex items-center gap-1.5 text-sm font-bold text-emerald-700">
                         <Activity className="w-4 h-4" />
                         {snapshot?.uptime7dPct ?? 99.8}%
@@ -376,21 +376,19 @@ export const ChannelSecurityLimitsDialog: React.FC<ChannelSecurityLimitsDialogPr
                     <div className="flex items-start justify-between gap-2">
                       <div>
                         <h3 className="text-sm font-bold text-gray-900">
-                          Cấu hình Proxy tĩnh cô lập IP theo từng tài khoản
+                          Địa chỉ Proxy riêng cho tài khoản
                         </h3>
                         <p className="text-xs text-gray-600 mt-0.5">
-                          Mỗi tài khoản Zalo / LINE Cá nhân nên gắn 1 IP dân cư tĩnh riêng qua{' '}
-                          <code className="px-1 py-0.5 bg-white rounded border text-indigo-700">
-                            undici ProxyAgent
-                          </code>{' '}
-                          để tránh trùng IP khi vận hành đa tài khoản.
+                          Khi vận hành nhiều tài khoản Zalo hoặc LINE Cá nhân cùng lúc, bạn nên gắn
+                          mỗi tài khoản một địa chỉ IP Proxy tĩnh riêng để tránh bị nền tảng đánh
+                          dấu trùng mạng.
                         </p>
                       </div>
                     </div>
 
                     <div>
                       <label className="block text-xs font-semibold text-gray-700 mb-1">
-                        Proxy URL (HTTP / HTTPS / SOCKS5)
+                        Đường dẫn Proxy (HTTP / HTTPS / SOCKS5)
                       </label>
                       <Input
                         value={proxyUrlInput}
@@ -398,7 +396,7 @@ export const ChannelSecurityLimitsDialog: React.FC<ChannelSecurityLimitsDialogPr
                         placeholder="http://username:password@103.145.x.x:8080 hoặc socks5://user:pass@ip:port"
                       />
                       <p className="text-[11px] text-gray-500 mt-1">
-                        Để trống nếu muốn sử dụng Direct IP của máy chủ.
+                        Bỏ trống nếu muốn kết nối trực tiếp qua mạng mặc định của hệ thống.
                       </p>
                     </div>
                   </div>
@@ -408,13 +406,13 @@ export const ChannelSecurityLimitsDialog: React.FC<ChannelSecurityLimitsDialogPr
                       Đóng
                     </Button>
                     <Button type="submit" isLoading={savingProxy}>
-                      Lưu cấu hình Mạng & Proxy
+                      Lưu cấu hình Proxy
                     </Button>
                   </div>
                 </form>
               )}
 
-              {/* TAB 2: GIỚI HẠN CHỐNG KHÓA NICK */}
+              {/* TAB 2: GIỚI HẠN GỬI TIN & CHỐNG KHÓA */}
               {activeTab === 'limits' && (
                 <form onSubmit={handleSaveLimits} className="space-y-5">
                   {/* LINE OA Monthly Push Quota Guardrail */}
@@ -424,7 +422,7 @@ export const ChannelSecurityLimitsDialog: React.FC<ChannelSecurityLimitsDialogPr
                         <div className="flex items-center gap-2">
                           <Sparkles className="w-4 h-4 text-emerald-700" />
                           <span className="text-sm font-bold text-emerald-950">
-                            Hạn mức Push Message Tháng (LINE Official Account Guardrail)
+                            Hạn mức tin nhắn chủ động trong tháng (LINE Official Account)
                           </span>
                         </div>
                         <span className="text-xs font-bold text-emerald-800">
@@ -445,21 +443,23 @@ export const ChannelSecurityLimitsDialog: React.FC<ChannelSecurityLimitsDialogPr
                         />
                       </div>
 
-                      <div className="grid grid-cols-3 gap-2 text-[11px]">
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[11px]">
                         <div className="p-2 rounded-lg bg-white border border-amber-200 text-amber-800 font-medium">
-                          • <strong>80% Cảnh báo</strong>: Báo động CSKH ưu tiên trả lời trong phiên
+                          • <strong>Chạm mốc 80%</strong>: Nhắc nhân viên CSKH ưu tiên phản hồi
+                          trong cuộc trò chuyện đang mở
                         </div>
                         <div className="p-2 rounded-lg bg-white border border-orange-200 text-orange-800 font-medium">
-                          • <strong>95% Giới hạn</strong>: Tạm ngưng chiến dịch Push hàng loạt
+                          • <strong>Chạm mốc 95%</strong>: Tạm dừng gửi thông báo tự động hàng loạt
                         </div>
                         <div className="p-2 rounded-lg bg-white border border-emerald-300 text-emerald-900 font-medium">
-                          • <strong>100% Chỉ cho phép Reply Token 0đ</strong>: Vẫn nhắn miễn phí khi HV nhắn trước
+                          • <strong>Chạm mốc 100%</strong>: Vẫn trả lời miễn phí bình thường khi học
+                          viên nhắn tin trước
                         </div>
                       </div>
 
                       <div className="flex items-center gap-3 pt-1">
                         <label className="text-xs font-semibold text-gray-700">
-                          Giới hạn Push tối đa / tháng:
+                          Số tin nhắn chủ động tối đa mỗi tháng:
                         </label>
                         <input
                           type="number"
@@ -474,13 +474,16 @@ export const ChannelSecurityLimitsDialog: React.FC<ChannelSecurityLimitsDialogPr
 
                   {/* Category Rate Limits Table */}
                   <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <h3 className="text-sm font-bold text-gray-900">
-                        Bộ giới hạn tần suất theo tác vụ (Sliding-Window Rate Limiter)
-                      </h3>
-                      <span className="text-xs text-gray-500">
-                        Tự động chèn độ trễ ngẫu nhiên (Human Jitter 1.2s – 3.5s)
-                      </span>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <h3 className="text-sm font-bold text-gray-900">
+                          Giới hạn số lượng thao tác mỗi ngày & mỗi đợt ngắn
+                        </h3>
+                        <p className="text-xs text-gray-500 mt-0.5">
+                          Hệ thống tự động giãn cách thời gian gửi giữa các tin nhắn (1.2 – 3.5 giây)
+                          để bảo vệ tài khoản không bị đánh dấu spam.
+                        </p>
+                      </div>
                     </div>
 
                     <div className="border border-gray-200 rounded-xl overflow-hidden divide-y divide-gray-100">
@@ -497,9 +500,6 @@ export const ChannelSecurityLimitsDialog: React.FC<ChannelSecurityLimitsDialogPr
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2">
                                 <span className="text-xs font-bold text-gray-900">{cat.label}</span>
-                                <span className="px-2 py-0.5 rounded bg-gray-100 text-gray-600 font-mono text-[10px]">
-                                  {cat.category}
-                                </span>
                               </div>
                               <div className="mt-1.5 flex items-center gap-3">
                                 <div className="w-40 h-2 bg-gray-100 rounded-full overflow-hidden">
@@ -515,7 +515,8 @@ export const ChannelSecurityLimitsDialog: React.FC<ChannelSecurityLimitsDialogPr
                                   />
                                 </div>
                                 <span className="text-xs text-gray-600 font-medium">
-                                  Hôm nay: <strong>{cat.usedToday}</strong> / {cat.dailyLimit} ({pct}%)
+                                  Đã dùng hôm nay: <strong>{cat.usedToday}</strong> /{' '}
+                                  {cat.dailyLimit} ({pct}%)
                                 </span>
                               </div>
                             </div>
@@ -541,7 +542,7 @@ export const ChannelSecurityLimitsDialog: React.FC<ChannelSecurityLimitsDialogPr
                               </div>
                               <div>
                                 <label className="block text-[10px] font-semibold text-gray-500 uppercase">
-                                  Burst / {cat.burstWindowMinutes}p
+                                  Tối đa / {cat.burstWindowMinutes} phút
                                 </label>
                                 <input
                                   type="number"
@@ -554,7 +555,7 @@ export const ChannelSecurityLimitsDialog: React.FC<ChannelSecurityLimitsDialogPr
                                       Number(e.target.value),
                                     )
                                   }
-                                  className="w-20 px-2.5 py-1 text-xs font-semibold border border-gray-300 rounded-lg"
+                                  className="w-24 px-2.5 py-1 text-xs font-semibold border border-gray-300 rounded-lg"
                                 />
                               </div>
                             </div>
@@ -569,39 +570,38 @@ export const ChannelSecurityLimitsDialog: React.FC<ChannelSecurityLimitsDialogPr
                       Đóng
                     </Button>
                     <Button type="submit" isLoading={savingLimits}>
-                      Lưu hạn mức chống khóa nick
+                      Lưu cài đặt giới hạn
                     </Button>
                   </div>
                 </form>
               )}
 
-              {/* TAB 3: SAO LƯU PHIÊN MÃ HÓA AES-256-GCM */}
+              {/* TAB 3: SAO LƯU & KHÔI PHỤC PHIÊN */}
               {activeTab === 'backup' && (
                 <div className="space-y-5">
                   <div className="p-4 rounded-xl border border-indigo-200 bg-indigo-50/40 flex items-start gap-3">
                     <Lock className="w-5 h-5 text-indigo-600 shrink-0 mt-0.5" />
                     <div className="text-xs text-gray-700 space-y-1">
                       <div className="font-bold text-gray-900 text-sm">
-                        Cơ chế bảo vệ thông tin xác thực AES-256-GCM
+                        Sao lưu an toàn phiên đăng nhập của tài khoản
                       </div>
                       <p>
-                        Toàn bộ Cookie / ZPW Token (Zalo) và AuthToken + E2EE Letter Sealing Keypair
-                        (LINE) được mã hóa bằng thuật toán <strong>AES-256-GCM</strong> trước khi lưu
-                        hoặc xuất file. Giúp di chuyển tài khoản sang máy chủ mới mà không cần quét
-                        lại mã QR.
+                        Thông tin đăng nhập của tài khoản Zalo / LINE được mã hóa bảo mật trước khi
+                        tải về máy. Bạn có thể dùng file này để khôi phục nhanh kết nối khi chuyển
+                        hệ thống mà không cần quét lại mã QR trên điện thoại.
                       </p>
                     </div>
                   </div>
 
                   {/* Export Box */}
-                  <div className="p-4 rounded-xl border border-gray-200 bg-white flex items-center justify-between gap-4">
+                  <div className="p-4 rounded-xl border border-gray-200 bg-white flex flex-wrap items-center justify-between gap-4">
                     <div>
                       <h4 className="text-sm font-bold text-gray-900">
-                        Xuất file phiên đăng nhập (Export Encrypted Credentials JSON)
+                        Tải xuống file sao lưu phiên đăng nhập
                       </h4>
                       <p className="text-xs text-gray-500 mt-0.5">
-                        Tải xuống gói JSON đã mã hóa AES-256-GCM của tài khoản{' '}
-                        <strong>{account.displayName}</strong> để lưu trữ dự phòng.
+                        Lưu trữ dự phòng phiên đăng nhập hiện tại của tài khoản{' '}
+                        <strong>{account.displayName}</strong>.
                       </p>
                     </div>
                     <Button
@@ -610,20 +610,20 @@ export const ChannelSecurityLimitsDialog: React.FC<ChannelSecurityLimitsDialogPr
                       isLoading={exporting}
                       leftIcon={<Download className="w-4 h-4" />}
                     >
-                      Xuất file phiên đăng nhập
+                      Tải file sao lưu
                     </Button>
                   </div>
 
                   {/* Import Box */}
                   <div className="p-4 rounded-xl border border-gray-200 bg-white space-y-3">
-                    <div className="flex items-center justify-between">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
                       <div>
                         <h4 className="text-sm font-bold text-gray-900">
-                          Khôi phục phiên (Import Encrypted Credentials JSON)
+                          Khôi phục phiên đăng nhập từ file sao lưu
                         </h4>
                         <p className="text-xs text-gray-500 mt-0.5">
-                          Chọn file JSON đã sao lưu hoặc dán nội dung vào ô bên dưới để khôi phục ngay
-                          mà không cần quét QR.
+                          Chọn file sao lưu (.json) từ máy tính hoặc dán nội dung vào ô bên dưới để
+                          khôi phục kết nối.
                         </p>
                       </div>
                       <div>
@@ -650,7 +650,7 @@ export const ChannelSecurityLimitsDialog: React.FC<ChannelSecurityLimitsDialogPr
                       rows={4}
                       value={importJsonText}
                       onChange={(e) => setImportJsonText(e.target.value)}
-                      placeholder='{"version":1,"platform":"ZALO","cipher":"AES-256-GCM","payload":"..."}'
+                      placeholder="Dán nội dung file sao lưu JSON vào đây..."
                       className="w-full p-3 text-xs font-mono border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
                     />
 
@@ -669,8 +669,7 @@ export const ChannelSecurityLimitsDialog: React.FC<ChannelSecurityLimitsDialogPr
                   <div className="flex items-center gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
                     <AlertTriangle className="w-4 h-4 shrink-0" />
                     <span>
-                      Lưu ý: Chỉ khôi phục file được xuất từ hệ thống có cùng khóa{' '}
-                      <code>CREDENTIALS_ENCRYPTION_KEY</code>.
+                      Lưu ý: Chỉ khôi phục được file sao lưu được xuất ra từ cùng hệ thống.
                     </span>
                   </div>
                 </div>
