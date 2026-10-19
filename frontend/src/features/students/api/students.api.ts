@@ -2,8 +2,8 @@ import { apiClient } from '../../../api/client';
 import { Student, CreateStudentDTO, UpdateStudentDTO } from '../types/students.types';
 
 export const studentsApi = {
-  list: async (): Promise<Student[]> => {
-    const res = await apiClient.get('/students');
+  list: async (params?: { program_type?: string; cs_id?: number }): Promise<Student[]> => {
+    const res = await apiClient.get('/students', { params });
     return res.data.data;
   },
 
