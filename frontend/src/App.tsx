@@ -18,10 +18,16 @@ import { CarePage } from './features/care/pages/CarePage';
 import { ToastProvider } from './components/ui/Toast';
 import { ZaloAccountsPage } from './features/zalo/pages/ZaloAccountsPage';
 import { ZaloMonitorPage } from './features/zalo/pages/ZaloMonitorPage';
-import { StudentZaloLinkPage } from './features/zalo/pages/StudentZaloLinkPage';
-import { ZaloContactsPage } from './features/zalo/pages/ZaloContactsPage';
-import { ZaloGroupsPage } from './features/zalo/pages/ZaloGroupsPage';
-import { ZaloChatPage } from './features/zalo/pages/ZaloChatPage';
+import { LineAccountsPage } from './features/line/pages/LineAccountsPage';
+import { LineContactsPage } from './features/line/pages/LineContactsPage';
+import { LineGroupsPage } from './features/line/pages/LineGroupsPage';
+import { LineChatPage } from './features/line/pages/LineChatPage';
+import { StudentLineLinkPage } from './features/line/pages/StudentLineLinkPage';
+import { OmnichannelAccountsPage } from './features/omnichannel/pages/OmnichannelAccountsPage';
+import { OmnichannelInboxPage } from './features/omnichannel/pages/OmnichannelInboxPage';
+import { OmnichannelContactsPage } from './features/omnichannel/pages/OmnichannelContactsPage';
+import { OmnichannelGroupsPage } from './features/omnichannel/pages/OmnichannelGroupsPage';
+import { OmnichannelStudentLinksPage } from './features/omnichannel/pages/OmnichannelStudentLinksPage';
 import { AutomationWorkflowsPage } from './features/automation/pages/AutomationWorkflowsPage';
 import { AutomationWorkflowDetailPage } from './features/automation/pages/AutomationWorkflowDetailPage';
 import { AttendanceReconciliationPage } from './features/attendance/pages/AttendanceReconciliationPage';
@@ -79,13 +85,34 @@ function App() {
               <Route path="/enrollments" element={<EnrollmentsPage />} />
               <Route path="/ghi-danh" element={<Navigate to="/enrollments" replace />} />
 
-              <Route path="/zalo" element={<ZaloAccountsPage />} />
-              <Route path="/zalo/tai-khoan" element={<Navigate to="/zalo" replace />} />
+              <Route path="/omnichannel" element={<Navigate to="/omnichannel/accounts" replace />} />
+              <Route path="/omnichannel/accounts" element={<OmnichannelAccountsPage />} />
+              <Route path="/omnichannel/chat" element={<OmnichannelInboxPage />} />
+              <Route path="/omnichannel/contacts" element={<OmnichannelContactsPage />} />
+              <Route path="/omnichannel/groups" element={<OmnichannelGroupsPage />} />
+              <Route path="/omnichannel/student-links" element={<OmnichannelStudentLinksPage />} />
+
+              <Route path="/zalo" element={<OmnichannelAccountsPage />} />
+              <Route path="/zalo/tai-khoan" element={<Navigate to="/omnichannel/accounts?channel=ZALO" replace />} />
               <Route path="/zalo/monitor" element={<ZaloMonitorPage />} />
-              <Route path="/zalo/lien-ket" element={<StudentZaloLinkPage />} />
-              <Route path="/zalo/danh-ba" element={<ZaloContactsPage />} />
-              <Route path="/zalo/nhom" element={<ZaloGroupsPage />} />
-              <Route path="/zalo/chat" element={<ZaloChatPage />} />
+              <Route path="/zalo/lien-ket" element={<OmnichannelStudentLinksPage initialTab="ZALO" />} />
+              <Route path="/zalo/danh-ba" element={<OmnichannelContactsPage initialChannel="ZALO" />} />
+              <Route path="/zalo/nhom" element={<OmnichannelGroupsPage initialTab="ZALO" />} />
+              <Route path="/zalo/chat" element={<OmnichannelInboxPage initialMode="ZALO" />} />
+              <Route path="/zalo/standalone" element={<ZaloAccountsPage />} />
+
+              <Route path="/line" element={<OmnichannelAccountsPage initialChannel="LINE_OA" />} />
+              <Route path="/line/tai-khoan" element={<Navigate to="/omnichannel/accounts?channel=LINE_OA" replace />} />
+              <Route path="/line/danh-ba" element={<OmnichannelContactsPage initialChannel="LINE" />} />
+              <Route path="/line/nhom" element={<OmnichannelGroupsPage initialTab="LINE" />} />
+              <Route path="/line/chat" element={<OmnichannelInboxPage initialMode="LINE" />} />
+              <Route path="/line/lien-ket" element={<OmnichannelStudentLinksPage initialTab="LINE" />} />
+              <Route path="/line/standalone" element={<LineAccountsPage />} />
+              <Route path="/line/standalone-chat" element={<LineChatPage />} />
+              <Route path="/line/standalone-contacts" element={<LineContactsPage />} />
+              <Route path="/line/standalone-groups" element={<LineGroupsPage />} />
+              <Route path="/line/standalone-links" element={<StudentLineLinkPage />} />
+
               <Route path="/automation" element={<AutomationWorkflowsPage />} />
               <Route path="/automation/:id" element={<AutomationWorkflowDetailPage />} />
 

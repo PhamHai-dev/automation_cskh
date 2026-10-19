@@ -251,8 +251,10 @@ export class AutomationRepository {
     enrollment_id: number;
     attendance_id: number;
     automation_step_id: number;
-    zalo_account_id: number;
-    zalo_group_id?: number;
+    zalo_account_id?: number | null;
+    zalo_group_id?: number | null;
+    line_account_id?: number | null;
+    line_group_id?: number | null;
     scheduled_at: Date;
     rendered_content: string;
     variables_snapshot: Record<string, any>;
@@ -289,12 +291,24 @@ export class AutomationRepository {
       include: {
         enrollment: {
           include: {
-            student: { select: { id: true, full_name: true, phone: true } },
+            student: { select: { id: true, full_name: true, phone: true, zalo_uid: true, line_uid: true } },
             cs: { select: { id: true, name: true } },
           },
         },
         automation_step: {
           include: { workflow: { select: { id: true, name: true } } },
+        },
+        zalo_account: {
+          select: { id: true, display_name: true, zalo_uid: true, status: true },
+        },
+        zalo_group: {
+          select: { id: true, name: true, zalo_group_id: true },
+        },
+        line_account: {
+          select: { id: true, display_name: true, account_type: true, basic_id: true, status: true },
+        },
+        line_group: {
+          select: { id: true, name: true, line_group_id: true },
         },
         attendance: {
           include: {
@@ -332,7 +346,11 @@ export class AutomationRepository {
           enrollment: {
             include: { student: { select: { id: true, full_name: true } } },
           },
-          automation_step: { select: { session_number: true, trigger_event: true } },
+          automation_step: { select: { id: true, session_number: true, trigger_event: true, channel: true } },
+          zalo_account: { select: { id: true, display_name: true, zalo_uid: true } },
+          zalo_group: { select: { id: true, name: true, zalo_group_id: true } },
+          line_account: { select: { id: true, display_name: true, account_type: true, basic_id: true } },
+          line_group: { select: { id: true, name: true, line_group_id: true } },
         },
         orderBy: { created_at: 'desc' },
         skip: (page - 1) * limit,

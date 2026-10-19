@@ -2,12 +2,15 @@ import { app } from './app';
 import { env } from './config/env';
 import { createLogger } from './shared/logger/logger';
 import { zaloPool } from './modules/zalo/zalo-pool';
+import { linePool } from './modules/line/line-pool';
 import { wirePoolEvents } from './modules/zalo/zalo-listener-factory';
 import { closeRedis } from './shared/queue/redis-connection';
 import { setupIo, closeIo } from './shared/realtime/socket-singleton';
 import { registerZaloSocketHandlers } from './modules/zalo/zalo-socket';
+import { registerLineSocketHandlers } from './modules/line/line-socket';
 import { startAutomationWorker, stopAutomationWorker } from './modules/automation/automation-worker';
 import { startZaloHealthCheck } from './modules/zalo/zalo-health-check';
+import { startLineHealthCheck } from './modules/line/line-health-check';
 import { startAutoAttendanceScheduler, stopAutoAttendanceScheduler } from './modules/auto-attendance/auto-attendance-scheduler';
 
 const log = createLogger('Server');
@@ -15,9 +18,10 @@ const log = createLogger('Server');
 const PORT = parseInt(env.PORT, 10);
 
 const server = app.listen(PORT, async () => {
-  // Setup Socket.IO server + register Zalo real-time handlers
+  // Setup Socket.IO server + register Zalo & LINE real-time handlers
   const io = setupIo(server);
   registerZaloSocketHandlers(io);
+  registerLineSocketHandlers(io);
 
   // Wire listener-factory to pool events FIRST (message/friend/group routing).
   // Must run before init(): reconnectAll() emits session:connected synchronously
@@ -33,12 +37,22 @@ const server = app.listen(PORT, async () => {
     });
   }
 
-  // Start Zalo health check cron (every 5 min reconnect + daily refresh + hourly ghost cleanup)
+  // Initialize LINE Hybrid pool (OA + Personal) — restore active sessions from DB
+  try {
+    await linePool.init();
+  } catch (err) {
+    log.warn('LINE pool init failed (continuing without LINE)', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+
+  // Start Zalo & LINE health check crons (every 5 min reconnect + quota refresh + hourly ghost cleanup)
   try {
     startZaloHealthCheck();
-    log.info('Zalo health check started');
+    startLineHealthCheck();
+    log.info('Zalo & LINE health checks started');
   } catch (err) {
-    log.warn('Zalo health check start failed (continuing)', {
+    log.warn('Health check start failed (continuing)', {
       error: err instanceof Error ? err.message : String(err),
     });
   }
@@ -95,10 +109,11 @@ async function shutdown(signal: string): Promise<void> {
     log.info('HTTP server closed');
   }
 
-  // Disconnect Zalo accounts (stop timers, clear pool)
+  // Disconnect Zalo & LINE accounts (stop timers, clear pool)
   try {
     await zaloPool.shutdown();
-    log.info('Zalo pool shut down');
+    await linePool.shutdown();
+    log.info('Zalo & LINE pools shut down');
   } catch (err) {
     log.error('Zalo pool shutdown error', {
       error: err instanceof Error ? err.message : String(err),

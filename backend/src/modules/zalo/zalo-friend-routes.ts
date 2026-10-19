@@ -30,6 +30,7 @@ import { Router, Request, Response } from 'express';
 import { prisma } from '../../prisma/client';
 import { createLogger } from '../../shared/logger/logger';
 import { zaloPool } from './zalo-pool';
+import { zaloRateLimiter } from './zalo-rate-limiter';
 import { resolveAccount, checkAccess, handleError, ZaloOpError } from './zalo-route-helpers';
 import { syncFriendsForAccount } from './friend-sync-service';
 
@@ -83,8 +84,8 @@ router.get('/:accountId/friends-db', async (req: Request, res: Response) => {
       const normalizedPhone = q.replace(/[^\d]/g, '');
       where.OR = [
         { zalo_uid_in_nick: { contains: q } },
-        { alias_in_nick: { contains: q, mode: 'insensitive' } },
-        { zalo_display_name: { contains: q, mode: 'insensitive' } },
+        { alias_in_nick: { contains: q } },
+        { zalo_display_name: { contains: q } },
         ...(normalizedPhone.length >= 9 ? [{ phone_from_sdk: { contains: normalizedPhone } }] as any : []),
       ];
     }
@@ -171,7 +172,13 @@ router.get('/:accountId/friends/find', async (req: Request, res: Response) => {
     if (!(await checkAccess(req, res, accountId, 'read'))) return;
     const client = zaloPool.getAccountClient(accountId);
     if (!client) return res.status(503).json({ error: 'Nick chưa kết nối Zalo' });
-    const data = await client.api.findUser(q);
+    const limitCheck = await zaloRateLimiter.checkLimits(accountId, 'friend_lookup');
+    if (!limitCheck.allowed) {
+      return res.status(429).json({ error: limitCheck.reason, code: 'RATE_LIMIT_EXCEEDED' });
+    }
+    const fn = client.findUser ?? client.api?.findUser;
+    const data = await fn.call(client.api ?? client, q);
+    await zaloRateLimiter.recordSend(accountId, 'friend_lookup');
     return res.json({ data });
   } catch (err) {
     return handleError(res, err, 'friend-find');
@@ -206,7 +213,13 @@ router.post('/:accountId/friends/lookup-by-phone', async (req: Request, res: Res
     if (!(await checkAccess(req, res, accountId, 'read'))) return;
     const client = zaloPool.getAccountClient(accountId);
     if (!client) return res.status(503).json({ error: 'Nick chưa kết nối Zalo' });
-    const data = await client.api.findUser(phone);
+    const limitCheck = await zaloRateLimiter.checkLimits(accountId, 'friend_lookup');
+    if (!limitCheck.allowed) {
+      return res.status(429).json({ error: limitCheck.reason, code: 'RATE_LIMIT_EXCEEDED' });
+    }
+    const fn = client.findUser ?? client.api?.findUser;
+    const data = await fn.call(client.api ?? client, phone);
+    await zaloRateLimiter.recordSend(accountId, 'friend_lookup');
     return res.json({ data });
   } catch (err) {
     return handleError(res, err, 'friend-lookup-by-phone');
@@ -262,7 +275,13 @@ router.post('/:accountId/friends/requests', async (req: Request, res: Response) 
     if (!(await checkAccess(req, res, accountId, 'chat'))) return;
     const client = zaloPool.getAccountClient(accountId);
     if (!client) return res.status(503).json({ error: 'Nick chưa kết nối Zalo' });
-    const data = await client.api.sendFriendRequest(userId, message);
+    const limitCheck = await zaloRateLimiter.checkLimits(accountId, 'friend_action');
+    if (!limitCheck.allowed) {
+      return res.status(429).json({ error: limitCheck.reason, code: 'RATE_LIMIT_EXCEEDED' });
+    }
+    const fn = client.sendFriendRequest ?? client.api?.sendFriendRequest;
+    const data = await fn.call(client.api ?? client, userId, message);
+    await zaloRateLimiter.recordSend(accountId, 'friend_action');
     await prisma.friend.updateMany({
       where: { zalo_account_id: accountId, zalo_uid_in_nick: userId },
       data: { friendship_status: 'pending_sent' },

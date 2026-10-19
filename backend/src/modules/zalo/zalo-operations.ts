@@ -8,6 +8,7 @@
 /** All Zalo SDK operation categories that have independent rate limits. */
 export type OpCategory =
   | 'message'
+  | 'stranger_message'
   | 'reaction'
   | 'chat_action'
   | 'group_admin'

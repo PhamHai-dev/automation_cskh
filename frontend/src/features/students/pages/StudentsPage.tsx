@@ -321,6 +321,7 @@ export const StudentsPage: React.FC = () => {
     school: '',
     occupation: '',
     zalo_uid: '',
+    line_uid: '',
     note: '',
 
     // 2. Khóa học & Tài chính
@@ -575,6 +576,7 @@ export const StudentsPage: React.FC = () => {
         school: student.school || '',
         occupation: student.occupation || '',
         zalo_uid: student.zalo_uid || '',
+        line_uid: student.line_uid || '',
         note: student.note || '',
 
         // 2. Gói học, Học phí & Tiến độ
@@ -1960,13 +1962,21 @@ export const StudentsPage: React.FC = () => {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
                   <div>
                     <label className="block font-medium text-slate-700 mb-1">Zalo UID / SĐT Zalo</label>
                     <Input
                       placeholder="Số điện thoại hoặc UID Zalo"
                       value={formData.zalo_uid || ''}
                       onChange={(e) => setFormData({ ...formData, zalo_uid: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-medium text-slate-700 mb-1">LINE UID / ID LINE</label>
+                    <Input
+                      placeholder="LINE UID (U...) hoặc SĐT LINE"
+                      value={formData.line_uid || ''}
+                      onChange={(e) => setFormData({ ...formData, line_uid: e.target.value })}
                     />
                   </div>
                   <div>

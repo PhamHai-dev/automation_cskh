@@ -8,6 +8,7 @@ export interface CreateStudentDTO {
   date_of_birth?: string | Date;
   occupation?: string;
   zalo_uid?: string;
+  line_uid?: string;
   note?: string;
 
   // Enrollment & Course & Finance info
@@ -55,6 +56,7 @@ export interface UpdateStudentDTO {
   date_of_birth?: string | Date;
   occupation?: string;
   zalo_uid?: string;
+  line_uid?: string;
   note?: string;
 
   // Enrollment & Course & Finance info

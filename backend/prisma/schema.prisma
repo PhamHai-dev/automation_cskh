@@ -38,6 +38,7 @@ model User {
   deleted_attendances              Attendance[]          @relation("AttendanceDeleter")
   enrollments_as_cs                Enrollment[]          @relation("EnrollmentCS")
   zalo_accounts                    ZaloAccount[]
+  line_accounts                    LineAccount[]
   automation_workflows             AutomationWorkflow[]  @relation("AutomationWorkflowOwner")
   care_logs                        CareLog[]             @relation("CareLogCS")
   care_tasks_assigned              CareTask[]            @relation("CareTaskAssignee")
@@ -45,6 +46,7 @@ model User {
   audit_logs                       AuditLog[]            @relation("AuditLogUser")
   zalo_account_accesses            ZaloAccountAccess[]
   archived_zalo_accounts           ZaloAccount[]         @relation("ZaloAccountArchiver")
+  archived_line_accounts           LineAccount[]         @relation("LineAccountArchiver")
   requested_import_create_requests ImportCreateRequest[] @relation("ImportCreateRequestRequester")
   reviewed_import_create_requests  ImportCreateRequest[] @relation("ImportCreateRequestReviewer")
   assigned_import_create_requests  ImportCreateRequest[] @relation("ImportCreateRequestAssignee")
@@ -159,12 +161,14 @@ model Student {
   date_of_birth DateTime? @db.Date
   occupation    String?
   zalo_uid      String?
+  line_uid      String?
   note          String?   @db.Text
   created_at    DateTime  @default(now())
   updated_at    DateTime  @updatedAt
 
   enrollments            Enrollment[]
   zalo_contact_relations ZaloContactRelation[]
+  line_contact_relations LineContactRelation[]
   contacts               Contact[]
 
   @@map("students")
@@ -639,6 +643,8 @@ enum AutomationTriggerEvent {
 enum AutomationChannel {
   ZALO_PERSONAL
   ZALO_GROUP
+  LINE_PERSONAL
+  LINE_GROUP
 }
 
 model AutomationWorkflow {
@@ -713,8 +719,10 @@ model MessageDelivery {
   enrollment_id       Int
   attendance_id       Int
   automation_step_id  Int
-  zalo_account_id     Int
+  zalo_account_id     Int?
   zalo_group_id       Int?
+  line_account_id     Int?
+  line_group_id       Int?
   scheduled_at        DateTime
   sent_at             DateTime?
   status              MessageDeliveryStatus @default(SCHEDULED)
@@ -730,10 +738,14 @@ model MessageDelivery {
   enrollment      Enrollment     @relation(fields: [enrollment_id], references: [id])
   attendance      Attendance     @relation(fields: [attendance_id], references: [id])
   automation_step AutomationStep @relation(fields: [automation_step_id], references: [id])
-  zalo_account    ZaloAccount    @relation(fields: [zalo_account_id], references: [id])
+  zalo_account    ZaloAccount?   @relation(fields: [zalo_account_id], references: [id])
   zalo_group      ZaloGroup?     @relation(fields: [zalo_group_id], references: [id])
+  line_account    LineAccount?   @relation(fields: [line_account_id], references: [id])
+  line_group      LineGroup?     @relation(fields: [line_group_id], references: [id])
 
   @@unique([attendance_id, automation_step_id])
+  @@index([line_account_id])
+  @@index([line_group_id])
   @@map("message_deliveries")
 }
 
@@ -1298,4 +1310,219 @@ model GroupMember {
   @@index([zalo_account_id])
   @@index([group_id])
   @@map("group_members")
+}
+
+// -----------------------------------------------------------------------------
+// 5. LINE Platform Integration (Hybrid: Official Account + Personal Thrift/E2EE)
+// -----------------------------------------------------------------------------
+
+enum LineAccountType {
+  OA
+  PERSONAL
+}
+
+enum LineAccountStatus {
+  QR_PENDING
+  PIN_REQUIRED
+  CONNECTING
+  ACTIVE
+  NOT_LOGGED_IN
+  EXPIRED
+  BANNED
+  DISABLED
+}
+
+model LineAccount {
+  id                     Int               @id @default(autoincrement())
+  cs_id                  Int
+  account_type           LineAccountType   @default(PERSONAL)
+  line_mid               String?           @unique
+  basic_id               String? // e.g., @edura for OA deep-link
+  display_name           String?
+  line_phone             String?
+  status                 LineAccountStatus @default(QR_PENDING)
+  encrypted_session_data String?           @db.Text // AES-256-GCM: { channelId, channelSecret, channelAccessToken } for OA or { authToken, refreshToken, qrCert, e2eeKeychain, device } for PERSONAL
+  qr_code                String?           @db.Text
+  pin_code               String?           @db.VarChar(16) // 6-digit PIN for @evex/linejs E2EE handshake
+  webhook_secret         String?           @db.VarChar(128) // optional plain/hashed lookup for OA webhook routing
+  monthly_quota          Int? // OA monthly push quota
+  monthly_consumption    Int? // OA current month push usage
+  last_connected_at      DateTime?
+  last_login_at          DateTime?
+  last_active_at         DateTime?
+  proxy_url              String?
+  archived_by_id         Int?
+  archived_at            DateTime?
+  disconnect_reason      String?           @db.VarChar(50)
+  disconnected_at        DateTime?
+  qr_pending_at          DateTime?
+  session_epoch          Int?
+  last_sync_error        String?           @db.Text
+  last_sync_at           DateTime?
+  avatar_url             String?           @db.VarChar(500)
+  created_at             DateTime          @default(now())
+  updated_at             DateTime          @updatedAt
+
+  cs                     User                  @relation(fields: [cs_id], references: [id])
+  archived_by            User?                 @relation("LineAccountArchiver", fields: [archived_by_id], references: [id])
+  line_contact_relations LineContactRelation[]
+  message_deliveries     MessageDelivery[]
+  line_groups            LineGroup[]
+  friends                LineFriend[]
+  conversations          LineConversation[]
+
+  @@index([cs_id])
+  @@index([account_type])
+  @@index([status])
+  @@index([archived_at])
+  @@map("line_accounts")
+}
+
+model LineContactRelation {
+  id              Int                       @id @default(autoincrement())
+  student_id      Int
+  line_account_id Int
+  relation_status ZaloContactRelationStatus @default(UNKNOWN)
+  display_name    String?
+  avatar_url      String?
+  friend_line_uid String? // Target LINE userId (U...) or MID for worker send
+  link_code       String?                   @unique // Short code (e.g., LK-893412) for 2-tap oaMessage deep-link binding
+  last_checked_at DateTime?
+  created_at      DateTime                  @default(now())
+  updated_at      DateTime                  @updatedAt
+
+  student      Student     @relation(fields: [student_id], references: [id])
+  line_account LineAccount @relation(fields: [line_account_id], references: [id])
+
+  @@unique([student_id, line_account_id])
+  @@index([student_id])
+  @@index([line_account_id])
+  @@index([friend_line_uid])
+  @@map("line_contact_relations")
+}
+
+model LineGroup {
+  id              Int       @id @default(autoincrement())
+  line_group_id   String    @unique
+  name            String?
+  avatar_url      String?
+  member_count    Int?
+  owner_line_uid  String?
+  line_account_id Int
+  last_synced_at  DateTime?
+  created_at      DateTime  @default(now())
+  updated_at      DateTime  @updatedAt
+
+  line_account       LineAccount       @relation(fields: [line_account_id], references: [id])
+  members            LineGroupMember[]
+  message_deliveries MessageDelivery[]
+
+  @@index([line_account_id])
+  @@map("line_groups")
+}
+
+model LineGroupMember {
+  id           Int       @id @default(autoincrement())
+  group_id     Int
+  line_uid     String
+  display_name String?
+  avatar_url   String?
+  is_admin     Boolean   @default(false)
+  joined_at    DateTime?
+  created_at   DateTime  @default(now())
+
+  line_group LineGroup @relation(fields: [group_id], references: [id], onDelete: Cascade)
+
+  @@unique([group_id, line_uid])
+  @@index([group_id])
+  @@map("line_group_members")
+}
+
+model LineFriend {
+  id                Int       @id @default(autoincrement())
+  line_account_id   Int
+  line_uid_in_nick  String
+  friendship_status String    @default("friend") // friend | follower | blocked | none
+  relationship_kind String    @default("friend")
+  alias_in_nick     String?
+  has_conversation  Boolean   @default(false)
+  phone_from_sdk    String?
+  line_display_name String?
+  line_avatar_url   String?
+  status_message    String?   @db.Text
+  first_message_at  DateTime?
+  last_inbound_at   DateTime?
+  last_outbound_at  DateTime?
+  total_inbound     Int       @default(0)
+  total_outbound    Int       @default(0)
+  became_friend_at  DateTime?
+  created_at        DateTime  @default(now())
+  updated_at        DateTime  @updatedAt
+
+  line_account LineAccount @relation(fields: [line_account_id], references: [id], onDelete: Cascade)
+
+  @@unique([line_account_id, line_uid_in_nick])
+  @@index([line_account_id])
+  @@index([phone_from_sdk])
+  @@map("line_friends")
+}
+
+model LineConversation {
+  id                    Int       @id @default(autoincrement())
+  line_account_id       Int
+  external_thread_id    String // userId (U...) or groupId (C...) or roomId (R...)
+  thread_type           String // "user" | "group"
+  display_name          String?
+  avatar_url            String?
+  group_name            String?
+  group_avatar_url      String?
+  group_members_count   Int?
+  reply_token           String?   @db.VarChar(128) // Cached latest webhook replyToken for free replies
+  reply_token_expires_at DateTime?
+  last_message_at       DateTime?
+  unread_count          Int       @default(0)
+  is_replied            Boolean   @default(true)
+  tab                   String    @default("main")
+  deleted_at            DateTime?
+  created_at            DateTime  @default(now())
+  updated_at            DateTime  @updatedAt
+
+  line_account LineAccount   @relation(fields: [line_account_id], references: [id], onDelete: Cascade)
+  messages     LineMessage[]
+
+  @@unique([line_account_id, external_thread_id])
+  @@index([line_account_id])
+  @@index([line_account_id, tab, last_message_at])
+  @@map("line_conversations")
+}
+
+model LineMessage {
+  id                 Int       @id @default(autoincrement())
+  conversation_id    Int
+  line_msg_id        String
+  quote_token        String?   @db.VarChar(255)
+  sender_uid         String
+  sender_name        String?
+  sender_type        String    @default("other") // "self" | "other"
+  content            String    @db.Text
+  content_type       String    @default("text") // text | image | sticker | file | flex | location
+  attachments        Json      @default("[]")
+  quote              Json?
+  mentions           Json?
+  reactions          Json?
+  is_self            Boolean   @default(false)
+  is_deleted         Boolean   @default(false)
+  delivered_at       DateTime?
+  seen_at            DateTime?
+  sent_via           String    @default("user") // "user" | "automation" | "system" | "reply_token"
+  replied_by_user_id Int?
+  raw_content        Json?
+  timestamp          DateTime
+  created_at         DateTime  @default(now())
+
+  conversation LineConversation @relation(fields: [conversation_id], references: [id], onDelete: Cascade)
+
+  @@unique([conversation_id, line_msg_id])
+  @@index([conversation_id])
+  @@map("line_messages")
 }
