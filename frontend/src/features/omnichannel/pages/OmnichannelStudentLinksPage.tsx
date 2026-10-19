@@ -850,7 +850,7 @@ export const OmnichannelStudentLinksPage: React.FC<{ initialTab?: string }> = ({
             <Button
               variant="outline"
               size="sm"
-              onClick={loadWorkspaceData}
+              onClick={() => loadWorkspaceData()}
               isLoading={loading}
               leftIcon={<RefreshCw className="w-4 h-4" />}
             >
