@@ -12,6 +12,7 @@ import { zaloAccessRouter } from './zalo-access-routes';
 import { groupScanRouter } from './group-scan-routes';
 import { zaloLabelsRouter } from './zalo-labels-routes';
 import { studentLinkRouter } from './student-link-routes';
+import './student-care-group-matcher.service';
 import { zaloChatRouter } from './zalo-chat-routes';
 import { zaloReactionRouter } from './zalo-reaction-routes';
 import { zaloPollRouter } from './zalo-poll-routes';

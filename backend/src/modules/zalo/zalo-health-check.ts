@@ -96,5 +96,28 @@ export function startZaloHealthCheck(): void {
     }
   });
 
-  log.info('Health check started (every 5min + daily refresh 04:00 UTC + hourly ghost cleanup)');
+  // ── Every 10 minutes: refresh groups for active accounts & auto-match student care groups ──
+  cron.schedule('*/10 * * * *', async () => {
+    try {
+      const { syncAndMatchCareGroups } = await import('./student-care-group-matcher.service');
+      const report = await syncAndMatchCareGroups({
+        triggeredBy: 'cron',
+        refreshLiveGroups: true,
+      });
+      log.info('Periodic care group sync completed', {
+        refreshedZaloAccounts: report.refreshedZaloAccounts,
+        refreshedLineAccounts: report.refreshedLineAccounts,
+        linkedStudentsCount: report.linkedStudentsCount,
+        unlinkedStudentsCount: report.unlinkedStudentsCount,
+        newlyLinkedZaloCount: report.newlyLinkedZaloCount,
+        newlyLinkedLineCount: report.newlyLinkedLineCount,
+      });
+    } catch (err) {
+      log.error('Periodic care group sync error', { error: String(err) });
+    }
+  });
+
+  log.info(
+    'Health check started (every 5min + every 10min care group sync + daily refresh 04:00 UTC + hourly ghost cleanup)',
+  );
 }

@@ -13,6 +13,7 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { prisma } from '../../prisma/client';
 import { createLogger } from '../../shared/logger/logger';
+import { syncAndMatchCareGroups } from './student-care-group-matcher.service';
 
 const log = createLogger('StudentLinkRoutes');
 const router = Router();
@@ -28,6 +29,62 @@ function handleError(res: Response, err: any) {
   const status = err?.status ?? 500;
   res.status(status).json({ success: false, message: err.message ?? 'Internal error' });
 }
+
+// ─── 0. Student Care Group Auto-Sync & Report ────────────────────────
+router.post('/care-groups/sync-and-match', async (req: Request, res: Response) => {
+  try {
+    const role = getRole(req);
+    const userId = req.user!.id;
+    const isAdmin = ['ADMIN', 'MANAGE'].includes(role);
+
+    const schema = z.object({
+      refreshLiveGroups: z.boolean().optional(),
+      cs_id: z.number().int().optional(),
+      student_ids: z.array(z.number().int()).optional(),
+      zalo_account_id: z.number().int().optional(),
+      line_account_id: z.number().int().optional(),
+    });
+    const dto = schema.parse(req.body ?? {});
+
+    const effectiveCsId = isAdmin ? dto.cs_id : userId;
+
+    const report = await syncAndMatchCareGroups({
+      triggeredBy: 'manual',
+      refreshLiveGroups: dto.refreshLiveGroups ?? true,
+      csId: effectiveCsId,
+      studentIds: dto.student_ids,
+      zaloAccountId: dto.zalo_account_id,
+      lineAccountId: dto.line_account_id,
+    });
+
+    res.json({ success: true, data: report, report });
+  } catch (err: any) {
+    if (err instanceof z.ZodError) {
+      return res.status(422).json({ success: false, errors: err.issues });
+    }
+    handleError(res, err);
+  }
+});
+
+router.get('/care-groups/report', async (req: Request, res: Response) => {
+  try {
+    const role = getRole(req);
+    const userId = req.user!.id;
+    const isAdmin = ['ADMIN', 'MANAGE'].includes(role);
+    const csIdParam = req.query.cs_id ? Number(req.query.cs_id) : undefined;
+    const effectiveCsId = isAdmin ? csIdParam : userId;
+
+    const report = await syncAndMatchCareGroups({
+      triggeredBy: 'manual',
+      refreshLiveGroups: false,
+      csId: effectiveCsId,
+    });
+
+    res.json({ success: true, data: report, report });
+  } catch (err: any) {
+    handleError(res, err);
+  }
+});
 
 // ─── 1. GET /zalo/students/unlinked?q=&cs_id= ───────────────────────
 // List học viên CHƯA link (CS: chỉ học viên mình phụ trách)
@@ -140,9 +197,19 @@ router.get('/:accountId/students-linked', async (req: Request, res: Response) =>
             avatar_url: true,
           },
         },
+        zalo_group: {
+          select: {
+            id: true,
+            zalo_group_id: true,
+            name: true,
+            avatar_url: true,
+            member_count: true,
+          },
+        },
         student: {
           select: {
             id: true,
+            external_id: true,
             full_name: true,
             phone: true,
             email: true,
@@ -150,7 +217,7 @@ router.get('/:accountId/students-linked', async (req: Request, res: Response) =>
               select: {
                 id: true,
                 package: { select: { id: true, name: true } },
-                cs: { select: { id: true, name: true } },
+                cs: { select: { id: true, code: true, name: true } },
                 enrollment_classes: {
                   take: 1,
                   orderBy: { sequence_no: 'asc' },
@@ -212,13 +279,21 @@ router.get('/:accountId/students-linked', async (req: Request, res: Response) =>
       const friend = digits.length >= 9 ? friendByPhone.get(digits.slice(-9)) : undefined;
       return {
         ...r,
-        friendAvatarUrl: r.avatar_url || friend?.zalo_avatar_url || null,
+        target_type: r.target_type ?? 'USER',
+        matched_by: r.matched_by ?? null,
+        friendAvatarUrl:
+          r.avatar_url || r.zalo_group?.avatar_url || friend?.zalo_avatar_url || null,
         friendDisplayName:
           r.display_name ||
+          r.zalo_group?.name ||
           friend?.alias_in_nick ||
           friend?.zalo_display_name ||
           null,
-        friendZaloUid: (r as any).friend_zalo_uid || friend?.zalo_uid_in_nick || null,
+        friendZaloUid:
+          (r as any).friend_zalo_uid ||
+          r.zalo_group?.zalo_group_id ||
+          friend?.zalo_uid_in_nick ||
+          null,
       };
     });
 
@@ -256,15 +331,30 @@ router.get('/students/:id/links', async (req: Request, res: Response) => {
             display_name: true,
             zalo_phone: true,
             status: true,
-            cs: { select: { id: true, name: true } },
+            cs: { select: { id: true, code: true, name: true } },
           },
         },
-        student: { select: { id: true, full_name: true, phone: true } },
+        zalo_group: {
+          select: {
+            id: true,
+            zalo_group_id: true,
+            name: true,
+            avatar_url: true,
+            member_count: true,
+          },
+        },
+        student: { select: { id: true, external_id: true, full_name: true, phone: true } },
       },
       orderBy: { updated_at: 'desc' },
     });
 
-    res.json({ success: true, items: relations });
+    const enrichedRelations = relations.map((r) => ({
+      ...r,
+      target_type: r.target_type ?? 'USER',
+      matched_by: r.matched_by ?? null,
+    }));
+
+    res.json({ success: true, items: enrichedRelations });
   } catch (err: any) {
     handleError(res, err);
   }
