@@ -9,6 +9,10 @@ import type {
   MessageDelivery,
   WorkflowListResult,
   SuggestLinkItem,
+  BroadcastCampaign,
+  BroadcastRecipient,
+  BroadcastTargetsCatalog,
+  CreateBroadcastCampaignDTO,
 } from '../types/automation.types';
 
 export const automationApi = {
@@ -229,4 +233,79 @@ export const automationApi = {
     const res = await apiClient.post('/zalo/auto-suggest-links', params ?? {});
     return res.data;
   },
+
+  // ─── Multi-Channel Broadcast & Scheduled Campaigns ────────────────────
+
+  listBroadcasts: async (params?: {
+    status?: string;
+    search?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<{ items: BroadcastCampaign[]; total: number }> => {
+    const res = await apiClient.get('/automation/broadcasts', { params });
+    const raw = res.data?.data ?? res.data;
+    const items: BroadcastCampaign[] = Array.isArray(raw)
+      ? raw
+      : raw?.items ?? raw?.campaigns ?? [];
+    return {
+      items,
+      total: raw?.total ?? items.length,
+    };
+  },
+
+  getBroadcastTargetsCatalog: async (): Promise<BroadcastTargetsCatalog> => {
+    const res = await apiClient.get('/automation/broadcasts/targets-catalog');
+    const raw = res.data?.data ?? res.data;
+    return {
+      students: raw?.students ?? [],
+      zaloGroups: raw?.zaloGroups ?? [],
+      lineGroups: raw?.lineGroups ?? [],
+      zaloAccounts: raw?.zaloAccounts ?? [],
+      lineAccounts: raw?.lineAccounts ?? [],
+    };
+  },
+
+  getBroadcastDetail: async (
+    id: number
+  ): Promise<{ campaign: BroadcastCampaign & { recipients: BroadcastRecipient[] } }> => {
+    const res = await apiClient.get(`/automation/broadcasts/${id}`);
+    const raw = res.data?.data ?? res.data;
+    const campaign = raw?.campaign ?? raw;
+    return {
+      campaign: {
+        ...campaign,
+        recipients: campaign?.recipients ?? raw?.recipients ?? [],
+      },
+    };
+  },
+
+  createBroadcast: async (
+    data: CreateBroadcastCampaignDTO
+  ): Promise<{ campaign: BroadcastCampaign }> => {
+    const res = await apiClient.post('/automation/broadcasts', data);
+    const raw = res.data?.data ?? res.data;
+    return {
+      campaign: raw?.campaign ?? raw,
+    };
+  },
+
+  sendBroadcastNow: async (id: number): Promise<{ campaign?: BroadcastCampaign; message?: string }> => {
+    const res = await apiClient.post(`/automation/broadcasts/${id}/send-now`);
+    return res.data?.data ?? res.data;
+  },
+
+  cancelBroadcast: async (id: number): Promise<{ campaign?: BroadcastCampaign; message?: string }> => {
+    const res = await apiClient.post(`/automation/broadcasts/${id}/cancel`);
+    return res.data?.data ?? res.data;
+  },
+
+  retryBroadcastFailed: async (id: number): Promise<{ campaign?: BroadcastCampaign; retried?: number; message?: string }> => {
+    const res = await apiClient.post(`/automation/broadcasts/${id}/retry-failed`);
+    return res.data?.data ?? res.data;
+  },
+
+  deleteBroadcast: async (id: number): Promise<void> => {
+    await apiClient.delete(`/automation/broadcasts/${id}`);
+  },
 };
+
