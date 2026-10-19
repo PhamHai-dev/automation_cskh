@@ -222,6 +222,8 @@ export const lineApi = {
   createLink: async (data: {
     student_id: number;
     line_account_id: number;
+    line_group_id?: number | null;
+    target_type?: 'USER' | 'GROUP';
     relation_status?: string;
     display_name?: string;
     friend_line_uid?: string;

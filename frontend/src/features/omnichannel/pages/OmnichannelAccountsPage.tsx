@@ -2,7 +2,12 @@ import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { zaloApi } from '../../zalo/api/zalo.api';
 import { lineApi } from '../../line/api/line.api';
-import type { ZaloAccount, CreateZaloAccountDTO, ZaloSocketStatusEvent } from '../../zalo/types/zalo.types';
+import { omnichannelApi } from '../api/omnichannel.api';
+import type {
+  ZaloAccount,
+  CreateZaloAccountDTO,
+  ZaloSocketStatusEvent,
+} from '../../zalo/types/zalo.types';
 import { ZALO_STATUS_LABELS, ZALO_STATUS_COLORS } from '../../zalo/types/zalo.types';
 import type {
   LineAccount,
@@ -18,8 +23,6 @@ import { useToast } from '../../../components/ui/Toast';
 import { QrLoginDialog } from '../../zalo/components/QrLoginDialog';
 import { LineQrLoginDialog } from '../../line/components/LineQrLoginDialog';
 import { LineOaConfigDialog } from '../../line/components/LineOaConfigDialog';
-import { ZaloAccountsPage } from '../../zalo/pages/ZaloAccountsPage';
-import { LineAccountsPage } from '../../line/pages/LineAccountsPage';
 import {
   ChannelSecurityLimitsDialog,
   type SecurityDialogTargetAccount,
@@ -41,13 +44,7 @@ import {
   Layers,
 } from 'lucide-react';
 
-type ChannelFilterTab =
-  | 'ALL'
-  | 'ZALO_PERSONAL'
-  | 'LINE_OA'
-  | 'LINE_PERSONAL'
-  | 'ZALO_DETAIL'
-  | 'LINE_DETAIL';
+type ChannelFilterTab = 'ALL' | 'ZALO_PERSONAL' | 'LINE_OA' | 'LINE_PERSONAL';
 
 interface UnifiedAccountRow {
   uidKey: string;
@@ -82,8 +79,7 @@ export const OmnichannelAccountsPage: React.FC<{ initialChannel?: ChannelFilterT
     const ch = searchParams.get('channel')?.toUpperCase();
     if (ch === 'ZALO') return 'ZALO_PERSONAL';
     if (ch === 'LINE_OA') return 'LINE_OA';
-    if (ch === 'LINE_PERSONAL') return 'LINE_PERSONAL';
-    if (ch === 'LINE') return 'LINE_DETAIL';
+    if (ch === 'LINE_PERSONAL' || ch === 'LINE') return 'LINE_PERSONAL';
     return 'ALL';
   }, [initialChannel, searchParams]);
 
@@ -91,6 +87,7 @@ export const OmnichannelAccountsPage: React.FC<{ initialChannel?: ChannelFilterT
   const [zaloAccounts, setZaloAccounts] = useState<ZaloAccount[]>([]);
   const [lineAccounts, setLineAccounts] = useState<LineAccount[]>([]);
   const [loading, setLoading] = useState(true);
+  const [syncingRowKey, setSyncingRowKey] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
 
   // Dialogs
@@ -187,11 +184,11 @@ export const OmnichannelAccountsPage: React.FC<{ initialChannel?: ChannelFilterT
         platform: 'ZALO',
         accountType: 'ZALO_PERSONAL',
         id: z.id,
-        displayName: z.display_name || `Zalo Nick #${z.id}`,
+        displayName: z.display_name || `Zalo #${z.id}`,
         uidOrMid: z.zalo_uid,
         phone: z.zalo_phone,
         avatarUrl: z.avatar_url,
-        csName: z.cs?.full_name || `CS #${z.cs_id}`,
+        csName: z.cs?.full_name || `CSKH #${z.cs_id}`,
         status: st,
         statusLabel: ZALO_STATUS_LABELS[st] || st,
         statusColor: ZALO_STATUS_COLORS[st] || 'bg-gray-100 text-gray-600',
@@ -211,11 +208,11 @@ export const OmnichannelAccountsPage: React.FC<{ initialChannel?: ChannelFilterT
         accountType: l.account_type,
         id: l.id,
         displayName:
-          l.display_name || (l.account_type === 'OA' ? `LINE OA #${l.id}` : `LINE Nick #${l.id}`),
+          l.display_name || (l.account_type === 'OA' ? `LINE OA #${l.id}` : `LINE #${l.id}`),
         uidOrMid: l.basic_id || l.line_mid,
         phone: l.line_phone,
         avatarUrl: l.avatar_url,
-        csName: l.cs?.full_name || l.cs?.name || `CS #${l.cs_id}`,
+        csName: l.cs?.full_name || l.cs?.name || `CSKH #${l.cs_id}`,
         status: st,
         statusLabel: LINE_STATUS_LABELS[st] || st,
         statusColor: LINE_STATUS_COLORS[st] || 'bg-gray-100 text-gray-600',
@@ -267,6 +264,7 @@ export const OmnichannelAccountsPage: React.FC<{ initialChannel?: ChannelFilterT
     .reduce((s, a) => s + (a.monthly_quota || 200), 0);
 
   const handleSyncRow = async (row: UnifiedAccountRow) => {
+    setSyncingRowKey(row.uidKey);
     try {
       if (row.platform === 'ZALO') {
         const [frRes, grRes] = await Promise.allSettled([
@@ -275,8 +273,12 @@ export const OmnichannelAccountsPage: React.FC<{ initialChannel?: ChannelFilterT
         ]);
         const grCount = grRes.status === 'fulfilled' ? grRes.value?.synced ?? 0 : 0;
         const frLoaded = frRes.status === 'fulfilled';
+        const matchReport = await omnichannelApi
+          .syncAndMatchCareGroups({ refreshLiveGroups: false })
+          .catch(() => null);
+        const newlyMatched = matchReport?.newlyLinkedZaloCount ?? 0;
         toast.success(
-          `Đã đồng bộ Zalo (${frLoaded ? 'Danh bạ + ' : ''}${grCount} nhóm lớp)`,
+          `Đã đồng bộ Zalo (${frLoaded ? 'Danh bạ + ' : ''}${grCount} nhóm${newlyMatched > 0 ? `, tự động gắn mới +${newlyMatched} nhóm chăm sóc` : ''})`,
         );
       } else {
         const [frRes, grRes] = await Promise.allSettled([
@@ -288,11 +290,19 @@ export const OmnichannelAccountsPage: React.FC<{ initialChannel?: ChannelFilterT
             ? frRes.value?.synced ?? frRes.value?.upserted ?? 0
             : 0;
         const grCount = grRes.status === 'fulfilled' ? grRes.value?.synced ?? 0 : 0;
-        toast.success(`Đã đồng bộ LINE (${frCount} liên hệ, ${grCount} nhóm)`);
+        const matchReport = await omnichannelApi
+          .syncAndMatchCareGroups({ refreshLiveGroups: false })
+          .catch(() => null);
+        const newlyMatched = matchReport?.newlyLinkedLineCount ?? 0;
+        toast.success(
+          `Đã đồng bộ LINE (${frCount} liên hệ, ${grCount} nhóm${newlyMatched > 0 ? `, tự động gắn mới +${newlyMatched} nhóm chăm sóc` : ''})`,
+        );
       }
       fetchAllAccounts();
     } catch (err: any) {
       toast.error(err.response?.data?.message || 'Đồng bộ thất bại');
+    } finally {
+      setSyncingRowKey(null);
     }
   };
 
@@ -344,7 +354,7 @@ export const OmnichannelAccountsPage: React.FC<{ initialChannel?: ChannelFilterT
         toast.success(
           createChannelType === 'LINE_OA'
             ? 'Đã thêm tài khoản LINE Official Account (OA)'
-            : 'Đã thêm tài khoản LINE Cá nhân — hãy quét mã QR + PIN 6 số',
+            : 'Đã thêm tài khoản LINE Cá nhân — hãy quét mã QR trên điện thoại',
         );
         setCreateChannelType(null);
         await fetchAllAccounts();
@@ -365,7 +375,7 @@ export const OmnichannelAccountsPage: React.FC<{ initialChannel?: ChannelFilterT
     <PageContainer>
       <PageHeader
         title="Tài khoản & Bảo mật Đa kênh (Zalo & LINE)"
-        description="Quản lý tập trung toàn bộ Nick Zalo Cá nhân, LINE Official Account (Bot OA) và LINE Cá nhân (QR + E2EE 6-Digit PIN) cùng cấu hình Proxy & Giới hạn chống khóa nick"
+        description="Quản lý tập trung toàn bộ tài khoản Zalo Cá nhân, LINE Official Account (OA) và LINE Cá nhân cùng cài đặt Proxy, giới hạn gửi tin & đồng bộ nhóm chăm sóc."
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <Button
@@ -380,7 +390,12 @@ export const OmnichannelAccountsPage: React.FC<{ initialChannel?: ChannelFilterT
             <Button
               size="sm"
               onClick={() => {
-                setZaloForm({ cs_id: user?.id || 0, display_name: '', zalo_phone: '', proxy_url: '' });
+                setZaloForm({
+                  cs_id: user?.id || 0,
+                  display_name: '',
+                  zalo_phone: '',
+                  proxy_url: '',
+                });
                 setCreateChannelType('ZALO');
               }}
               leftIcon={<Plus className="w-4 h-4" />}
@@ -423,7 +438,7 @@ export const OmnichannelAccountsPage: React.FC<{ initialChannel?: ChannelFilterT
               }}
               leftIcon={<Smartphone className="w-4 h-4" />}
             >
-              + Thêm LINE Cá nhân (QR)
+              + Thêm LINE Cá nhân
             </Button>
           </div>
         }
@@ -433,7 +448,7 @@ export const OmnichannelAccountsPage: React.FC<{ initialChannel?: ChannelFilterT
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 mb-5">
         <div className="bg-white rounded-2xl border border-gray-200 p-4 shadow-xs">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-gray-500">Tổng Kênh Hoạt Động</span>
+            <span className="text-xs font-semibold text-gray-500">Tổng tài khoản đang kết nối</span>
             <Layers className="w-4 h-4 text-indigo-600" />
           </div>
           <div className="mt-2 flex items-baseline gap-2">
@@ -444,75 +459,75 @@ export const OmnichannelAccountsPage: React.FC<{ initialChannel?: ChannelFilterT
 
         <div className="bg-white rounded-2xl border border-blue-200 p-4 shadow-xs">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-blue-700">Zalo Cá nhân (Active)</span>
+            <span className="text-xs font-semibold text-blue-700">Zalo Cá nhân</span>
             <MessageSquare className="w-4 h-4 text-blue-600" />
           </div>
           <div className="mt-2 flex items-baseline gap-2">
             <span className="text-2xl font-bold text-blue-700">{activeZaloCount}</span>
-            <span className="text-xs text-gray-500">/ {zaloAccounts.length} nick</span>
+            <span className="text-xs text-gray-500">/ {zaloAccounts.length} đang hoạt động</span>
           </div>
         </div>
 
         <div className="bg-white rounded-2xl border border-emerald-200 p-4 shadow-xs">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-emerald-700">LINE Official Account</span>
+            <span className="text-xs font-semibold text-emerald-700">LINE Official Account (OA)</span>
             <Bot className="w-4 h-4 text-emerald-600" />
           </div>
           <div className="mt-2 flex items-baseline justify-between">
             <span className="text-2xl font-bold text-emerald-700">{activeLineOaCount}</span>
             <span className="text-[11px] font-medium text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-full">
-              Quota: {lineOaQuotaUsed}/{lineOaQuotaMax || 200}
+              Đã gửi: {lineOaQuotaUsed}/{lineOaQuotaMax || 200} tin
             </span>
           </div>
         </div>
 
         <div className="bg-white rounded-2xl border border-green-200 p-4 shadow-xs">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-green-700">LINE Cá nhân (E2EE)</span>
+            <span className="text-xs font-semibold text-green-700">LINE Cá nhân</span>
             <Smartphone className="w-4 h-4 text-green-600" />
           </div>
           <div className="mt-2 flex items-baseline gap-2">
             <span className="text-2xl font-bold text-green-700">{activeLinePersonalCount}</span>
-            <span className="text-xs text-gray-500">Letter Sealing PIN</span>
+            <span className="text-xs text-gray-500">
+              / {lineAccounts.filter((a) => a.account_type === 'PERSONAL').length} đang hoạt động
+            </span>
           </div>
         </div>
 
         <div className="bg-gradient-to-br from-slate-900 to-indigo-950 text-white rounded-2xl p-4 shadow-xs">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-300">Khiên Chống Khóa & Proxy</span>
+            <span className="text-xs font-semibold text-slate-300">Bảo vệ & Kết nối Proxy</span>
             <ShieldCheck className="w-4 h-4 text-emerald-400" />
           </div>
           <div className="mt-2 flex items-baseline justify-between">
-            <span className="text-lg font-bold text-emerald-400">AES-256-GCM</span>
+            <span className="text-lg font-bold text-emerald-400">An toàn</span>
             <span className="text-[11px] text-slate-300">
-              {proxyPinnedCount}/{unifiedRows.length} gắn Proxy
+              {proxyPinnedCount}/{unifiedRows.length} dùng Proxy riêng
             </span>
           </div>
         </div>
       </div>
 
-      {/* Channel Filter Pills */}
+      {/* 4 Clean Channel Filter Tabs & Search */}
       <div className="bg-white rounded-2xl border border-gray-200 p-3 mb-5 flex flex-col md:flex-row md:items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-1.5">
           {[
-            { key: 'ALL', label: `Tất cả kênh (${unifiedRows.length})` },
+            { key: 'ALL', label: `Tất cả tài khoản (${unifiedRows.length})` },
             { key: 'ZALO_PERSONAL', label: `Zalo Cá nhân (${zaloAccounts.length})` },
             {
               key: 'LINE_OA',
-              label: `LINE Official Account (${lineAccounts.filter((a) => a.account_type === 'OA').length})`,
+              label: `LINE Official Account (OA) (${lineAccounts.filter((a) => a.account_type === 'OA').length})`,
             },
             {
               key: 'LINE_PERSONAL',
-              label: `LINE Cá nhân QR + E2EE (${lineAccounts.filter((a) => a.account_type === 'PERSONAL').length})`,
+              label: `LINE Cá nhân (${lineAccounts.filter((a) => a.account_type === 'PERSONAL').length})`,
             },
-            { key: 'ZALO_DETAIL', label: 'Quản lý chi tiết Zalo' },
-            { key: 'LINE_DETAIL', label: 'Quản lý chi tiết LINE' },
           ].map((tab) => (
             <button
               key={tab.key}
               type="button"
               onClick={() => setActiveFilter(tab.key as ChannelFilterTab)}
-              className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all ${
                 activeFilter === tab.key
                   ? 'bg-indigo-600 text-white shadow-xs'
                   : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
@@ -523,285 +538,279 @@ export const OmnichannelAccountsPage: React.FC<{ initialChannel?: ChannelFilterT
           ))}
         </div>
 
-        {activeFilter !== 'ZALO_DETAIL' && activeFilter !== 'LINE_DETAIL' && (
-          <div className="w-full md:w-64">
-            <Input
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Tìm tên nick, SĐT, UID/MID, CS..."
-            />
-          </div>
-        )}
+        <div className="w-full md:w-72">
+          <Input
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Tìm theo tên tài khoản, SĐT, nhân viên CSKH..."
+          />
+        </div>
       </div>
 
-      {/* Mode Switch: Embedded Full Zalo or Full LINE Page vs Unified Table */}
-      {activeFilter === 'ZALO_DETAIL' ? (
-        <div className="bg-white rounded-2xl border border-gray-200 p-4">
-          <ZaloAccountsPage />
-        </div>
-      ) : activeFilter === 'LINE_DETAIL' ? (
-        <div className="bg-white rounded-2xl border border-gray-200 p-4">
-          <LineAccountsPage />
-        </div>
-      ) : (
-        <div className="bg-white rounded-2xl border border-gray-200 shadow-xs overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="bg-gray-50/90 border-b border-gray-200 text-[11px] font-bold text-gray-500 uppercase tracking-wider">
-                  <th className="py-3.5 px-4">Tài khoản & Nền tảng</th>
-                  <th className="py-3.5 px-4">CS Phụ trách</th>
-                  <th className="py-3.5 px-4">Trạng thái</th>
-                  <th className="py-3.5 px-4">Mạng & Proxy Isolation</th>
-                  <th className="py-3.5 px-4">Hạn mức / Quota Tháng</th>
-                  <th className="py-3.5 px-4 text-right">Thao tác nhanh</th>
+      {/* Unified Accounts Table */}
+      <div className="bg-white rounded-2xl border border-gray-200 shadow-xs overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-gray-50/90 border-b border-gray-200 text-[11px] font-bold text-gray-500 uppercase tracking-wider">
+                <th className="py-3.5 px-4">Tài khoản & Kênh</th>
+                <th className="py-3.5 px-4">Nhân viên CSKH</th>
+                <th className="py-3.5 px-4">Trạng thái</th>
+                <th className="py-3.5 px-4">Kết nối mạng</th>
+                <th className="py-3.5 px-4">Giới hạn bảo vệ tài khoản</th>
+                <th className="py-3.5 px-4 text-right">Thao tác</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100 text-sm">
+              {loading ? (
+                <tr>
+                  <td colSpan={6} className="py-12 text-center text-gray-500">
+                    Đang tải danh sách tài khoản Zalo & LINE...
+                  </td>
                 </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100 text-sm">
-                {loading ? (
-                  <tr>
-                    <td colSpan={6} className="py-12 text-center text-gray-500">
-                      Đang tải danh sách tài khoản đa kênh...
-                    </td>
-                  </tr>
-                ) : filteredRows.length === 0 ? (
-                  <tr>
-                    <td colSpan={6} className="py-12 text-center text-gray-500">
-                      Chưa có tài khoản nào khớp bộ lọc. Hãy nhấn <strong>+ Thêm Zalo</strong> hoặc{' '}
-                      <strong>+ Thêm LINE</strong> ở góc trên.
-                    </td>
-                  </tr>
-                ) : (
-                  filteredRows.map((row) => {
-                    const quotaPct =
-                      row.accountType === 'OA' && row.monthlyQuota
-                        ? Math.min(
-                            100,
-                            Math.round(((row.monthlyConsumption || 0) / row.monthlyQuota) * 100),
-                          )
-                        : null;
+              ) : filteredRows.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="py-12 text-center text-gray-500">
+                    Chưa có tài khoản nào khớp bộ lọc. Hãy nhấn <strong>+ Thêm Zalo</strong> hoặc{' '}
+                    <strong>+ Thêm LINE</strong> ở góc trên.
+                  </td>
+                </tr>
+              ) : (
+                filteredRows.map((row) => {
+                  const quotaPct =
+                    row.accountType === 'OA' && row.monthlyQuota
+                      ? Math.min(
+                          100,
+                          Math.round(((row.monthlyConsumption || 0) / row.monthlyQuota) * 100),
+                        )
+                      : null;
+                  const isRowSyncing = syncingRowKey === row.uidKey;
 
-                    return (
-                      <tr key={row.uidKey} className="hover:bg-gray-50/70 transition-colors">
-                        {/* Account & Channel Badge */}
-                        <td className="py-3.5 px-4">
-                          <div className="flex items-center gap-3">
-                            {row.avatarUrl ? (
-                              <img
-                                src={row.avatarUrl}
-                                alt=""
-                                referrerPolicy="no-referrer"
-                                className="w-10 h-10 rounded-full object-cover border border-gray-200 shrink-0"
-                              />
-                            ) : (
-                              <div
-                                className={`w-10 h-10 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
-                                  row.platform === 'ZALO'
-                                    ? 'bg-blue-100 text-blue-700'
-                                    : 'bg-emerald-100 text-emerald-700'
-                                }`}
-                              >
-                                {row.displayName.charAt(0).toUpperCase()}
-                              </div>
-                            )}
-                            <div>
-                              <div className="flex items-center gap-2">
-                                <span className="font-bold text-gray-900">{row.displayName}</span>
-                                {row.accountType === 'ZALO_PERSONAL' && (
-                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-700">
-                                    Zalo
-                                  </span>
-                                )}
-                                {row.accountType === 'OA' && (
-                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
-                                    LINE OA
-                                  </span>
-                                )}
-                                {row.accountType === 'PERSONAL' && (
-                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-green-100 text-green-800">
-                                    LINE Personal
-                                  </span>
-                                )}
-                              </div>
-                              <div className="text-xs text-gray-500 mt-0.5">
-                                {row.uidOrMid || `ID #${row.id}`}
-                                {row.phone ? ` · ${row.phone}` : ''}
-                              </div>
+                  return (
+                    <tr key={row.uidKey} className="hover:bg-gray-50/70 transition-colors">
+                      {/* Account & Channel Badge */}
+                      <td className="py-3.5 px-4">
+                        <div className="flex items-center gap-3">
+                          {row.avatarUrl ? (
+                            <img
+                              src={row.avatarUrl}
+                              alt=""
+                              referrerPolicy="no-referrer"
+                              className="w-10 h-10 rounded-full object-cover border border-gray-200 shrink-0"
+                            />
+                          ) : (
+                            <div
+                              className={`w-10 h-10 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
+                                row.platform === 'ZALO'
+                                  ? 'bg-blue-100 text-blue-700'
+                                  : 'bg-emerald-100 text-emerald-700'
+                              }`}
+                            >
+                              {row.displayName.charAt(0).toUpperCase()}
+                            </div>
+                          )}
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-gray-900">{row.displayName}</span>
+                              {row.accountType === 'ZALO_PERSONAL' && (
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-700">
+                                  Zalo Cá nhân
+                                </span>
+                              )}
+                              {row.accountType === 'OA' && (
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                                  LINE Official Account (OA)
+                                </span>
+                              )}
+                              {row.accountType === 'PERSONAL' && (
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-green-100 text-green-800">
+                                  LINE Cá nhân
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-xs text-gray-500 mt-0.5">
+                              {row.uidOrMid || `Mã #${row.id}`}
+                              {row.phone ? ` · SĐT: ${row.phone}` : ''}
                             </div>
                           </div>
-                        </td>
+                        </div>
+                      </td>
 
-                        {/* Owner CS */}
-                        <td className="py-3.5 px-4 text-xs font-medium text-gray-700">
-                          {row.csName}
-                        </td>
+                      {/* Owner CS */}
+                      <td className="py-3.5 px-4 text-xs font-medium text-gray-700">
+                        {row.csName}
+                      </td>
 
-                        {/* Status */}
-                        <td className="py-3.5 px-4">
-                          <span
-                            className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${row.statusColor}`}
-                          >
-                            {row.statusLabel}
+                      {/* Status */}
+                      <td className="py-3.5 px-4">
+                        <span
+                          className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${row.statusColor}`}
+                        >
+                          {row.statusLabel}
+                        </span>
+                      </td>
+
+                      {/* Proxy Status */}
+                      <td className="py-3.5 px-4">
+                        {row.proxyUrl ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                            <Server className="w-3.5 h-3.5" />
+                            Dùng Proxy riêng
                           </span>
-                        </td>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium bg-gray-100 text-gray-600">
+                            Mạng trực tiếp
+                          </span>
+                        )}
+                      </td>
 
-                        {/* Proxy Status */}
-                        <td className="py-3.5 px-4">
-                          {row.proxyUrl ? (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">
-                              <Server className="w-3.5 h-3.5" />
-                              Proxy Pinned
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium bg-gray-100 text-gray-600">
-                              Direct IP
-                            </span>
-                          )}
-                        </td>
-
-                        {/* Daily Rate Limit / Monthly Quota */}
-                        <td className="py-3.5 px-4">
-                          {row.accountType === 'OA' && quotaPct !== null ? (
-                            <div className="w-44">
-                              <div className="flex justify-between text-[11px] font-semibold text-emerald-800 mb-1">
-                                <span>Push Quota tháng</span>
-                                <span>
-                                  {row.monthlyConsumption || 0}/{row.monthlyQuota || 200} ({quotaPct}
-                                  %)
-                                </span>
-                              </div>
-                              <div className="w-full h-1.5 bg-emerald-100 rounded-full overflow-hidden">
-                                <div
-                                  className="h-full bg-emerald-600 rounded-full"
-                                  style={{ width: `${quotaPct}%` }}
-                                />
-                              </div>
+                      {/* Daily Rate Limit / Monthly Quota */}
+                      <td className="py-3.5 px-4">
+                        {row.accountType === 'OA' && quotaPct !== null ? (
+                          <div className="w-44">
+                            <div className="flex justify-between text-[11px] font-semibold text-emerald-800 mb-1">
+                              <span>Tin nhắn tháng</span>
+                              <span>
+                                {row.monthlyConsumption || 0}/{row.monthlyQuota || 200} ({quotaPct}
+                                %)
+                              </span>
                             </div>
-                          ) : (
-                            <div className="text-xs text-gray-600">
-                              <div className="font-semibold text-gray-800">
-                                {row.platform === 'ZALO'
-                                  ? 'SĐT: 60/ngày (4/5p)'
-                                  : 'SĐT: 20/ngày (2/10p)'}
-                              </div>
-                              <div className="text-[11px] text-gray-500">
-                                Chống khóa Sliding-Window
-                              </div>
+                            <div className="w-full h-1.5 bg-emerald-100 rounded-full overflow-hidden">
+                              <div
+                                className="h-full bg-emerald-600 rounded-full"
+                                style={{ width: `${quotaPct}%` }}
+                              />
                             </div>
-                          )}
-                        </td>
+                          </div>
+                        ) : (
+                          <div className="text-xs text-gray-600">
+                            <div className="font-semibold text-gray-800">
+                              {row.platform === 'ZALO'
+                                ? 'Tra cứu SĐT: 60 lần/ngày'
+                                : 'Tra cứu SĐT: 20 lần/ngày'}
+                            </div>
+                            <div className="text-[11px] text-gray-500">
+                              Tự động giãn cách chống khóa
+                            </div>
+                          </div>
+                        )}
+                      </td>
 
-                        {/* Actions */}
-                        <td className="py-3.5 px-4 text-right">
-                          <div className="flex items-center justify-end gap-1.5">
-                            {/* Security / Proxy / Rate Limits */}
+                      {/* Actions */}
+                      <td className="py-3.5 px-4 text-right">
+                        <div className="flex items-center justify-end gap-1.5 flex-wrap">
+                          {/* QR Login for Zalo or LINE Personal when not active */}
+                          {row.accountType === 'ZALO_PERSONAL' &&
+                            row.status !== 'ACTIVE' &&
+                            row.rawZalo && (
+                              <Button
+                                variant="secondary"
+                                size="sm"
+                                onClick={() => setZaloQrTarget(row.rawZalo!)}
+                                title="Quét mã QR để đăng nhập Zalo"
+                                leftIcon={<QrCode className="w-3.5 h-3.5" />}
+                              >
+                                Quét QR
+                              </Button>
+                            )}
+
+                          {row.accountType === 'PERSONAL' &&
+                            row.status !== 'ACTIVE' &&
+                            row.rawLine && (
+                              <Button
+                                variant="secondary"
+                                size="sm"
+                                onClick={() => setLineQrTarget(row.rawLine!)}
+                                title="Quét mã QR để đăng nhập LINE Cá nhân"
+                                leftIcon={<QrCode className="w-3.5 h-3.5" />}
+                              >
+                                Quét QR
+                              </Button>
+                            )}
+
+                          {/* OA Webhook & Credentials Config */}
+                          {row.accountType === 'OA' && row.rawLine && (
                             <Button
                               variant="outline"
                               size="sm"
-                              onClick={() =>
-                                setSecurityTarget({
-                                  platform: row.platform,
-                                  accountId: row.id,
-                                  displayName: row.displayName,
-                                  uidOrMid: row.uidOrMid,
-                                  accountType: row.accountType,
-                                  proxyUrl: row.proxyUrl,
-                                  monthlyQuota: row.monthlyQuota,
-                                  monthlyConsumption: row.monthlyConsumption,
-                                  status: row.status,
-                                })
-                              }
-                              title="Bảo mật / Proxy / Hạn mức / Sao lưu AES-256-GCM"
-                              leftIcon={<ShieldCheck className="w-3.5 h-3.5 text-indigo-600" />}
+                              onClick={() => setLineOaTarget(row.rawLine!)}
+                              title="Cấu hình kết nối LINE Official Account"
+                              leftIcon={<Settings className="w-3.5 h-3.5 text-emerald-700" />}
                             >
-                              Bảo mật & Hạn mức
+                              Cấu hình OA
                             </Button>
+                          )}
 
-                            {/* QR Login for Zalo or LINE Personal */}
-                            {row.accountType === 'ZALO_PERSONAL' &&
-                              row.status !== 'ACTIVE' &&
-                              row.rawZalo && (
-                                <Button
-                                  variant="secondary"
-                                  size="sm"
-                                  onClick={() => setZaloQrTarget(row.rawZalo!)}
-                                  title="Đăng nhập QR Zalo"
-                                  leftIcon={<QrCode className="w-3.5 h-3.5" />}
-                                >
-                                  QR
-                                </Button>
-                              )}
+                          {/* Sync Groups & Contacts */}
+                          {row.status === 'ACTIVE' && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              isLoading={isRowSyncing}
+                              onClick={() => handleSyncRow(row)}
+                              title="Đồng bộ Nhóm, Danh bạ và tự động gắn nhóm chăm sóc cho học viên"
+                              leftIcon={<RefreshCw className="w-3.5 h-3.5 text-blue-600" />}
+                            >
+                              Đồng bộ Nhóm & Danh bạ
+                            </Button>
+                          )}
 
-                            {row.accountType === 'PERSONAL' &&
-                              row.status !== 'ACTIVE' &&
-                              row.rawLine && (
-                                <Button
-                                  variant="secondary"
-                                  size="sm"
-                                  onClick={() => setLineQrTarget(row.rawLine!)}
-                                  title="Đăng nhập QR + Mã PIN E2EE 6 số LINE"
-                                  leftIcon={<QrCode className="w-3.5 h-3.5" />}
-                                >
-                                  QR + PIN
-                                </Button>
-                              )}
+                          {/* Proxy & Limits */}
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() =>
+                              setSecurityTarget({
+                                platform: row.platform,
+                                accountId: row.id,
+                                displayName: row.displayName,
+                                uidOrMid: row.uidOrMid,
+                                accountType: row.accountType,
+                                proxyUrl: row.proxyUrl,
+                                monthlyQuota: row.monthlyQuota,
+                                monthlyConsumption: row.monthlyConsumption,
+                                status: row.status,
+                              })
+                            }
+                            title="Cài đặt Proxy, giới hạn gửi tin và sao lưu phiên"
+                            leftIcon={<ShieldCheck className="w-3.5 h-3.5 text-indigo-600" />}
+                          >
+                            Cài đặt Proxy & Giới hạn
+                          </Button>
 
-                            {/* OA Webhook & Credentials Config */}
-                            {row.accountType === 'OA' && row.rawLine && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => setLineOaTarget(row.rawLine!)}
-                                title="Cấu hình OA & Webhook"
-                              >
-                                <Settings className="w-4 h-4 text-emerald-700" />
-                              </Button>
-                            )}
-
-                            {/* Sync */}
-                            {row.status === 'ACTIVE' && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleSyncRow(row)}
-                                title="Đồng bộ danh bạ & nhóm"
-                              >
-                                <RefreshCw className="w-4 h-4 text-blue-600" />
-                              </Button>
-                            )}
-
-                            {/* Disconnect */}
-                            {row.status === 'ACTIVE' && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleDisconnectRow(row)}
-                                title="Ngắt kết nối"
-                              >
-                                <WifiOff className="w-4 h-4 text-amber-600" />
-                              </Button>
-                            )}
-
-                            {/* Delete */}
+                          {/* Disconnect */}
+                          {row.status === 'ACTIVE' && (
                             <Button
                               variant="ghost"
                               size="sm"
-                              onClick={() => handleDeleteRow(row)}
-                              title="Xóa tài khoản"
+                              onClick={() => handleDisconnectRow(row)}
+                              title="Ngắt kết nối tài khoản này"
+                              leftIcon={<WifiOff className="w-3.5 h-3.5 text-amber-600" />}
                             >
-                              <Trash2 className="w-4 h-4 text-red-500" />
+                              Ngắt kết nối
                             </Button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
+                          )}
+
+                          {/* Delete */}
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleDeleteRow(row)}
+                            title="Xóa tài khoản"
+                            leftIcon={<Trash2 className="w-3.5 h-3.5 text-red-500" />}
+                          >
+                            Xóa
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
         </div>
-      )}
+      </div>
 
       {/* Quick Create Account Modal */}
       {createChannelType && (
@@ -811,43 +820,43 @@ export const OmnichannelAccountsPage: React.FC<{ initialChannel?: ChannelFilterT
               {createChannelType === 'ZALO'
                 ? 'Thêm Tài khoản Zalo Cá nhân'
                 : createChannelType === 'LINE_OA'
-                  ? 'Thêm Tài khoản LINE Official Account (Bot OA)'
-                  : 'Thêm Tài khoản LINE Cá nhân (QR + E2EE 6-Digit PIN)'}
+                  ? 'Thêm Tài khoản LINE Official Account (OA)'
+                  : 'Thêm Tài khoản LINE Cá nhân (Quét mã QR)'}
             </h3>
 
             <form onSubmit={handleCreateQuickAccount} className="space-y-3">
               {createChannelType === 'ZALO' ? (
                 <>
                   <Input
-                    label="Tên hiển thị (Gợi nhớ)"
+                    label="Tên hiển thị (Để dễ phân biệt)"
                     value={zaloForm.display_name || ''}
                     onChange={(e) => setZaloForm({ ...zaloForm, display_name: e.target.value })}
-                    placeholder="VD: CSKH Edura - Nick 01"
+                    placeholder="VD: Zalo CSKH 01 - Hải Yến"
                   />
                   <Input
-                    label="Số điện thoại Zalo"
+                    label="Số điện thoại đăng ký Zalo"
                     value={zaloForm.zalo_phone || ''}
                     onChange={(e) => setZaloForm({ ...zaloForm, zalo_phone: e.target.value })}
                     placeholder="0901234567"
                   />
                   <Input
-                    label="Proxy URL riêng (Tùy chọn — undici ProxyAgent)"
+                    label="Địa chỉ Proxy riêng (Tùy chọn)"
                     value={zaloForm.proxy_url || ''}
                     onChange={(e) => setZaloForm({ ...zaloForm, proxy_url: e.target.value })}
-                    placeholder="http://user:pass@ip:port"
+                    placeholder="http://user:pass@ip:port (bỏ trống nếu dùng mạng trực tiếp)"
                   />
                 </>
               ) : createChannelType === 'LINE_OA' ? (
                 <>
                   <Input
-                    label="Tên LINE Official Account"
+                    label="Tên kênh LINE Official Account"
                     value={lineForm.display_name || ''}
                     onChange={(e) => setLineForm({ ...lineForm, display_name: e.target.value })}
-                    placeholder="VD: Edura Official OA"
+                    placeholder="VD: Edura CSKH Official"
                     required
                   />
                   <Input
-                    label="LINE Basic ID (VD: @edura)"
+                    label="Mã LINE ID (VD: @edura)"
                     value={lineForm.basic_id || ''}
                     onChange={(e) => setLineForm({ ...lineForm, basic_id: e.target.value })}
                     placeholder="@edura"
@@ -862,15 +871,15 @@ export const OmnichannelAccountsPage: React.FC<{ initialChannel?: ChannelFilterT
                     label="Channel Secret"
                     value={lineForm.channel_secret || ''}
                     onChange={(e) => setLineForm({ ...lineForm, channel_secret: e.target.value })}
-                    placeholder="Nhập Channel Secret từ LINE Developers Console"
+                    placeholder="Nhập Channel Secret từ trang quản trị LINE"
                   />
                   <Input
-                    label="Channel Access Token (Long-lived)"
+                    label="Channel Access Token"
                     value={lineForm.channel_access_token || ''}
                     onChange={(e) =>
                       setLineForm({ ...lineForm, channel_access_token: e.target.value })
                     }
-                    placeholder="Nhập Channel Access Token"
+                    placeholder="Nhập mã kết nối Channel Access Token"
                   />
                 </>
               ) : (
@@ -879,7 +888,7 @@ export const OmnichannelAccountsPage: React.FC<{ initialChannel?: ChannelFilterT
                     label="Tên hiển thị LINE Cá nhân"
                     value={lineForm.display_name || ''}
                     onChange={(e) => setLineForm({ ...lineForm, display_name: e.target.value })}
-                    placeholder="VD: CSKH LINE Personal 01"
+                    placeholder="VD: LINE CSKH 01 - Hải Yến"
                   />
                   <Input
                     label="Số điện thoại LINE"
@@ -888,10 +897,10 @@ export const OmnichannelAccountsPage: React.FC<{ initialChannel?: ChannelFilterT
                     placeholder="0901234567"
                   />
                   <Input
-                    label="Proxy URL riêng (Tùy chọn)"
+                    label="Địa chỉ Proxy riêng (Tùy chọn)"
                     value={lineForm.proxy_url || ''}
                     onChange={(e) => setLineForm({ ...lineForm, proxy_url: e.target.value })}
-                    placeholder="http://user:pass@ip:port"
+                    placeholder="http://user:pass@ip:port (bỏ trống nếu dùng mạng trực tiếp)"
                   />
                 </>
               )}
@@ -934,7 +943,7 @@ export const OmnichannelAccountsPage: React.FC<{ initialChannel?: ChannelFilterT
         />
       )}
 
-      {/* LINE Personal QR + 6-Digit E2EE PIN Dialog */}
+      {/* LINE Personal QR Login Dialog */}
       {lineQrTarget && (
         <LineQrLoginDialog
           account={lineQrTarget}
