@@ -834,29 +834,101 @@ export class LineService {
 
   async createOrUpdateLink(input: {
     student_id: number;
-    line_account_id: number;
+    line_account_id?: number;
+    line_group_id?: number | null;
+    target_type?: 'USER' | 'GROUP';
     relation_status?: ZaloContactRelationStatus;
     display_name?: string | null;
     avatar_url?: string | null;
     friend_line_uid?: string | null;
   }) {
     const relationStatus = input.relation_status ?? 'FRIEND';
-    const relation = await lineRepository.upsertContactRelation(
-      input.student_id,
-      input.line_account_id,
-      {
-        relation_status: relationStatus,
-        display_name: input.display_name,
-        avatar_url: input.avatar_url,
-        friend_line_uid: input.friend_line_uid,
-      },
-    );
 
-    if (input.friend_line_uid && relationStatus === 'FRIEND') {
+    let resolvedGroup: {
+      id: number;
+      line_group_id: string;
+      name: string | null;
+      avatar_url: string | null;
+      line_account_id: number;
+    } | null = null;
+
+    if (input.line_group_id != null && Number.isFinite(Number(input.line_group_id))) {
+      resolvedGroup = await prisma.lineGroup.findUnique({
+        where: { id: Number(input.line_group_id) },
+        select: {
+          id: true,
+          line_group_id: true,
+          name: true,
+          avatar_url: true,
+          line_account_id: true,
+        },
+      });
+      if (!resolvedGroup) {
+        const err: any = new Error('LINE group not found');
+        err.statusCode = 404;
+        throw err;
+      }
+    }
+
+    const effectiveAccountId = resolvedGroup?.line_account_id ?? Number(input.line_account_id);
+    if (!effectiveAccountId || !Number.isFinite(effectiveAccountId)) {
+      const err: any = new Error('line_account_id or line_group_id is required');
+      err.statusCode = 400;
+      throw err;
+    }
+
+    const isGroupLink = resolvedGroup != null || input.target_type === 'GROUP';
+    const targetType = isGroupLink ? 'GROUP' : 'USER';
+    const lineGroupId = resolvedGroup ? resolvedGroup.id : null;
+    const friendLineUid = resolvedGroup ? resolvedGroup.line_group_id : (input.friend_line_uid ?? null);
+    const displayName = resolvedGroup ? (input.display_name || resolvedGroup.name || null) : (input.display_name ?? null);
+    const avatarUrl = resolvedGroup ? (input.avatar_url ?? resolvedGroup.avatar_url ?? null) : (input.avatar_url ?? null);
+
+    const relation = await prisma.lineContactRelation.upsert({
+      where: {
+        student_id_line_account_id: {
+          student_id: input.student_id,
+          line_account_id: effectiveAccountId,
+        },
+      },
+      create: {
+        student_id: input.student_id,
+        line_account_id: effectiveAccountId,
+        relation_status: relationStatus,
+        target_type: targetType,
+        line_group_id: lineGroupId,
+        friend_line_uid: friendLineUid,
+        display_name: displayName,
+        avatar_url: avatarUrl,
+        matched_by: 'MANUAL',
+        last_checked_at: new Date(),
+      },
+      update: {
+        relation_status: relationStatus,
+        target_type: targetType,
+        line_group_id: lineGroupId,
+        friend_line_uid: friendLineUid,
+        display_name: displayName,
+        ...(avatarUrl !== null ? { avatar_url: avatarUrl } : {}),
+        matched_by: 'MANUAL',
+        last_checked_at: new Date(),
+      },
+      include: {
+        student: { select: { id: true, full_name: true, phone: true, email: true, line_uid: true } },
+        line_account: {
+          select: { id: true, display_name: true, account_type: true, basic_id: true, line_mid: true, status: true },
+        },
+        line_group: {
+          select: { id: true, line_group_id: true, name: true, avatar_url: true, member_count: true },
+        },
+      },
+    });
+
+    if (!isGroupLink && friendLineUid && relationStatus === 'FRIEND') {
       await prisma.student
         .update({
           where: { id: input.student_id },
-          data: { line_uid: input.friend_line_uid },
+          data: { line_uid: friendLineUid },
         })
         .catch(() => undefined);
     }
@@ -871,6 +943,8 @@ export class LineService {
       relation_status?: ZaloContactRelationStatus;
       new_line_account_id?: number;
       friend_line_uid?: string;
+      line_group_id?: number | null;
+      target_type?: 'USER' | 'GROUP';
     },
   ) {
     const existing = await prisma.lineContactRelation.findUnique({ where: { id: linkId } });
@@ -879,6 +953,50 @@ export class LineService {
       err.statusCode = 404;
       throw err;
     }
+
+    let resolvedGroup: {
+      id: number;
+      line_group_id: string;
+      name: string | null;
+      avatar_url: string | null;
+      line_account_id: number;
+    } | null = null;
+
+    if (data.line_group_id != null && Number.isFinite(Number(data.line_group_id))) {
+      resolvedGroup = await prisma.lineGroup.findUnique({
+        where: { id: Number(data.line_group_id) },
+        select: {
+          id: true,
+          line_group_id: true,
+          name: true,
+          avatar_url: true,
+          line_account_id: true,
+        },
+      });
+      if (!resolvedGroup) {
+        const err: any = new Error('LINE group not found');
+        err.statusCode = 404;
+        throw err;
+      }
+    }
+
+    const groupPatchFields = resolvedGroup
+      ? {
+          target_type: 'GROUP',
+          line_group_id: resolvedGroup.id,
+          line_account_id: data.new_line_account_id ?? resolvedGroup.line_account_id,
+          friend_line_uid: resolvedGroup.line_group_id,
+          display_name: data.display_name || resolvedGroup.name || existing.display_name,
+          avatar_url: resolvedGroup.avatar_url ?? existing.avatar_url,
+          matched_by: 'MANUAL',
+        }
+      : data.line_group_id === null || data.target_type === 'USER'
+        ? {
+            target_type: 'USER',
+            line_group_id: null,
+            matched_by: 'MANUAL',
+          }
+        : {};
 
     const updated = await prisma.lineContactRelation.update({
       where: { id: linkId },
@@ -889,17 +1007,21 @@ export class LineService {
           ? { line_account_id: data.new_line_account_id }
           : {}),
         ...(data.friend_line_uid !== undefined ? { friend_line_uid: data.friend_line_uid } : {}),
+        ...groupPatchFields,
         last_checked_at: new Date(),
       },
       include: {
         student: { select: { id: true, full_name: true, phone: true, email: true, line_uid: true } },
         line_account: {
-          select: { id: true, display_name: true, account_type: true, basic_id: true, line_mid: true },
+          select: { id: true, display_name: true, account_type: true, basic_id: true, line_mid: true, status: true },
+        },
+        line_group: {
+          select: { id: true, line_group_id: true, name: true, avatar_url: true, member_count: true },
         },
       },
     });
 
-    if (data.friend_line_uid && updated.relation_status === 'FRIEND') {
+    if (!resolvedGroup && updated.target_type !== 'GROUP' && data.friend_line_uid && updated.relation_status === 'FRIEND') {
       await prisma.student
         .update({
           where: { id: updated.student_id },

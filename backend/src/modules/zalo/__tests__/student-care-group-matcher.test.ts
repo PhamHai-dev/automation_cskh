@@ -37,9 +37,11 @@ jest.mock('../../../prisma/client', () => ({
     },
     zaloContactRelation: {
       upsert: jest.fn(),
+      deleteMany: jest.fn(),
     },
     lineContactRelation: {
       upsert: jest.fn(),
+      deleteMany: jest.fn(),
     },
   },
 }));
@@ -324,6 +326,159 @@ describe('Student Care Group Matcher Service (student-care-group-matcher.service
         }),
       );
       expect(mockEmit).toHaveBeenCalledWith('omnichannel:sync-complete', report);
+    });
+
+    test('ignores orphan/archived FRIEND relations with null group/uid/display_name and formats valid USER links with (Cá nhân)', async () => {
+      (prisma.user.findMany as jest.Mock).mockResolvedValue([
+        { id: 10, code: 'CVHT01', roles: ['CS'] },
+      ]);
+
+      (prisma.student.findMany as jest.Mock).mockResolvedValue([
+        {
+          id: 201,
+          external_id: 'HV_GHOST_01',
+          full_name: 'Học Viên Ghost Seed',
+          enrollments: [
+            {
+              id: 601,
+              cs: { id: 10, code: 'CVHT01', name: 'Trần Thị Hải Yến', email: 'yen@edura.vn' },
+            },
+          ],
+          // Old seed row with relation_status: 'FRIEND' but no group, no friend UID, no display_name
+          zalo_contact_relations: [
+            {
+              id: 1,
+              student_id: 201,
+              zalo_account_id: 1,
+              relation_status: 'FRIEND',
+              target_type: 'USER',
+              zalo_group_id: null,
+              friend_zalo_uid: null,
+              display_name: null,
+              zalo_account: { id: 1, display_name: 'Old Nick', status: 'DISABLED', archived_at: null },
+              zalo_group: null,
+            },
+          ],
+          line_contact_relations: [],
+        },
+        {
+          id: 202,
+          external_id: 'HV_ARCHIVED_02',
+          full_name: 'Học Viên Nick Đã Lưu Trữ',
+          enrollments: [
+            {
+              id: 602,
+              cs: { id: 10, code: 'CVHT01', name: 'Trần Thị Hải Yến', email: 'yen@edura.vn' },
+            },
+          ],
+          // Relation pointing to an archived Zalo account
+          zalo_contact_relations: [
+            {
+              id: 2,
+              student_id: 202,
+              zalo_account_id: 2,
+              relation_status: 'FRIEND',
+              target_type: 'USER',
+              zalo_group_id: null,
+              friend_zalo_uid: 'uid_archived',
+              display_name: 'Nick Archived',
+              zalo_account: {
+                id: 2,
+                display_name: 'Archived Nick',
+                status: 'DISABLED',
+                archived_at: new Date('2026-01-01T00:00:00Z'),
+              },
+              zalo_group: null,
+            },
+          ],
+          line_contact_relations: [],
+        },
+        {
+          id: 203,
+          external_id: 'HV_USER_FRIEND_03',
+          full_name: 'Lê Thị Mai',
+          enrollments: [
+            {
+              id: 603,
+              cs: { id: 10, code: 'CVHT01', name: 'Trần Thị Hải Yến', email: 'yen@edura.vn' },
+            },
+          ],
+          // Valid 1-1 USER friend link on active non-archived account
+          zalo_contact_relations: [
+            {
+              id: 3,
+              student_id: 203,
+              zalo_account_id: 7,
+              relation_status: 'FRIEND',
+              target_type: 'USER',
+              zalo_group_id: null,
+              friend_zalo_uid: 'zalo_uid_mai_203',
+              display_name: 'Mai Lê Zalo',
+              zalo_account: {
+                id: 7,
+                display_name: 'CS Hải Yến Zalo',
+                status: 'ACTIVE',
+                archived_at: null,
+              },
+              zalo_group: null,
+            },
+          ],
+          line_contact_relations: [
+            {
+              id: 4,
+              student_id: 203,
+              line_account_id: 9,
+              relation_status: 'FRIEND',
+              target_type: 'USER',
+              line_group_id: null,
+              friend_line_uid: 'U_line_mai_203',
+              display_name: 'Mai Lê LINE',
+              line_account: {
+                id: 9,
+                display_name: 'CS Hải Yến LINE',
+                status: 'ACTIVE',
+                archived_at: null,
+              },
+              line_group: null,
+            },
+          ],
+        },
+      ]);
+
+      (prisma.zaloGroup.findMany as jest.Mock).mockResolvedValue([]);
+      (prisma.lineGroup.findMany as jest.Mock).mockResolvedValue([]);
+      (prisma.zaloContactRelation.deleteMany as jest.Mock).mockResolvedValue({ count: 2 });
+
+      const report = await syncAndMatchCareGroups({
+        triggeredBy: 'manual',
+        refreshLiveGroups: false,
+      });
+
+      // Orphan cleanup was executed
+      expect(prisma.zaloContactRelation.deleteMany).toHaveBeenCalledTimes(1);
+
+      // Only student 203 is counted as linked; students 201 and 202 are unlinked
+      expect(report.totalEligibleStudents).toBe(3);
+      expect(report.linkedStudentsCount).toBe(1);
+      expect(report.unlinkedStudentsCount).toBe(2);
+
+      expect(report.linkedItems).toHaveLength(1);
+      expect(report.linkedItems[0]).toEqual(
+        expect.objectContaining({
+          studentId: 203,
+          zaloLinked: true,
+          zaloGroupName: 'Mai Lê Zalo (Cá nhân)',
+          zaloGroupId: 'zalo_uid_mai_203',
+          zaloAccountId: 7,
+          lineLinked: true,
+          lineGroupName: 'Mai Lê LINE (Cá nhân)',
+          lineGroupId: 'U_line_mai_203',
+          lineAccountId: 9,
+          newlyLinked: false,
+        }),
+      );
+
+      expect(report.unlinkedItems.map((u) => u.studentId)).toEqual([201, 202]);
     });
 
     test('registers runner with student-care-group.contract so runStudentCareGroupAutoSync works', async () => {

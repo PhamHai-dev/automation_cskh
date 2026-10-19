@@ -43,6 +43,20 @@ export class StudentsRepository {
           },
           orderBy: { created_at: 'desc' },
         },
+        zalo_contact_relations: {
+          where: { zalo_account: { archived_at: null } },
+          include: {
+            zalo_account: { select: { id: true, display_name: true, status: true } },
+            zalo_group: { select: { id: true, zalo_group_id: true, name: true, avatar_url: true, member_count: true } },
+          },
+        },
+        line_contact_relations: {
+          where: { line_account: { archived_at: null } },
+          include: {
+            line_account: { select: { id: true, display_name: true, account_type: true, status: true } },
+            line_group: { select: { id: true, line_group_id: true, name: true, avatar_url: true, member_count: true } },
+          },
+        },
       },
       orderBy: { id: 'asc' },
     });

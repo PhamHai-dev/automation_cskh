@@ -292,6 +292,30 @@ export async function syncAndMatchCareGroups(
   // ── Step 2: Load Eligible Students & Groups from DB ───────────────────────
   await ensureAllCsUsersHaveCodes();
 
+  // Clean up invalid/orphan ZaloContactRelation rows (no group, no friend UID, no display_name, or archived account)
+  try {
+    await (prisma.zaloContactRelation as any)?.deleteMany?.({
+      where: {
+        OR: [
+          {
+            zalo_group_id: null,
+            friend_zalo_uid: null,
+            display_name: null,
+          },
+          {
+            zalo_account: {
+              archived_at: { not: null },
+            },
+          },
+        ],
+      },
+    });
+  } catch (err) {
+    log.warn('Cleanup of orphan ZaloContactRelation rows non-critical warning', {
+      error: String(err),
+    });
+  }
+
   const studentWhere: any = {};
   if (options?.studentIds && options.studentIds.length > 0) {
     studentWhere.id = { in: options.studentIds };
@@ -316,6 +340,9 @@ export async function syncAndMatchCareGroups(
         },
         zalo_contact_relations: {
           include: {
+            zalo_account: {
+              select: { id: true, display_name: true, status: true, archived_at: true },
+            },
             zalo_group: {
               select: {
                 id: true,
@@ -330,6 +357,9 @@ export async function syncAndMatchCareGroups(
         },
         line_contact_relations: {
           include: {
+            line_account: {
+              select: { id: true, display_name: true, status: true, archived_at: true },
+            },
             line_group: {
               select: {
                 id: true,
@@ -467,23 +497,61 @@ export async function syncAndMatchCareGroups(
     let lineAccountId: number | null = null;
     let newlyLinkedLineForStudent = false;
 
-    // Check existing Zalo relations
+    // Check existing Zalo relations (only valid FRIEND links on non-archived accounts with group, friend UID, or display_name)
     const existingZaloRelations = student.zalo_contact_relations ?? [];
-    const existingZaloFriendRel = existingZaloRelations.find((r) => r.relation_status === 'FRIEND');
+    const isValidZaloRel = (r: (typeof existingZaloRelations)[number]) =>
+      r.relation_status === 'FRIEND' &&
+      (r as any).zalo_account?.archived_at == null &&
+      (r.zalo_group_id != null || Boolean(r.friend_zalo_uid?.trim()) || Boolean(r.display_name?.trim()));
+
+    const existingZaloFriendRel =
+      existingZaloRelations.find((r) => isValidZaloRel(r) && (r.target_type === 'GROUP' || r.zalo_group_id != null)) ??
+      existingZaloRelations.find(isValidZaloRel);
+
     if (existingZaloFriendRel) {
       zaloLinked = true;
-      zaloGroupName = existingZaloFriendRel.zalo_group?.name ?? existingZaloFriendRel.display_name ?? null;
-      zaloGroupId = existingZaloFriendRel.zalo_group?.zalo_group_id ?? existingZaloFriendRel.friend_zalo_uid ?? null;
+      const isGroupLink =
+        existingZaloFriendRel.target_type === 'GROUP' || existingZaloFriendRel.zalo_group_id != null;
+      zaloGroupName =
+        existingZaloFriendRel.zalo_group?.name ??
+        (existingZaloFriendRel.display_name
+          ? isGroupLink
+            ? existingZaloFriendRel.display_name
+            : `${existingZaloFriendRel.display_name} (Cá nhân)`
+          : `UID: ${existingZaloFriendRel.friend_zalo_uid}`);
+      zaloGroupId =
+        existingZaloFriendRel.zalo_group?.zalo_group_id ??
+        existingZaloFriendRel.friend_zalo_uid ??
+        null;
       zaloAccountId = existingZaloFriendRel.zalo_account_id;
     }
 
-    // Check existing LINE relations
+    // Check existing LINE relations (only valid FRIEND links on non-archived accounts with group, friend UID, or display_name)
     const existingLineRelations = student.line_contact_relations ?? [];
-    const existingLineFriendRel = existingLineRelations.find((r) => r.relation_status === 'FRIEND');
+    const isValidLineRel = (r: (typeof existingLineRelations)[number]) =>
+      r.relation_status === 'FRIEND' &&
+      (r as any).line_account?.archived_at == null &&
+      (r.line_group_id != null || Boolean(r.friend_line_uid?.trim()) || Boolean(r.display_name?.trim()));
+
+    const existingLineFriendRel =
+      existingLineRelations.find((r) => isValidLineRel(r) && (r.target_type === 'GROUP' || r.line_group_id != null)) ??
+      existingLineRelations.find(isValidLineRel);
+
     if (existingLineFriendRel) {
       lineLinked = true;
-      lineGroupName = existingLineFriendRel.line_group?.name ?? existingLineFriendRel.display_name ?? null;
-      lineGroupId = existingLineFriendRel.line_group?.line_group_id ?? existingLineFriendRel.friend_line_uid ?? null;
+      const isGroupLink =
+        existingLineFriendRel.target_type === 'GROUP' || existingLineFriendRel.line_group_id != null;
+      lineGroupName =
+        existingLineFriendRel.line_group?.name ??
+        (existingLineFriendRel.display_name
+          ? isGroupLink
+            ? existingLineFriendRel.display_name
+            : `${existingLineFriendRel.display_name} (Cá nhân)`
+          : `UID: ${existingLineFriendRel.friend_line_uid}`);
+      lineGroupId =
+        existingLineFriendRel.line_group?.line_group_id ??
+        existingLineFriendRel.friend_line_uid ??
+        null;
       lineAccountId = existingLineFriendRel.line_account_id;
     }
 
