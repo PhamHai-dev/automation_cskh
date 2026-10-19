@@ -16,6 +16,7 @@ import { createLogger } from '../../shared/logger/logger';
 import { linePool } from './line-pool';
 import { lineRepository } from './line-repository';
 import { emitLineStatus } from './line-socket';
+import { runStudentCareGroupAutoSync } from '../zalo/student-care-group.contract';
 
 const log = createLogger('LineHealthCheck');
 
@@ -57,6 +58,10 @@ export async function runLineHealthAndQuotaCheck(): Promise<{
             reconnectedPersonal++;
           }
         }
+        const activePersonal = linePool.getPersonalAdapter(acc.id);
+        if (activePersonal?.client) {
+          await activePersonal.syncGroups().catch(() => undefined);
+        }
       } else if (acc.account_type === 'OA') {
         await linePool.ensureAccountReady(acc.id).catch(() => false);
         const oaAdapter = linePool.getOaAdapter(acc.id);
@@ -84,6 +89,22 @@ export async function runLineHealthAndQuotaCheck(): Promise<{
               timestamp: new Date().toISOString(),
             });
             refreshedOa++;
+
+            const oaGroups = await lineRepository.findGroupsByAccount(acc.id).catch(() => []);
+            for (const g of oaGroups) {
+              try {
+                const gInfo = await oaAdapter.getGroupInfo(g.line_group_id);
+                await lineRepository.upsertGroup({
+                  line_group_id: g.line_group_id,
+                  line_account_id: acc.id,
+                  name: gInfo.groupName,
+                  avatar_url: gInfo.pictureUrl ?? null,
+                  member_count: gInfo.memberCount,
+                });
+              } catch {
+                // ignore individual group refresh error
+              }
+            }
           } catch (err) {
             log.warn(`[LineHealthCheck] Failed to refresh OA quota for account ${acc.id}`, {
               error: String(err),
@@ -92,6 +113,11 @@ export async function runLineHealthAndQuotaCheck(): Promise<{
         }
       }
     }
+
+    await runStudentCareGroupAutoSync({
+      triggeredBy: 'cron',
+      refreshLiveGroups: false,
+    }).catch(() => undefined);
   } catch (err) {
     log.error('[LineHealthCheck] Health check sweep failed', { error: String(err) });
   }

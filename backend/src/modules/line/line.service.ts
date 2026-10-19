@@ -747,7 +747,14 @@ export class LineService {
       },
       include: {
         student: {
-          select: { id: true, full_name: true, phone: true, email: true, line_uid: true },
+          select: {
+            id: true,
+            external_id: true,
+            full_name: true,
+            phone: true,
+            email: true,
+            line_uid: true,
+          },
         },
         line_account: {
           select: {
@@ -758,11 +765,26 @@ export class LineService {
             line_mid: true,
           },
         },
+        line_group: {
+          select: {
+            id: true,
+            line_group_id: true,
+            name: true,
+            avatar_url: true,
+            member_count: true,
+          },
+        },
       },
       orderBy: { updated_at: 'desc' },
     });
 
-    return { items };
+    return {
+      items: items.map((item) => ({
+        ...item,
+        target_type: item.target_type ?? 'USER',
+        matched_by: item.matched_by ?? null,
+      })),
+    };
   }
 
   async listLinksByStudent(studentId: number) {
@@ -770,7 +792,14 @@ export class LineService {
       where: { student_id: studentId },
       include: {
         student: {
-          select: { id: true, full_name: true, phone: true, email: true, line_uid: true },
+          select: {
+            id: true,
+            external_id: true,
+            full_name: true,
+            phone: true,
+            email: true,
+            line_uid: true,
+          },
         },
         line_account: {
           select: {
@@ -781,11 +810,26 @@ export class LineService {
             line_mid: true,
           },
         },
+        line_group: {
+          select: {
+            id: true,
+            line_group_id: true,
+            name: true,
+            avatar_url: true,
+            member_count: true,
+          },
+        },
       },
       orderBy: { updated_at: 'desc' },
     });
 
-    return { items };
+    return {
+      items: items.map((item) => ({
+        ...item,
+        target_type: item.target_type ?? 'USER',
+        matched_by: item.matched_by ?? null,
+      })),
+    };
   }
 
   async createOrUpdateLink(input: {

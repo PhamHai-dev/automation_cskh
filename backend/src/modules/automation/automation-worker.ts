@@ -168,8 +168,8 @@ export async function processDeliveryJob(job: Job<SendJobData>): Promise<void> {
           });
           providerMessageId = sent?.providerMessageId ?? null;
         } else {
-          const targetLineUid = await resolvePersonalTargetLineUid(delivery);
-          if (!targetLineUid) {
+          const lineTarget = await resolvePersonalTargetLine(delivery);
+          if (!lineTarget) {
             await prisma.messageDelivery.update({
               where: { id: deliveryId },
               data: { status: 'SKIPPED_NOT_FRIEND', error_message: 'No friend line_uid resolved' },
@@ -177,14 +177,25 @@ export async function processDeliveryJob(job: Job<SendJobData>): Promise<void> {
             log.info('No friend LINE UID resolved — skipping', { deliveryId });
             return;
           }
-          const sent = await dispatcher.sendPersonalMessage({
-            lineAccountId,
-            targetLineUid,
-            content: delivery.rendered_content,
-            retryKey,
-            sentVia: 'automation',
-          });
-          providerMessageId = sent?.providerMessageId ?? null;
+          if (lineTarget.isGroup) {
+            const sent = await dispatcher.sendGroupMessage({
+              lineAccountId,
+              targetLineGroupId: lineTarget.targetId,
+              content: delivery.rendered_content,
+              retryKey,
+              sentVia: 'automation',
+            });
+            providerMessageId = sent?.providerMessageId ?? null;
+          } else {
+            const sent = await dispatcher.sendPersonalMessage({
+              lineAccountId,
+              targetLineUid: lineTarget.targetId,
+              content: delivery.rendered_content,
+              retryKey,
+              sentVia: 'automation',
+            });
+            providerMessageId = sent?.providerMessageId ?? null;
+          }
         }
 
         await prisma.messageDelivery.update({
@@ -263,8 +274,8 @@ export async function processDeliveryJob(job: Job<SendJobData>): Promise<void> {
         const sent = await api.sendMessage(delivery.rendered_content, groupId, 1);
         providerMessageId = sent?.data?.messageId ?? sent?.msgId ?? sent?.messageId ?? null;
       } else {
-        const zaloUid = await resolvePersonalTargetZaloUid(delivery);
-        if (!zaloUid) {
+        const zaloTarget = await resolvePersonalTargetZalo(delivery);
+        if (!zaloTarget) {
           await prisma.messageDelivery.update({
             where: { id: deliveryId },
             data: { status: 'SKIPPED_NOT_FRIEND', error_message: 'No friend zalo_uid resolved' },
@@ -272,8 +283,8 @@ export async function processDeliveryJob(job: Job<SendJobData>): Promise<void> {
           log.info('No friend UID resolved — skipping', { deliveryId });
           return;
         }
-        // zca-js: sendMessage(content, threadId, threadType=0 for User)
-        const sent = await api.sendMessage(delivery.rendered_content, zaloUid, 0);
+        // zca-js: sendMessage(content, threadId, threadType: 0 for User, 1 for Care Group)
+        const sent = await api.sendMessage(delivery.rendered_content, zaloTarget.targetId, zaloTarget.threadType);
         providerMessageId = sent?.data?.messageId ?? sent?.msgId ?? sent?.messageId ?? null;
       }
 
@@ -390,29 +401,56 @@ function normalizePhoneForMatch(phone: string): string {
 }
 
 /**
- * Resolve the friend's line_uid for personal LINE sends.
+ * Resolve the friend's line_uid or Care Group ID for personal LINE sends.
  * Priority:
- *   1. LineContactRelation.friend_line_uid
- *   2. Student.line_uid
- *   3. 9-digit phone suffix match against LineFriend.phone_from_sdk (with backfill to LineContactRelation.friend_line_uid)
+ *   1. LineContactRelation with Care Group (target_type === 'GROUP', line_group.line_group_id, or friend_line_uid starting with 'C')
+ *   2. LineContactRelation.friend_line_uid (user)
+ *   3. Student.line_uid
+ *   4. 9-digit phone suffix match against LineFriend.phone_from_sdk (with backfill to LineContactRelation.friend_line_uid)
  */
-export async function resolvePersonalTargetLineUid(delivery: any): Promise<string | null> {
-  // 1. Try friend_line_uid stored on LineContactRelation
+export async function resolvePersonalTargetLine(
+  delivery: any,
+): Promise<{ targetId: string; isGroup: boolean } | null> {
+  // 1. Try LineContactRelation (including Care Group relation if linked after delivery creation)
   const relation = await prisma.lineContactRelation.findFirst({
     where: {
       student_id: delivery.enrollment.student_id,
       line_account_id: delivery.line_account_id,
       relation_status: 'FRIEND',
     },
-    select: { id: true, friend_line_uid: true },
+    include: {
+      line_group: { select: { id: true, line_group_id: true } },
+    },
   });
 
-  if (relation?.friend_line_uid) {
-    log.debug('Resolved target LINE UID from relation.friend_line_uid', {
-      deliveryId: delivery.id,
-      friendLineUid: relation.friend_line_uid,
-    });
-    return relation.friend_line_uid;
+  if (relation) {
+    const careGroupExternalId = relation.line_group?.line_group_id ?? null;
+    const isCareGroup =
+      relation.target_type === 'GROUP' ||
+      Boolean(careGroupExternalId) ||
+      Boolean(
+        relation.friend_line_uid &&
+          (relation.friend_line_uid.startsWith('C') || relation.friend_line_uid.startsWith('c')),
+      );
+
+    if (isCareGroup) {
+      const groupTargetId = careGroupExternalId || relation.friend_line_uid;
+      if (groupTargetId) {
+        log.debug('Resolved target LINE Care Group from relation', {
+          deliveryId: delivery.id,
+          targetLineGroupId: groupTargetId,
+        });
+        return { targetId: groupTargetId, isGroup: true };
+      }
+    }
+
+    if (relation.friend_line_uid) {
+      log.debug('Resolved target LINE UID from relation.friend_line_uid', {
+        deliveryId: delivery.id,
+        friendLineUid: relation.friend_line_uid,
+      });
+      return { targetId: relation.friend_line_uid, isGroup: false };
+    }
   }
 
   // 2. Try direct Student.line_uid
@@ -422,7 +460,10 @@ export async function resolvePersonalTargetLineUid(delivery: any): Promise<strin
       deliveryId: delivery.id,
       studentLineUid,
     });
-    return studentLineUid;
+    return {
+      targetId: studentLineUid,
+      isGroup: studentLineUid.startsWith('C') || studentLineUid.startsWith('c'),
+    };
   }
 
   // 3. Fallback: 9-digit phone suffix match against LineFriend.phone_from_sdk
@@ -461,33 +502,58 @@ export async function resolvePersonalTargetLineUid(delivery: any): Promise<strin
         data: { friend_line_uid: fallback.line_uid_in_nick },
       }).catch(() => {});
     }
+    return { targetId: fallback.line_uid_in_nick, isGroup: false };
   }
 
-  return fallback?.line_uid_in_nick ?? null;
+  return null;
+}
+
+export async function resolvePersonalTargetLineUid(delivery: any): Promise<string | null> {
+  const res = await resolvePersonalTargetLine(delivery);
+  return res?.targetId ?? null;
 }
 
 /**
- * Resolve the friend's zalo_uid for personal sends.
- * Looks in Friend table by student phone → friend.phone_from_sdk.
- * Uses suffix matching (last 9 digits) for cross-format compatibility.
+ * Resolve the friend's zalo_uid or Care Group ID for personal sends.
+ * If relation is linked to a Student Care Group (`target_type === 'GROUP'` or `zalo_group.zalo_group_id`),
+ * returns `threadType = 1` so zca-js sends to the Care Group.
+ * Otherwise looks in Friend table by student phone → friend.phone_from_sdk (`threadType = 0`).
  */
-async function resolvePersonalTargetZaloUid(delivery: any): Promise<string | null> {
-  // 1. Try friend_zalo_uid stored on ZaloContactRelation (fast path)
+export async function resolvePersonalTargetZalo(
+  delivery: any,
+): Promise<{ targetId: string; threadType: 0 | 1 } | null> {
+  // 1. Try ZaloContactRelation (including Care Group if linked after delivery creation)
   const relation = await prisma.zaloContactRelation.findFirst({
     where: {
       student_id: delivery.enrollment.student_id,
       zalo_account_id: delivery.zalo_account_id,
       relation_status: 'FRIEND',
     },
-    select: { id: true, friend_zalo_uid: true },
+    include: {
+      zalo_group: { select: { id: true, zalo_group_id: true } },
+    },
   });
 
-  if (relation?.friend_zalo_uid) {
-    log.debug('Resolved target UID from relation.friend_zalo_uid', {
-      deliveryId: delivery.id,
-      friendZaloUid: relation.friend_zalo_uid,
-    });
-    return relation.friend_zalo_uid;
+  if (relation) {
+    const careGroupExternalId = relation.zalo_group?.zalo_group_id ?? null;
+    if (relation.target_type === 'GROUP' || careGroupExternalId) {
+      const groupTargetId = careGroupExternalId || relation.friend_zalo_uid;
+      if (groupTargetId) {
+        log.debug('Resolved target Zalo Care Group from relation', {
+          deliveryId: delivery.id,
+          zaloGroupId: groupTargetId,
+        });
+        return { targetId: groupTargetId, threadType: 1 };
+      }
+    }
+
+    if (relation.friend_zalo_uid) {
+      log.debug('Resolved target UID from relation.friend_zalo_uid', {
+        deliveryId: delivery.id,
+        friendZaloUid: relation.friend_zalo_uid,
+      });
+      return { targetId: relation.friend_zalo_uid, threadType: 0 };
+    }
   }
 
   // 2. Fallback: phone-based suffix matching (legacy)
@@ -525,9 +591,15 @@ async function resolvePersonalTargetZaloUid(delivery: any): Promise<string | nul
         data: { friend_zalo_uid: fallback.zalo_uid_in_nick },
       }).catch(() => {});
     }
+    return { targetId: fallback.zalo_uid_in_nick, threadType: 0 };
   }
 
-  return fallback?.zalo_uid_in_nick ?? null;
+  return null;
+}
+
+export async function resolvePersonalTargetZaloUid(delivery: any): Promise<string | null> {
+  const res = await resolvePersonalTargetZalo(delivery);
+  return res?.targetId ?? null;
 }
 
 // ─── Worker singleton ────────────────────────────────────────────────
