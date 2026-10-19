@@ -22,6 +22,7 @@ import {
 } from './line-socket';
 import type { LinePersonalSessionData } from './types/line.types';
 import type { LineSendResult } from './line-dispatcher.contract';
+import { runStudentCareGroupAutoSync } from '../zalo/student-care-group.contract';
 
 const log = createLogger('LinePersonalAdapter');
 
@@ -487,8 +488,16 @@ export class LinePersonalAdapter {
     });
 
     this.startPollingListener(runEpoch);
-    void this.syncFriends().catch(() => undefined);
-    void this.syncGroups().catch(() => undefined);
+    void Promise.all([
+      this.syncFriends().catch(() => undefined),
+      this.syncGroups().catch(() => undefined),
+    ]).then(() => {
+      void runStudentCareGroupAutoSync({
+        triggeredBy: 'login',
+        lineAccountId: this.accountId,
+        refreshLiveGroups: false,
+      }).catch(() => undefined);
+    });
   }
 
   public startPollingListener(listenerEpoch = this.epoch): void {

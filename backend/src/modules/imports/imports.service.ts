@@ -7,6 +7,8 @@ import { ImportsRepository } from './imports.repository';
 import { SheetPreviewData, UploadResponse, ValidationReport, ValidationErrorItem, ValidationWarningItem, SaveMappingDTO, ImportBatchSummary, RequestActor, ReconcileItem, ReconcileClassification, LogicalSheet, MonthAttendanceBlock } from './imports.types';
 import { AppError } from '../../middlewares/error.middleware';
 import { normalizeDateOnly, attendanceStatusLabel } from '../attendance/attendance.utils';
+import { runStudentCareGroupAutoSync } from '../zalo/student-care-group.contract';
+import { getIo } from '../../shared/realtime/socket-singleton';
 
 export class ImportsService {
   private repo: ImportsRepository;
@@ -1632,7 +1634,26 @@ export class ImportsService {
       this.cleanupTempFiles(importId, meta);
     }
 
-    return { ...updated, conflict_attendances: 0 };
+    getIo()?.emit('import:sync-progress', {
+      importId,
+      stage: 'MATCHING_CARE_GROUPS',
+      message: 'Đang tự động dò tìm và gắn liên kết Nhóm Chăm sóc Zalo/LINE cho học viên...',
+    });
+    const careGroupSyncReport = await runStudentCareGroupAutoSync({
+      triggeredBy: 'import',
+      refreshLiveGroups: true,
+    }).catch(() => null);
+    getIo()?.emit('import:sync-progress', {
+      importId,
+      stage: 'COMPLETED',
+      report: careGroupSyncReport,
+    });
+
+    return {
+      ...updated,
+      conflict_attendances: 0,
+      care_group_sync_report: careGroupSyncReport,
+    };
   }
 
   // Execute import
@@ -2055,7 +2076,26 @@ export class ImportsService {
       },
     });
 
-    return { ...updatedBatch, conflict_attendances: totalConflictAttendances };
+    getIo()?.emit('import:sync-progress', {
+      importId,
+      stage: 'MATCHING_CARE_GROUPS',
+      message: 'Đang tự động dò tìm và gắn liên kết Nhóm Chăm sóc Zalo/LINE cho học viên...',
+    });
+    const careGroupSyncReport = await runStudentCareGroupAutoSync({
+      triggeredBy: 'import',
+      refreshLiveGroups: true,
+    }).catch(() => null);
+    getIo()?.emit('import:sync-progress', {
+      importId,
+      stage: 'COMPLETED',
+      report: careGroupSyncReport,
+    });
+
+    return {
+      ...updatedBatch,
+      conflict_attendances: totalConflictAttendances,
+      care_group_sync_report: careGroupSyncReport,
+    };
   }
 
   // Get batch by ID

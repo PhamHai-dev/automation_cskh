@@ -347,6 +347,9 @@ export async function resolveDeliveryTarget(
       },
     });
     if (csRelation) {
+      if (csRelation.line_group_id != null) {
+        return { lineAccountId: csRelation.line_account_id, lineGroupId: csRelation.line_group_id };
+      }
       return { lineAccountId: csRelation.line_account_id };
     }
 
@@ -359,6 +362,9 @@ export async function resolveDeliveryTarget(
       },
     });
     if (oaRelation) {
+      if (oaRelation.line_group_id != null) {
+        return { lineAccountId: oaRelation.line_account_id, lineGroupId: oaRelation.line_group_id };
+      }
       return { lineAccountId: oaRelation.line_account_id };
     }
 
@@ -371,6 +377,9 @@ export async function resolveDeliveryTarget(
       },
     });
     if (anyLineRelation) {
+      if (anyLineRelation.line_group_id != null) {
+        return { lineAccountId: anyLineRelation.line_account_id, lineGroupId: anyLineRelation.line_group_id };
+      }
       return { lineAccountId: anyLineRelation.line_account_id };
     }
 
@@ -414,6 +423,9 @@ export async function resolveDeliveryTarget(
     },
   });
   if (preferredRelation) {
+    if (preferredRelation.zalo_group_id != null) {
+      return { zaloAccountId: preferredRelation.zalo_account_id, zaloGroupId: preferredRelation.zalo_group_id };
+    }
     return { zaloAccountId: preferredRelation.zalo_account_id };
   }
 
@@ -425,6 +437,9 @@ export async function resolveDeliveryTarget(
     },
   });
   if (anyRelation) {
+    if (anyRelation.zalo_group_id != null) {
+      return { zaloAccountId: anyRelation.zalo_account_id, zaloGroupId: anyRelation.zalo_group_id };
+    }
     return { zaloAccountId: anyRelation.zalo_account_id };
   }
 
