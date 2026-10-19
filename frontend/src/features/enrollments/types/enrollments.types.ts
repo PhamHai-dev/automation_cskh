@@ -1,12 +1,31 @@
 import { Student } from '../../students/types/students.types';
 import { Package } from '../../packages/types/packages.types';
 
+export interface ProgramMetadata {
+  expected_start_date?: string | null;
+  active_state?: string | null;
+  satisfaction_score_b18?: string | null;
+  exam_registration?: string | null;
+  exam_score?: string | number | null;
+  exam_result?: string | null;
+  test_scores?: Record<string, string | number | null>;
+  special_support?: Record<string, string | null>;
+  renewal_note?: string | null;
+  latest_class_code?: string | null;
+  tuition_fee?: string | number | null;
+  paid_month?: string | null;
+  end_course_care?: string | null;
+}
+
 export interface Enrollment {
   id: number;
   external_id?: string;
   student_id: number;
   package_id?: number;
   cs_id: number;
+  program_type?: 'JLPT' | 'KAIWA' | string;
+  external_sync_key?: string | null;
+  program_metadata?: ProgramMetadata | null;
   paid_at?: string | null;
   sale_name?: string | null;
   student_source_status?: string | null;
@@ -59,6 +78,7 @@ export interface Enrollment {
     id: number;
     name: string;
     email: string;
+    staff_code?: string | null;
   };
   enrollment_classes?: Array<{
     id: number;

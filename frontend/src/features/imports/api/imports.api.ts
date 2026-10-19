@@ -1,5 +1,15 @@
 import { apiClient } from '../../../api/client';
-import { UploadResponse, SheetPreviewData, ValidationReport, ImportBatchSummary, ImportRowItem } from '../types/imports.types';
+import {
+  UploadResponse,
+  SheetPreviewData,
+  ValidationReport,
+  ImportBatchSummary,
+  ImportRowItem,
+  GoogleSheetSyncConfig,
+  CsUserOption,
+  UpdateGoogleSheetSyncConfigDTO,
+  SheetSyncResult,
+} from '../types/imports.types';
 
 export const importsApi = {
   upload: async (file: File, assignedCsId?: number): Promise<UploadResponse> => {
@@ -139,5 +149,38 @@ export const importsApi = {
   rejectCreateRequest: async (id: number, version: number, reason: string) => {
     const res = await apiClient.post(`/imports/create-requests/${id}/reject`, { version, reason });
     return res.data;
+  },
+
+  // Google Sheet Sync (JLPT & Kaiwa)
+  getSheetSyncConfigs: async (): Promise<{
+    configs: GoogleSheetSyncConfig[];
+    csUsers: CsUserOption[];
+  }> => {
+    const res = await apiClient.get('/imports/sheet-sync/configs');
+    return res.data?.data || res.data;
+  },
+
+  updateSheetSyncConfig: async (
+    code: string,
+    payload: UpdateGoogleSheetSyncConfigDTO
+  ): Promise<GoogleSheetSyncConfig> => {
+    const res = await apiClient.put(`/imports/sheet-sync/configs/${code}`, payload);
+    return res.data?.data || res.data;
+  },
+
+  runSheetSync: async (
+    code: string,
+    options?: { forceFullSync?: boolean; limit?: number }
+  ): Promise<SheetSyncResult> => {
+    const res = await apiClient.post(`/imports/sheet-sync/configs/${code}/sync`, options || {});
+    return res.data?.data || res.data;
+  },
+
+  runSheetSyncAll: async (options?: {
+    forceFullSync?: boolean;
+    limit?: number;
+  }): Promise<{ results: SheetSyncResult[] }> => {
+    const res = await apiClient.post('/imports/sheet-sync/sync-all', options || {});
+    return res.data?.data || res.data;
   },
 };

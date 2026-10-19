@@ -19,6 +19,7 @@ interface User {
   id: number;
   name: string;
   email: string;
+  staff_code?: string | null;
   roles: string[];
   active: boolean;
   last_login_at: string | null;
@@ -60,7 +61,7 @@ export const UsersPage: React.FC = () => {
   const [userToRevokeSessions, setUserToRevokeSessions] = useState<User | null>(null);
 
   // Form states
-  const [formData, setFormData] = useState({ name: '', email: '', password: '', roles: [] as string[] });
+  const [formData, setFormData] = useState({ name: '', email: '', password: '', staff_code: '', roles: [] as string[] });
 
   const fetchUsers = async () => {
     try {
@@ -81,10 +82,16 @@ export const UsersPage: React.FC = () => {
   const openModal = (user?: User) => {
     if (user) {
       setEditingUser(user);
-      setFormData({ name: user.name, email: user.email, password: '', roles: user.roles });
+      setFormData({
+        name: user.name,
+        email: user.email,
+        password: '',
+        staff_code: user.staff_code || '',
+        roles: user.roles,
+      });
     } else {
       setEditingUser(null);
-      setFormData({ name: '', email: '', password: '', roles: ['CS'] });
+      setFormData({ name: '', email: '', password: '', staff_code: '', roles: ['CS'] });
     }
     setIsModalOpen(true);
   };
@@ -109,11 +116,15 @@ export const UsersPage: React.FC = () => {
       if (editingUser) {
         await apiClient.patch(`/settings/users/${editingUser.id}`, {
           name: formData.name,
+          staff_code: formData.staff_code.trim() || null,
           roles: formData.roles,
         });
         toast.success('Cập nhật tài khoản người dùng thành công!');
       } else {
-        await apiClient.post('/settings/users', formData);
+        await apiClient.post('/settings/users', {
+          ...formData,
+          staff_code: formData.staff_code.trim() || null,
+        });
         toast.success('Tạo tài khoản người dùng mới thành công!');
       }
       closeModal();
@@ -152,7 +163,8 @@ export const UsersPage: React.FC = () => {
       const matchSearch =
         !searchTerm.trim() ||
         u.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        u.email.toLowerCase().includes(searchTerm.toLowerCase());
+        u.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (u.staff_code && u.staff_code.toLowerCase().includes(searchTerm.toLowerCase()));
 
       const matchRole = !roleFilter || u.roles.includes(roleFilter);
 
@@ -176,6 +188,17 @@ export const UsersPage: React.FC = () => {
           </div>
         </div>
       ),
+    },
+    {
+      header: 'Mã nhân viên / CVHT',
+      cell: (item) =>
+        item.staff_code ? (
+          <Badge variant="accent" className="font-mono font-bold">
+            {item.staff_code}
+          </Badge>
+        ) : (
+          <span className="text-xs text-slate-400 italic">—</span>
+        ),
     },
     {
       header: 'Vai trò (Roles)',
@@ -366,6 +389,12 @@ export const UsersPage: React.FC = () => {
             value={formData.email}
             onChange={(e) => setFormData({ ...formData, email: e.target.value })}
             placeholder="user@example.com"
+          />
+          <Input
+            label="Mã CVHT / Nhân viên (staff_code)"
+            value={formData.staff_code}
+            onChange={(e) => setFormData({ ...formData, staff_code: e.target.value.toUpperCase() })}
+            placeholder="VD: CVHT01, CVHT02, CVHT03..."
           />
           {!editingUser && (
             <Input

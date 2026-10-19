@@ -78,3 +78,70 @@ export interface ImportCreateRequest {
   version: number; status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'CONFLICT'; review_reason?: string; created_at: string;
   requested_by: { id: number; name: string | null; email: string }; assigned_cs?: { id: number; name: string | null; email: string };
 }
+
+export interface CsUserOption {
+  id: number;
+  name: string | null;
+  email: string;
+  staff_code: string | null;
+}
+
+export interface GoogleSheetSyncSummary {
+  totalRows?: number;
+  unchangedRows?: number;
+  createdCount?: number;
+  updatedCount?: number;
+  failedCount?: number;
+  byCvht?: Record<string, number>;
+  skipped?: boolean;
+}
+
+export interface GoogleSheetSyncConfig {
+  id: number;
+  code: 'JLPT' | 'KAIWA' | string;
+  name: string;
+  program_type: 'JLPT' | 'KAIWA' | string;
+  spreadsheet_url?: string | null;
+  spreadsheet_id?: string | null;
+  local_file_path?: string | null;
+  sheet_name: string;
+  setting_sheet_name?: string | null;
+  header_row: number;
+  cvht_mapping?: Record<string, number> | null;
+  default_cs_id?: number | null;
+  sync_interval_minutes: number;
+  enabled: boolean;
+  last_file_hash?: string | null;
+  last_synced_at?: string | null;
+  last_status?: string | null;
+  last_summary?: GoogleSheetSyncSummary | null;
+  last_error?: string | null;
+}
+
+export interface UpdateGoogleSheetSyncConfigDTO {
+  spreadsheet_url?: string | null;
+  local_file_path?: string | null;
+  sheet_name?: string;
+  setting_sheet_name?: string | null;
+  cvht_mapping?: Record<string, number>;
+  default_cs_id?: number | null;
+  sync_interval_minutes?: number;
+  enabled?: boolean;
+}
+
+export interface SheetSyncResult {
+  code?: string;
+  program_type?: string;
+  status?: string;
+  totalRows?: number;
+  unchangedRows?: number;
+  createdCount?: number;
+  updatedCount?: number;
+  failedCount?: number;
+  byCvht?: Record<string, number>;
+  skipped?: boolean;
+  summary?: GoogleSheetSyncSummary;
+  config?: GoogleSheetSyncConfig;
+  error?: string | null;
+}
+

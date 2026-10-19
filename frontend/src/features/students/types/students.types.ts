@@ -1,4 +1,6 @@
-import { Enrollment } from '../../enrollments/types/enrollments.types';
+import { Enrollment, ProgramMetadata } from '../../enrollments/types/enrollments.types';
+
+export type { ProgramMetadata };
 
 export interface Student {
   id: number;
@@ -68,6 +70,12 @@ export interface CreateStudentDTO {
   post_course_care?: string;
   handed_over_at?: string;
   account_created_at?: string;
+
+  // 5. Program & CVHT sync fields
+  program_type?: 'JLPT' | 'KAIWA' | string;
+  program_metadata?: Record<string, any>;
+  cs_id?: number;
+  package_code?: string;
 }
 
 export interface UpdateStudentDTO extends Partial<CreateStudentDTO> {}

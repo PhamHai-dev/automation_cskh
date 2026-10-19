@@ -53,6 +53,8 @@ export interface StudentRow {
   teacher_code?: string | null;     // Cột V: Mã GV
   class_name: string;               // Cột W: Tên lớp
   sale_name?: string | null;        // Sale phụ trách
+  program_type?: 'JLPT' | 'KAIWA' | string; // Khóa học (JLPT / KAIWA)
+  cs_staff_code?: string | null;    // Mã CVHT phụ trách
 }
 
 export interface AttendanceMatrixProps {
