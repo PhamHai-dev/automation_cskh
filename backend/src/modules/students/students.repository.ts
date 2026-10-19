@@ -163,6 +163,8 @@ export class StudentsRepository {
         data: {
           student_id: student.id,
           cs_id: csId,
+          program_type: data.program_type || 'KAIWA',
+          ...(data.program_metadata !== undefined ? { program_metadata: data.program_metadata as any } : {}),
           sale_name: data.sale_name ? String(data.sale_name).trim() : undefined,
           student_source_status: data.student_source_status || 'Học viên chuẩn',
           course_content: data.course_content || 'Tiếng Nhật Kaiwa',
