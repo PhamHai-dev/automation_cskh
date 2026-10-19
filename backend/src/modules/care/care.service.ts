@@ -6,6 +6,8 @@ import {
   CareTaskFilterParams,
   UpdateEnrollmentCareDTO,
   SaveSessionCareLogDTO,
+  AttendanceNotificationFilterParams,
+  AttendanceNotificationItem,
 } from './care.types';
 import { CareTaskPriority, CareTaskStatus, CareLogOutcome, CareTaskType } from '@prisma/client';
 import { AppError } from '../../middlewares/error.middleware';
@@ -287,5 +289,113 @@ export class CareService {
     }
 
     return this.repo.updateEnrollmentCareFields(enrollmentId, updateData);
+  }
+
+  // --- Attendance Notification Methods ---
+
+  private mapAuditLogToNotification(logRecord: any): AttendanceNotificationItem {
+    const payload = (logRecord.after_data || {}) as Record<string, any>;
+    return {
+      id: logRecord.id,
+      recipient_user_id: Number(payload.recipient_user_id ?? logRecord.entity_id),
+      recipient_role: payload.recipient_role || 'CS',
+      attendance_id: Number(payload.attendance_id || 0),
+      student_id: Number(payload.student_id || 0),
+      student_name: payload.student_name || '',
+      student_code: payload.student_code ?? null,
+      class_id: Number(payload.class_id || 0),
+      class_name: payload.class_name || '',
+      session_id: Number(payload.session_id || 0),
+      session_number: Number(payload.session_number || 0),
+      session_date: payload.session_date || '',
+      previous_status: payload.previous_status ?? null,
+      admin_status: payload.admin_status,
+      actor_id: Number(payload.actor_id ?? logRecord.user_id),
+      actor_name: payload.actor_name || 'Admin/Quản lý',
+      is_read: Boolean(payload.is_read),
+      read_at: payload.read_at ?? null,
+      created_at: logRecord.created_at,
+    };
+  }
+
+  async getNotifications(
+    filter: AttendanceNotificationFilterParams,
+    userId: number,
+    roles: string[]
+  ) {
+    const isPrivileged = roles.includes('ADMIN') || roles.includes('MANAGE');
+    const scopedRecipientId = isPrivileged ? filter.recipient_user_id : userId;
+
+    const logs = await this.repo.findNotificationLogs(scopedRecipientId);
+    const allItems = logs.map((l) => this.mapAuditLogToNotification(l));
+
+    const unreadCount = allItems.filter((item) => !item.is_read).length;
+
+    let filtered = allItems;
+    if (filter.status === 'unread') {
+      filtered = allItems.filter((item) => !item.is_read);
+    } else if (filter.status === 'read') {
+      filtered = allItems.filter((item) => item.is_read);
+    }
+
+    const total = filtered.length;
+    const limit = filter.limit ?? 50;
+    const offset = filter.offset ?? 0;
+    const items = filtered.slice(offset, offset + limit);
+
+    return { items, total, unreadCount };
+  }
+
+  async markNotificationRead(notificationId: number, userId: number, roles: string[]) {
+    const existing = await this.repo.findNotificationLogById(notificationId);
+    if (!existing) {
+      throw new AppError(404, 'Không tìm thấy thông báo');
+    }
+
+    const isPrivileged = roles.includes('ADMIN') || roles.includes('MANAGE');
+    if (!isPrivileged && existing.entity_id !== String(userId)) {
+      throw new AppError(403, 'Bạn không có quyền truy cập thông báo này');
+    }
+
+    const readAt = new Date().toISOString();
+    const updatedAfterData = {
+      ...((existing.after_data as object) || {}),
+      is_read: true,
+      read_at: readAt,
+    };
+
+    await this.repo.updateNotificationLogAfterData(notificationId, updatedAfterData);
+    return {
+      id: notificationId,
+      is_read: true,
+      read_at: readAt,
+    };
+  }
+
+  async markAllNotificationsRead(
+    userId: number,
+    roles: string[],
+    recipientUserId?: number
+  ) {
+    const isPrivileged = roles.includes('ADMIN') || roles.includes('MANAGE');
+    const scopedRecipientId = isPrivileged ? recipientUserId : userId;
+
+    const logs = await this.repo.findNotificationLogs(scopedRecipientId);
+    const unreadLogs = logs.filter((l) => {
+      const payload = (l.after_data || {}) as Record<string, any>;
+      return !Boolean(payload.is_read);
+    });
+
+    const readAt = new Date().toISOString();
+    for (const logRecord of unreadLogs) {
+      const updatedAfterData = {
+        ...((logRecord.after_data as object) || {}),
+        is_read: true,
+        read_at: readAt,
+      };
+      await this.repo.updateNotificationLogAfterData(logRecord.id, updatedAfterData);
+    }
+
+    return { updatedCount: unreadLogs.length };
   }
 }

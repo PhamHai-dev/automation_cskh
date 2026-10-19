@@ -101,7 +101,7 @@ export type AttendanceStatus = 'ATTENDED' | 'ABSENT_APPROVED_A' | 'LEAVE_B' | 'A
 
 export type AttendanceSource = 'MANUAL' | 'EXCEL_IMPORT' | 'TEACHER_UPLOAD';
 
-export type AttendanceSide = 'TEACHER' | 'CS';
+export type AttendanceSide = 'TEACHER' | 'CS' | 'ADMIN';
 export type ReconciliationState = 'PENDING_TEACHER' | 'PENDING_CS' | 'MATCHED' | 'CONFLICT' | 'RESOLVED';
 
 export interface Attendance {

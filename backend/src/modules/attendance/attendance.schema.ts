@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { AttendanceStatus } from '@prisma/client';
 
-const attendanceSideSchema = z.enum(['TEACHER', 'CS']);
+const attendanceSideSchema = z.enum(['TEACHER', 'CS', 'ADMIN']);
 
 export const markAttendanceSchema = z.object({
   body: z.object({

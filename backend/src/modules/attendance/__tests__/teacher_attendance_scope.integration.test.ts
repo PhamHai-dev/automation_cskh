@@ -386,10 +386,79 @@ describe('Teacher Attendance Scope Integration Tests', () => {
         .set('Authorization', `Bearer ${teacher1Token}`)
         .send({
           status: 'ABSENT_APPROVED_A',
+          lesson_topic: 'Kaiwa Bài 1',
+          teacher_note: 'Xin nghỉ phép',
         });
 
       expect(res.status).toBe(200);
-      expect(res.body.data.status).toBe('ABSENT_APPROVED_A');
+      expect(res.body.data.teacher_status).toBe('ABSENT_APPROVED_A');
+      expect(res.body.data.lesson_topic).toBe('Kaiwa Bài 1');
+      expect(res.body.data.teacher_note).toBe('Xin nghỉ phép');
+    });
+
+    it('Admin cannot mark TEACHER or CS side directly (403 Forbidden)', async () => {
+      const res = await request(app)
+        .post(`/api/v1/classes/${class1.id}/sessions/${session1.id}/attendance`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({
+          enrollment_class_id: ec1.id,
+          status: 'ATTENDED',
+          side: 'TEACHER',
+        });
+
+      expect(res.status).toBe(403);
+    });
+
+    it('Teacher cannot mark ADMIN side (403 Forbidden)', async () => {
+      const res = await request(app)
+        .post(`/api/v1/classes/${class1.id}/sessions/${session1.id}/attendance`)
+        .set('Authorization', `Bearer ${teacher1Token}`)
+        .send({
+          enrollment_class_id: ec1.id,
+          status: 'ATTENDED',
+          side: 'ADMIN',
+        });
+
+      expect(res.status).toBe(403);
+    });
+
+    it('Admin marking attendance updates final status (ADMIN side), ignores lesson_topic/teacher_note, and generates notifications', async () => {
+      const res = await request(app)
+        .patch(`/api/v1/classes/${class1.id}/sessions/${session1.id}/attendance/${attendance1Id}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({
+          status: 'ATTENDED',
+          lesson_topic: 'Admin không được ghi đè bài học',
+          teacher_note: 'Admin không được ghi đè ghi chú GV',
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.status).toBe('ATTENDED');
+      expect(res.body.data.reconciliation_state).toBe('RESOLVED');
+      expect(res.body.data.teacher_status).toBe('ABSENT_APPROVED_A');
+      expect(res.body.data.lesson_topic).toBe('Kaiwa Bài 1');
+      expect(res.body.data.teacher_note).toBe('Xin nghỉ phép');
+
+      // Check teacher notification via care-notifications API
+      const notifRes = await request(app)
+        .get('/api/v1/care-notifications?status=unread')
+        .set('Authorization', `Bearer ${teacher1Token}`);
+
+      expect(notifRes.status).toBe(200);
+      const notif = notifRes.body.data.find((n: any) => n.attendance_id === attendance1Id);
+      expect(notif).toBeDefined();
+      expect(notif.recipient_role).toBe('TEACHER');
+      expect(notif.previous_status).toBe('ABSENT_APPROVED_A');
+      expect(notif.admin_status).toBe('ATTENDED');
+      expect(notif.is_read).toBe(false);
+
+      // Mark notification read
+      const readRes = await request(app)
+        .post(`/api/v1/care-notifications/${notif.id}/read`)
+        .set('Authorization', `Bearer ${teacher1Token}`);
+
+      expect(readRes.status).toBe(200);
+      expect(readRes.body.data.is_read).toBe(true);
     });
 
     it('Teacher 2 cannot reset attendance for Class 1 (403 Forbidden)', async () => {

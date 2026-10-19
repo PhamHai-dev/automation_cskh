@@ -303,4 +303,36 @@ export class CareRepository {
       data,
     });
   }
+
+  // --- Attendance Notification Methods ---
+
+  async findNotificationLogs(recipientUserId?: number) {
+    const where: any = {
+      action: 'ATTENDANCE_ADMIN_NOTIFICATION',
+      entity_type: 'UserNotification',
+    };
+    if (recipientUserId !== undefined) {
+      where.entity_id = String(recipientUserId);
+    }
+    return this.db.auditLog.findMany({
+      where,
+      orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
+    });
+  }
+
+  async findNotificationLogById(id: number) {
+    return this.db.auditLog.findFirst({
+      where: {
+        id,
+        action: 'ATTENDANCE_ADMIN_NOTIFICATION',
+      },
+    });
+  }
+
+  async updateNotificationLogAfterData(id: number, afterData: any) {
+    return this.db.auditLog.update({
+      where: { id },
+      data: { after_data: afterData },
+    });
+  }
 }

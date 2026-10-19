@@ -19,15 +19,14 @@ import {
   formatClassCode,
 } from '../../classes/components/AttendanceMatrix';
 import { classSessionsApi, attendanceApi } from '../../classes/api/sessions.api';
-import { ClassSession, Attendance, AttendanceStatus } from '../../classes/types/classes.types';
-import { BarChart3, BookOpen, Calendar, Zap } from 'lucide-react';
+import { ClassSession, Attendance, AttendanceStatus, AttendanceSide } from '../../classes/types/classes.types';
+import { BarChart3, Calendar, Zap } from 'lucide-react';
 import { useColumnVisibility } from '../../preferences/hooks/useColumnVisibility';
 import { PreferenceScope } from '../../preferences/columns';
 
 const DEFAULT_STATUS_BY_TAB: Record<AttendanceTab, string> = {
   quick: 'STUDYING',
   detailed: 'STUDYING',
-  sessions: 'STUDYING',
   stats: '',
 };
 
@@ -41,8 +40,7 @@ export const EnrollmentsPage: React.FC = () => {
 
   // Tab & Filters state
   const [activeTab, setActiveTab] = useState<AttendanceTab>('quick');
-  const prefScope: PreferenceScope =
-    activeTab === 'sessions' ? 'enrollments.quick' : `enrollments.${activeTab}`;
+  const prefScope: PreferenceScope = `enrollments.${activeTab}`;
   const { visible: visibleColumns } = useColumnVisibility(prefScope);
 
   const [filters, setFilters] = useState<EnrollmentFilterState>(() => ({
@@ -441,7 +439,7 @@ export const EnrollmentsPage: React.FC = () => {
     pendingEdits: Record<string, AttendanceStatus>,
     _customValues?: Record<string, number>,
     sessionIndex = 0,
-    side?: 'TEACHER' | 'CS'
+    side?: AttendanceSide
   ) => {
     const entries = Object.entries(pendingEdits);
     if (entries.length === 0) return;
@@ -496,7 +494,6 @@ export const EnrollmentsPage: React.FC = () => {
         items={[
           { value: 'quick', label: 'Điểm danh nhanh', icon: <Zap /> },
           { value: 'detailed', label: 'Điểm danh chi tiết', icon: <Calendar /> },
-          { value: 'sessions', label: 'Buổi học', icon: <BookOpen /> },
           { value: 'stats', label: 'Thống kê', icon: <BarChart3 /> },
         ]}
       />

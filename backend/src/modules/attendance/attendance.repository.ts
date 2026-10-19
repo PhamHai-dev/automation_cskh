@@ -1,5 +1,5 @@
 import { prisma } from '../../prisma/client';
-import { MarkAttendanceDTO, BulkMarkAttendanceDTO, UpdateAttendanceDTO } from './attendance.types';
+import { AttendanceSide, UpdateAttendanceDTO } from './attendance.types';
 import { Prisma, AttendanceStatus, ReconciliationState } from '@prisma/client';
 
 export class AttendanceRepository {
@@ -43,14 +43,13 @@ export class AttendanceRepository {
     });
   }
 
-
   async mark(
     enrollmentClassId: number,
     classSessionId: number,
     status: string,
     source: string,
     userId: number,
-    side: 'TEACHER' | 'CS',
+    side: AttendanceSide,
     options?: {
       lesson_topic?: string | null;
       teacher_note?: string | null;
@@ -58,6 +57,7 @@ export class AttendanceRepository {
     },
   ) {
     const isTeacher = side === 'TEACHER';
+    const isAdmin = side === 'ADMIN';
     const parsedStatus = status as AttendanceStatus;
 
     return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
@@ -71,7 +71,9 @@ export class AttendanceRepository {
       });
 
       let recState: ReconciliationState;
-      if (isTeacher) {
+      if (isAdmin) {
+        recState = ReconciliationState.RESOLVED;
+      } else if (isTeacher) {
         if (existing?.cs_status) {
           recState = existing.cs_status === parsedStatus ? ReconciliationState.MATCHED : ReconciliationState.CONFLICT;
         } else {
@@ -85,10 +87,12 @@ export class AttendanceRepository {
         }
       }
 
+      const now = new Date();
+
       const updateData: any = {
         source: source as any,
         reconciliation_state: recState,
-        ...(recState === ReconciliationState.MATCHED ? { status: parsedStatus } : {}),
+        ...(recState === ReconciliationState.MATCHED || isAdmin ? { status: parsedStatus } : {}),
         deleted_at: null,
         deleted_by_id: null,
       };
@@ -102,33 +106,42 @@ export class AttendanceRepository {
         created_by_id: userId,
       };
 
-      if (options?.lesson_topic !== undefined) {
-        updateData.lesson_topic = options.lesson_topic;
-        createData.lesson_topic = options.lesson_topic;
-      }
-      if (options?.teacher_note !== undefined) {
-        updateData.teacher_note = options.teacher_note;
-        createData.teacher_note = options.teacher_note;
+      if (isTeacher) {
+        if (options?.lesson_topic !== undefined) {
+          updateData.lesson_topic = options.lesson_topic;
+          createData.lesson_topic = options.lesson_topic;
+        }
+        if (options?.teacher_note !== undefined) {
+          updateData.teacher_note = options.teacher_note;
+          createData.teacher_note = options.teacher_note;
+        }
       }
       if (options?.cs_note !== undefined) {
         updateData.cs_note = options.cs_note;
         createData.cs_note = options.cs_note;
       }
 
-      if (isTeacher) {
+      if (isAdmin) {
+        updateData.resolved_by_id = userId;
+        updateData.resolved_at = now;
+        createData.resolved_by_id = userId;
+        createData.resolved_at = now;
+        createData.teacher_status = null;
+        createData.cs_status = null;
+      } else if (isTeacher) {
         updateData.teacher_status = parsedStatus;
         updateData.teacher_user_id = userId;
-        updateData.teacher_submitted_at = new Date();
+        updateData.teacher_submitted_at = now;
         createData.teacher_status = parsedStatus;
         createData.teacher_user_id = userId;
-        createData.teacher_submitted_at = new Date();
+        createData.teacher_submitted_at = now;
       } else {
         updateData.cs_status = parsedStatus;
         updateData.cs_user_id = userId;
-        updateData.cs_submitted_at = new Date();
+        updateData.cs_submitted_at = now;
         createData.cs_status = parsedStatus;
         createData.cs_user_id = userId;
-        createData.cs_submitted_at = new Date();
+        createData.cs_submitted_at = now;
       }
 
       const attendance = await tx.attendance.upsert({
@@ -156,9 +169,10 @@ export class AttendanceRepository {
     classSessionId: number,
     source: string,
     userId: number,
-    side: 'TEACHER' | 'CS',
+    side: AttendanceSide,
   ) {
     const isTeacher = side === 'TEACHER';
+    const isAdmin = side === 'ADMIN';
 
     return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       const results = [];
@@ -175,7 +189,9 @@ export class AttendanceRepository {
         });
 
         let recState: ReconciliationState;
-        if (isTeacher) {
+        if (isAdmin) {
+          recState = ReconciliationState.RESOLVED;
+        } else if (isTeacher) {
           if (existing?.cs_status) {
             recState = existing.cs_status === parsedStatus ? ReconciliationState.MATCHED : ReconciliationState.CONFLICT;
           } else {
@@ -189,10 +205,12 @@ export class AttendanceRepository {
           }
         }
 
+        const now = new Date();
+
         const updateData: any = {
           source: source as any,
           reconciliation_state: recState,
-          ...(recState === ReconciliationState.MATCHED ? { status: parsedStatus } : {}),
+          ...(recState === ReconciliationState.MATCHED || isAdmin ? { status: parsedStatus } : {}),
           deleted_at: null,
           deleted_by_id: null,
         };
@@ -206,33 +224,42 @@ export class AttendanceRepository {
           created_by_id: userId,
         };
 
-        if (item.lesson_topic !== undefined) {
-          updateData.lesson_topic = item.lesson_topic;
-          createData.lesson_topic = item.lesson_topic;
-        }
-        if (item.teacher_note !== undefined) {
-          updateData.teacher_note = item.teacher_note;
-          createData.teacher_note = item.teacher_note;
+        if (isTeacher) {
+          if (item.lesson_topic !== undefined) {
+            updateData.lesson_topic = item.lesson_topic;
+            createData.lesson_topic = item.lesson_topic;
+          }
+          if (item.teacher_note !== undefined) {
+            updateData.teacher_note = item.teacher_note;
+            createData.teacher_note = item.teacher_note;
+          }
         }
         if (item.cs_note !== undefined) {
           updateData.cs_note = item.cs_note;
           createData.cs_note = item.cs_note;
         }
 
-        if (isTeacher) {
+        if (isAdmin) {
+          updateData.resolved_by_id = userId;
+          updateData.resolved_at = now;
+          createData.resolved_by_id = userId;
+          createData.resolved_at = now;
+          createData.teacher_status = null;
+          createData.cs_status = null;
+        } else if (isTeacher) {
           updateData.teacher_status = parsedStatus;
           updateData.teacher_user_id = userId;
-          updateData.teacher_submitted_at = new Date();
+          updateData.teacher_submitted_at = now;
           createData.teacher_status = parsedStatus;
           createData.teacher_user_id = userId;
-          createData.teacher_submitted_at = new Date();
+          createData.teacher_submitted_at = now;
         } else {
           updateData.cs_status = parsedStatus;
           updateData.cs_user_id = userId;
-          updateData.cs_submitted_at = new Date();
+          updateData.cs_submitted_at = now;
           createData.cs_status = parsedStatus;
           createData.cs_user_id = userId;
-          createData.cs_submitted_at = new Date();
+          createData.cs_submitted_at = now;
         }
 
         const attendance = await tx.attendance.upsert({
@@ -251,7 +278,7 @@ export class AttendanceRepository {
     });
   }
 
-  async update(attendanceId: number, data: UpdateAttendanceDTO, userId: number, side: 'TEACHER' | 'CS') {
+  async update(attendanceId: number, data: UpdateAttendanceDTO, userId: number, side: AttendanceSide) {
     return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       const existing = await tx.attendance.findUnique({ where: { id: attendanceId } });
       if (!existing) throw new Error('Attendance not found');
@@ -260,35 +287,44 @@ export class AttendanceRepository {
 
       if (data.status !== undefined) {
         const parsedStatus = data.status as AttendanceStatus;
-        const teacherStatus = side === 'TEACHER' ? parsedStatus : existing.teacher_status;
-        const csStatus = side === 'CS' ? parsedStatus : existing.cs_status;
-        const recState = teacherStatus && csStatus
-          ? (teacherStatus === csStatus ? ReconciliationState.MATCHED : ReconciliationState.CONFLICT)
-          : (teacherStatus ? ReconciliationState.PENDING_CS : ReconciliationState.PENDING_TEACHER);
-
-        if (side === 'TEACHER') {
-          updateData.teacher_status = parsedStatus;
-          updateData.teacher_user_id = userId;
-          updateData.teacher_submitted_at = new Date();
-        } else {
-          updateData.cs_status = parsedStatus;
-          updateData.cs_user_id = userId;
-          updateData.cs_submitted_at = new Date();
-        }
-        updateData.reconciliation_state = recState;
-        if (recState === ReconciliationState.MATCHED) {
+        if (side === 'ADMIN') {
           updateData.status = parsedStatus;
+          updateData.reconciliation_state = ReconciliationState.RESOLVED;
+          updateData.resolved_by_id = userId;
+          updateData.resolved_at = new Date();
+        } else {
+          const teacherStatus = side === 'TEACHER' ? parsedStatus : existing.teacher_status;
+          const csStatus = side === 'CS' ? parsedStatus : existing.cs_status;
+          const recState = teacherStatus && csStatus
+            ? (teacherStatus === csStatus ? ReconciliationState.MATCHED : ReconciliationState.CONFLICT)
+            : (teacherStatus ? ReconciliationState.PENDING_CS : ReconciliationState.PENDING_TEACHER);
+
+          if (side === 'TEACHER') {
+            updateData.teacher_status = parsedStatus;
+            updateData.teacher_user_id = userId;
+            updateData.teacher_submitted_at = new Date();
+          } else {
+            updateData.cs_status = parsedStatus;
+            updateData.cs_user_id = userId;
+            updateData.cs_submitted_at = new Date();
+          }
+          updateData.reconciliation_state = recState;
+          if (recState === ReconciliationState.MATCHED) {
+            updateData.status = parsedStatus;
+          }
+          updateData.resolved_by_id = null;
+          updateData.resolved_at = null;
+          updateData.resolution_note = null;
         }
-        updateData.resolved_by_id = null;
-        updateData.resolved_at = null;
-        updateData.resolution_note = null;
       }
 
-      if (data.lesson_topic !== undefined) {
-        updateData.lesson_topic = data.lesson_topic;
-      }
-      if (data.teacher_note !== undefined) {
-        updateData.teacher_note = data.teacher_note;
+      if (side === 'TEACHER') {
+        if (data.lesson_topic !== undefined) {
+          updateData.lesson_topic = data.lesson_topic;
+        }
+        if (data.teacher_note !== undefined) {
+          updateData.teacher_note = data.teacher_note;
+        }
       }
       if (data.cs_note !== undefined) {
         updateData.cs_note = data.cs_note;
@@ -301,10 +337,60 @@ export class AttendanceRepository {
     });
   }
 
-  async reset(attendanceId: number, userId: number, side: 'TEACHER' | 'CS') {
+  async reset(attendanceId: number, userId: number, side: AttendanceSide) {
     return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       const existing = await tx.attendance.findUnique({ where: { id: attendanceId } });
       if (!existing) throw new Error('Attendance not found');
+
+      if (side === 'ADMIN') {
+        const teacherStatus = existing.teacher_status;
+        const csStatus = existing.cs_status;
+        const hasAnyOpinion = Boolean(teacherStatus || csStatus);
+
+        let reconciliationState: ReconciliationState = existing.reconciliation_state;
+        if (hasAnyOpinion) {
+          if (teacherStatus && csStatus) {
+            reconciliationState = teacherStatus === csStatus ? ReconciliationState.MATCHED : ReconciliationState.CONFLICT;
+          } else if (teacherStatus) {
+            reconciliationState = ReconciliationState.PENDING_CS;
+          } else {
+            reconciliationState = ReconciliationState.PENDING_TEACHER;
+          }
+        }
+
+        const attendance = await tx.attendance.update({
+          where: { id: attendanceId },
+          data: {
+            ...(hasAnyOpinion
+              ? {
+                  status: teacherStatus || csStatus || existing.status,
+                  reconciliation_state: reconciliationState,
+                  resolved_by_id: null,
+                  resolved_at: null,
+                  resolution_note: null,
+                  deleted_at: null,
+                  deleted_by_id: null,
+                }
+              : {
+                  resolved_by_id: null,
+                  resolved_at: null,
+                  resolution_note: null,
+                  deleted_at: new Date(),
+                  deleted_by_id: userId,
+                }),
+          },
+        });
+
+        await tx.messageDelivery.updateMany({
+          where: {
+            attendance_id: attendanceId,
+            status: { in: ['SCHEDULED', 'QUEUED'] },
+          },
+          data: { status: 'CANCELLED' },
+        });
+        return attendance;
+      }
+
       const teacherStatus = side === 'TEACHER' ? null : existing.teacher_status;
       const csStatus = side === 'CS' ? null : existing.cs_status;
       const hasAnyOpinion = Boolean(teacherStatus || csStatus);

@@ -23,10 +23,7 @@ import {
   Clock,
   Users,
   BarChart3,
-  BookOpen,
   Save,
-  Search,
-  MessageSquare,
 } from 'lucide-react';
 
 export { formatClassCode };
@@ -76,7 +73,7 @@ export interface AttendanceMatrixProps {
   visibleColumns?: Record<string, boolean>;
 }
 
-export type AttendanceTab = 'quick' | 'detailed' | 'sessions' | 'stats';
+export type AttendanceTab = 'quick' | 'detailed' | 'stats';
 
 const formatClassModel = (model?: string | null): string => {
   const labels: Record<string, string> = {
@@ -172,6 +169,7 @@ interface AttendancePickerPopoverProps {
   attendance: Attendance | undefined;
   rawAttendance?: Attendance | undefined;
   saving: boolean;
+  canEditTeacherNote?: boolean;
   onSelectStatus: (
     session: ClassSession | undefined,
     status: AttendanceStatus,
@@ -233,6 +231,7 @@ const AttendancePickerPopover: React.FC<AttendancePickerPopoverProps> = ({
   attendance,
   rawAttendance,
   saving,
+  canEditTeacherNote = false,
   onSelectStatus,
   onSaveNote,
   onClear,
@@ -337,10 +336,16 @@ const AttendancePickerPopover: React.FC<AttendancePickerPopoverProps> = ({
               aria-selected={active}
               disabled={saving}
               onClick={() =>
-                onSelectStatus(targetSession, status, {
-                  lesson_topic: lessonTopic.trim() || null,
-                  teacher_note: teacherNote.trim() || null,
-                })
+                onSelectStatus(
+                  targetSession,
+                  status,
+                  canEditTeacherNote
+                    ? {
+                        lesson_topic: lessonTopic.trim() || null,
+                        teacher_note: teacherNote.trim() || null,
+                      }
+                    : undefined
+                )
               }
               className={`flex h-7 w-full items-center justify-between rounded-lg border px-2.5 text-left text-xs font-extrabold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 disabled:cursor-not-allowed disabled:opacity-60 ${active ? 'ring-2 ring-primary ring-offset-1' : ''} ${option.bg} ${option.text} ${option.border}`}
             >
@@ -363,48 +368,50 @@ const AttendancePickerPopover: React.FC<AttendancePickerPopoverProps> = ({
         )}
       </div>
 
-      {/* Khu vực nhập Bài học & Ghi chú GV theo buổi */}
-      <div className="mt-2 border-t border-border/70 pt-2 space-y-1.5">
-        <div>
-          <label className="block text-[10px] font-bold text-text-secondary uppercase tracking-wide mb-0.5">
-            Bài học (Lesson)
-          </label>
-          <input
-            type="text"
-            value={lessonTopic}
-            onChange={(e) => setLessonTopic(e.target.value)}
-            placeholder="VD: Bài 4, Kaiwa 2..."
-            className="w-full h-7 px-2 rounded-lg border border-border text-xs bg-white text-text-primary focus:outline-none focus:ring-1 focus:ring-primary select-text"
-          />
+      {/* Khu vực nhập Bài học & Ghi chú GV theo buổi — chỉ hiển thị cho Giáo viên */}
+      {canEditTeacherNote && (
+        <div className="mt-2 border-t border-border/70 pt-2 space-y-1.5">
+          <div>
+            <label className="block text-[10px] font-bold text-text-secondary uppercase tracking-wide mb-0.5">
+              Bài học (Lesson)
+            </label>
+            <input
+              type="text"
+              value={lessonTopic}
+              onChange={(e) => setLessonTopic(e.target.value)}
+              placeholder="VD: Bài 4, Kaiwa 2..."
+              className="w-full h-7 px-2 rounded-lg border border-border text-xs bg-white text-text-primary focus:outline-none focus:ring-1 focus:ring-primary select-text"
+            />
+          </div>
+          <div>
+            <label className="block text-[10px] font-bold text-text-secondary uppercase tracking-wide mb-0.5">
+              Ghi chú GV theo buổi
+            </label>
+            <textarea
+              rows={2}
+              value={teacherNote}
+              onChange={(e) => setTeacherNote(e.target.value)}
+              placeholder="Nhận xét buổi học, BTVN..."
+              className="w-full px-2 py-1 rounded-lg border border-border text-xs bg-white text-text-primary focus:outline-none focus:ring-1 focus:ring-primary resize-none select-text"
+            />
+          </div>
+          <button
+            type="button"
+            disabled={saving}
+            onClick={() =>
+              onSaveNote(
+                targetSession,
+                lessonTopic.trim() || null,
+                teacherNote.trim() || null
+              )
+            }
+            className="flex h-7 w-full items-center justify-center gap-1 rounded-lg bg-primary px-2.5 text-[11px] font-bold text-white shadow-2xs transition hover:bg-primary/90 disabled:opacity-50"
+          >
+            <Save className="h-3 w-3" />
+            <span>Lưu bài học & ghi chú</span>
+          </button>
         </div>
-        <div>
-          <label className="block text-[10px] font-bold text-text-secondary uppercase tracking-wide mb-0.5">
-            Ghi chú GV theo buổi
-          </label>
-          <textarea
-            rows={2}
-            value={teacherNote}
-            onChange={(e) => setTeacherNote(e.target.value)}
-            placeholder="Nhận xét buổi học, BTVN..."
-            className="w-full px-2 py-1 rounded-lg border border-border text-xs bg-white text-text-primary focus:outline-none focus:ring-1 focus:ring-primary resize-none select-text"
-          />
-        </div>
-        <button
-          type="button"
-          disabled={saving}
-          onClick={() =>
-            onSaveNote(
-              targetSession,
-              lessonTopic.trim() || null,
-              teacherNote.trim() || null
-            )
-          }
-          className="flex h-7 w-full items-center justify-center gap-1 rounded-lg bg-primary px-2.5 text-[11px] font-bold text-white shadow-2xs transition hover:bg-primary/90 disabled:opacity-50"
-        >
-          <Save className="h-3 w-3" />
-          <span>Lưu bài học & ghi chú</span>
-        </button>
-      </div>
+      )}
     </div>,
     document.body
   );
@@ -428,13 +435,14 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
 
   const toast = useToast();
   const { user } = useAuth();
-  const privilegedSideChoice = Boolean(user?.roles.some((role) => role === 'ADMIN' || role === 'MANAGE'));
-  const defaultSide: AttendanceSide = user?.roles.includes('TEACHER') && !user?.roles.includes('CS') ? 'TEACHER' : 'CS';
-  const [selectedSide, setSelectedSide] = useState<AttendanceSide>(defaultSide);
+  const isAdminOrManage = Boolean(user?.roles.some((role) => role === 'ADMIN' || role === 'MANAGE'));
+  const isCSOnly = Boolean(user?.roles.includes('CS') && !isAdminOrManage);
+  const isTeacherOnly = Boolean(user?.roles.includes('TEACHER') && !isAdminOrManage && !user?.roles.includes('CS'));
+  const selectedSide: AttendanceSide = isAdminOrManage ? 'ADMIN' : isCSOnly ? 'CS' : 'TEACHER';
 
   const [internalActiveTab] = useState<AttendanceTab>('quick');
   const activeTab = controlledActiveTab ?? internalActiveTab;
-  const activeSide: AttendanceSide = activeTab === 'quick' ? 'CS' : selectedSide;
+  const activeSide: AttendanceSide = selectedSide;
 
   // Tab 1 (Quick Attendance) specific date state (Default: Today)
   const [quickDate, setQuickDate] = useState<string>(() => toLocalDateString(new Date()));
@@ -579,7 +587,12 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
   const attendanceMap = useMemo(() => {
     const map = new Map<string, Attendance>();
     rawAttendanceMap.forEach((a, key) => {
-      const visibleStatus = activeSide === 'TEACHER' ? a.teacher_status : a.cs_status;
+      const visibleStatus =
+        activeSide === 'ADMIN'
+          ? a.status
+          : activeSide === 'TEACHER'
+          ? a.teacher_status
+          : a.cs_status;
       if (!visibleStatus) return;
       map.set(key, { ...a, status: visibleStatus });
     });
@@ -674,7 +687,12 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
         if (!dStr || processedDates.has(dStr) || clearedKeys.has(`${s.enrollment_class_id}_${dStr}`)) return;
         processedDates.add(dStr);
 
-        const status = selectedSide === 'TEACHER' ? a.teacher_status : a.cs_status;
+        const status =
+          selectedSide === 'ADMIN'
+            ? a.status
+            : selectedSide === 'TEACHER'
+            ? a.teacher_status
+            : a.cs_status;
         if (!status) return;
         const count = 1;
 
@@ -979,9 +997,7 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
       const session = (sessionsByClassAndDate.get(`${classId}_${targetDate}`) || [])[bulkSessionIndex];
       if (!session) return;
       const key = `${ecId}_session_${session.id}`;
-      const existing = activeTab === 'quick'
-        ? (rawAttendanceMap.get(key)?.cs_status ? rawAttendanceMap.get(key) : undefined)
-        : attendanceMap.get(key);
+      const existing = attendanceMap.get(key);
       if (existing) toRemove.push({ classId, sessionId: session.id, attendanceId: existing.id });
     });
 
@@ -1003,21 +1019,6 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
       setBulkSaving(false);
     }
   };
-
-  // State cho Tab Buổi học (sessions)
-  const [sessionsViewScope, setSessionsViewScope] = useState<'month' | 'all'>('month');
-  const [sessionSearchQuery, setSessionSearchQuery] = useState<string>('');
-  const [sessionEdits, setSessionEdits] = useState<
-    Record<
-      string,
-      {
-        status?: AttendanceStatus;
-        lesson_topic?: string;
-        teacher_note?: string;
-      }
-    >
-  >({});
-  const [savingRowKey, setSavingRowKey] = useState<string | null>(null);
 
   const resolveClassId = (enrollmentClassId: number, session?: ClassSession) =>
     session?.class_id || cls?.id || students.find((item) => item.enrollment_class_id === enrollmentClassId)?.class_id;
@@ -1053,7 +1054,12 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
       });
       setAttendanceOverrides((current) => {
         const next = new Map(current);
-        const sideStatus = activeSide === 'TEACHER' ? saved.teacher_status : saved.cs_status;
+        const sideStatus =
+          activeSide === 'ADMIN'
+            ? saved.status
+            : activeSide === 'TEACHER'
+            ? saved.teacher_status
+            : saved.cs_status;
         next.set(`${enrollmentClassId}_session_${target!.id}`, {
           ...saved,
           status: sideStatus || saved.status || status,
@@ -1110,7 +1116,12 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
       }
       setAttendanceOverrides((current) => {
         const next = new Map(current);
-        const sideStatus = activeSide === 'TEACHER' ? saved.teacher_status : saved.cs_status;
+        const sideStatus =
+          activeSide === 'ADMIN'
+            ? saved.status
+            : activeSide === 'TEACHER'
+            ? saved.teacher_status
+            : saved.cs_status;
         next.set(key, {
           ...saved,
           status: sideStatus || saved.status || existingRaw?.status || 'ATTENDED',
@@ -1129,9 +1140,7 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
   const handleClearCell = async (enrollmentClassId: number, session: ClassSession) => {
     const key = `${enrollmentClassId}_session_${session.id}`;
     const rawAtt = rawAttendanceMap.get(key);
-    const attendance = activeTab === 'quick'
-      ? (rawAtt?.cs_status ? rawAtt : undefined)
-      : attendanceMap.get(key);
+    const attendance = attendanceMap.get(key);
     if (!attendance) return;
     setActiveCell(null);
     setActiveAnchorEl(null);
@@ -1141,9 +1150,7 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
       setAttendanceOverrides((current) => {
         const next = new Map(current);
         const existing = rawAtt || attendance;
-        const nextTeacherStatus = activeSide === 'TEACHER' ? null : (existing.teacher_status ?? null);
-        const nextCsStatus = activeSide === 'CS' ? null : (existing.cs_status ?? null);
-        if (!nextTeacherStatus && !nextCsStatus) {
+        if (activeSide === 'ADMIN') {
           next.set(key, {
             ...existing,
             teacher_status: null,
@@ -1151,12 +1158,23 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
             deleted_at: new Date().toISOString(),
           } as any);
         } else {
-          next.set(key, {
-            ...existing,
-            teacher_status: nextTeacherStatus,
-            cs_status: nextCsStatus,
-            reconciliation_state: nextTeacherStatus ? 'PENDING_CS' : 'PENDING_TEACHER',
-          });
+          const nextTeacherStatus = activeSide === 'TEACHER' ? null : (existing.teacher_status ?? null);
+          const nextCsStatus = activeSide === 'CS' ? null : (existing.cs_status ?? null);
+          if (!nextTeacherStatus && !nextCsStatus) {
+            next.set(key, {
+              ...existing,
+              teacher_status: null,
+              cs_status: null,
+              deleted_at: new Date().toISOString(),
+            } as any);
+          } else {
+            next.set(key, {
+              ...existing,
+              teacher_status: nextTeacherStatus,
+              cs_status: nextCsStatus,
+              reconciliation_state: nextTeacherStatus ? 'PENDING_CS' : 'PENDING_TEACHER',
+            });
+          }
         }
         return next;
       });
@@ -1383,6 +1401,51 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
     );
   };
 
+  // Ô chỉ đọc: Điểm danh phía CSKH (dùng trong Tab Điểm danh nhanh khi user là Admin/Manage hoặc GV)
+  const renderCSReadonlyCell = (st: StudentRow, dateStr: string) => {
+    if (st.enrollment_class_id <= 0) {
+      return <span className="whitespace-nowrap rounded bg-slate-100/80 px-2 py-0.5 text-[10px] italic text-text-muted">Chưa xếp lớp</span>;
+    }
+    const daySessions = getSessionsForCell(st.enrollment_class_id, dateStr);
+    if (daySessions.length === 0) {
+      return (
+        <div className="flex min-h-9 w-full min-w-[52px] items-center justify-center px-1 py-1">
+          <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-md border border-border/50 bg-slate-50 px-2 text-xs font-semibold text-text-muted">
+            —
+          </span>
+        </div>
+      );
+    }
+
+    return (
+      <div className="flex min-h-9 w-full min-w-[60px] flex-wrap items-center justify-center gap-1 px-1 py-1">
+        {daySessions.map((session, index) => {
+          const sessionNumber = index + 1;
+          const att = rawAttendanceMap.get(`${st.enrollment_class_id}_session_${session.id}`);
+          const csStatus = att?.cs_status as AttendanceStatus | null | undefined;
+          const cfg = csStatus ? STATUS_CONFIG[csStatus] : null;
+          return (
+            <span
+              key={session.id}
+              title={
+                cfg
+                  ? `Buổi ${sessionNumber} (CSKH): ${cfg.label}`
+                  : `Buổi ${sessionNumber}: CSKH chưa điểm danh`
+              }
+              className={`relative inline-flex h-6 min-w-6 items-center justify-center rounded-md border px-1.5 text-[10px] font-extrabold ${
+                cfg
+                  ? `${cfg.bg.replace(/\s*hover:\S+/g, '')} ${cfg.text} ${cfg.border}`
+                  : 'border-border/60 bg-slate-100/80 text-text-muted'
+              }`}
+            >
+              {cfg ? cfg.short : '—'}
+            </span>
+          );
+        })}
+      </div>
+    );
+  };
+
   // Ô chỉ đọc: Điểm danh chốt / Trạng thái cuối (dùng trong Tab Điểm danh nhanh)
   const renderFinalStatusCell = (st: StudentRow, dateStr: string) => {
     if (st.enrollment_class_id <= 0) {
@@ -1494,22 +1557,6 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
       {/* Unified filters, save action and active-tab controls */}
       <div className="flex flex-wrap items-center gap-2.5 border-b border-border/80 bg-slate-50/60 p-3 sm:px-4">
         {titleHeader}
-        {activeTab !== 'quick' && (
-          <div className="flex items-center gap-1 rounded-xl border border-border/70 bg-surface p-1" aria-label="Chọn phía điểm danh">
-            {(['TEACHER', 'CS'] as AttendanceSide[]).map((side) => (
-              <button
-                id={`attendance-side-${side.toLowerCase()}`}
-                key={side}
-                type="button"
-                disabled={!privilegedSideChoice && side !== defaultSide}
-                onClick={() => privilegedSideChoice && setSelectedSide(side)}
-                className={`rounded-lg px-3 py-1.5 text-xs font-extrabold transition ${selectedSide === side ? 'bg-primary text-white shadow-sm' : 'text-text-muted hover:bg-surface-muted disabled:hidden'}`}
-              >
-                {side === 'TEACHER' ? 'Phía Giáo viên' : 'Phía CSKH'}
-              </button>
-            ))}
-          </div>
-        )}
         <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-2">
           {activeTab === 'quick' && (
             <>
@@ -1982,19 +2029,25 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
                       </td>
                       )}
 
-                      {/* Cột 1: Điểm danh GV (Chỉ đọc) */}
+                      {/* Cột 1: Điểm danh GV */}
                       <td className="px-2 py-1.5 border-r border-border/60 text-center bg-slate-50/40">
-                        {renderTeacherReadonlyCell(st, quickDate)}
+                        {isTeacherOnly
+                          ? renderAttendanceCell(st, quickDate)
+                          : renderTeacherReadonlyCell(st, quickDate)}
                       </td>
 
-                      {/* Cột 2: Điểm danh CSKH (Chấm điểm danh) */}
+                      {/* Cột 2: Điểm danh CSKH */}
                       <td className="px-2 py-1.5 border-r border-border/60 text-center bg-blue-50/20">
-                        {renderAttendanceCell(st, quickDate)}
+                        {isCSOnly
+                          ? renderAttendanceCell(st, quickDate)
+                          : renderCSReadonlyCell(st, quickDate)}
                       </td>
 
-                      {/* Cột 3: Điểm danh Chốt / Trạng thái cuối (Chỉ đọc) */}
+                      {/* Cột 3: Điểm danh Chốt / Trạng thái cuối */}
                       <td className="px-2 py-1.5 border-r border-border/60 text-center bg-emerald-50/20">
-                        {renderFinalStatusCell(st, quickDate)}
+                        {isAdminOrManage
+                          ? renderAttendanceCell(st, quickDate)
+                          : renderFinalStatusCell(st, quickDate)}
                       </td>
                     </tr>
                   );
@@ -2404,445 +2457,6 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
       )}
 
       {/* ========================================================================= */}
-      {/* TAB BUỔI HỌC (LESSON & GHI CHÚ CỦA GIÁO VIÊN)                             */}
-      {/* ========================================================================= */}
-      {activeTab === 'sessions' && (() => {
-        const currentYear = currentDate.getFullYear();
-        const currentMonth = currentDate.getMonth() + 1;
-        const monthPrefix = `${currentYear}-${String(currentMonth).padStart(2, '0')}`;
-        const q = sessionSearchQuery.trim().toLocaleLowerCase('vi-VN');
-
-        // Build rows: every (student, session of student's class)
-        const sessionRows: Array<{
-          rowKey: string;
-          student: StudentRow;
-          session: ClassSession;
-          dateStr: string;
-          rawAtt?: Attendance;
-        }> = [];
-
-        students.forEach((st) => {
-          if (st.enrollment_class_id <= 0) return;
-          const classId = cls?.id || st.class_id;
-          if (!classId) return;
-
-          const clsSessions = effectiveSessions
-            .filter((s) => s.class_id === classId)
-            .sort(
-              (a, b) =>
-                formatSessionDate(b.session_date).localeCompare(formatSessionDate(a.session_date)) ||
-                b.session_number - a.session_number ||
-                b.id - a.id
-            );
-
-          clsSessions.forEach((sess) => {
-            const dStr = formatSessionDate(sess.session_date);
-            if (sessionsViewScope === 'month' && !dStr.startsWith(monthPrefix)) return;
-            const rawAtt = rawAttendanceMap.get(`${st.enrollment_class_id}_session_${sess.id}`);
-
-            if (q) {
-              const codeStr = formatClassCode(st.class_code || cls?.class_code, classId);
-              const hay = [
-                st.full_name,
-                st.external_id,
-                st.class_name,
-                codeStr,
-                st.teacher_name,
-                rawAtt?.lesson_topic,
-                rawAtt?.teacher_note,
-                dStr,
-              ]
-                .filter(Boolean)
-                .join(' ')
-                .toLocaleLowerCase('vi-VN');
-              if (!hay.includes(q)) return;
-            }
-
-            sessionRows.push({
-              rowKey: `${st.enrollment_class_id}_session_${sess.id}`,
-              student: st,
-              session: sess,
-              dateStr: dStr,
-              rawAtt,
-            });
-          });
-        });
-
-        sessionRows.sort(
-          (a, b) =>
-            b.dateStr.localeCompare(a.dateStr) ||
-            b.session.session_number - a.session.session_number ||
-            a.student.full_name.localeCompare(b.student.full_name, 'vi')
-        );
-
-        const handleSaveSessionRow = async (row: (typeof sessionRows)[number]) => {
-          const edit = sessionEdits[row.rowKey];
-          const classId = cls?.id || row.student.class_id || row.session.class_id;
-          if (!classId) return;
-
-          const currentTeacherStatus = (edit?.status ?? row.rawAtt?.teacher_status ?? row.rawAtt?.status ?? 'ATTENDED') as AttendanceStatus;
-          const nextLesson = (edit?.lesson_topic !== undefined ? edit.lesson_topic : (row.rawAtt?.lesson_topic || '')).trim() || null;
-          const nextNote = (edit?.teacher_note !== undefined ? edit.teacher_note : (row.rawAtt?.teacher_note || '')).trim() || null;
-
-          setSavingRowKey(row.rowKey);
-          try {
-            let saved: Attendance;
-            if (row.rawAtt && edit?.status === undefined && row.rawAtt.teacher_status) {
-              saved = await attendanceApi.update(classId, row.session.id, row.rawAtt.id, {
-                side: 'TEACHER',
-                lesson_topic: nextLesson,
-                teacher_note: nextNote,
-              });
-            } else {
-              saved = await attendanceApi.mark(classId, row.session.id, {
-                enrollment_class_id: row.student.enrollment_class_id,
-                status: currentTeacherStatus,
-                side: 'TEACHER',
-                lesson_topic: nextLesson,
-                teacher_note: nextNote,
-              });
-            }
-            setAttendanceOverrides((current) => {
-              const next = new Map(current);
-              next.set(row.rowKey, {
-                ...saved,
-                status: saved.teacher_status || saved.status || currentTeacherStatus,
-              });
-              return next;
-            });
-            setSessionEdits((prev) => {
-              const next = { ...prev };
-              delete next[row.rowKey];
-              return next;
-            });
-            toast.success(`Đã lưu Bài học & Ghi chú GV cho ${row.student.full_name} (Buổi ${row.session.session_number})`);
-          } catch (err: any) {
-            toast.error(err.response?.data?.message || err.response?.data?.error?.message || err.message || 'Không thể lưu buổi học');
-          } finally {
-            setSavingRowKey(null);
-          }
-        };
-
-        return (
-          <div className="flex flex-col">
-            {/* Thanh công cụ Tab Buổi học */}
-            <div className="p-3 px-4 border-b border-border/70 bg-surface flex flex-wrap items-center justify-between gap-3 text-xs">
-              <div className="flex flex-wrap items-center gap-2.5">
-                <div className="flex p-0.5 bg-surface-muted rounded-xl border border-border/60 text-xs font-semibold">
-                  <button
-                    type="button"
-                    onClick={() => setSessionsViewScope('month')}
-                    className={`px-3 py-1 rounded-lg transition-all ${
-                      sessionsViewScope === 'month'
-                        ? 'bg-surface text-primary shadow-xs font-bold'
-                        : 'text-text-muted hover:text-text-primary'
-                    }`}
-                  >
-                    Theo tháng
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setSessionsViewScope('all')}
-                    className={`px-3 py-1 rounded-lg transition-all ${
-                      sessionsViewScope === 'all'
-                        ? 'bg-surface text-primary shadow-xs font-bold'
-                        : 'text-text-muted hover:text-text-primary'
-                    }`}
-                  >
-                    Tất cả các buổi
-                  </button>
-                </div>
-
-                {sessionsViewScope === 'month' && (
-                  <>
-                    <div className="flex items-center gap-1 bg-surface-muted p-1 rounded-xl border border-border/60">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const d = new Date(currentDate);
-                          d.setMonth(d.getMonth() - 1);
-                          setCurrentDate(d);
-                        }}
-                        className="p-1 rounded-lg text-text-muted hover:text-text-primary hover:bg-surface transition-colors"
-                        title="Tháng trước"
-                      >
-                        <ChevronLeft className="w-4 h-4" />
-                      </button>
-                      <span className="px-2.5 text-xs font-bold text-text-primary select-none">
-                        Tháng {currentMonth} / {currentYear}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const d = new Date(currentDate);
-                          d.setMonth(d.getMonth() + 1);
-                          setCurrentDate(d);
-                        }}
-                        className="p-1 rounded-lg text-text-muted hover:text-text-primary hover:bg-surface transition-colors"
-                        title="Tháng sau"
-                      >
-                        <ChevronRight className="w-4 h-4" />
-                      </button>
-                    </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setCurrentDate(new Date())}
-                      className="text-xs h-7 px-2.5 font-bold"
-                    >
-                      Tháng hiện tại
-                    </Button>
-                  </>
-                )}
-
-                <span className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-[11px] font-bold text-indigo-800">
-                  <BookOpen className="w-3.5 h-3.5" />
-                  <span>Tổng: {sessionRows.length} bản ghi buổi học</span>
-                </span>
-              </div>
-
-              <div className="relative w-full sm:w-72">
-                <input
-                  type="text"
-                  value={sessionSearchQuery}
-                  onChange={(e) => setSessionSearchQuery(e.target.value)}
-                  placeholder="Tìm HV, mã lớp, bài học, ghi chú GV..."
-                  className="w-full h-8 pl-8 pr-3 border border-border rounded-xl text-xs bg-white text-text-primary focus:outline-none focus:ring-2 focus:ring-primary"
-                />
-                <Search className="w-3.5 h-3.5 text-text-muted absolute left-2.5 top-2.5" />
-              </div>
-            </div>
-
-            {/* Bảng chi tiết Buổi học & Ghi chú Giáo viên */}
-            <div className="w-full overflow-x-auto">
-              <table className="w-full text-xs text-left border-collapse">
-                <thead>
-                  <tr className="bg-surface-muted/90 text-text-secondary border-b border-border/80 text-[11px] font-bold">
-                    <th className="px-2.5 py-3 border-r border-border/60 w-10 text-center">#</th>
-                    <th className="px-3 py-3 border-r border-border/60 whitespace-nowrap min-w-[100px]">
-                      Mã lớp
-                    </th>
-                    <th className="px-3 py-3 border-r border-border/60 whitespace-nowrap min-w-[150px]">
-                      Tên lớp
-                    </th>
-                    <th className="px-2.5 py-3 border-r border-border/60 text-center whitespace-nowrap min-w-[80px]">
-                      Mô hình
-                    </th>
-                    <th className="px-3 py-3 border-r border-border/60 whitespace-nowrap min-w-[95px]">
-                      Mã HV
-                    </th>
-                    <th className="px-3 py-3 border-r border-border/60 whitespace-nowrap min-w-[150px]">
-                      Họ tên HV
-                    </th>
-                    <th className="px-3 py-3 border-r border-border/60 whitespace-nowrap min-w-[120px]">
-                      Giáo viên
-                    </th>
-                    <th className="px-3 py-3 border-r border-border/60 text-center whitespace-nowrap min-w-[85px]">
-                      Buổi học
-                    </th>
-                    <th className="px-3 py-3 border-r border-border/60 whitespace-nowrap min-w-[110px]">
-                      Ngày học
-                    </th>
-                    <th className="px-3 py-3 border-r border-border/60 text-center whitespace-nowrap min-w-[140px]">
-                      Điểm danh GV
-                    </th>
-                    <th className="px-3 py-3 border-r border-border/60 whitespace-nowrap min-w-[200px]">
-                      Bài học
-                    </th>
-                    <th className="px-3 py-3 border-r border-border/60 whitespace-nowrap min-w-[240px]">
-                      Ghi chú GV
-                    </th>
-                    <th className="px-3 py-3 text-center whitespace-nowrap w-24">
-                      Thao tác
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sessionRows.length === 0 ? (
-                    <tr>
-                      <td colSpan={13} className="text-center py-10 text-text-muted">
-                        Chưa có buổi học nào trong khoảng thời gian này.
-                      </td>
-                    </tr>
-                  ) : (
-                    sessionRows.map((row, idx) => {
-                      const edit = sessionEdits[row.rowKey];
-                      const classId = cls?.id || row.student.class_id || row.session.class_id;
-                      const formattedCode = formatClassCode(
-                        row.student.class_code || cls?.class_code,
-                        classId
-                      );
-                      const effectiveStatus = (edit?.status ??
-                        row.rawAtt?.teacher_status ??
-                        undefined) as AttendanceStatus | undefined;
-                      const effectiveLesson =
-                        edit?.lesson_topic !== undefined
-                          ? edit.lesson_topic
-                          : row.rawAtt?.lesson_topic || '';
-                      const effectiveNote =
-                        edit?.teacher_note !== undefined
-                          ? edit.teacher_note
-                          : row.rawAtt?.teacher_note || '';
-                      const isDirty = Boolean(
-                        edit &&
-                          ((edit.status !== undefined && edit.status !== row.rawAtt?.teacher_status) ||
-                            (edit.lesson_topic !== undefined &&
-                              edit.lesson_topic !== (row.rawAtt?.lesson_topic || '')) ||
-                            (edit.teacher_note !== undefined &&
-                              edit.teacher_note !== (row.rawAtt?.teacher_note || '')))
-                      );
-                      const isRowSaving = savingRowKey === row.rowKey;
-                      const formattedDate = row.dateStr
-                        ? new Date(`${row.dateStr}T00:00:00`).toLocaleDateString('vi-VN')
-                        : '—';
-                      const statusCfg = effectiveStatus ? STATUS_CONFIG[effectiveStatus] : null;
-
-                      return (
-                        <tr
-                          key={row.rowKey}
-                          className={`border-b border-border/60 hover:bg-slate-50/80 transition-colors ${
-                            isDirty
-                              ? 'bg-amber-50/40'
-                              : idx % 2 === 1
-                              ? 'bg-slate-50/30'
-                              : 'bg-surface'
-                          }`}
-                        >
-                          <td className="px-2.5 py-2.5 border-r border-border/60 text-center font-bold text-text-muted">
-                            {idx + 1}
-                          </td>
-                          <td className="px-3 py-2.5 border-r border-border/60 whitespace-nowrap">
-                            <span className="font-mono text-[11px] font-extrabold px-1.5 py-0.5 rounded bg-slate-100 text-slate-800 border border-slate-200">
-                              {formattedCode}
-                            </span>
-                          </td>
-                          <td className="px-3 py-2.5 border-r border-border/60 font-semibold text-text-primary whitespace-nowrap">
-                            {row.student.class_name}
-                          </td>
-                          <td className="px-2.5 py-2.5 border-r border-border/60 text-center whitespace-nowrap">
-                            <Badge variant="neutral" size="sm">
-                              {formatClassModel(row.student.model_type)}
-                            </Badge>
-                          </td>
-                          <td className="px-3 py-2.5 border-r border-border/60 font-mono text-xs font-bold text-text-primary whitespace-nowrap">
-                            {row.student.external_id || `HV_${row.student.student_id}`}
-                          </td>
-                          <td className="px-3 py-2.5 border-r border-border/60 font-bold text-text-primary whitespace-nowrap">
-                            {row.student.full_name}
-                          </td>
-                          <td className="px-3 py-2.5 border-r border-border/60 font-semibold text-text-secondary whitespace-nowrap">
-                            {row.student.teacher_name || '—'}
-                          </td>
-                          <td className="px-3 py-2.5 border-r border-border/60 text-center font-extrabold text-primary whitespace-nowrap">
-                            Buổi {row.session.session_number}
-                          </td>
-                          <td className="px-3 py-2.5 border-r border-border/60 text-[11px] text-text-secondary font-medium whitespace-nowrap">
-                            {formattedDate}
-                            {row.session.start_time ? ` · ${row.session.start_time}` : ''}
-                          </td>
-                          <td className="px-3 py-2.5 border-r border-border/60 text-center">
-                            <select
-                              value={effectiveStatus || ''}
-                              onChange={(e) => {
-                                const val = e.target.value as AttendanceStatus | '';
-                                if (!val) return;
-                                setSessionEdits((prev) => ({
-                                  ...prev,
-                                  [row.rowKey]: {
-                                    ...prev[row.rowKey],
-                                    status: val,
-                                  },
-                                }));
-                              }}
-                              className={`h-8 w-full rounded-lg border px-2 text-xs font-extrabold outline-none focus:ring-2 focus:ring-primary/30 cursor-pointer ${
-                                statusCfg
-                                  ? `${statusCfg.bg} ${statusCfg.text} ${statusCfg.border}`
-                                  : 'border-border bg-white text-text-muted'
-                              }`}
-                            >
-                              <option value="">-- Chưa chấm --</option>
-                              {POPOVER_STATUS_OPTIONS.map((opt) => (
-                                <option key={opt.status} value={opt.status}>
-                                  {opt.label}
-                                </option>
-                              ))}
-                            </select>
-                          </td>
-                          <td className="px-2.5 py-2 border-r border-border/60">
-                            <input
-                              type="text"
-                              value={effectiveLesson}
-                              onChange={(e) => {
-                                const val = e.target.value;
-                                setSessionEdits((prev) => ({
-                                  ...prev,
-                                  [row.rowKey]: {
-                                    ...prev[row.rowKey],
-                                    lesson_topic: val,
-                                  },
-                                }));
-                              }}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') {
-                                  e.preventDefault();
-                                  handleSaveSessionRow(row);
-                                }
-                              }}
-                              placeholder="Nhập bài học (VD: Bài 5)..."
-                              className="w-full h-8 px-2.5 rounded-lg border border-border/80 bg-white text-xs text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/40"
-                            />
-                          </td>
-                          <td className="px-2.5 py-2 border-r border-border/60">
-                            <div className="relative">
-                              <input
-                                type="text"
-                                value={effectiveNote}
-                                onChange={(e) => {
-                                  const val = e.target.value;
-                                  setSessionEdits((prev) => ({
-                                    ...prev,
-                                    [row.rowKey]: {
-                                      ...prev[row.rowKey],
-                                      teacher_note: val,
-                                    },
-                                  }));
-                                }}
-                                onKeyDown={(e) => {
-                                  if (e.key === 'Enter') {
-                                    e.preventDefault();
-                                    handleSaveSessionRow(row);
-                                  }
-                                }}
-                                placeholder="Nhập ghi chú buổi học..."
-                                className="w-full h-8 pl-2.5 pr-7 rounded-lg border border-border/80 bg-white text-xs text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/40"
-                              />
-                              <MessageSquare className="w-3.5 h-3.5 text-slate-400 absolute right-2 top-2.5 pointer-events-none" />
-                            </div>
-                          </td>
-                          <td className="px-2.5 py-2 text-center">
-                            <Button
-                              variant={isDirty ? 'primary' : 'outline'}
-                              size="sm"
-                              disabled={isRowSaving}
-                              onClick={() => handleSaveSessionRow(row)}
-                              leftIcon={<Save className="w-3.5 h-3.5" />}
-                              className="text-xs h-8 px-2.5 font-bold"
-                            >
-                              {isRowSaving ? 'Lưu...' : 'Lưu'}
-                            </Button>
-                          </td>
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        );
-      })()}
-
-      {/* ========================================================================= */}
       {/* TAB 3: THỐNG KÊ ĐIỂM DANH (A -> H + Y -> AH)                             */}
       {/* ========================================================================= */}
       {activeTab === 'stats' && (
@@ -3174,6 +2788,7 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
             attendance={attendance}
             rawAttendance={rawAttendance}
             saving={isSaving}
+            canEditTeacherNote={isTeacherOnly}
             onSelectStatus={(session, status, extra) =>
               handleStatusSelect(
                 activeCell.enrollmentClassId,

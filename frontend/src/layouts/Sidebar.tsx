@@ -98,7 +98,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           name: 'Nhiệm vụ & Chăm sóc',
           path: '/care',
           icon: <HeartHandshake className="w-5 h-5 shrink-0" />,
-          allowedRoles: ['ADMIN', 'MANAGE', 'CS'],
+          allowedRoles: ['ADMIN', 'MANAGE', 'CS', 'TEACHER'],
         },
       ],
     },

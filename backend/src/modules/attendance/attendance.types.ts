@@ -1,4 +1,4 @@
-export type AttendanceSide = 'TEACHER' | 'CS';
+export type AttendanceSide = 'TEACHER' | 'CS' | 'ADMIN';
 
 export interface MarkAttendanceDTO {
   enrollment_class_id: number;

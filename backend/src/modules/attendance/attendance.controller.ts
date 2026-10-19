@@ -71,7 +71,7 @@ export class AttendanceController {
       const sessionId = parseInt(req.params.sessionId);
       const attendanceId = parseInt(req.params.attendanceId);
       const actor = { id: req.user!.id, roles: req.user!.roles };
-      const side = req.query.side === 'TEACHER' || req.query.side === 'CS' ? req.query.side : undefined;
+      const side = req.query.side === 'TEACHER' || req.query.side === 'CS' || req.query.side === 'ADMIN' ? req.query.side : undefined;
       await attendanceService.resetAttendance(attendanceId, actor, side, classId, sessionId);
       res.status(204).send();
     } catch (error) {

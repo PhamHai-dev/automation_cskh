@@ -84,4 +84,23 @@ router.put(
   controller.saveSessionCareLog
 );
 
+// Attendance Notification endpoints
+router.get(
+  '/care-notifications',
+  requireRoles(['ADMIN', 'MANAGE', 'CS', 'TEACHER']),
+  controller.getNotifications
+);
+
+router.post(
+  '/care-notifications/read-all',
+  requireRoles(['ADMIN', 'MANAGE', 'CS', 'TEACHER']),
+  controller.markAllNotificationsRead
+);
+
+router.post(
+  '/care-notifications/:notificationId/read',
+  requireRoles(['ADMIN', 'MANAGE', 'CS', 'TEACHER']),
+  controller.markNotificationRead
+);
+
 export { router as careRouter };

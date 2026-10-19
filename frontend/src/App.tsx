@@ -76,9 +76,6 @@ function App() {
               <Route path="/dashboard" element={<DashboardPage />} />
               <Route path="/tong-quan" element={<Navigate to="/dashboard" replace />} />
 
-              <Route path="/care" element={<CarePage />} />
-              <Route path="/cham-soc" element={<Navigate to="/care" replace />} />
-
               <Route path="/students" element={<StudentsPage />} />
               <Route path="/hoc-vien" element={<Navigate to="/students" replace />} />
 
@@ -120,8 +117,11 @@ function App() {
               <Route path="/doi-soat-diem-danh" element={<Navigate to="/attendance/reconciliation" replace />} />
             </Route>
 
-            {/* Classes, Attendance, Imports/Exports: Admin, Manage, CS, Teacher */}
+            {/* Classes, Attendance, Care, Imports/Exports: Admin, Manage, CS, Teacher */}
             <Route element={<ProtectedRoute allowedRoles={['ADMIN', 'MANAGE', 'CS', 'TEACHER']} />}>
+              <Route path="/care" element={<CarePage />} />
+              <Route path="/cham-soc" element={<Navigate to="/care" replace />} />
+
               <Route path="/teacher/my-sessions" element={<MyTeachingSessionsPage />} />
               <Route path="/lich-day-cua-toi" element={<Navigate to="/teacher/my-sessions" replace />} />
               <Route path="/teacher/attendance-tracking" element={<TeacherAttendanceTrackingPage />} />

@@ -1,5 +1,5 @@
 import { apiClient } from '../../../api/client';
-import { ClassSession, Attendance, CreateClassSessionDTO, UpdateClassSessionDTO, MarkAttendanceDTO, BulkMarkAttendanceDTO, UpdateAttendanceDTO } from '../types/classes.types';
+import { ClassSession, Attendance, AttendanceSide, CreateClassSessionDTO, UpdateClassSessionDTO, MarkAttendanceDTO, BulkMarkAttendanceDTO, UpdateAttendanceDTO } from '../types/classes.types';
 
 export const classSessionsApi = {
   list: async (classId: number): Promise<ClassSession[]> => {
@@ -55,7 +55,7 @@ export const attendanceApi = {
     return res.data.data;
   },
 
-  remove: async (classId: number, sessionId: number, attendanceId: number, side?: 'TEACHER' | 'CS'): Promise<void> => {
+  remove: async (classId: number, sessionId: number, attendanceId: number, side?: AttendanceSide): Promise<void> => {
     await apiClient.delete(`/classes/${classId}/sessions/${sessionId}/attendance/${attendanceId}`, { params: { side } });
   },
 };

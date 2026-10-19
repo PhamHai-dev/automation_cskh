@@ -375,5 +375,118 @@ describe('Care Module Integration Tests', () => {
       expect(log2.content).toContain('Học viên tiếp thu tốt');
     });
   });
+
+  describe('Care Notifications Flow', () => {
+    let notif1Id: number;
+    let notif2Id: number;
+
+    beforeAll(async () => {
+      const n1 = await prisma.auditLog.create({
+        data: {
+          user_id: adminId,
+          action: 'ATTENDANCE_ADMIN_NOTIFICATION',
+          entity_type: 'UserNotification',
+          entity_id: String(cs1Id),
+          after_data: {
+            recipient_user_id: cs1Id,
+            recipient_role: 'CS',
+            attendance_id: 9991,
+            student_id: student1Id,
+            student_name: 'Student Care 1',
+            student_code: 'ST_CARE_001',
+            class_id: 1,
+            class_name: 'Lớp Test Thông Báo',
+            session_id: 1,
+            session_number: 1,
+            session_date: '2026-10-19',
+            previous_status: null,
+            admin_status: 'ATTENDED',
+            actor_id: adminId,
+            actor_name: 'Admin Care Test',
+            is_read: false,
+            read_at: null,
+          },
+        },
+      });
+      notif1Id = n1.id;
+
+      const n2 = await prisma.auditLog.create({
+        data: {
+          user_id: adminId,
+          action: 'ATTENDANCE_ADMIN_NOTIFICATION',
+          entity_type: 'UserNotification',
+          entity_id: String(teacherId),
+          after_data: {
+            recipient_user_id: teacherId,
+            recipient_role: 'TEACHER',
+            attendance_id: 9992,
+            student_id: student1Id,
+            student_name: 'Student Care 1',
+            student_code: 'ST_CARE_001',
+            class_id: 1,
+            class_name: 'Lớp Test Thông Báo',
+            session_id: 1,
+            session_number: 1,
+            session_date: '2026-10-19',
+            previous_status: 'ABSENT_APPROVED_A',
+            admin_status: 'ATTENDED',
+            actor_id: adminId,
+            actor_name: 'Admin Care Test',
+            is_read: false,
+            read_at: null,
+          },
+        },
+      });
+      notif2Id = n2.id;
+    });
+
+    afterAll(async () => {
+      await prisma.auditLog.deleteMany({
+        where: { id: { in: [notif1Id, notif2Id] } },
+      });
+    });
+
+    it('CS1 only sees their own notifications', async () => {
+      const res = await request(app)
+        .get('/api/v1/care-notifications')
+        .set('Authorization', `Bearer ${cs1Token}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.some((n: any) => n.id === notif1Id)).toBe(true);
+      expect(res.body.data.some((n: any) => n.id === notif2Id)).toBe(false);
+      expect(res.body.meta.unreadCount).toBeGreaterThanOrEqual(1);
+    });
+
+    it('CS2 cannot mark CS1 notification as read (403)', async () => {
+      const res = await request(app)
+        .post(`/api/v1/care-notifications/${notif1Id}/read`)
+        .set('Authorization', `Bearer ${cs2Token}`);
+
+      expect(res.status).toBe(403);
+    });
+
+    it('Teacher can list and mark all notifications as read', async () => {
+      const listRes = await request(app)
+        .get('/api/v1/care-notifications?status=unread')
+        .set('Authorization', `Bearer ${teacherToken}`);
+
+      expect(listRes.status).toBe(200);
+      expect(listRes.body.data.some((n: any) => n.id === notif2Id)).toBe(true);
+
+      const readAllRes = await request(app)
+        .post('/api/v1/care-notifications/read-all')
+        .set('Authorization', `Bearer ${teacherToken}`);
+
+      expect(readAllRes.status).toBe(200);
+      expect(readAllRes.body.data.updatedCount).toBeGreaterThanOrEqual(1);
+
+      const afterRes = await request(app)
+        .get('/api/v1/care-notifications?status=unread')
+        .set('Authorization', `Bearer ${teacherToken}`);
+
+      expect(afterRes.status).toBe(200);
+      expect(afterRes.body.data.some((n: any) => n.id === notif2Id)).toBe(false);
+    });
+  });
 });
 
