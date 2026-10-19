@@ -13,6 +13,7 @@ datasource db {
 
 model User {
   id            Int       @id @default(autoincrement())
+  code          String?   @unique // e.g., CVHT01, CVHT02 for CS role
   name          String?
   email         String    @unique
   phone         String?

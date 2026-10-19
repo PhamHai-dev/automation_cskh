@@ -60,7 +60,8 @@ async function seedNewAccounts() {
 
   const cskh1 = await prisma.user.create({
     data: {
-      name: 'CSKH 1',
+      code: 'CVHT01',
+      name: 'Trần Thị Hải Yến',
       email: 'cskh1@gmail.com',
       password_hash: passwordHash,
       roles: ['CS'],
@@ -70,7 +71,8 @@ async function seedNewAccounts() {
 
   const cskh2 = await prisma.user.create({
     data: {
-      name: 'CSKH 2',
+      code: 'CVHT02',
+      name: 'Lưu Thị Vân',
       email: 'cskh2@gmail.com',
       password_hash: passwordHash,
       roles: ['CS'],
@@ -80,7 +82,8 @@ async function seedNewAccounts() {
 
   const cskh3 = await prisma.user.create({
     data: {
-      name: 'CSKH 3',
+      code: 'CVHT03',
+      name: 'Đào Thị Minh Huyền',
       email: 'cskh3@gmail.com',
       password_hash: passwordHash,
       roles: ['CS'],
@@ -202,9 +205,9 @@ async function seedNewAccounts() {
   ];
 
   const salesConfig = [
-    { user: cskh1, saleName: 'CSKH 1', students: studentsCS1 },
-    { user: cskh2, saleName: 'CSKH 2', students: studentsCS2 },
-    { user: cskh3, saleName: 'CSKH 3', students: studentsCS3 },
+    { user: cskh1, saleName: 'Trần Thị Hải Yến - CVHT01', students: studentsCS1 },
+    { user: cskh2, saleName: 'Lưu Thị Vân - CVHT02', students: studentsCS2 },
+    { user: cskh3, saleName: 'Đào Thị Minh Huyền - CVHT03', students: studentsCS3 },
   ];
 
   const allEnrollmentClasses: any[] = [];

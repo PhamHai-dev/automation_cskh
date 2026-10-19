@@ -12,6 +12,7 @@ export class StudentsRepository {
             cs: {
               select: {
                 id: true,
+                code: true,
                 name: true,
                 email: true,
               },
@@ -88,13 +89,15 @@ export class StudentsRepository {
       // 2. Resolve CS/Sale user
       let csId = currentUserId;
       const allUsers = await tx.user.findMany({
-        select: { id: true, name: true, email: true, roles: true },
+        select: { id: true, code: true, name: true, email: true, roles: true },
       });
 
       if (data.sale_name) {
         const query = data.sale_name.trim().toLowerCase();
         const matched = allUsers.find(
           (u) =>
+            (u.code && query.includes(u.code.toLowerCase())) ||
+            (u.name && query.includes(u.name.toLowerCase())) ||
             u.name?.toLowerCase().includes(query) ||
             u.email.toLowerCase().includes(query)
         );

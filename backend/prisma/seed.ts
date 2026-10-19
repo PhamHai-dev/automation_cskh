@@ -191,8 +191,13 @@ async function main() {
 
   const passwordHash = bcrypt.hashSync('123456', 10);
   const admin = await prisma.user.create({ data: { name: 'Quản trị viên', email: 'admin@gmail.com', password_hash: passwordHash, roles: ['ADMIN'], active: true } });
-  const csUsers = await Promise.all([1, 2, 3].map((number) => prisma.user.create({
-    data: { name: `CSKH ${number}`, email: `cskh${number}@gmail.com`, password_hash: passwordHash, roles: ['CS'], active: true, created_by_id: admin.id },
+  const csSeedAccounts = [
+    { number: 1, code: 'CVHT01', name: 'Trần Thị Hải Yến' },
+    { number: 2, code: 'CVHT02', name: 'Lưu Thị Vân' },
+    { number: 3, code: 'CVHT03', name: 'Đào Thị Minh Huyền' },
+  ];
+  const csUsers = await Promise.all(csSeedAccounts.map((acc) => prisma.user.create({
+    data: { code: acc.code, name: acc.name, email: `cskh${acc.number}@gmail.com`, password_hash: passwordHash, roles: ['CS'], active: true, created_by_id: admin.id },
   })));
   const defaultTeacher = await prisma.user.create({ data: { name: 'Giáo viên phụ trách', email: 'teacher@gmail.com', password_hash: passwordHash, roles: ['TEACHER'], active: true, created_by_id: admin.id } });
   await prisma.teacher.create({ data: { user_id: defaultTeacher.id, code: 'GV-MOCK', name: defaultTeacher.name ?? 'Giáo viên phụ trách', teacher_type: TeacherType.OTHER } });
