@@ -20,8 +20,13 @@ export class StudentsService {
     this.repository = new StudentsRepository();
   }
 
-  async getAllStudents() {
-    return this.repository.findAll();
+  async getAllStudents(options?: {
+    userId?: number;
+    roles?: string[];
+    programType?: string;
+    csId?: number;
+  }) {
+    return this.repository.findAll(options);
   }
 
   async getStudentById(id: number) {

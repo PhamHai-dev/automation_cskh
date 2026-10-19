@@ -5,7 +5,7 @@ export class UsersService {
   async listUsers() {
     return prisma.user.findMany({
       select: {
-        id: true, name: true, email: true, roles: true, active: true,
+        id: true, name: true, email: true, staff_code: true, roles: true, active: true,
         last_login_at: true, created_at: true, updated_at: true
       }
     });
@@ -15,7 +15,7 @@ export class UsersService {
     return prisma.user.findUnique({
       where: { id },
       select: {
-        id: true, name: true, email: true, roles: true, active: true,
+        id: true, name: true, email: true, staff_code: true, roles: true, active: true,
         last_login_at: true, created_at: true, updated_at: true
       }
     });
@@ -27,19 +27,24 @@ export class UsersService {
       data: {
         email: data.email,
         name: data.name,
+        staff_code: data.staff_code ? String(data.staff_code).trim().toUpperCase() : null,
         roles: data.roles,
         password_hash,
         created_by_id: createdById,
       },
-      select: { id: true, email: true, name: true, roles: true }
+      select: { id: true, email: true, name: true, staff_code: true, roles: true }
     });
   }
 
   async updateUser(id: number, data: any) {
+    const updatePayload: any = { ...data };
+    if (data.staff_code !== undefined) {
+      updatePayload.staff_code = data.staff_code ? String(data.staff_code).trim().toUpperCase() : null;
+    }
     return prisma.user.update({
       where: { id },
-      data,
-      select: { id: true, email: true, name: true, roles: true, active: true }
+      data: updatePayload,
+      select: { id: true, email: true, name: true, staff_code: true, roles: true, active: true }
     });
   }
 

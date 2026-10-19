@@ -266,6 +266,9 @@ export class ImportsRepository {
 
   async createEnrollment(data: {
     external_id?: string;
+    external_sync_key?: string | null;
+    program_type?: string;
+    program_metadata?: any;
     student_id: number;
     package_id?: number | null;
     cs_id: number;
@@ -295,6 +298,9 @@ export class ImportsRepository {
     return this.db.enrollment.create({
       data: {
         external_id: data.external_id,
+        external_sync_key: data.external_sync_key || undefined,
+        program_type: data.program_type || 'KAIWA',
+        program_metadata: data.program_metadata !== undefined ? data.program_metadata : undefined,
         student_id: data.student_id,
         package_id: data.package_id,
         cs_id: data.cs_id,

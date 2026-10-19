@@ -21,6 +21,12 @@ router.get('/export/attendance', requireRoles(['ADMIN', 'MANAGE', 'CS', 'TEACHER
 // 2. Batches list & batch status
 router.get('/batches', requireRoles(['ADMIN', 'MANAGE', 'CS', 'TEACHER']), controller.listBatches);
 
+// 2b. Google Sheet Sync Configs & Execution (ADMIN, MANAGE)
+router.get('/sheet-sync/configs', requireRoles(['ADMIN', 'MANAGE']), controller.getSheetSyncConfigs);
+router.put('/sheet-sync/configs/:code', requireRoles(['ADMIN', 'MANAGE']), controller.updateSheetSyncConfig);
+router.post('/sheet-sync/configs/:code/sync', requireRoles(['ADMIN', 'MANAGE']), controller.syncSheetByCode);
+router.post('/sheet-sync/sync-all', requireRoles(['ADMIN', 'MANAGE']), controller.syncAllSheets);
+
 // 3. Create / Transfer Requests approval queue
 router.get('/create-requests', requireRoles(['ADMIN', 'MANAGE', 'CS']), controller.listCreateRequests);
 router.get('/create-requests/:id', requireRoles(['ADMIN', 'MANAGE', 'CS']), controller.getCreateRequest);

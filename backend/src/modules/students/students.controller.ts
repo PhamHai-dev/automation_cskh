@@ -7,7 +7,20 @@ const studentsService = new StudentsService();
 export class StudentsController {
   async list(req: Request, res: Response, next: NextFunction) {
     try {
-      const students = await studentsService.getAllStudents();
+      const user = (req as any).user;
+      const programType = typeof req.query.program_type === 'string' && req.query.program_type.trim()
+        ? req.query.program_type.trim().toUpperCase()
+        : undefined;
+      const csId = req.query.cs_id !== undefined && req.query.cs_id !== ''
+        ? parseInt(String(req.query.cs_id), 10)
+        : undefined;
+
+      const students = await studentsService.getAllStudents({
+        userId: user?.id,
+        roles: user?.roles,
+        programType,
+        csId: csId && !Number.isNaN(csId) ? csId : undefined,
+      });
       res.json({ data: students, meta: null });
     } catch (error) {
       next(error);

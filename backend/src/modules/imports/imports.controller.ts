@@ -1,13 +1,16 @@
 import { Request, Response, NextFunction } from 'express';
 import { ImportsService } from './imports.service';
+import { SheetSyncService } from './sheet-sync.service';
 import { ImportType } from '@prisma/client';
 import { AppError } from '../../middlewares/error.middleware';
 
 export class ImportsController {
   private service: ImportsService;
+  private sheetSyncService: SheetSyncService;
 
-  constructor(service?: ImportsService) {
+  constructor(service?: ImportsService, sheetSyncService?: SheetSyncService) {
     this.service = service || new ImportsService();
+    this.sheetSyncService = sheetSyncService || new SheetSyncService();
   }
 
   upload = async (req: Request, res: Response, next: NextFunction) => {
@@ -273,6 +276,58 @@ export class ImportsController {
       };
       const result = await this.service.rejectCreateRequest(id, actor, dto);
       res.status(200).json(result);
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  getSheetSyncConfigs = async (_req: Request, res: Response, next: NextFunction) => {
+    try {
+      const data = await this.sheetSyncService.getConfigs();
+      res.status(200).json({ data, meta: null });
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  updateSheetSyncConfig = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const code = req.params.code;
+      const updated = await this.sheetSyncService.updateConfig(code, req.body || {});
+      res.status(200).json({ data: updated, meta: null });
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  syncSheetByCode = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const code = req.params.code;
+      const user = (req as any).user;
+      const forceFullSync = Boolean(req.body?.forceFullSync);
+      const limit = req.body?.limit ? Number(req.body.limit) : undefined;
+      const data = await this.sheetSyncService.syncConfigByCode(code, {
+        forceFullSync,
+        limit,
+        actorId: user?.id,
+      });
+      res.status(200).json({ data, meta: null });
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  syncAllSheets = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const user = (req as any).user;
+      const forceFullSync = Boolean(req.body?.forceFullSync);
+      const limit = req.body?.limit ? Number(req.body.limit) : undefined;
+      const data = await this.sheetSyncService.syncAll({
+        forceFullSync,
+        limit,
+        actorId: user?.id,
+      });
+      res.status(200).json({ data, meta: null });
     } catch (err) {
       next(err);
     }

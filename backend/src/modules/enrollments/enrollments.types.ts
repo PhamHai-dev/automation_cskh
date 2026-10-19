@@ -10,6 +10,8 @@ export interface CreateEnrollmentDTO {
 
 export interface UpdateEnrollmentDTO {
   external_id?: string;
+  program_type?: 'JLPT' | 'KAIWA';
+  program_metadata?: Record<string, any> | null;
   package_id?: number;
   total_sessions?: number;
   start_date?: string | Date;

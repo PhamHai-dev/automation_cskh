@@ -12,6 +12,10 @@ export interface CreateStudentDTO {
   note?: string;
 
   // Enrollment & Course & Finance info
+  program_type?: 'JLPT' | 'KAIWA';
+  program_metadata?: Record<string, any> | null;
+  cs_id?: number;
+  package_code?: string;
   paid_at?: string | Date;
   sale_name?: string;
   student_source_status?: string;
@@ -60,6 +64,10 @@ export interface UpdateStudentDTO {
   note?: string;
 
   // Enrollment & Course & Finance info
+  program_type?: 'JLPT' | 'KAIWA';
+  program_metadata?: Record<string, any> | null;
+  cs_id?: number;
+  package_code?: string;
   paid_at?: string | Date;
   sale_name?: string;
   student_source_status?: string;

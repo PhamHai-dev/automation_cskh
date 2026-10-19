@@ -9,6 +9,7 @@ const ENROLLMENT_INCLUDES = {
       id: true,
       name: true,
       email: true,
+      staff_code: true,
     },
   },
   enrollment_classes: {
@@ -45,9 +46,10 @@ const ENROLLMENT_INCLUDES = {
 };
 
 export class EnrollmentsRepository {
-  async findAllByCS(csId: number, saleIdentifier?: string) {
+  async findAllByCS(csId: number, saleIdentifier?: string, programType?: string) {
     return prisma.enrollment.findMany({
       where: {
+        ...(programType ? { program_type: programType } : {}),
         OR: [
           { cs_id: csId },
           ...(saleIdentifier
@@ -64,25 +66,35 @@ export class EnrollmentsRepository {
     });
   }
 
-  async findAllByCSIds(csIds: number[]) {
+  async findAllByCSIds(csIds: number[], programType?: string) {
     return prisma.enrollment.findMany({
-      where: { cs_id: { in: csIds } },
+      where: {
+        cs_id: { in: csIds },
+        ...(programType ? { program_type: programType } : {}),
+      },
       include: ENROLLMENT_INCLUDES,
       orderBy: { created_at: 'desc' },
     });
   }
 
-  async findAll(saleIdentifier?: string) {
+  async findAll(saleIdentifier?: string, filters?: { programType?: string; csId?: number }) {
+    const where: any = {};
+    if (filters?.programType) {
+      where.program_type = filters.programType;
+    }
+    if (filters?.csId) {
+      where.cs_id = filters.csId;
+    }
+    if (saleIdentifier) {
+      where.OR = [
+        { sale_name: { equals: saleIdentifier } },
+        { cs: { name: { equals: saleIdentifier } } },
+        { cs: { email: { equals: saleIdentifier } } },
+      ];
+    }
+
     return prisma.enrollment.findMany({
-      where: saleIdentifier
-        ? {
-            OR: [
-              { sale_name: { equals: saleIdentifier } },
-              { cs: { name: { equals: saleIdentifier } } },
-              { cs: { email: { equals: saleIdentifier } } },
-            ],
-          }
-        : undefined,
+      where: Object.keys(where).length > 0 ? where : undefined,
       include: ENROLLMENT_INCLUDES,
       orderBy: { created_at: 'desc' },
     });
@@ -116,6 +128,7 @@ export class EnrollmentsRepository {
       where: { id },
       data: {
         ...data,
+        program_metadata: data.program_metadata !== undefined ? (data.program_metadata as any) : undefined,
         start_date: startDate,
         end_date: endDate
       }

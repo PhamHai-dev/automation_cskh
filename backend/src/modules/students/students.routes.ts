@@ -14,5 +14,6 @@ router.get('/:id', requireRoles(['ADMIN', 'MANAGE', 'CS']), controller.get);
 // CS/MANAGE/ADMIN can create/update students
 router.post('/', requireRoles(['ADMIN', 'MANAGE', 'CS']), controller.create);
 router.patch('/:id', requireRoles(['ADMIN', 'MANAGE', 'CS']), controller.update);
+router.put('/:id', requireRoles(['ADMIN', 'MANAGE', 'CS']), controller.update);
 
 export { router as studentsRouter };
