@@ -15,6 +15,7 @@ import { zaloPool } from '../zalo/zalo-pool';
 import { getLineDeliveryDispatcher } from '../line/line-dispatcher.contract';
 import { prisma } from '../../prisma/client';
 import { createLogger } from '../../shared/logger/logger';
+import { broadcastService } from './broadcast.service';
 
 const log = createLogger('AutomationWorker');
 
@@ -605,11 +606,24 @@ export async function resolvePersonalTargetZaloUid(delivery: any): Promise<strin
 // ─── Worker singleton ────────────────────────────────────────────────
 
 let _worker: Worker | null = null;
+let _broadcastPollerTimer: ReturnType<typeof setInterval> | null = null;
 
 /**
  * Start the automation delivery worker.
  */
 export function startAutomationWorker(): Worker | null {
+  if (!_broadcastPollerTimer) {
+    _broadcastPollerTimer = setInterval(() => {
+      broadcastService.processDueScheduledCampaigns().catch((err) => {
+        log.error('Scheduled broadcast poller error', { error: err?.message ?? String(err) });
+      });
+    }, 15_000);
+    if (_broadcastPollerTimer.unref) {
+      _broadcastPollerTimer.unref();
+    }
+    log.info('Scheduled broadcast poller started (15s interval)');
+  }
+
   if (_worker) return _worker;
 
   const redis = getRedisClient();
@@ -655,6 +669,12 @@ export function startAutomationWorker(): Worker | null {
  * Stop the worker (graceful shutdown).
  */
 export async function stopAutomationWorker(): Promise<void> {
+  if (_broadcastPollerTimer) {
+    clearInterval(_broadcastPollerTimer);
+    _broadcastPollerTimer = null;
+    log.info('Scheduled broadcast poller stopped');
+  }
+
   if (_worker) {
     try {
       await _worker.close();
