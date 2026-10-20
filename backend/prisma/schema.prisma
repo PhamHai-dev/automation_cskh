@@ -783,6 +783,7 @@ model BroadcastCampaign {
   name             String
   description      String?                 @db.Text
   message_content  String                  @db.Text
+  message_metadata Json? // { urgency, attachments: [...], links: [...], rawHtmlOrMarkup?: string }
   channel_mode     String                  @default("AUTO") // "AUTO" | "ZALO_ONLY" | "LINE_ONLY" | "BOTH"
   schedule_type    String                  @default("IMMEDIATE") // "IMMEDIATE" | "SCHEDULED"
   scheduled_at     DateTime?
@@ -818,6 +819,7 @@ model BroadcastRecipient {
   external_target_id  String? // Zalo UID / Group ID or LINE userId / groupId
   target_display_name String?
   rendered_content    String                @db.Text
+  rendered_metadata   Json? // compiled { styles, urgency, attachments, links } for this recipient
   status              MessageDeliveryStatus @default(SCHEDULED)
   sent_at             DateTime?
   provider_message_id String?
