@@ -23,9 +23,17 @@ router.get('/batches', requireRoles(['ADMIN', 'MANAGE', 'CS', 'TEACHER']), contr
 
 // 2b. Google Sheet Sync Configs & Execution (ADMIN, MANAGE)
 router.get('/sheet-sync/configs', requireRoles(['ADMIN', 'MANAGE']), controller.getSheetSyncConfigs);
+router.put('/sheet-sync/service-account', requireRoles(['ADMIN', 'MANAGE']), controller.saveServiceAccount);
 router.put('/sheet-sync/configs/:code', requireRoles(['ADMIN', 'MANAGE']), controller.updateSheetSyncConfig);
 router.post('/sheet-sync/configs/:code/sync', requireRoles(['ADMIN', 'MANAGE']), controller.syncSheetByCode);
 router.post('/sheet-sync/sync-all', requireRoles(['ADMIN', 'MANAGE']), controller.syncAllSheets);
+
+// 2c. CS Sheet Backup Configs, Execution & Download (ADMIN, MANAGE, CS)
+router.get('/sheet-backup/configs', requireRoles(['ADMIN', 'MANAGE', 'CS']), controller.getSheetBackupConfigs);
+router.put('/sheet-backup/configs/:csUserId', requireRoles(['ADMIN', 'MANAGE']), controller.updateSheetBackupConfig);
+router.post('/sheet-backup/configs/:csUserId/run', requireRoles(['ADMIN', 'MANAGE', 'CS']), controller.runSheetBackupForCs);
+router.post('/sheet-backup/run-all', requireRoles(['ADMIN', 'MANAGE']), controller.runAllSheetBackups);
+router.get('/sheet-backup/configs/:csUserId/download', requireRoles(['ADMIN', 'MANAGE', 'CS']), controller.downloadSheetBackup);
 
 // 3. Create / Transfer Requests approval queue
 router.get('/create-requests', requireRoles(['ADMIN', 'MANAGE', 'CS']), controller.listCreateRequests);

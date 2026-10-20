@@ -13,6 +13,7 @@ import {
 import { prisma } from '../../prisma/client';
 import { createLogger } from '../../shared/logger/logger';
 import { AppError } from '../../middlewares/error.middleware';
+import { encrypt, decrypt } from '../../shared/crypto/aes-gcm';
 import {
   NormalizedSheetRow,
   loadOptimizedWorkbook,
@@ -48,7 +49,259 @@ export interface UpdateSyncConfigDTO {
   enabled?: boolean;
 }
 
+export interface ServiceAccountInfo {
+  configured: boolean;
+  clientEmail: string | null;
+  projectId: string | null;
+  source: 'DB' | 'ENV_FILE' | 'ENV_VARS' | 'NONE';
+}
+
+interface ParsedServiceAccountKey {
+  client_email: string;
+  private_key: string;
+  project_id?: string;
+  token_uri?: string;
+}
+
+const SERVICE_ACCOUNT_SETTING_KEY = 'GOOGLE_SERVICE_ACCOUNT_JSON';
+let cachedAccessToken: { token: string; expiresAtMs: number; clientEmail: string } | null = null;
+
 export class SheetSyncService {
+  /**
+   * Load Google Service Account credentials from DB (AppSetting) or Environment Variables
+   */
+  public async getServiceAccountKey(): Promise<{ key: ParsedServiceAccountKey | null; info: ServiceAccountInfo }> {
+    // 1. Check AppSetting in DB first (configured via Admin UI)
+    try {
+      const setting = await prisma.appSetting.findUnique({
+        where: { key: SERVICE_ACCOUNT_SETTING_KEY },
+      });
+      if (setting && setting.value && typeof setting.value === 'object') {
+        const val = setting.value as Record<string, any>;
+        if (val.client_email && val.private_key) {
+          const rawKey = String(val.private_key);
+          let decryptedKey = rawKey;
+          if (!rawKey.includes('-----BEGIN') && !rawKey.includes('PRIVATE KEY')) {
+            try {
+              decryptedKey = decrypt(rawKey, process.env.JWT_SECRET || 'default-secret');
+            } catch {
+              decryptedKey = rawKey;
+            }
+          }
+          return {
+            key: {
+              client_email: String(val.client_email).trim(),
+              private_key: decryptedKey.replace(/\\n/g, '\n'),
+              project_id: val.project_id ? String(val.project_id) : undefined,
+              token_uri: val.token_uri ? String(val.token_uri) : undefined,
+            },
+            info: {
+              configured: true,
+              clientEmail: String(val.client_email).trim(),
+              projectId: val.project_id ? String(val.project_id) : null,
+              source: 'DB',
+            },
+          };
+        }
+      }
+    } catch {
+      // Ignore DB lookup errors and fallback to env
+    }
+
+    // 2. Check GOOGLE_SERVICE_ACCOUNT_JSON_PATH
+    const jsonPath = process.env.GOOGLE_SERVICE_ACCOUNT_JSON_PATH?.trim();
+    if (jsonPath) {
+      const candidates = [
+        path.resolve(process.cwd(), jsonPath),
+        path.resolve(process.cwd(), '..', jsonPath),
+      ];
+      for (const p of candidates) {
+        if (fs.existsSync(p)) {
+          try {
+            const raw = JSON.parse(fs.readFileSync(p, 'utf-8'));
+            if (raw.client_email && raw.private_key) {
+              return {
+                key: {
+                  client_email: String(raw.client_email).trim(),
+                  private_key: String(raw.private_key).replace(/\\n/g, '\n'),
+                  project_id: raw.project_id,
+                  token_uri: raw.token_uri,
+                },
+                info: {
+                  configured: true,
+                  clientEmail: String(raw.client_email).trim(),
+                  projectId: raw.project_id || null,
+                  source: 'ENV_FILE',
+                },
+              };
+            }
+          } catch {
+            // Invalid JSON file
+          }
+        }
+      }
+    }
+
+    // 3. Check GOOGLE_SERVICE_ACCOUNT_EMAIL + GOOGLE_PRIVATE_KEY
+    const envEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL?.trim();
+    const envKey = process.env.GOOGLE_PRIVATE_KEY?.trim();
+    if (envEmail && envKey) {
+      return {
+        key: {
+          client_email: envEmail,
+          private_key: envKey.replace(/^["']|["']$/g, '').replace(/\\n/g, '\n'),
+        },
+        info: {
+          configured: true,
+          clientEmail: envEmail,
+          projectId: null,
+          source: 'ENV_VARS',
+        },
+      };
+    }
+
+    return {
+      key: null,
+      info: {
+        configured: false,
+        clientEmail: null,
+        projectId: null,
+        source: 'NONE',
+      },
+    };
+  }
+
+  /**
+   * Save or clear Google Service Account JSON via Admin UI
+   */
+  public async saveServiceAccountJson(rawJson: string | Record<string, any> | null, userId?: number): Promise<ServiceAccountInfo> {
+    cachedAccessToken = null;
+
+    if (!rawJson || (typeof rawJson === 'string' && !rawJson.trim())) {
+      await prisma.appSetting.deleteMany({
+        where: { key: SERVICE_ACCOUNT_SETTING_KEY },
+      });
+      const { info } = await this.getServiceAccountKey();
+      return info;
+    }
+
+    let parsed: Record<string, any>;
+    try {
+      parsed = typeof rawJson === 'string' ? JSON.parse(rawJson.trim()) : rawJson;
+    } catch {
+      throw new AppError(400, 'Nội dung JSON Service Account không hợp lệ. Vui lòng dán nguyên nội dung file .json tải từ Google Cloud.');
+    }
+
+    if (!parsed.client_email || !parsed.private_key || !String(parsed.private_key).includes('PRIVATE KEY')) {
+      throw new AppError(400, 'File JSON thiếu trường "client_email" hoặc "private_key" hợp lệ của Google Service Account.');
+    }
+
+    const encryptedKey = encrypt(
+      String(parsed.private_key).replace(/\\n/g, '\n'),
+      process.env.JWT_SECRET || 'default-secret'
+    );
+    const toStore = {
+      ...parsed,
+      private_key: encryptedKey,
+      private_key_encrypted: true,
+    };
+
+    await prisma.appSetting.upsert({
+      where: { key: SERVICE_ACCOUNT_SETTING_KEY },
+      update: {
+        value: toStore as Prisma.InputJsonValue,
+        updated_by_id: userId || null,
+      },
+      create: {
+        key: SERVICE_ACCOUNT_SETTING_KEY,
+        value: toStore as Prisma.InputJsonValue,
+        updated_by_id: userId || null,
+      },
+    });
+
+    const { info } = await this.getServiceAccountKey();
+    return info;
+  }
+
+  /**
+   * Generate OAuth2 Bearer access_token from Service Account using native Node.js crypto RS256
+   */
+  public async getGoogleAccessToken(sa: ParsedServiceAccountKey, _writable = false): Promise<string> {
+    const nowSec = Math.floor(Date.now() / 1000);
+    if (
+      cachedAccessToken &&
+      cachedAccessToken.clientEmail === sa.client_email &&
+      cachedAccessToken.expiresAtMs > Date.now() + 60_000
+    ) {
+      return cachedAccessToken.token;
+    }
+
+    const tokenUri = sa.token_uri || 'https://oauth2.googleapis.com/token';
+    const header = { alg: 'RS256', typ: 'JWT' };
+    const payload = {
+      iss: sa.client_email,
+      scope: 'https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/spreadsheets',
+      aud: tokenUri,
+      iat: nowSec,
+      exp: nowSec + 3600,
+    };
+
+    const base64UrlEncode = (obj: object) =>
+      Buffer.from(JSON.stringify(obj))
+        .toString('base64')
+        .replace(/=/g, '')
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_');
+
+    const unsignedToken = `${base64UrlEncode(header)}.${base64UrlEncode(payload)}`;
+    const signer = crypto.createSign('RSA-SHA256');
+    signer.update(unsignedToken);
+    signer.end();
+    const signature = signer
+      .sign(sa.private_key, 'base64')
+      .replace(/=/g, '')
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_');
+
+    const assertion = `${unsignedToken}.${signature}`;
+
+    const resp = await fetch(tokenUri, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+        assertion,
+      }).toString(),
+    });
+
+    if (!resp.ok) {
+      const errText = await resp.text().catch(() => '');
+      throw new AppError(
+        401,
+        `Xác thực Google Service Account (${sa.client_email}) thất bại: ${errText || resp.statusText}`
+      );
+    }
+
+    const tokenData = (await resp.json()) as { access_token: string; expires_in?: number };
+    cachedAccessToken = {
+      token: tokenData.access_token,
+      clientEmail: sa.client_email,
+      expiresAtMs: Date.now() + (tokenData.expires_in || 3600) * 1000,
+    };
+
+    return tokenData.access_token;
+  }
+
+  /**
+   * Get an authorized OAuth2 access token from configured Google Service Account
+   */
+  public async getAuthorizedAccessToken(): Promise<{ accessToken: string; clientEmail: string } | null> {
+    const { key } = await this.getServiceAccountKey();
+    if (!key) return null;
+    const accessToken = await this.getGoogleAccessToken(key, true);
+    return { accessToken, clientEmail: key.client_email };
+  }
+
   /**
    * Compute SHA-256 hex digest of a Buffer or string
    */
@@ -176,11 +429,12 @@ export class SheetSyncService {
   }
 
   /**
-   * Get all sync configs + CS users for UI mapping
+   * Get all sync configs + CS users + Service Account status for UI
    */
   public async getConfigs() {
     await this.ensureDefaultConfigs();
     const { csUsers, mapping, defaultCsId } = await this.buildDefaultCvhtMapping();
+    const { info: serviceAccount } = await this.getServiceAccountKey();
     const configs = await prisma.googleSheetSyncConfig.findMany({
       orderBy: { id: 'asc' },
     });
@@ -199,7 +453,7 @@ export class SheetSyncService {
       }
     }
 
-    return { configs, csUsers };
+    return { configs, csUsers, serviceAccount };
   }
 
   /**
@@ -235,7 +489,8 @@ export class SheetSyncService {
   }
 
   /**
-   * Load workbook buffer from Google Sheets export URL or local file path fallback
+   * Load workbook buffer from Google Drive API (with Service Account for private sheets),
+   * public export URL, or local file path fallback
    */
   private async loadWorkbookBuffer(config: {
     spreadsheet_url?: string | null;
@@ -244,6 +499,53 @@ export class SheetSyncService {
   }): Promise<{ buffer: Buffer; sourceLabel: string }> {
     const sheetId = config.spreadsheet_id || this.extractSpreadsheetId(config.spreadsheet_url);
     if (sheetId) {
+      const { key: saKey } = await this.getServiceAccountKey();
+
+      // 1. Authenticated download via Google Service Account (works for Restricted / Private sheets)
+      if (saKey) {
+        const accessToken = await this.getGoogleAccessToken(saKey);
+        const authHeaders = { Authorization: `Bearer ${accessToken}` };
+        const driveUrls = [
+          `https://www.googleapis.com/drive/v3/files/${sheetId}/export?mimeType=application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`,
+          `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=xlsx`,
+          `https://www.googleapis.com/drive/v3/files/${sheetId}?alt=media&supportsAllDrives=true`,
+        ];
+
+        let lastStatus = 0;
+        for (const url of driveUrls) {
+          const controller = new AbortController();
+          const timeout = setTimeout(() => controller.abort(), 30000);
+          try {
+            const resp = await fetch(url, { headers: authHeaders, signal: controller.signal });
+            clearTimeout(timeout);
+            lastStatus = resp.status;
+            if (resp.ok) {
+              const arrayBuf = await resp.arrayBuffer();
+              const buf = Buffer.from(arrayBuf);
+              if (buf.length > 100 && buf[0] === 0x50 && buf[1] === 0x4b) {
+                return { buffer: buf, sourceLabel: `GoogleSheet:${sheetId}` };
+              }
+            }
+          } catch (err) {
+            clearTimeout(timeout);
+            throw err;
+          }
+        }
+
+        if (lastStatus === 403 || lastStatus === 404) {
+          throw new AppError(
+            403,
+            `File Google Sheet (${sheetId}) đang khóa riêng tư và chưa cấp quyền cho Service Account. Vui lòng mở Google Sheet -> bấm nút Chia sẻ (Share) -> thêm email "${saKey.client_email}" với quyền Người xem (Viewer).`
+          );
+        }
+
+        throw new AppError(
+          400,
+          `Không thể tải dữ liệu từ Google Sheet (${sheetId}) qua Service Account (HTTP ${lastStatus}).`
+        );
+      }
+
+      // 2. Unauthenticated public export URL (only works if "Anyone with the link can view" is enabled)
       const exportUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=xlsx`;
       try {
         const controller = new AbortController();
@@ -257,8 +559,12 @@ export class SheetSyncService {
             return { buffer: buf, sourceLabel: exportUrl };
           }
         }
-        log.warn(`Google Sheet export returned non-xlsx or error status ${resp.status}, falling back to local file`);
+        throw new AppError(
+          403,
+          `File Google Sheet (${sheetId}) đang để chế độ Riêng tư (chỉ người có quyền mới xem được). Vui lòng cấu hình Google Service Account JSON ở khung phía trên rồi Share quyền Xem cho email Service Account đó.`
+        );
       } catch (err: any) {
+        if (err instanceof AppError) throw err;
         log.warn(`Failed to download Google Sheet (${sheetId}), falling back to local file`, {
           error: err?.message || String(err),
         });
