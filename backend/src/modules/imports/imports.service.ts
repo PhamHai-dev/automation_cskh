@@ -356,10 +356,20 @@ export class ImportsService {
       };
 
       const dailyCols: MonthAttendanceBlock['dailyCols'] = [];
+      let prevDate: Date | null = null;
       for (let c = cur.startCol + 6; c <= endCol; c++) {
         const c2 = row2.getCell(c);
-        const parsedDate = this.parseExcelDate(c2.value) || this.parseExcelDate(c2.text);
+        let parsedDate = this.parseExcelDate(c2.value) || this.parseExcelDate(c2.text);
+        if (!parsedDate && prevDate && c2.value && typeof c2.value === 'object' && 'formula' in c2.value) {
+          const formulaStr = String((c2.value as any).formula || '');
+          const plusMatch = formulaStr.match(/\+\s*(\d+)/);
+          if (plusMatch) {
+            const addDays = parseInt(plusMatch[1], 10);
+            parsedDate = new Date(prevDate.getTime() + addDays * 86400 * 1000);
+          }
+        }
         if (parsedDate) {
+          prevDate = parsedDate;
           dailyCols.push({
             colNumber: c,
             colLetter: worksheet.getColumn(c).letter,

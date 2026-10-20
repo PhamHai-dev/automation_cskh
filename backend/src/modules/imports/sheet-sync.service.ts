@@ -13,6 +13,7 @@ import {
 import { prisma } from '../../prisma/client';
 import { createLogger } from '../../shared/logger/logger';
 import { AppError } from '../../middlewares/error.middleware';
+import { encrypt, decrypt } from '../../shared/crypto/aes-gcm';
 import {
   NormalizedSheetRow,
   loadOptimizedWorkbook,
@@ -78,10 +79,19 @@ export class SheetSyncService {
       if (setting && setting.value && typeof setting.value === 'object') {
         const val = setting.value as Record<string, any>;
         if (val.client_email && val.private_key) {
+          const rawKey = String(val.private_key);
+          let decryptedKey = rawKey;
+          if (!rawKey.includes('-----BEGIN') && !rawKey.includes('PRIVATE KEY')) {
+            try {
+              decryptedKey = decrypt(rawKey, process.env.JWT_SECRET || 'default-secret');
+            } catch {
+              decryptedKey = rawKey;
+            }
+          }
           return {
             key: {
               client_email: String(val.client_email).trim(),
-              private_key: String(val.private_key).replace(/\\n/g, '\n'),
+              private_key: decryptedKey.replace(/\\n/g, '\n'),
               project_id: val.project_id ? String(val.project_id) : undefined,
               token_uri: val.token_uri ? String(val.token_uri) : undefined,
             },
@@ -186,15 +196,25 @@ export class SheetSyncService {
       throw new AppError(400, 'File JSON thiếu trường "client_email" hoặc "private_key" hợp lệ của Google Service Account.');
     }
 
+    const encryptedKey = encrypt(
+      String(parsed.private_key).replace(/\\n/g, '\n'),
+      process.env.JWT_SECRET || 'default-secret'
+    );
+    const toStore = {
+      ...parsed,
+      private_key: encryptedKey,
+      private_key_encrypted: true,
+    };
+
     await prisma.appSetting.upsert({
       where: { key: SERVICE_ACCOUNT_SETTING_KEY },
       update: {
-        value: parsed as Prisma.InputJsonValue,
+        value: toStore as Prisma.InputJsonValue,
         updated_by_id: userId || null,
       },
       create: {
         key: SERVICE_ACCOUNT_SETTING_KEY,
-        value: parsed as Prisma.InputJsonValue,
+        value: toStore as Prisma.InputJsonValue,
         updated_by_id: userId || null,
       },
     });
@@ -206,7 +226,7 @@ export class SheetSyncService {
   /**
    * Generate OAuth2 Bearer access_token from Service Account using native Node.js crypto RS256
    */
-  private async getGoogleAccessToken(sa: ParsedServiceAccountKey): Promise<string> {
+  public async getGoogleAccessToken(sa: ParsedServiceAccountKey, _writable = false): Promise<string> {
     const nowSec = Math.floor(Date.now() / 1000);
     if (
       cachedAccessToken &&
@@ -220,7 +240,7 @@ export class SheetSyncService {
     const header = { alg: 'RS256', typ: 'JWT' };
     const payload = {
       iss: sa.client_email,
-      scope: 'https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/spreadsheets.readonly',
+      scope: 'https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/spreadsheets',
       aud: tokenUri,
       iat: nowSec,
       exp: nowSec + 3600,
@@ -271,6 +291,17 @@ export class SheetSyncService {
 
     return tokenData.access_token;
   }
+
+  /**
+   * Get an authorized OAuth2 access token from configured Google Service Account
+   */
+  public async getAuthorizedAccessToken(): Promise<{ accessToken: string; clientEmail: string } | null> {
+    const { key } = await this.getServiceAccountKey();
+    if (!key) return null;
+    const accessToken = await this.getGoogleAccessToken(key, true);
+    return { accessToken, clientEmail: key.client_email };
+  }
+
   /**
    * Compute SHA-256 hex digest of a Buffer or string
    */

@@ -56,6 +56,7 @@ model User {
   attendances_as_cs                Attendance[]          @relation("AttendanceCSUser")
   resolved_attendances             Attendance[]          @relation("AttendanceResolver")
   user_preferences                 UserPreference[]
+  cs_sheet_backup_config           CsSheetBackupConfig?  @relation("UserCsSheetBackup")
 
   @@map("users")
 }
@@ -918,6 +919,32 @@ enum ImportType {
   ATTENDANCE
   TEACHER_ATTENDANCE
   GOOGLE_SHEET_SYNC
+  GOOGLE_SHEET_BACKUP
+}
+
+model CsSheetBackupConfig {
+  id                     Int       @id @default(autoincrement())
+  cs_user_id             Int       @unique
+  name                   String
+  target_spreadsheet_url String?   @db.Text
+  target_spreadsheet_id  String?
+  local_backup_path      String?
+  sheet1_name            String    @default("1.Chăm sóc")
+  sheet3_name            String    @default("3.Chấm buổi")
+  schedule_times         Json? // e.g. ["12:00", "21:00"]
+  enabled                Boolean   @default(true)
+  require_private_sheet  Boolean   @default(true)
+  mask_sensitive_data    Boolean   @default(false)
+  last_backup_at         DateTime?
+  last_status            String? // "IDLE" | "RUNNING" | "SUCCESS" | "FAILED"
+  last_summary           Json?
+  last_error             String?   @db.Text
+  created_at             DateTime  @default(now())
+  updated_at             DateTime  @updatedAt
+
+  cs_user User @relation("UserCsSheetBackup", fields: [cs_user_id], references: [id], onDelete: Cascade)
+
+  @@map("cs_sheet_backup_configs")
 }
 
 model GoogleSheetSyncConfig {

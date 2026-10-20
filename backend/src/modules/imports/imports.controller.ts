@@ -1,16 +1,23 @@
 import { Request, Response, NextFunction } from 'express';
 import { ImportsService } from './imports.service';
 import { SheetSyncService } from './sheet-sync.service';
+import { SheetBackupService } from './sheet-backup.service';
 import { ImportType } from '@prisma/client';
 import { AppError } from '../../middlewares/error.middleware';
 
 export class ImportsController {
   private service: ImportsService;
   private sheetSyncService: SheetSyncService;
+  private sheetBackupService: SheetBackupService;
 
-  constructor(service?: ImportsService, sheetSyncService?: SheetSyncService) {
+  constructor(
+    service?: ImportsService,
+    sheetSyncService?: SheetSyncService,
+    sheetBackupService?: SheetBackupService
+  ) {
     this.service = service || new ImportsService();
     this.sheetSyncService = sheetSyncService || new SheetSyncService();
+    this.sheetBackupService = sheetBackupService || new SheetBackupService(this.sheetSyncService, this.service);
   }
 
   upload = async (req: Request, res: Response, next: NextFunction) => {
@@ -341,6 +348,102 @@ export class ImportsController {
         actorId: user?.id,
       });
       res.status(200).json({ data, meta: null });
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  getSheetBackupConfigs = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const user = (req as any).user;
+      const actor = {
+        id: user?.id || 1,
+        roles: (user?.roles as string[]) || ['ADMIN'],
+      };
+      const data = await this.sheetBackupService.getConfigs(actor);
+      res.status(200).json({ data, meta: null });
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  updateSheetBackupConfig = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const csUserId = parseInt(req.params.csUserId, 10);
+      if (isNaN(csUserId)) {
+        throw new AppError(400, 'csUserId không hợp lệ');
+      }
+      const data = await this.sheetBackupService.updateConfig(csUserId, req.body || {});
+      res.status(200).json({ data, meta: null });
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  runSheetBackupForCs = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const csUserId = parseInt(req.params.csUserId, 10);
+      if (isNaN(csUserId)) {
+        throw new AppError(400, 'csUserId không hợp lệ');
+      }
+      const user = (req as any).user;
+      const roles: string[] = Array.isArray(user?.roles) ? user.roles : [];
+      const isAdminOrManage = roles.includes('ADMIN') || roles.includes('MANAGE');
+
+      if (!isAdminOrManage && csUserId !== user?.id) {
+        throw new AppError(403, 'Bạn chỉ được phép sao lưu dữ liệu học viên thuộc tài khoản của mình');
+      }
+
+      const forceFullRewrite = Boolean(req.body?.forceFullRewrite);
+      const data = await this.sheetBackupService.runBackupForCs(csUserId, {
+        forceFullRewrite,
+        actorId: user?.id,
+      });
+      res.status(200).json({ data, meta: null });
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  runAllSheetBackups = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const user = (req as any).user;
+      const forceFullRewrite = Boolean(req.body?.forceFullRewrite);
+      const data = await this.sheetBackupService.runAllBackups({
+        forceFullRewrite,
+        actorId: user?.id,
+      });
+      res.status(200).json({ data, meta: null });
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  downloadSheetBackup = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const csUserId = parseInt(req.params.csUserId, 10);
+      if (isNaN(csUserId)) {
+        throw new AppError(400, 'csUserId không hợp lệ');
+      }
+      const user = (req as any).user;
+      const roles: string[] = Array.isArray(user?.roles) ? user.roles : [];
+      const isAdminOrManage = roles.includes('ADMIN') || roles.includes('MANAGE');
+
+      if (!isAdminOrManage && csUserId !== user?.id) {
+        throw new AppError(403, 'Bạn chỉ được phép tải xuống dữ liệu học viên thuộc tài khoản của mình');
+      }
+
+      const refresh = req.query.refresh === 'true';
+      const { absFilePath, fileName } = await this.sheetBackupService.getBackupFileForDownload(csUserId, {
+        refresh,
+        actorId: user?.id,
+      });
+
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+      res.sendFile(absFilePath, (err) => {
+        if (err) next(err);
+      });
     } catch (err) {
       next(err);
     }

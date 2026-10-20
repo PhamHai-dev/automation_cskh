@@ -13,6 +13,7 @@ import { startZaloHealthCheck } from './modules/zalo/zalo-health-check';
 import { startLineHealthCheck } from './modules/line/line-health-check';
 import { startAutoAttendanceScheduler, stopAutoAttendanceScheduler } from './modules/auto-attendance/auto-attendance-scheduler';
 import { startGoogleSheetSyncScheduler, stopGoogleSheetSyncScheduler } from './modules/imports/sheet-sync.service';
+import { startCsSheetBackupScheduler, stopCsSheetBackupScheduler } from './modules/imports/sheet-backup.service';
 
 const log = createLogger('Server');
 
@@ -101,6 +102,16 @@ const server = app.listen(PORT, async () => {
     });
   }
 
+  // Start CS Sheet backup background scheduler
+  try {
+    startCsSheetBackupScheduler();
+    log.info('CS Sheet backup scheduler started');
+  } catch (err) {
+    log.warn('CS Sheet backup scheduler start failed (continuing)', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+
   log.info('Server started', {
     port: PORT,
     nodeEnv: env.NODE_ENV,
@@ -157,6 +168,16 @@ async function shutdown(signal: string): Promise<void> {
     log.info('Google Sheet sync scheduler stopped');
   } catch (err) {
     log.error('Google Sheet sync scheduler shutdown error', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+
+  // Stop CS Sheet backup scheduler
+  try {
+    stopCsSheetBackupScheduler();
+    log.info('CS Sheet backup scheduler stopped');
+  } catch (err) {
+    log.error('CS Sheet backup scheduler shutdown error', {
       error: err instanceof Error ? err.message : String(err),
     });
   }

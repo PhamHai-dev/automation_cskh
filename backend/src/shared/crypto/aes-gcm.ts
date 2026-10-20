@@ -65,3 +65,37 @@ export function encryptJson(obj: unknown): string {
 export function decryptJson<T = unknown>(b64: string): T {
   return JSON.parse(decryptSessionData(b64)) as T;
 }
+
+/**
+ * Encrypt plaintext with a custom secret (or default secret) using AES-256-GCM.
+ */
+export function encrypt(plaintext: string, customSecret?: string): string {
+  const secret = customSecret || process.env.JWT_SECRET || process.env.ZALO_SESSION_SECRET || 'default-secret';
+  const key = deriveKey(secret);
+  const iv = crypto.randomBytes(IV_LENGTH);
+  const cipher = crypto.createCipheriv(ALGORITHM, key, iv);
+  const encrypted = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
+  const authTag = cipher.getAuthTag();
+  const packed = Buffer.concat([iv, authTag, encrypted]);
+  return packed.toString('base64');
+}
+
+/**
+ * Decrypt base64 ciphertext encrypted with encrypt() using AES-256-GCM.
+ */
+export function decrypt(b64: string, customSecret?: string): string {
+  const secret = customSecret || process.env.JWT_SECRET || process.env.ZALO_SESSION_SECRET || 'default-secret';
+  const key = deriveKey(secret);
+  const packed = Buffer.from(b64, 'base64');
+  if (packed.length < IV_LENGTH + AUTH_TAG_LENGTH) {
+    throw new Error('Invalid encrypted data: too short');
+  }
+  const iv = packed.subarray(0, IV_LENGTH);
+  const authTag = packed.subarray(IV_LENGTH, IV_LENGTH + AUTH_TAG_LENGTH);
+  const ciphertext = packed.subarray(IV_LENGTH + AUTH_TAG_LENGTH);
+  const decipher = crypto.createDecipheriv(ALGORITHM, key, iv);
+  decipher.setAuthTag(authTag);
+  const decrypted = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+  return decrypted.toString('utf8');
+}
+
