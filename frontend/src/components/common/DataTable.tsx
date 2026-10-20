@@ -90,7 +90,7 @@ export function DataTable<T>({
                 <th
                   key={index}
                   style={col.width ? { width: col.width } : undefined}
-                  className={`px-4 py-3.5 text-xs font-bold whitespace-nowrap ${col.className || ''}`}
+                  className={`px-4 py-3.5 text-xs font-bold whitespace-nowrap ${col.className || ''} !text-center`}
                 >
                   {col.header}
                 </th>

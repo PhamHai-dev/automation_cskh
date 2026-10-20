@@ -106,12 +106,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
       title: 'ĐÀO TẠO & LỚP HỌC',
       items: [
         {
-          name: 'Quản lý Lớp học',
-          path: '/classes',
-          icon: <GraduationCap className="w-5 h-5 shrink-0" />,
-          allowedRoles: ['ADMIN', 'MANAGE', 'CS'],
-        },
-        {
           name: 'Đối soát Điểm danh',
           path: '/attendance/reconciliation',
           icon: <ClipboardCheck className="w-5 h-5 shrink-0" />,
@@ -138,7 +132,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           name: 'Lớp học & Điểm danh',
           path: '/classes',
           icon: <GraduationCap className="w-5 h-5 shrink-0" />,
-          allowedRoles: ['ADMIN', 'MANAGE', 'TEACHER'],
+          allowedRoles: ['ADMIN', 'MANAGE', 'CS', 'TEACHER'],
         },
         {
           name: 'Lịch dạy của tôi',

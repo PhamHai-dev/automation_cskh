@@ -1119,7 +1119,7 @@ export const ClassesPage: React.FC = () => {
   return (
     <PageContainer>
       <PageHeader
-        title={isTeacher ? 'Lớp học & Điểm danh Giáo viên' : 'Quản lý Lớp học'}
+        title="Lớp học & Điểm danh"
         actions={
           <div className="flex items-center gap-2">
             {isTeacher && (
