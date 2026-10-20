@@ -19,6 +19,7 @@ import {
   registerLineDeliveryDispatcher,
   type ILineDeliveryDispatcher,
   type LineSendResult,
+  type RichMessageMetadata,
 } from './line-dispatcher.contract';
 import { emitLineMessage, emitLineStatus } from './line-socket';
 import type {
@@ -228,6 +229,7 @@ export class LineAccountPool implements ILineDeliveryDispatcher {
     lineAccountId: number;
     targetLineUid: string;
     content: string;
+    richMetadata?: RichMessageMetadata | null;
     retryKey?: string;
     sentVia?: 'user' | 'automation' | 'system';
   }): Promise<LineSendResult> {
@@ -247,6 +249,7 @@ export class LineAccountPool implements ILineDeliveryDispatcher {
         lineAccountId: params.lineAccountId,
         to: params.targetLineUid,
         text: params.content,
+        ...(params.richMetadata ? { richMetadata: params.richMetadata } : {}),
         retryKey: params.retryKey,
       });
     } else {
@@ -254,7 +257,12 @@ export class LineAccountPool implements ILineDeliveryDispatcher {
       if (!personalAdapter) {
         throw new Error(`LINE personal adapter not found for account ${params.lineAccountId}`);
       }
-      result = await personalAdapter.sendMessage(params.targetLineUid, params.content);
+      const linkSuffix = (params.richMetadata?.links ?? [])
+        .map((l) => l.url?.trim())
+        .filter((u): u is string => Boolean(u) && !params.content.includes(u!))
+        .join('\n');
+      const personalText = linkSuffix ? `${params.content}\n${linkSuffix}` : params.content;
+      result = await personalAdapter.sendMessage(params.targetLineUid, personalText);
     }
 
     await this.recordOutboundMessage({
@@ -273,6 +281,7 @@ export class LineAccountPool implements ILineDeliveryDispatcher {
     lineAccountId: number;
     targetLineGroupId: string;
     content: string;
+    richMetadata?: RichMessageMetadata | null;
     retryKey?: string;
     sentVia?: 'user' | 'automation' | 'system';
   }): Promise<LineSendResult> {
@@ -292,6 +301,7 @@ export class LineAccountPool implements ILineDeliveryDispatcher {
         lineAccountId: params.lineAccountId,
         to: params.targetLineGroupId,
         text: params.content,
+        ...(params.richMetadata ? { richMetadata: params.richMetadata } : {}),
         retryKey: params.retryKey,
       });
     } else {
@@ -299,7 +309,12 @@ export class LineAccountPool implements ILineDeliveryDispatcher {
       if (!personalAdapter) {
         throw new Error(`LINE personal adapter not found for account ${params.lineAccountId}`);
       }
-      result = await personalAdapter.sendMessage(params.targetLineGroupId, params.content);
+      const linkSuffix = (params.richMetadata?.links ?? [])
+        .map((l) => l.url?.trim())
+        .filter((u): u is string => Boolean(u) && !params.content.includes(u!))
+        .join('\n');
+      const personalText = linkSuffix ? `${params.content}\n${linkSuffix}` : params.content;
+      result = await personalAdapter.sendMessage(params.targetLineGroupId, personalText);
     }
 
     await this.recordOutboundMessage({
