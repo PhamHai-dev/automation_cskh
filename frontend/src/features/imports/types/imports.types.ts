@@ -152,3 +152,64 @@ export interface SheetSyncResult {
   error?: string | null;
 }
 
+export interface SheetBackupSheetStats {
+  totalEnrollments: number;
+  unchangedRows: number;
+  updatedRows: number;
+  appendedRows: number;
+  updatedCellsCount: number;
+}
+
+export interface CsSheetBackupSummary {
+  csUserId?: number;
+  staffCode?: string;
+  status?: string;
+  syncedToGoogleSheet?: boolean;
+  localFilePath?: string;
+  sheet1?: SheetBackupSheetStats;
+  sheet3?: SheetBackupSheetStats;
+  backedUpAt?: string;
+}
+
+export interface CsSheetBackupConfigItem {
+  id: number;
+  cs_user_id: number;
+  name: string;
+  target_spreadsheet_url?: string | null;
+  target_spreadsheet_id?: string | null;
+  local_backup_path?: string | null;
+  sheet1_name: string;
+  sheet3_name: string;
+  schedule_times?: string[] | null; // e.g. ["12:00", "21:00"]
+  enabled: boolean;
+  require_private_sheet: boolean;
+  mask_sensitive_data: boolean;
+  last_backup_at?: string | null;
+  last_status?: string | null;
+  last_summary?: CsSheetBackupSummary | null;
+  last_error?: string | null;
+  hasLocalBackupFile?: boolean;
+  cs_user: {
+    id: number;
+    name: string | null;
+    email: string;
+    staff_code: string | null;
+  };
+  studentCounts: {
+    total: number;
+    kaiwa: number;
+    jlpt: number;
+  };
+}
+
+export interface UpdateCsSheetBackupConfigDTO {
+  target_spreadsheet_url?: string | null;
+  sheet1_name?: string;
+  sheet3_name?: string;
+  schedule_times?: string[];
+  enabled?: boolean;
+  require_private_sheet?: boolean;
+  mask_sensitive_data?: boolean;
+}
+
+

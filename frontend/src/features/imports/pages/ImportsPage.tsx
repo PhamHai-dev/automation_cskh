@@ -8,15 +8,19 @@ import { HorizontalTabs } from '../../../components/ui/HorizontalTabs';
 import { ImportWizard } from '../components/ImportWizard';
 import { ImportHistoryTable } from '../components/ImportHistoryTable';
 import { GoogleSheetSyncPanel } from '../components/GoogleSheetSyncPanel';
+import { CsSheetBackupPanel } from '../components/CsSheetBackupPanel';
 import { AttendanceExcelImportPanel } from '../../attendance/components/AttendanceExcelImportPanel';
 import { importsApi } from '../api/imports.api';
-import { CalendarCheck, Download, History, RefreshCw, UploadCloud } from 'lucide-react';
+import { CalendarCheck, DatabaseBackup, Download, History, RefreshCw, UploadCloud } from 'lucide-react';
 
 export const ImportsPage: React.FC = () => {
   const toast = useToast();
   const [searchParams] = useSearchParams();
-  const [activeTab, setActiveTab] = useState<'sheet-sync' | 'wizard' | 'attendance' | 'history'>(() => {
+  const [activeTab, setActiveTab] = useState<
+    'sheet-sync' | 'sheet-backup' | 'wizard' | 'attendance' | 'history'
+  >(() => {
     const tab = searchParams.get('tab');
+    if (tab === 'sheet-backup') return 'sheet-backup';
     if (tab === 'attendance') return 'attendance';
     if (tab === 'wizard') return 'wizard';
     if (tab === 'history') return 'history';
@@ -26,7 +30,9 @@ export const ImportsPage: React.FC = () => {
   const [isExportingAttendance, setIsExportingAttendance] = useState(false);
 
   useEffect(() => {
-    if (searchParams.get('tab') === 'attendance') setActiveTab('attendance');
+    const tab = searchParams.get('tab');
+    if (tab === 'attendance') setActiveTab('attendance');
+    if (tab === 'sheet-backup') setActiveTab('sheet-backup');
   }, [searchParams]);
 
   const handleExportStudents = async () => {
@@ -88,6 +94,7 @@ export const ImportsPage: React.FC = () => {
         className="mb-6"
         items={[
           { value: 'sheet-sync', label: 'Đồng bộ Google Sheet (JLPT & Kaiwa)', icon: <RefreshCw /> },
+          { value: 'sheet-backup', label: 'Backup Sổ CSKH (Sheet 1 & 3)', icon: <DatabaseBackup /> },
           { value: 'wizard', label: 'Upload Hồ sơ (Sheet 1)', icon: <UploadCloud /> },
           { value: 'attendance', label: 'Điểm danh CSKH / GV', icon: <CalendarCheck /> },
           { value: 'history', label: 'Lịch sử nhập', icon: <History /> },
@@ -95,6 +102,7 @@ export const ImportsPage: React.FC = () => {
       />
 
       {activeTab === 'sheet-sync' && <GoogleSheetSyncPanel />}
+      {activeTab === 'sheet-backup' && <CsSheetBackupPanel />}
       {activeTab === 'wizard' && <ImportWizard onImportComplete={() => setActiveTab('history')} />}
       {activeTab === 'attendance' && <AttendanceExcelImportPanel />}
       {activeTab === 'history' && <ImportHistoryTable />}
