@@ -216,6 +216,37 @@ export const BROADCAST_TEMPLATE_VARIABLES = [
   { key: 'teacher_name', label: 'Tên giáo viên', sample: 'Ms. Lan Hương' },
 ];
 
+export interface RichAttachmentItem {
+  url: string;
+  filePath?: string;
+  filename: string;
+  mimeType: string;
+  size: number;
+  width?: number;
+  height?: number;
+}
+
+export interface RichLinkItem {
+  url: string;
+  title?: string;
+  description?: string;
+  thumbnailUrl?: string;
+  buttonLabel?: string;
+}
+
+export interface RichTextStyleSpan {
+  start: number;
+  len: number;
+  st: string;
+}
+
+export interface RichMessageMetadata {
+  urgency?: 0 | 1 | 2; // 0 = Bình thường, 1 = Quan trọng (!), 2 = Khẩn cấp (!!)
+  styles?: RichTextStyleSpan[];
+  attachments?: RichAttachmentItem[];
+  links?: RichLinkItem[];
+}
+
 export interface BroadcastRecipient {
   id: number;
   campaign_id: number;
@@ -229,6 +260,7 @@ export interface BroadcastRecipient {
   external_target_id: string | null;
   target_display_name: string | null;
   rendered_content: string;
+  rendered_metadata?: RichMessageMetadata | null;
   status: MessageDeliveryStatus;
   sent_at: string | null;
   provider_message_id: string | null;
@@ -242,6 +274,7 @@ export interface BroadcastCampaign {
   name: string;
   description: string | null;
   message_content: string;
+  message_metadata?: RichMessageMetadata | null;
   channel_mode: BroadcastChannelMode;
   schedule_type: BroadcastScheduleType;
   scheduled_at: string | null;
@@ -354,6 +387,7 @@ export interface CreateBroadcastCampaignDTO {
   name: string;
   description?: string;
   message_content: string;
+  message_metadata?: RichMessageMetadata | null;
   channel_mode: BroadcastChannelMode;
   schedule_type: BroadcastScheduleType;
   scheduled_at?: string | null;

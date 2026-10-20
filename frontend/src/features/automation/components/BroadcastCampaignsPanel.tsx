@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { automationApi } from '../api/automation.api';
 import type {
   BroadcastCampaign,
@@ -10,13 +10,19 @@ import type {
   BroadcastTargetZaloGroupItem,
   BroadcastTargetLineGroupItem,
   CreateBroadcastCampaignDTO,
+  RichMessageMetadata,
 } from '../types/automation.types';
 import {
   BROADCAST_CHANNEL_MODE_LABELS,
   BROADCAST_STATUS_LABELS,
-  BROADCAST_TEMPLATE_VARIABLES,
   DELIVERY_STATUS_LABELS,
 } from '../types/automation.types';
+import {
+  RichChatComposer,
+  renderFormattedRichText,
+  isImageAttachment,
+  formatBytes,
+} from './RichChatComposer';
 import { DataTable, Column } from '../../../components/common/DataTable';
 import { Button } from '../../../components/ui/Button';
 import { Input } from '../../../components/ui/Input';
@@ -31,6 +37,7 @@ import {
   Clock,
   CheckCircle2,
   AlertTriangle,
+  AlertCircle,
   RefreshCw,
   Eye,
   Trash2,
@@ -38,12 +45,15 @@ import {
   Ban,
   Users,
   MessageSquare,
-  Sparkles,
   Search,
   CheckSquare,
   Radio,
   Layers,
   Loader2,
+  Paperclip,
+  Link2,
+  ExternalLink,
+  FileText,
 } from 'lucide-react';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -155,7 +165,6 @@ export const BroadcastCampaignsPanel: React.FC<BroadcastCampaignsPanelProps> = (
 }) => {
   const toast = useToast();
   const { on, off } = useSocket();
-  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   // Campaign list state
   const [campaigns, setCampaigns] = useState<BroadcastCampaign[]>([]);
@@ -196,8 +205,13 @@ export const BroadcastCampaignsPanel: React.FC<BroadcastCampaignsPanelProps> = (
   const [scheduledAt, setScheduledAt] = useState<string>(getDefaultScheduledDateTimeLocal());
   const [channelMode, setChannelMode] = useState<BroadcastChannelMode>('AUTO');
   const [messageContent, setMessageContent] = useState(
-    'Xin chào phụ huynh và học viên {{student_name}} ({{class_name}}),\nEdura xin thông báo lịch học tuần mới. Hiện học viên còn {{remaining_sessions}} buổi trong gói {{enrollment_package}}. Mọi thắc mắc vui lòng liên hệ CSKH {{cs_name}} để được hỗ trợ nhanh nhất!'
+    '[big][b]THÔNG BÁO LỊCH HỌC TUẦN MỚI[/b][/big]\nXin chào phụ huynh và học viên [b]{{student_name}}[/b] ({{class_name}}),\n• Hiện học viên còn [orange][b]{{remaining_sessions}} buổi[/b][/orange] trong gói {{enrollment_package}}.\n• Mọi thắc mắc vui lòng liên hệ CSKH [green]{{cs_name}}[/green] để được hỗ trợ nhanh nhất!'
   );
+  const [messageMetadata, setMessageMetadata] = useState<RichMessageMetadata>({
+    urgency: 0,
+    attachments: [],
+    links: [],
+  });
 
   // Target selection tabs & state
   const [targetTab, setTargetTab] = useState<'STUDENTS' | 'ZALO_GROUPS' | 'LINE_GROUPS'>('STUDENTS');
@@ -371,6 +385,11 @@ export const BroadcastCampaignsPanel: React.FC<BroadcastCampaignsPanelProps> = (
     setScheduleType('IMMEDIATE');
     setScheduledAt(getDefaultScheduledDateTimeLocal());
     setChannelMode('AUTO');
+    setMessageMetadata({
+      urgency: 0,
+      attachments: [],
+      links: [],
+    });
     setSelectedStudentIds([]);
     setSelectedZaloGroupIds([]);
     setSelectedLineGroupIds([]);
@@ -545,25 +564,7 @@ export const BroadcastCampaignsPanel: React.FC<BroadcastCampaignsPanelProps> = (
     }
   };
 
-  // ─── Template Variable Insertion & Live Preview ─────────────────────────────
-
-  const insertVariable = (varKey: string) => {
-    const token = `{{${varKey}}}`;
-    const el = textareaRef.current;
-    if (!el) {
-      setMessageContent((prev) => `${prev}${token}`);
-      return;
-    }
-    const start = el.selectionStart ?? messageContent.length;
-    const end = el.selectionEnd ?? messageContent.length;
-    const next =
-      messageContent.substring(0, start) + token + messageContent.substring(end);
-    setMessageContent(next);
-    setTimeout(() => {
-      el.focus();
-      el.setSelectionRange(start + token.length, start + token.length);
-    }, 0);
-  };
+  // ─── Live Preview Sample Student ───────────────────────────────────────────
 
   const previewSampleStudent = useMemo(() => {
     if (selectedStudentIds.length > 0) {
@@ -572,28 +573,6 @@ export const BroadcastCampaignsPanel: React.FC<BroadcastCampaignsPanelProps> = (
     }
     return normalizedStudents[0] ?? null;
   }, [selectedStudentIds, normalizedStudents]);
-
-  const renderedPreview = useMemo(() => {
-    const sampleMap: Record<string, string> = {
-      student_name: previewSampleStudent?.fullName || 'Nguyễn Minh Anh',
-      student_phone: previewSampleStudent?.phone || '0912345678',
-      class_name:
-        previewSampleStudent?.className && previewSampleStudent.className !== 'Chưa xếp lớp'
-          ? previewSampleStudent.className
-          : 'IELTS Intensive K18',
-      enrollment_package: previewSampleStudent?.packageName || 'IELTS 6.5 Cam Kết',
-      remaining_sessions: previewSampleStudent?.remainingSessions || '12',
-      cs_name:
-        previewSampleStudent?.csName && previewSampleStudent.csName !== 'Chưa phân công'
-          ? previewSampleStudent.csName
-          : 'Trần Thu Hà',
-      teacher_name: previewSampleStudent?.teacherName || 'Ms. Lan Hương',
-    };
-
-    return messageContent.replace(/\{\{(\w+)\}\}/g, (match, key) => {
-      return sampleMap[key] !== undefined ? sampleMap[key] : match;
-    });
-  }, [messageContent, previewSampleStudent]);
 
   // ─── Submit Create Broadcast ────────────────────────────────────────────────
 
@@ -606,8 +585,12 @@ export const BroadcastCampaignsPanel: React.FC<BroadcastCampaignsPanelProps> = (
       toast.warning('Vui lòng nhập tên chiến dịch gửi tin');
       return;
     }
-    if (!messageContent.trim()) {
-      toast.warning('Vui lòng nhập nội dung tin nhắn');
+    if (
+      !messageContent.trim() &&
+      !(messageMetadata.attachments?.length) &&
+      !(messageMetadata.links?.length)
+    ) {
+      toast.warning('Vui lòng nhập nội dung tin nhắn hoặc đính kèm Ảnh/File/Link');
       return;
     }
     if (totalSelectedTargets === 0) {
@@ -630,6 +613,7 @@ export const BroadcastCampaignsPanel: React.FC<BroadcastCampaignsPanelProps> = (
       name: campaignName.trim(),
       description: campaignDescription.trim() || undefined,
       message_content: messageContent,
+      message_metadata: messageMetadata,
       channel_mode: channelMode,
       schedule_type: scheduleType,
       scheduled_at:
@@ -753,21 +737,52 @@ export const BroadcastCampaignsPanel: React.FC<BroadcastCampaignsPanelProps> = (
   const columns: Column<BroadcastCampaign>[] = [
     {
       header: 'Tên chiến dịch & Nội dung mẫu',
-      cell: (item) => (
-        <div className="max-w-md">
-          <div className="flex items-center gap-2">
-            <span className="font-bold text-text-primary text-sm">{item.name}</span>
-          </div>
-          {item.description && (
-            <div className="text-xs text-text-secondary mt-0.5 line-clamp-1">
-              {item.description}
+      cell: (item) => {
+        const meta = item.message_metadata;
+        const urgency = meta?.urgency ?? 0;
+        const attCount = meta?.attachments?.length ?? 0;
+        const linkCount = meta?.links?.length ?? 0;
+
+        return (
+          <div className="max-w-md">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="font-bold text-text-primary text-sm">{item.name}</span>
+              {urgency === 2 && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-rose-50 text-[#db342e] border border-rose-200">
+                  <AlertCircle className="w-3 h-3" />
+                  <span>!! Khẩn cấp</span>
+                </span>
+              )}
+              {urgency === 1 && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-50 text-[#f27806] border border-amber-200">
+                  <AlertTriangle className="w-3 h-3" />
+                  <span>! Quan trọng</span>
+                </span>
+              )}
+              {attCount > 0 && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                  <Paperclip className="w-3 h-3" />
+                  <span>📎 {attCount} tệp</span>
+                </span>
+              )}
+              {linkCount > 0 && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                  <Link2 className="w-3 h-3" />
+                  <span>🔗 {linkCount} link</span>
+                </span>
+              )}
             </div>
-          )}
-          <div className="mt-1.5 text-xs text-text-muted bg-surface-muted/80 border border-border/60 rounded-lg px-2.5 py-1.5 line-clamp-2 whitespace-pre-wrap font-normal">
-            {item.message_content}
+            {item.description && (
+              <div className="text-xs text-text-secondary mt-0.5 line-clamp-1">
+                {item.description}
+              </div>
+            )}
+            <div className="mt-1.5 text-xs text-text-primary bg-surface-muted/80 border border-border/60 rounded-lg px-2.5 py-1.5 line-clamp-2 whitespace-pre-wrap font-normal">
+              {renderFormattedRichText(item.message_content)}
+            </div>
           </div>
-        </div>
-      ),
+        );
+      },
     },
     {
       header: 'Kênh & Chế độ phát',
@@ -1748,7 +1763,7 @@ export const BroadcastCampaignsPanel: React.FC<BroadcastCampaignsPanelProps> = (
             )}
           </div>
 
-          {/* ─── Section 3: Soạn nội dung tin nhắn & Biến cá nhân hóa ────────── */}
+          {/* ─── Section 3: Soạn nội dung tin nhắn Rich Chat (Zalo PC & LINE Flex) ─── */}
           <div className="p-4 sm:p-5 rounded-2xl bg-surface-muted/50 border border-border/80 space-y-4">
             <div className="flex items-center gap-2">
               <span className="w-6 h-6 rounded-full bg-primary text-white text-xs font-bold flex items-center justify-center">
@@ -1756,67 +1771,21 @@ export const BroadcastCampaignsPanel: React.FC<BroadcastCampaignsPanelProps> = (
               </span>
               <div>
                 <h4 className="text-sm font-bold text-text-primary">
-                  Soạn nội dung tin nhắn & Biến cá nhân hóa
+                  Khung Soạn Thảo Tin Nhắn Đa Phương Tiện (Chuẩn Zalo PC & LINE OA Flex)
                 </h4>
                 <p className="text-xs text-text-muted">
-                  Bấm vào các thẻ biến bên dưới để chèn tự động tên học viên, lớp học, số buổi còn lại... vào nội dung.
+                  Hỗ trợ in đậm, in nghiêng, gạch chân, tô màu chữ, đánh dấu Khẩn cấp (!!), đính kèm Hình ảnh / File tài liệu và gắn Thẻ Link / Nút bấm CTA.
                 </p>
               </div>
             </div>
 
-            {/* Clickable Variable Chips */}
-            <div className="flex flex-wrap items-center gap-1.5">
-              {BROADCAST_TEMPLATE_VARIABLES.map((v) => (
-                <button
-                  key={v.key}
-                  type="button"
-                  onClick={() => insertVariable(v.key)}
-                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-surface border border-border hover:border-primary hover:bg-primary-soft/40 text-xs font-medium text-text-primary transition-colors shadow-2xs"
-                  title={`Chèn biến {{${v.key}}} (${v.label})`}
-                >
-                  <Sparkles className="w-3 h-3 text-primary" />
-                  <span>{v.label}</span>
-                  <code className="text-[10px] text-primary font-mono bg-primary/10 px-1 rounded">
-                    {`{{${v.key}}}`}
-                  </code>
-                </button>
-              ))}
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-semibold text-text-secondary uppercase tracking-wider mb-1.5">
-                  Nội dung tin nhắn mẫu *
-                </label>
-                <textarea
-                  ref={textareaRef}
-                  value={messageContent}
-                  onChange={(e) => setMessageContent(e.target.value)}
-                  rows={6}
-                  placeholder="Nhập nội dung tin nhắn gửi tới Phụ huynh / Học viên / Nhóm lớp..."
-                  className="w-full px-3.5 py-2.5 text-sm bg-surface border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all leading-relaxed"
-                  required
-                />
-              </div>
-
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <span className="text-xs font-semibold text-text-secondary uppercase tracking-wider">
-                    Xem trước tin nhắn thực tế (Live Preview)
-                  </span>
-                  <span className="text-[11px] text-text-muted">
-                    Mẫu: {previewSampleStudent?.fullName || 'Nguyễn Minh Anh'}
-                  </span>
-                </div>
-                <div className="h-[154px] overflow-y-auto p-3.5 rounded-xl bg-gradient-to-br from-blue-50/80 via-white to-emerald-50/60 border border-border text-sm text-text-primary whitespace-pre-wrap leading-relaxed shadow-inner">
-                  {renderedPreview || (
-                    <span className="text-text-muted italic">
-                      Nội dung xem trước sẽ hiển thị tại đây...
-                    </span>
-                  )}
-                </div>
-              </div>
-            </div>
+            <RichChatComposer
+              value={messageContent}
+              onChange={setMessageContent}
+              metadata={messageMetadata}
+              onMetadataChange={setMessageMetadata}
+              sampleStudent={previewSampleStudent}
+            />
           </div>
         </form>
       </Modal>
@@ -1932,6 +1901,101 @@ export const BroadcastCampaignsPanel: React.FC<BroadcastCampaignsPanelProps> = (
               </div>
             </div>
 
+            {/* Rich Metadata Summary Card (Urgency, Attachments, Links) */}
+            {(Boolean(selectedCampaign.message_metadata?.urgency) ||
+              (selectedCampaign.message_metadata?.attachments?.length ?? 0) > 0 ||
+              (selectedCampaign.message_metadata?.links?.length ?? 0) > 0) && (
+              <div className="p-3.5 rounded-xl bg-surface-muted/70 border border-border space-y-2.5">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs font-bold text-text-secondary">
+                    Định dạng & Đính kèm của chiến dịch:
+                  </span>
+                  {selectedCampaign.message_metadata?.urgency === 2 && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-extrabold bg-rose-50 text-[#db342e] border border-rose-200">
+                      <AlertCircle className="w-3.5 h-3.5" />
+                      <span>!! Khẩn cấp</span>
+                    </span>
+                  )}
+                  {selectedCampaign.message_metadata?.urgency === 1 && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-extrabold bg-amber-50 text-[#f27806] border border-amber-200">
+                      <AlertTriangle className="w-3.5 h-3.5" />
+                      <span>! Quan trọng</span>
+                    </span>
+                  )}
+                  {(selectedCampaign.message_metadata?.attachments?.length ?? 0) > 0 && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                      <Paperclip className="w-3 h-3" />
+                      <span>
+                        📎 {selectedCampaign.message_metadata?.attachments?.length} tệp đính kèm
+                      </span>
+                    </span>
+                  )}
+                  {(selectedCampaign.message_metadata?.links?.length ?? 0) > 0 && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                      <Link2 className="w-3 h-3" />
+                      <span>
+                        🔗 {selectedCampaign.message_metadata?.links?.length} link / nút bấm
+                      </span>
+                    </span>
+                  )}
+                </div>
+
+                {(selectedCampaign.message_metadata?.attachments?.length ?? 0) > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {selectedCampaign.message_metadata?.attachments?.map((att, idx) => (
+                      <a
+                        key={idx}
+                        href={att.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-surface border border-border hover:border-primary text-xs text-text-primary transition-colors"
+                      >
+                        {isImageAttachment(att) ? (
+                          <img
+                            src={att.url}
+                            alt={att.filename}
+                            className="w-6 h-6 rounded object-cover"
+                          />
+                        ) : (
+                          <FileText className="w-4 h-4 text-primary" />
+                        )}
+                        <span className="font-semibold truncate max-w-[180px]">
+                          {att.filename}
+                        </span>
+                        {att.size > 0 && (
+                          <span className="text-[10px] text-text-muted">
+                            ({formatBytes(att.size)})
+                          </span>
+                        )}
+                      </a>
+                    ))}
+                  </div>
+                )}
+
+                {(selectedCampaign.message_metadata?.links?.length ?? 0) > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {selectedCampaign.message_metadata?.links?.map((lnk, idx) => (
+                      <a
+                        key={idx}
+                        href={lnk.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-emerald-50/70 border border-emerald-200 text-xs font-semibold text-emerald-800 hover:bg-emerald-100/70 transition-colors"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5 text-emerald-600" />
+                        <span>{lnk.title || lnk.url}</span>
+                        {lnk.buttonLabel && (
+                          <span className="px-1.5 py-0.5 rounded bg-emerald-600 text-white text-[10px] font-bold">
+                            {lnk.buttonLabel}
+                          </span>
+                        )}
+                      </a>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Filter bar for recipients */}
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
               <div className="flex items-center gap-1.5 flex-wrap">
@@ -2025,8 +2089,40 @@ export const BroadcastCampaignsPanel: React.FC<BroadcastCampaignsPanelProps> = (
                         </div>
                       </div>
 
-                      <div className="text-xs text-text-secondary bg-surface-muted/70 rounded-lg px-3 py-2 whitespace-pre-wrap border border-border/50">
-                        {r.rendered_content}
+                      <div className="text-xs text-text-primary bg-surface-muted/70 rounded-lg px-3 py-2 whitespace-pre-wrap border border-border/50 space-y-1.5">
+                        <div>{renderFormattedRichText(r.rendered_content)}</div>
+                        {(() => {
+                          const rMeta =
+                            r.rendered_metadata ?? selectedCampaign.message_metadata;
+                          const rUrgency = rMeta?.urgency ?? 0;
+                          const rAtts = rMeta?.attachments?.length ?? 0;
+                          const rLinks = rMeta?.links?.length ?? 0;
+                          if (!rUrgency && !rAtts && !rLinks) return null;
+                          return (
+                            <div className="flex items-center gap-1.5 flex-wrap pt-1 border-t border-border/40">
+                              {rUrgency === 2 && (
+                                <span className="px-1.5 py-0.5 rounded text-[10px] font-extrabold bg-rose-50 text-[#db342e] border border-rose-200">
+                                  !! Khẩn cấp
+                                </span>
+                              )}
+                              {rUrgency === 1 && (
+                                <span className="px-1.5 py-0.5 rounded text-[10px] font-extrabold bg-amber-50 text-[#f27806] border border-amber-200">
+                                  ! Quan trọng
+                                </span>
+                              )}
+                              {rAtts > 0 && (
+                                <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                                  📎 {rAtts} tệp
+                                </span>
+                              )}
+                              {rLinks > 0 && (
+                                <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                  🔗 {rLinks} link
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })()}
                       </div>
 
                       {r.error_message && (

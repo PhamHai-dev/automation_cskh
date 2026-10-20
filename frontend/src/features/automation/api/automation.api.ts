@@ -13,6 +13,7 @@ import type {
   BroadcastRecipient,
   BroadcastTargetsCatalog,
   CreateBroadcastCampaignDTO,
+  RichAttachmentItem,
 } from '../types/automation.types';
 
 export const automationApi = {
@@ -306,6 +307,21 @@ export const automationApi = {
 
   deleteBroadcast: async (id: number): Promise<void> => {
     await apiClient.delete(`/automation/broadcasts/${id}`);
+  },
+
+  uploadBroadcastAttachments: async (
+    files: File[]
+  ): Promise<{ files: RichAttachmentItem[] }> => {
+    const formData = new FormData();
+    files.forEach((f) => formData.append('files', f));
+    const res = await apiClient.post('/automation/broadcasts/upload', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    const raw = res.data?.data ?? res.data;
+    const uploaded: RichAttachmentItem[] = Array.isArray(raw)
+      ? raw
+      : raw?.files ?? raw?.items ?? [];
+    return { files: uploaded };
   },
 };
 
