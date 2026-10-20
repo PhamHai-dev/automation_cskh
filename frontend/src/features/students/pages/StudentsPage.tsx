@@ -1772,13 +1772,7 @@ export const StudentsPage: React.FC = () => {
     <PageContainer>
       {/* Page Header */}
       <PageHeader
-        title={
-          programFilter === 'JLPT'
-            ? 'Danh sách Học viên — Khóa Luyện thi (JLPT)'
-            : programFilter === 'KAIWA'
-            ? 'Danh sách Học viên — Khóa Giao tiếp (Kaiwa)'
-            : 'Danh sách Học viên (Tất cả khóa JLPT & Kaiwa)'
-        }
+        title="Danh sách học viên"
         actions={
           <div className="flex items-center gap-2">
             {activeTab === 'care_reports' && (
@@ -1807,21 +1801,27 @@ export const StudentsPage: React.FC = () => {
       {/* Program Switcher & CVHT Quick Filter Bar */}
       <div className="mb-4 p-3 bg-surface rounded-2xl border border-border/80 shadow-soft flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs font-extrabold text-slate-600 uppercase tracking-wider mr-1">
+          <span className="text-xs font-extrabold text-text-secondary uppercase tracking-wider mr-1">
             Chế độ Khóa học:
           </span>
-          <div className="inline-flex flex-wrap items-center p-1 bg-slate-100 rounded-xl border border-slate-200/80 gap-1">
+          <div className="inline-flex flex-wrap items-center p-1 bg-surface-muted/80 rounded-xl border border-border/80 gap-1 shadow-xs">
             <button
               type="button"
               onClick={() => setProgramFilter('ALL')}
-              className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer flex items-center gap-1.5 ${
                 programFilter === 'ALL'
-                  ? 'bg-white text-slate-900 shadow-xs border border-slate-200/80'
-                  : 'text-slate-600 hover:text-slate-900'
+                  ? 'border-border/70 bg-surface text-primary shadow-sm'
+                  : 'border-transparent text-text-secondary hover:bg-surface/70 hover:text-text-primary'
               }`}
             >
               <span>Tất cả khóa học</span>
-              <span className="px-1.5 py-0.5 rounded-full text-[10px] bg-slate-200/90 text-slate-800 font-extrabold">
+              <span
+                className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold leading-none ${
+                  programFilter === 'ALL'
+                    ? 'bg-primary-soft text-primary'
+                    : 'bg-surface text-text-muted'
+                }`}
+              >
                 {programCounts.all}
               </span>
             </button>
@@ -1829,18 +1829,18 @@ export const StudentsPage: React.FC = () => {
             <button
               type="button"
               onClick={() => setProgramFilter('KAIWA')}
-              className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer flex items-center gap-1.5 ${
                 programFilter === 'KAIWA'
-                  ? 'bg-teal-600 text-white shadow-xs'
-                  : 'text-slate-600 hover:text-teal-700'
+                  ? 'border-border/70 bg-surface text-primary shadow-sm'
+                  : 'border-transparent text-text-secondary hover:bg-surface/70 hover:text-text-primary'
               }`}
             >
               <span>Giao tiếp (Kaiwa)</span>
               <span
-                className={`px-1.5 py-0.5 rounded-full text-[10px] font-extrabold ${
+                className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold leading-none ${
                   programFilter === 'KAIWA'
-                    ? 'bg-teal-700 text-white'
-                    : 'bg-teal-100 text-teal-800'
+                    ? 'bg-primary-soft text-primary'
+                    : 'bg-surface text-text-muted'
                 }`}
               >
                 {programCounts.kaiwa}
@@ -1850,18 +1850,18 @@ export const StudentsPage: React.FC = () => {
             <button
               type="button"
               onClick={() => setProgramFilter('JLPT')}
-              className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer flex items-center gap-1.5 ${
                 programFilter === 'JLPT'
-                  ? 'bg-indigo-600 text-white shadow-xs'
-                  : 'text-slate-600 hover:text-indigo-700'
+                  ? 'border-border/70 bg-surface text-primary shadow-sm'
+                  : 'border-transparent text-text-secondary hover:bg-surface/70 hover:text-text-primary'
               }`}
             >
               <span>Luyện thi (JLPT)</span>
               <span
-                className={`px-1.5 py-0.5 rounded-full text-[10px] font-extrabold ${
+                className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold leading-none ${
                   programFilter === 'JLPT'
-                    ? 'bg-indigo-700 text-white'
-                    : 'bg-indigo-100 text-indigo-800'
+                    ? 'bg-primary-soft text-primary'
+                    : 'bg-surface text-text-muted'
                 }`}
               >
                 {programCounts.jlpt}
@@ -1921,7 +1921,6 @@ export const StudentsPage: React.FC = () => {
             value: 'care_reports',
             label: 'Báo cáo học tập & chăm sóc',
             icon: <FileText />,
-            badge: 'Chỉnh sửa trực tiếp',
           },
         ]}
       />
@@ -2002,20 +2001,6 @@ export const StudentsPage: React.FC = () => {
 
       {/* Main Table View */}
       <div className="bg-surface rounded-2xl border border-border/80 shadow-soft overflow-hidden">
-        {activeTab === 'care_reports' && (
-          <div className="px-4 py-2 bg-emerald-50/70 border-b border-emerald-200/80 flex items-center justify-between text-xs text-emerald-900">
-            <div className="flex items-center gap-2 font-medium">
-              <span className="font-bold">Mẹo:</span>
-              <span>
-                Click trực tiếp vào các ô Trao đổi, Điểm nóng, CS sau buổi để gõ nhận xét như Excel. Nhấn Enter hoặc click ra ngoài để tự động lưu.
-              </span>
-            </div>
-            <div className="text-[11px] font-bold text-emerald-800">
-              Đang hiển thị {activeMilestones.length} mốc buổi chăm sóc
-            </div>
-          </div>
-        )}
-
         <DataTable
           data={filteredStudents}
           columns={(activeTab === 'students' ? tab1Columns : tab2Columns).filter(keepColumn)}
