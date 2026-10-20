@@ -19,9 +19,16 @@ import crypto from 'crypto';
 import type { BroadcastCampaignStatus, BroadcastTargetType, MessageDeliveryStatus } from '@prisma/client';
 import { prisma } from '../../prisma/client';
 import { render, type TemplateVars } from './automation-renderer';
+import {
+  buildZaloSendPayload,
+  parseAndCompileRichText,
+} from './rich-message.compiler';
 import { zaloPool } from '../zalo/zalo-pool';
 import { zaloRateLimiter } from '../zalo/zalo-rate-limiter';
-import { getLineDeliveryDispatcher } from '../line/line-dispatcher.contract';
+import {
+  getLineDeliveryDispatcher,
+  type RichMessageMetadata,
+} from '../line/line-dispatcher.contract';
 import { getIo } from '../../shared/realtime/socket-singleton';
 import { createLogger } from '../../shared/logger/logger';
 
@@ -42,6 +49,7 @@ export interface CreateBroadcastCampaignInput {
   name: string;
   description?: string | null;
   message_content: string;
+  message_metadata?: RichMessageMetadata | null;
   channel_mode?: BroadcastChannelMode;
   schedule_type?: BroadcastScheduleType;
   scheduled_at?: string | Date | null;
@@ -70,6 +78,7 @@ interface PendingRecipientDraft {
   external_target_id: string | null;
   target_display_name: string | null;
   rendered_content: string;
+  rendered_metadata?: RichMessageMetadata | null;
   status: MessageDeliveryStatus;
   error_message: string | null;
 }
@@ -95,6 +104,37 @@ function sleep(ms: number): Promise<void> {
 export class BroadcastService {
   private isPollingScheduled = false;
   private activeCampaignRuns = new Set<number>();
+
+  /**
+   * Render template variables and compile inline rich markup + explicit styles
+   * into `cleanText` and per-recipient `renderedMetadata`.
+   */
+  private compileRecipientMessage(
+    rawTemplate: string,
+    vars: TemplateVars,
+    baseMetadata?: RichMessageMetadata | null,
+  ): { cleanText: string; renderedMetadata: RichMessageMetadata | null } {
+    const renderedRaw = render(rawTemplate, vars);
+    const { cleanText, styles } = parseAndCompileRichText(renderedRaw, baseMetadata?.styles);
+
+    const hasBaseMeta =
+      Boolean(baseMetadata) &&
+      (baseMetadata!.urgency === 1 ||
+        baseMetadata!.urgency === 2 ||
+        (Array.isArray(baseMetadata!.attachments) && baseMetadata!.attachments.length > 0) ||
+        (Array.isArray(baseMetadata!.links) && baseMetadata!.links.length > 0) ||
+        (Array.isArray(baseMetadata!.flexMessages) && baseMetadata!.flexMessages.length > 0));
+
+    const renderedMetadata: RichMessageMetadata | null =
+      hasBaseMeta || styles.length > 0
+        ? {
+            ...(baseMetadata ?? {}),
+            ...(styles.length > 0 ? { styles } : {}),
+          }
+        : null;
+
+    return { cleanText, renderedMetadata };
+  }
 
   /**
    * Build template variables for a student from their latest active enrollment.
@@ -472,7 +512,8 @@ export class BroadcastService {
         if (!student) continue;
 
         const vars = this.extractStudentTemplateVars(student);
-        const renderedContent = render(messageContent, vars);
+        const { cleanText: renderedContent, renderedMetadata } =
+          this.compileRecipientMessage(messageContent, vars, input.message_metadata);
         const preferredCsId = student.enrollments?.[0]?.cs?.id ?? userId;
 
         const zaloTarget =
@@ -499,6 +540,7 @@ export class BroadcastService {
               external_target_id: zaloTarget.externalTargetId,
               target_display_name: zaloTarget.displayName,
               rendered_content: renderedContent,
+              rendered_metadata: renderedMetadata,
               status: 'SCHEDULED',
               error_message: null,
             });
@@ -517,6 +559,7 @@ export class BroadcastService {
               external_target_id: lineTarget.externalTargetId,
               target_display_name: lineTarget.displayName,
               rendered_content: renderedContent,
+              rendered_metadata: renderedMetadata,
               status: 'SCHEDULED',
               error_message: null,
             });
@@ -535,6 +578,7 @@ export class BroadcastService {
               external_target_id: zaloTarget.externalTargetId,
               target_display_name: zaloTarget.displayName,
               rendered_content: renderedContent,
+              rendered_metadata: renderedMetadata,
               status: 'SCHEDULED',
               error_message: null,
             });
@@ -552,6 +596,7 @@ export class BroadcastService {
               external_target_id: lineTarget.externalTargetId,
               target_display_name: lineTarget.displayName,
               rendered_content: renderedContent,
+              rendered_metadata: renderedMetadata,
               status: 'SCHEDULED',
               error_message: null,
             });
@@ -575,6 +620,7 @@ export class BroadcastService {
               external_target_id: zaloTarget.externalTargetId,
               target_display_name: zaloTarget.displayName,
               rendered_content: renderedContent,
+              rendered_metadata: renderedMetadata,
               status: 'SCHEDULED',
               error_message: null,
             });
@@ -591,6 +637,7 @@ export class BroadcastService {
               external_target_id: lineTarget.externalTargetId,
               target_display_name: lineTarget.displayName,
               rendered_content: renderedContent,
+              rendered_metadata: renderedMetadata,
               status: 'SCHEDULED',
               error_message: null,
             });
@@ -610,6 +657,7 @@ export class BroadcastService {
             external_target_id: null,
             target_display_name: student.full_name,
             rendered_content: renderedContent,
+            rendered_metadata: renderedMetadata,
             status: 'SKIPPED_NOT_FRIEND',
             error_message: 'Học viên chưa gắn Nhóm/Tài khoản Zalo hoặc LINE',
           });
@@ -627,15 +675,20 @@ export class BroadcastService {
       for (const gid of zaloGroupIds) {
         const group = groupMap.get(gid);
         if (!group) continue;
-        const renderedContent = render(messageContent, {
-          student_name: group.name ?? '',
-          student_phone: '',
-          class_name: group.name ?? '',
-          enrollment_package: '',
-          remaining_sessions: '',
-          cs_name: '',
-          teacher_name: '',
-        });
+        const { cleanText: renderedContent, renderedMetadata } =
+          this.compileRecipientMessage(
+            messageContent,
+            {
+              student_name: group.name ?? '',
+              student_phone: '',
+              class_name: group.name ?? '',
+              enrollment_package: '',
+              remaining_sessions: '',
+              cs_name: '',
+              teacher_name: '',
+            },
+            input.message_metadata,
+          );
         recipientDrafts.push({
           target_type: 'ZALO_GROUP',
           platform: 'ZALO',
@@ -647,6 +700,7 @@ export class BroadcastService {
           external_target_id: group.zalo_group_id,
           target_display_name: group.name ?? `Nhóm Zalo #${group.id}`,
           rendered_content: renderedContent,
+          rendered_metadata: renderedMetadata,
           status: 'SCHEDULED',
           error_message: null,
         });
@@ -663,15 +717,20 @@ export class BroadcastService {
       for (const gid of lineGroupIds) {
         const group = groupMap.get(gid);
         if (!group) continue;
-        const renderedContent = render(messageContent, {
-          student_name: group.name ?? '',
-          student_phone: '',
-          class_name: group.name ?? '',
-          enrollment_package: '',
-          remaining_sessions: '',
-          cs_name: '',
-          teacher_name: '',
-        });
+        const { cleanText: renderedContent, renderedMetadata } =
+          this.compileRecipientMessage(
+            messageContent,
+            {
+              student_name: group.name ?? '',
+              student_phone: '',
+              class_name: group.name ?? '',
+              enrollment_package: '',
+              remaining_sessions: '',
+              cs_name: '',
+              teacher_name: '',
+            },
+            input.message_metadata,
+          );
         recipientDrafts.push({
           target_type: 'LINE_GROUP',
           platform: 'LINE',
@@ -683,6 +742,7 @@ export class BroadcastService {
           external_target_id: group.line_group_id,
           target_display_name: group.name ?? `Nhóm LINE #${group.id}`,
           rendered_content: renderedContent,
+          rendered_metadata: renderedMetadata,
           status: 'SCHEDULED',
           error_message: null,
         });
@@ -705,15 +765,20 @@ export class BroadcastService {
             ? 'LINE_GROUP'
             : 'LINE_USER';
 
-      const renderedContent = render(messageContent, {
-        student_name: dt.display_name ?? '',
-        student_phone: '',
-        class_name: dt.display_name ?? '',
-        enrollment_package: '',
-        remaining_sessions: '',
-        cs_name: '',
-        teacher_name: '',
-      });
+      const { cleanText: renderedContent, renderedMetadata } =
+        this.compileRecipientMessage(
+          messageContent,
+          {
+            student_name: dt.display_name ?? '',
+            student_phone: '',
+            class_name: dt.display_name ?? '',
+            enrollment_package: '',
+            remaining_sessions: '',
+            cs_name: '',
+            teacher_name: '',
+          },
+          input.message_metadata,
+        );
 
       recipientDrafts.push({
         target_type: targetType,
@@ -726,6 +791,7 @@ export class BroadcastService {
         external_target_id: dt.external_target_id,
         target_display_name: dt.display_name ?? dt.external_target_id,
         rendered_content: renderedContent,
+        rendered_metadata: renderedMetadata,
         status: 'SCHEDULED',
         error_message: null,
       });
@@ -741,6 +807,9 @@ export class BroadcastService {
         name,
         description: input.description ?? null,
         message_content: messageContent,
+        ...(input.message_metadata !== undefined
+          ? { message_metadata: input.message_metadata as any }
+          : {}),
         channel_mode: channelMode,
         schedule_type: scheduleType,
         scheduled_at: scheduledAtDate,
@@ -752,7 +821,7 @@ export class BroadcastService {
         skipped_count: skippedCount,
         created_by_id: userId,
         recipients: {
-          create: recipientDrafts,
+          create: recipientDrafts as any,
         },
       },
       include: {
@@ -906,17 +975,50 @@ export class BroadcastService {
                   recipient.target_type === 'ZALO_GROUP' || recipient.zalo_group_id != null
                     ? 1
                     : 0;
+                const recipientMetadata = ((recipient as any).rendered_metadata ??
+                  (campaign as any).message_metadata ??
+                  null) as RichMessageMetadata | null;
+                const { messagePayload, linksToSend } = buildZaloSendPayload(
+                  recipient.rendered_content,
+                  recipientMetadata,
+                );
                 try {
                   const sent = await api.sendMessage(
-                    recipient.rendered_content,
+                    messagePayload,
                     externalTargetId,
                     threadType,
                   );
                   await zaloRateLimiter.recordSend(zaloAccountId, 'message');
+
+                  if (linksToSend.length > 0) {
+                    for (const linkItem of linksToSend) {
+                      if (typeof api.sendLink === 'function') {
+                        await api.sendLink(
+                          {
+                            link: linkItem.link,
+                            ...(linkItem.msg ? { msg: linkItem.msg } : {}),
+                          },
+                          externalTargetId,
+                          threadType,
+                        );
+                      } else {
+                        await api.sendMessage(
+                          linkItem.msg ? `${linkItem.msg}\n${linkItem.link}` : linkItem.link,
+                          externalTargetId,
+                          threadType,
+                        );
+                      }
+                    }
+                  }
+
                   lastSendByAccount.set(accountKey, Date.now());
 
                   const providerMessageId =
-                    sent?.data?.messageId ?? sent?.msgId ?? sent?.messageId ?? null;
+                    sent?.data?.messageId ??
+                    sent?.message?.msgId ??
+                    sent?.msgId ??
+                    sent?.messageId ??
+                    null;
 
                   await prisma.broadcastRecipient.update({
                     where: { id: recipient.id },
@@ -985,6 +1087,9 @@ export class BroadcastService {
                 externalTargetId.startsWith('C') ||
                 externalTargetId.startsWith('c');
 
+              const recipientMetadata = ((recipient as any).rendered_metadata ??
+                (campaign as any).message_metadata ??
+                null) as RichMessageMetadata | null;
               const retryKey = buildLineBroadcastRetryKey(recipient.id);
               try {
                 const sent = isGroup
@@ -992,6 +1097,7 @@ export class BroadcastService {
                       lineAccountId,
                       targetLineGroupId: externalTargetId,
                       content: recipient.rendered_content,
+                      ...(recipientMetadata ? { richMetadata: recipientMetadata } : {}),
                       retryKey,
                       sentVia: 'automation',
                     })
@@ -999,6 +1105,7 @@ export class BroadcastService {
                       lineAccountId,
                       targetLineUid: externalTargetId,
                       content: recipient.rendered_content,
+                      ...(recipientMetadata ? { richMetadata: recipientMetadata } : {}),
                       retryKey,
                       sentVia: 'automation',
                     });

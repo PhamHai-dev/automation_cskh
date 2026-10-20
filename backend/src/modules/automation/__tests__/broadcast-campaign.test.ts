@@ -71,12 +71,19 @@ import {
   registerLineDeliveryDispatcher,
   type ILineDeliveryDispatcher,
 } from '../../line/line-dispatcher.contract';
+import { render } from '../automation-renderer';
+import {
+  buildLineMessagesPayload,
+  buildZaloSendPayload,
+  parseAndCompileRichText,
+} from '../rich-message.compiler';
 import { broadcastService } from '../broadcast.service';
 import { startAutomationWorker, stopAutomationWorker } from '../automation-worker';
 
 describe('Multi-Channel Broadcast & Scheduled Campaign Engine', () => {
   let mockLineDispatcher: jest.Mocked<ILineDeliveryDispatcher>;
   let mockZaloSendMessage: jest.Mock;
+  let mockZaloSendLink: jest.Mock;
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -84,8 +91,12 @@ describe('Multi-Channel Broadcast & Scheduled Campaign Engine', () => {
     mockZaloSendMessage = jest.fn().mockResolvedValue({
       data: { messageId: 'zalo-bcast-msg-01' },
     });
+    mockZaloSendLink = jest.fn().mockResolvedValue({
+      msgId: 'zalo-bcast-link-01',
+    });
     (zaloPool.getApi as jest.Mock).mockReturnValue({
       sendMessage: mockZaloSendMessage,
+      sendLink: mockZaloSendLink,
     });
     (zaloRateLimiter.checkLimits as jest.Mock).mockResolvedValue({ allowed: true });
 
@@ -552,6 +563,318 @@ describe('Multi-Channel Broadcast & Scheduled Campaign Engine', () => {
       const worker = startAutomationWorker();
       expect(worker).toBeNull(); // Redis is mocked as null, but poller timer is started
       await stopAutomationWorker();
+    });
+  });
+
+  describe('Rich Message Compiler & Multi-Channel Rich Delivery (Zalo & LINE)', () => {
+    it('parses [b], [red], **bold**, *italic*, __underline__, ~~strike~~, and list lines after {{student_name}} substitution with exact { start, len, st } offsets', () => {
+      const template =
+        'Chào [b]{{student_name}}[/b], lớp **{{class_name}}** học lúc [red]19:30[/red] (*Online* __Zoom__ ~~Cũ~~)\n• Bài tập 1\n1. Phần nghe';
+      const renderedWithTags = render(template, {
+        student_name: 'Nguyễn Minh Anh',
+        class_name: 'N3-Tối',
+      });
+
+      const compiled = parseAndCompileRichText(renderedWithTags);
+
+      expect(compiled.cleanText).toBe(
+        'Chào Nguyễn Minh Anh, lớp N3-Tối học lúc 19:30 (Online Zoom Cũ)\n• Bài tập 1\n1. Phần nghe',
+      );
+
+      // Verify exact character slices for each compiled style span
+      const findSpan = (st: string, expectedSubstr: string) =>
+        compiled.styles.find(
+          (s) =>
+            s.st === st &&
+            compiled.cleanText.slice(s.start, s.start + s.len) === expectedSubstr,
+        );
+
+      expect(findSpan('b', 'Nguyễn Minh Anh')).toEqual({
+        start: compiled.cleanText.indexOf('Nguyễn Minh Anh'),
+        len: 'Nguyễn Minh Anh'.length,
+        st: 'b',
+      });
+      expect(findSpan('b', 'N3-Tối')).toEqual({
+        start: compiled.cleanText.indexOf('N3-Tối'),
+        len: 'N3-Tối'.length,
+        st: 'b',
+      });
+      expect(findSpan('c_db342e', '19:30')).toEqual({
+        start: compiled.cleanText.indexOf('19:30'),
+        len: '19:30'.length,
+        st: 'c_db342e',
+      });
+      expect(findSpan('i', 'Online')).toEqual({
+        start: compiled.cleanText.indexOf('Online'),
+        len: 'Online'.length,
+        st: 'i',
+      });
+      expect(findSpan('u', 'Zoom')).toEqual({
+        start: compiled.cleanText.indexOf('Zoom'),
+        len: 'Zoom'.length,
+        st: 'u',
+      });
+      expect(findSpan('s', 'Cũ')).toEqual({
+        start: compiled.cleanText.indexOf('Cũ'),
+        len: 'Cũ'.length,
+        st: 's',
+      });
+      expect(findSpan('lst_1', '• Bài tập 1')).toBeDefined();
+      expect(findSpan('lst_2', '1. Phần nghe')).toBeDefined();
+    });
+
+    it('builds a valid LINE Flex Message bubble with urgency badge, colored/bold spans, and URI action buttons for links', () => {
+      const raw = 'Thông báo [b][red]Khẩn[/red][/b]: Lịch thi thử JLPT tháng 10';
+      const compiled = parseAndCompileRichText(raw);
+
+      const lineMessages = buildLineMessagesPayload(compiled.cleanText, {
+        urgency: 2,
+        styles: compiled.styles,
+        links: [
+          {
+            url: 'https://edura.vn/jlpt-mock',
+            title: 'Đăng ký thi thử JLPT',
+            description: 'Hạn chót 25/10',
+            buttonLabel: 'Đăng ký ngay',
+          },
+        ],
+      });
+
+      expect(lineMessages).toHaveLength(1);
+      const flexMsg = lineMessages[0];
+      expect(flexMsg.type).toBe('flex');
+      expect(flexMsg.altText).toContain('Thông báo Khẩn: Lịch thi thử JLPT tháng 10');
+      expect(flexMsg.contents.type).toBe('bubble');
+
+      // Urgency badge box at top of body
+      const badgeBox = flexMsg.contents.body.contents[0];
+      expect(badgeBox.backgroundColor).toBe('#db342e');
+      expect(badgeBox.contents[0].text).toBe('!! KHẨN CẤP');
+
+      // Styled text with spans
+      const textComponent = flexMsg.contents.body.contents[1];
+      expect(textComponent.type).toBe('text');
+      expect(textComponent.contents).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            type: 'span',
+            text: 'Khẩn',
+            weight: 'bold',
+            color: '#db342e',
+          }),
+        ]),
+      );
+
+      // Footer CTA button
+      const footerBtn = flexMsg.contents.footer.contents[0];
+      expect(footerBtn).toMatchObject({
+        type: 'button',
+        action: {
+          type: 'uri',
+          label: 'Đăng ký ngay',
+          uri: 'https://edura.vn/jlpt-mock',
+        },
+      });
+    });
+
+    it('creates and executes a rich campaign sending Zalo MessageContent ({ msg, styles, urgency }) + sendLink and rich LINE Flex metadata', async () => {
+      (prisma.student.findMany as jest.Mock).mockResolvedValue([
+        {
+          id: 201,
+          full_name: 'Phạm Minh Tuấn',
+          phone: '0909998887',
+          zalo_uid: null,
+          line_uid: null,
+          enrollments: [
+            {
+              id: 601,
+              status: 'STUDYING',
+              total_sessions: 24,
+              external_remaining_sessions: 5,
+              package: { id: 1, code: 'JLPT-N3', name: 'Luyện thi N3' },
+              cs: { id: 9, name: 'CS Lan' },
+              enrollment_classes: [
+                {
+                  class: {
+                    id: 40,
+                    class_name: 'N3-VIP',
+                    class_teachers: [{ teacher: { id: 3, name: 'Sensei Yuki' } }],
+                  },
+                },
+              ],
+            },
+          ],
+          zalo_contact_relations: [
+            {
+              id: 10,
+              student_id: 201,
+              zalo_account_id: 11,
+              relation_status: 'FRIEND',
+              target_type: 'GROUP',
+              zalo_group_id: 70,
+              friend_zalo_uid: 'zalo_care_grp_201',
+              display_name: '01 - 201 Phạm Minh Tuấn',
+              zalo_account: { id: 11, cs_id: 9, display_name: 'CS Lan Zalo', status: 'ACTIVE' },
+              zalo_group: {
+                id: 70,
+                zalo_group_id: 'zalo_care_grp_201',
+                name: '01 - 201 Phạm Minh Tuấn',
+                zalo_account_id: 11,
+              },
+            },
+          ],
+          line_contact_relations: [
+            {
+              id: 20,
+              student_id: 201,
+              line_account_id: 22,
+              relation_status: 'FRIEND',
+              target_type: 'GROUP',
+              line_group_id: 80,
+              friend_line_uid: 'C_line_care_grp_201',
+              display_name: '01 - 201 Phạm Minh Tuấn LINE',
+              line_account: {
+                id: 22,
+                cs_id: 9,
+                display_name: 'Edura LINE OA',
+                status: 'ACTIVE',
+                account_type: 'OA',
+              },
+              line_group: {
+                id: 80,
+                line_group_id: 'C_line_care_grp_201',
+                name: '01 - 201 Phạm Minh Tuấn LINE',
+                line_account_id: 22,
+              },
+            },
+          ],
+        },
+      ]);
+
+      let capturedRecipientsCreate: any[] = [];
+      (prisma.broadcastCampaign.create as jest.Mock).mockImplementation(async ({ data }) => {
+        capturedRecipientsCreate = data.recipients.create.map((r: any, idx: number) => ({
+          id: 5000 + idx,
+          campaign_id: 77,
+          ...r,
+        }));
+        return {
+          id: 77,
+          ...data,
+          recipients: capturedRecipientsCreate,
+        };
+      });
+
+      (prisma.broadcastCampaign.findUnique as jest.Mock).mockResolvedValue({
+        id: 77,
+        name: 'Thông báo đóng học phí đợt 2',
+        status: 'SENDING',
+        total_recipients: 2,
+        sent_count: 0,
+        failed_count: 0,
+        skipped_count: 0,
+        started_at: new Date(),
+      });
+
+      (prisma.broadcastRecipient.findMany as jest.Mock).mockImplementation(async () =>
+        capturedRecipientsCreate.filter((r) => ['SCHEDULED', 'QUEUED'].includes(r.status)),
+      );
+
+      (prisma.broadcastRecipient.update as jest.Mock).mockImplementation(
+        async ({ where, data }) => {
+          const item = capturedRecipientsCreate.find((r) => r.id === where.id);
+          if (item) Object.assign(item, data);
+          return item;
+        },
+      );
+
+      (prisma.broadcastCampaign.update as jest.Mock).mockImplementation(async ({ data }) => ({
+        id: 77,
+        name: 'Thông báo đóng học phí đợt 2',
+        ...data,
+        recipients: capturedRecipientsCreate,
+      }));
+
+      const campaign = await broadcastService.createCampaign(
+        {
+          name: 'Thông báo đóng học phí đợt 2',
+          message_content:
+            'Chào [b]{{student_name}}[/b], lớp [red]{{class_name}}[/red] còn {{remaining_sessions}} buổi!',
+          message_metadata: {
+            urgency: 1,
+            links: [
+              {
+                url: 'https://edura.vn/payment',
+                title: 'Cổng thanh toán học phí Edura',
+                buttonLabel: 'Thanh toán ngay',
+              },
+            ],
+          },
+          channel_mode: 'BOTH',
+          schedule_type: 'IMMEDIATE',
+          student_ids: [201],
+          awaitExecution: true,
+        },
+        9,
+      );
+
+      expect(capturedRecipientsCreate).toHaveLength(2);
+      const expectedClean = 'Chào Phạm Minh Tuấn, lớp N3-VIP còn 5 buổi!';
+
+      // Verify Zalo rich MessageContent + sendLink
+      expect(mockZaloSendMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          msg: expectedClean,
+          urgency: 1,
+          styles: [
+            {
+              start: expectedClean.indexOf('Phạm Minh Tuấn'),
+              len: 'Phạm Minh Tuấn'.length,
+              st: 'b',
+            },
+            {
+              start: expectedClean.indexOf('N3-VIP'),
+              len: 'N3-VIP'.length,
+              st: 'c_db342e',
+            },
+          ],
+        }),
+        'zalo_care_grp_201',
+        1,
+      );
+      expect(mockZaloSendLink).toHaveBeenCalledWith(
+        {
+          link: 'https://edura.vn/payment',
+          msg: 'Cổng thanh toán học phí Edura',
+        },
+        'zalo_care_grp_201',
+        1,
+      );
+
+      // Verify LINE dispatcher received richMetadata with compiled styles + urgency + links
+      expect(mockLineDispatcher.sendGroupMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          lineAccountId: 22,
+          targetLineGroupId: 'C_line_care_grp_201',
+          content: expectedClean,
+          richMetadata: expect.objectContaining({
+            urgency: 1,
+            styles: expect.arrayContaining([
+              expect.objectContaining({ st: 'b', len: 'Phạm Minh Tuấn'.length }),
+              expect.objectContaining({ st: 'c_db342e', len: 'N3-VIP'.length }),
+            ]),
+            links: [
+              expect.objectContaining({
+                url: 'https://edura.vn/payment',
+                buttonLabel: 'Thanh toán ngay',
+              }),
+            ],
+          }),
+        }),
+      );
+
+      expect(campaign?.status).toBe('COMPLETED');
+      expect(campaign?.sent_count).toBe(2);
     });
   });
 });

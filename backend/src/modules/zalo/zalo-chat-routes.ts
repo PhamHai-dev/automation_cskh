@@ -13,6 +13,16 @@
 import { Router, Request, Response } from 'express';
 import { prisma } from '../../prisma/client';
 import { createLogger } from '../../shared/logger/logger';
+import {
+  buildZaloSendPayload,
+  parseAndCompileRichText,
+} from '../automation/rich-message.compiler';
+import type {
+  RichAttachmentItem,
+  RichLinkItem,
+  RichMessageMetadata,
+  RichTextStyleSpan,
+} from '../line/line-dispatcher.contract';
 import { zaloPool } from './zalo-pool';
 import { zaloRateLimiter } from './zalo-rate-limiter';
 import { checkAccess, resolveAccount, handleError } from './zalo-route-helpers';
@@ -333,14 +343,31 @@ router.post('/accounts/:accountId/conversations/:threadId/messages', async (req:
   const { threadId } = req.params;
   const user = req.user!;
   const isAdmin = user.roles.includes('ADMIN') || user.roles.includes('MANAGE');
-  const { content, contentType = 'text', attachments = [], quote = null } = req.body as {
+  const {
+    content,
+    contentType = 'text',
+    attachments = [],
+    styles,
+    urgency,
+    links = [],
+    quote = null,
+  } = req.body as {
     content?: string;
     contentType?: string;
-    attachments?: Array<{ url: string; name: string; mime: string; size: number }>;
+    attachments?: Array<
+      RichAttachmentItem & { name?: string; mime?: string }
+    >;
+    styles?: RichTextStyleSpan[];
+    urgency?: 0 | 1 | 2;
+    links?: RichLinkItem[];
     quote?: any;
   };
 
-  if (!content || !content.trim()) {
+  const hasContent = Boolean(content && content.trim());
+  const hasAttachments = Array.isArray(attachments) && attachments.length > 0;
+  const hasLinks = Array.isArray(links) && links.length > 0;
+
+  if (!hasContent && !hasAttachments && !hasLinks) {
     return res.status(400).json({ error: 'content is required' });
   }
 
@@ -418,10 +445,56 @@ router.post('/accounts/:accountId/conversations/:threadId/messages', async (req:
       });
     }
 
+    const normalizedAttachments: RichAttachmentItem[] = Array.isArray(attachments)
+      ? attachments.map((att) => ({
+          url: att.url,
+          filePath: att.filePath,
+          filename: att.filename || att.name || 'attachment.bin',
+          mimeType: att.mimeType || att.mime || 'application/octet-stream',
+          size: att.size ?? 0,
+          width: att.width,
+          height: att.height,
+        }))
+      : [];
+
+    const rawText = (content ?? '').trim();
+    const { cleanText, styles: compiledStyles } = parseAndCompileRichText(rawText, styles);
+    const richMeta: RichMessageMetadata = {
+      ...(urgency === 1 || urgency === 2 ? { urgency } : {}),
+      ...(compiledStyles.length > 0 ? { styles: compiledStyles } : {}),
+      ...(normalizedAttachments.length > 0 ? { attachments: normalizedAttachments } : {}),
+      ...(Array.isArray(links) && links.length > 0 ? { links } : {}),
+    };
+    const { messagePayload, linksToSend } = buildZaloSendPayload(cleanText, richMeta);
+
     try {
       // zca-js SDK: sendMessage(message, threadId, type?) where type: 0=User, 1=Group
       const threadType = isGroup ? 1 : 0;
-      sendResult = await client.sendMessage(content.trim(), threadId, threadType);
+      if (cleanText || typeof messagePayload !== 'string') {
+        sendResult = await client.sendMessage(messagePayload, threadId, threadType);
+      }
+      if (linksToSend.length > 0) {
+        for (const linkItem of linksToSend) {
+          if (typeof (client as any).sendLink === 'function') {
+            const linkRes = await (client as any).sendLink(
+              {
+                link: linkItem.link,
+                ...(linkItem.msg ? { msg: linkItem.msg } : {}),
+              },
+              threadId,
+              threadType,
+            );
+            if (!sendResult) sendResult = linkRes;
+          } else {
+            const fallbackRes = await client.sendMessage(
+              linkItem.msg ? `${linkItem.msg}\n${linkItem.link}` : linkItem.link,
+              threadId,
+              threadType,
+            );
+            if (!sendResult) sendResult = fallbackRes;
+          }
+        }
+      }
     } catch (sdkErr: any) {
       log.warn(`SDK send failed for thread ${threadId}: ${sdkErr.message}`);
       return res.status(502).json({ error: 'Gửi tin nhắn thất bại từ Zalo SDK', detail: sdkErr.message });
@@ -432,11 +505,14 @@ router.post('/accounts/:accountId/conversations/:threadId/messages', async (req:
     const msg = await prisma.message.create({
       data: {
         conversation_id: conversation.id,
-        zalo_msg_id: sendResult?.msgId || `local_${Date.now()}`,
+        zalo_msg_id:
+          sendResult?.message?.msgId ||
+          sendResult?.msgId ||
+          `local_${Date.now()}`,
         sender_uid: 'self',
         sender_name: account.display_name || 'Me',
         sender_type: 'self',
-        content: content.trim(),
+        content: cleanText,
         content_type: contentType,
         attachments: attachments as any,
         quote: quote as any,

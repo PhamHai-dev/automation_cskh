@@ -2,14 +2,88 @@
  * Broadcast & Scheduled Campaign Routes — mounted under /api/v1/automation/broadcasts
  */
 
+import fs from 'fs';
+import path from 'path';
 import { Router, Request, Response } from 'express';
+import multer from 'multer';
+import imageSize from 'image-size';
 import { z } from 'zod';
 import { authenticate } from '../../middlewares/auth.middleware';
+import type { RichAttachmentItem } from '../line/line-dispatcher.contract';
 import { broadcastService } from './broadcast.service';
 
 const router = Router();
 
 router.use(authenticate);
+
+const broadcastUploadDir = path.resolve(process.cwd(), 'uploads/broadcasts');
+
+const storage = multer.diskStorage({
+  destination: (_req, _file, cb) => {
+    try {
+      fs.mkdirSync(broadcastUploadDir, { recursive: true });
+      cb(null, broadcastUploadDir);
+    } catch (err) {
+      cb(err as Error, broadcastUploadDir);
+    }
+  },
+  filename: (_req, file, cb) => {
+    const ext = path.extname(file.originalname) || '';
+    const safeBase = path
+      .basename(file.originalname, ext)
+      .replace(/[^a-zA-Z0-9._-]/g, '_')
+      .slice(0, 60);
+    const uniqueSuffix = `${Date.now()}-${Math.round(Math.random() * 1e6)}`;
+    cb(null, `${uniqueSuffix}-${safeBase || 'file'}${ext}`);
+  },
+});
+
+const uploadMiddleware = multer({
+  storage,
+  limits: {
+    files: 10,
+    fileSize: 25 * 1024 * 1024, // 25MB max per file
+  },
+});
+
+async function handleBroadcastUpload(req: Request, res: Response) {
+  try {
+    const rawFiles = (req.files as Express.Multer.File[]) ?? (req.file ? [req.file] : []);
+    const files: RichAttachmentItem[] = rawFiles.map((file) => {
+      let width: number | undefined;
+      let height: number | undefined;
+
+      if (file.mimetype?.toLowerCase().startsWith('image/') && fs.existsSync(file.path)) {
+        try {
+          const buf = fs.readFileSync(file.path);
+          const dimensions = imageSize(buf);
+          if (typeof dimensions?.width === 'number') width = dimensions.width;
+          if (typeof dimensions?.height === 'number') height = dimensions.height;
+        } catch {
+          // Ignore dimension extraction failure for unsupported image sub-formats
+        }
+      }
+
+      return {
+        url: `/uploads/broadcasts/${file.filename}`,
+        filePath: file.path,
+        filename: file.originalname,
+        mimeType: file.mimetype || 'application/octet-stream',
+        size: file.size,
+        ...(width !== undefined ? { width } : {}),
+        ...(height !== undefined ? { height } : {}),
+      };
+    });
+
+    res.json({
+      success: true,
+      files,
+      data: { files },
+    });
+  } catch (err: any) {
+    handleError(res, err);
+  }
+}
 
 function getRole(req: Request): string {
   const roles: string[] = (req.user?.roles as string[]) ?? [];
@@ -44,6 +118,10 @@ router.get('/', async (req: Request, res: Response) => {
     handleError(res, err);
   }
 });
+
+// POST /api/v1/automation/broadcasts/upload (and alias /uploads)
+router.post('/upload', uploadMiddleware.any(), handleBroadcastUpload);
+router.post('/uploads', uploadMiddleware.any(), handleBroadcastUpload);
 
 // GET /api/v1/automation/broadcasts/targets-catalog
 router.get('/targets-catalog', async (req: Request, res: Response) => {
@@ -88,10 +166,43 @@ router.post('/', async (req: Request, res: Response) => {
       display_name: z.string().optional(),
     });
 
+    const richAttachmentSchema = z.object({
+      url: z.string(),
+      filePath: z.string().optional(),
+      filename: z.string(),
+      mimeType: z.string().default('application/octet-stream'),
+      size: z.number().default(0),
+      width: z.number().optional(),
+      height: z.number().optional(),
+    });
+
+    const richLinkSchema = z.object({
+      url: z.string().min(1),
+      title: z.string().optional(),
+      description: z.string().optional(),
+      thumbnailUrl: z.string().optional(),
+      buttonLabel: z.string().optional(),
+    });
+
+    const richStyleSpanSchema = z.object({
+      start: z.number().int().nonnegative(),
+      len: z.number().int().positive(),
+      st: z.string().min(1),
+    });
+
+    const messageMetadataSchema = z.object({
+      urgency: z.union([z.literal(0), z.literal(1), z.literal(2)]).optional(),
+      styles: z.array(richStyleSpanSchema).optional(),
+      attachments: z.array(richAttachmentSchema).optional(),
+      links: z.array(richLinkSchema).optional(),
+      flexMessages: z.array(z.any()).optional(),
+    });
+
     const schema = z.object({
       name: z.string().min(1, 'Tên chiến dịch không được để trống').max(255),
       description: z.string().max(2000).optional().nullable(),
       message_content: z.string().min(1, 'Nội dung tin nhắn không được để trống').max(5000),
+      message_metadata: messageMetadataSchema.optional().nullable(),
       channel_mode: z.enum(['AUTO', 'ZALO_ONLY', 'LINE_ONLY', 'BOTH']).default('AUTO'),
       schedule_type: z.enum(['IMMEDIATE', 'SCHEDULED']).default('IMMEDIATE'),
       scheduled_at: z.string().optional().nullable(),
