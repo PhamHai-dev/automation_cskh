@@ -9,6 +9,10 @@ import {
   CsUserOption,
   UpdateGoogleSheetSyncConfigDTO,
   SheetSyncResult,
+  ServiceAccountInfo,
+  CsSheetBackupConfigItem,
+  UpdateCsSheetBackupConfigDTO,
+  CsSheetBackupSummary,
 } from '../types/imports.types';
 
 export const importsApi = {
@@ -155,8 +159,18 @@ export const importsApi = {
   getSheetSyncConfigs: async (): Promise<{
     configs: GoogleSheetSyncConfig[];
     csUsers: CsUserOption[];
+    serviceAccount?: ServiceAccountInfo;
   }> => {
     const res = await apiClient.get('/imports/sheet-sync/configs');
+    return res.data?.data || res.data;
+  },
+
+  saveServiceAccount: async (
+    serviceAccountJson: string | null
+  ): Promise<{ serviceAccount: ServiceAccountInfo }> => {
+    const res = await apiClient.put('/imports/sheet-sync/service-account', {
+      service_account_json: serviceAccountJson,
+    });
     return res.data?.data || res.data;
   },
 
@@ -182,5 +196,58 @@ export const importsApi = {
   }): Promise<{ results: SheetSyncResult[] }> => {
     const res = await apiClient.post('/imports/sheet-sync/sync-all', options || {});
     return res.data?.data || res.data;
+  },
+
+  // CS Sheet Backup (Web -> Sheet 1.Chăm sóc & 3.Chấm buổi)
+  getSheetBackupConfigs: async (): Promise<{
+    configs: CsSheetBackupConfigItem[];
+    serviceAccount?: ServiceAccountInfo;
+  }> => {
+    const res = await apiClient.get('/imports/sheet-backup/configs');
+    return res.data?.data || res.data;
+  },
+
+  updateSheetBackupConfig: async (
+    csUserId: number,
+    payload: UpdateCsSheetBackupConfigDTO
+  ): Promise<CsSheetBackupConfigItem> => {
+    const res = await apiClient.put(`/imports/sheet-backup/configs/${csUserId}`, payload);
+    return res.data?.data || res.data;
+  },
+
+  runSheetBackup: async (
+    csUserId: number,
+    options?: { forceFullRewrite?: boolean }
+  ): Promise<CsSheetBackupSummary> => {
+    const res = await apiClient.post(`/imports/sheet-backup/configs/${csUserId}/run`, options || {});
+    return res.data?.data || res.data;
+  },
+
+  runSheetBackupAll: async (options?: {
+    forceFullRewrite?: boolean;
+  }): Promise<{ results: CsSheetBackupSummary[] }> => {
+    const res = await apiClient.post('/imports/sheet-backup/run-all', options || {});
+    return res.data?.data || res.data;
+  },
+
+  downloadCsSheetBackupExcel: async (
+    csUserId: number,
+    staffCode?: string,
+    refresh = false
+  ): Promise<void> => {
+    const res = await apiClient.get(
+      `/imports/sheet-backup/configs/${csUserId}/download?refresh=${refresh}`,
+      {
+        responseType: 'blob',
+      }
+    );
+    const url = window.URL.createObjectURL(new Blob([res.data]));
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `cham_soc_hoc_vien_${staffCode || csUserId}.xlsx`);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
   },
 };
