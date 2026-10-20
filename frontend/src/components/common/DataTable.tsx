@@ -125,12 +125,12 @@ export function DataTable<T>({
                 <tr
                   key={rowIndex}
                   onClick={() => onRowClick?.(item)}
-                  className={`transition-colors hover:bg-slate-50/80 ${
+                  className={`group transition-colors hover:bg-slate-50/80 ${
                     onRowClick ? 'cursor-pointer' : ''
                   }`}
                 >
                   {columns.map((col, colIndex) => (
-                    <td key={colIndex} className={`px-4 py-3.5 text-text-primary ${col.className || ''}`}>
+                    <td key={colIndex} className={`px-4 py-3.5 text-text-primary group-hover:bg-slate-50 ${col.className || ''}`}>
                       {col.cell
                         ? col.cell(item)
                         : col.accessorKey

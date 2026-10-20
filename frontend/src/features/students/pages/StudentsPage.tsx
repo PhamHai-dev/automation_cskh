@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { studentsApi } from '../api/students.api';
 import { careApi } from '../../care/api/care.api';
 import { Student, CreateStudentDTO } from '../types/students.types';
@@ -178,99 +179,9 @@ const InlineEditableCell: React.FC<InlineEditableCellProps> = ({
   );
 };
 
-// Component chỉnh sửa link Báo cáo học tập (Cột AK)
-const InlineReportLinkCell: React.FC<{
-  url?: string | null;
-  onSave: (newUrl: string) => Promise<void>;
-}> = ({ url, onSave }) => {
-  const [isEditing, setIsEditing] = useState(false);
-  const [draft, setDraft] = useState(url || '');
-  const [isSaving, setIsSaving] = useState(false);
-
-  useEffect(() => {
-    setDraft(url || '');
-  }, [url]);
-
-  const handleCommit = async () => {
-    setIsEditing(false);
-    const trimmed = draft.trim();
-    if (trimmed === (url || '').trim()) return;
-
-    try {
-      setIsSaving(true);
-      await onSave(trimmed);
-    } catch {
-      setDraft(url || '');
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  if (isEditing) {
-    return (
-      <div className="min-w-[180px]">
-        <input
-          autoFocus
-          type="url"
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onBlur={handleCommit}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              e.preventDefault();
-              handleCommit();
-            } else if (e.key === 'Escape') {
-              setIsEditing(false);
-              setDraft(url || '');
-            }
-          }}
-          className="w-full text-xs p-1 bg-white border-2 border-primary rounded-lg focus:outline-none shadow-md text-blue-700"
-          placeholder="Dán link Google Docs/Sheets..."
-        />
-      </div>
-    );
-  }
-
-  if (!url) {
-    return (
-      <button
-        type="button"
-        onClick={() => setIsEditing(true)}
-        className="text-[11px] text-blue-600 hover:text-blue-800 bg-blue-50/60 hover:bg-blue-100 border border-blue-200/60 px-2 py-0.5 rounded-lg flex items-center gap-1 transition-colors whitespace-nowrap"
-      >
-        <Plus className="w-3 h-3" />
-        <span>Thêm link</span>
-      </button>
-    );
-  }
-
-  return (
-    <div className="flex items-center gap-1 whitespace-nowrap">
-      <a
-        href={url.startsWith('http') ? url : `https://${url}`}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-700 bg-blue-50 border border-blue-200 hover:bg-blue-100 px-2 py-0.5 rounded-lg transition-colors"
-        title={url}
-      >
-        <span>Xem BC</span>
-        <ExternalLink className="w-3 h-3 text-blue-600" />
-      </a>
-      <button
-        type="button"
-        onClick={() => setIsEditing(true)}
-        className="p-1 text-slate-400 hover:text-blue-600 rounded transition-colors"
-        title="Sửa đường dẫn link"
-      >
-        <Edit className="w-3 h-3" />
-      </button>
-      {isSaving && <span className="text-[10px] text-primary animate-pulse">Lưu...</span>}
-    </div>
-  );
-};
-
 export const StudentsPage: React.FC = () => {
   const toast = useToast();
+  const navigate = useNavigate();
   const { user } = useAuth();
   const isCS = user?.roles.includes('CS') && !user?.roles.includes('ADMIN');
 
@@ -779,10 +690,43 @@ export const StudentsPage: React.FC = () => {
     {
       key: 'stt',
       header: '#',
+      width: '52px',
+      className: 'sticky left-0 z-20 bg-white w-[52px] min-w-[52px] max-w-[52px] text-center',
       cell: (item) => (
-        <span className="font-bold text-slate-400 text-xs text-center block w-6">
+        <span className="font-bold text-slate-400 text-xs text-center block">
           {filteredStudents.indexOf(item) + 1}
         </span>
+      ),
+    },
+    {
+      key: 'external_id',
+      header: 'Mã học viên',
+      width: '124px',
+      className: 'sticky left-[52px] z-20 bg-white w-[124px] min-w-[124px] max-w-[124px]',
+      cell: (item) => (
+        <span className="font-mono font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded text-[11px] whitespace-nowrap">
+          {item.external_id || `HV_${item.id}`}
+        </span>
+      ),
+    },
+    {
+      key: 'full_name',
+      header: 'Họ và tên',
+      width: '210px',
+      className:
+        'sticky left-[176px] z-20 bg-white w-[210px] min-w-[210px] shadow-[4px_0_6px_-2px_rgba(0,0,0,0.06)]',
+      cell: (item) => (
+        <div className="flex items-center space-x-2 whitespace-nowrap">
+          <div className="w-7 h-7 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-xs shrink-0">
+            {item.full_name.charAt(0).toUpperCase()}
+          </div>
+          <span
+            className="font-bold text-slate-900 text-xs hover:text-blue-600 cursor-pointer"
+            onClick={() => setViewingStudent(item)}
+          >
+            {item.full_name}
+          </span>
+        </div>
       ),
     },
     {
@@ -817,15 +761,6 @@ export const StudentsPage: React.FC = () => {
           </span>
         );
       },
-    },
-    {
-      key: 'external_id',
-      header: 'Mã học viên',
-      cell: (item) => (
-        <span className="font-mono font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded text-[11px] whitespace-nowrap">
-          {item.external_id || `HV_${item.id}`}
-        </span>
-      ),
     },
     {
       key: 'paid_at',
@@ -866,23 +801,6 @@ export const StudentsPage: React.FC = () => {
           </span>
         );
       },
-    },
-    {
-      key: 'full_name',
-      header: 'Họ và tên',
-      cell: (item) => (
-        <div className="flex items-center space-x-2 whitespace-nowrap">
-          <div className="w-7 h-7 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-xs shrink-0">
-            {item.full_name.charAt(0).toUpperCase()}
-          </div>
-          <span
-            className="font-bold text-slate-900 text-xs hover:text-blue-600 cursor-pointer"
-            onClick={() => setViewingStudent(item)}
-          >
-            {item.full_name}
-          </span>
-        </div>
-      ),
     },
     {
       key: 'gender',
@@ -1429,26 +1347,26 @@ export const StudentsPage: React.FC = () => {
   // --- TAB 2: CỘT BÁO CÁO HỌC TẬP & CHĂM SÓC ---
   const tab2Columns: Column<Student>[] = [
     ...commonColumnsAtoI,
-    ...(programFilter !== 'JLPT'
-      ? [
-          {
-            key: 'study_report_url',
-            header: 'Báo cáo học tập (Link)',
-            cell: (item: Student) => {
-              const enr = item.enrollments?.[0];
-              if (!enr) return <span className="text-slate-400">—</span>;
-              return (
-                <InlineReportLinkCell
-                  url={enr.study_report_url}
-                  onSave={(newUrl) =>
-                    handleSaveEnrollmentCareField(enr.id, 'study_report_url', newUrl)
-                  }
-                />
-              );
-            },
-          },
-        ]
-      : []),
+    {
+      key: 'study_report_url',
+      header: 'Báo cáo học tập',
+      cell: (item: Student) => (
+        <div className="flex items-center justify-center whitespace-nowrap">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              navigate(`/students/${item.id}/study-report`);
+            }}
+            className="inline-flex items-center gap-1 text-[11px] font-bold text-primary bg-primary-soft border border-primary/30 hover:bg-blue-100 px-2.5 py-1 rounded-lg transition-colors cursor-pointer"
+            title={`Mở Báo cáo học tập của ${item.full_name}`}
+          >
+            <FileText className="w-3.5 h-3.5 text-primary shrink-0" />
+            <span>Mở báo cáo</span>
+          </button>
+        </div>
+      ),
+    },
     {
       key: 'exchange_info',
       header: 'Trao đổi với học viên',

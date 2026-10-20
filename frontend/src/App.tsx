@@ -8,6 +8,7 @@ import { UsersPage } from './pages/admin/UsersPage';
 import { PackagesPage } from './features/packages/pages/PackagesPage';
 import { TeachersPage } from './features/teachers/pages/TeachersPage';
 import { StudentsPage } from './features/students/pages/StudentsPage';
+import { StudentStudyReportPage } from './features/students/pages/StudentStudyReportPage';
 import { ClassesPage } from './features/classes/pages/ClassesPage';
 import { ClassSessionsPage } from './features/classes/pages/ClassSessionsPage';
 import { AttendanceSheetPage } from './features/classes/pages/AttendanceSheetPage';
@@ -77,7 +78,9 @@ function App() {
               <Route path="/tong-quan" element={<Navigate to="/dashboard" replace />} />
 
               <Route path="/students" element={<StudentsPage />} />
+              <Route path="/students/:id/study-report" element={<StudentStudyReportPage />} />
               <Route path="/hoc-vien" element={<Navigate to="/students" replace />} />
+              <Route path="/hoc-vien/:id/bao-cao-hoc-tap" element={<StudentStudyReportPage />} />
 
               <Route path="/enrollments" element={<EnrollmentsPage />} />
               <Route path="/ghi-danh" element={<Navigate to="/enrollments" replace />} />

@@ -99,7 +99,47 @@ export class StudentsRepository {
 
   async findById(id: number) {
     return prisma.student.findUnique({
-      where: { id }
+      where: { id },
+      include: {
+        enrollments: {
+          include: {
+            package: true,
+            sale: true,
+            cs: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+                staff_code: true,
+              },
+            },
+            enrollment_classes: {
+              include: {
+                class: {
+                  include: {
+                    class_teachers: {
+                      include: {
+                        teacher: {
+                          include: {
+                            user: true,
+                          },
+                        },
+                      },
+                    },
+                    class_schedules: true,
+                  },
+                },
+                attendance: { where: { deleted_at: null } },
+              },
+            },
+            care_logs: {
+              orderBy: { after_session_number: 'asc' },
+            },
+            care_tasks: true,
+          },
+          orderBy: { created_at: 'desc' },
+        },
+      },
     });
   }
 

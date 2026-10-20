@@ -63,6 +63,11 @@ export const CsSheetBackupPanel: React.FC = () => {
   const [downloadingUserId, setDownloadingUserId] = useState<number | null>(null);
   const [runningAllMode, setRunningAllMode] = useState<'delta' | 'full' | null>(null);
 
+  // Service Account JSON Editor state
+  const [showSaEditor, setShowSaEditor] = useState(false);
+  const [saJsonDraft, setSaJsonDraft] = useState('');
+  const [savingSa, setSavingSa] = useState(false);
+
   // Editable drafts keyed by cs_user_id
   const [drafts, setDrafts] = useState<Record<number, UpdateCsSheetBackupConfigDTO>>({});
   const [customTimeStrings, setCustomTimeStrings] = useState<Record<number, string>>({});
@@ -425,7 +430,110 @@ export const CsSheetBackupPanel: React.FC = () => {
               )}
             </div>
           </div>
+
+          {isAdminOrManage && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowSaEditor((prev) => !prev)}
+              leftIcon={<KeyRound className="w-3.5 h-3.5 text-indigo-600" />}
+              className="bg-white text-xs shrink-0"
+            >
+              {showSaEditor
+                ? 'Đóng cấu hình Key'
+                : serviceAccount?.configured
+                ? 'Đổi Service Account JSON'
+                : 'Cấu hình Service Account JSON'}
+            </Button>
+          )}
         </div>
+
+        {showSaEditor && isAdminOrManage && (
+          <div className="mt-3 p-4 bg-white rounded-xl border border-indigo-200 space-y-3">
+            <div className="text-xs text-slate-700 space-y-1">
+              <p className="font-bold text-slate-900">
+                Cấu hình Google Service Account JSON (Mã hóa bảo mật AES-256-GCM):
+              </p>
+              <ol className="list-decimal list-inside space-y-0.5 text-slate-600">
+                <li>
+                  Vào <strong>Google Cloud Console → IAM &amp; Admin → Service Accounts</strong>, tạo 1 Service Account và bật <strong>Google Sheets API</strong> + <strong>Google Drive API</strong>.
+                </li>
+                <li>
+                  Vào tab <strong>Keys → Add Key → Create new key (JSON)</strong> để tải file <code className="font-mono">.json</code> về máy và dán toàn bộ nội dung vào ô bên dưới.
+                </li>
+                <li>
+                  Sau khi lưu, bấm <strong>Copy Email</strong> và mở file Google Sheet riêng của từng CSKH → bấm <strong>Chia sẻ (Share)</strong> → cấp quyền <strong>Người chỉnh sửa (Editor)</strong> cho email đó.
+                </li>
+              </ol>
+            </div>
+            <textarea
+              rows={5}
+              value={saJsonDraft}
+              onChange={(e) => setSaJsonDraft(e.target.value)}
+              placeholder='Dán toàn bộ nội dung file service-account.json vào đây: {"type": "service_account", "project_id": "...", "private_key": "-----BEGIN PRIVATE KEY-----...", "client_email": "...@...iam.gserviceaccount.com"}'
+              className="w-full text-xs font-mono p-2.5 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
+            />
+            <div className="flex items-center justify-end gap-2">
+              {serviceAccount?.configured && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={async () => {
+                    try {
+                      setSavingSa(true);
+                      const res = await importsApi.saveServiceAccount(null);
+                      setServiceAccount(res.serviceAccount);
+                      setSaJsonDraft('');
+                      setShowSaEditor(false);
+                      toast.success('Đã xóa cấu hình Google Service Account trên DB.');
+                    } catch (err: any) {
+                      toast.error(
+                        err.response?.data?.error?.message ||
+                          err.response?.data?.message ||
+                          'Không thể xóa Service Account'
+                      );
+                    } finally {
+                      setSavingSa(false);
+                    }
+                  }}
+                  isLoading={savingSa}
+                >
+                  Xóa Key trên DB
+                </Button>
+              )}
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={async () => {
+                  try {
+                    setSavingSa(true);
+                    const res = await importsApi.saveServiceAccount(saJsonDraft.trim() || null);
+                    setServiceAccount(res.serviceAccount);
+                    setShowSaEditor(false);
+                    setSaJsonDraft('');
+                    toast.success(
+                      res.serviceAccount.configured
+                        ? `Đã mã hóa AES-256-GCM và lưu Google Service Account (${res.serviceAccount.clientEmail})!`
+                        : 'Đã xóa cấu hình Google Service Account.'
+                    );
+                  } catch (err: any) {
+                    toast.error(
+                      err.response?.data?.error?.message ||
+                        err.response?.data?.message ||
+                        'Không thể lưu Google Service Account JSON'
+                    );
+                  } finally {
+                    setSavingSa(false);
+                  }
+                }}
+                isLoading={savingSa}
+                leftIcon={<Save className="w-3.5 h-3.5" />}
+              >
+                Lưu Service Account JSON
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* 2. CSKH Cards Grid */}

@@ -1836,7 +1836,7 @@ export const ClassesPage: React.FC = () => {
                                 className="border-b border-border/50 bg-white hover:bg-blue-50/30 transition-colors"
                               >
                                 <td
-                                  className={`px-3 py-2 border-r border-border/50 text-right font-mono text-[10px] text-slate-400 w-28 min-w-[112px] ${
+                                  className={`py-2 pl-[1cm] pr-3 border-r border-border/50 text-left font-mono text-[10px] text-slate-400 w-28 min-w-[112px] ${
                                     activeTab === 'detailed' ? 'sticky left-0 z-10 bg-white' : ''
                                   }`}
                                 >

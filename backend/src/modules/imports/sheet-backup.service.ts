@@ -418,59 +418,94 @@ export class SheetBackupService {
       ws3.name = sheet3Name;
     }
 
-    // Strip sample student rows from template (keep header rows 1..3 in Sheet 1, and 1..2 in Sheet 3)
-    if (ws1 && ws1.rowCount >= 4) {
-      ws1.spliceRows(4, ws1.rowCount - 3);
-    }
-    if (ws3 && ws3.rowCount >= 3) {
-      ws3.spliceRows(3, ws3.rowCount - 2);
-    }
+      // Strip sample student rows from template (keep header rows 1..3 in Sheet 1, and 1..2 in Sheet 3)
+      if (ws1 && ws1.rowCount >= 4) {
+        ws1.spliceRows(4, ws1.rowCount);
+      }
+      if (ws3 && ws3.rowCount >= 3) {
+        ws3.spliceRows(3, ws3.rowCount);
+      }
 
-    return { workbook, isFreshFromTemplate: true };
+      return { workbook, isFreshFromTemplate: true };
   }
 
   /**
-   * Layer 2 Security check: Verify Google Sheet is not "Anyone can edit" when require_private_sheet is true
+   * Layer 2 Security check: Verify Google Sheet access via Sheets API v4,
+   * and check "Anyone can edit" via Drive API v3 if Drive API is enabled on the project.
    */
   public async verifyTargetSpreadsheetSecurity(
     spreadsheetId: string,
     accessToken: string,
     requirePrivateSheet: boolean
   ): Promise<void> {
-    const url = `https://www.googleapis.com/drive/v3/files/${spreadsheetId}?fields=id,name,permissions&supportsAllDrives=true`;
-    const resp = await fetch(url, {
+    const driveUrl = `https://www.googleapis.com/drive/v3/files/${spreadsheetId}?fields=id,name,permissions&supportsAllDrives=true`;
+    const driveResp = await fetch(driveUrl, {
       method: 'GET',
       headers: { Authorization: `Bearer ${accessToken}` },
     });
 
-    if (!resp.ok) {
-      if (resp.status === 403 || resp.status === 404) {
-        throw new AppError(
-          403,
-          `Không thể truy cập Google Sheet đích (${spreadsheetId}). Vui lòng Share quyền Người chỉnh sửa (Editor) cho email Google Service Account.`
+    if (driveResp.ok) {
+      const data = (await driveResp.json()) as {
+        id?: string;
+        name?: string;
+        permissions?: Array<{ type?: string; role?: string }>;
+      };
+
+      if (requirePrivateSheet && Array.isArray(data.permissions)) {
+        const hasPublicWrite = data.permissions.some(
+          (p) => p.type === 'anyone' && (p.role === 'writer' || p.role === 'organizer' || p.role === 'fileOrganizer')
         );
+        if (hasPublicWrite) {
+          throw new AppError(
+            403,
+            'Chặn bảo mật: File Google Sheet đích đang bật quyền cho phép bất kỳ ai trên Internet chỉnh sửa (Anyone can edit). Vui lòng đổi về Hạn chế (Restricted) để chống rò rỉ dữ liệu học viên.'
+          );
+        }
       }
-      const errText = await resp.text().catch(() => '');
-      throw new AppError(400, `Lỗi kiểm tra bảo mật Google Sheet (${spreadsheetId}): ${errText || resp.statusText}`);
+      return;
     }
 
-    const data = (await resp.json()) as {
-      id?: string;
-      name?: string;
-      permissions?: Array<{ type?: string; role?: string }>;
-    };
+    const driveErrText = await driveResp.text().catch(() => '');
 
-    if (requirePrivateSheet && Array.isArray(data.permissions)) {
-      const hasPublicWrite = data.permissions.some(
-        (p) => p.type === 'anyone' && (p.role === 'writer' || p.role === 'organizer' || p.role === 'fileOrganizer')
+    // If Drive API is simply not enabled in Google Cloud project, fallback to Google Sheets API v4 directly!
+    if (
+      driveErrText.includes('SERVICE_DISABLED') ||
+      driveErrText.includes('accessNotConfigured') ||
+      driveErrText.includes('drive.googleapis.com')
+    ) {
+      const sheetsUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=spreadsheetId,properties.title,sheets.properties.title`;
+      const sheetsResp = await fetch(sheetsUrl, {
+        method: 'GET',
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+
+      if (!sheetsResp.ok) {
+        if (sheetsResp.status === 403 || sheetsResp.status === 404) {
+          throw new AppError(
+            403,
+            `Không thể truy cập Google Sheet đích (${spreadsheetId}). Vui lòng Share quyền Người chỉnh sửa (Editor) cho email Google Service Account.`
+          );
+        }
+        const sheetsErrText = await sheetsResp.text().catch(() => '');
+        throw new AppError(
+          400,
+          `Lỗi kết nối Google Sheets API (${spreadsheetId}): ${sheetsErrText || sheetsResp.statusText}`
+        );
+      }
+      return;
+    }
+
+    if (driveResp.status === 403 || driveResp.status === 404) {
+      throw new AppError(
+        403,
+        `Không thể truy cập Google Sheet đích (${spreadsheetId}). Vui lòng Share quyền Người chỉnh sửa (Editor) cho email Google Service Account.`
       );
-      if (hasPublicWrite) {
-        throw new AppError(
-          403,
-          'Chặn bảo mật: File Google Sheet đích đang bật quyền cho phép bất kỳ ai trên Internet chỉnh sửa (Anyone can edit). Vui lòng đổi về Hạn chế (Restricted) để chống rò rỉ dữ liệu học viên.'
-        );
-      }
     }
+
+    throw new AppError(
+      400,
+      `Lỗi kiểm tra bảo mật Google Sheet (${spreadsheetId}): ${driveErrText || driveResp.statusText}`
+    );
   }
 
   /**
@@ -488,7 +523,8 @@ export class SheetBackupService {
   }
 
   /**
-   * Push changed/appended rows to Google Sheet via Sheets API v4 values:batchUpdate
+   * Ensure Google Sheet tabs have enough rows and columns before values:batchUpdate,
+   * then push changed/appended rows via Sheets API v4.
    */
   private async pushDeltaToGoogleSheet(
     spreadsheetId: string,
@@ -497,25 +533,117 @@ export class SheetBackupService {
   ): Promise<void> {
     if (batchRanges.length === 0) return;
 
-    const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values:batchUpdate`;
-    const resp = await fetch(url, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        valueInputOption: 'USER_ENTERED',
-        data: batchRanges,
-      }),
-    });
+    // 1. Check current sheet grid dimensions (rowCount & columnCount) and auto-expand if needed
+    try {
+      const metaUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=sheets.properties(sheetId,title,gridProperties)`;
+      const metaResp = await fetch(metaUrl, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (metaResp.ok) {
+        const meta = (await metaResp.json()) as {
+          sheets?: Array<{
+            properties?: {
+              sheetId?: number;
+              title?: string;
+              gridProperties?: { rowCount?: number; columnCount?: number };
+            };
+          }>;
+        };
 
-    if (!resp.ok) {
-      const errText = await resp.text().catch(() => '');
-      throw new AppError(
-        400,
-        `Đồng bộ Google Sheets API v4 thất bại (${spreadsheetId}): ${errText || resp.statusText}`
-      );
+        const sheetPropsByName = new Map<
+          string,
+          { sheetId: number; rowCount: number; columnCount: number }
+        >();
+        for (const s of meta.sheets || []) {
+          const p = s.properties;
+          if (p && p.title !== undefined && p.sheetId !== undefined) {
+            sheetPropsByName.set(p.title, {
+              sheetId: p.sheetId,
+              rowCount: p.gridProperties?.rowCount || 1000,
+              columnCount: p.gridProperties?.columnCount || 26,
+            });
+          }
+        }
+
+        // Determine max row & col needed per sheet title from batchRanges
+        const neededBySheet = new Map<string, { maxRow: number; maxCol: number }>();
+        for (const item of batchRanges) {
+          const match = item.range.match(/^'?([^'!]+)'?!([A-Z]+)(\d+)(?::([A-Z]+)(\d+))?$/);
+          if (match) {
+            const title = match[1];
+            const rowEnd = parseInt(match[5] || match[3], 10);
+            const colCount = item.values?.[0]?.length || 60;
+            const prev = neededBySheet.get(title) || { maxRow: 0, maxCol: 0 };
+            neededBySheet.set(title, {
+              maxRow: Math.max(prev.maxRow, rowEnd),
+              maxCol: Math.max(prev.maxCol, colCount),
+            });
+          }
+        }
+
+        const dimensionRequests: any[] = [];
+        for (const [title, needed] of neededBySheet.entries()) {
+          const prop = sheetPropsByName.get(title);
+          if (!prop) continue;
+          if (needed.maxRow > prop.rowCount) {
+            dimensionRequests.push({
+              appendDimension: {
+                sheetId: prop.sheetId,
+                dimension: 'ROWS',
+                length: needed.maxRow - prop.rowCount + 50,
+              },
+            });
+          }
+          if (needed.maxCol > prop.columnCount) {
+            dimensionRequests.push({
+              appendDimension: {
+                sheetId: prop.sheetId,
+                dimension: 'COLUMNS',
+                length: needed.maxCol - prop.columnCount + 10,
+              },
+            });
+          }
+        }
+
+        if (dimensionRequests.length > 0) {
+          await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`, {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ requests: dimensionRequests }),
+          });
+        }
+      }
+    } catch {
+      // Non-fatal: proceed to values:batchUpdate
+    }
+
+    // 2. Push values in chunks of 200 ranges to stay well within Google Sheets payload limits
+    const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values:batchUpdate`;
+    const chunkSize = 200;
+    for (let i = 0; i < batchRanges.length; i += chunkSize) {
+      const chunk = batchRanges.slice(i, i + chunkSize);
+      const resp = await fetch(url, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          valueInputOption: 'USER_ENTERED',
+          data: chunk,
+        }),
+      });
+
+      if (!resp.ok) {
+        const errText = await resp.text().catch(() => '');
+        throw new AppError(
+          400,
+          `Đồng bộ Google Sheets API v4 thất bại (${spreadsheetId}): ${errText || resp.statusText}`
+        );
+      }
     }
   }
 
@@ -604,28 +732,21 @@ export class SheetBackupService {
 
       // 3. Index existing rows in Sheet 1 (header row = 3, data starts at row 4)
       const sheet1RowMap = new Map<string, number>();
-      let sheet1MaxRow = Math.max(3, ws1.rowCount);
+      let lastNonEmptyRow1 = 3;
       for (let r = 4; r <= ws1.rowCount; r++) {
         const row = ws1.getRow(r);
         const extId = this.normalizeCellComparable(row.getCell(1).value);
+        const fullName = this.normalizeCellComparable(row.getCell(5).value);
         const pkgCode = this.normalizeCellComparable(row.getCell(11).value) || 'DEFAULT';
-        if (extId) {
+        if (extId && fullName) {
           const key = `${extId.toUpperCase()}::${pkgCode.toUpperCase()}`;
           if (!sheet1RowMap.has(key)) {
             sheet1RowMap.set(key, r);
           }
-          sheet1MaxRow = Math.max(sheet1MaxRow, r);
-        }
-      }
-      // Re-find actual last non-empty row in Sheet 1
-      let lastNonEmptyRow1 = 3;
-      for (let r = 4; r <= ws1.rowCount; r++) {
-        const row = ws1.getRow(r);
-        if (this.normalizeCellComparable(row.getCell(1).value) || this.normalizeCellComparable(row.getCell(5).value)) {
           lastNonEmptyRow1 = r;
         }
       }
-      sheet1MaxRow = lastNonEmptyRow1;
+      let sheet1MaxRow = lastNonEmptyRow1;
 
       // 4. Index existing rows in Sheet 3 (header row = 2, data starts at row 3)
       const monthBlocks: MonthAttendanceBlock[] = this.importsService.detectAttendanceMonthBlocks(ws3);
@@ -635,14 +756,13 @@ export class SheetBackupService {
       for (let r = 3; r <= ws3.rowCount; r++) {
         const row = ws3.getRow(r);
         const extId = this.normalizeCellComparable(row.getCell(1).value);
+        const fullName = this.normalizeCellComparable(row.getCell(2).value);
         const pkgCode = this.normalizeCellComparable(row.getCell(3).value) || 'DEFAULT';
-        if (extId) {
+        if (extId && fullName) {
           const key = `${extId.toUpperCase()}::${pkgCode.toUpperCase()}`;
           if (!sheet3RowMap.has(key)) {
             sheet3RowMap.set(key, r);
           }
-          lastNonEmptyRow3 = r;
-        } else if (this.normalizeCellComparable(row.getCell(2).value)) {
           lastNonEmptyRow3 = r;
         }
       }

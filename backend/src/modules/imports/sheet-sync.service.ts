@@ -489,13 +489,87 @@ export class SheetSyncService {
   }
 
   /**
-   * Load workbook buffer from Google Drive API (with Service Account for private sheets),
+   * Build an ExcelJS buffer directly from Google Sheets API v4 (when Google Drive API is not enabled)
+   */
+  private async fetchWorkbookBufferViaSheetsApi(
+    sheetId: string,
+    accessToken: string,
+    preferredSheets: string[]
+  ): Promise<Buffer> {
+    const metaUrl = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}?fields=sheets.properties.title`;
+    const metaResp = await fetch(metaUrl, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+
+    if (!metaResp.ok) {
+      const errText = await metaResp.text().catch(() => '');
+      if (metaResp.status === 403 || metaResp.status === 404) {
+        throw new AppError(
+          403,
+          `Không có quyền truy cập file Google Sheet (${sheetId}). Vui lòng mở Google Sheet -> bấm Chia sẻ (Share) -> cấp quyền Người xem (Viewer) hoặc Người chỉnh sửa (Editor) cho email Service Account.`
+        );
+      }
+      throw new AppError(400, `Lỗi đọc Google Sheets API (${sheetId}): ${errText || metaResp.statusText}`);
+    }
+
+    const meta = (await metaResp.json()) as { sheets?: Array<{ properties?: { title?: string } }> };
+    const availableTitles = (meta.sheets || [])
+      .map((s) => s.properties?.title)
+      .filter((t): t is string => Boolean(t));
+
+    const wantedSet = new Set(preferredSheets.map((s) => s.trim().toLowerCase()));
+    let sheetsToFetch = availableTitles.filter((t) => wantedSet.has(t.trim().toLowerCase()));
+    if (sheetsToFetch.length === 0) {
+      sheetsToFetch = availableTitles.slice(0, 3);
+    }
+
+    const params = new URLSearchParams();
+    params.set('valueRenderOption', 'UNFORMATTED_VALUE');
+    params.set('dateTimeRenderOption', 'SERIAL_NUMBER');
+    for (const title of sheetsToFetch) {
+      params.append('ranges', `'${title.replace(/'/g, "''")}'!A1:BZ10000`);
+    }
+
+    const valuesUrl = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values:batchGet?${params.toString()}`;
+    const valResp = await fetch(valuesUrl, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+
+    if (!valResp.ok) {
+      const errText = await valResp.text().catch(() => '');
+      throw new AppError(400, `Không thể tải dữ liệu các tab từ Google Sheets API (${sheetId}): ${errText}`);
+    }
+
+    const valData = (await valResp.json()) as {
+      valueRanges?: Array<{ range?: string; values?: any[][] }>;
+    };
+
+    const wb = new ExcelJS.Workbook();
+    const valueRanges = valData.valueRanges || [];
+    for (let i = 0; i < sheetsToFetch.length; i++) {
+      const sheetTitle = sheetsToFetch[i];
+      const rows = valueRanges[i]?.values || [];
+      const ws = wb.addWorksheet(sheetTitle);
+      if (rows.length > 0) {
+        ws.addRows(rows);
+      }
+    }
+
+    const out = await wb.xlsx.writeBuffer();
+    return Buffer.from(out);
+  }
+
+  /**
+   * Load workbook buffer from Google Drive API / Google Sheets API v4 (with Service Account for private sheets),
    * public export URL, or local file path fallback
    */
   private async loadWorkbookBuffer(config: {
     spreadsheet_url?: string | null;
     spreadsheet_id?: string | null;
     local_file_path?: string | null;
+    sheet_name?: string;
+    setting_sheet_name?: string | null;
+    program_type?: string;
   }): Promise<{ buffer: Buffer; sourceLabel: string }> {
     const sheetId = config.spreadsheet_id || this.extractSpreadsheetId(config.spreadsheet_url);
     if (sheetId) {
@@ -511,14 +585,12 @@ export class SheetSyncService {
           `https://www.googleapis.com/drive/v3/files/${sheetId}?alt=media&supportsAllDrives=true`,
         ];
 
-        let lastStatus = 0;
         for (const url of driveUrls) {
           const controller = new AbortController();
-          const timeout = setTimeout(() => controller.abort(), 30000);
+          const timeout = setTimeout(() => controller.abort(), 25000);
           try {
             const resp = await fetch(url, { headers: authHeaders, signal: controller.signal });
             clearTimeout(timeout);
-            lastStatus = resp.status;
             if (resp.ok) {
               const arrayBuf = await resp.arrayBuffer();
               const buf = Buffer.from(arrayBuf);
@@ -526,23 +598,18 @@ export class SheetSyncService {
                 return { buffer: buf, sourceLabel: `GoogleSheet:${sheetId}` };
               }
             }
-          } catch (err) {
+          } catch {
             clearTimeout(timeout);
-            throw err;
           }
         }
 
-        if (lastStatus === 403 || lastStatus === 404) {
-          throw new AppError(
-            403,
-            `File Google Sheet (${sheetId}) đang khóa riêng tư và chưa cấp quyền cho Service Account. Vui lòng mở Google Sheet -> bấm nút Chia sẻ (Share) -> thêm email "${saKey.client_email}" với quyền Người xem (Viewer).`
-          );
-        }
-
-        throw new AppError(
-          400,
-          `Không thể tải dữ liệu từ Google Sheet (${sheetId}) qua Service Account (HTTP ${lastStatus}).`
-        );
+        // Fallback directly to Google Sheets API v4 (works even when Google Drive API is not enabled!)
+        const preferredSheets =
+          config.program_type?.toUpperCase() === 'JLPT'
+            ? [config.sheet_name || 'Data JLPT_Inhouse', config.setting_sheet_name || 'Setting', 'Điểm học tập']
+            : [config.sheet_name || 'Tổng'];
+        const sheetsApiBuf = await this.fetchWorkbookBufferViaSheetsApi(sheetId, accessToken, preferredSheets);
+        return { buffer: sheetsApiBuf, sourceLabel: `GoogleSheetsAPI:${sheetId}` };
       }
 
       // 2. Unauthenticated public export URL (only works if "Anyone with the link can view" is enabled)

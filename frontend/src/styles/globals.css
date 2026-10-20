@@ -21,6 +21,10 @@
   table thead th {
     text-align: center !important;
   }
+
+  table thead th > div.flex {
+    justify-content: center;
+  }
 }
 
 /* Custom Sleek Scrollbar */
