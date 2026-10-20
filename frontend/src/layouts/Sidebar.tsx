@@ -106,25 +106,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
       title: 'ĐÀO TẠO & LỚP HỌC',
       items: [
         {
-          name: user?.roles?.includes('TEACHER') && !user?.roles?.includes('ADMIN') && !user?.roles?.includes('MANAGE')
-            ? 'Lớp học & Điểm danh'
-            : 'Quản lý Lớp học',
+          name: 'Quản lý Lớp học',
           path: '/classes',
           icon: <GraduationCap className="w-5 h-5 shrink-0" />,
-          allowedRoles: ['ADMIN', 'MANAGE', 'CS', 'TEACHER'],
-        },
-        {
-          name: 'Lịch dạy của tôi',
-          path: '/teacher/my-sessions',
-          icon: <CalendarCheck className="w-5 h-5 shrink-0" />,
-          allowedRoles: ['ADMIN', 'MANAGE', 'TEACHER'],
-        },
-        {
-          name: 'Theo dõi điểm danh',
-          path: '/teacher/attendance-tracking',
-          icon: <ClipboardCheck className="w-5 h-5 shrink-0" />,
-          allowedRoles: ['ADMIN', 'MANAGE', 'TEACHER'],
-          badge: isTeacherOnly ? attendancePendingCount : undefined,
+          allowedRoles: ['ADMIN', 'MANAGE', 'CS'],
         },
         {
           name: 'Đối soát Điểm danh',
@@ -143,6 +128,30 @@ export const Sidebar: React.FC<SidebarProps> = ({
           path: '/teachers',
           icon: <UserCheck className="w-5 h-5 shrink-0" />,
           allowedRoles: ['ADMIN', 'MANAGE'],
+        },
+      ],
+    },
+    {
+      title: 'GIÁO VIÊN',
+      items: [
+        {
+          name: 'Lớp học & Điểm danh',
+          path: '/classes',
+          icon: <GraduationCap className="w-5 h-5 shrink-0" />,
+          allowedRoles: ['ADMIN', 'MANAGE', 'TEACHER'],
+        },
+        {
+          name: 'Lịch dạy của tôi',
+          path: '/teacher/my-sessions',
+          icon: <CalendarCheck className="w-5 h-5 shrink-0" />,
+          allowedRoles: ['ADMIN', 'MANAGE', 'TEACHER'],
+        },
+        {
+          name: 'Theo dõi điểm danh',
+          path: '/teacher/attendance-tracking',
+          icon: <ClipboardCheck className="w-5 h-5 shrink-0" />,
+          allowedRoles: ['ADMIN', 'MANAGE', 'TEACHER'],
+          badge: isTeacherOnly ? attendancePendingCount : undefined,
         },
       ],
     },
@@ -260,7 +269,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               </div>
               {visibleItems.map((item) => (
                 <NavLink
-                  key={item.path}
+                  key={`${item.path}-${item.name}`}
                   to={item.path}
                   end={item.end}
                   onClick={onMobileClose}

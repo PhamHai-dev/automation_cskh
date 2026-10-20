@@ -9,6 +9,7 @@ import {
   CsUserOption,
   UpdateGoogleSheetSyncConfigDTO,
   SheetSyncResult,
+  ServiceAccountInfo,
 } from '../types/imports.types';
 
 export const importsApi = {
@@ -155,8 +156,18 @@ export const importsApi = {
   getSheetSyncConfigs: async (): Promise<{
     configs: GoogleSheetSyncConfig[];
     csUsers: CsUserOption[];
+    serviceAccount?: ServiceAccountInfo;
   }> => {
     const res = await apiClient.get('/imports/sheet-sync/configs');
+    return res.data?.data || res.data;
+  },
+
+  saveServiceAccount: async (
+    serviceAccountJson: string | null
+  ): Promise<{ serviceAccount: ServiceAccountInfo }> => {
+    const res = await apiClient.put('/imports/sheet-sync/service-account', {
+      service_account_json: serviceAccountJson,
+    });
     return res.data?.data || res.data;
   },
 

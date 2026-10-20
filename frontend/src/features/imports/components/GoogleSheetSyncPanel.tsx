@@ -4,6 +4,7 @@ import {
   GoogleSheetSyncConfig,
   CsUserOption,
   UpdateGoogleSheetSyncConfigDTO,
+  ServiceAccountInfo,
 } from '../types/imports.types';
 import { Button } from '../../../components/ui/Button';
 import { Badge } from '../../../components/ui/Badge';
@@ -23,6 +24,8 @@ import {
   Link2,
   Layers,
   RotateCcw,
+  KeyRound,
+  Copy,
 } from 'lucide-react';
 
 const DEFAULT_CVHT_CODES = ['CVHT01', 'CVHT02', 'CVHT03'];
@@ -75,6 +78,12 @@ export const GoogleSheetSyncPanel: React.FC = () => {
   const [syncingCode, setSyncingCode] = useState<string | null>(null);
   const [syncingAll, setSyncingAll] = useState(false);
 
+  // Service Account state for Private / Restricted Google Sheets
+  const [serviceAccount, setServiceAccount] = useState<ServiceAccountInfo | null>(null);
+  const [showSaEditor, setShowSaEditor] = useState(false);
+  const [saJsonDraft, setSaJsonDraft] = useState('');
+  const [savingSa, setSavingSa] = useState(false);
+
   // Local editable drafts keyed by config.code
   const [drafts, setDrafts] = useState<Record<string, UpdateGoogleSheetSyncConfigDTO>>({});
 
@@ -88,6 +97,9 @@ export const GoogleSheetSyncPanel: React.FC = () => {
 
       setConfigs(loadedConfigs);
       setCsUsers(loadedUsers);
+      if (data?.serviceAccount) {
+        setServiceAccount(data.serviceAccount);
+      }
 
       const nextDrafts: Record<string, UpdateGoogleSheetSyncConfigDTO> = {};
       loadedConfigs.forEach((cfg) => {
@@ -242,6 +254,34 @@ export const GoogleSheetSyncPanel: React.FC = () => {
     }
   };
 
+  const handleSaveServiceAccount = async () => {
+    try {
+      setSavingSa(true);
+      const res = await importsApi.saveServiceAccount(saJsonDraft.trim() || null);
+      setServiceAccount(res.serviceAccount);
+      setShowSaEditor(false);
+      setSaJsonDraft('');
+      toast.success(
+        res.serviceAccount.configured
+          ? `Đã lưu Google Service Account (${res.serviceAccount.clientEmail})!`
+          : 'Đã xóa cấu hình Google Service Account trên DB.'
+      );
+    } catch (err: any) {
+      toast.error(
+        err.response?.data?.error?.message ||
+          err.response?.data?.message ||
+          'Không thể lưu Google Service Account JSON'
+      );
+    } finally {
+      setSavingSa(false);
+    }
+  };
+
+  const handleCopyEmail = (email: string) => {
+    navigator.clipboard.writeText(email);
+    toast.success(`Đã sao chép email: ${email}`);
+  };
+
   const handleSyncAll = async (forceFullSync = false) => {
     try {
       setSyncingAll(true);
@@ -359,6 +399,101 @@ export const GoogleSheetSyncPanel: React.FC = () => {
             </Button>
           </div>
         </div>
+
+        {/* Private Sheet / Service Account Authentication Bar */}
+        <div className="mt-4 pt-3.5 border-t border-blue-200/70 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div className="flex items-start sm:items-center gap-2.5 text-xs">
+            <KeyRound className="w-4 h-4 text-indigo-600 shrink-0 mt-0.5 sm:mt-0" />
+            <div>
+              <span className="font-bold text-slate-800">
+                Xác thực Google Sheet Riêng tư (Restricted):{' '}
+              </span>
+              {serviceAccount?.configured && serviceAccount.clientEmail ? (
+                <span className="inline-flex flex-wrap items-center gap-1.5">
+                  <Badge variant="success" size="sm">Đã kết nối Service Account</Badge>
+                  <code className="px-2 py-0.5 bg-white border border-slate-200 rounded font-mono text-[11px] font-bold text-indigo-700">
+                    {serviceAccount.clientEmail}
+                  </code>
+                  <button
+                    type="button"
+                    onClick={() => handleCopyEmail(serviceAccount.clientEmail!)}
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-indigo-100 hover:bg-indigo-200 text-indigo-800 font-semibold text-[11px] transition-colors"
+                    title="Copy email này và bấm Share (Viewer) trên file Google Sheet"
+                  >
+                    <Copy className="w-3 h-3" />
+                    Copy Email để Share quyền xem
+                  </button>
+                </span>
+              ) : (
+                <span className="text-slate-600">
+                  Chưa cấu hình Service Account (Hiện đang dùng file local <code className="font-mono text-[11px] bg-white px-1 rounded">docs/data/hoc_vien/</code> hoặc link công khai). Nếu file Google Sheet khóa riêng tư, hãy gắn Service Account JSON.
+                </span>
+              )}
+            </div>
+          </div>
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowSaEditor((prev) => !prev)}
+            leftIcon={<KeyRound className="w-3.5 h-3.5 text-indigo-600" />}
+            className="bg-white text-xs shrink-0"
+          >
+            {showSaEditor ? 'Đóng cấu hình Key' : serviceAccount?.configured ? 'Đổi Service Account JSON' : 'Cấu hình Service Account JSON'}
+          </Button>
+        </div>
+
+        {showSaEditor && (
+          <div className="mt-3 p-4 bg-white rounded-xl border border-indigo-200 space-y-3">
+            <div className="text-xs text-slate-700 space-y-1">
+              <p className="font-bold text-slate-900">
+                Hướng dẫn kết nối file Google Sheet chỉ người có quyền mới xem được:
+              </p>
+              <ol className="list-decimal list-inside space-y-0.5 text-slate-600">
+                <li>
+                  Vào <strong>Google Cloud Console → IAM &amp; Admin → Service Accounts</strong>, tạo 1 Service Account và bật <strong>Google Drive API</strong>.
+                </li>
+                <li>
+                  Vào tab <strong>Keys → Add Key → Create new key (JSON)</strong> để tải file <code className="font-mono">.json</code> về máy và dán nội dung vào ô bên dưới.
+                </li>
+                <li>
+                  Copy địa chỉ <code className="font-mono text-indigo-700">client_email</code> của Service Account, mở 2 file Google Sheet (JLPT &amp; Kaiwa) → bấm <strong>Chia sẻ (Share)</strong> → thêm email đó với quyền <strong>Người xem (Viewer)</strong>.
+                </li>
+              </ol>
+            </div>
+            <textarea
+              rows={5}
+              value={saJsonDraft}
+              onChange={(e) => setSaJsonDraft(e.target.value)}
+              placeholder='Dán toàn bộ nội dung file service-account.json vào đây: {"type": "service_account", "project_id": "...", "private_key": "-----BEGIN PRIVATE KEY-----...", "client_email": "...@...iam.gserviceaccount.com"}'
+              className="w-full text-xs font-mono p-2.5 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
+            />
+            <div className="flex items-center justify-end gap-2">
+              {serviceAccount?.configured && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setSaJsonDraft('');
+                    handleSaveServiceAccount();
+                  }}
+                  isLoading={savingSa}
+                >
+                  Xóa Key trên DB
+                </Button>
+              )}
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={handleSaveServiceAccount}
+                isLoading={savingSa}
+                leftIcon={<Save className="w-3.5 h-3.5" />}
+              >
+                Lưu Service Account JSON
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* 2 Cards Grid: JLPT & KAIWA */}

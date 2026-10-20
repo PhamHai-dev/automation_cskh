@@ -129,6 +129,13 @@ export interface UpdateGoogleSheetSyncConfigDTO {
   enabled?: boolean;
 }
 
+export interface ServiceAccountInfo {
+  configured: boolean;
+  clientEmail: string | null;
+  projectId: string | null;
+  source: 'DB' | 'ENV_FILE' | 'ENV_VARS' | 'NONE';
+}
+
 export interface SheetSyncResult {
   code?: string;
   program_type?: string;

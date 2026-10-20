@@ -290,6 +290,19 @@ export class ImportsController {
     }
   };
 
+  saveServiceAccount = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const user = (req as any).user;
+      const serviceAccount = await this.sheetSyncService.saveServiceAccountJson(
+        req.body?.service_account_json ?? null,
+        user?.id
+      );
+      res.status(200).json({ data: { serviceAccount }, meta: null });
+    } catch (err) {
+      next(err);
+    }
+  };
+
   updateSheetSyncConfig = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const code = req.params.code;

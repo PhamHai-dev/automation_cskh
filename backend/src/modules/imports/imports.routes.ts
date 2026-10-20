@@ -23,6 +23,7 @@ router.get('/batches', requireRoles(['ADMIN', 'MANAGE', 'CS', 'TEACHER']), contr
 
 // 2b. Google Sheet Sync Configs & Execution (ADMIN, MANAGE)
 router.get('/sheet-sync/configs', requireRoles(['ADMIN', 'MANAGE']), controller.getSheetSyncConfigs);
+router.put('/sheet-sync/service-account', requireRoles(['ADMIN', 'MANAGE']), controller.saveServiceAccount);
 router.put('/sheet-sync/configs/:code', requireRoles(['ADMIN', 'MANAGE']), controller.updateSheetSyncConfig);
 router.post('/sheet-sync/configs/:code/sync', requireRoles(['ADMIN', 'MANAGE']), controller.syncSheetByCode);
 router.post('/sheet-sync/sync-all', requireRoles(['ADMIN', 'MANAGE']), controller.syncAllSheets);

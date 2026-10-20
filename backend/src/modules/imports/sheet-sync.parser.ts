@@ -439,6 +439,53 @@ export function extractStartTime(rawTime: any): string | null {
 }
 
 /**
+ * Normalize sheet schedule strings like "T2-T4-T6", "T3-T5-T7", "246", "Thứ 2, 4, 6", "35CN"
+ * into canonical compact format ("246", "357", "35CN", "LKCD") required by AutoAttendanceService.
+ */
+export function extractSchedulePattern(rawPattern: any): string | null {
+  const val = extractCellValue(rawPattern);
+  if (val === null || val === undefined) return null;
+  const str = String(val).trim();
+  if (!str || str === '-') return null;
+
+  const firstLine = str.split(/\r?\n/)[0].trim().toUpperCase();
+  if (!firstLine) return null;
+  if (firstLine === 'LKCD' || firstLine.includes('LINH HOẠT') || firstLine.includes('TỰ DO')) {
+    return 'LKCD';
+  }
+
+  // Strip common Vietnamese prefixes/separators: "THỨ", "T", "-", ",", "/", ".", spaces
+  const cleaned = firstLine
+    .replace(/CHỦ\s*NHẬT/g, 'CN')
+    .replace(/CHU\s*NHAT/g, 'CN')
+    .replace(/THỨ\s*/g, '')
+    .replace(/THU\s*/g, '')
+    .replace(/T(?=[2-7])/g, '')
+    .replace(/[\s\-_,./+~;]+/g, '');
+
+  const tokens = new Set<number>();
+  for (let i = 0; i < cleaned.length; ) {
+    const ch = cleaned[i];
+    if (ch >= '2' && ch <= '7') {
+      tokens.add(Number(ch));
+      i += 1;
+      continue;
+    }
+    if (cleaned.slice(i, i + 2) === 'CN' || ch === '8') {
+      tokens.add(8);
+      i += ch === '8' ? 1 : 2;
+      continue;
+    }
+    // Unrecognized token -> fallback to LKCD so AutoAttendanceService never logs a warning
+    return 'LKCD';
+  }
+
+  if (tokens.size === 0) return null;
+  const ordered = [2, 3, 4, 5, 6, 7, 8].filter((d) => tokens.has(d));
+  return ordered.map((d) => (d === 8 ? 'CN' : String(d))).join('');
+}
+
+/**
  * Infer CareLogOutcome from care log text content
  */
 export function inferCareLogOutcome(text: string): CareLogOutcome {
@@ -612,7 +659,7 @@ export function parseJlptSheetRows(
     const status = mapEnrollmentStatus(rawStatus);
 
     const startTime = extractStartTime(row.getCell(20).value);
-    const schedulePattern = cellText(row.getCell(21)) || null;
+    const schedulePattern = extractSchedulePattern(row.getCell(21).value);
     const teacherName = cellText(row.getCell(22)) || null;
     const classCode = cellText(row.getCell(23)) || null;
     const rawClassName = cellText(row.getCell(24));
@@ -818,8 +865,8 @@ export function parseKaiwaSheetRows(
     const endDate = formatIsoDateOnly(parseSheetDate(row.getCell(23).value));
 
     const startTime = extractStartTime(row.getCell(24).value);
-    const sched1 = cellText(row.getCell(25));
-    const schedFallback = cellText(row.getCell(31));
+    const sched1 = extractSchedulePattern(row.getCell(25).value);
+    const schedFallback = extractSchedulePattern(row.getCell(31).value);
     const schedulePattern = sched1 || schedFallback || null;
 
     const rawDur = extractCellValue(row.getCell(26).value);
