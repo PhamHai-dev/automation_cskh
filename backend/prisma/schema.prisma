@@ -34,29 +34,29 @@ model User {
   cs_group_members                 CSGroupMember[]
   manage_assignments               ManageAssignment[]
   teacher                          Teacher?
-  created_class_sessions           ClassSession[]        @relation("SessionCreator")
-  created_attendances              Attendance[]          @relation("AttendanceCreator")
-  deleted_attendances              Attendance[]          @relation("AttendanceDeleter")
-  enrollments_as_cs                Enrollment[]          @relation("EnrollmentCS")
+  created_class_sessions           ClassSession[]             @relation("SessionCreator")
+  created_attendances              Attendance[]               @relation("AttendanceCreator")
+  deleted_attendances              Attendance[]               @relation("AttendanceDeleter")
+  enrollments_as_cs                Enrollment[]               @relation("EnrollmentCS")
   zalo_accounts                    ZaloAccount[]
   line_accounts                    LineAccount[]
-  automation_workflows             AutomationWorkflow[]  @relation("AutomationWorkflowOwner")
-  care_logs                        CareLog[]             @relation("CareLogCS")
-  care_tasks_assigned              CareTask[]            @relation("CareTaskAssignee")
-  import_batches                   ImportBatch[]         @relation("ImportBatchUploader")
-  audit_logs                       AuditLog[]            @relation("AuditLogUser")
+  automation_workflows             AutomationWorkflow[]       @relation("AutomationWorkflowOwner")
+  care_logs                        CareLog[]                  @relation("CareLogCS")
+  care_tasks_assigned              CareTask[]                 @relation("CareTaskAssignee")
+  import_batches                   ImportBatch[]              @relation("ImportBatchUploader")
+  audit_logs                       AuditLog[]                 @relation("AuditLogUser")
   zalo_account_accesses            ZaloAccountAccess[]
-  archived_zalo_accounts           ZaloAccount[]         @relation("ZaloAccountArchiver")
-  archived_line_accounts           LineAccount[]         @relation("LineAccountArchiver")
-  requested_import_create_requests ImportCreateRequest[] @relation("ImportCreateRequestRequester")
-  reviewed_import_create_requests  ImportCreateRequest[] @relation("ImportCreateRequestReviewer")
-  assigned_import_create_requests  ImportCreateRequest[] @relation("ImportCreateRequestAssignee")
-  updated_app_settings             AppSetting[]          @relation("AppSettingUpdater")
-  attendances_as_teacher           Attendance[]          @relation("AttendanceTeacherUser")
-  attendances_as_cs                Attendance[]          @relation("AttendanceCSUser")
-  resolved_attendances             Attendance[]          @relation("AttendanceResolver")
+  archived_zalo_accounts           ZaloAccount[]              @relation("ZaloAccountArchiver")
+  archived_line_accounts           LineAccount[]              @relation("LineAccountArchiver")
+  requested_import_create_requests ImportCreateRequest[]      @relation("ImportCreateRequestRequester")
+  reviewed_import_create_requests  ImportCreateRequest[]      @relation("ImportCreateRequestReviewer")
+  assigned_import_create_requests  ImportCreateRequest[]      @relation("ImportCreateRequestAssignee")
+  updated_app_settings             AppSetting[]               @relation("AppSettingUpdater")
+  attendances_as_teacher           Attendance[]               @relation("AttendanceTeacherUser")
+  attendances_as_cs                Attendance[]               @relation("AttendanceCSUser")
+  resolved_attendances             Attendance[]               @relation("AttendanceResolver")
   user_preferences                 UserPreference[]
-  cs_sheet_backup_config           CsSheetBackupConfig?  @relation("UserCsSheetBackup")
+  program_sheet_backup_configs     ProgramSheetBackupConfig[] @relation("UserProgramSheetBackup")
 
   @@map("users")
 }
@@ -922,19 +922,21 @@ enum ImportType {
   GOOGLE_SHEET_BACKUP
 }
 
-model CsSheetBackupConfig {
+model ProgramSheetBackupConfig {
   id                     Int       @id @default(autoincrement())
-  cs_user_id             Int       @unique
+  cs_user_id             Int
+  program_type           String    @db.VarChar(20) // "JLPT" | "KAIWA"
   name                   String
   target_spreadsheet_url String?   @db.Text
   target_spreadsheet_id  String?
   local_backup_path      String?
-  sheet1_name            String    @default("1.Chăm sóc")
-  sheet3_name            String    @default("3.Chấm buổi")
+  sheet_name             String    @default("Chấm buổi") // JLPT="Chấm buổi", KAIWA="3.Chấm buổi"
+  header_row             Int       @default(2)
   schedule_times         Json? // e.g. ["12:00", "21:00"]
   enabled                Boolean   @default(true)
   require_private_sheet  Boolean   @default(true)
   mask_sensitive_data    Boolean   @default(false)
+  backup_year            Int? // null = backup all month blocks (all years)
   last_backup_at         DateTime?
   last_status            String? // "IDLE" | "RUNNING" | "SUCCESS" | "FAILED"
   last_summary           Json?
@@ -942,9 +944,11 @@ model CsSheetBackupConfig {
   created_at             DateTime  @default(now())
   updated_at             DateTime  @updatedAt
 
-  cs_user User @relation("UserCsSheetBackup", fields: [cs_user_id], references: [id], onDelete: Cascade)
+  cs_user User @relation("UserProgramSheetBackup", fields: [cs_user_id], references: [id], onDelete: Cascade)
 
-  @@map("cs_sheet_backup_configs")
+  @@unique([cs_user_id, program_type])
+  @@index([enabled, program_type])
+  @@map("program_sheet_backup_configs")
 }
 
 model GoogleSheetSyncConfig {

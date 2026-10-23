@@ -6,7 +6,6 @@ import {
   AttendanceSource,
   AttendanceSourceType,
   AttendanceStatus,
-  CareLogOutcome,
   ClassModelType,
   ClassSessionStatus,
   EnrollmentClassStatus,
@@ -15,26 +14,42 @@ import {
 import { app } from '../../../app';
 import { prisma } from '../../../prisma/client';
 import { signTestToken } from '../../../shared/utils/test-helper';
-import { ImportsService } from '../imports.service';
+import { detectJlptMonthBlocks } from '../attendance-sheet.util';
 
-describe('CS Sheet Backup (Web -> 1.Chăm sóc & 3.Chấm buổi) Integration', () => {
+/**
+ * Program Sheet Backup (JLPT + KAIWA -> local "Chấm buổi" workbooks) integration test.
+ *
+ * Covers the new per-program contract:
+ *  - ensureConfigs/listConfigs create exactly 2 configs per CS (JLPT + KAIWA) and scope CS users to their own rows
+ *  - runBackupForConfig writes the attendance mark into the correct day column of the correct month block
+ *    (timezone regression: 05/10 mid-month must not drift, 31/10 month-end must not spill into T11)
+ *  - year filter (year=2025) writes 0 attendance cells when all sessions are in 2026
+ *  - an idempotent re-run reports unchangedRows === totalStudents and updatedCellsCount === 0
+ *  - cross-CS access (CVHT02 touching CVHT01's config) is rejected with 403 by the engine
+ */
+describe('Program Sheet Backup (JLPT & KAIWA "Chấm buổi") Integration', () => {
   let adminToken: string;
   let cvht01Token: string;
   let cvht02Token: string;
   let adminId: number;
   let cvht01Id: number;
   let cvht02Id: number;
-  let cvht03Id: number;
 
+  let testClassId: number;
+  let testEnrollmentClass1Id: number; // JLPT
+  let testEnrollmentClass2Id: number; // KAIWA
   let testEnrollment1Id: number;
-  let testStudent1Id: number;
-  let testEnrollmentClass1Id: number;
-  let testClass1Id: number;
-
   let testEnrollment2Id: number;
+  let testStudent1Id: number;
   let testStudent2Id: number;
 
-  const importsService = new ImportsService();
+  const EXTERNAL_ID_JLPT = 'HV_SBKPG_JLPT_001';
+  const EXTERNAL_ID_KAIWA = 'HV_SBKPG_KAIWA_001';
+  const SYNC_KEY_JLPT = 'SBKPG_TEST::HV_SBKPG_JLPT_001::JLPT_SBK_TEST';
+  const SYNC_KEY_KAIWA = 'SBKPG_TEST::HV_SBKPG_KAIWA_001::KAIWA_SBK_TEST';
+
+  let jlptConfigId: number;
+  let kaiwaConfigId: number;
 
   beforeAll(async () => {
     const adminUser = await prisma.user.upsert({
@@ -81,26 +96,17 @@ describe('CS Sheet Backup (Web -> 1.Chăm sóc & 3.Chấm buổi) Integration', 
     cvht02Id = u2.id;
     cvht02Token = signTestToken(cvht02Id, ['CS']);
 
-    const u3 = await prisma.user.upsert({
-      where: { email: 'cskh3@gmail.com' },
-      update: { staff_code: 'CVHT03', active: true, roles: ['CS'] },
-      create: {
-        email: 'cskh3@gmail.com',
-        name: 'CVHT03 - CSKH 3',
-        staff_code: 'CVHT03',
-        password_hash: 'dummy',
-        roles: ['CS'],
-        active: true,
-      },
+    // ---- Temp seed data -------------------------------------------------
+    const pkgJlpt = await prisma.package.upsert({
+      where: { code: 'JLPT_SBK_TEST' },
+      update: { default_total_sessions: 12, active: true },
+      create: { code: 'JLPT_SBK_TEST', name: 'Gói JLPT Backup Test', default_total_sessions: 12, active: true },
     });
-    cvht03Id = u3.id;
-
-    // Ensure test package, teacher, class, student & enrollment for CVHT01 and CVHT02
-    const pkg = await prisma.package.upsert({
-      where: { code: 'KAIWA_BK_TEST' },
+    const pkgKaiwa = await prisma.package.upsert({
+      where: { code: 'KAIWA_SBK_TEST' },
       update: { default_total_sessions: 30, active: true },
       create: {
-        code: 'KAIWA_BK_TEST',
+        code: 'KAIWA_SBK_TEST',
         name: 'Gói Kaiwa Backup Test',
         default_total_sessions: 30,
         active: true,
@@ -108,36 +114,27 @@ describe('CS Sheet Backup (Web -> 1.Chăm sóc & 3.Chấm buổi) Integration', 
     });
 
     const teacher = await prisma.teacher.upsert({
-      where: { code: 'GV_BK_01' },
-      update: { name: 'Sensei Backup 01', active: true },
-      create: {
-        code: 'GV_BK_01',
-        name: 'Sensei Backup 01',
-        active: true,
-      },
+      where: { code: 'GV_SBKPG_01' },
+      update: { name: 'Sensei Backup Program 01', active: true },
+      create: { code: 'GV_SBKPG_01', name: 'Sensei Backup Program 01', active: true },
     });
 
+    // One class shared by both test enrollments (each gets its own EnrollmentClass).
     const cls = await prisma.class.create({
       data: {
-        class_code: 'CLS_BK_CVHT01',
-        class_name: 'Lớp Kaiwa Backup CVHT01',
+        class_code: 'CLS_SBKPG_CVHT01',
+        class_name: 'Lớp Backup Program Test CVHT01',
         level: 'N4',
         model_type: ClassModelType.ONE_TO_ONE,
         attendance_source: AttendanceSourceType.LEARNING_SYSTEM,
         active: true,
       },
     });
-    testClass1Id = cls.id;
+    testClassId = cls.id;
 
     await prisma.classTeacher.create({
-      data: {
-        class_id: cls.id,
-        teacher_id: teacher.id,
-        role: 'MAIN',
-        active: true,
-      },
+      data: { class_id: cls.id, teacher_id: teacher.id, role: 'MAIN', active: true },
     });
-
     await prisma.classSchedule.create({
       data: {
         class_id: cls.id,
@@ -149,44 +146,73 @@ describe('CS Sheet Backup (Web -> 1.Chăm sóc & 3.Chấm buổi) Integration', 
     });
 
     const student1 = await prisma.student.upsert({
-      where: { external_id: 'HV_BK_CVHT01_001' },
-      update: {
-        full_name: 'Nguyễn Văn Backup 01',
-        gender: 'Nam',
-        phone: '0912345678',
-        email: 'hv_bk_01@example.com',
-        occupation: 'Kỹ sư',
-      },
+      where: { external_id: EXTERNAL_ID_JLPT },
+      update: { full_name: 'Nguyễn Văn SBK JLPT' },
       create: {
-        external_id: 'HV_BK_CVHT01_001',
-        full_name: 'Nguyễn Văn Backup 01',
+        external_id: EXTERNAL_ID_JLPT,
+        full_name: 'Nguyễn Văn SBK JLPT',
         gender: 'Nam',
-        phone: '0912345678',
-        email: 'hv_bk_01@example.com',
-        occupation: 'Kỹ sư',
+        phone: '0912340001',
+        email: 'hv_sbkpg_jlpt@example.com',
       },
     });
     testStudent1Id = student1.id;
 
-    const enr1 = await prisma.enrollment.upsert({
-      where: { external_sync_key: 'BACKUP_TEST::HV_BK_CVHT01_001::KAIWA_BK_TEST' },
+    const student2 = await prisma.student.upsert({
+      where: { external_id: EXTERNAL_ID_KAIWA },
+      update: { full_name: 'Trần Thị SBK KAIWA' },
+      create: {
+        external_id: EXTERNAL_ID_KAIWA,
+        full_name: 'Trần Thị SBK KAIWA',
+        gender: 'Nữ',
+        phone: '0912340002',
+        email: 'hv_sbkpg_kaiwa@example.com',
+      },
+    });
+    testStudent2Id = student2.id;
+
+    const enrJlpt = await prisma.enrollment.upsert({
+      where: { external_sync_key: SYNC_KEY_JLPT },
+      update: { cs_id: cvht01Id, student_id: student1.id, package_id: pkgJlpt.id, status: EnrollmentStatus.STUDYING },
+      create: {
+        external_id: EXTERNAL_ID_JLPT,
+        external_sync_key: SYNC_KEY_JLPT,
+        program_type: 'JLPT',
+        student_id: student1.id,
+        package_id: pkgJlpt.id,
+        cs_id: cvht01Id,
+        paid_at: new Date('2026-09-01T00:00:00.000Z'),
+        sale_name: 'Sale A',
+        student_source_status: 'HV mới',
+        course_content: 'Thường',
+        payment_status: 'Full phí',
+        course_teacher_type: 'GV Việt Nam',
+        level: 'N4',
+        total_sessions: 12,
+        class_model: 'Lớp 1-1',
+        start_date: new Date('2026-10-01T00:00:00.000Z'),
+        status: EnrollmentStatus.STUDYING,
+      },
+    });
+    testEnrollment1Id = enrJlpt.id;
+
+    const enrKaiwa = await prisma.enrollment.upsert({
+      where: { external_sync_key: SYNC_KEY_KAIWA },
       update: {
         cs_id: cvht01Id,
-        student_id: student1.id,
-        package_id: pkg.id,
-        total_sessions: 30,
+        student_id: student2.id,
+        package_id: pkgKaiwa.id,
         status: EnrollmentStatus.STUDYING,
-        exchange_info: 'Trao đổi ban đầu lần 1',
       },
       create: {
-        external_id: 'HV_BK_CVHT01_001',
-        external_sync_key: 'BACKUP_TEST::HV_BK_CVHT01_001::KAIWA_BK_TEST',
+        external_id: EXTERNAL_ID_KAIWA,
+        external_sync_key: SYNC_KEY_KAIWA,
         program_type: 'KAIWA',
-        student_id: student1.id,
-        package_id: pkg.id,
+        student_id: student2.id,
+        package_id: pkgKaiwa.id,
         cs_id: cvht01Id,
-        paid_at: new Date('2026-01-10T00:00:00.000Z'),
-        sale_name: 'Sale A',
+        paid_at: new Date('2026-09-01T00:00:00.000Z'),
+        sale_name: 'Sale B',
         student_source_status: 'HV mới',
         course_content: 'Thường',
         payment_status: 'Full phí',
@@ -194,24 +220,19 @@ describe('CS Sheet Backup (Web -> 1.Chăm sóc & 3.Chấm buổi) Integration', 
         level: 'N4',
         total_sessions: 30,
         class_model: 'Lớp 1-1',
-        exchange_info: 'Trao đổi ban đầu lần 1',
-        start_date: new Date('2026-01-12T00:00:00.000Z'),
+        start_date: new Date('2026-10-01T00:00:00.000Z'),
         status: EnrollmentStatus.STUDYING,
       },
     });
-    testEnrollment1Id = enr1.id;
+    testEnrollment2Id = enrKaiwa.id;
 
     const ec1 = await prisma.enrollmentClass.upsert({
       where: {
-        enrollment_id_class_id_sequence_no: {
-          enrollment_id: enr1.id,
-          class_id: cls.id,
-          sequence_no: 1,
-        },
+        enrollment_id_class_id_sequence_no: { enrollment_id: enrJlpt.id, class_id: cls.id, sequence_no: 1 },
       },
       update: { status: EnrollmentClassStatus.ACTIVE },
       create: {
-        enrollment_id: enr1.id,
+        enrollment_id: enrJlpt.id,
         class_id: cls.id,
         sequence_no: 1,
         status: EnrollmentClassStatus.ACTIVE,
@@ -219,89 +240,90 @@ describe('CS Sheet Backup (Web -> 1.Chăm sóc & 3.Chấm buổi) Integration', 
     });
     testEnrollmentClass1Id = ec1.id;
 
-    // Create a ClassSession & Attendance on 2026-09-15 for Student 1
-    const session1 = await prisma.classSession.upsert({
+    const ec2 = await prisma.enrollmentClass.upsert({
       where: {
-        class_id_session_number: {
-          class_id: cls.id,
-          session_number: 1,
-        },
+        enrollment_id_class_id_sequence_no: { enrollment_id: enrKaiwa.id, class_id: cls.id, sequence_no: 2 },
       },
-      update: {
-        session_date: new Date('2026-09-15T00:00:00.000Z'),
-        status: ClassSessionStatus.COMPLETED,
+      update: { status: EnrollmentClassStatus.ACTIVE },
+      create: {
+        enrollment_id: enrKaiwa.id,
+        class_id: cls.id,
+        sequence_no: 2,
+        status: EnrollmentClassStatus.ACTIVE,
       },
+    });
+    testEnrollmentClass2Id = ec2.id;
+
+    // JLPT session on 2026-10-05 -> attendance ABSENT_UNAPPROVED_C (cell value 'C')
+    const sessionJlpt = await prisma.classSession.upsert({
+      where: { class_id_session_number: { class_id: cls.id, session_number: 101 } },
+      update: { session_date: new Date('2026-10-05T00:00:00.000Z'), status: ClassSessionStatus.COMPLETED },
       create: {
         class_id: cls.id,
-        session_number: 1,
-        session_date: new Date('2026-09-15T00:00:00.000Z'),
+        session_number: 101,
+        session_date: new Date('2026-10-05T00:00:00.000Z'),
         status: ClassSessionStatus.COMPLETED,
         created_by_id: adminId,
       },
     });
-
     await prisma.attendance.upsert({
       where: {
         enrollment_class_id_class_session_id: {
           enrollment_class_id: ec1.id,
-          class_session_id: session1.id,
+          class_session_id: sessionJlpt.id,
         },
       },
-      update: {
-        status: AttendanceStatus.ATTENDED,
-        lesson_topic: 'K1 L1',
-        deleted_at: null,
-      },
+      update: { status: AttendanceStatus.ABSENT_UNAPPROVED_C, deleted_at: null },
       create: {
         enrollment_class_id: ec1.id,
-        class_session_id: session1.id,
-        status: AttendanceStatus.ATTENDED,
-        lesson_topic: 'K1 L1',
+        class_session_id: sessionJlpt.id,
+        status: AttendanceStatus.ABSENT_UNAPPROVED_C,
         source: AttendanceSource.MANUAL,
         created_by_id: adminId,
       },
     });
 
-    // Create a second student strictly for CVHT02 to verify scope isolation
-    const student2 = await prisma.student.upsert({
-      where: { external_id: 'HV_BK_CVHT02_999' },
-      update: { full_name: 'Trần Thị Riêng Biệt CVHT02' },
+    // KAIWA session on 2026-10-31 (month-end) -> attendance ATTENDED (cell value '1')
+    const sessionKaiwa = await prisma.classSession.upsert({
+      where: { class_id_session_number: { class_id: cls.id, session_number: 102 } },
+      update: { session_date: new Date('2026-10-31T00:00:00.000Z'), status: ClassSessionStatus.COMPLETED },
       create: {
-        external_id: 'HV_BK_CVHT02_999',
-        full_name: 'Trần Thị Riêng Biệt CVHT02',
-        gender: 'Nữ',
-        phone: '0988777666',
-        email: 'hv_bk_02@example.com',
+        class_id: cls.id,
+        session_number: 102,
+        session_date: new Date('2026-10-31T00:00:00.000Z'),
+        status: ClassSessionStatus.COMPLETED,
+        created_by_id: adminId,
       },
     });
-    testStudent2Id = student2.id;
-
-    const enr2 = await prisma.enrollment.upsert({
-      where: { external_sync_key: 'BACKUP_TEST::HV_BK_CVHT02_999::KAIWA_BK_TEST' },
-      update: { cs_id: cvht02Id, student_id: student2.id, package_id: pkg.id },
+    await prisma.attendance.upsert({
+      where: {
+        enrollment_class_id_class_session_id: {
+          enrollment_class_id: ec2.id,
+          class_session_id: sessionKaiwa.id,
+        },
+      },
+      update: { status: AttendanceStatus.ATTENDED, deleted_at: null },
       create: {
-        external_id: 'HV_BK_CVHT02_999',
-        external_sync_key: 'BACKUP_TEST::HV_BK_CVHT02_999::KAIWA_BK_TEST',
-        program_type: 'KAIWA',
-        student_id: student2.id,
-        package_id: pkg.id,
-        cs_id: cvht02Id,
-        total_sessions: 30,
-        status: EnrollmentStatus.STUDYING,
+        enrollment_class_id: ec2.id,
+        class_session_id: sessionKaiwa.id,
+        status: AttendanceStatus.ATTENDED,
+        source: AttendanceSource.MANUAL,
+        created_by_id: adminId,
       },
     });
-    testEnrollment2Id = enr2.id;
   });
 
   afterAll(async () => {
+    // Cleanup temp seed data only (configs are engine-managed and re-created by ensureConfigs).
     try {
+      const enrollmentClassIds = [testEnrollmentClass1Id, testEnrollmentClass2Id].filter(Boolean);
+      await prisma.attendance.deleteMany({ where: { enrollment_class_id: { in: enrollmentClassIds } } });
+      await prisma.enrollmentClass.deleteMany({ where: { enrollment_id: { in: [testEnrollment1Id, testEnrollment2Id] } } });
       await prisma.careLog.deleteMany({ where: { enrollment_id: { in: [testEnrollment1Id, testEnrollment2Id] } } });
-      await prisma.attendance.deleteMany({ where: { enrollment_class_id: testEnrollmentClass1Id } });
-      await prisma.enrollmentClass.deleteMany({ where: { id: testEnrollmentClass1Id } });
-      await prisma.classSession.deleteMany({ where: { class_id: testClass1Id } });
-      await prisma.classSchedule.deleteMany({ where: { class_id: testClass1Id } });
-      await prisma.classTeacher.deleteMany({ where: { class_id: testClass1Id } });
-      await prisma.class.deleteMany({ where: { id: testClass1Id } });
+      await prisma.classSession.deleteMany({ where: { class_id: testClassId } });
+      await prisma.classSchedule.deleteMany({ where: { class_id: testClassId } });
+      await prisma.classTeacher.deleteMany({ where: { class_id: testClassId } });
+      await prisma.class.deleteMany({ where: { id: testClassId } });
       await prisma.enrollment.deleteMany({ where: { id: { in: [testEnrollment1Id, testEnrollment2Id] } } });
       await prisma.student.deleteMany({ where: { id: { in: [testStudent1Id, testStudent2Id] } } });
     } catch {
@@ -310,230 +332,198 @@ describe('CS Sheet Backup (Web -> 1.Chăm sóc & 3.Chấm buổi) Integration', 
     await prisma.$disconnect();
   });
 
-  it('1. Auto-initializes backup configs for CVHT01, CVHT02, CVHT03 and enforces CS data scope on GET /configs', async () => {
-    // Admin sees all CS configs
+  const resolveBackupPath = (p: string): string =>
+    path.isAbsolute(p) ? p : path.resolve(process.cwd(), p);
+
+  // Structural mirror of the month-block shape returned by detectJlptMonthBlocks(),
+  // so the assertions stay readable even though the helper lives in the engine module.
+  type MonthBlockLite = {
+    month: number;
+    year: number;
+    label?: string;
+    startCol: number;
+    endCol: number;
+    dailyCols: Array<{ colNumber: number; colLetter?: string; date: string }>;
+    summaryCols?: Record<string, number>;
+  };
+
+  const monthBlocks = (ws: ExcelJS.Worksheet): MonthBlockLite[] =>
+    detectJlptMonthBlocks(ws) as unknown as MonthBlockLite[];
+
+  const findStudentRow = (ws: ExcelJS.Worksheet, externalId: string, headerRow = 2): ExcelJS.Row | null => {
+    for (let r = headerRow + 1; r <= ws.rowCount; r++) {
+      const row = ws.getRow(r);
+      // Template gốc: cột A = Mã lớp, cột B = ID học viên (khoá dòng)
+      const idVal = String(row.getCell(2).value || '').trim();
+      if (idVal === externalId) return row;
+    }
+    return null;
+  };
+
+  it('1. ensureConfigs creates 2 configs per CS (JLPT + KAIWA); CS sees only own configs, admin sees all', async () => {
     const adminRes = await request(app)
       .get('/api/v1/imports/sheet-backup/configs')
       .set('Authorization', `Bearer ${adminToken}`);
 
     expect(adminRes.status).toBe(200);
     const configs = adminRes.body.data.configs as any[];
-    expect(configs.length).toBeGreaterThanOrEqual(3);
+    expect(Array.isArray(configs)).toBe(true);
 
-    const staffCodes = configs.map((c) => c.cs_user.staff_code);
-    expect(staffCodes).toContain('CVHT01');
-    expect(staffCodes).toContain('CVHT02');
-    expect(staffCodes).toContain('CVHT03');
+    const forCs1 = configs.filter((c) => c.cs_user_id === cvht01Id);
+    expect(forCs1.map((c) => c.program_type).sort()).toEqual(['JLPT', 'KAIWA']);
 
-    // CVHT01 only sees their own config
+    const jlpt = forCs1.find((c) => c.program_type === 'JLPT')!;
+    const kaiwa = forCs1.find((c) => c.program_type === 'KAIWA')!;
+    expect(jlpt.sheet_name).toBe('Chấm buổi');
+    expect(kaiwa.sheet_name).toBe('3.Chấm buổi');
+    expect(String(jlpt.local_backup_path)).toContain('hoc_vien_jlpt_CVHT01');
+    expect(String(kaiwa.local_backup_path)).toContain('hoc_vien_kaiwa_CVHT01');
+    expect(jlpt.schedule_times).toEqual(['12:00', '21:00']);
+    expect(jlpt.enabled).toBe(true);
+    expect(jlpt.require_private_sheet).toBe(true);
+    expect(jlpt.mask_sensitive_data).toBe(false);
+    expect(jlpt.backup_year).toBeNull();
+    expect(jlpt.cs_user.staff_code).toBe('CVHT01');
+    expect(jlpt.cs_user).toEqual({ id: cvht01Id, name: expect.any(String), email: expect.any(String), staff_code: 'CVHT01' });
+    expect(jlpt.student_counts.total).toBeGreaterThanOrEqual(1);
+    expect(adminRes.body.data.serviceAccount).toBeDefined();
+    expect(Array.isArray(adminRes.body.data.availableYears)).toBe(true);
+
+    jlptConfigId = jlpt.id;
+    kaiwaConfigId = kaiwa.id;
+
+    // CVHT01 (CS) only sees their own 2 configs
     const cs1Res = await request(app)
       .get('/api/v1/imports/sheet-backup/configs')
       .set('Authorization', `Bearer ${cvht01Token}`);
-
     expect(cs1Res.status).toBe(200);
-    expect(cs1Res.body.data.configs).toHaveLength(1);
-    expect(cs1Res.body.data.configs[0].cs_user_id).toBe(cvht01Id);
-    expect(cs1Res.body.data.configs[0].cs_user.staff_code).toBe('CVHT01');
+    const cs1Configs = cs1Res.body.data.configs as any[];
+    expect(cs1Configs).toHaveLength(2);
+    expect(cs1Configs.every((c) => c.cs_user_id === cvht01Id)).toBe(true);
   });
 
-  it('2. Updates backup config schedule & options via PUT /api/v1/imports/sheet-backup/configs/:csUserId', async () => {
-    const res = await request(app)
-      .put(`/api/v1/imports/sheet-backup/configs/${cvht01Id}`)
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send({
-        schedule_times: ['12:00', '21:00'],
-        enabled: true,
-        require_private_sheet: true,
-        mask_sensitive_data: false,
-      });
-
-    expect(res.status).toBe(200);
-    expect(res.body.data.cs_user_id).toBe(cvht01Id);
-    expect(res.body.data.schedule_times).toEqual(['12:00', '21:00']);
-  });
-
-  it('3. Runs first full backup for CVHT01 and creates cham_soc_hoc_vien_CVHT01.xlsx with 60 cols in 1.Chăm sóc and 466 cols in 3.Chấm buổi', async () => {
-    const run1 = await request(app)
-      .post(`/api/v1/imports/sheet-backup/configs/${cvht01Id}/run`)
+  it('2. runBackupForConfig(JLPT) writes "C" into the 05/10/2026 column of the T10/2026 block', async () => {
+    const runRes = await request(app)
+      .post(`/api/v1/imports/sheet-backup/configs/${jlptConfigId}/run`)
       .set('Authorization', `Bearer ${cvht01Token}`)
       .send({ forceFullRewrite: true });
 
-    expect(run1.status).toBe(200);
-    const data = run1.body.data;
-    expect(data.csUserId).toBe(cvht01Id);
-    expect(data.staffCode).toBe('CVHT01');
-    expect(data.status).toBe('SUCCESS');
-    expect(data.sheet1.totalEnrollments).toBeGreaterThanOrEqual(1);
-    expect(data.sheet1.appendedRows).toBe(data.sheet1.totalEnrollments);
-    expect(data.sheet1.unchangedRows).toBe(0);
+    expect(runRes.status).toBe(200);
+    const summary = runRes.body.data;
+    expect(summary.csUserId).toBe(cvht01Id);
+    expect(summary.staffCode).toBe('CVHT01');
+    expect(summary.programType).toBe('JLPT');
+    expect(summary.status).toBe('SUCCESS');
+    expect(summary.totalStudents).toBeGreaterThanOrEqual(1);
+    expect(summary.attendanceCellsWritten).toBeGreaterThanOrEqual(1);
 
-    const absFile = path.resolve(process.cwd(), data.localFilePath);
+    const absFile = resolveBackupPath(summary.localFilePath);
     expect(fs.existsSync(absFile)).toBe(true);
 
     const wb = new ExcelJS.Workbook();
     await wb.xlsx.readFile(absFile);
+    const ws = wb.getWorksheet('Chấm buổi');
+    expect(ws).toBeDefined();
 
-    const ws1 = wb.getWorksheet('1.Chăm sóc');
-    const ws3 = wb.getWorksheet('3.Chấm buổi');
-    expect(ws1).toBeDefined();
-    expect(ws3).toBeDefined();
-    expect(ws1!.columnCount).toBeGreaterThanOrEqual(60);
-    expect(ws3!.columnCount).toBeGreaterThanOrEqual(466);
-
-    // Verify HV_BK_CVHT01_001 is present in 1.Chăm sóc and HV_BK_CVHT02_999 is NOT present
-    let foundRow1: ExcelJS.Row | null = null;
-    let foundCvht02InSheet1 = false;
-    for (let r = 4; r <= ws1!.rowCount; r++) {
-      const row = ws1!.getRow(r);
-      const idVal = String(row.getCell(1).value || '').trim();
-      if (idVal === 'HV_BK_CVHT01_001') foundRow1 = row;
-      if (idVal === 'HV_BK_CVHT02_999') foundCvht02InSheet1 = true;
-    }
-    expect(foundRow1).not.toBeNull();
-    expect(foundCvht02InSheet1).toBe(false);
-    expect(String(foundRow1!.getCell(5).value)).toBe('Nguyễn Văn Backup 01');
-    expect(String(foundRow1!.getCell(11).value)).toBe('KAIWA_BK_TEST');
-    expect(String(foundRow1!.getCell(19).value)).toBe('CVHT01');
-    expect(String(foundRow1!.getCell(34).value)).toBe('Lớp Kaiwa Backup CVHT01');
-    expect(String(foundRow1!.getCell(38).value)).toBe('Trao đổi ban đầu lần 1');
-
-    // Verify 3.Chấm buổi has attendance on 2026-09-15
-    const blocks = importsService.detectAttendanceMonthBlocks(ws3!);
-    const sepBlock = blocks.find((b) => b.month === 9 && b.year === 2026);
-    expect(sepBlock).toBeDefined();
-    const sep15Col = sepBlock!.dailyCols.find((d) => d.date.slice(0, 10) === '2026-09-15');
-    expect(sep15Col).toBeDefined();
-
-    let foundRow3: ExcelJS.Row | null = null;
-    for (let r = 3; r <= ws3!.rowCount; r++) {
-      const row = ws3!.getRow(r);
-      if (String(row.getCell(1).value || '').trim() === 'HV_BK_CVHT01_001') {
-        foundRow3 = row;
-        break;
+    const blocks = monthBlocks(ws!);
+    const oct = blocks.find((b) => b.month === 10 && b.year === 2026);
+    expect(oct).toBeDefined();
+    // 05/10/2026 -> 'C'
+    const day05 = oct!.dailyCols.find((d) => d.date.slice(0, 10) === '2026-10-05');
+    expect(day05).toBeDefined();
+    const row = findStudentRow(ws!, EXTERNAL_ID_JLPT);
+    expect(row).not.toBeNull();
+    expect(String(row!.getCell(day05!.colNumber).value)).toBe('C');
+    // 04/10/2026 -> empty
+    const day04 = oct!.dailyCols.find((d) => d.date.slice(0, 10) === '2026-10-04');
+    expect(day04).toBeDefined();
+    expect(String(row!.getCell(day04!.colNumber).value || '')).toBe('');
+    // Timezone guard: file fresh giữ đủ 24 block template; dữ liệu 05/10 KHÔNG được
+    // rò rỉ sang block T9/2026 (local-midnight shift sẽ ghi vào 04/09 hoặc 05/09)
+    const sep = blocks.find((b) => b.month === 9 && b.year === 2026);
+    expect(sep).toBeDefined();
+    if (sep) {
+      for (const d of sep.dailyCols) {
+        expect(String(row!.getCell(d.colNumber).value || '')).toBe('');
       }
     }
-    expect(foundRow3).not.toBeNull();
-    expect(String(foundRow3!.getCell(sep15Col!.colNumber).value)).toBe('K1 L1');
-    expect(Number(foundRow3!.getCell(sepBlock!.summaryCols.attendedCol).value)).toBe(1);
-  }, 30000);
+  }, 60000);
 
-  it('4. Second backup run when Web data is unchanged yields unchangedRows === totalEnrollments and updatedCellsCount === 0', async () => {
-    const run2 = await request(app)
-      .post(`/api/v1/imports/sheet-backup/configs/${cvht01Id}/run`)
+  it('3. runBackupForConfig(KAIWA) writes "1" into the 31/10/2026 column and does NOT spill into T11', async () => {
+    const runRes = await request(app)
+      .post(`/api/v1/imports/sheet-backup/configs/${kaiwaConfigId}/run`)
+      .set('Authorization', `Bearer ${cvht01Token}`)
+      .send({ forceFullRewrite: true });
+
+    expect(runRes.status).toBe(200);
+    const summary = runRes.body.data;
+    expect(summary.programType).toBe('KAIWA');
+    expect(summary.status).toBe('SUCCESS');
+    expect(summary.attendanceCellsWritten).toBeGreaterThanOrEqual(1);
+
+    const absFile = resolveBackupPath(summary.localFilePath);
+    expect(fs.existsSync(absFile)).toBe(true);
+
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.readFile(absFile);
+    const ws = wb.getWorksheet('3.Chấm buổi');
+    expect(ws).toBeDefined();
+
+    const blocks = monthBlocks(ws!);
+    const oct = blocks.find((b) => b.month === 10 && b.year === 2026);
+    expect(oct).toBeDefined();
+    const day31 = oct!.dailyCols.find((d) => d.date.slice(0, 10) === '2026-10-31');
+    expect(day31).toBeDefined();
+    const row = findStudentRow(ws!, EXTERNAL_ID_KAIWA);
+    expect(row).not.toBeNull();
+    expect(String(row!.getCell(day31!.colNumber).value)).toBe('1');
+    // 31/10 must not leak into a November block (local-midnight shift would write into Nov 1)
+    expect(String(row!.getCell(oct!.endCol + 1).value || '')).toBe('');
+  }, 60000);
+
+  it('4. year=2025 filter writes zero attendance cells (all test sessions are in 2026)', async () => {
+    const runRes = await request(app)
+      .post(`/api/v1/imports/sheet-backup/configs/${jlptConfigId}/run`)
+      .set('Authorization', `Bearer ${cvht01Token}`)
+      .send({ year: 2025 });
+
+    expect(runRes.status).toBe(200);
+    expect(runRes.body.data.status).toBe('SUCCESS');
+    expect(runRes.body.data.yearFilter).toBe(2025);
+    expect(runRes.body.data.attendanceCellsWritten).toBe(0);
+  }, 60000);
+
+  it('5. Re-running with unchanged data yields unchangedRows === totalStudents and updatedCellsCount === 0', async () => {
+    const runRes = await request(app)
+      .post(`/api/v1/imports/sheet-backup/configs/${jlptConfigId}/run`)
       .set('Authorization', `Bearer ${cvht01Token}`)
       .send({ forceFullRewrite: false });
 
-    expect(run2.status).toBe(200);
-    const data = run2.body.data;
-    expect(data.sheet1.unchangedRows).toBe(data.sheet1.totalEnrollments);
-    expect(data.sheet1.updatedRows).toBe(0);
-    expect(data.sheet1.appendedRows).toBe(0);
-    expect(data.sheet1.updatedCellsCount).toBe(0);
+    expect(runRes.status).toBe(200);
+    const summary = runRes.body.data;
+    expect(summary.status).toBe('SUCCESS');
+    expect(summary.updatedCellsCount).toBe(0);
+    expect(summary.updatedRows).toBe(0);
+    expect(summary.appendedRows).toBe(0);
+    expect(summary.unchangedRows).toBe(summary.totalStudents);
+  }, 60000);
 
-    expect(data.sheet3.unchangedRows).toBe(data.sheet3.totalEnrollments);
-    expect(data.sheet3.updatedRows).toBe(0);
-    expect(data.sheet3.appendedRows).toBe(0);
-    expect(data.sheet3.updatedCellsCount).toBe(0);
-  }, 30000);
-
-  it('5. Modifying 1 student on Web (exchange_info + CareLog milestone 1 + new Attendance) updates ONLY that row & cells on next backup', async () => {
-    await prisma.enrollment.update({
-      where: { id: testEnrollment1Id },
-      data: {
-        exchange_info: 'Đã gọi điện chăm sóc cập nhật mới',
-      },
-    });
-
-    await prisma.careLog.create({
-      data: {
-        enrollment_id: testEnrollment1Id,
-        cs_id: cvht01Id,
-        after_session_number: 1,
-        outcome: CareLogOutcome.POSITIVE,
-        content: 'HV phản hồi buổi 1 rất tốt',
-        created_by_id: cvht01Id,
-      },
-    });
-
-    // Add a second attendance on 2026-09-17 (Absent A)
-    const session2 = await prisma.classSession.upsert({
-      where: {
-        class_id_session_number: {
-          class_id: testClass1Id,
-          session_number: 2,
-        },
-      },
-      update: {
-        session_date: new Date('2026-09-17T00:00:00.000Z'),
-        status: ClassSessionStatus.COMPLETED,
-      },
-      create: {
-        class_id: testClass1Id,
-        session_number: 2,
-        session_date: new Date('2026-09-17T00:00:00.000Z'),
-        status: ClassSessionStatus.COMPLETED,
-        created_by_id: adminId,
-      },
-    });
-
-    await prisma.attendance.upsert({
-      where: {
-        enrollment_class_id_class_session_id: {
-          enrollment_class_id: testEnrollmentClass1Id,
-          class_session_id: session2.id,
-        },
-      },
-      update: { status: AttendanceStatus.ABSENT_APPROVED_A, deleted_at: null },
-      create: {
-        enrollment_class_id: testEnrollmentClass1Id,
-        class_session_id: session2.id,
-        status: AttendanceStatus.ABSENT_APPROVED_A,
-        source: AttendanceSource.MANUAL,
-        created_by_id: adminId,
-      },
-    });
-
-    const run3 = await request(app)
-      .post(`/api/v1/imports/sheet-backup/configs/${cvht01Id}/run`)
-      .set('Authorization', `Bearer ${cvht01Token}`)
-      .send({ forceFullRewrite: false });
-
-    expect(run3.status).toBe(200);
-    const data = run3.body.data;
-
-    // Exactly 1 row updated in Sheet 1 (exchange_info + CareLog milestone 1 = 2 cells)
-    expect(data.sheet1.updatedRows).toBe(1);
-    expect(data.sheet1.appendedRows).toBe(0);
-    expect(data.sheet1.unchangedRows).toBe(data.sheet1.totalEnrollments - 1);
-    expect(data.sheet1.updatedCellsCount).toBe(2);
-
-    // Exactly 1 row updated in Sheet 3 (2026-09-17 cell 'A' + month summary absentA + year summary absentA = 3 cells)
-    expect(data.sheet3.updatedRows).toBe(1);
-    expect(data.sheet3.appendedRows).toBe(0);
-    expect(data.sheet3.unchangedRows).toBe(data.sheet3.totalEnrollments - 1);
-    expect(data.sheet3.updatedCellsCount).toBe(3);
-  }, 30000);
-
-  it('6. Enforces strict 403 Forbidden when CVHT01 attempts to run backup or download file of CVHT02', async () => {
+  it('6. CVHT02 cannot run or download CVHT01 config (403); CVHT01 can download own backup', async () => {
     const forbiddenRun = await request(app)
-      .post(`/api/v1/imports/sheet-backup/configs/${cvht02Id}/run`)
-      .set('Authorization', `Bearer ${cvht01Token}`)
+      .post(`/api/v1/imports/sheet-backup/configs/${jlptConfigId}/run`)
+      .set('Authorization', `Bearer ${cvht02Token}`)
       .send({});
-
     expect(forbiddenRun.status).toBe(403);
 
     const forbiddenDownload = await request(app)
-      .get(`/api/v1/imports/sheet-backup/configs/${cvht02Id}/download`)
-      .set('Authorization', `Bearer ${cvht01Token}`);
-
+      .get(`/api/v1/imports/sheet-backup/configs/${jlptConfigId}/download`)
+      .set('Authorization', `Bearer ${cvht02Token}`);
     expect(forbiddenDownload.status).toBe(403);
 
-    // CVHT01 downloading their own backup succeeds
     const allowedDownload = await request(app)
-      .get(`/api/v1/imports/sheet-backup/configs/${cvht01Id}/download`)
+      .get(`/api/v1/imports/sheet-backup/configs/${jlptConfigId}/download`)
       .set('Authorization', `Bearer ${cvht01Token}`);
-
     expect(allowedDownload.status).toBe(200);
-    expect(allowedDownload.headers['content-disposition']).toContain('cham_soc_hoc_vien_CVHT01.xlsx');
+    expect(allowedDownload.headers['content-disposition']).toContain('hoc_vien_jlpt_CVHT01');
   });
 });

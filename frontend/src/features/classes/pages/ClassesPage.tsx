@@ -16,6 +16,7 @@ import { formatSessionDate, toLocalDateString } from '../components/AttendanceMa
 import { PageContainer } from '../../../components/common/PageContainer';
 import { PageHeader } from '../../../components/common/PageHeader';
 import { FilterBar } from '../../../components/common/FilterBar';
+import { PaginationFooter } from '../../../components/common/Pagination';
 import { HorizontalTabs } from '../../../components/ui/HorizontalTabs';
 import { Button } from '../../../components/ui/Button';
 import { Badge } from '../../../components/ui/Badge';
@@ -397,6 +398,28 @@ export const ClassesPage: React.FC = () => {
   );
 
   const activeFiltersCount = (searchTerm ? 1 : 0) + (modelFilter ? 1 : 0);
+
+  // Pagination cho danh sách lớp
+  const [classPage, setClassPage] = useState(1);
+  const [classPageSize, setClassPageSize] = useState(20);
+
+  useEffect(() => {
+    setClassPage(1);
+  }, [searchTerm, modelFilter, activeTab]);
+
+  const classTotalPages = Math.max(1, Math.ceil(filteredClasses.length / classPageSize));
+  const classPageSafe = Math.min(classPage, classTotalPages);
+  const pagedClasses = useMemo(
+    () =>
+      filteredClasses.slice(
+        (classPageSafe - 1) * classPageSize,
+        classPageSafe * classPageSize
+      ),
+    [filteredClasses, classPageSafe, classPageSize]
+  );
+  const classStartRecord =
+    filteredClasses.length === 0 ? 0 : (classPageSafe - 1) * classPageSize + 1;
+  const classEndRecord = Math.min(classPageSafe * classPageSize, filteredClasses.length);
 
   // Dates list for Tab 2 (Điểm danh chi tiết: Theo tuần | Theo tháng | Theo năm)
   const periodDates = useMemo(() => {
@@ -1524,7 +1547,7 @@ export const ClassesPage: React.FC = () => {
                   </td>
                 </tr>
               ) : (
-                filteredClasses.map((cls) => {
+                pagedClasses.map((cls) => {
                   const formattedCode = formatClassCode(cls.class_code, cls.id);
                   const modelNorm = normalizeModel(cls.model_type);
                   const conf = MODEL_CONFIG[modelNorm] || MODEL_CONFIG['1:1'];
@@ -1936,6 +1959,24 @@ export const ClassesPage: React.FC = () => {
             </tbody>
           </table>
         </div>
+
+        {/* Phân trang danh sách lớp */}
+        {filteredClasses.length > 0 && (
+          <PaginationFooter
+            startRecord={classStartRecord}
+            endRecord={classEndRecord}
+            totalCount={filteredClasses.length}
+            pageSize={classPageSize}
+            currentPage={classPageSafe}
+            totalPages={classTotalPages}
+            onPageChange={setClassPage}
+            onPageSizeChange={(size) => {
+              setClassPageSize(size);
+              setClassPage(1);
+            }}
+            recordLabel="lớp học"
+          />
+        )}
 
         {/* Chú thích mã trạng thái ở chân bảng giống bên CSKH */}
         <div className="p-3.5 px-4 border-t border-border/80 bg-surface-muted/30 flex flex-wrap items-center justify-between gap-4 text-xs text-text-secondary">

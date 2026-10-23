@@ -1,6 +1,6 @@
 import { useState, useMemo, ReactNode } from 'react';
-import { ChevronLeft, ChevronRight, Inbox } from 'lucide-react';
-import { Button } from '../ui/Button';
+import { Inbox } from 'lucide-react';
+import { PaginationFooter } from './Pagination';
 
 export interface Column<T> {
   key?: string;
@@ -147,57 +147,16 @@ export function DataTable<T>({
 
       {/* Pagination Footer */}
       {pagination && !isLoading && totalCount > 0 && (
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 sm:px-6 py-3 border-t border-border/80 bg-surface-muted/30 text-xs text-text-secondary">
-          <div className="flex items-center gap-2">
-            <span>
-              Hiển thị <strong className="text-text-primary">{startRecord}</strong> -{' '}
-              <strong className="text-text-primary">{endRecord}</strong> trên tổng số{' '}
-              <strong className="text-text-primary">{totalCount}</strong> bản ghi
-            </span>
-            <span className="hidden sm:inline text-text-muted">•</span>
-            <div className="hidden sm:flex items-center gap-1.5">
-              <span>Mỗi trang:</span>
-              <select
-                value={effectivePageSize}
-                onChange={(e) => {
-                  handlePageSizeChange(Number(e.target.value));
-                }}
-                className="bg-surface border border-border rounded-lg px-2 py-1 text-xs text-text-primary focus:outline-none focus:ring-1 focus:ring-primary"
-              >
-                <option value={10}>10</option>
-                <option value={20}>20</option>
-                <option value={50}>50</option>
-                <option value={100}>100</option>
-              </select>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-1.5">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => handlePageChange(currentPageSafe - 1)}
-              disabled={currentPageSafe <= 1}
-              className="h-8 w-8 p-0"
-              aria-label="Trang trước"
-            >
-              <ChevronLeft className="w-4 h-4" />
-            </Button>
-            <span className="px-2 font-medium">
-              Trang {currentPageSafe} / {totalPages}
-            </span>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => handlePageChange(currentPageSafe + 1)}
-              disabled={currentPageSafe >= totalPages}
-              className="h-8 w-8 p-0"
-              aria-label="Trang sau"
-            >
-              <ChevronRight className="w-4 h-4" />
-            </Button>
-          </div>
-        </div>
+        <PaginationFooter
+          startRecord={startRecord}
+          endRecord={endRecord}
+          totalCount={totalCount}
+          pageSize={effectivePageSize}
+          currentPage={currentPageSafe}
+          totalPages={totalPages}
+          onPageChange={handlePageChange}
+          onPageSizeChange={handlePageSizeChange}
+        />
       )}
     </div>
   );

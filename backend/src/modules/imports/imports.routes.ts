@@ -28,12 +28,12 @@ router.put('/sheet-sync/configs/:code', requireRoles(['ADMIN', 'MANAGE']), contr
 router.post('/sheet-sync/configs/:code/sync', requireRoles(['ADMIN', 'MANAGE']), controller.syncSheetByCode);
 router.post('/sheet-sync/sync-all', requireRoles(['ADMIN', 'MANAGE']), controller.syncAllSheets);
 
-// 2c. CS Sheet Backup Configs, Execution & Download (ADMIN, MANAGE, CS)
+// 2c. Program Sheet Backup Configs (JLPT / KAIWA per CS), Execution & Download (ADMIN, MANAGE, CS)
 router.get('/sheet-backup/configs', requireRoles(['ADMIN', 'MANAGE', 'CS']), controller.getSheetBackupConfigs);
-router.put('/sheet-backup/configs/:csUserId', requireRoles(['ADMIN', 'MANAGE']), controller.updateSheetBackupConfig);
-router.post('/sheet-backup/configs/:csUserId/run', requireRoles(['ADMIN', 'MANAGE', 'CS']), controller.runSheetBackupForCs);
+router.put('/sheet-backup/configs/:id', requireRoles(['ADMIN', 'MANAGE']), controller.updateSheetBackupConfig);
+router.post('/sheet-backup/configs/:id/run', requireRoles(['ADMIN', 'MANAGE', 'CS']), controller.runSheetBackupForConfig);
 router.post('/sheet-backup/run-all', requireRoles(['ADMIN', 'MANAGE']), controller.runAllSheetBackups);
-router.get('/sheet-backup/configs/:csUserId/download', requireRoles(['ADMIN', 'MANAGE', 'CS']), controller.downloadSheetBackup);
+router.get('/sheet-backup/configs/:id/download', requireRoles(['ADMIN', 'MANAGE', 'CS']), controller.downloadSheetBackup);
 
 // 3. Create / Transfer Requests approval queue
 router.get('/create-requests', requireRoles(['ADMIN', 'MANAGE', 'CS']), controller.listCreateRequests);

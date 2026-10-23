@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { PaginationFooter } from '../../../components/common/Pagination';
 import {
   Class,
   ClassSession,
@@ -524,6 +525,23 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
   const [selectedStudents, setSelectedStudents] = useState<Set<number>>(new Set());
   const [bulkDate, setBulkDate] = useState<string>('');
   const [bulkSessionIndex, setBulkSessionIndex] = useState(0);
+
+  // Pagination state (rows of students)
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [students, activeTab]);
+
+  const totalPages = Math.max(1, Math.ceil(students.length / pageSize));
+  const currentPageSafe = Math.min(currentPage, totalPages);
+  const pagedStudents = useMemo(
+    () => students.slice((currentPageSafe - 1) * pageSize, currentPageSafe * pageSize),
+    [students, currentPageSafe, pageSize]
+  );
+  const startRecord = students.length === 0 ? 0 : (currentPageSafe - 1) * pageSize + 1;
+  const endRecord = Math.min(currentPageSafe * pageSize, students.length);
 
 
   // Active date-cell popover picker
@@ -1961,7 +1979,7 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
                   </td>
                 </tr>
               ) : (
-                students.map((st, idx) => {
+                pagedStudents.map((st, idx) => {
                   const isSelected = selectedStudents.has(st.enrollment_class_id);
 
                   return (
@@ -1985,7 +2003,7 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
 
                       {/* STT */}
                       <td className="px-2 py-2.5 border-r border-border/60 text-center text-text-muted font-bold">
-                        {idx + 1}
+                        {(currentPageSafe - 1) * pageSize + idx + 1}
                       </td>
 
                       {/* Cột A: Mã HV */}
@@ -2296,7 +2314,7 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
                   </td>
                 </tr>
               ) : (
-                students.map((st, idx) => {
+                pagedStudents.map((st, idx) => {
                   const stat = studentStats.get(st.enrollment_class_id);
                   const prevAttended = st.attended_previous_years || 0;
                   const currentAttended = stat?.totalAttended || 0;
@@ -2315,7 +2333,7 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
                     >
                       {/* STT */}
                       <td className="px-2 py-2.5 border-r border-border/60 text-center text-text-muted font-bold sticky left-0 bg-slate-100 z-10">
-                        {idx + 1}
+                        {(currentPageSafe - 1) * pageSize + idx + 1}
                       </td>
 
                       {/* Mã HV (A) */}
@@ -2692,7 +2710,7 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
                     </td>
                   </tr>
                 ) : (
-                  students.map((st, idx) => {
+                  pagedStudents.map((st, idx) => {
                     const stat = studentStats.get(st.enrollment_class_id);
 
                     return (
@@ -2703,7 +2721,7 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
                         }`}
                       >
                         <td className="px-2 py-2.5 border-r border-border/60 text-center text-text-muted font-bold sticky left-0 bg-slate-100 z-10">
-                          {idx + 1}
+                          {(currentPageSafe - 1) * pageSize + idx + 1}
                         </td>
                         {isColVisible('external_id') && (
                         <td className="px-3 py-2.5 border-r border-border/60 font-mono font-bold text-text-primary whitespace-nowrap sticky left-10 bg-slate-100 z-10">
@@ -2789,6 +2807,24 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
             </table>
           </div>
         </div>
+      )}
+
+      {/* Pagination Footer */}
+      {students.length > 0 && (
+        <PaginationFooter
+          startRecord={startRecord}
+          endRecord={endRecord}
+          totalCount={students.length}
+          pageSize={pageSize}
+          currentPage={currentPageSafe}
+          totalPages={totalPages}
+          onPageChange={setCurrentPage}
+          onPageSizeChange={(size) => {
+            setPageSize(size);
+            setCurrentPage(1);
+          }}
+          recordLabel="học viên"
+        />
       )}
 
       {/* Legend Footer */}

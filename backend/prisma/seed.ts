@@ -245,6 +245,55 @@ async function main() {
     },
   });
 
+  // Khởi tạo ProgramSheetBackupConfig: mỗi CS user 2 bản ghi (JLPT & KAIWA)
+  const programBackupTemplates = [
+    {
+      program_type: 'JLPT',
+      sheet_name: 'Chấm buổi',
+      name: (label: string) => `Backup JLPT - ${label}`,
+      path: (label: string) => `backups/cskh/hoc_vien_jlpt_${label}.xlsx`,
+    },
+    {
+      program_type: 'KAIWA',
+      sheet_name: '3.Chấm buổi',
+      name: (label: string) => `Backup KAIWA - ${label}`,
+      path: (label: string) => `backups/cskh/hoc_vien_kaiwa_${label}.xlsx`,
+    },
+  ];
+
+  for (const csUser of csUsers) {
+    const staffLabel = csUser.staff_code || `CS${csUser.id}`;
+    for (const tpl of programBackupTemplates) {
+      await prisma.programSheetBackupConfig.upsert({
+        where: { cs_user_id_program_type: { cs_user_id: csUser.id, program_type: tpl.program_type } },
+        update: {
+          name: tpl.name(staffLabel),
+          sheet_name: tpl.sheet_name,
+          local_backup_path: tpl.path(staffLabel),
+          schedule_times: ['12:00', '21:00'],
+          enabled: true,
+          require_private_sheet: true,
+          mask_sensitive_data: false,
+          backup_year: null,
+        },
+        create: {
+          cs_user_id: csUser.id,
+          program_type: tpl.program_type,
+          name: tpl.name(staffLabel),
+          sheet_name: tpl.sheet_name,
+          local_backup_path: tpl.path(staffLabel),
+          header_row: 2,
+          schedule_times: ['12:00', '21:00'],
+          enabled: true,
+          require_private_sheet: true,
+          mask_sensitive_data: false,
+          backup_year: null,
+          last_status: 'IDLE',
+        },
+      });
+    }
+  }
+
   const allSeedRows: Array<{ row: NormalizedSheetRow; configId: number }> = [
     ...selectedJlpt.map((row) => ({ row, configId: jlptConfig.id })),
     ...selectedKaiwa.map((row) => ({ row, configId: kaiwaConfig.id })),
@@ -507,6 +556,7 @@ async function main() {
     jlptEnrollments: await prisma.enrollment.count({ where: { program_type: 'JLPT' } }),
     kaiwaEnrollments: await prisma.enrollment.count({ where: { program_type: 'KAIWA' } }),
     syncConfigs: await prisma.googleSheetSyncConfig.count(),
+    programBackupConfigs: await prisma.programSheetBackupConfig.count(),
     rowStates: await prisma.googleSheetRowState.count(),
     careMilestones: await prisma.careMilestoneConfig.count(),
   };
