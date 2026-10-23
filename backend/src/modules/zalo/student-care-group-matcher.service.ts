@@ -96,7 +96,17 @@ export async function refreshLiveZaloGroupsForAccount(accountId: number): Promis
   const api = client.api ?? client;
   if (typeof api?.getAllGroups !== 'function') return 0;
 
-  const raw: any = await api.getAllGroups();
+  // Transient network failures ("TypeError: fetch failed") from the Zalo API are common;
+  // retry once after a short backoff so a single blip doesn't skip a whole sync cycle.
+  let raw: any;
+  try {
+    raw = await api.getAllGroups();
+  } catch (err) {
+    const transient = err instanceof Error && /fetch failed|timeout|ECONN|network/i.test(err.message);
+    if (!transient) throw err;
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    raw = await api.getAllGroups();
+  }
   const verMap: Record<string, unknown> = raw?.gridVerMap ?? {};
   const infoMap: Record<string, any> = { ...(raw?.gridInfoMap ?? {}) };
   const groupIds = Object.keys(verMap).length > 0 ? Object.keys(verMap) : Object.keys(infoMap);

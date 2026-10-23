@@ -13,6 +13,9 @@ describe('schedule pattern', () => {
     ['35Cn', '35CN'],
     ['35cn', '35CN'],
     ['CN53', '35CN'],
+    ['2,4,6', '246'],
+    ['2 4 6', '246'],
+    ['3-CN-5', '35CN'],
     ['lkcd', 'LKCD'],
     ['Lkcd', 'LKCD'],
   ])('normalizes %s to %s', (input, expected) => {
@@ -35,7 +38,7 @@ describe('schedule pattern', () => {
     expect(isDateInSchedule(pattern, new Date(2026, 8, 25))).toBe(false);
   });
 
-  it.each(['', '2LKCD', 'LKCD35', '2246', '35CNCN', '18', '2,4,6', 'ABC'])(
+  it.each(['', '2LKCD', 'LKCD35', '2246', '35CNCN', '18', 'ABC'])(
     'rejects invalid pattern %s',
     (input) => {
       expect(() => parseSchedulePattern(input)).toThrow();
