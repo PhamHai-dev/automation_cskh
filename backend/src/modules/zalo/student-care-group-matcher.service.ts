@@ -389,6 +389,9 @@ export async function syncAndMatchCareGroups(
       orderBy: { id: 'asc' },
     }),
     prisma.zaloGroup.findMany({
+      where: {
+        zalo_account: { archived_at: null },
+      },
       include: {
         zalo_account: {
           select: { id: true, cs_id: true, status: true, display_name: true },
@@ -397,6 +400,9 @@ export async function syncAndMatchCareGroups(
     }),
     prisma.lineGroup?.findMany
       ? prisma.lineGroup.findMany({
+          where: {
+            line_account: { archived_at: null },
+          },
           include: {
             line_account: {
               select: { id: true, cs_id: true, status: true, display_name: true },
