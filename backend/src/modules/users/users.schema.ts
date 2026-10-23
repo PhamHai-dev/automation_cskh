@@ -8,6 +8,7 @@ export const createUserSchema = z.object({
     phone: z.string().optional(),
     password: z.string().min(6),
     roles: z.array(z.string()).min(1),
+    staff_code: z.string().optional().nullable(),
   }),
 });
 
@@ -17,5 +18,6 @@ export const updateUserSchema = z.object({
     name: z.string().optional(),
     phone: z.string().optional(),
     roles: z.array(z.string()).optional(),
+    staff_code: z.string().optional().nullable(),
   }),
 });

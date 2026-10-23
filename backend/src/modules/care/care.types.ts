@@ -1,4 +1,4 @@
-import { CareLogOutcome, CareTaskType, CareTaskPriority, CareTaskStatus } from '@prisma/client';
+import { CareLogOutcome, CareTaskType, CareTaskPriority, CareTaskStatus, AttendanceStatus } from '@prisma/client';
 
 export interface CreateCareLogDTO {
   after_session_number: number;
@@ -55,4 +55,33 @@ export interface UpdateEnrollmentCareDTO {
 export interface SaveSessionCareLogDTO {
   content: string;
   outcome?: CareLogOutcome;
+}
+
+export interface AttendanceNotificationFilterParams {
+  status?: 'all' | 'unread' | 'read';
+  recipient_user_id?: number;
+  limit?: number;
+  offset?: number;
+}
+
+export interface AttendanceNotificationItem {
+  id: number;
+  recipient_user_id: number;
+  recipient_role: 'CS' | 'TEACHER';
+  attendance_id: number;
+  student_id: number;
+  student_name: string;
+  student_code: string | null;
+  class_id: number;
+  class_name: string;
+  session_id: number;
+  session_number: number;
+  session_date: string;
+  previous_status: AttendanceStatus | null;
+  admin_status: AttendanceStatus;
+  actor_id: number;
+  actor_name: string;
+  is_read: boolean;
+  read_at: string | null;
+  created_at: Date;
 }

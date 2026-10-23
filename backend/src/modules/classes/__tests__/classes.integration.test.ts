@@ -50,7 +50,7 @@ describe('Classes API & Random ID / Model Type Integration Tests', () => {
     createdClassIds.push(res.body.data.id);
   });
 
-  it('should automatically generate a random class_code if class_code is omitted', async () => {
+  it('should automatically generate a compact class_code if class_code is omitted', async () => {
     const res = await request(app)
       .post('/api/v1/classes')
       .set('Authorization', `Bearer ${adminToken}`)
@@ -62,7 +62,7 @@ describe('Classes API & Random ID / Model Type Integration Tests', () => {
 
     expect(res.status).toBe(201);
     expect(res.body.data.id).toBeDefined();
-    expect(res.body.data.class_code).toMatch(/^CLS_[A-Z0-9]+$/);
+    expect(res.body.data.class_code).toMatch(/^class_\d{4,}$/);
     expect(res.body.data.model_type).toBe('1:2');
     createdClassIds.push(res.body.data.id);
   });
@@ -80,7 +80,7 @@ describe('Classes API & Random ID / Model Type Integration Tests', () => {
     expect(res.body.data.id).toBeDefined();
     expect(res.body.data.model_type).toBe('1:n');
     expect(res.body.data.attendance_source).toBe('LEARNING_SYSTEM');
-    expect(res.body.data.class_code).toMatch(/^CLS_/);
+    expect(res.body.data.class_code).toMatch(/^class_\d{4,}$/);
     createdClassIds.push(res.body.data.id);
   });
 

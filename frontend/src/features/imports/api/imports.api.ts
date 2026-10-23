@@ -1,5 +1,19 @@
 import { apiClient } from '../../../api/client';
-import { UploadResponse, SheetPreviewData, ValidationReport, ImportBatchSummary, ImportRowItem } from '../types/imports.types';
+import {
+  UploadResponse,
+  SheetPreviewData,
+  ValidationReport,
+  ImportBatchSummary,
+  ImportRowItem,
+  GoogleSheetSyncConfig,
+  CsUserOption,
+  UpdateGoogleSheetSyncConfigDTO,
+  SheetSyncResult,
+  ServiceAccountInfo,
+  CsSheetBackupConfigItem,
+  UpdateCsSheetBackupConfigDTO,
+  CsSheetBackupSummary,
+} from '../types/imports.types';
 
 export const importsApi = {
   upload: async (file: File, assignedCsId?: number): Promise<UploadResponse> => {
@@ -139,5 +153,101 @@ export const importsApi = {
   rejectCreateRequest: async (id: number, version: number, reason: string) => {
     const res = await apiClient.post(`/imports/create-requests/${id}/reject`, { version, reason });
     return res.data;
+  },
+
+  // Google Sheet Sync (JLPT & Kaiwa)
+  getSheetSyncConfigs: async (): Promise<{
+    configs: GoogleSheetSyncConfig[];
+    csUsers: CsUserOption[];
+    serviceAccount?: ServiceAccountInfo;
+  }> => {
+    const res = await apiClient.get('/imports/sheet-sync/configs');
+    return res.data?.data || res.data;
+  },
+
+  saveServiceAccount: async (
+    serviceAccountJson: string | null
+  ): Promise<{ serviceAccount: ServiceAccountInfo }> => {
+    const res = await apiClient.put('/imports/sheet-sync/service-account', {
+      service_account_json: serviceAccountJson,
+    });
+    return res.data?.data || res.data;
+  },
+
+  updateSheetSyncConfig: async (
+    code: string,
+    payload: UpdateGoogleSheetSyncConfigDTO
+  ): Promise<GoogleSheetSyncConfig> => {
+    const res = await apiClient.put(`/imports/sheet-sync/configs/${code}`, payload);
+    return res.data?.data || res.data;
+  },
+
+  runSheetSync: async (
+    code: string,
+    options?: { forceFullSync?: boolean; limit?: number }
+  ): Promise<SheetSyncResult> => {
+    const res = await apiClient.post(`/imports/sheet-sync/configs/${code}/sync`, options || {});
+    return res.data?.data || res.data;
+  },
+
+  runSheetSyncAll: async (options?: {
+    forceFullSync?: boolean;
+    limit?: number;
+  }): Promise<{ results: SheetSyncResult[] }> => {
+    const res = await apiClient.post('/imports/sheet-sync/sync-all', options || {});
+    return res.data?.data || res.data;
+  },
+
+  // CS Sheet Backup (Web -> Sheet 1.Chăm sóc & 3.Chấm buổi)
+  getSheetBackupConfigs: async (): Promise<{
+    configs: CsSheetBackupConfigItem[];
+    serviceAccount?: ServiceAccountInfo;
+  }> => {
+    const res = await apiClient.get('/imports/sheet-backup/configs');
+    return res.data?.data || res.data;
+  },
+
+  updateSheetBackupConfig: async (
+    csUserId: number,
+    payload: UpdateCsSheetBackupConfigDTO
+  ): Promise<CsSheetBackupConfigItem> => {
+    const res = await apiClient.put(`/imports/sheet-backup/configs/${csUserId}`, payload);
+    return res.data?.data || res.data;
+  },
+
+  runSheetBackup: async (
+    csUserId: number,
+    options?: { forceFullRewrite?: boolean }
+  ): Promise<CsSheetBackupSummary> => {
+    const res = await apiClient.post(`/imports/sheet-backup/configs/${csUserId}/run`, options || {});
+    return res.data?.data || res.data;
+  },
+
+  runSheetBackupAll: async (options?: {
+    forceFullRewrite?: boolean;
+  }): Promise<{ results: CsSheetBackupSummary[] }> => {
+    const res = await apiClient.post('/imports/sheet-backup/run-all', options || {});
+    return res.data?.data || res.data;
+  },
+
+  downloadCsSheetBackupExcel: async (
+    csUserId: number,
+    staffCode?: string,
+    refresh = false
+  ): Promise<void> => {
+    const res = await apiClient.get(
+      `/imports/sheet-backup/configs/${csUserId}/download?refresh=${refresh}`,
+      {
+        responseType: 'blob',
+      }
+    );
+    const url = window.URL.createObjectURL(new Blob([res.data]));
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `cham_soc_hoc_vien_${staffCode || csUserId}.xlsx`);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
   },
 };

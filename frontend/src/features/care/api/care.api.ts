@@ -1,5 +1,13 @@
 import { apiClient } from '../../../api/client';
-import { CareLog, CreateCareLogDTO, CareTask, CreateCareTaskDTO, UpdateCareTaskDTO, TaskFilterParams } from '../types/care.types';
+import {
+  CareLog,
+  CreateCareLogDTO,
+  CareTask,
+  CreateCareTaskDTO,
+  UpdateCareTaskDTO,
+  TaskFilterParams,
+  AttendanceNotificationItem,
+} from '../types/care.types';
 
 export const careApi = {
   // Care Logs
@@ -81,5 +89,30 @@ export const careApi = {
   ): Promise<any> => {
     const res = await apiClient.put(`/enrollments/${enrollmentId}/sessions/${sessionNumber}/care-log`, data);
     return res.data.data;
+  },
+
+  // Care Notifications (Attendance Mismatch / Admin Override)
+  listNotifications: async (params?: {
+    status?: 'all' | 'unread' | 'read';
+    limit?: number;
+    offset?: number;
+  }): Promise<{ items: AttendanceNotificationItem[]; total: number; unreadCount: number }> => {
+    const res = await apiClient.get('/care-notifications', { params });
+    const items: AttendanceNotificationItem[] = res.data.data || [];
+    const meta = res.data.meta || {};
+    return {
+      items,
+      total: typeof meta.total === 'number' ? meta.total : items.length,
+      unreadCount: typeof meta.unreadCount === 'number' ? meta.unreadCount : items.filter((i) => !i.is_read).length,
+    };
+  },
+
+  markNotificationRead: async (id: number): Promise<void> => {
+    await apiClient.post(`/care-notifications/${id}/read`);
+  },
+
+  markAllNotificationsRead: async (): Promise<{ updatedCount: number }> => {
+    const res = await apiClient.post('/care-notifications/read-all');
+    return res.data.data || { updatedCount: 0 };
   },
 };

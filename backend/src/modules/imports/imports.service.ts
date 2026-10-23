@@ -9,6 +9,15 @@ import { AppError } from '../../middlewares/error.middleware';
 import { normalizeDateOnly, attendanceStatusLabel } from '../attendance/attendance.utils';
 import { runStudentCareGroupAutoSync } from '../zalo/student-care-group.contract';
 import { getIo } from '../../shared/realtime/socket-singleton';
+import {
+  extractCellValue,
+  extractCvhtCode,
+  inferCareLogOutcome,
+  normalizeExternalId,
+  normalizePhone,
+  parseJlptAttendedSessions,
+  parseJlptSettingsSheet,
+} from './sheet-sync.parser';
 
 export class ImportsService {
   private repo: ImportsRepository;
@@ -59,15 +68,15 @@ export class ImportsService {
   // Helper to parse Excel dates safely
   public parseExcelDate(val: any): Date | null {
     if (!val) return null;
-    if (typeof val === 'object' && val !== null) {
-      if ('result' in val && val.result !== undefined && val.result !== null) {
-        val = val.result;
-      }
-    }
+    val = extractCellValue(val);
+    if (!val) return null;
     if (val instanceof Date && !isNaN(val.getTime())) {
       return val;
     }
     if (typeof val === 'number') {
+      if (val >= 1940 && val <= 2030) {
+        return new Date(Date.UTC(Math.round(val), 0, 1));
+      }
       // Excel serial date to JS Date
       // Excel epoch: Dec 30 1899
       const ms = Math.round((val - 25569) * 86400 * 1000);
@@ -164,11 +173,27 @@ export class ImportsService {
         suggestedMapping['email'] = colLetter;
       } else if (lower.includes('giới tính')) {
         suggestedMapping['gender'] = colLetter;
-      } else if (lower.includes('dob') || lower.includes('ngày sinh')) {
+      } else if (lower.includes('dob') || lower.includes('ngày sinh') || lower.includes('năm sinh')) {
         suggestedMapping['date_of_birth'] = colLetter;
       } else if (lower.includes('nghề nghiệp')) {
         suggestedMapping['occupation'] = colLetter;
-      } else if (lower.includes('gói học') || lower === 'gói' || lower.includes('mã gói') || lower.startsWith('gói')) {
+      } else if (lower === 'cvht' || lower.includes('cvht') || lower.includes('cố vấn')) {
+        suggestedMapping['cvht_code'] = colLetter;
+      } else if (lower.includes('mã khóa học') || lower.includes('mã khoá học')) {
+        suggestedMapping['package_code'] = colLetter;
+      } else if (lower.includes('gói sp') || lower.includes('gói sản phẩm')) {
+        suggestedMapping['level'] = colLetter;
+        if (!suggestedMapping['package_code']) {
+          suggestedMapping['package_code'] = colLetter;
+        }
+      } else if (lower === 'mã gói') {
+        if (!suggestedMapping['class_model']) {
+          suggestedMapping['class_model'] = colLetter;
+        }
+        if (!suggestedMapping['package_code']) {
+          suggestedMapping['package_code'] = colLetter;
+        }
+      } else if (lower.includes('gói học') || lower === 'gói' || lower.startsWith('gói')) {
         suggestedMapping['package_code'] = colLetter;
       } else if (lower.includes('trình độ')) {
         suggestedMapping['level'] = colLetter;
@@ -176,45 +201,54 @@ export class ImportsService {
         suggestedMapping['total_sessions'] = colLetter;
       } else if (lower.includes('số buổi còn lại')) {
         suggestedMapping['remaining_sessions'] = colLetter;
-      } else if (lower.includes('đã học năm trước') || lower.includes('buổi đã học năm trước')) {
+      } else if (lower.includes('đã học năm trước') || lower.includes('buổi đã học năm trước') || lower.includes('số buổi đã học (2021)')) {
         suggestedMapping['attended_previous_years'] = colLetter;
       } else if (lower.includes('ngày bắt đầu')) {
         suggestedMapping['start_date'] = colLetter;
-      } else if (lower.includes('ngày kết thúc') || lower.includes('kết thúc/bảo lưu')) {
+      } else if (lower.includes('ngày kết thúc') || lower.includes('kết thúc/bảo lưu') || lower.includes('bảo lưu/kết thúc')) {
         suggestedMapping['end_date'] = colLetter;
       } else if (lower.includes('thanh toán')) {
         suggestedMapping['payment_status'] = colLetter;
       } else if (lower.includes('trạng thái hv') || lower.includes('trạng thái học viên') || lower.includes('nguồn hv')) {
         suggestedMapping['student_source_status'] = colLetter;
       } else if (lower.includes('trạng thái') || lower.includes('tình trạng')) {
-        suggestedMapping['status'] = colLetter;
+        if (!suggestedMapping['student_source_status'] && colNumber <= 4) {
+          suggestedMapping['student_source_status'] = colLetter;
+        } else {
+          suggestedMapping['status'] = colLetter;
+        }
       } else if (lower.includes('mô hình')) {
         suggestedMapping['class_model'] = colLetter;
-      } else if ((lower.includes('nội dung khoá') || lower.includes('nội dung khóa') || lower === 'nội dung' || lower.includes('nội dung')) && !lower.includes('chăm sóc')) {
+      } else if (lower.includes('học phí thực nộp') || ((lower.includes('nội dung khoá') || lower.includes('nội dung khóa') || lower === 'nội dung' || lower.includes('nội dung')) && !lower.includes('chăm sóc'))) {
         suggestedMapping['course_content'] = colLetter;
       } else if (lower.includes('sale') && !lower.includes('ghi chú')) {
         suggestedMapping['sale_name'] = colLetter;
-      } else if (lower.includes('ghi chú sale')) {
+      } else if (lower.includes('ghi chú sale') || lower === 'ghi chú') {
         suggestedMapping['sales_note'] = colLetter;
       } else if (lower.includes('ngày nộp học phí')) {
         suggestedMapping['paid_at'] = colLetter;
+      } else if (lower === 'mã lớp') {
+        suggestedMapping['class_code'] = colLetter;
+        if (!suggestedMapping['class_name']) {
+          suggestedMapping['class_name'] = colLetter;
+        }
       } else if (lower.includes('tên lớp') || lower === 'lớp' || lower.includes('lớp học') || lower.startsWith('lớp')) {
         suggestedMapping['class_name'] = colLetter;
       } else if (lower.includes('báo cáo học tập')) {
         suggestedMapping['study_report_url'] = colLetter;
       } else if (lower.includes('thông tin trao đổi') || lower.includes('trao đổi với hv') || lower.includes('trao đổi')) {
         suggestedMapping['exchange_info'] = colLetter;
-      } else if (lower.includes('lịch hẹn gọi')) {
+      } else if (lower.includes('lịch hẹn gọi') || lower.includes('lịch hẹn tái chăm')) {
         suggestedMapping['callback_note'] = colLetter;
       } else if (lower.includes('điểm nóng')) {
         suggestedMapping['hot_issue_note'] = colLetter;
-      } else if (lower.includes('chăm sóc sau kết thúc')) {
+      } else if (lower.includes('chăm sóc sau kết thúc') || lower.includes('sau khi khóa học kết thúc')) {
         suggestedMapping['post_course_care'] = colLetter;
-      } else if (lower.includes('ngày bàn giao')) {
+      } else if (lower.includes('ngày bàn giao') || lower.includes('ngày khai giảng dự kiến')) {
         suggestedMapping['handed_over_at'] = colLetter;
       } else if (lower.includes('ngày tạo tài khoản')) {
         suggestedMapping['account_created_at'] = colLetter;
-      } else if (lower.includes('mã gv') || lower.includes('mã giáo viên')) {
+      } else if (lower.includes('mã gv') || lower.includes('mã giáo viên') || lower.includes('tk gv')) {
         suggestedMapping['teacher_code'] = colLetter;
       } else if (lower.includes('giáo viên') || lower === 'gv' || lower.includes('tên gv') || lower.includes('gv phụ trách')) {
         suggestedMapping['teacher_name'] = colLetter;
@@ -225,7 +259,7 @@ export class ImportsService {
   }
 
   private cellText(cell: ExcelJS.Cell): string {
-    let value: any = cell.value;
+    let value: any = extractCellValue(cell.value);
     if (value && typeof value === 'object') {
       if (value instanceof Date && !isNaN(value.getTime())) {
         const iso = value.toISOString();
@@ -324,10 +358,20 @@ export class ImportsService {
       };
 
       const dailyCols: MonthAttendanceBlock['dailyCols'] = [];
+      let prevDate: Date | null = null;
       for (let c = cur.startCol + 6; c <= endCol; c++) {
         const c2 = row2.getCell(c);
-        const parsedDate = this.parseExcelDate(c2.value) || this.parseExcelDate(c2.text);
+        let parsedDate = this.parseExcelDate(c2.value) || this.parseExcelDate(c2.text);
+        if (!parsedDate && prevDate && c2.value && typeof c2.value === 'object' && 'formula' in c2.value) {
+          const formulaStr = String((c2.value as any).formula || '');
+          const plusMatch = formulaStr.match(/\+\s*(\d+)/);
+          if (plusMatch) {
+            const addDays = parseInt(plusMatch[1], 10);
+            parsedDate = new Date(prevDate.getTime() + addDays * 86400 * 1000);
+          }
+        }
         if (parsedDate) {
+          prevDate = parsedDate;
           dailyCols.push({
             colNumber: c,
             colLetter: worksheet.getColumn(c).letter,
@@ -496,7 +540,13 @@ export class ImportsService {
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.readFile(targetPath);
 
-    const studentSheet = workbook.worksheets.find((ws) => ws.name.toLowerCase().includes('chăm sóc') || ws.name.startsWith('1.'));
+    const studentSheet = workbook.worksheets.find(
+      (ws) =>
+        ws.name.toLowerCase().includes('chăm sóc') ||
+        ws.name.startsWith('1.') ||
+        ws.name.toLowerCase().includes('data jlpt') ||
+        ws.name.trim().toLowerCase() === 'tổng'
+    );
     const attendanceSheet = workbook.worksheets.find((ws) => ws.name.toLowerCase().includes('chấm buổi') || ws.name.startsWith('3.'));
 
     const isExplicitSingle = importType === ImportType.STUDENT_ENROLLMENT || importType === ImportType.ATTENDANCE;
@@ -556,7 +606,13 @@ export class ImportsService {
     let selectedSheetName = sheetNames[0];
 
     if (importType === ImportType.STUDENT_ENROLLMENT) {
-      const s1 = sheetNames.find((n) => n.toLowerCase().includes('chăm sóc') || n.startsWith('1.'));
+      const s1 = sheetNames.find(
+        (n) =>
+          n.toLowerCase().includes('chăm sóc') ||
+          n.startsWith('1.') ||
+          n.toLowerCase().includes('data jlpt') ||
+          n.trim().toLowerCase() === 'tổng'
+      );
       if (s1) selectedSheetName = s1;
     } else if (importType === ImportType.ATTENDANCE) {
       const s3 = sheetNames.find((n) => n.toLowerCase().includes('chấm buổi') || n.startsWith('3.'));
@@ -581,13 +637,7 @@ export class ImportsService {
       const rowObj: Record<string, any> = { _rowNumber: rowNumber };
       row.eachCell({ includeEmpty: false }, (cell, colNumber) => {
         const colLetter = worksheet.getColumn(colNumber).letter;
-        let val = cell.value;
-        if (typeof val === 'object' && val !== null) {
-          if ('result' in val) val = (val as any).result;
-          else if ('text' in val) val = (val as any).text;
-          else if ('richText' in val) val = (val as any).richText.map((t: any) => t.text).join('');
-        }
-        rowObj[colLetter] = val;
+        rowObj[colLetter] = this.cellText(cell);
       });
 
       // Only include if row has at least one cell with value
@@ -680,13 +730,7 @@ export class ImportsService {
       const rowObj: Record<string, any> = { _rowNumber: rowNumber };
       row.eachCell({ includeEmpty: false }, (cell, colNumber) => {
         const colLetter = worksheet.getColumn(colNumber).letter;
-        let val = cell.value;
-        if (typeof val === 'object' && val !== null) {
-          if ('result' in val) val = (val as any).result;
-          else if ('text' in val) val = (val as any).text;
-          else if ('richText' in val) val = (val as any).richText.map((t: any) => t.text).join('');
-        }
-        rowObj[colLetter] = val;
+        rowObj[colLetter] = this.cellText(cell);
       });
 
       if (Object.keys(rowObj).length > 1) {
@@ -792,14 +836,8 @@ export class ImportsService {
         const getColVal = (field: string) => {
           const colLetter = mapping[field];
           if (!colLetter) return null;
-          const cell = row.getCell(colLetter);
-          let val = cell.value;
-          if (typeof val === 'object' && val !== null) {
-            if ('result' in val) val = (val as any).result;
-            else if ('text' in val) val = (val as any).text;
-            else if ('richText' in val) val = (val as any).richText.map((t: any) => t.text).join('');
-          }
-          return val !== undefined && val !== null ? String(val).trim() : null;
+          const text = this.cellText(row.getCell(colLetter));
+          return text || null;
         };
 
         const fullName = getColVal('full_name');
@@ -1317,6 +1355,29 @@ export class ImportsService {
     const isCS = Boolean(actor?.roles?.includes('CS') && !actor?.roles?.includes('ADMIN') && !actor?.roles?.includes('MANAGE'));
     const targetCsId = isCS ? actor.id : (assignedCsId || meta.assignedCsId || actor.id);
 
+    // Preload CVHT mapping from DB users + JLPT Settings if available
+    const allUsers = await prisma.user.findMany({
+      where: { active: true },
+      select: { id: true, email: true, staff_code: true },
+    });
+    const cvhtMap: Record<string, number> = {};
+    for (const u of allUsers) {
+      if (u.staff_code) cvhtMap[u.staff_code.trim().toUpperCase()] = u.id;
+      const emailLower = u.email.toLowerCase();
+      if (emailLower === 'cskh1@gmail.com' && !cvhtMap.CVHT01) cvhtMap.CVHT01 = u.id;
+      if (emailLower === 'cskh2@gmail.com' && !cvhtMap.CVHT02) cvhtMap.CVHT02 = u.id;
+      if (emailLower === 'cskh3@gmail.com' && !cvhtMap.CVHT03) cvhtMap.CVHT03 = u.id;
+    }
+
+    const wbForSettings = new ExcelJS.Workbook();
+    await wbForSettings.xlsx.readFile(meta.filePath);
+    const jlptSettingsMap = parseJlptSettingsSheet(wbForSettings);
+    const isJlptWorkbook = Boolean(
+      wbForSettings.getWorksheet('Data JLPT_Inhouse') ||
+      meta.sheets?.studentEnrollment?.sheetName?.toLowerCase().includes('jlpt')
+    );
+    const detectedProgramType = isJlptWorkbook ? 'JLPT' : 'KAIWA';
+
     for (const item of items) {
       if (item.classification === 'SKIPPED_SCOPE') {
         continue;
@@ -1414,13 +1475,15 @@ export class ImportsService {
           }
 
           // 2. Package
+          const courseSetting = jlptSettingsMap.get(item.packageCode.toUpperCase());
+          const resolvedTotalSessions = Number(snap.total_sessions) || courseSetting?.totalSessions || 30;
           let pkg = await tx.package.findUnique({ where: { code: item.packageCode } });
           if (!pkg) {
             pkg = await tx.package.create({
               data: {
                 code: item.packageCode,
                 name: `Gói ${item.packageCode}`,
-                default_total_sessions: Number(snap.total_sessions) || 30,
+                default_total_sessions: resolvedTotalSessions,
                 active: true,
               },
             });
@@ -1434,8 +1497,12 @@ export class ImportsService {
           const saleId = saleRecord ? saleRecord.id : null;
           const saleName = snap.sale_name ? String(snap.sale_name).trim() : null;
 
-          // 4. CS ID assignment
-          const finalCsId = targetCsId;
+          // 4. CS ID assignment (resolve per-row CVHT if present and actor is Admin/Manage)
+          const rowCvhtCode = extractCvhtCode(snap.cvht_code, snap.sales_note);
+          const rowCsId = !isCS && rowCvhtCode && cvhtMap[rowCvhtCode]
+            ? cvhtMap[rowCvhtCode]
+            : targetCsId;
+          const finalCsId = rowCsId;
 
           // 5. Enrollment
           let enrollment = await tx.enrollment.findFirst({
@@ -1448,6 +1515,7 @@ export class ImportsService {
             enrollment = await tx.enrollment.create({
               data: {
                 external_id: item.externalId,
+                program_type: detectedProgramType,
                 student_id: student.id,
                 package_id: pkg.id,
                 cs_id: finalCsId,
@@ -1459,7 +1527,7 @@ export class ImportsService {
                 payment_status: snap.payment_status || null,
                 course_teacher_type: snap.course_teacher_type || null,
                 level: snap.level || null,
-                total_sessions: Number(snap.total_sessions) || 30,
+                total_sessions: resolvedTotalSessions,
                 class_model: snap.class_model || null,
                 sales_note: snap.sales_note || null,
                 study_report_url: snap.study_report_url || null,
@@ -1481,7 +1549,8 @@ export class ImportsService {
           } else {
             // Overwrite enrollment: blank cell sets to null per Decision 4
             const updateData: any = {
-              total_sessions: Number(snap.total_sessions) || enrollment.total_sessions,
+              program_type: detectedProgramType,
+              total_sessions: Number(snap.total_sessions) || courseSetting?.totalSessions || enrollment.total_sessions,
               external_remaining_sessions: snap.remaining_sessions !== undefined && snap.remaining_sessions !== '' ? Number(snap.remaining_sessions) : null,
               attended_previous_years: snap.attended_previous_years !== undefined && snap.attended_previous_years !== '' ? Number(snap.attended_previous_years) : enrollment.attended_previous_years,
               level: snap.level !== undefined ? (snap.level || null) : enrollment.level,
@@ -1501,8 +1570,8 @@ export class ImportsService {
               account_created_at: snap.account_created_at !== undefined ? this.parseExcelDate(snap.account_created_at) : enrollment.account_created_at,
               external_synced_at: new Date(),
             };
-            if (!isCS && (assignedCsId || meta.assignedCsId)) {
-              updateData.cs_id = targetCsId;
+            if (!isCS && (rowCvhtCode || assignedCsId || meta.assignedCsId)) {
+              updateData.cs_id = finalCsId;
             }
             await tx.enrollment.update({
               where: { id: enrollment.id },
@@ -1689,8 +1758,26 @@ export class ImportsService {
     const finalCSId = isCS ? actor.id : (assignedCsId || meta.assignedCsId || fallbackCSId);
 
     if (meta.importType === ImportType.STUDENT_ENROLLMENT) {
-      // Process rows
-      const rowPromises: Promise<any>[] = [];
+      const allUsers = await prisma.user.findMany({
+        where: { active: true },
+        select: { id: true, email: true, staff_code: true },
+      });
+      const cvhtMap: Record<string, number> = {};
+      for (const u of allUsers) {
+        if (u.staff_code) cvhtMap[u.staff_code.trim().toUpperCase()] = u.id;
+        const emailLower = u.email.toLowerCase();
+        if (emailLower === 'cskh1@gmail.com' && !cvhtMap.CVHT01) cvhtMap.CVHT01 = u.id;
+        if (emailLower === 'cskh2@gmail.com' && !cvhtMap.CVHT02) cvhtMap.CVHT02 = u.id;
+        if (emailLower === 'cskh3@gmail.com' && !cvhtMap.CVHT03) cvhtMap.CVHT03 = u.id;
+      }
+
+      const jlptSettingsMap = parseJlptSettingsSheet(workbook);
+      const jlptAttendedMap = parseJlptAttendedSessions(workbook);
+      const isJlptSheet = Boolean(
+        worksheet.name.toLowerCase().includes('jlpt') ||
+        workbook.getWorksheet('Data JLPT_Inhouse')
+      );
+      const detectedProgramType = isJlptSheet ? 'JLPT' : 'KAIWA';
 
       for (let r = headerRowIdx + 1; r <= worksheet.rowCount; r++) {
         const row = worksheet.getRow(r);
@@ -1702,15 +1789,15 @@ export class ImportsService {
         };
 
         const fullName = getColVal('full_name');
-        const extId = getColVal('external_id');
+        const extId = normalizeExternalId(getColVal('external_id')) || getColVal('external_id');
         const email = getColVal('email');
-        const phone = getColVal('phone');
+        const phone = normalizePhone(getColVal('phone')) || getColVal('phone');
 
         if (!fullName && !extId && !email && !phone) continue;
 
         const rawData: Record<string, any> = {};
         row.eachCell({ includeEmpty: false }, (cell, colNumber) => {
-          rawData[worksheet.getColumn(colNumber).letter] = cell.value;
+          rawData[worksheet.getColumn(colNumber).letter] = this.cellText(cell);
         });
 
         if (!fullName) {
@@ -1732,6 +1819,12 @@ export class ImportsService {
           const salesNote = getColVal('sales_note');
           const note = salesNote ? `Ghi chú sale: ${salesNote}` : null;
 
+          // Resolve per-row CS ID from CVHT column if available
+          const rowCvhtCode = extractCvhtCode(getColVal('cvht_code'), salesNote);
+          const rowCSId = !isCS && rowCvhtCode && cvhtMap[rowCvhtCode]
+            ? cvhtMap[rowCvhtCode]
+            : finalCSId;
+
           // 1. Upsert Student
           const student = await this.repo.upsertStudent({
             external_id: extId || undefined,
@@ -1744,18 +1837,21 @@ export class ImportsService {
             note,
           });
 
-          // 2. Package
-          const packageCode = getColVal('package_code') || 'DEFAULT';
-          const totalSessionsRaw = parseInt(getColVal('total_sessions') || '30', 10);
-          const totalSessions = isNaN(totalSessionsRaw) ? 30 : totalSessionsRaw;
+          // 2. Package & total sessions (check JLPT Setting sheet if available)
+          const packageCode = getColVal('package_code') || getColVal('level') || 'DEFAULT';
+          const courseSetting = jlptSettingsMap.get(packageCode.toUpperCase());
+          const totalSessionsRaw = parseInt(getColVal('total_sessions') || '', 10);
+          const totalSessions = !isNaN(totalSessionsRaw) && totalSessionsRaw > 0
+            ? totalSessionsRaw
+            : (courseSetting?.totalSessions || 30);
           const pkg = await this.repo.createPackageIfNotExist(packageCode, totalSessions);
 
           // 3. Status mapping
           const statusRaw = (getColVal('status') || '').toLowerCase();
           let status: EnrollmentStatus = EnrollmentStatus.STUDYING;
-          if (statusRaw.includes('chờ')) status = EnrollmentStatus.WAITING_CLASS;
+          if (statusRaw.includes('chờ') || statusRaw.includes('đợi')) status = EnrollmentStatus.WAITING_CLASS;
           else if (statusRaw.includes('sắp học')) status = EnrollmentStatus.UPCOMING;
-          else if (statusRaw.includes('bảo lưu')) status = EnrollmentStatus.PAUSED;
+          else if (statusRaw.includes('bảo lưu') || statusRaw.includes('tạm nghỉ')) status = EnrollmentStatus.PAUSED;
           else if (statusRaw.includes('kết thúc') || statusRaw.includes('hoàn thành')) status = EnrollmentStatus.FINISHED;
           else if (statusRaw.includes('chưa học')) status = EnrollmentStatus.NOT_STARTED;
           else if (statusRaw.includes('hủy')) status = EnrollmentStatus.CANCELLED;
@@ -1763,8 +1859,11 @@ export class ImportsService {
           const startDate = this.parseExcelDate(getColVal('start_date'));
           const endDate = this.parseExcelDate(getColVal('end_date'));
           const paidAt = this.parseExcelDate(getColVal('paid_at'));
-          const remainingSessionsRaw = parseInt(getColVal('remaining_sessions') || '0', 10);
-          const remainingSessions = isNaN(remainingSessionsRaw) ? null : remainingSessionsRaw;
+          const remainingSessionsRaw = parseInt(getColVal('remaining_sessions') || '', 10);
+          const jlptAttended = extId ? jlptAttendedMap.get(extId) : undefined;
+          const remainingSessions = !isNaN(remainingSessionsRaw)
+            ? remainingSessionsRaw
+            : (jlptAttended !== undefined ? Math.max(0, totalSessions - jlptAttended) : totalSessions);
 
           // 4. Create Enrollment
           const saleRaw = getColVal('sale_name');
@@ -1774,16 +1873,22 @@ export class ImportsService {
             saleId = saleRec ? saleRec.id : null;
           }
 
+          const courseContent = getColVal('course_content');
+          const programMetadata: Record<string, any> = {};
+          if (courseContent) programMetadata.tuition_fee = courseContent;
+
           const enrollment = await this.repo.createEnrollment({
             external_id: extId || undefined,
+            program_type: detectedProgramType,
+            program_metadata: Object.keys(programMetadata).length > 0 ? programMetadata : undefined,
             student_id: student.id,
             package_id: pkg.id,
-            cs_id: finalCSId,
+            cs_id: rowCSId,
             paid_at: paidAt,
             sale_id: saleId,
             sale_name: saleRaw,
             student_source_status: getColVal('student_source_status'),
-            course_content: getColVal('course_content'),
+            course_content: courseContent,
             payment_status: getColVal('payment_status'),
             course_teacher_type: getColVal('course_teacher_type'),
             level: getColVal('level'),
@@ -1804,7 +1909,7 @@ export class ImportsService {
           });
 
           // 5. Class & EnrollmentClass
-          const className = getColVal('class_name') || `Lớp ${student.full_name}`;
+          const className = getColVal('class_name') || getColVal('class_code') || `Lớp ${student.full_name}`;
           const cls = await this.repo.createClassIfNotExist(className, getColVal('level') || undefined);
 
           await this.repo.createEnrollmentClass({
@@ -1861,11 +1966,11 @@ export class ImportsService {
                 prisma.careLog.create({
                   data: {
                     enrollment_id: enrollment.id,
-                    cs_id: finalCSId,
+                    cs_id: rowCSId,
                     after_session_number: sessionNum,
                     content: logContent,
-                    outcome: CareLogOutcome.POSITIVE,
-                    created_by_id: actor?.id || finalCSId,
+                    outcome: inferCareLogOutcome(logContent),
+                    created_by_id: actor?.id || rowCSId,
                   },
                 }).catch(() => {});
               }

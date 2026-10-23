@@ -1,5 +1,5 @@
 import { AttendanceRepository } from './attendance.repository';
-import { MarkAttendanceDTO, BulkMarkAttendanceDTO, UpdateAttendanceDTO } from './attendance.types';
+import { AttendanceSide, MarkAttendanceDTO, BulkMarkAttendanceDTO, UpdateAttendanceDTO } from './attendance.types';
 import { prisma } from '../../prisma/client';
 import { handleAttendanceEvent, cancelPendingDeliveries } from '../automation/automation-trigger.service';
 import { createLogger } from '../../shared/logger/logger';
@@ -15,11 +15,16 @@ interface AttendanceActor {
 export class AttendanceService {
   private repository = new AttendanceRepository();
 
-  private resolveSide(actor: AttendanceActor, requested?: 'TEACHER' | 'CS'): 'TEACHER' | 'CS' {
+  private resolveSide(actor: AttendanceActor, requested?: AttendanceSide): AttendanceSide {
     const privileged = actor.roles.includes('ADMIN') || actor.roles.includes('MANAGE');
     if (privileged) {
-      if (!requested) throw new AppError(400, 'ADMIN/MANAGE phải chọn phía điểm danh');
-      return requested;
+      if (requested === 'TEACHER' || requested === 'CS') {
+        throw new AppError(403, 'Tài khoản Admin/Quản lý chỉ được phép sửa cột Điểm danh, không được sửa cột của CSKH hoặc Giáo viên');
+      }
+      return 'ADMIN';
+    }
+    if (requested === 'ADMIN') {
+      throw new AppError(403, 'Chỉ Admin hoặc Quản lý mới được sửa cột Điểm danh chốt');
     }
     const available = [
       ...(actor.roles.includes('TEACHER') ? ['TEACHER' as const] : []),
@@ -33,7 +38,7 @@ export class AttendanceService {
     return available[0];
   }
 
-  private async assertWriteScope(actor: AttendanceActor, side: 'TEACHER' | 'CS', classId: number, enrollmentClassId: number) {
+  private async assertWriteScope(actor: AttendanceActor, side: AttendanceSide, classId: number, enrollmentClassId: number) {
     if (actor.roles.includes('ADMIN') || actor.roles.includes('MANAGE')) return;
     if (side === 'TEACHER') {
       const assigned = await prisma.classTeacher.findFirst({
@@ -62,6 +67,136 @@ export class AttendanceService {
     }
   }
 
+  private async notifyOnAdminMark(attendanceId: number, actor: AttendanceActor) {
+    try {
+      const [fullRecord, actorUser] = await Promise.all([
+        prisma.attendance.findUnique({
+          where: { id: attendanceId },
+          include: {
+            enrollment_class: {
+              include: {
+                enrollment: {
+                  include: {
+                    student: true,
+                  },
+                },
+                class: {
+                  include: {
+                    class_teachers: {
+                      where: { active: true },
+                      include: {
+                        teacher: true,
+                      },
+                    },
+                  },
+                },
+              },
+            },
+            class_session: true,
+          },
+        }),
+        prisma.user.findUnique({
+          where: { id: actor.id },
+          select: { id: true, name: true },
+        }),
+      ]);
+
+      if (!fullRecord) return;
+
+      const adminStatus = fullRecord.status;
+      const enrollment = fullRecord.enrollment_class.enrollment;
+      const student = enrollment.student;
+      const cls = fullRecord.enrollment_class.class;
+      const session = fullRecord.class_session;
+      const sessionDateYMD = session.session_date instanceof Date
+        ? session.session_date.toISOString().slice(0, 10)
+        : String(session.session_date).slice(0, 10);
+      const actorName = actorUser?.name || 'Admin/Quản lý';
+
+      // 1. Check CSKH side
+      if (fullRecord.cs_status !== adminStatus) {
+        const csRecipientId = fullRecord.cs_user_id || enrollment.cs_id;
+        if (csRecipientId) {
+          await prisma.auditLog.create({
+            data: {
+              user_id: actor.id,
+              action: 'ATTENDANCE_ADMIN_NOTIFICATION',
+              entity_type: 'UserNotification',
+              entity_id: String(csRecipientId),
+              after_data: {
+                recipient_user_id: csRecipientId,
+                recipient_role: 'CS',
+                attendance_id: fullRecord.id,
+                student_id: student.id,
+                student_name: student.full_name,
+                student_code: student.external_id || null,
+                class_id: cls.id,
+                class_name: cls.class_name,
+                session_id: session.id,
+                session_number: session.session_number,
+                session_date: sessionDateYMD,
+                previous_status: fullRecord.cs_status || null,
+                admin_status: adminStatus,
+                actor_id: actor.id,
+                actor_name: actorName,
+                is_read: false,
+                read_at: null,
+              },
+            },
+          });
+        }
+      }
+
+      // 2. Check Teacher side
+      if (fullRecord.teacher_status !== adminStatus) {
+        let teacherRecipientIds: number[] = [];
+        if (fullRecord.teacher_user_id) {
+          teacherRecipientIds = [fullRecord.teacher_user_id];
+        } else {
+          teacherRecipientIds = cls.class_teachers
+            .filter((ct) => ct.active && ct.teacher?.active && ct.teacher.user_id != null)
+            .map((ct) => ct.teacher.user_id as number);
+        }
+        const uniqueTeacherIds = Array.from(new Set(teacherRecipientIds));
+
+        for (const teacherUserId of uniqueTeacherIds) {
+          await prisma.auditLog.create({
+            data: {
+              user_id: actor.id,
+              action: 'ATTENDANCE_ADMIN_NOTIFICATION',
+              entity_type: 'UserNotification',
+              entity_id: String(teacherUserId),
+              after_data: {
+                recipient_user_id: teacherUserId,
+                recipient_role: 'TEACHER',
+                attendance_id: fullRecord.id,
+                student_id: student.id,
+                student_name: student.full_name,
+                student_code: student.external_id || null,
+                class_id: cls.id,
+                class_name: cls.class_name,
+                session_id: session.id,
+                session_number: session.session_number,
+                session_date: sessionDateYMD,
+                previous_status: fullRecord.teacher_status || null,
+                admin_status: adminStatus,
+                actor_id: actor.id,
+                actor_name: actorName,
+                is_read: false,
+                read_at: null,
+              },
+            },
+          });
+        }
+      }
+    } catch (err) {
+      log.error('Admin notification creation failed', {
+        attendanceId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
   async listBySession(classId: number, sessionId: number) {
     return this.repository.findBySession(classId, sessionId);
   }
@@ -76,8 +211,23 @@ export class AttendanceService {
     await this.assertWriteScope(actor, side, classId, data.enrollment_class_id);
 
     const before = await this.repository.findByEnrollmentClassAndSession(data.enrollment_class_id, sessionId);
-    const result = await this.repository.mark(data.enrollment_class_id, sessionId, data.status, 'MANUAL', actor.id, side);
+    const result = await this.repository.mark(
+      data.enrollment_class_id,
+      sessionId,
+      data.status,
+      'MANUAL',
+      actor.id,
+      side,
+      {
+        lesson_topic: side === 'TEACHER' ? data.lesson_topic : undefined,
+        teacher_note: side === 'TEACHER' ? data.teacher_note : undefined,
+        cs_note: data.cs_note,
+      },
+    );
     await this.logAudit(actor.id, before ? 'UPDATE' : 'CREATE', 'Attendance', String(result.id), before, result);
+    if (side === 'ADMIN' && data.status) {
+      await this.notifyOnAdminMark(result.id, actor);
+    }
     await this.runDownstream(result);
     return result;
   }
@@ -92,8 +242,18 @@ export class AttendanceService {
       if (ec.class_id !== classId) throw new AppError(409, `Ghi danh ${item.enrollment_class_id} không thuộc lớp này`);
       await this.assertWriteScope(actor, side, classId, item.enrollment_class_id);
     }
-    const results = await this.repository.bulkMark(data.items, sessionId, 'MANUAL', actor.id, side);
+    const sanitizedItems = data.items.map((item) => ({
+      ...item,
+      lesson_topic: side === 'TEACHER' ? item.lesson_topic : undefined,
+      teacher_note: side === 'TEACHER' ? item.teacher_note : undefined,
+    }));
+    const results = await this.repository.bulkMark(sanitizedItems, sessionId, 'MANUAL', actor.id, side);
     await this.logAudit(actor.id, 'BULK_UPSERT', 'Attendance', `session:${sessionId}`, null, { side, count: results.length });
+    if (side === 'ADMIN') {
+      for (const attendance of results) {
+        await this.notifyOnAdminMark(attendance.id, actor);
+      }
+    }
     for (const attendance of results) await this.runDownstream(attendance);
     return results;
   }
@@ -105,13 +265,21 @@ export class AttendanceService {
     if (sessionId && before.class_session_id !== sessionId) throw new AppError(409, 'Điểm danh không thuộc buổi này');
     const side = this.resolveSide(actor, data.side);
     await this.assertWriteScope(actor, side, before.class_session.class_id, before.enrollment_class_id);
-    const result = await this.repository.update(attendanceId, data, actor.id, side);
+    const sanitizedData: UpdateAttendanceDTO = {
+      ...data,
+      lesson_topic: side === 'TEACHER' ? data.lesson_topic : undefined,
+      teacher_note: side === 'TEACHER' ? data.teacher_note : undefined,
+    };
+    const result = await this.repository.update(attendanceId, sanitizedData, actor.id, side);
     await this.logAudit(actor.id, 'UPDATE', 'Attendance', String(attendanceId), before, result);
+    if (side === 'ADMIN' && data.status) {
+      await this.notifyOnAdminMark(result.id, actor);
+    }
     await this.runDownstream(result);
     return result;
   }
 
-  async resetAttendance(attendanceId: number, actor: AttendanceActor, requestedSide?: 'TEACHER' | 'CS', classId?: number, sessionId?: number) {
+  async resetAttendance(attendanceId: number, actor: AttendanceActor, requestedSide?: AttendanceSide, classId?: number, sessionId?: number) {
     const before = await this.repository.findById(attendanceId);
     if (!before) throw new AppError(404, 'Không tìm thấy điểm danh');
     if (classId && before.class_session.class_id !== classId) throw new AppError(409, 'Điểm danh không thuộc lớp này');

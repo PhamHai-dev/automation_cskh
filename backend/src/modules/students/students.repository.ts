@@ -2,10 +2,59 @@ import { prisma } from '../../prisma/client';
 import { CreateStudentDTO, UpdateStudentDTO } from './students.types';
 
 export class StudentsRepository {
-  async findAll() {
+  async findAll(options?: {
+    userId?: number;
+    roles?: string[];
+    programType?: string;
+    csId?: number;
+  }) {
+    const roles = options?.roles || [];
+    const userId = options?.userId;
+    const isAdmin = roles.includes('ADMIN');
+    const isManage = !isAdmin && roles.includes('MANAGE');
+    const isCS = !isAdmin && !isManage && roles.includes('CS');
+
+    let allowedCsIds: number[] | undefined = undefined;
+    if (isCS && userId) {
+      allowedCsIds = [userId];
+    } else if (isManage && userId) {
+      const assignments = await prisma.manageAssignment.findMany({
+        where: { manage_user_id: userId },
+        include: { cs_group: { include: { members: true } } },
+      });
+      const csSet = new Set<number>([userId]);
+      assignments.forEach((a) => {
+        a.cs_group.members.forEach((m) => csSet.add(m.user_id));
+      });
+      allowedCsIds = Array.from(csSet);
+      if (options?.csId) {
+        allowedCsIds = allowedCsIds.filter((id) => id === options.csId);
+      }
+    } else if (options?.csId) {
+      allowedCsIds = [options.csId];
+    }
+
+    const enrollmentFilter: any = {};
+    if (allowedCsIds !== undefined) {
+      enrollmentFilter.cs_id = allowedCsIds.length === 1 ? allowedCsIds[0] : { in: allowedCsIds };
+    }
+    if (options?.programType) {
+      enrollmentFilter.program_type = options.programType;
+    }
+
+    const hasEnrollmentFilter = Object.keys(enrollmentFilter).length > 0;
+
     return prisma.student.findMany({
+      where: hasEnrollmentFilter
+        ? {
+            enrollments: {
+              some: enrollmentFilter,
+            },
+          }
+        : undefined,
       include: {
         enrollments: {
+          where: hasEnrollmentFilter ? enrollmentFilter : undefined,
           include: {
             package: true,
             sale: true,
@@ -15,6 +64,7 @@ export class StudentsRepository {
                 code: true,
                 name: true,
                 email: true,
+                staff_code: true,
               },
             },
             enrollment_classes: {
@@ -64,7 +114,47 @@ export class StudentsRepository {
 
   async findById(id: number) {
     return prisma.student.findUnique({
-      where: { id }
+      where: { id },
+      include: {
+        enrollments: {
+          include: {
+            package: true,
+            sale: true,
+            cs: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+                staff_code: true,
+              },
+            },
+            enrollment_classes: {
+              include: {
+                class: {
+                  include: {
+                    class_teachers: {
+                      include: {
+                        teacher: {
+                          include: {
+                            user: true,
+                          },
+                        },
+                      },
+                    },
+                    class_schedules: true,
+                  },
+                },
+                attendance: { where: { deleted_at: null } },
+              },
+            },
+            care_logs: {
+              orderBy: { after_session_number: 'asc' },
+            },
+            care_tasks: true,
+          },
+          orderBy: { created_at: 'desc' },
+        },
+      },
     });
   }
 
@@ -130,6 +220,8 @@ export class StudentsRepository {
         data: {
           student_id: student.id,
           cs_id: csId,
+          program_type: data.program_type || 'KAIWA',
+          ...(data.program_metadata !== undefined ? { program_metadata: data.program_metadata as any } : {}),
           sale_name: data.sale_name ? String(data.sale_name).trim() : undefined,
           student_source_status: data.student_source_status || 'Học viên chuẩn',
           course_content: data.course_content || 'Tiếng Nhật Kaiwa',
@@ -283,6 +375,26 @@ export class StudentsRepository {
 
       // 2. Prepare Enrollment update
       const enrollmentUpdate: any = {};
+      if (data.program_type !== undefined) enrollmentUpdate.program_type = data.program_type;
+      if (data.program_metadata !== undefined) enrollmentUpdate.program_metadata = data.program_metadata;
+      if (data.cs_id !== undefined) enrollmentUpdate.cs_id = Number(data.cs_id);
+      if (data.package_code !== undefined) {
+        const trimmedPkg = String(data.package_code).trim();
+        if (trimmedPkg) {
+          let pkg = await tx.package.findUnique({ where: { code: trimmedPkg } });
+          if (!pkg) {
+            pkg = await tx.package.create({
+              data: {
+                code: trimmedPkg,
+                name: `Gói ${trimmedPkg}`,
+                default_total_sessions: data.total_sessions ? Number(data.total_sessions) : 30,
+                active: true,
+              },
+            });
+          }
+          enrollmentUpdate.package_id = pkg.id;
+        }
+      }
       if (data.sale_name !== undefined) enrollmentUpdate.sale_name = data.sale_name || null;
       if (data.student_source_status !== undefined)
         enrollmentUpdate.student_source_status = data.student_source_status || null;

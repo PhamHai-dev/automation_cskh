@@ -17,6 +17,7 @@ model User {
   name          String?
   email         String    @unique
   phone         String?
+  staff_code    String?   @unique
   password_hash String
   roles         Json // MySQL JSON, e.g., ["CS"], ["MANAGE", "TEACHER"]
   active        Boolean   @default(true)
@@ -56,6 +57,7 @@ model User {
   attendances_as_cs                Attendance[]          @relation("AttendanceCSUser")
   resolved_attendances             Attendance[]          @relation("AttendanceResolver")
   user_preferences                 UserPreference[]
+  cs_sheet_backup_config           CsSheetBackupConfig?  @relation("UserCsSheetBackup")
 
   @@map("users")
 }
@@ -203,6 +205,9 @@ enum EnrollmentStatus {
 model Enrollment {
   id                          Int              @id @default(autoincrement())
   external_id                 String?
+  external_sync_key           String?          @unique
+  program_type                String           @default("KAIWA")
+  program_metadata            Json?
   student_id                  Int
   package_id                  Int?
   cs_id                       Int
@@ -245,6 +250,7 @@ model Enrollment {
   care_logs              CareLog[]
   care_tasks             CareTask[]
 
+  @@index([program_type, cs_id])
   @@map("enrollments")
 }
 
@@ -981,7 +987,7 @@ model UserPreference {
   id         Int      @id @default(autoincrement())
   user_id    Int
   scope      String   @db.VarChar(64) // e.g. "enrollments.quick"
-  value      Json     // { [columnKey: string]: boolean } — only stores deltas from default
+  value      Json // { [columnKey: string]: boolean } — only stores deltas from default
   created_at DateTime @default(now())
   updated_at DateTime @updatedAt
 
@@ -997,6 +1003,78 @@ enum ImportType {
   STUDENT_ENROLLMENT
   ATTENDANCE
   TEACHER_ATTENDANCE
+  GOOGLE_SHEET_SYNC
+  GOOGLE_SHEET_BACKUP
+}
+
+model CsSheetBackupConfig {
+  id                     Int       @id @default(autoincrement())
+  cs_user_id             Int       @unique
+  name                   String
+  target_spreadsheet_url String?   @db.Text
+  target_spreadsheet_id  String?
+  local_backup_path      String?
+  sheet1_name            String    @default("1.Chăm sóc")
+  sheet3_name            String    @default("3.Chấm buổi")
+  schedule_times         Json? // e.g. ["12:00", "21:00"]
+  enabled                Boolean   @default(true)
+  require_private_sheet  Boolean   @default(true)
+  mask_sensitive_data    Boolean   @default(false)
+  last_backup_at         DateTime?
+  last_status            String? // "IDLE" | "RUNNING" | "SUCCESS" | "FAILED"
+  last_summary           Json?
+  last_error             String?   @db.Text
+  created_at             DateTime  @default(now())
+  updated_at             DateTime  @updatedAt
+
+  cs_user User @relation("UserCsSheetBackup", fields: [cs_user_id], references: [id], onDelete: Cascade)
+
+  @@map("cs_sheet_backup_configs")
+}
+
+model GoogleSheetSyncConfig {
+  id                    Int       @id @default(autoincrement())
+  code                  String    @unique // "JLPT" | "KAIWA"
+  name                  String
+  program_type          String    @default("KAIWA") // "JLPT" | "KAIWA"
+  spreadsheet_url       String?   @db.Text
+  spreadsheet_id        String?
+  local_file_path       String?
+  sheet_name            String
+  setting_sheet_name    String?
+  header_row            Int       @default(2)
+  cvht_mapping          Json? // { "CVHT01": 2, "CVHT02": 3, "CVHT03": 4 }
+  default_cs_id         Int?
+  sync_interval_minutes Int       @default(10)
+  enabled               Boolean   @default(true)
+  last_file_hash        String?
+  last_synced_at        DateTime?
+  last_status           String? // "IDLE" | "SYNCING" | "SUCCESS" | "PARTIAL_FAILED" | "FAILED"
+  last_summary          Json?
+  last_error            String?   @db.Text
+  created_at            DateTime  @default(now())
+  updated_at            DateTime  @updatedAt
+
+  row_states GoogleSheetRowState[]
+
+  @@map("google_sheet_sync_configs")
+}
+
+model GoogleSheetRowState {
+  id            Int      @id @default(autoincrement())
+  config_id     Int
+  sync_key      String
+  row_number    Int
+  row_hash      String
+  student_id    Int?
+  enrollment_id Int?
+  updated_at    DateTime @updatedAt
+
+  config GoogleSheetSyncConfig @relation(fields: [config_id], references: [id], onDelete: Cascade)
+
+  @@unique([config_id, sync_key])
+  @@index([config_id])
+  @@map("google_sheet_row_states")
 }
 
 enum ImportBatchStatus {
@@ -1559,24 +1637,24 @@ model LineFriend {
 }
 
 model LineConversation {
-  id                    Int       @id @default(autoincrement())
-  line_account_id       Int
-  external_thread_id    String // userId (U...) or groupId (C...) or roomId (R...)
-  thread_type           String // "user" | "group"
-  display_name          String?
-  avatar_url            String?
-  group_name            String?
-  group_avatar_url      String?
-  group_members_count   Int?
-  reply_token           String?   @db.VarChar(128) // Cached latest webhook replyToken for free replies
+  id                     Int       @id @default(autoincrement())
+  line_account_id        Int
+  external_thread_id     String // userId (U...) or groupId (C...) or roomId (R...)
+  thread_type            String // "user" | "group"
+  display_name           String?
+  avatar_url             String?
+  group_name             String?
+  group_avatar_url       String?
+  group_members_count    Int?
+  reply_token            String?   @db.VarChar(128) // Cached latest webhook replyToken for free replies
   reply_token_expires_at DateTime?
-  last_message_at       DateTime?
-  unread_count          Int       @default(0)
-  is_replied            Boolean   @default(true)
-  tab                   String    @default("main")
-  deleted_at            DateTime?
-  created_at            DateTime  @default(now())
-  updated_at            DateTime  @updatedAt
+  last_message_at        DateTime?
+  unread_count           Int       @default(0)
+  is_replied             Boolean   @default(true)
+  tab                    String    @default("main")
+  deleted_at             DateTime?
+  created_at             DateTime  @default(now())
+  updated_at             DateTime  @updatedAt
 
   line_account LineAccount   @relation(fields: [line_account_id], references: [id], onDelete: Cascade)
   messages     LineMessage[]

@@ -15,11 +15,13 @@ export const createEnrollmentSchema = z.object({
 export const updateEnrollmentSchema = z.object({
   body: z.object({
     external_id: z.string().optional(),
+    program_type: z.enum(['JLPT', 'KAIWA']).optional(),
+    program_metadata: z.record(z.any()).optional().nullable(),
     package_id: z.number().int().positive().optional(),
     total_sessions: z.number().int().positive().optional(),
     start_date: z.string().optional(),
     end_date: z.string().optional(),
-    status: z.enum(['NOT_STARTED', 'STUDYING', 'PAUSED', 'FINISHED', 'CANCELLED']).optional(),
+    status: z.enum(['WAITING_CLASS', 'STUDYING', 'PAUSED', 'FINISHED', 'UPCOMING', 'NOT_STARTED', 'CANCELLED']).optional(),
   })
 });
 

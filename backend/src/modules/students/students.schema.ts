@@ -15,6 +15,10 @@ export const createStudentSchema = z.object({
     note: z.string().optional(),
 
     // Enrollment & Course fields
+    program_type: z.enum(['JLPT', 'KAIWA']).optional(),
+    program_metadata: z.record(z.any()).optional().nullable(),
+    cs_id: z.number().int().positive().optional(),
+    package_code: z.string().optional(),
     paid_at: z.string().optional(),
     sale_name: z.string().optional(),
     student_source_status: z.string().optional(),
@@ -65,6 +69,10 @@ export const updateStudentSchema = z.object({
     note: z.string().optional(),
 
     // Enrollment & Course fields
+    program_type: z.enum(['JLPT', 'KAIWA']).optional(),
+    program_metadata: z.record(z.any()).optional().nullable(),
+    cs_id: z.number().int().positive().optional(),
+    package_code: z.string().optional(),
     paid_at: z.string().optional(),
     sale_name: z.string().optional(),
     student_source_status: z.string().optional(),

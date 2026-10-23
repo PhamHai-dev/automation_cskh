@@ -126,7 +126,7 @@ export const HomePage: React.FC = () => {
             <span>Trung tâm Điều phối & Tự động hóa Vận hành CSKH</span>
           </div>
           <h1 className="text-2xl sm:text-4xl font-extrabold tracking-tight mb-3">
-            Xin chào, {user?.name || 'Bạn'}! 👋
+            Xin chào, {user?.name || 'Bạn'}!
           </h1>
           <p className="text-blue-100 text-xs sm:text-base leading-relaxed max-w-2xl">
             Chào mừng bạn đến với hệ thống quản trị học viên, điều phối lớp học và tự động hóa quy trình chăm sóc khách hàng.

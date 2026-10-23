@@ -8,9 +8,21 @@ export class EnrollmentsController {
   async list(req: Request, res: Response, next: NextFunction) {
     try {
       const sale = (req.query.sale as string) || undefined;
-      const csIdentifier = (req.user?.name || req.user?.email) || undefined;
-      const saleFilter = sale || (req.user?.roles.includes('CS') ? csIdentifier : undefined);
-      const enrollments = await enrollmentsService.getEnrollmentsForUser(req.user!.id, req.user!.roles, saleFilter);
+      const programType = typeof req.query.program_type === 'string' && req.query.program_type.trim()
+        ? req.query.program_type.trim().toUpperCase()
+        : undefined;
+      const csId = req.query.cs_id !== undefined && req.query.cs_id !== ''
+        ? parseInt(String(req.query.cs_id), 10)
+        : undefined;
+      const enrollments = await enrollmentsService.getEnrollmentsForUser(
+        req.user!.id,
+        req.user!.roles,
+        sale,
+        {
+          programType,
+          csId: csId && !Number.isNaN(csId) ? csId : undefined,
+        }
+      );
       res.json({ data: enrollments, meta: null });
     } catch (error) {
       next(error);

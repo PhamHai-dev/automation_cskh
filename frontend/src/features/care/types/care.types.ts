@@ -97,3 +97,25 @@ export interface TaskFilterParams {
   limit?: number;
   offset?: number;
 }
+
+export interface AttendanceNotificationItem {
+  id: number;
+  recipient_user_id: number;
+  recipient_role: 'CS' | 'TEACHER';
+  attendance_id: number;
+  student_id: number;
+  student_name: string;
+  student_code: string | null;
+  class_id: number;
+  class_name: string;
+  session_id: number;
+  session_number: number;
+  session_date: string;
+  previous_status: 'ATTENDED' | 'ABSENT_APPROVED_A' | 'LEAVE_B' | 'ABSENT_UNAPPROVED_C' | 'TEACHER_ABSENT_D' | 'TECH_ERROR_E' | null;
+  admin_status: 'ATTENDED' | 'ABSENT_APPROVED_A' | 'LEAVE_B' | 'ABSENT_UNAPPROVED_C' | 'TEACHER_ABSENT_D' | 'TECH_ERROR_E';
+  actor_id: number;
+  actor_name: string;
+  is_read: boolean;
+  read_at: string | null;
+  created_at: string;
+}

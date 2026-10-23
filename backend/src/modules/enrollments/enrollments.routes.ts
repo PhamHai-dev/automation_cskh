@@ -12,6 +12,7 @@ router.get('/', requireRoles(['ADMIN', 'MANAGE', 'CS']), controller.list);
 router.get('/:id', requireRoles(['ADMIN', 'MANAGE', 'CS']), controller.get);
 router.post('/', requireRoles(['ADMIN', 'MANAGE', 'CS']), controller.create);
 router.patch('/:id', requireRoles(['ADMIN', 'MANAGE', 'CS']), controller.update);
+router.put('/:id', requireRoles(['ADMIN', 'MANAGE', 'CS']), controller.update);
 
 // Specific Actions
 router.post('/:id/assign', requireRoles(['ADMIN', 'MANAGE']), controller.reassign);

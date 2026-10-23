@@ -8,6 +8,7 @@ import { UsersPage } from './pages/admin/UsersPage';
 import { PackagesPage } from './features/packages/pages/PackagesPage';
 import { TeachersPage } from './features/teachers/pages/TeachersPage';
 import { StudentsPage } from './features/students/pages/StudentsPage';
+import { StudentStudyReportPage } from './features/students/pages/StudentStudyReportPage';
 import { ClassesPage } from './features/classes/pages/ClassesPage';
 import { ClassSessionsPage } from './features/classes/pages/ClassSessionsPage';
 import { AttendanceSheetPage } from './features/classes/pages/AttendanceSheetPage';
@@ -76,11 +77,10 @@ function App() {
               <Route path="/dashboard" element={<DashboardPage />} />
               <Route path="/tong-quan" element={<Navigate to="/dashboard" replace />} />
 
-              <Route path="/care" element={<CarePage />} />
-              <Route path="/cham-soc" element={<Navigate to="/care" replace />} />
-
               <Route path="/students" element={<StudentsPage />} />
+              <Route path="/students/:id/study-report" element={<StudentStudyReportPage />} />
               <Route path="/hoc-vien" element={<Navigate to="/students" replace />} />
+              <Route path="/hoc-vien/:id/bao-cao-hoc-tap" element={<StudentStudyReportPage />} />
 
               <Route path="/enrollments" element={<EnrollmentsPage />} />
               <Route path="/ghi-danh" element={<Navigate to="/enrollments" replace />} />
@@ -120,8 +120,11 @@ function App() {
               <Route path="/doi-soat-diem-danh" element={<Navigate to="/attendance/reconciliation" replace />} />
             </Route>
 
-            {/* Classes, Attendance, Imports/Exports: Admin, Manage, CS, Teacher */}
+            {/* Classes, Attendance, Care, Imports/Exports: Admin, Manage, CS, Teacher */}
             <Route element={<ProtectedRoute allowedRoles={['ADMIN', 'MANAGE', 'CS', 'TEACHER']} />}>
+              <Route path="/care" element={<CarePage />} />
+              <Route path="/cham-soc" element={<Navigate to="/care" replace />} />
+
               <Route path="/teacher/my-sessions" element={<MyTeachingSessionsPage />} />
               <Route path="/lich-day-cua-toi" element={<Navigate to="/teacher/my-sessions" replace />} />
               <Route path="/teacher/attendance-tracking" element={<TeacherAttendanceTrackingPage />} />

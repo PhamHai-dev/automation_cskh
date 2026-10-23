@@ -11,7 +11,33 @@ export class ClassesRepository {
       include: {
         class_teachers: {
           include: { teacher: true }
-        }
+        },
+        class_schedules: true,
+        class_sessions: {
+          include: {
+            attendance: {
+              where: { deleted_at: null },
+            },
+          },
+          orderBy: [{ session_date: 'asc' }, { session_number: 'asc' }],
+        },
+        enrollment_classes: {
+          include: {
+            enrollment: {
+              include: {
+                student: true,
+                package: true,
+                sale: true,
+              },
+            },
+            attendance: {
+              where: { deleted_at: null },
+              include: {
+                class_session: true,
+              },
+            },
+          },
+        },
       },
       orderBy: { created_at: 'desc' }
     });
@@ -29,6 +55,14 @@ export class ClassesRepository {
           },
         },
         class_schedules: true,
+        class_sessions: {
+          include: {
+            attendance: {
+              where: { deleted_at: null },
+            },
+          },
+          orderBy: [{ session_date: 'asc' }, { session_number: 'asc' }],
+        },
         enrollment_classes: {
           include: {
             enrollment: {

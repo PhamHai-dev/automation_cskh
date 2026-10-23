@@ -16,9 +16,10 @@ import {
   AttendanceTab,
   StudentRow,
   formatSessionDate,
+  formatClassCode,
 } from '../../classes/components/AttendanceMatrix';
 import { classSessionsApi, attendanceApi } from '../../classes/api/sessions.api';
-import { ClassSession, Attendance, AttendanceStatus } from '../../classes/types/classes.types';
+import { ClassSession, Attendance, AttendanceStatus, AttendanceSide } from '../../classes/types/classes.types';
 import { BarChart3, Calendar, Zap } from 'lucide-react';
 import { useColumnVisibility } from '../../preferences/hooks/useColumnVisibility';
 import { PreferenceScope } from '../../preferences/columns';
@@ -39,6 +40,7 @@ export const EnrollmentsPage: React.FC = () => {
 
   // Tab & Filters state
   const [activeTab, setActiveTab] = useState<AttendanceTab>('quick');
+  const [programFilter, setProgramFilter] = useState<'ALL' | 'KAIWA' | 'JLPT'>('ALL');
   const prefScope: PreferenceScope = `enrollments.${activeTab}`;
   const { visible: visibleColumns } = useColumnVisibility(prefScope);
 
@@ -101,6 +103,11 @@ export const EnrollmentsPage: React.FC = () => {
           list.push({
             enrollment_class_id: ec.id,
             class_id: ec.class_id,
+            class_code: cls?.class_code
+              ? formatClassCode(cls.class_code, cls.id)
+              : cls?.id
+              ? formatClassCode(null, cls.id)
+              : '—',
             student_id: student.id,
             external_id: student.external_id || enr.external_id || `HV_${student.id}`,
             full_name: student.full_name,
@@ -127,6 +134,8 @@ export const EnrollmentsPage: React.FC = () => {
               '—',
             class_name: cls?.class_name || '—',
             sale_name: enr.sale_name || enr.cs?.name || '—',
+            program_type: enr.program_type || 'KAIWA',
+            cs_staff_code: enr.cs?.staff_code || null,
           });
         });
       } else {
@@ -134,6 +143,7 @@ export const EnrollmentsPage: React.FC = () => {
         list.push({
           enrollment_class_id: -enr.id,
           class_id: 0,
+          class_code: '—',
           student_id: student.id,
           external_id: student.external_id || enr.external_id || `HV_${student.id}`,
           full_name: student.full_name,
@@ -156,6 +166,8 @@ export const EnrollmentsPage: React.FC = () => {
           teacher_code: '—',
           class_name: 'Chưa xếp lớp',
           sale_name: enr.sale_name || enr.cs?.name || '—',
+          program_type: enr.program_type || 'KAIWA',
+          cs_staff_code: enr.cs?.staff_code || null,
         });
       }
     });
@@ -257,6 +269,21 @@ export const EnrollmentsPage: React.FC = () => {
     return Array.from(set).sort();
   }, [listStudents]);
 
+  // Counts by program_type for the switcher
+  const programCounts = useMemo(() => {
+    let kaiwa = 0;
+    let jlpt = 0;
+    listStudents.forEach((s) => {
+      const pType = (s.program_type || '').toUpperCase();
+      if (pType === 'JLPT') {
+        jlpt++;
+      } else {
+        kaiwa++;
+      }
+    });
+    return { all: listStudents.length, kaiwa, jlpt };
+  }, [listStudents]);
+
   // Main filtered students list with all requested criteria
   const matrixStudents = useMemo(() => {
     const query = filters.searchQuery.trim().toLocaleLowerCase('vi-VN');
@@ -264,6 +291,12 @@ export const EnrollmentsPage: React.FC = () => {
     const classQuery = filters.className.trim().toLocaleLowerCase('vi-VN');
 
     return listStudents.filter((student) => {
+      // 0. Program filter (ALL | KAIWA | JLPT)
+      if (programFilter !== 'ALL') {
+        const pType = (student.program_type || 'KAIWA').toUpperCase();
+        if (pType !== programFilter) return false;
+      }
+
       // 1. Text search: ID, Name, Phone, Email
       if (query) {
         const matchesSearch = [
@@ -418,7 +451,7 @@ export const EnrollmentsPage: React.FC = () => {
 
       return true;
     });
-  }, [listStudents, filters, attendedSessionsMap]);
+  }, [listStudents, filters, attendedSessionsMap, programFilter]);
 
   const handleResetFilters = () => {
     setFilters({
@@ -432,7 +465,7 @@ export const EnrollmentsPage: React.FC = () => {
     pendingEdits: Record<string, AttendanceStatus>,
     _customValues?: Record<string, number>,
     sessionIndex = 0,
-    side?: 'TEACHER' | 'CS'
+    side?: AttendanceSide
   ) => {
     const entries = Object.entries(pendingEdits);
     if (entries.length === 0) return;
@@ -477,7 +510,67 @@ export const EnrollmentsPage: React.FC = () => {
 
   return (
     <PageContainer>
-      <PageHeader title="Quản lý Điểm danh & Ghi danh" />
+      <PageHeader
+        title="Quản lý Điểm danh & Ghi danh"
+        actions={
+          <div className="inline-flex items-center p-1 bg-slate-100 rounded-xl border border-slate-200/80 gap-1">
+            <button
+              type="button"
+              onClick={() => setProgramFilter('ALL')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                programFilter === 'ALL'
+                  ? 'bg-white text-slate-900 shadow-xs border border-slate-200/80'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <span>Tất cả</span>
+              <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-slate-200/80 text-slate-700 font-extrabold">
+                {programCounts.all}
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setProgramFilter('KAIWA')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                programFilter === 'KAIWA'
+                  ? 'bg-teal-600 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-teal-700'
+              }`}
+            >
+              <span>Giao tiếp (Kaiwa)</span>
+              <span
+                className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${
+                  programFilter === 'KAIWA'
+                    ? 'bg-teal-700 text-white'
+                    : 'bg-teal-100 text-teal-800'
+                }`}
+              >
+                {programCounts.kaiwa}
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setProgramFilter('JLPT')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                programFilter === 'JLPT'
+                  ? 'bg-indigo-600 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-indigo-700'
+              }`}
+            >
+              <span>Luyện thi (JLPT)</span>
+              <span
+                className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${
+                  programFilter === 'JLPT'
+                    ? 'bg-indigo-700 text-white'
+                    : 'bg-indigo-100 text-indigo-800'
+                }`}
+              >
+                {programCounts.jlpt}
+              </span>
+            </button>
+          </div>
+        }
+      />
 
       <HorizontalTabs
         ariaLabel="Nội dung quản lý ghi danh"

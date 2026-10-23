@@ -57,21 +57,45 @@ export class UsersService {
 
   /**
    * Ensure all existing users with role 'CS' have a valid `CVHTxx` code assigned.
+   * Prefers the existing `staff_code` (set by the Google Sheet sync feature) as the
+   * canonical CVHT code to avoid two divergent CVHT sequences per user.
    */
   async ensureCsUsersHaveCodes(): Promise<void> {
     const allUsers = await prisma.user.findMany({
       orderBy: { id: 'asc' },
-      select: { id: true, code: true, roles: true },
+      select: { id: true, code: true, staff_code: true, roles: true },
     });
 
     for (const u of allUsers) {
       const roles = Array.isArray(u.roles) ? (u.roles as string[]) : [];
-      if (roles.includes('CS') && !u.code) {
-        const nextCode = await this.generateNextCsCode();
-        await prisma.user.update({
-          where: { id: u.id },
-          data: { code: nextCode },
+      if (!roles.includes('CS') || u.code) continue;
+
+      const staffNormalized = normalizeCsCode(u.staff_code);
+      let nextCode: string | null = staffNormalized;
+
+      // Adopt staff_code only when it is not already taken by another user's code
+      if (nextCode) {
+        const clash = await prisma.user.findFirst({
+          where: { code: nextCode, id: { not: u.id } },
+          select: { id: true },
         });
+        if (clash) nextCode = null;
+      }
+
+      if (!nextCode) {
+        nextCode = await this.generateNextCsCode();
+      }
+
+      await prisma.user.update({
+        where: { id: u.id },
+        data: { code: nextCode },
+      });
+
+      // Keep staff_code in sync so sheet features see the same label
+      if (staffNormalized !== nextCode) {
+        await prisma.user
+          .update({ where: { id: u.id }, data: { staff_code: nextCode } })
+          .catch(() => undefined);
       }
     }
   }
@@ -83,6 +107,7 @@ export class UsersService {
       select: {
         id: true,
         code: true,
+        staff_code: true,
         name: true,
         email: true,
         phone: true,
@@ -96,8 +121,9 @@ export class UsersService {
 
     return users.map((u) => {
       const roles = Array.isArray(u.roles) ? (u.roles as string[]) : [];
+      const csCode = u.code || (roles.includes('CS') ? u.staff_code : null);
       const displayLabel = roles.includes('CS')
-        ? formatCsDisplayName(u.name, u.code)
+        ? formatCsDisplayName(u.name, csCode)
         : u.name || u.email;
       return {
         ...u,
@@ -112,6 +138,7 @@ export class UsersService {
       select: {
         id: true,
         code: true,
+        staff_code: true,
         name: true,
         email: true,
         phone: true,
@@ -124,10 +151,11 @@ export class UsersService {
     });
     if (!user) return null;
     const roles = Array.isArray(user.roles) ? (user.roles as string[]) : [];
+    const csCode = user.code || (roles.includes('CS') ? user.staff_code : null);
     return {
       ...user,
       display_label: roles.includes('CS')
-        ? formatCsDisplayName(user.name, user.code)
+        ? formatCsDisplayName(user.name, csCode)
         : user.name || user.email,
     };
   }
@@ -158,9 +186,16 @@ export class UsersService {
       }
     }
 
+    const normalizedStaffCode = data.staff_code
+      ? String(data.staff_code).trim().toUpperCase()
+      : null;
+    // For CS users, keep staff_code aligned with the canonical CVHT code
+    const staffCode = roles.includes('CS') ? (normalizedStaffCode || code) : normalizedStaffCode;
+
     const created = await prisma.user.create({
       data: {
         code,
+        staff_code: staffCode,
         email: data.email,
         name: cleanName,
         phone: data.phone ? String(data.phone).trim() : null,
@@ -168,13 +203,22 @@ export class UsersService {
         password_hash,
         created_by_id: createdById,
       },
-      select: { id: true, code: true, email: true, name: true, phone: true, roles: true, active: true },
+      select: {
+        id: true,
+        code: true,
+        staff_code: true,
+        email: true,
+        name: true,
+        phone: true,
+        roles: true,
+        active: true,
+      },
     });
 
     return {
       ...created,
       display_label: roles.includes('CS')
-        ? formatCsDisplayName(created.name, created.code)
+        ? formatCsDisplayName(created.name, created.code || created.staff_code)
         : created.name || created.email,
     };
   }
@@ -203,6 +247,11 @@ export class UsersService {
     if (data.roles !== undefined) {
       updatePayload.roles = data.roles;
     }
+    if (data.staff_code !== undefined) {
+      updatePayload.staff_code = data.staff_code
+        ? String(data.staff_code).trim().toUpperCase()
+        : null;
+    }
 
     if (data.code !== undefined) {
       updatePayload.code = roles.includes('CS')
@@ -212,16 +261,36 @@ export class UsersService {
       updatePayload.code = await this.generateNextCsCode();
     }
 
+    // When the canonical CVHT code changes (or is first assigned) for a CS user,
+    // mirror it into staff_code so the Google Sheet sync/backup features stay aligned.
+    if (
+      roles.includes('CS') &&
+      updatePayload.code !== undefined &&
+      updatePayload.code !== null &&
+      updatePayload.staff_code === undefined
+    ) {
+      updatePayload.staff_code = updatePayload.code;
+    }
+
     const updated = await prisma.user.update({
       where: { id },
       data: updatePayload,
-      select: { id: true, code: true, email: true, name: true, phone: true, roles: true, active: true },
+      select: {
+        id: true,
+        code: true,
+        staff_code: true,
+        email: true,
+        name: true,
+        phone: true,
+        roles: true,
+        active: true,
+      },
     });
 
     return {
       ...updated,
       display_label: roles.includes('CS')
-        ? formatCsDisplayName(updated.name, updated.code)
+        ? formatCsDisplayName(updated.name, updated.code || updated.staff_code)
         : updated.name || updated.email,
     };
   }

@@ -8,6 +8,7 @@ export interface AuthUser {
   roles: string[];
   name?: string | null;
   email?: string | null;
+  staff_code?: string | null;
 }
 
 declare global {
@@ -42,6 +43,7 @@ export const authenticate = async (req: Request, res: Response, next: NextFuncti
       roles: user.roles as string[],
       name: user.name,
       email: user.email,
+      staff_code: user.staff_code,
     };
     next();
   } catch (error) {

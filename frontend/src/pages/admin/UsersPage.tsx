@@ -22,6 +22,7 @@ interface User {
   name: string;
   email: string;
   phone?: string | null;
+  staff_code?: string | null;
   roles: string[];
   active: boolean;
   last_login_at: string | null;
@@ -69,6 +70,7 @@ export const UsersPage: React.FC = () => {
     email: '',
     phone: '',
     password: '',
+    staff_code: '',
     roles: [] as string[],
   });
 
@@ -97,11 +99,12 @@ export const UsersPage: React.FC = () => {
         email: user.email,
         phone: user.phone || '',
         password: '',
+        staff_code: user.staff_code || '',
         roles: user.roles,
       });
     } else {
       setEditingUser(null);
-      setFormData({ code: '', name: '', email: '', phone: '', password: '', roles: ['CS'] });
+      setFormData({ code: '', name: '', email: '', phone: '', password: '', staff_code: '', roles: ['CS'] });
     }
     setIsModalOpen(true);
   };
@@ -128,6 +131,7 @@ export const UsersPage: React.FC = () => {
           code: formData.code || undefined,
           name: formData.name,
           phone: formData.phone || undefined,
+          staff_code: formData.staff_code.trim() || null,
           roles: formData.roles,
         });
         toast.success('Cập nhật tài khoản người dùng thành công!');
@@ -136,6 +140,7 @@ export const UsersPage: React.FC = () => {
           ...formData,
           code: formData.code || undefined,
           phone: formData.phone || undefined,
+          staff_code: formData.staff_code.trim() || null,
         });
         toast.success('Tạo tài khoản người dùng mới thành công!');
       }
@@ -178,6 +183,7 @@ export const UsersPage: React.FC = () => {
         u.name.toLowerCase().includes(q) ||
         u.email.toLowerCase().includes(q) ||
         (u.code && u.code.toLowerCase().includes(q)) ||
+        (u.staff_code && u.staff_code.toLowerCase().includes(q)) ||
         (u.display_label && u.display_label.toLowerCase().includes(q));
 
       const matchRole = !roleFilter || u.roles.includes(roleFilter);
@@ -224,6 +230,17 @@ export const UsersPage: React.FC = () => {
           </div>
         );
       },
+    },
+    {
+      header: 'Mã nhân viên / CVHT',
+      cell: (item) =>
+        item.staff_code ? (
+          <Badge variant="accent" className="font-mono font-bold">
+            {item.staff_code}
+          </Badge>
+        ) : (
+          <span className="text-xs text-slate-400 italic">—</span>
+        ),
     },
     {
       header: 'Vai trò (Roles)',
@@ -423,7 +440,7 @@ export const UsersPage: React.FC = () => {
               Định dạng hiển thị chuẩn CSKH:{' '}
               <strong>
                 {formData.name.trim() || 'Họ và tên'} -{' '}
-                {formData.code.trim().toUpperCase() || 'CVHTxx (tự động cấp từ 01)'}
+                {formData.code.trim().toUpperCase() || formData.staff_code.trim().toUpperCase() || 'CVHTxx (tự động cấp từ 01)'}
               </strong>
             </div>
           )}
@@ -444,6 +461,12 @@ export const UsersPage: React.FC = () => {
               placeholder="0912345678"
             />
           </div>
+          <Input
+            label="Mã nhân viên dùng cho Google Sheet (staff_code)"
+            value={formData.staff_code}
+            onChange={(e) => setFormData({ ...formData, staff_code: e.target.value.toUpperCase() })}
+            placeholder="Tự đồng bộ theo mã CVHTxx nếu để trống"
+          />
           {!editingUser && (
             <Input
               label="Mật khẩu khởi tạo *"

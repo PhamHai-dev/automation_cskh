@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { studentsApi } from '../api/students.api';
 import { careApi } from '../../care/api/care.api';
 import { Student, CreateStudentDTO } from '../types/students.types';
@@ -178,99 +179,9 @@ const InlineEditableCell: React.FC<InlineEditableCellProps> = ({
   );
 };
 
-// Component chỉnh sửa link Báo cáo học tập (Cột AK)
-const InlineReportLinkCell: React.FC<{
-  url?: string | null;
-  onSave: (newUrl: string) => Promise<void>;
-}> = ({ url, onSave }) => {
-  const [isEditing, setIsEditing] = useState(false);
-  const [draft, setDraft] = useState(url || '');
-  const [isSaving, setIsSaving] = useState(false);
-
-  useEffect(() => {
-    setDraft(url || '');
-  }, [url]);
-
-  const handleCommit = async () => {
-    setIsEditing(false);
-    const trimmed = draft.trim();
-    if (trimmed === (url || '').trim()) return;
-
-    try {
-      setIsSaving(true);
-      await onSave(trimmed);
-    } catch {
-      setDraft(url || '');
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  if (isEditing) {
-    return (
-      <div className="min-w-[180px]">
-        <input
-          autoFocus
-          type="url"
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onBlur={handleCommit}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              e.preventDefault();
-              handleCommit();
-            } else if (e.key === 'Escape') {
-              setIsEditing(false);
-              setDraft(url || '');
-            }
-          }}
-          className="w-full text-xs p-1 bg-white border-2 border-primary rounded-lg focus:outline-none shadow-md text-blue-700"
-          placeholder="Dán link Google Docs/Sheets..."
-        />
-      </div>
-    );
-  }
-
-  if (!url) {
-    return (
-      <button
-        type="button"
-        onClick={() => setIsEditing(true)}
-        className="text-[11px] text-blue-600 hover:text-blue-800 bg-blue-50/60 hover:bg-blue-100 border border-blue-200/60 px-2 py-0.5 rounded-lg flex items-center gap-1 transition-colors whitespace-nowrap"
-      >
-        <Plus className="w-3 h-3" />
-        <span>Thêm link</span>
-      </button>
-    );
-  }
-
-  return (
-    <div className="flex items-center gap-1 whitespace-nowrap">
-      <a
-        href={url.startsWith('http') ? url : `https://${url}`}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-700 bg-blue-50 border border-blue-200 hover:bg-blue-100 px-2 py-0.5 rounded-lg transition-colors"
-        title={url}
-      >
-        <span>Xem BC</span>
-        <ExternalLink className="w-3 h-3 text-blue-600" />
-      </a>
-      <button
-        type="button"
-        onClick={() => setIsEditing(true)}
-        className="p-1 text-slate-400 hover:text-blue-600 rounded transition-colors"
-        title="Sửa đường dẫn link"
-      >
-        <Edit className="w-3 h-3" />
-      </button>
-      {isSaving && <span className="text-[10px] text-primary animate-pulse">Lưu...</span>}
-    </div>
-  );
-};
-
 export const StudentsPage: React.FC = () => {
   const toast = useToast();
+  const navigate = useNavigate();
   const { user } = useAuth();
   const isCS = user?.roles.includes('CS') && !user?.roles.includes('ADMIN');
 
@@ -296,6 +207,8 @@ export const StudentsPage: React.FC = () => {
   const [addingMilestone, setAddingMilestone] = useState(false);
 
   // Filter states
+  const [programFilter, setProgramFilter] = useState<'ALL' | 'KAIWA' | 'JLPT'>('ALL');
+  const [cvhtFilter, setCvhtFilter] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [genderFilter, setGenderFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
@@ -356,6 +269,10 @@ export const StudentsPage: React.FC = () => {
     post_course_care: '',
     handed_over_at: '',
     account_created_at: '',
+
+    // 5. Program & Metadata
+    program_type: 'KAIWA',
+    program_metadata: {},
   };
 
   const [teachersList, setTeachersList] = useState<Teacher[]>([]);
@@ -400,9 +317,51 @@ export const StudentsPage: React.FC = () => {
     fetchTeachers();
   }, []);
 
-  // Filtered students list matching Sheet 1
+  // Counts by program_type for the top Program Switcher
+  const programCounts = useMemo(() => {
+    let kaiwa = 0;
+    let jlpt = 0;
+    students.forEach((s) => {
+      const enr = s.enrollments?.[0];
+      const pType = (enr?.program_type || 'KAIWA').toUpperCase();
+      if (pType === 'JLPT') {
+        jlpt++;
+      } else {
+        kaiwa++;
+      }
+    });
+    return { all: students.length, kaiwa, jlpt };
+  }, [students]);
+
+  // Extract unique CVHT codes list for Filter
+  const cvhtList = useMemo(() => {
+    const set = new Set<string>(['CVHT01', 'CVHT02', 'CVHT03']);
+    students.forEach((s) => {
+      s.enrollments?.forEach((e) => {
+        if (e.cs?.staff_code) set.add(e.cs.staff_code.toUpperCase());
+      });
+    });
+    return Array.from(set).filter(Boolean).sort();
+  }, [students]);
+
+  // Filtered students list matching Sheet 1 & Sheet JLPT
   const filteredStudents = useMemo(() => {
     return students.filter((s) => {
+      // Primary enrollment for Sheet 1 attributes
+      const enr = s.enrollments?.[0];
+
+      // Program filter (ALL | KAIWA | JLPT)
+      if (programFilter !== 'ALL') {
+        const pType = (enr?.program_type || 'KAIWA').toUpperCase();
+        if (pType !== programFilter) return false;
+      }
+
+      // CVHT filter
+      if (cvhtFilter) {
+        const code = (enr?.cs?.staff_code || enr?.cs?.name || '').toUpperCase();
+        if (!code.includes(cvhtFilter.toUpperCase())) return false;
+      }
+
       // Search term
       const query = searchTerm.toLowerCase().trim();
       const matchSearch =
@@ -415,9 +374,6 @@ export const StudentsPage: React.FC = () => {
       // Gender filter
       const matchGender = !genderFilter || s.gender === genderFilter;
 
-      // Primary enrollment for Sheet 1 attributes
-      const enr = s.enrollments?.[0];
-
       // Status filter
       const matchStatus = !statusFilter || (enr && enr.status === statusFilter);
 
@@ -425,8 +381,13 @@ export const StudentsPage: React.FC = () => {
       let matchSale = true;
       if (isCS) {
         const userIdentifier = (user?.name || user?.email || '').toLowerCase();
+        const userStaffCode = (user?.staff_code || '').toLowerCase();
         const saleName = (enr?.sale_name || enr?.cs?.name || enr?.cs?.email || '').toLowerCase();
-        matchSale = saleName.includes(userIdentifier) || enr?.cs_id === user?.id;
+        const csCode = (enr?.cs?.staff_code || '').toLowerCase();
+        matchSale =
+          enr?.cs_id === user?.id ||
+          (userStaffCode !== '' && csCode === userStaffCode) ||
+          (userIdentifier !== '' && saleName.includes(userIdentifier));
       } else if (saleFilter) {
         const saleName = (enr?.sale_name || enr?.cs?.name || enr?.cs?.email || '').toLowerCase();
         matchSale = saleName === saleFilter.toLowerCase();
@@ -434,7 +395,7 @@ export const StudentsPage: React.FC = () => {
 
       return matchSearch && matchGender && matchStatus && matchSale;
     });
-  }, [students, searchTerm, genderFilter, statusFilter, saleFilter, isCS, user]);
+  }, [students, programFilter, cvhtFilter, searchTerm, genderFilter, statusFilter, saleFilter, isCS, user]);
 
   // Extract unique Sales list for Filter
   const salesList = useMemo(() => {
@@ -450,12 +411,33 @@ export const StudentsPage: React.FC = () => {
     return Array.from(set).filter(Boolean);
   }, [students]);
 
-  // All active session milestones (configured milestones + any session numbers with existing care logs)
+  // All active session milestones depending on programFilter (KAIWA vs JLPT vs ALL)
   const activeMilestones = useMemo(() => {
-    const set = new Set<number>(configuredMilestones);
-    // Ensure session 1 is always present by default
-    set.add(1);
+    if (programFilter === 'KAIWA') {
+      const set = new Set<number>([1, 3, 10, 15, 20, 25, 27]);
+      filteredStudents.forEach((st) => {
+        st.enrollments?.forEach((enr) => {
+          enr.care_logs?.forEach((cl) => {
+            if (cl.after_session_number) set.add(cl.after_session_number);
+          });
+        });
+      });
+      return Array.from(set).sort((a, b) => a - b);
+    }
 
+    if (programFilter === 'JLPT') {
+      const set = new Set<number>([1, 15, 25, 30, 35, 40]);
+      filteredStudents.forEach((st) => {
+        st.enrollments?.forEach((enr) => {
+          enr.care_logs?.forEach((cl) => {
+            if (cl.after_session_number) set.add(cl.after_session_number);
+          });
+        });
+      });
+      return Array.from(set).sort((a, b) => a - b);
+    }
+
+    const set = new Set<number>([...configuredMilestones, 1, 3, 10, 15, 20, 25, 27, 30, 35, 40]);
     filteredStudents.forEach((st) => {
       st.enrollments?.forEach((enr) => {
         enr.care_logs?.forEach((cl) => {
@@ -467,7 +449,7 @@ export const StudentsPage: React.FC = () => {
     });
 
     return Array.from(set).sort((a, b) => a - b);
-  }, [configuredMilestones, filteredStudents]);
+  }, [configuredMilestones, filteredStudents, programFilter]);
 
   // Handle adding a new care milestone
   const handleAddMilestone = async () => {
@@ -513,6 +495,35 @@ export const StudentsPage: React.FC = () => {
           enr.id === enrollmentId ? { ...enr, [field]: val } : enr
         ),
       }))
+    );
+  };
+
+  // Handler to update JLPT program_metadata directly via studentsApi.update
+  const handleSaveProgramMetadata = async (
+    student: Student,
+    patch: Record<string, any>
+  ) => {
+    const enr = student.enrollments?.[0];
+    if (!enr) return;
+    const nextMeta = {
+      ...(enr.program_metadata || {}),
+      ...patch,
+    };
+    await studentsApi.update(student.id, {
+      program_type: enr.program_type || 'JLPT',
+      program_metadata: nextMeta,
+    });
+    setStudents((prev) =>
+      prev.map((st) =>
+        st.id === student.id
+          ? {
+              ...st,
+              enrollments: st.enrollments?.map((e, idx) =>
+                idx === 0 ? { ...e, program_metadata: nextMeta } : e
+              ),
+            }
+          : st
+      )
     );
   };
 
@@ -618,11 +629,14 @@ export const StudentsPage: React.FC = () => {
         account_created_at: enr?.account_created_at
           ? new Date(enr.account_created_at).toISOString().split('T')[0]
           : '',
+        program_type: enr?.program_type || 'KAIWA',
+        program_metadata: enr?.program_metadata || {},
       });
     } else {
       setEditingStudent(null);
       setFormData({
         ...initialFormData,
+        program_type: programFilter === 'JLPT' ? 'JLPT' : 'KAIWA',
         sale_name: user?.name || user?.email || '',
       });
     }
@@ -669,13 +683,17 @@ export const StudentsPage: React.FC = () => {
     }
   };
 
+  const isJlptMode = programFilter === 'JLPT';
+
   // --- CỘT CHUNG (A ➔ I): CỐ ĐỊNH Ở CẢ 2 TAB ---
   const commonColumnsAtoI: Column<Student>[] = [
     {
       key: 'stt',
       header: '#',
+      width: '52px',
+      className: 'sticky left-0 z-20 bg-white w-[52px] min-w-[52px] max-w-[52px] text-center',
       cell: (item) => (
-        <span className="font-bold text-slate-400 text-xs text-center block w-6">
+        <span className="font-bold text-slate-400 text-xs text-center block">
           {filteredStudents.indexOf(item) + 1}
         </span>
       ),
@@ -683,11 +701,66 @@ export const StudentsPage: React.FC = () => {
     {
       key: 'external_id',
       header: 'Mã học viên',
+      width: '124px',
+      className: 'sticky left-[52px] z-20 bg-white w-[124px] min-w-[124px] max-w-[124px]',
       cell: (item) => (
         <span className="font-mono font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded text-[11px] whitespace-nowrap">
           {item.external_id || `HV_${item.id}`}
         </span>
       ),
+    },
+    {
+      key: 'full_name',
+      header: 'Họ và tên',
+      width: '210px',
+      className:
+        'sticky left-[176px] z-20 bg-white w-[210px] min-w-[210px] shadow-[4px_0_6px_-2px_rgba(0,0,0,0.06)]',
+      cell: (item) => (
+        <div className="flex items-center space-x-2 whitespace-nowrap">
+          <div className="w-7 h-7 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-xs shrink-0">
+            {item.full_name.charAt(0).toUpperCase()}
+          </div>
+          <span
+            className="font-bold text-slate-900 text-xs hover:text-blue-600 cursor-pointer"
+            onClick={() => setViewingStudent(item)}
+          >
+            {item.full_name}
+          </span>
+        </div>
+      ),
+    },
+    {
+      key: 'program_type',
+      header: 'Khóa',
+      cell: (item) => {
+        const enr = item.enrollments?.[0];
+        const pType = (enr?.program_type || 'KAIWA').toUpperCase();
+        const isJlpt = pType === 'JLPT';
+        return (
+          <span
+            className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-extrabold tracking-wide whitespace-nowrap border ${
+              isJlpt
+                ? 'bg-indigo-100 text-indigo-800 border-indigo-300'
+                : 'bg-teal-100 text-teal-800 border-teal-300'
+            }`}
+          >
+            {isJlpt ? 'JLPT' : 'KAIWA'}
+          </span>
+        );
+      },
+    },
+    {
+      key: 'cs_staff_code',
+      header: 'CVHT',
+      cell: (item) => {
+        const enr = item.enrollments?.[0];
+        const code = enr?.cs?.staff_code || enr?.cs?.name || '—';
+        return (
+          <span className="inline-flex items-center px-2 py-0.5 rounded bg-blue-50 text-blue-800 border border-blue-200 font-mono font-bold text-[11px] whitespace-nowrap">
+            {code}
+          </span>
+        );
+      },
     },
     {
       key: 'paid_at',
@@ -735,23 +808,6 @@ export const StudentsPage: React.FC = () => {
       },
     },
     {
-      key: 'full_name',
-      header: 'Họ và tên',
-      cell: (item) => (
-        <div className="flex items-center space-x-2 whitespace-nowrap">
-          <div className="w-7 h-7 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-xs shrink-0">
-            {item.full_name.charAt(0).toUpperCase()}
-          </div>
-          <span
-            className="font-bold text-slate-900 text-xs hover:text-blue-600 cursor-pointer"
-            onClick={() => setViewingStudent(item)}
-          >
-            {item.full_name}
-          </span>
-        </div>
-      ),
-    },
-    {
       key: 'gender',
       header: 'Giới tính',
       cell: (item) => (
@@ -780,12 +836,15 @@ export const StudentsPage: React.FC = () => {
     },
     {
       key: 'course_content',
-      header: 'Nội dung khóa học',
+      header: isJlptMode ? 'Học phí thực nộp' : 'Nội dung khóa học',
       cell: (item) => {
         const enr = item.enrollments?.[0];
+        const val = isJlptMode
+          ? enr?.program_metadata?.tuition_fee || enr?.course_content || '—'
+          : enr?.course_content || enr?.package?.name || 'Tiếng Nhật Kaiwa';
         return (
           <span className="text-slate-700 text-xs whitespace-nowrap max-w-[180px] truncate block">
-            {enr?.course_content || enr?.package?.name || 'Tiếng Nhật Kaiwa'}
+            {String(val)}
           </span>
         );
       },
@@ -843,19 +902,19 @@ export const StudentsPage: React.FC = () => {
     },
     {
       key: 'package_name',
-      header: 'Gói học',
+      header: isJlptMode ? 'Mã khóa học' : 'Gói học',
       cell: (item) => {
         const enr = item.enrollments?.[0];
         return (
           <span className="font-semibold text-slate-800 text-xs whitespace-nowrap">
-            {enr?.package?.name || 'Gói chuẩn 30 buổi'}
+            {enr?.package?.code || enr?.package?.name || 'Gói chuẩn 30 buổi'}
           </span>
         );
       },
     },
     {
       key: 'khoa_hoc',
-      header: 'Khóa học',
+      header: isJlptMode ? 'Học phí thực nộp' : 'Khóa học (GV Nhật/Việt)',
       cell: (item) => {
         const enr = item.enrollments?.[0];
         return (
@@ -867,7 +926,7 @@ export const StudentsPage: React.FC = () => {
     },
     {
       key: 'level',
-      header: 'Trình độ',
+      header: isJlptMode ? 'Gói SP' : 'Trình độ (Kaiwa 1..4)',
       cell: (item) => {
         const enr = item.enrollments?.[0];
         return (
@@ -891,12 +950,30 @@ export const StudentsPage: React.FC = () => {
     },
     {
       key: 'class_model',
-      header: 'Mô hình lớp',
+      header: isJlptMode ? 'Mã gói (1-n / 1-1)' : 'Mô hình lớp',
       cell: (item) => {
         const enr = item.enrollments?.[0];
         return (
           <span className="text-slate-600 text-xs whitespace-nowrap">
             {enr?.class_model || 'Nhóm'}
+          </span>
+        );
+      },
+    },
+    {
+      key: 'class_code',
+      header: 'Mã lớp',
+      cell: (item) => {
+        const enr = item.enrollments?.[0];
+        const ec = enr?.enrollment_classes?.[0];
+        const code =
+          ec?.class?.class_code ||
+          enr?.program_metadata?.latest_class_code ||
+          ec?.class?.class_name ||
+          '—';
+        return (
+          <span className="font-mono font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded text-xs whitespace-nowrap">
+            {code}
           </span>
         );
       },
@@ -1053,12 +1130,19 @@ export const StudentsPage: React.FC = () => {
     },
     {
       key: 'end_date',
-      header: 'Ngày kết thúc / bảo lưu',
+      header: isJlptMode ? 'Ngày KG dự kiến' : 'Ngày bảo lưu/kết thúc',
       cell: (item) => {
         const enr = item.enrollments?.[0];
+        const displayDate = isJlptMode
+          ? enr?.program_metadata?.expected_start_date ||
+            (enr?.handed_over_at ? new Date(enr.handed_over_at).toLocaleDateString('vi-VN') : null) ||
+            (enr?.end_date ? new Date(enr.end_date).toLocaleDateString('vi-VN') : null)
+          : enr?.end_date
+          ? new Date(enr.end_date).toLocaleDateString('vi-VN')
+          : null;
         return (
           <span className="text-slate-600 text-xs whitespace-nowrap">
-            {enr?.end_date ? new Date(enr.end_date).toLocaleDateString('vi-VN') : '—'}
+            {displayDate || '—'}
           </span>
         );
       },
@@ -1271,16 +1355,22 @@ export const StudentsPage: React.FC = () => {
     {
       key: 'study_report_url',
       header: 'Báo cáo học tập',
-      cell: (item) => {
-        const enr = item.enrollments?.[0];
-        if (!enr) return <span className="text-slate-400">—</span>;
-        return (
-          <InlineReportLinkCell
-            url={enr.study_report_url}
-            onSave={(newUrl) => handleSaveEnrollmentCareField(enr.id, 'study_report_url', newUrl)}
-          />
-        );
-      },
+      cell: (item: Student) => (
+        <div className="flex items-center justify-center whitespace-nowrap">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              navigate(`/students/${item.id}/study-report`);
+            }}
+            className="inline-flex items-center gap-1 text-[11px] font-bold text-primary bg-primary-soft border border-primary/30 hover:bg-blue-100 px-2.5 py-1 rounded-lg transition-colors cursor-pointer"
+            title={`Mở Báo cáo học tập của ${item.full_name}`}
+          >
+            <FileText className="w-3.5 h-3.5 text-primary shrink-0" />
+            <span>Mở báo cáo</span>
+          </button>
+        </div>
+      ),
     },
     {
       key: 'exchange_info',
@@ -1337,26 +1427,196 @@ export const StudentsPage: React.FC = () => {
     },
 
     // --- DYNAMIC CARE SESSION COLUMNS (AO ➔ BC: Buổi 1, Buổi N...) ---
-    ...activeMilestones.map((sessionNum) => ({
-      header: (
-        <div key={`head-sess-${sessionNum}`} className="flex items-center gap-1 text-slate-800 whitespace-nowrap">
-          <MessageSquare className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-          <span>Nội dung chăm sóc sau buổi {sessionNum}</span>
-        </div>
-      ),
-      cell: (item: Student) => {
-        const enr = item.enrollments?.[0];
-        if (!enr) return <span className="text-slate-400">—</span>;
-        const log = enr.care_logs?.find((cl) => cl.after_session_number === sessionNum);
-        return (
-          <CareSelectCell
-            value={log?.content}
-            placeholder="Chọn phản hồi..."
-            onSave={(newVal) => handleSaveSessionCareLog(enr.id, sessionNum, newVal)}
-          />
-        );
-      },
-    })),
+    ...activeMilestones.map((sessionNum) => {
+      const label =
+        programFilter === 'JLPT'
+          ? sessionNum === 40
+            ? 'Cuối khóa (B40)'
+            : `Sau buổi ${sessionNum}`
+          : programFilter === 'KAIWA' && sessionNum === 27
+          ? 'Buổi 27-29'
+          : `Nội dung CS sau buổi ${sessionNum}`;
+
+      return {
+        header: (
+          <div
+            key={`head-sess-${sessionNum}`}
+            className="flex items-center gap-1 text-slate-800 whitespace-nowrap"
+          >
+            <MessageSquare className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+            <span>{label}</span>
+          </div>
+        ),
+        cell: (item: Student) => {
+          const enr = item.enrollments?.[0];
+          if (!enr) return <span className="text-slate-400">—</span>;
+          const log = enr.care_logs?.find((cl) => cl.after_session_number === sessionNum);
+          return (
+            <CareSelectCell
+              value={log?.content}
+              placeholder="Chọn phản hồi..."
+              onSave={(newVal) => handleSaveSessionCareLog(enr.id, sessionNum, newVal)}
+            />
+          );
+        },
+      };
+    }),
+
+    // --- CÁC CỘT ĐẶC THÙ CỦA KHÓA JLPT (Đọc/Ghi trực tiếp program_metadata) ---
+    ...(programFilter === 'JLPT' || programFilter === 'ALL'
+      ? [
+          {
+            key: 'satisfaction_score_b18',
+            header: 'Điểm hài lòng (B18)',
+            cell: (item: Student) => {
+              const enr = item.enrollments?.[0];
+              if (!enr) return <span className="text-slate-400">—</span>;
+              return (
+                <InlineEditableCell
+                  value={enr.program_metadata?.satisfaction_score_b18 || ''}
+                  placeholder="Điểm B18..."
+                  onSave={(newVal) =>
+                    handleSaveProgramMetadata(item, { satisfaction_score_b18: newVal })
+                  }
+                />
+              );
+            },
+          },
+          {
+            key: 'exam_registration',
+            header: 'ĐK Thi',
+            cell: (item: Student) => {
+              const enr = item.enrollments?.[0];
+              if (!enr) return <span className="text-slate-400">—</span>;
+              return (
+                <InlineEditableCell
+                  value={enr.program_metadata?.exam_registration || ''}
+                  placeholder="VD: T7.2026"
+                  onSave={(newVal) =>
+                    handleSaveProgramMetadata(item, { exam_registration: newVal })
+                  }
+                />
+              );
+            },
+          },
+          {
+            key: 'exam_score',
+            header: 'Điểm thi thật',
+            cell: (item: Student) => {
+              const enr = item.enrollments?.[0];
+              if (!enr) return <span className="text-slate-400">—</span>;
+              const rawVal = enr.program_metadata?.exam_score;
+              return (
+                <InlineEditableCell
+                  value={rawVal !== undefined && rawVal !== null ? String(rawVal) : ''}
+                  placeholder="Điểm thi..."
+                  onSave={(newVal) => handleSaveProgramMetadata(item, { exam_score: newVal })}
+                />
+              );
+            },
+          },
+          {
+            key: 'exam_result',
+            header: 'Tình trạng thi',
+            cell: (item: Student) => {
+              const enr = item.enrollments?.[0];
+              if (!enr) return <span className="text-slate-400">—</span>;
+              return (
+                <InlineEditableCell
+                  value={enr.program_metadata?.exam_result || ''}
+                  placeholder="pass / not pass..."
+                  onSave={(newVal) => handleSaveProgramMetadata(item, { exam_result: newVal })}
+                />
+              );
+            },
+          },
+          {
+            key: 'test_scores_summary',
+            header: 'Kiểm tra (L1–L7)',
+            cell: (item: Student) => {
+              const enr = item.enrollments?.[0];
+              if (!enr) return <span className="text-slate-400">—</span>;
+              const scoresObj = enr.program_metadata?.test_scores || {};
+              const summaryStr = Object.entries(scoresObj)
+                .filter(([, v]) => v !== null && v !== undefined && String(v).trim() !== '')
+                .map(([k, v]) => `${k.toUpperCase()}: ${v}`)
+                .join(' | ');
+              return (
+                <InlineEditableCell
+                  value={summaryStr}
+                  placeholder="L1: 80 | L2: 85..."
+                  onSave={async (newVal) => {
+                    const parsed: Record<string, string> = {
+                      ...(enr.program_metadata?.test_scores as Record<string, string> | undefined),
+                    };
+                    newVal.split('|').forEach((part) => {
+                      const [k, ...rest] = part.split(':');
+                      if (k && rest.length > 0) {
+                        parsed[k.trim().toLowerCase()] = rest.join(':').trim();
+                      }
+                    });
+                    if (!newVal.includes(':') && newVal.trim()) {
+                      parsed.l1 = newVal.trim();
+                    }
+                    await handleSaveProgramMetadata(item, { test_scores: parsed });
+                  }}
+                />
+              );
+            },
+          },
+          {
+            key: 'special_support',
+            header: 'HT Đặc biệt (L1–L3)',
+            cell: (item: Student) => {
+              const enr = item.enrollments?.[0];
+              if (!enr) return <span className="text-slate-400">—</span>;
+              const supObj = enr.program_metadata?.special_support || {};
+              const summaryStr = Object.entries(supObj)
+                .filter(([, v]) => v !== null && v !== undefined && String(v).trim() !== '')
+                .map(([k, v]) => `${k.toUpperCase()}: ${v}`)
+                .join(' | ');
+              return (
+                <InlineEditableCell
+                  value={summaryStr}
+                  multiline
+                  placeholder="L1: Hỗ trợ..."
+                  onSave={async (newVal) => {
+                    const parsed: Record<string, string | null> = {
+                      ...(enr.program_metadata?.special_support || {}),
+                    };
+                    if (newVal.includes(':')) {
+                      newVal.split('|').forEach((part) => {
+                        const [k, ...rest] = part.split(':');
+                        if (k && rest.length > 0) {
+                          parsed[k.trim().toLowerCase()] = rest.join(':').trim();
+                        }
+                      });
+                    } else {
+                      parsed.l1 = newVal.trim();
+                    }
+                    await handleSaveProgramMetadata(item, { special_support: parsed });
+                  }}
+                />
+              );
+            },
+          },
+          {
+            key: 'renewal_note',
+            header: 'Tái tục',
+            cell: (item: Student) => {
+              const enr = item.enrollments?.[0];
+              if (!enr) return <span className="text-slate-400">—</span>;
+              return (
+                <InlineEditableCell
+                  value={enr.program_metadata?.renewal_note || ''}
+                  placeholder="Ghi chú tái tục..."
+                  onSave={(newVal) => handleSaveProgramMetadata(item, { renewal_note: newVal })}
+                />
+              );
+            },
+          },
+        ]
+      : []),
 
     // --- CÁC CỘT CUỐI (BD ➔ BH) ---
     {
@@ -1435,7 +1695,7 @@ export const StudentsPage: React.FC = () => {
     <PageContainer>
       {/* Page Header */}
       <PageHeader
-        title="Danh sách Học viên (Chuẩn Sheet 1)"
+        title="Danh sách học viên"
         actions={
           <div className="flex items-center gap-2">
             {activeTab === 'care_reports' && (
@@ -1461,6 +1721,113 @@ export const StudentsPage: React.FC = () => {
         }
       />
 
+      {/* Program Switcher & CVHT Quick Filter Bar */}
+      <div className="mb-4 p-3 bg-surface rounded-2xl border border-border/80 shadow-soft flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs font-extrabold text-text-secondary uppercase tracking-wider mr-1">
+            Chế độ Khóa học:
+          </span>
+          <div className="inline-flex flex-wrap items-center p-1 bg-surface-muted/80 rounded-xl border border-border/80 gap-1 shadow-xs">
+            <button
+              type="button"
+              onClick={() => setProgramFilter('ALL')}
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer flex items-center gap-1.5 ${
+                programFilter === 'ALL'
+                  ? 'border-border/70 bg-surface text-primary shadow-sm'
+                  : 'border-transparent text-text-secondary hover:bg-surface/70 hover:text-text-primary'
+              }`}
+            >
+              <span>Tất cả khóa học</span>
+              <span
+                className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold leading-none ${
+                  programFilter === 'ALL'
+                    ? 'bg-primary-soft text-primary'
+                    : 'bg-surface text-text-muted'
+                }`}
+              >
+                {programCounts.all}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setProgramFilter('KAIWA')}
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer flex items-center gap-1.5 ${
+                programFilter === 'KAIWA'
+                  ? 'border-border/70 bg-surface text-primary shadow-sm'
+                  : 'border-transparent text-text-secondary hover:bg-surface/70 hover:text-text-primary'
+              }`}
+            >
+              <span>Giao tiếp (Kaiwa)</span>
+              <span
+                className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold leading-none ${
+                  programFilter === 'KAIWA'
+                    ? 'bg-primary-soft text-primary'
+                    : 'bg-surface text-text-muted'
+                }`}
+              >
+                {programCounts.kaiwa}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setProgramFilter('JLPT')}
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer flex items-center gap-1.5 ${
+                programFilter === 'JLPT'
+                  ? 'border-border/70 bg-surface text-primary shadow-sm'
+                  : 'border-transparent text-text-secondary hover:bg-surface/70 hover:text-text-primary'
+              }`}
+            >
+              <span>Luyện thi (JLPT)</span>
+              <span
+                className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold leading-none ${
+                  programFilter === 'JLPT'
+                    ? 'bg-primary-soft text-primary'
+                    : 'bg-surface text-text-muted'
+                }`}
+              >
+                {programCounts.jlpt}
+              </span>
+            </button>
+          </div>
+        </div>
+
+        {/* CVHT Quick Filter */}
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs font-bold text-slate-600 whitespace-nowrap">
+            CVHT phụ trách:
+          </span>
+          <div className="inline-flex flex-wrap items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setCvhtFilter('')}
+              className={`px-2.5 py-1 rounded-lg text-xs font-bold border transition cursor-pointer ${
+                cvhtFilter === ''
+                  ? 'bg-blue-600 text-white border-blue-600 shadow-2xs'
+                  : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+              }`}
+            >
+              Tất cả CVHT
+            </button>
+            {cvhtList.map((code) => (
+              <button
+                key={code}
+                type="button"
+                onClick={() => setCvhtFilter(code === cvhtFilter ? '' : code)}
+                className={`px-2.5 py-1 rounded-lg text-xs font-mono font-bold border transition cursor-pointer ${
+                  cvhtFilter === code
+                    ? 'bg-blue-600 text-white border-blue-600 shadow-2xs'
+                    : 'bg-blue-50/60 text-blue-800 border-blue-200 hover:bg-blue-100'
+                }`}
+              >
+                {code}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
       <HorizontalTabs
         ariaLabel="Nội dung danh sách học viên"
         value={activeTab}
@@ -1477,7 +1844,6 @@ export const StudentsPage: React.FC = () => {
             value: 'care_reports',
             label: 'Báo cáo học tập & chăm sóc',
             icon: <FileText />,
-            badge: 'Chỉnh sửa trực tiếp',
           },
         ]}
       />
@@ -1558,20 +1924,6 @@ export const StudentsPage: React.FC = () => {
 
       {/* Main Table View */}
       <div className="bg-surface rounded-2xl border border-border/80 shadow-soft overflow-hidden">
-        {activeTab === 'care_reports' && (
-          <div className="px-4 py-2 bg-emerald-50/70 border-b border-emerald-200/80 flex items-center justify-between text-xs text-emerald-900">
-            <div className="flex items-center gap-2 font-medium">
-              <span className="font-bold">Mẹo:</span>
-              <span>
-                Click trực tiếp vào các ô Trao đổi, Điểm nóng, CS sau buổi để gõ nhận xét như Excel. Nhấn Enter hoặc click ra ngoài để tự động lưu.
-              </span>
-            </div>
-            <div className="text-[11px] font-bold text-emerald-800">
-              Đang hiển thị {activeMilestones.length} mốc buổi chăm sóc
-            </div>
-          </div>
-        )}
-
         <DataTable
           data={filteredStudents}
           columns={(activeTab === 'students' ? tab1Columns : tab2Columns).filter(keepColumn)}

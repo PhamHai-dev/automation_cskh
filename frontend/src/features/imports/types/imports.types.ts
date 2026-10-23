@@ -79,3 +79,138 @@ export interface ImportCreateRequest {
   version: number; status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'CONFLICT'; review_reason?: string; created_at: string;
   requested_by: { id: number; name: string | null; email: string }; assigned_cs?: { id: number; name: string | null; email: string };
 }
+
+export interface CsUserOption {
+  id: number;
+  name: string | null;
+  email: string;
+  staff_code: string | null;
+}
+
+export interface GoogleSheetSyncSummary {
+  totalRows?: number;
+  unchangedRows?: number;
+  createdCount?: number;
+  updatedCount?: number;
+  failedCount?: number;
+  byCvht?: Record<string, number>;
+  skipped?: boolean;
+}
+
+export interface GoogleSheetSyncConfig {
+  id: number;
+  code: 'JLPT' | 'KAIWA' | string;
+  name: string;
+  program_type: 'JLPT' | 'KAIWA' | string;
+  spreadsheet_url?: string | null;
+  spreadsheet_id?: string | null;
+  local_file_path?: string | null;
+  sheet_name: string;
+  setting_sheet_name?: string | null;
+  header_row: number;
+  cvht_mapping?: Record<string, number> | null;
+  default_cs_id?: number | null;
+  sync_interval_minutes: number;
+  enabled: boolean;
+  last_file_hash?: string | null;
+  last_synced_at?: string | null;
+  last_status?: string | null;
+  last_summary?: GoogleSheetSyncSummary | null;
+  last_error?: string | null;
+}
+
+export interface UpdateGoogleSheetSyncConfigDTO {
+  spreadsheet_url?: string | null;
+  local_file_path?: string | null;
+  sheet_name?: string;
+  setting_sheet_name?: string | null;
+  cvht_mapping?: Record<string, number>;
+  default_cs_id?: number | null;
+  sync_interval_minutes?: number;
+  enabled?: boolean;
+}
+
+export interface ServiceAccountInfo {
+  configured: boolean;
+  clientEmail: string | null;
+  projectId: string | null;
+  source: 'DB' | 'ENV_FILE' | 'ENV_VARS' | 'NONE';
+}
+
+export interface SheetSyncResult {
+  code?: string;
+  program_type?: string;
+  status?: string;
+  totalRows?: number;
+  unchangedRows?: number;
+  createdCount?: number;
+  updatedCount?: number;
+  failedCount?: number;
+  byCvht?: Record<string, number>;
+  skipped?: boolean;
+  summary?: GoogleSheetSyncSummary;
+  config?: GoogleSheetSyncConfig;
+  error?: string | null;
+}
+
+export interface SheetBackupSheetStats {
+  totalEnrollments: number;
+  unchangedRows: number;
+  updatedRows: number;
+  appendedRows: number;
+  updatedCellsCount: number;
+}
+
+export interface CsSheetBackupSummary {
+  csUserId?: number;
+  staffCode?: string;
+  status?: string;
+  syncedToGoogleSheet?: boolean;
+  localFilePath?: string;
+  sheet1?: SheetBackupSheetStats;
+  sheet3?: SheetBackupSheetStats;
+  backedUpAt?: string;
+}
+
+export interface CsSheetBackupConfigItem {
+  id: number;
+  cs_user_id: number;
+  name: string;
+  target_spreadsheet_url?: string | null;
+  target_spreadsheet_id?: string | null;
+  local_backup_path?: string | null;
+  sheet1_name: string;
+  sheet3_name: string;
+  schedule_times?: string[] | null; // e.g. ["12:00", "21:00"]
+  enabled: boolean;
+  require_private_sheet: boolean;
+  mask_sensitive_data: boolean;
+  last_backup_at?: string | null;
+  last_status?: string | null;
+  last_summary?: CsSheetBackupSummary | null;
+  last_error?: string | null;
+  hasLocalBackupFile?: boolean;
+  cs_user: {
+    id: number;
+    name: string | null;
+    email: string;
+    staff_code: string | null;
+  };
+  studentCounts: {
+    total: number;
+    kaiwa: number;
+    jlpt: number;
+  };
+}
+
+export interface UpdateCsSheetBackupConfigDTO {
+  target_spreadsheet_url?: string | null;
+  sheet1_name?: string;
+  sheet3_name?: string;
+  schedule_times?: string[];
+  enabled?: boolean;
+  require_private_sheet?: boolean;
+  mask_sensitive_data?: boolean;
+}
+
+

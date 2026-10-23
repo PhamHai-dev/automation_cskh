@@ -7,19 +7,32 @@ import { useToast } from '../../../components/ui/Toast';
 import { HorizontalTabs } from '../../../components/ui/HorizontalTabs';
 import { ImportWizard } from '../components/ImportWizard';
 import { ImportHistoryTable } from '../components/ImportHistoryTable';
+import { GoogleSheetSyncPanel } from '../components/GoogleSheetSyncPanel';
+import { CsSheetBackupPanel } from '../components/CsSheetBackupPanel';
 import { AttendanceExcelImportPanel } from '../../attendance/components/AttendanceExcelImportPanel';
 import { importsApi } from '../api/imports.api';
-import { CalendarCheck, Download, History, UploadCloud } from 'lucide-react';
+import { CalendarCheck, DatabaseBackup, Download, History, RefreshCw, UploadCloud } from 'lucide-react';
 
 export const ImportsPage: React.FC = () => {
   const toast = useToast();
   const [searchParams] = useSearchParams();
-  const [activeTab, setActiveTab] = useState<'wizard' | 'attendance' | 'history'>(() => searchParams.get('tab') === 'attendance' ? 'attendance' : 'wizard');
+  const [activeTab, setActiveTab] = useState<
+    'sheet-sync' | 'sheet-backup' | 'wizard' | 'attendance' | 'history'
+  >(() => {
+    const tab = searchParams.get('tab');
+    if (tab === 'sheet-backup') return 'sheet-backup';
+    if (tab === 'attendance') return 'attendance';
+    if (tab === 'wizard') return 'wizard';
+    if (tab === 'history') return 'history';
+    return 'sheet-sync';
+  });
   const [isExportingStudents, setIsExportingStudents] = useState(false);
   const [isExportingAttendance, setIsExportingAttendance] = useState(false);
 
   useEffect(() => {
-    if (searchParams.get('tab') === 'attendance') setActiveTab('attendance');
+    const tab = searchParams.get('tab');
+    if (tab === 'attendance') setActiveTab('attendance');
+    if (tab === 'sheet-backup') setActiveTab('sheet-backup');
   }, [searchParams]);
 
   const handleExportStudents = async () => {
@@ -80,12 +93,16 @@ export const ImportsPage: React.FC = () => {
         onChange={setActiveTab}
         className="mb-6"
         items={[
-          { value: 'wizard', label: 'Hồ sơ học viên (Sheet 1)', icon: <UploadCloud /> },
+          { value: 'sheet-sync', label: 'Đồng bộ Google Sheet (JLPT & Kaiwa)', icon: <RefreshCw /> },
+          { value: 'sheet-backup', label: 'Backup Sổ CSKH (Sheet 1 & 3)', icon: <DatabaseBackup /> },
+          { value: 'wizard', label: 'Upload Hồ sơ (Sheet 1)', icon: <UploadCloud /> },
           { value: 'attendance', label: 'Điểm danh CSKH / GV', icon: <CalendarCheck /> },
           { value: 'history', label: 'Lịch sử nhập', icon: <History /> },
         ]}
       />
 
+      {activeTab === 'sheet-sync' && <GoogleSheetSyncPanel />}
+      {activeTab === 'sheet-backup' && <CsSheetBackupPanel />}
       {activeTab === 'wizard' && <ImportWizard onImportComplete={() => setActiveTab('history')} />}
       {activeTab === 'attendance' && <AttendanceExcelImportPanel />}
       {activeTab === 'history' && <ImportHistoryTable />}

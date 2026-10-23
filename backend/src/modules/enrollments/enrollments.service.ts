@@ -17,9 +17,14 @@ export class EnrollmentsService {
     this.repository = new EnrollmentsRepository();
   }
 
-  async getEnrollmentsForUser(userId: number, roles: string[], saleIdentifier?: string) {
+  async getEnrollmentsForUser(
+    userId: number,
+    roles: string[],
+    saleIdentifier?: string,
+    filters?: { programType?: string; csId?: number }
+  ) {
     if (roles.includes('ADMIN')) {
-      return this.repository.findAll(saleIdentifier);
+      return this.repository.findAll(saleIdentifier, filters);
     } else if (roles.includes('MANAGE')) {
       // Find all CS groups this MANAGE user is assigned to
       const assignments = await prisma.manageAssignment.findMany({
@@ -30,18 +35,23 @@ export class EnrollmentsService {
           }
         }
       });
-      
+
       const csIds = new Set<number>();
       csIds.add(userId); // They might also have their own
-      
+
       assignments.forEach(a => {
         a.cs_group.members.forEach(m => csIds.add(m.user_id));
       });
-      
-      return this.repository.findAllByCSIds(Array.from(csIds));
+
+      let allowedIds = Array.from(csIds);
+      if (filters?.csId) {
+        allowedIds = allowedIds.filter((id) => id === filters.csId);
+      }
+
+      return this.repository.findAllByCSIds(allowedIds, filters?.programType);
     } else {
       // CS
-      return this.repository.findAllByCS(userId, saleIdentifier);
+      return this.repository.findAllByCS(userId, saleIdentifier, filters?.programType);
     }
   }
 

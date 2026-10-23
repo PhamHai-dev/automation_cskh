@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { CareService } from './care.service';
-import { CareTaskFilterParams } from './care.types';
+import { CareTaskFilterParams, AttendanceNotificationFilterParams } from './care.types';
 
 export class CareController {
   private service: CareService;
@@ -164,6 +164,58 @@ export class CareController {
         user.id,
         user.roles
       );
+      res.status(200).json({ data: result, meta: null });
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  // --- Attendance Notification Endpoints ---
+
+  getNotifications = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const user = (req as any).user;
+      const statusParam = req.query.status as string | undefined;
+      const status: 'all' | 'unread' | 'read' =
+        statusParam === 'unread' || statusParam === 'read' ? statusParam : 'all';
+      const filter: AttendanceNotificationFilterParams = {
+        status,
+        recipient_user_id: req.query.recipient_user_id
+          ? parseInt(req.query.recipient_user_id as string, 10)
+          : undefined,
+        limit: req.query.limit ? parseInt(req.query.limit as string, 10) : 50,
+        offset: req.query.offset ? parseInt(req.query.offset as string, 10) : 0,
+      };
+      const result = await this.service.getNotifications(filter, user.id, user.roles);
+      res.status(200).json({
+        data: result.items,
+        meta: { total: result.total, unreadCount: result.unreadCount },
+      });
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  markNotificationRead = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const notificationId = parseInt(req.params.notificationId, 10);
+      const user = (req as any).user;
+      const result = await this.service.markNotificationRead(notificationId, user.id, user.roles);
+      res.status(200).json({ data: result, meta: null });
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  markAllNotificationsRead = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const user = (req as any).user;
+      const recipientUserId = req.query.recipient_user_id
+        ? parseInt(req.query.recipient_user_id as string, 10)
+        : req.body?.recipient_user_id
+        ? parseInt(String(req.body.recipient_user_id), 10)
+        : undefined;
+      const result = await this.service.markAllNotificationsRead(user.id, user.roles, recipientUserId);
       res.status(200).json({ data: result, meta: null });
     } catch (err) {
       next(err);
