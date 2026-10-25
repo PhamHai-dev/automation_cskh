@@ -1,4 +1,4 @@
-import { PrismaClient, CareLog, CareTask, CareLogOutcome, CareTaskType, CareTaskPriority, CareTaskStatus } from '@prisma/client';
+import { Prisma, PrismaClient, CareLog, CareTask, CareLogOutcome, CareTaskType, CareTaskPriority, CareTaskStatus } from '@prisma/client';
 import { prisma } from '../../prisma/client';
 
 export class CareRepository {
@@ -169,7 +169,50 @@ export class CareRepository {
     note?: string;
     due_at?: Date;
     priority: CareTaskPriority;
+    /** Optional request-level dedupe key (CareTask.idempotency_key is @unique). */
+    idempotency_key?: string;
   }): Promise<CareTask> {
+    const include = {
+      enrollment: {
+        include: {
+          student: true,
+          package: true,
+        },
+      },
+      assigned_to: {
+        select: { id: true, name: true, email: true },
+      },
+    };
+
+    // Idempotent lane: the model has a UNIQUE idempotency_key. When the caller
+    // supplies one, upsert so a repeated save for the SAME source event yields a
+    // single task instead of a duplicate. A distinct event passes a distinct key
+    // and still creates its own task. Update only refreshes the mutable fields,
+    // never the enrollment/type identity, so a replay cannot re-point the task.
+    if (data.idempotency_key) {
+      return this.db.careTask.upsert({
+        where: { idempotency_key: data.idempotency_key },
+        update: {
+          title: data.title,
+          note: data.note,
+          due_at: data.due_at,
+          priority: data.priority,
+        },
+        create: {
+          enrollment_id: data.enrollment_id,
+          assigned_to_id: data.assigned_to_id,
+          type: data.type,
+          title: data.title,
+          note: data.note,
+          due_at: data.due_at,
+          priority: data.priority,
+          status: CareTaskStatus.PENDING,
+          idempotency_key: data.idempotency_key,
+        },
+        include,
+      });
+    }
+
     return this.db.careTask.create({
       data: {
         enrollment_id: data.enrollment_id,
@@ -181,17 +224,7 @@ export class CareRepository {
         priority: data.priority,
         status: CareTaskStatus.PENDING,
       },
-      include: {
-        enrollment: {
-          include: {
-            student: true,
-            package: true,
-          },
-        },
-        assigned_to: {
-          select: { id: true, name: true, email: true },
-        },
-      },
+      include,
     });
   }
 
@@ -260,39 +293,50 @@ export class CareRepository {
     userId: number;
     csId: number;
   }): Promise<CareLog> {
-    const existing = await this.db.careLog.findFirst({
-      where: {
-        enrollment_id: data.enrollment_id,
-        after_session_number: data.after_session_number,
-      },
-    });
+    const include = {
+      cs: { select: { id: true, name: true, email: true } },
+    };
 
-    if (existing) {
-      return this.db.careLog.update({
-        where: { id: existing.id },
-        data: {
-          content: data.content,
-          ...(data.outcome ? { outcome: data.outcome } : {}),
-        },
-        include: {
-          cs: { select: { id: true, name: true, email: true } },
-        },
-      });
-    }
+    // CareLog has NO @@unique([enrollment_id, after_session_number]) in the
+    // schema, so prisma.upsert cannot key on it (adding one is a schema
+    // migration — deliberately NOT done here). This findFirst→update/create is
+    // therefore only atomic against concurrent runs by wrapping it in a
+    // Serializable transaction; a true DB-level guarantee still needs the
+    // unique constraint (reported as a limitation).
+    return this.db.$transaction(
+      async (tx) => {
+        const existing = await tx.careLog.findFirst({
+          where: {
+            enrollment_id: data.enrollment_id,
+            after_session_number: data.after_session_number,
+          },
+        });
 
-    return this.db.careLog.create({
-      data: {
-        enrollment_id: data.enrollment_id,
-        cs_id: data.csId,
-        after_session_number: data.after_session_number,
-        content: data.content,
-        outcome: data.outcome || CareLogOutcome.POSITIVE,
-        created_by_id: data.userId,
+        if (existing) {
+          return tx.careLog.update({
+            where: { id: existing.id },
+            data: {
+              content: data.content,
+              ...(data.outcome ? { outcome: data.outcome } : {}),
+            },
+            include,
+          });
+        }
+
+        return tx.careLog.create({
+          data: {
+            enrollment_id: data.enrollment_id,
+            cs_id: data.csId,
+            after_session_number: data.after_session_number,
+            content: data.content,
+            outcome: data.outcome || CareLogOutcome.POSITIVE,
+            created_by_id: data.userId,
+          },
+          include,
+        });
       },
-      include: {
-        cs: { select: { id: true, name: true, email: true } },
-      },
-    });
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+    );
   }
 
   // --- Update Enrollment Care Fields ---

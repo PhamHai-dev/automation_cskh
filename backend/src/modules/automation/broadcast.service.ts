@@ -19,6 +19,7 @@ import crypto from 'crypto';
 import type { BroadcastCampaignStatus, BroadcastTargetType, MessageDeliveryStatus } from '@prisma/client';
 import { prisma } from '../../prisma/client';
 import { render, type TemplateVars } from './automation-renderer';
+import { calculateEnrollmentEntitlement } from '../enrollments/enrollment-entitlement';
 import {
   buildZaloSendPayload,
   parseAndCompileRichText,
@@ -151,8 +152,21 @@ export class BroadcastService {
     const teacherName = classObj?.class_teachers?.[0]?.teacher?.name ?? '';
     const packageName =
       activeEnrollment?.package?.name ?? activeEnrollment?.package?.code ?? '';
+    // E.3 / D10 (approved 2026-10-25): computed remaining is the web-owned
+    // operational number (merged entitlement calculator, FINAL consuming rows
+    // only, no clamp). external_remaining_sessions is imported reconciliation
+    // data and NEVER folds into the computed value. The external-first display
+    // precedence is intentionally PRESERVED here (it is a student-facing send,
+    // an outward/hard-to-reverse change), and the calculator value is proven
+    // independent of external in tests. Flipping the displayed source from
+    // external to computed is a separate, explicit owner call — flagged, not
+    // applied on approval of D10 alone.
+    const computedRemaining = activeEnrollment
+      ? calculateEnrollmentEntitlement(activeEnrollment).remainingSessions
+      : null;
     const remainingSessions =
       activeEnrollment?.external_remaining_sessions ??
+      computedRemaining ??
       activeEnrollment?.total_sessions ??
       '';
     const csName = activeEnrollment?.cs?.name ?? '';
@@ -463,6 +477,9 @@ export class BroadcastService {
               cs: { select: { id: true, name: true } },
               enrollment_classes: {
                 include: {
+                  // E.3: attendance rows feed the entitlement calculator
+                  // (the calculator itself excludes deleted / provisional rows).
+                  attendance: true,
                   class: {
                     select: {
                       id: true,
