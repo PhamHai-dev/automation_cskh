@@ -24,6 +24,7 @@ import { Select } from '../../../components/ui/Select';
 import { Textarea } from '../../../components/ui/Textarea';
 import { HorizontalTabs, HorizontalTabItem } from '../../../components/ui/HorizontalTabs';
 import { useToast } from '../../../components/ui/Toast';
+import { useAuth } from '../../../contexts/AuthContext';
 import { reconciliationApi } from '../api/reconciliation.api';
 import {
   AttendanceRecord,
@@ -59,6 +60,10 @@ const formatDateTime = (d: string | Date | null | undefined) =>
 
 export const AttendanceReconciliationPage: React.FC = () => {
   const toast = useToast();
+  const { user } = useAuth();
+  // D2 (owner-confirmed): resolution authority is ADMIN only. CS submits an
+  // opinion (cs-mark); MANAGE/CS must not see or trigger resolve-conflict.
+  const isAdmin = Boolean(user?.roles.includes('ADMIN'));
 
   const [activeTab, setActiveTab] = useState<ReconciliationTab>('conflicts');
   const [isLoading, setIsLoading] = useState(false);
@@ -402,20 +407,30 @@ export const AttendanceReconciliationPage: React.FC = () => {
       },
       {
         header: 'Hành động',
-        cell: (r) => (
-          <Button
-            size="sm"
-            variant="primary"
-            onClick={() => handleOpenResolve(r)}
-            className="whitespace-nowrap"
-          >
-            <AlertCircle className="w-4 h-4 mr-1.5" />
-            Phân xử
-          </Button>
-        ),
+        cell: (r) =>
+          isAdmin ? (
+            <Button
+              size="sm"
+              variant="primary"
+              onClick={() => handleOpenResolve(r)}
+              className="whitespace-nowrap"
+            >
+              <AlertCircle className="w-4 h-4 mr-1.5" />
+              Phân xử
+            </Button>
+          ) : (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => handleOpenCSMark(r)}
+              className="whitespace-nowrap"
+            >
+              Ghi ý kiến CS
+            </Button>
+          ),
       },
     ],
-    []
+    [isAdmin]
   );
 
   const teacherCell = (r: AttendanceRecord) => {

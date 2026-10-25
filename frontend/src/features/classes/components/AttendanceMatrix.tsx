@@ -697,13 +697,18 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
       let monthTeacherD = 0;
       let monthTechE = 0;
 
-      const processedDates = new Set<string>();
+      // E.3: dates covered by optimistic (pending) edits. A pending optimistic
+      // entry for a date intentionally supersedes server rows of that date
+      // until the refresh lands. This set must NOT collapse two same-day
+      // server rows against each other: they are distinct sessions and each
+      // counts separately.
+      const optimisticDates = new Set<string>();
 
       // 1. Process optimistic updates first
       Object.entries(optimisticUpdates).forEach(([key, opt]) => {
         const [ecIdStr, dStr] = key.split('_');
         if (parseInt(ecIdStr, 10) !== s.enrollment_class_id) return;
-        processedDates.add(dStr);
+        optimisticDates.add(dStr);
 
         const status = opt.status;
         const count = 1;
@@ -722,7 +727,11 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
         }
       });
 
-      // 2. Process existing attendances not overridden in optimisticUpdates
+      // 2. Process existing attendances not overridden by optimisticUpdates.
+      // E.3: each server row counts on its own — two FINAL rows sharing one
+      // session date are two distinct sessions and must both count (the old
+      // per-date collapse dropped the second row). Only optimistic/cleared
+      // entries for that date suppress server rows.
       attendances.forEach((a) => {
         if (a.enrollment_class_id !== s.enrollment_class_id || (a as any).deleted_at) return;
         const dStr =
@@ -731,8 +740,7 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
             ? formatSessionDate(sessions.find((sess) => sess.id === a.class_session_id)!.session_date)
             : '');
 
-        if (!dStr || processedDates.has(dStr) || clearedKeys.has(`${s.enrollment_class_id}_${dStr}`)) return;
-        processedDates.add(dStr);
+        if (!dStr || optimisticDates.has(dStr) || clearedKeys.has(`${s.enrollment_class_id}_${dStr}`)) return;
 
         const status =
           selectedSide === 'ADMIN'
