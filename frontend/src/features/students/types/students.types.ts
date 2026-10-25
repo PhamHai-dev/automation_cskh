@@ -78,5 +78,7 @@ export interface CreateStudentDTO {
   package_code?: string;
 }
 
-export interface UpdateStudentDTO extends Partial<CreateStudentDTO> {}
+export interface UpdateStudentDTO extends Partial<CreateStudentDTO> {
+  enrollment_id: number;
+}
 

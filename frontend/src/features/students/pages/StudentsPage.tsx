@@ -510,6 +510,7 @@ export const StudentsPage: React.FC = () => {
       ...patch,
     };
     await studentsApi.update(student.id, {
+      enrollment_id: enr.id,
       program_type: enr.program_type || 'JLPT',
       program_metadata: nextMeta,
     });
@@ -668,7 +669,12 @@ export const StudentsPage: React.FC = () => {
       };
 
       if (editingStudent) {
-        await studentsApi.update(editingStudent.id, payload);
+        const enrollmentId = editingStudent.enrollments?.[0]?.id;
+        if (!enrollmentId) {
+          toast.error('Không xác định được gói ghi danh để cập nhật');
+          return;
+        }
+        await studentsApi.update(editingStudent.id, { ...payload, enrollment_id: enrollmentId });
         toast.success('Cập nhật hồ sơ học viên thành công!');
       } else {
         await studentsApi.create(payload);
