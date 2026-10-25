@@ -585,12 +585,24 @@ export class ImportsRepository {
     return Array.from(names);
   }
 
-  async getAllStudentsWithEnrollments(filter?: { cs_id?: number }) {
+  async getAllStudentsWithEnrollments(filter?: { cs_id?: number; cs_ids?: number[]; classIds?: number[] }) {
+    const csIds = filter?.cs_ids ?? (filter?.cs_id !== undefined ? [filter.cs_id] : undefined);
+    const classIds = filter?.classIds;
+
+    const enrollmentScope: any = {};
+    const or: any[] = [];
+    if (csIds !== undefined) or.push({ cs_id: csIds.length === 1 ? csIds[0] : { in: csIds } });
+    if (classIds !== undefined) or.push({ enrollment_classes: { some: { class_id: { in: classIds } } } });
+    if (or.length === 1) Object.assign(enrollmentScope, or[0]);
+    else if (or.length > 1) enrollmentScope.OR = or;
+
+    const hasScope = Object.keys(enrollmentScope).length > 0;
+
     return this.db.student.findMany({
-      where: filter?.cs_id ? { enrollments: { some: { cs_id: filter.cs_id } } } : undefined,
+      where: hasScope ? { enrollments: { some: enrollmentScope } } : undefined,
       include: {
         enrollments: {
-          where: filter?.cs_id ? { cs_id: filter.cs_id } : undefined,
+          where: hasScope ? enrollmentScope : undefined,
           include: {
             package: true,
             cs: { select: { id: true, name: true, email: true } },

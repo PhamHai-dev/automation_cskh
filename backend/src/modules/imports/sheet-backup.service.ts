@@ -12,6 +12,7 @@ import {
 import { prisma } from '../../prisma/client';
 import { createLogger } from '../../shared/logger/logger';
 import { AppError } from '../../middlewares/error.middleware';
+import { isConsumedAttendance } from '../enrollments/enrollment-entitlement';
 import { ImportsService } from './imports.service';
 import { MonthAttendanceBlock } from './imports.types';
 import { SheetSyncService, ServiceAccountInfo } from './sheet-sync.service';
@@ -847,14 +848,24 @@ export class SheetBackupService {
           }
         }
 
-        const totalAttendedAndC = attendedCount + absentCCount;
+        // C.4/E.3: consumed must match the merged entitlement calculator —
+        // only FINAL (MATCHED/RESOLVED) rows with consuming status (ATTENDED /
+        // ABSENT_UNAPPROVED_C) count, and each row counts separately (two
+        // same-day rows are 2 consumed, never collapsed by the date->record
+        // map used for daily cell rendering below).
+        const consumedSessions = allAttendances.filter((att) =>
+          isConsumedAttendance(att),
+        ).length;
         const attendedPrevYears = enr.attended_previous_years ?? 0;
         const hasWebAttendance = allAttendances.length > 0;
+        // No clamp: a negative computed remaining is a deliberate "nợ buổi"
+        // ops signal (Q-012). The external balance below stays a clearly-labeled
+        // reconciliation value and is never folded into the computed number.
         const remainingSessions = hasWebAttendance
-          ? Math.max(0, enr.total_sessions - totalAttendedAndC)
+          ? enr.total_sessions - consumedSessions
           : (enr.external_remaining_sessions ?? Math.max(0, enr.total_sessions - attendedPrevYears));
         const attendedInCurrentYear = hasWebAttendance
-          ? totalAttendedAndC
+          ? consumedSessions
           : Math.max(0, enr.total_sessions - attendedPrevYears - remainingSessions);
 
         // Map CareLogs to the 15 milestone columns [1, 3, 10, 15, 20, 25, 29, 30, 35, 45, 55, 59, 60, 89, 90]

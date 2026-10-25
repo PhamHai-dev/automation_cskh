@@ -1,5 +1,6 @@
 import ExcelJS from 'exceljs';
 import { CareLogOutcome, ClassModelType, EnrollmentStatus } from '@prisma/client';
+import { classifyClassModel } from './model-mapper';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const JSZip = require('jszip');
@@ -407,13 +408,13 @@ export function mapEnrollmentStatus(rawStatus: string | null | undefined): Enrol
 }
 
 /**
- * Map class model string to ClassModelType enum
+ * Map class model string to ClassModelType enum. E.1: delegates to the single
+ * canonical mapper (model-mapper.ts) shared by every ingestion path. Kept as
+ * the stable import name for sheet-sync.service so behavior is unchanged while
+ * there is now exactly one decision rule in the codebase.
  */
 export function mapClassModelType(rawModel: string | null | undefined): ClassModelType {
-  const m = (rawModel || '').toLowerCase();
-  if (m.includes('1-2') || m.includes('1:2')) return ClassModelType.ONE_TO_TWO;
-  if (m.includes('1-n') || m.includes('1:n') || m.includes('nhóm')) return ClassModelType.ONE_TO_N;
-  return ClassModelType.ONE_TO_ONE;
+  return classifyClassModel(rawModel);
 }
 
 /**
