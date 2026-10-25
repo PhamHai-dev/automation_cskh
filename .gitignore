@@ -17,3 +17,7 @@ src_code_ZaloCRM_tham_khao/
 backups/
 .claude/
 
+
+# Data zip artifacts (PII carriers) — never commit; provenance in docs/khao-sat/NUOI-NGUON.md
+docs/khao-sat.zip
+docs/khao-sat/**/*.zip
