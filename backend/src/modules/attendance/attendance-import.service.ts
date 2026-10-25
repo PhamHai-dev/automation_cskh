@@ -1,5 +1,6 @@
 import { AttendanceSource, AttendanceStatus, ClassModelType, EnrollmentClassStatus, EnrollmentStatus, ReconciliationState } from '@prisma/client';
 import ExcelJS from 'exceljs';
+import { AttendanceDeliveryPolicy, AttendancePostCommitInput, deriveAttendanceReconciliationState, runAttendancePostCommit } from './attendance-lifecycle';
 import { prisma } from '../../prisma/client';
 import { addMinutes, normalizeClassModel, normalizeDateOnly, parseAttendanceValue, parseTimeSlot, remapDateYear } from './attendance.utils';
 
@@ -138,7 +139,21 @@ export class AttendanceImportService {
     return { ...base, classification: allUnchanged ? 'UNCHANGED' : hasConflict ? 'CONFLICT' : 'CREATE', defaultAction: allUnchanged ? 'KEEP_DATABASE' : hasConflict ? 'SKIP' : 'APPLY' };
   }
 
-  async commit(preview: { items: AttendanceImportItem[] }, actor: AttendanceImportActor, actions: Record<string, AttendanceImportAction> = {}) {
+  async commit(
+    preview: { items: AttendanceImportItem[] },
+    actor: AttendanceImportActor,
+    actions: Record<string, AttendanceImportAction> = {},
+    options: {
+      deliveryPolicy?: AttendanceDeliveryPolicy;
+      deliveryPolicies?: Record<string, AttendanceDeliveryPolicy>;
+    } = {},
+  ) {
+    // Importer requests that omit policy remain NO_SEND: this path historically
+    // wrote the read model without triggering outbound delivery. An explicit
+    // SEND opt-in is accepted only through this request/batch context. Per-item
+    // overrides allow mixed batches. Never infer policy from dates, source or
+    // reconciliation state, or persist it on Attendance.
+    const deliveryPolicy = options.deliveryPolicy ?? 'NO_SEND';
     let createdSessions = 0;
     let createdAttendances = 0;
     let updatedAttendances = 0;
@@ -153,6 +168,8 @@ export class AttendanceImportService {
         continue;
       }
       const itemResult = { id: item.id, externalId: item.externalId, cellAddress: item.cellAddress, targetDate: item.targetDate, rawValue: item.rawValue, action, createdSessions: 0, createdAttendances: 0, updatedAttendances: 0, skipped: false };
+      const itemDownstream: AttendancePostCommitInput[] = [];
+      const itemDeliveryPolicy = options.deliveryPolicies?.[item.id] ?? deliveryPolicy;
       await prisma.$transaction(async (tx) => {
         for (const plan of item.sessionPlans) {
           let sessionId = plan.sessionId;
@@ -191,7 +208,14 @@ export class AttendanceImportService {
           const existing = await tx.attendance.findUnique({ where: { enrollment_class_id_class_session_id: { enrollment_class_id: item.enrollmentClassId!, class_session_id: sessionId } } });
           const isTeacher = item.source === 'TEACHER';
           const otherStatus = isTeacher ? existing?.cs_status : existing?.teacher_status;
-          const reconciliationState = otherStatus ? (otherStatus === status ? ReconciliationState.MATCHED : ReconciliationState.CONFLICT) : (isTeacher ? ReconciliationState.PENDING_CS : ReconciliationState.PENDING_TEACHER);
+          const reconciliationState = deriveAttendanceReconciliationState(
+            isTeacher ? status : otherStatus,
+            isTeacher ? otherStatus : status,
+          );
+          const invalidatePendingDeliveries = Boolean(existing && (
+            existing.teacher_status !== (isTeacher ? status : existing.teacher_status) ||
+            existing.cs_status !== (isTeacher ? existing.cs_status : status)
+          ));
           const sideData: any = isTeacher
             ? { teacher_status: status, teacher_raw_value: item.rawValue, teacher_user_id: actor.id, teacher_submitted_at: new Date(), ...(item.lessonTopic ? { lesson_topic: item.lessonTopic } : {}) }
             : { cs_status: status, cs_raw_value: item.rawValue, cs_user_id: actor.id, cs_submitted_at: new Date() };
@@ -204,6 +228,7 @@ export class AttendanceImportService {
               reconciliation_state: existing.reconciliation_state,
             };
             await tx.attendance.update({ where: { id: existing.id }, data: updateData });
+            itemDownstream.push({ attendanceId: existing.id, reconciliationState, deliveryPolicy: itemDeliveryPolicy, invalidatePendingDeliveries });
             updatedAttendances += 1;
             itemResult.updatedAttendances += 1;
             await tx.auditLog.create({
@@ -218,6 +243,7 @@ export class AttendanceImportService {
             });
           } else {
             const created = await tx.attendance.create({ data: { enrollment_class_id: item.enrollmentClassId!, class_session_id: sessionId, status, source: isTeacher ? AttendanceSource.TEACHER_UPLOAD : AttendanceSource.EXCEL_IMPORT, reconciliation_state: reconciliationState, created_by_id: actor.id, ...sideData } });
+            itemDownstream.push({ attendanceId: created.id, reconciliationState, deliveryPolicy: itemDeliveryPolicy });
             createdAttendances += 1;
             itemResult.createdAttendances += 1;
             await tx.auditLog.create({
@@ -232,6 +258,13 @@ export class AttendanceImportService {
           }
         }
       });
+      // Drain this item's downstream immediately after its transaction commits,
+      // before processing the next item, so a later item throwing/rolling back
+      // never strands already-durable cancellation or trigger work. NO_SEND (the
+      // default here) still allows cancellation for invalidated pending deliveries.
+      for (const entry of itemDownstream) {
+        await runAttendancePostCommit(entry);
+      }
       items.push(itemResult);
     }
     return { createdSessions, createdAttendances, updatedAttendances, skipped, items };
