@@ -15,9 +15,10 @@ export class StudentsController {
         ? parseInt(String(req.query.cs_id), 10)
         : undefined;
 
+      // B.5/D9: the full actor is passed so the repository derives scope from
+      // enrollment.cs_id only; sale/handover fields are not access predicates.
       const students = await studentsService.getAllStudents({
-        userId: user?.id,
-        roles: user?.roles,
+        actor: user,
         programType,
         csId: csId && !Number.isNaN(csId) ? csId : undefined,
       });
@@ -30,7 +31,8 @@ export class StudentsController {
   async get(req: Request, res: Response, next: NextFunction) {
     try {
       const id = parseInt(req.params.id);
-      const student = await studentsService.getStudentById(id);
+      const user = (req as any).user;
+      const student = await studentsService.getStudentById(id, user);
       res.json({ data: student, meta: null });
     } catch (error) {
       next(error);
@@ -40,8 +42,10 @@ export class StudentsController {
   async create(req: Request, res: Response, next: NextFunction) {
     try {
       const validated = createStudentSchema.parse({ body: req.body });
-      const currentUserId = (req as any).user?.id;
-      const student = await studentsService.createStudent(validated.body, currentUserId);
+      const user = (req as any).user;
+      // B.5/D9: pass the full actor; cs_id assignment is authorized against the
+      // actor's scope and the CS role in the repository, not guessed from names.
+      const student = await studentsService.createStudent(validated.body, user);
       res.status(201).json({ data: student, meta: null });
     } catch (error: any) {
       if (error.name === 'ZodError') {
@@ -56,7 +60,8 @@ export class StudentsController {
     try {
       const id = parseInt(req.params.id);
       const validated = updateStudentSchema.parse({ body: req.body });
-      const student = await studentsService.updateStudent(id, validated.body);
+      const user = (req as any).user;
+      const student = await studentsService.updateStudent(id, validated.body, user);
       res.json({ data: student, meta: null });
     } catch (error: any) {
       if (error.name === 'ZodError') {
