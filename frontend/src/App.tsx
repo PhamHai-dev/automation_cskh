@@ -14,6 +14,7 @@ import { ClassSessionsPage } from './features/classes/pages/ClassSessionsPage';
 import { AttendanceSheetPage } from './features/classes/pages/AttendanceSheetPage';
 import { EnrollmentsPage } from './features/enrollments/pages/EnrollmentsPage';
 import { ImportsPage } from './features/imports/pages/ImportsPage';
+import { ImportApprovalQueuePage } from './features/imports/pages/ImportApprovalQueuePage';
 import { DashboardPage } from './features/dashboard/pages/DashboardPage';
 import { CarePage } from './features/care/pages/CarePage';
 import { ToastProvider } from './components/ui/Toast';
@@ -70,6 +71,9 @@ function App() {
 
               <Route path="/teachers" element={<TeachersPage />} />
               <Route path="/giao-vien" element={<Navigate to="/teachers" replace />} />
+
+              <Route path="/imports/approval-queue" element={<ImportApprovalQueuePage />} />
+              <Route path="/nhap-xuat/hang-doi-phe-duyet" element={<Navigate to="/imports/approval-queue" replace />} />
             </Route>
 
             {/* Core Staff: Admin, Manage, CS */}
