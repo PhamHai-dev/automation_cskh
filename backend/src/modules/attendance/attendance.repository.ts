@@ -5,7 +5,10 @@ import { Prisma, AttendanceStatus, ReconciliationState } from '@prisma/client';
 export class AttendanceRepository {
   async findBySession(classId: number, sessionId: number) {
     return prisma.attendance.findMany({
-      where: { class_session_id: sessionId, deleted_at: null },
+      where: {
+        class_session: { id: sessionId, class_id: classId },
+        deleted_at: null,
+      },
       include: {
         enrollment_class: {
           include: {

@@ -134,10 +134,10 @@ export class ReconciliationController {
   async confirmAttendanceImport(req: Request, res: Response, next: NextFunction) {
     try {
       if (!req.file?.buffer) throw new AppError(400, 'Vui lòng tải lại file Excel để xác nhận nhập điểm danh');
-      const { source, targetYear, actions } = AttendanceImportConfirmSchema.parse(req.body);
+      const { source, targetYear, actions, deliveryPolicy } = AttendanceImportConfirmSchema.parse(req.body);
       const service = new AttendanceImportService();
       const preview = await service.preview(req.file.buffer, source, targetYear, req.user as Actor);
-      const data = await service.commit(preview, req.user as Actor, actions);
+      const data = await service.commit(preview, req.user as Actor, actions, { deliveryPolicy });
       res.json({ success: true, data });
     } catch (err) { next(err); }
   }

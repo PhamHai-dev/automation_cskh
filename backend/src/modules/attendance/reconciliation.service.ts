@@ -1,6 +1,8 @@
 import { prisma } from '../../prisma/client';
 import { AttendanceStatus, ReconciliationState, AttendanceSource, Prisma } from '@prisma/client';
 import ExcelJS from 'exceljs';
+import { runAttendancePostCommit } from './attendance-lifecycle';
+import { findEffectiveAssignment } from './teacher-assignment';
 import { handleAttendanceEvent, cancelPendingDeliveries } from '../automation/automation-trigger.service';
 import { createLogger } from '../../shared/logger/logger';
 import { AppError } from '../../middlewares/error.middleware';
@@ -62,18 +64,53 @@ export class ReconciliationService {
     return teacherStatus === csStatus ? ReconciliationState.MATCHED : ReconciliationState.CONFLICT;
   }
 
-  private async assertTeacherScope(actor: Actor, classId: number) {
+  private async assertTeacherScope(actor: Actor, classId: number, sessionDate: Date) {
     if (this.isPrivileged(actor)) return;
     if (!actor.roles.includes('TEACHER')) throw new AppError(403, 'Vai trò không được phép điểm danh phía giáo viên');
-    const assignment = await prisma.classTeacher.findFirst({
-      where: { class_id: classId, active: true, teacher: { user_id: actor.id, active: true } },
-      select: { id: true },
+    // D8 (approved 2026-10-25): authority is the assignment EFFECTIVE AT THE
+    // SESSION DATE, not "active today". Windows with null bounds are unbounded;
+    // missing/expired evidence falls through to 403 (Admin-assisted mark is
+    // the separate privileged path above).
+    const candidates = await prisma.classTeacher.findMany({
+      where: { class_id: classId, teacher: { user_id: actor.id, active: true } },
+      select: { active: true, start_date: true, end_date: true },
     });
-    if (!assignment) throw new AppError(403, 'Bạn không được phân công active cho lớp này');
+    const effective = findEffectiveAssignment(candidates, sessionDate);
+    if (!effective) throw new AppError(403, 'Bạn không được phân công cho lớp này tại ngày dạy của buổi học');
   }
 
-  private assertCSScope(actor: Actor, assignedCSId: number) {
-    if (this.isPrivileged(actor)) return;
+  /**
+   * MANAGE write scope: self + user_ids of every CS group assigned to the
+   * actor (prisma.manageAssignment -> cs_group.members). Same idiom as
+   * care.service.getAccessibleCSIds and students.repository.getStudentCsScope
+   * (POLICY owner 2026-10-25: "MANAGE vẫn là CVHT có phạm vi quản lý nhóm").
+   */
+  private async resolveManageScope(actor: Actor): Promise<number[]> {
+    const assignments = await prisma.manageAssignment.findMany({
+      where: { manage_user_id: actor.id },
+      include: { cs_group: { include: { members: true } } },
+    });
+    return Array.from(
+      new Set([
+        actor.id,
+        ...assignments.flatMap((a) => a.cs_group.members.map((m) => m.user_id)),
+      ])
+    );
+  }
+
+  private async assertCSScope(actor: Actor, assignedCSId: number) {
+    // ADMIN keeps the unrestricted bypass.
+    if (actor.roles.includes('ADMIN')) return;
+    // MANAGE acts on CS opinions only within its assigned CS groups + self;
+    // no longer an ADMIN-equivalent short-circuit via isPrivileged().
+    if (actor.roles.includes('MANAGE')) {
+      const scope = await this.resolveManageScope(actor);
+      if (!scope.includes(assignedCSId)) {
+        throw new AppError(403, 'Bạn không phụ trách học viên này');
+      }
+      return;
+    }
+    // Plain CS: own-enrollment-only, unchanged.
     if (!actor.roles.includes('CS') || assignedCSId !== actor.id) {
       throw new AppError(403, 'Bạn không phụ trách học viên này');
     }
@@ -190,26 +227,19 @@ export class ReconciliationService {
   }
 
   private async runDownstream(attendanceId: number, state: ReconciliationState) {
-    try {
-      if (state === ReconciliationState.MATCHED || state === ReconciliationState.RESOLVED) {
-        await handleAttendanceEvent(attendanceId);
-      } else if (state === ReconciliationState.CONFLICT) {
-        await cancelPendingDeliveries(attendanceId);
-      }
-    } catch (err: any) {
-      log.error('Attendance downstream action failed', { attendanceId, state, error: err.message });
-    }
+    await runAttendancePostCommit({ attendanceId, reconciliationState: state });
   }
 
   async markByTeacher(attendanceId: number, data: TeacherMarkDTO, actor: Actor) {
     const existing = await prisma.attendance.findUnique({
       where: { id: attendanceId },
       include: {
-        class_session: { select: { class_id: true } },
+        class_session: { select: { class_id: true, status: true, session_date: true } },
         enrollment_class: { include: { enrollment: true } },
       },
     });
     if (!existing) throw new AppError(404, 'Không tìm thấy bản ghi điểm danh');
+    if (existing.class_session?.status === 'CANCELLED') throw new AppError(409, 'Không thể điểm danh cho buổi học đã hủy');
 
     if (this.isPrivileged(actor)) {
       if (!data.teacherId) throw new AppError(400, 'Vui lòng chọn giáo viên được hỗ trợ');
@@ -226,7 +256,7 @@ export class ReconciliationService {
       if (data.teacherId && data.teacherId !== actor.id) {
         throw new AppError(403, 'Bạn không được điểm danh thay giáo viên khác');
       }
-      await this.assertTeacherScope(actor, existing.class_session.class_id);
+      await this.assertTeacherScope(actor, existing.class_session.class_id, existing.class_session.session_date);
     }
 
     const state = this.deriveState(data.status, existing.cs_status);
@@ -267,10 +297,14 @@ export class ReconciliationService {
   async markByCS(attendanceId: number, data: CSMarkDTO, actor: Actor) {
     const existing = await prisma.attendance.findUnique({
       where: { id: attendanceId },
-      include: { enrollment_class: { include: { enrollment: true } } },
+      include: {
+        class_session: { select: { status: true } },
+        enrollment_class: { include: { enrollment: true } },
+      },
     });
     if (!existing) throw new AppError(404, 'Không tìm thấy bản ghi điểm danh');
-    this.assertCSScope(actor, existing.enrollment_class.enrollment.cs_id);
+    if (existing.class_session?.status === 'CANCELLED') throw new AppError(409, 'Không thể điểm danh cho buổi học đã hủy');
+    await this.assertCSScope(actor, existing.enrollment_class.enrollment.cs_id);
 
     const state = this.deriveState(existing.teacher_status, data.status);
     const updateData: Prisma.AttendanceUpdateInput = {
@@ -302,7 +336,20 @@ export class ReconciliationService {
     return updated;
   }
 
+  /**
+   * D2 (owner-confirmed): conflict resolution authority belongs to ADMIN only.
+   * MANAGE keeps group-management scope but NOT Admin-equivalent resolution
+   * authority, and CS must not self-resolve its own opinion conflict. This is
+   * enforced again here in addition to the route's requireRoles(['ADMIN']).
+   */
+  private assertAdminResolver(actor: Actor) {
+    if (!actor.roles.includes('ADMIN')) {
+      throw new AppError(403, 'Chỉ ADMIN được phân xử xung đột điểm danh');
+    }
+  }
+
   async resolveConflict(attendanceId: number, data: ResolveConflictDTO, actor: Actor) {
+    this.assertAdminResolver(actor);
     const existing = await prisma.attendance.findUnique({
       where: { id: attendanceId },
       include: { enrollment_class: { include: { enrollment: true } } },
@@ -311,7 +358,6 @@ export class ReconciliationService {
     if (existing.reconciliation_state !== ReconciliationState.CONFLICT) {
       throw new AppError(409, 'Chỉ có thể phân xử bản ghi đang xung đột');
     }
-    this.assertCSScope(actor, existing.enrollment_class.enrollment.cs_id);
 
     const updated = await prisma.$transaction(async (tx) => {
       const result = await tx.attendance.update({ where: { id: attendanceId }, data: {
@@ -331,8 +377,11 @@ export class ReconciliationService {
       } });
       return result;
     });
+    // Preserve the existing resolve-conflict semantics: invalidation of queued
+    // deliveries here is not swallowed (a cancellation failure must still fail
+    // the request), while the FINAL trigger is best-effort.
     await cancelPendingDeliveries(updated.id);
-    await this.runDownstream(updated.id, ReconciliationState.RESOLVED);
+    await runAttendancePostCommit({ attendanceId: updated.id, reconciliationState: ReconciliationState.RESOLVED });
     return updated;
   }
 
@@ -345,7 +394,7 @@ export class ReconciliationService {
       throw new AppError(404, 'Có bản ghi điểm danh không tồn tại');
     }
     for (const attendance of attendances) {
-      this.assertCSScope(actor, attendance.enrollment_class.enrollment.cs_id);
+      await this.assertCSScope(actor, attendance.enrollment_class.enrollment.cs_id);
       if (attendance.reconciliation_state !== ReconciliationState.PENDING_CS || !attendance.teacher_status) {
         throw new AppError(409, `Điểm danh ${attendance.id} không ở trạng thái chờ CSKH`);
       }
@@ -879,7 +928,7 @@ export class ReconciliationService {
             errors.push({ row: r, error: 'Không tìm thấy buổi học khớp lớp, ngày và giờ' });
             continue;
           }
-          await this.assertTeacherScope(actor, ec.class_id);
+          await this.assertTeacherScope(actor, ec.class_id, session.session_date);
 
           // Check existing attendance for reconciliation
           const existingAtt = await prisma.attendance.findUnique({

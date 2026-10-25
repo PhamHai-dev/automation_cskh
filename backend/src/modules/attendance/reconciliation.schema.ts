@@ -87,4 +87,7 @@ export const AttendanceImportConfirmSchema = z.object({
     if (typeof value !== 'string') return value;
     try { return JSON.parse(value); } catch { return value; }
   }, z.record(z.enum(['APPLY', 'KEEP_DATABASE', 'SKIP'])).optional()),
+  // Per-batch downstream send policy, orthogonal to reconciliation state.
+  // Historical imports must explicitly opt in to SEND; default stays NO_SEND.
+  deliveryPolicy: z.enum(['SEND', 'NO_SEND']).optional(),
 });
