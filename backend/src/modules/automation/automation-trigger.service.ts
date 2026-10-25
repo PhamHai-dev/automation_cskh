@@ -104,10 +104,16 @@ export async function handleAttendanceEvent(attendanceId: number): Promise<Trigg
       return result;
     }
 
-    // 3. Calculate enrollment session number (count of past attended sessions + 1)
+    // 3. Calculate enrollment session number (care-milestone ordinal, D1/K7:
+    //    FINAL ATTENDED rows in (session_date, created_at, id) order; a second
+    //    valid same-day session gets its own next ordinal)
     const sessionNumber = await resolveEnrollmentSessionNumber(
       enrollment.id,
-      attendance.class_session.session_date,
+      {
+        id: attendance.id,
+        sessionDate: attendance.class_session.session_date,
+        createdAt: attendance.created_at,
+      },
     );
 
     // 4. Find matching steps
@@ -249,23 +255,56 @@ export async function cancelPendingDeliveries(attendanceId: number): Promise<num
 // ─── Internal helpers ────────────────────────────────────────────────
 
 /**
- * Calculate enrollment session number: count of distinct class_sessions with attendance
- * before the given date + 1.
- * Sessions are counted across all enrollment_classes (cross-class = continuous numbering).
+ * Care-milestone ordinal basis (K7), D1 APPROVED by the project owner
+ * 2026-10-25: FINAL personal ATTENDED rows only — reconciliation_state ∈
+ * { MATCHED, RESOLVED } — each counting as one session, so two valid sessions
+ * on the same day each advance the ordinal. Mirrors the canonical predicate
+ * `isCareMilestoneAttendance` (enrollments/enrollment-entitlement.ts): not
+ * soft-deleted, FINAL, status = ATTENDED. This module deliberately keeps the
+ * predicate inline as a Prisma `where` (it queries by count instead of
+ * filtering an in-memory graph); the two definitions must stay in sync.
+ *
+ * Ordinal = 1 + number of qualifying rows that come STRICTLY BEFORE this row
+ * under the deterministic total order (session_date, then created_at, then
+ * attendance id). For the row's own date this reproduces the previous
+ * "count-before + 1" value exactly (the +1 counts the session being marked),
+ * and among same-day rows the tie-break gives each FINAL session its own
+ * increasing ordinal. Numbering is continuous across all EnrollmentClass rows
+ * (cross-class journeys share one sequence — decisions #4).
  */
 async function resolveEnrollmentSessionNumber(
   enrollmentId: number,
-  sessionDate: Date,
+  currentAttendance: { id: number; sessionDate: Date; createdAt: Date },
 ): Promise<number> {
+  const sessionDate = normalizeToUtcDate(currentAttendance.sessionDate);
+  const { id, createdAt } = currentAttendance;
+  const sameDay = { class_session: { session_date: sessionDate } };
   const count = await prisma.attendance.count({
     where: {
       enrollment_class: { enrollment_id: enrollmentId },
-      class_session: { session_date: { lt: sessionDate } },
       status: 'ATTENDED',
       reconciliation_state: { in: ['MATCHED', 'RESOLVED'] },
+      deleted_at: null,
+      // Qualifying rows strictly before the current row in
+      // (session_date, created_at, id) order.
+      OR: [
+        { class_session: { session_date: { lt: sessionDate } } },
+        { ...sameDay, created_at: { lt: createdAt } },
+        { ...sameDay, created_at: createdAt, id: { lt: id } },
+      ],
     },
   });
   return count + 1;
+}
+
+/**
+ * Truncate to UTC midnight so same-day equality against the @db.Date column
+ * is reliable regardless of the time component a caller carries. DB reads of
+ * session_date already land at UTC midnight, keeping earlier-date counting
+ * identical to the previous `lt` semantics.
+ */
+function normalizeToUtcDate(value: Date): Date {
+  return new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate()));
 }
 
 /**
