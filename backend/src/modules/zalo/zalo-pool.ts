@@ -772,6 +772,23 @@ class ZaloAccountPool extends EventEmitter {
       } catch (err) {
         log.error('Auto-sync on connect failed', { accountId, error: String(err) });
       }
+
+      try {
+        const { syncAndMatchCareGroups } = await import('./student-care-group-matcher.service');
+        const report = await syncAndMatchCareGroups({
+          triggeredBy: 'login',
+          zaloAccountId: accountId,
+          refreshLiveGroups: true,
+        });
+        log.info('Auto-sync care groups on connect', {
+          accountId,
+          totalZaloGroupsScanned: report.totalZaloGroupsScanned,
+          linkedStudentsCount: report.linkedStudentsCount,
+          newlyLinkedZaloCount: report.newlyLinkedZaloCount,
+        });
+      } catch (err) {
+        log.error('Auto-sync care groups on connect failed', { accountId, error: String(err) });
+      }
     })();
   }
 

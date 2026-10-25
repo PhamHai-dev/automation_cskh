@@ -495,9 +495,18 @@ lineRouter.get('/links/by-student/:studentId', async (req: Request, res: Respons
 
 lineRouter.post('/links', async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const rawLineGroupId = req.body.line_group_id ?? req.body.lineGroupId;
+    const rawLineAccountId = req.body.line_account_id ?? req.body.lineAccountId;
     const result = await lineService.createOrUpdateLink({
       student_id: Number(req.body.student_id ?? req.body.studentId),
-      line_account_id: Number(req.body.line_account_id ?? req.body.lineAccountId),
+      line_account_id: rawLineAccountId != null ? Number(rawLineAccountId) : undefined,
+      line_group_id:
+        rawLineGroupId === null
+          ? null
+          : rawLineGroupId !== undefined
+            ? Number(rawLineGroupId)
+            : undefined,
+      target_type: req.body.target_type ?? req.body.targetType,
       relation_status: req.body.relation_status ?? req.body.relationStatus ?? 'FRIEND',
       display_name: req.body.display_name ?? req.body.displayName,
       avatar_url: req.body.avatar_url ?? req.body.avatarUrl,
@@ -511,7 +520,16 @@ lineRouter.post('/links', async (req: Request, res: Response, next: NextFunction
 
 lineRouter.patch('/links/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const result = await lineService.updateLinkById(Number(req.params.id), req.body);
+    const rawLineGroupId = req.body?.line_group_id ?? req.body?.lineGroupId;
+    const result = await lineService.updateLinkById(Number(req.params.id), {
+      ...req.body,
+      ...(rawLineGroupId !== undefined
+        ? { line_group_id: rawLineGroupId === null ? null : Number(rawLineGroupId) }
+        : {}),
+      ...(req.body?.target_type ?? req.body?.targetType
+        ? { target_type: req.body.target_type ?? req.body.targetType }
+        : {}),
+    });
     res.json({ data: result, ...result });
   } catch (err) {
     handleLineError(err, res, next);
@@ -520,7 +538,16 @@ lineRouter.patch('/links/:id', async (req: Request, res: Response, next: NextFun
 
 lineRouter.put('/links/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const result = await lineService.updateLinkById(Number(req.params.id), req.body);
+    const rawLineGroupId = req.body?.line_group_id ?? req.body?.lineGroupId;
+    const result = await lineService.updateLinkById(Number(req.params.id), {
+      ...req.body,
+      ...(rawLineGroupId !== undefined
+        ? { line_group_id: rawLineGroupId === null ? null : Number(rawLineGroupId) }
+        : {}),
+      ...(req.body?.target_type ?? req.body?.targetType
+        ? { target_type: req.body.target_type ?? req.body.targetType }
+        : {}),
+    });
     res.json({ data: result, ...result });
   } catch (err) {
     handleLineError(err, res, next);

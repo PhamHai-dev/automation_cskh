@@ -290,6 +290,94 @@ describe('Automation Multi-Channel Zalo + LINE Engine & Worker', () => {
         }),
       });
     });
+
+    it('routes ZALO_PERSONAL step to student Care Group when ZaloContactRelation has zalo_group_id', async () => {
+      (prisma.attendance.findUnique as jest.Mock).mockResolvedValue(baseAttendance);
+      (prisma.attendance.count as jest.Mock).mockResolvedValue(0);
+      (prisma.automationStep.findMany as jest.Mock).mockResolvedValue([
+        {
+          ...baseStep,
+          id: 21,
+          channel: 'ZALO_PERSONAL',
+          target_group_id: null,
+        },
+      ]);
+      (prisma.messageDelivery.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.enrollment.findUnique as jest.Mock).mockResolvedValue({
+        student_id: 400,
+        student: { id: 400, line_uid: null },
+      });
+      (prisma.zaloContactRelation.findFirst as jest.Mock).mockResolvedValue({
+        id: 10,
+        student_id: 400,
+        zalo_account_id: 12,
+        relation_status: 'FRIEND',
+        target_type: 'GROUP',
+        zalo_group_id: 88,
+        matched_by: 'AUTO_GROUP_NAME',
+      });
+      (prisma.messageDelivery.create as jest.Mock).mockResolvedValue({ id: 701 });
+      (prisma.messageDelivery.update as jest.Mock).mockResolvedValue({ id: 701, status: 'QUEUED' });
+
+      const res = await handleAttendanceEvent(900);
+
+      expect(res.deliveriesCreated).toBe(1);
+      expect(prisma.messageDelivery.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          enrollment_id: 300,
+          attendance_id: 900,
+          automation_step_id: 21,
+          zalo_account_id: 12,
+          zalo_group_id: 88,
+          line_account_id: null,
+          line_group_id: null,
+        }),
+      });
+    });
+
+    it('routes LINE_PERSONAL step to student Care Group when LineContactRelation has line_group_id', async () => {
+      (prisma.attendance.findUnique as jest.Mock).mockResolvedValue(baseAttendance);
+      (prisma.attendance.count as jest.Mock).mockResolvedValue(0);
+      (prisma.automationStep.findMany as jest.Mock).mockResolvedValue([
+        {
+          ...baseStep,
+          id: 22,
+          channel: 'LINE_PERSONAL',
+          target_group_id: null,
+        },
+      ]);
+      (prisma.messageDelivery.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.enrollment.findUnique as jest.Mock).mockResolvedValue({
+        student_id: 400,
+        student: { id: 400, line_uid: null },
+      });
+      (prisma.lineContactRelation.findFirst as jest.Mock).mockResolvedValue({
+        id: 11,
+        student_id: 400,
+        line_account_id: 77,
+        relation_status: 'FRIEND',
+        target_type: 'GROUP',
+        line_group_id: 99,
+        matched_by: 'AUTO_GROUP_NAME',
+      });
+      (prisma.messageDelivery.create as jest.Mock).mockResolvedValue({ id: 702 });
+      (prisma.messageDelivery.update as jest.Mock).mockResolvedValue({ id: 702, status: 'QUEUED' });
+
+      const res = await handleAttendanceEvent(900);
+
+      expect(res.deliveriesCreated).toBe(1);
+      expect(prisma.messageDelivery.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          enrollment_id: 300,
+          attendance_id: 900,
+          automation_step_id: 22,
+          zalo_account_id: null,
+          zalo_group_id: null,
+          line_account_id: 77,
+          line_group_id: 99,
+        }),
+      });
+    });
   });
 
   // ─── Worker Execution Tests ────────────────────────────────────────────────
@@ -609,6 +697,133 @@ describe('Automation Multi-Channel Zalo + LINE Engine & Worker', () => {
         data: expect.objectContaining({
           status: 'SENT',
           provider_message_id: 'zalo-msg-999',
+        }),
+      });
+    });
+
+    it('routes ZALO_PERSONAL delivery to Care Group with threadType = 1 when relation is linked to a Care Group after delivery creation', async () => {
+      const mockSendMessage = jest.fn().mockResolvedValue({ data: { messageId: 'zalo-care-grp-1001' } });
+      (zaloPool.getApi as jest.Mock).mockReturnValue({ sendMessage: mockSendMessage });
+
+      (prisma.messageDelivery.findUnique as jest.Mock).mockResolvedValue({
+        id: 601,
+        status: 'QUEUED',
+        enrollment_id: 300,
+        zalo_account_id: 12,
+        zalo_group_id: null,
+        line_account_id: null,
+        line_group_id: null,
+        rendered_content: 'Chăm sóc học viên qua Nhóm Zalo!',
+        automation_step: { id: 20, channel: 'ZALO_PERSONAL' },
+        enrollment: {
+          student_id: 400,
+          student: {
+            id: 400,
+            full_name: 'Trần Văn An',
+            phone: '0988767563',
+            zalo_uid: null,
+            line_uid: null,
+          },
+        },
+        zalo_account: {
+          id: 12,
+          status: 'ACTIVE',
+          zalo_uid: 'cs_zalo_1',
+          display_name: 'CVHT01 Zalo',
+        },
+        zalo_group: null,
+        line_account: null,
+        line_group: null,
+        attendance: { enrollment_class: {} },
+      });
+
+      (prisma.zaloContactRelation.findFirst as jest.Mock).mockResolvedValue({
+        id: 15,
+        student_id: 400,
+        zalo_account_id: 12,
+        relation_status: 'FRIEND',
+        target_type: 'GROUP',
+        zalo_group_id: 88,
+        friend_zalo_uid: 'zalo_care_group_ext_88',
+        zalo_group: { id: 88, zalo_group_id: 'zalo_care_group_ext_88' },
+      });
+
+      await processDeliveryJob(makeJob(601));
+
+      expect(mockSendMessage).toHaveBeenCalledWith(
+        'Chăm sóc học viên qua Nhóm Zalo!',
+        'zalo_care_group_ext_88',
+        1,
+      );
+      expect(prisma.messageDelivery.update).toHaveBeenLastCalledWith({
+        where: { id: 601 },
+        data: expect.objectContaining({
+          status: 'SENT',
+          provider_message_id: 'zalo-care-grp-1001',
+        }),
+      });
+    });
+
+    it('routes LINE_PERSONAL delivery to Care Group via sendGroupMessage when LineContactRelation has target_type GROUP or C-prefixed group ID', async () => {
+      (prisma.messageDelivery.findUnique as jest.Mock).mockResolvedValue({
+        id: 602,
+        status: 'QUEUED',
+        enrollment_id: 300,
+        zalo_account_id: null,
+        zalo_group_id: null,
+        line_account_id: 77,
+        line_group_id: null,
+        rendered_content: 'Chăm sóc học viên qua Nhóm LINE!',
+        automation_step: { id: 10, channel: 'LINE_PERSONAL' },
+        enrollment: {
+          student_id: 400,
+          student: {
+            id: 400,
+            full_name: 'Trần Văn An',
+            phone: '0988767563',
+            zalo_uid: null,
+            line_uid: null,
+          },
+        },
+        zalo_account: null,
+        zalo_group: null,
+        line_account: {
+          id: 77,
+          status: 'ACTIVE',
+          account_type: 'OA',
+          line_mid: 'U_oa_bot',
+          display_name: 'Edura OA',
+        },
+        line_group: null,
+        attendance: { enrollment_class: {} },
+      });
+
+      (prisma.lineContactRelation.findFirst as jest.Mock).mockResolvedValue({
+        id: 25,
+        student_id: 400,
+        line_account_id: 77,
+        relation_status: 'FRIEND',
+        target_type: 'GROUP',
+        line_group_id: 99,
+        friend_line_uid: 'C_care_group_427901798',
+        line_group: { id: 99, line_group_id: 'C_care_group_427901798' },
+      });
+
+      await processDeliveryJob(makeJob(602));
+
+      expect(mockLineDispatcher.sendGroupMessage).toHaveBeenCalledWith({
+        lineAccountId: 77,
+        targetLineGroupId: 'C_care_group_427901798',
+        content: 'Chăm sóc học viên qua Nhóm LINE!',
+        retryKey: expect.stringMatching(/^[0-9a-f-]{36}$/),
+        sentVia: 'automation',
+      });
+      expect(mockLineDispatcher.sendPersonalMessage).not.toHaveBeenCalled();
+      expect(prisma.messageDelivery.update).toHaveBeenLastCalledWith({
+        where: { id: 602 },
+        data: expect.objectContaining({
+          status: 'SENT',
+          provider_message_id: 'line-grp-msg-202',
         }),
       });
     });

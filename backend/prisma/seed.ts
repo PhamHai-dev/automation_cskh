@@ -133,9 +133,10 @@ async function main() {
   const csUsers = await Promise.all([
     prisma.user.create({
       data: {
-        name: 'CVHT01 - CSKH 1',
-        email: 'cskh1@gmail.com',
+        code: 'CVHT01',
         staff_code: 'CVHT01',
+        name: 'Trần Thị Hải Yến',
+        email: 'cskh1@gmail.com',
         password_hash: passwordHash,
         roles: ['CS'],
         active: true,
@@ -144,9 +145,10 @@ async function main() {
     }),
     prisma.user.create({
       data: {
-        name: 'CVHT02 - CSKH 2',
-        email: 'cskh2@gmail.com',
+        code: 'CVHT02',
         staff_code: 'CVHT02',
+        name: 'Lưu Thị Vân',
+        email: 'cskh2@gmail.com',
         password_hash: passwordHash,
         roles: ['CS'],
         active: true,
@@ -155,9 +157,10 @@ async function main() {
     }),
     prisma.user.create({
       data: {
-        name: 'CVHT03 - CSKH 3',
-        email: 'cskh3@gmail.com',
+        code: 'CVHT03',
         staff_code: 'CVHT03',
+        name: 'Đào Thị Minh Huyền',
+        email: 'cskh3@gmail.com',
         password_hash: passwordHash,
         roles: ['CS'],
         active: true,

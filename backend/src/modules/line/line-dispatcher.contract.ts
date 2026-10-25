@@ -11,6 +11,38 @@ export interface LineSendResult {
   sentVia?: 'reply_token' | 'push_api' | 'personal_e2ee';
 }
 
+export interface RichAttachmentItem {
+  url: string;
+  filePath?: string;
+  filename: string;
+  mimeType: string;
+  size: number;
+  width?: number;
+  height?: number;
+}
+
+export interface RichLinkItem {
+  url: string;
+  title?: string;
+  description?: string;
+  thumbnailUrl?: string;
+  buttonLabel?: string;
+}
+
+export interface RichTextStyleSpan {
+  start: number;
+  len: number;
+  st: string; // 'b' | 'i' | 'u' | 's' | 'c_db342e' | 'c_f27806' | 'c_f7b503' | 'c_15a85f' | 'f_13' | 'f_18' | 'lst_1' | 'lst_2'
+}
+
+export interface RichMessageMetadata {
+  urgency?: 0 | 1 | 2; // 0 = Default, 1 = Important (!), 2 = Urgent (!!)
+  styles?: RichTextStyleSpan[];
+  attachments?: RichAttachmentItem[];
+  links?: RichLinkItem[];
+  flexMessages?: any[]; // optional pre-compiled LINE Flex / Image message objects
+}
+
 export interface ILineDeliveryDispatcher {
   /**
    * Ensure the given LINE account is connected/ready in the pool.
@@ -28,6 +60,7 @@ export interface ILineDeliveryDispatcher {
     lineAccountId: number;
     targetLineUid: string;
     content: string;
+    richMetadata?: RichMessageMetadata | null;
     retryKey?: string;
     sentVia?: 'user' | 'automation' | 'system';
   }): Promise<LineSendResult>;
@@ -39,6 +72,7 @@ export interface ILineDeliveryDispatcher {
     lineAccountId: number;
     targetLineGroupId: string;
     content: string;
+    richMetadata?: RichMessageMetadata | null;
     retryKey?: string;
     sentVia?: 'user' | 'automation' | 'system';
   }): Promise<LineSendResult>;

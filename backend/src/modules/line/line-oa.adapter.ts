@@ -18,9 +18,10 @@ import crypto from 'node:crypto';
 import { messagingApi, validateSignature } from '@line/bot-sdk';
 import { prisma } from '../../prisma/client';
 import { createLogger } from '../../shared/logger/logger';
+import { buildLineMessagesPayload } from '../automation/rich-message.compiler';
 import { lineRateLimiter } from './line-rate-limiter';
 import type { LineBotProfileInfo, LineOaSessionData } from './types/line.types';
-import type { LineSendResult } from './line-dispatcher.contract';
+import type { LineSendResult, RichMessageMetadata } from './line-dispatcher.contract';
 
 const log = createLogger('LineOaAdapter');
 
@@ -28,6 +29,7 @@ export interface SendMessageWithReplyFallbackParams {
   lineAccountId: number;
   to: string;
   text: string;
+  richMetadata?: RichMessageMetadata | null;
   quoteToken?: string;
   retryKey?: string;
 }
@@ -156,8 +158,14 @@ export class LineOaAdapter {
   async sendMessageWithReplyFallback(
     params: SendMessageWithReplyFallbackParams,
   ): Promise<LineSendResult & { quoteToken?: string }> {
-    const { lineAccountId, to, text, quoteToken } = params;
+    const { lineAccountId, to, text, richMetadata, quoteToken } = params;
     const now = new Date();
+    const compiledMessages = buildLineMessagesPayload(text, richMetadata);
+
+    const buildMessagesWithQuote = (qt?: string) =>
+      compiledMessages.map((msg, idx) =>
+        idx === 0 && msg.type === 'text' && qt ? { ...msg, quoteToken: qt } : msg,
+      );
 
     const conversation = await prisma.lineConversation.findUnique({
       where: {
@@ -191,13 +199,7 @@ export class LineOaAdapter {
       try {
         const replyRes = await this.client.replyMessage({
           replyToken,
-          messages: [
-            {
-              type: 'text',
-              text,
-              ...(quoteToken ? { quoteToken } : {}),
-            },
-          ],
+          messages: buildMessagesWithQuote(quoteToken),
         });
         const firstSent = replyRes?.sentMessages?.[0];
         return {
@@ -220,7 +222,13 @@ export class LineOaAdapter {
     const retryKey = params.retryKey || crypto.randomUUID();
 
     try {
-      const pushRes = await this.invokePushMessage(to, text, retryKey, quoteToken);
+      const pushRes = await this.invokePushMessage(
+        to,
+        text,
+        retryKey,
+        quoteToken,
+        richMetadata,
+      );
       await this.incrementMonthlyConsumption(lineAccountId);
       const firstSent = pushRes?.sentMessages?.[0];
       return {
@@ -247,7 +255,13 @@ export class LineOaAdapter {
         );
         const fallbackRetryKey = crypto.randomUUID();
         try {
-          const retryRes = await this.invokePushMessage(to, text, fallbackRetryKey, undefined);
+          const retryRes = await this.invokePushMessage(
+            to,
+            text,
+            fallbackRetryKey,
+            undefined,
+            richMetadata,
+          );
           await this.incrementMonthlyConsumption(lineAccountId);
           const firstSent = retryRes?.sentMessages?.[0];
           return {
@@ -275,16 +289,16 @@ export class LineOaAdapter {
     text: string,
     retryKey: string,
     quoteToken?: string,
+    richMetadata?: RichMessageMetadata | null,
   ): Promise<messagingApi.PushMessageResponse> {
+    const compiledMessages = buildLineMessagesPayload(text, richMetadata);
+    const messages = compiledMessages.map((msg, idx) =>
+      idx === 0 && msg.type === 'text' && quoteToken ? { ...msg, quoteToken } : msg,
+    );
+
     const payload: messagingApi.PushMessageRequest = {
       to,
-      messages: [
-        {
-          type: 'text',
-          text,
-          ...(quoteToken ? { quoteToken } : {}),
-        },
-      ],
+      messages,
     };
 
     return (this.client.pushMessage as any)(payload, retryKey);

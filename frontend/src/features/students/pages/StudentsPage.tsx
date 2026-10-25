@@ -777,10 +777,15 @@ export const StudentsPage: React.FC = () => {
     },
     {
       key: 'sale_name',
-      header: 'Sale phụ trách',
+      header: 'Sale / CSKH phụ trách',
       cell: (item) => {
         const enr = item.enrollments?.[0];
-        const sale = enr?.sale_name || enr?.sale?.name || enr?.cs?.name || enr?.cs?.email || '—';
+        const csObj = enr?.cs as any;
+        const csFormatted =
+          csObj?.name && csObj?.code
+            ? `${csObj.name} - ${csObj.code}`
+            : csObj?.name || csObj?.email;
+        const sale = enr?.sale_name || enr?.sale?.name || csFormatted || '—';
         return (
           <div className="flex items-center gap-1.5 font-semibold text-slate-800 text-xs whitespace-nowrap">
             <UserCheck className="w-3.5 h-3.5 text-blue-600 shrink-0" />

@@ -13,6 +13,7 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { prisma } from '../../prisma/client';
 import { createLogger } from '../../shared/logger/logger';
+import { syncAndMatchCareGroups } from './student-care-group-matcher.service';
 
 const log = createLogger('StudentLinkRoutes');
 const router = Router();
@@ -28,6 +29,100 @@ function handleError(res: Response, err: any) {
   const status = err?.status ?? 500;
   res.status(status).json({ success: false, message: err.message ?? 'Internal error' });
 }
+
+// ─── 0. Student Care Group Auto-Sync & Report ────────────────────────
+router.post('/care-groups/sync-and-match', async (req: Request, res: Response) => {
+  try {
+    const role = getRole(req);
+    const userId = req.user!.id;
+    const isAdmin = ['ADMIN', 'MANAGE'].includes(role);
+
+    const schema = z.object({
+      refreshLiveGroups: z.boolean().optional(),
+      cs_id: z.number().int().optional(),
+      student_ids: z.array(z.number().int()).optional(),
+      zalo_account_id: z.number().int().optional(),
+      line_account_id: z.number().int().optional(),
+    });
+    const dto = schema.parse(req.body ?? {});
+
+    const effectiveCsId = isAdmin ? dto.cs_id : userId;
+
+    const report = await syncAndMatchCareGroups({
+      triggeredBy: 'manual',
+      refreshLiveGroups: dto.refreshLiveGroups ?? true,
+      csId: effectiveCsId,
+      studentIds: dto.student_ids,
+      zaloAccountId: dto.zalo_account_id,
+      lineAccountId: dto.line_account_id,
+    });
+
+    res.json({ success: true, data: report, report });
+  } catch (err: any) {
+    if (err instanceof z.ZodError) {
+      return res.status(422).json({ success: false, errors: err.issues });
+    }
+    handleError(res, err);
+  }
+});
+
+router.get('/care-groups/report', async (req: Request, res: Response) => {
+  try {
+    const role = getRole(req);
+    const userId = req.user!.id;
+    const isAdmin = ['ADMIN', 'MANAGE'].includes(role);
+    const csIdParam = req.query.cs_id ? Number(req.query.cs_id) : undefined;
+    const effectiveCsId = isAdmin ? csIdParam : userId;
+
+    const report = await syncAndMatchCareGroups({
+      triggeredBy: 'manual',
+      refreshLiveGroups: false,
+      silent: true,
+      csId: effectiveCsId,
+    });
+
+    res.json({ success: true, data: report, report });
+  } catch (err: any) {
+    handleError(res, err);
+  }
+});
+
+// ─── 0b. GET /zalo/groups (list all Zalo groups across active non-archived accounts) ───
+router.get('/groups', async (req: Request, res: Response) => {
+  try {
+    const role = getRole(req);
+    const userId = req.user!.id;
+    const isAdmin = ['ADMIN', 'MANAGE'].includes(role);
+    const csIdParam = req.query.cs_id ? Number(req.query.cs_id) : undefined;
+    const effectiveCsId = isAdmin ? csIdParam : userId;
+
+    const groups = await prisma.zaloGroup.findMany({
+      where: {
+        zalo_account: {
+          archived_at: null,
+          status: { notIn: ['DISABLED', 'BANNED'] },
+          ...(effectiveCsId ? { cs_id: effectiveCsId } : {}),
+        },
+      },
+      include: {
+        zalo_account: {
+          select: {
+            id: true,
+            cs_id: true,
+            display_name: true,
+            status: true,
+          },
+        },
+        _count: { select: { members: true } },
+      },
+      orderBy: { updated_at: 'desc' },
+    });
+
+    res.json({ success: true, data: groups, groups, items: groups });
+  } catch (err: any) {
+    handleError(res, err);
+  }
+});
 
 // ─── 1. GET /zalo/students/unlinked?q=&cs_id= ───────────────────────
 // List học viên CHƯA link (CS: chỉ học viên mình phụ trách)
@@ -47,12 +142,17 @@ router.get('/students/unlinked', async (req: Request, res: Response) => {
       ? (csIdParam ? { cs_id: csIdParam } : {})
       : { cs_id: userId };
 
-    // Students that have NO zalo_contact_relations
+    // Students that have NO active FRIEND zalo_contact_relations
     const where: any = {
       enrollments: {
         some: csWhere,
       },
-      zalo_contact_relations: { none: {} },
+      zalo_contact_relations: {
+        none: {
+          relation_status: 'FRIEND',
+          zalo_account: { archived_at: null },
+        },
+      },
       ...(q
         ? {
             OR: [
@@ -140,9 +240,19 @@ router.get('/:accountId/students-linked', async (req: Request, res: Response) =>
             avatar_url: true,
           },
         },
+        zalo_group: {
+          select: {
+            id: true,
+            zalo_group_id: true,
+            name: true,
+            avatar_url: true,
+            member_count: true,
+          },
+        },
         student: {
           select: {
             id: true,
+            external_id: true,
             full_name: true,
             phone: true,
             email: true,
@@ -150,7 +260,7 @@ router.get('/:accountId/students-linked', async (req: Request, res: Response) =>
               select: {
                 id: true,
                 package: { select: { id: true, name: true } },
-                cs: { select: { id: true, name: true } },
+                cs: { select: { id: true, code: true, name: true } },
                 enrollment_classes: {
                   take: 1,
                   orderBy: { sequence_no: 'asc' },
@@ -212,13 +322,21 @@ router.get('/:accountId/students-linked', async (req: Request, res: Response) =>
       const friend = digits.length >= 9 ? friendByPhone.get(digits.slice(-9)) : undefined;
       return {
         ...r,
-        friendAvatarUrl: r.avatar_url || friend?.zalo_avatar_url || null,
+        target_type: r.target_type ?? 'USER',
+        matched_by: r.matched_by ?? null,
+        friendAvatarUrl:
+          r.avatar_url || r.zalo_group?.avatar_url || friend?.zalo_avatar_url || null,
         friendDisplayName:
           r.display_name ||
+          r.zalo_group?.name ||
           friend?.alias_in_nick ||
           friend?.zalo_display_name ||
           null,
-        friendZaloUid: (r as any).friend_zalo_uid || friend?.zalo_uid_in_nick || null,
+        friendZaloUid:
+          (r as any).friend_zalo_uid ||
+          r.zalo_group?.zalo_group_id ||
+          friend?.zalo_uid_in_nick ||
+          null,
       };
     });
 
@@ -256,22 +374,37 @@ router.get('/students/:id/links', async (req: Request, res: Response) => {
             display_name: true,
             zalo_phone: true,
             status: true,
-            cs: { select: { id: true, name: true } },
+            cs: { select: { id: true, code: true, name: true } },
           },
         },
-        student: { select: { id: true, full_name: true, phone: true } },
+        zalo_group: {
+          select: {
+            id: true,
+            zalo_group_id: true,
+            name: true,
+            avatar_url: true,
+            member_count: true,
+          },
+        },
+        student: { select: { id: true, external_id: true, full_name: true, phone: true } },
       },
       orderBy: { updated_at: 'desc' },
     });
 
-    res.json({ success: true, items: relations });
+    const enrichedRelations = relations.map((r) => ({
+      ...r,
+      target_type: r.target_type ?? 'USER',
+      matched_by: r.matched_by ?? null,
+    }));
+
+    res.json({ success: true, items: enrichedRelations });
   } catch (err: any) {
     handleError(res, err);
   }
 });
 
 // ─── 4. POST /zalo/links (tạo link) ──────────────────────────────────
-// Body: { student_id, zalo_account_id, relation_status?, display_name? }
+// Body: { student_id, zalo_account_id?, zalo_group_id?, target_type?, relation_status?, display_name?, friend_zalo_uid? }
 router.post('/links', async (req: Request, res: Response) => {
   try {
     const role = getRole(req);
@@ -279,18 +412,52 @@ router.post('/links', async (req: Request, res: Response) => {
 
     const schema = z.object({
       student_id: z.number().int(),
-      zalo_account_id: z.number().int(),
+      zalo_account_id: z.number().int().optional(),
+      zalo_group_id: z.number().int().nullable().optional(),
+      target_type: z.enum(['USER', 'GROUP']).optional(),
       relation_status: z.enum(['FRIEND', 'STRANGER', 'UNKNOWN', 'BLOCKED']).default('FRIEND'),
       display_name: z.string().max(200).optional(),
       friend_zalo_uid: z.string().max(64).optional(),
     });
     const dto = schema.parse(req.body);
 
+    let resolvedGroup: {
+      id: number;
+      zalo_group_id: string;
+      name: string | null;
+      avatar_url: string | null;
+      zalo_account_id: number;
+    } | null = null;
+
+    if (dto.zalo_group_id != null) {
+      resolvedGroup = await prisma.zaloGroup.findUnique({
+        where: { id: dto.zalo_group_id },
+        select: {
+          id: true,
+          zalo_group_id: true,
+          name: true,
+          avatar_url: true,
+          zalo_account_id: true,
+        },
+      });
+      if (!resolvedGroup) {
+        return res.status(404).json({ success: false, message: 'Zalo group not found' });
+      }
+    }
+
+    const effectiveAccountId = resolvedGroup?.zalo_account_id ?? dto.zalo_account_id;
+    if (!effectiveAccountId) {
+      return res.status(422).json({
+        success: false,
+        message: 'zalo_account_id or zalo_group_id is required',
+      });
+    }
+
     // Q-003 scope:
     // - CS: nick phải là của mình + học viên phải thuộc mình
     // - ADMIN/MANAGE: bất kỳ
     const account = await prisma.zaloAccount.findUnique({
-      where: { id: dto.zalo_account_id },
+      where: { id: effectiveAccountId },
       select: { id: true, cs_id: true },
     });
     if (!account) return res.status(404).json({ success: false, message: 'Zalo account not found' });
@@ -308,66 +475,93 @@ router.post('/links', async (req: Request, res: Response) => {
       }
     }
 
+    const isGroupLink = resolvedGroup != null || dto.target_type === 'GROUP';
+    const targetType = isGroupLink ? 'GROUP' : 'USER';
+    const zaloGroupId = resolvedGroup ? resolvedGroup.id : null;
+    const friendZaloUid = resolvedGroup ? resolvedGroup.zalo_group_id : dto.friend_zalo_uid;
+    const displayName = resolvedGroup ? (dto.display_name || resolvedGroup.name || undefined) : dto.display_name;
+    const avatarUrl = resolvedGroup ? (resolvedGroup.avatar_url ?? undefined) : undefined;
+
     const relation = await prisma.zaloContactRelation.upsert({
       where: {
         student_id_zalo_account_id: {
           student_id: dto.student_id,
-          zalo_account_id: dto.zalo_account_id,
+          zalo_account_id: effectiveAccountId,
         },
       },
       create: {
         student_id: dto.student_id,
-        zalo_account_id: dto.zalo_account_id,
+        zalo_account_id: effectiveAccountId,
         relation_status: dto.relation_status,
-        display_name: dto.display_name,
-        friend_zalo_uid: dto.friend_zalo_uid,
+        target_type: targetType,
+        zalo_group_id: zaloGroupId,
+        friend_zalo_uid: friendZaloUid,
+        display_name: displayName,
+        avatar_url: avatarUrl,
+        matched_by: 'MANUAL',
         last_checked_at: new Date(),
       },
       update: {
         relation_status: dto.relation_status,
-        display_name: dto.display_name,
-        friend_zalo_uid: dto.friend_zalo_uid,
+        target_type: targetType,
+        zalo_group_id: zaloGroupId,
+        friend_zalo_uid: friendZaloUid,
+        display_name: displayName,
+        ...(avatarUrl !== undefined ? { avatar_url: avatarUrl } : {}),
+        matched_by: 'MANUAL',
         last_checked_at: new Date(),
+      },
+      include: {
+        zalo_account: {
+          select: { id: true, display_name: true, status: true },
+        },
+        zalo_group: {
+          select: { id: true, zalo_group_id: true, name: true, avatar_url: true, member_count: true },
+        },
       },
     });
 
-    // ─── Populate avatar + display_name from Friend table (best-effort) ────
-    try {
-      const student = await prisma.student.findUnique({
-        where: { id: dto.student_id },
-        select: { phone: true },
-      });
-      if (student?.phone) {
-        const digits = student.phone.replace(/\D/g, '');
-        const friend = await prisma.friend.findFirst({
-          where: {
-            zalo_account_id: dto.zalo_account_id,
-            OR: [
-              { phone_from_sdk: student.phone },
-              ...(digits.length >= 9 ? [{ phone_from_sdk: { endsWith: digits.slice(-9) } }] : []),
-            ],
-          },
-          select: { zalo_avatar_url: true, alias_in_nick: true, zalo_display_name: true, zalo_uid_in_nick: true },
+    // ─── Populate avatar + display_name from Friend table (best-effort, USER links only) ────
+    if (!isGroupLink) {
+      try {
+        const student = await prisma.student.findUnique({
+          where: { id: dto.student_id },
+          select: { phone: true },
         });
-        if (friend) {
-          await prisma.zaloContactRelation.update({
-            where: { id: relation.id },
-            data: {
-              avatar_url: friend.zalo_avatar_url || undefined,
-              display_name: relation.display_name || friend.alias_in_nick || friend.zalo_display_name || undefined,
-              friend_zalo_uid: dto.friend_zalo_uid ?? friend.zalo_uid_in_nick ?? undefined,
+        if (student?.phone) {
+          const digits = student.phone.replace(/\D/g, '');
+          const friend = await prisma.friend.findFirst({
+            where: {
+              zalo_account_id: effectiveAccountId,
+              OR: [
+                { phone_from_sdk: student.phone },
+                ...(digits.length >= 9 ? [{ phone_from_sdk: { endsWith: digits.slice(-9) } }] : []),
+              ],
             },
+            select: { zalo_avatar_url: true, alias_in_nick: true, zalo_display_name: true, zalo_uid_in_nick: true },
           });
-          (relation as any).avatar_url = friend.zalo_avatar_url || relation.avatar_url;
-          (relation as any).display_name = relation.display_name || friend.alias_in_nick || friend.zalo_display_name;
-          (relation as any).friend_zalo_uid = dto.friend_zalo_uid ?? friend.zalo_uid_in_nick ?? null;
+          if (friend) {
+            await prisma.zaloContactRelation.update({
+              where: { id: relation.id },
+              data: {
+                avatar_url: friend.zalo_avatar_url || undefined,
+                display_name: relation.display_name || friend.alias_in_nick || friend.zalo_display_name || undefined,
+                friend_zalo_uid: dto.friend_zalo_uid ?? friend.zalo_uid_in_nick ?? undefined,
+              },
+            });
+            (relation as any).avatar_url = friend.zalo_avatar_url || relation.avatar_url;
+            (relation as any).display_name = relation.display_name || friend.alias_in_nick || friend.zalo_display_name;
+            (relation as any).friend_zalo_uid = dto.friend_zalo_uid ?? friend.zalo_uid_in_nick ?? null;
+          }
         }
-      }
-    } catch { /* non-critical — relation already created */ }
+      } catch { /* non-critical — relation already created */ }
+    }
 
     log.info('Link created', {
       studentId: dto.student_id,
-      zaloAccountId: dto.zalo_account_id,
+      zaloAccountId: effectiveAccountId,
+      zaloGroupId,
+      targetType,
       byUserId: userId,
       role,
     });
@@ -426,6 +620,8 @@ router.patch('/links/:id', async (req: Request, res: Response) => {
       relation_status: z.enum(['FRIEND', 'STRANGER', 'UNKNOWN', 'BLOCKED']).optional(),
       new_zalo_account_id: z.number().int().optional(),
       friend_zalo_uid: z.string().max(64).optional(),
+      zalo_group_id: z.number().int().nullable().optional(),
+      target_type: z.enum(['USER', 'GROUP']).optional(),
     });
     const dto = schema.parse(req.body);
 
@@ -434,6 +630,33 @@ router.patch('/links/:id', async (req: Request, res: Response) => {
       include: { zalo_account: { select: { cs_id: true } } },
     });
     if (!relation) return res.status(404).json({ success: false, message: 'Link not found' });
+
+    let resolvedGroup: {
+      id: number;
+      zalo_group_id: string;
+      name: string | null;
+      avatar_url: string | null;
+      zalo_account_id: number;
+    } | null = null;
+
+    if (dto.zalo_group_id != null) {
+      resolvedGroup = await prisma.zaloGroup.findUnique({
+        where: { id: dto.zalo_group_id },
+        select: {
+          id: true,
+          zalo_group_id: true,
+          name: true,
+          avatar_url: true,
+          zalo_account_id: true,
+        },
+      });
+      if (!resolvedGroup) {
+        return res.status(404).json({ success: false, message: 'Zalo group not found' });
+      }
+      if (dto.new_zalo_account_id === undefined && resolvedGroup.zalo_account_id !== relation.zalo_account_id) {
+        dto.new_zalo_account_id = resolvedGroup.zalo_account_id;
+      }
+    }
 
     // If transferring to another nick, verify the new account belongs to user (Q-003)
     if (dto.new_zalo_account_id !== undefined && dto.new_zalo_account_id !== relation.zalo_account_id) {
@@ -459,6 +682,23 @@ router.patch('/links/:id', async (req: Request, res: Response) => {
       }
     }
 
+    const groupPatchFields = resolvedGroup
+      ? {
+          target_type: 'GROUP',
+          zalo_group_id: resolvedGroup.id,
+          friend_zalo_uid: resolvedGroup.zalo_group_id,
+          display_name: dto.display_name || resolvedGroup.name || relation.display_name,
+          avatar_url: resolvedGroup.avatar_url ?? relation.avatar_url,
+          matched_by: 'MANUAL',
+        }
+      : dto.zalo_group_id === null || dto.target_type === 'USER'
+        ? {
+            target_type: 'USER',
+            zalo_group_id: null,
+            matched_by: 'MANUAL',
+          }
+        : {};
+
     // Execute transfer in a transaction (delete old relation + upsert new one)
     const updated =
       dto.new_zalo_account_id !== undefined && dto.new_zalo_account_id !== relation.zalo_account_id
@@ -477,13 +717,23 @@ router.patch('/links/:id', async (req: Request, res: Response) => {
                 relation_status: dto.relation_status ?? relation.relation_status,
                 display_name: dto.display_name ?? relation.display_name,
                 friend_zalo_uid: dto.friend_zalo_uid ?? undefined,
+                ...groupPatchFields,
                 last_checked_at: new Date(),
               },
               update: {
                 relation_status: dto.relation_status ?? relation.relation_status,
                 display_name: dto.display_name ?? relation.display_name,
                 ...(dto.friend_zalo_uid !== undefined && { friend_zalo_uid: dto.friend_zalo_uid }),
+                ...groupPatchFields,
                 last_checked_at: new Date(),
+              },
+              include: {
+                zalo_account: {
+                  select: { id: true, display_name: true, status: true },
+                },
+                zalo_group: {
+                  select: { id: true, zalo_group_id: true, name: true, avatar_url: true, member_count: true },
+                },
               },
             });
           })
@@ -493,40 +743,51 @@ router.patch('/links/:id', async (req: Request, res: Response) => {
               ...(dto.display_name !== undefined && { display_name: dto.display_name }),
               ...(dto.relation_status !== undefined && { relation_status: dto.relation_status }),
               ...(dto.friend_zalo_uid !== undefined && { friend_zalo_uid: dto.friend_zalo_uid }),
+              ...groupPatchFields,
               last_checked_at: new Date(),
+            },
+            include: {
+              zalo_account: {
+                select: { id: true, display_name: true, status: true },
+              },
+              zalo_group: {
+                select: { id: true, zalo_group_id: true, name: true, avatar_url: true, member_count: true },
+              },
             },
           });
 
-    // ─── Populate avatar from Friend table for the new target ──────────
-    try {
-      const student = await prisma.student.findUnique({
-        where: { id: updated.student_id },
-        select: { phone: true },
-      });
-      if (student?.phone) {
-        const digits = student.phone.replace(/\D/g, '');
-        const friend = await prisma.friend.findFirst({
-          where: {
-            zalo_account_id: updated.zalo_account_id,
-            OR: [
-              { phone_from_sdk: student.phone },
-              ...(digits.length >= 9 ? [{ phone_from_sdk: { endsWith: digits.slice(-9) } }] : []),
-            ],
-          },
-          select: { zalo_avatar_url: true, alias_in_nick: true, zalo_display_name: true },
+    // ─── Populate avatar from Friend table for the new target (USER links only) ──────────
+    if (!resolvedGroup && updated.target_type !== 'GROUP') {
+      try {
+        const student = await prisma.student.findUnique({
+          where: { id: updated.student_id },
+          select: { phone: true },
         });
-        if (friend) {
-          await prisma.zaloContactRelation.update({
-            where: { id: updated.id },
-            data: {
-              avatar_url: friend.zalo_avatar_url || undefined,
-              display_name: updated.display_name || friend.alias_in_nick || friend.zalo_display_name || undefined,
+        if (student?.phone) {
+          const digits = student.phone.replace(/\D/g, '');
+          const friend = await prisma.friend.findFirst({
+            where: {
+              zalo_account_id: updated.zalo_account_id,
+              OR: [
+                { phone_from_sdk: student.phone },
+                ...(digits.length >= 9 ? [{ phone_from_sdk: { endsWith: digits.slice(-9) } }] : []),
+              ],
             },
+            select: { zalo_avatar_url: true, alias_in_nick: true, zalo_display_name: true },
           });
-          (updated as any).avatar_url = friend.zalo_avatar_url || updated.avatar_url;
+          if (friend) {
+            await prisma.zaloContactRelation.update({
+              where: { id: updated.id },
+              data: {
+                avatar_url: friend.zalo_avatar_url || undefined,
+                display_name: updated.display_name || friend.alias_in_nick || friend.zalo_display_name || undefined,
+              },
+            });
+            (updated as any).avatar_url = friend.zalo_avatar_url || updated.avatar_url;
+          }
         }
-      }
-    } catch { /* non-critical */ }
+      } catch { /* non-critical */ }
+    }
 
     log.info('Link updated', { relationId, byUserId: userId, role, transferTo: dto.new_zalo_account_id });
 

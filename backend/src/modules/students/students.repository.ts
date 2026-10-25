@@ -61,6 +61,7 @@ export class StudentsRepository {
             cs: {
               select: {
                 id: true,
+                code: true,
                 name: true,
                 email: true,
                 staff_code: true,
@@ -91,6 +92,20 @@ export class StudentsRepository {
             care_tasks: true,
           },
           orderBy: { created_at: 'desc' },
+        },
+        zalo_contact_relations: {
+          where: { zalo_account: { archived_at: null } },
+          include: {
+            zalo_account: { select: { id: true, display_name: true, status: true } },
+            zalo_group: { select: { id: true, zalo_group_id: true, name: true, avatar_url: true, member_count: true } },
+          },
+        },
+        line_contact_relations: {
+          where: { line_account: { archived_at: null } },
+          include: {
+            line_account: { select: { id: true, display_name: true, account_type: true, status: true } },
+            line_group: { select: { id: true, line_group_id: true, name: true, avatar_url: true, member_count: true } },
+          },
         },
       },
       orderBy: { id: 'asc' },
@@ -178,13 +193,15 @@ export class StudentsRepository {
       // 2. Resolve CS/Sale user
       let csId = currentUserId;
       const allUsers = await tx.user.findMany({
-        select: { id: true, name: true, email: true, roles: true },
+        select: { id: true, code: true, name: true, email: true, roles: true },
       });
 
       if (data.sale_name) {
         const query = data.sale_name.trim().toLowerCase();
         const matched = allUsers.find(
           (u) =>
+            (u.code && query.includes(u.code.toLowerCase())) ||
+            (u.name && query.includes(u.name.toLowerCase())) ||
             u.name?.toLowerCase().includes(query) ||
             u.email.toLowerCase().includes(query)
         );

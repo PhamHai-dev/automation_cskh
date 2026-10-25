@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowRight, CheckCircle2, FileSpreadsheet, Upload, AlertTriangle, UserCheck, Scale } from 'lucide-react';
+import { ArrowRight, CheckCircle2, FileSpreadsheet, Upload, AlertTriangle, UserCheck, Scale, Loader2, Link2 } from 'lucide-react';
 import { Button } from '../../../components/ui/Button';
 import { Badge } from '../../../components/ui/Badge';
 import { Card } from '../../../components/ui/Card';
@@ -9,12 +9,27 @@ import { importsApi } from '../api/imports.api';
 import { apiClient } from '../../../api/client';
 import { useAuth } from '../../../contexts/AuthContext';
 import { LogicalSheet, SheetPreviewData, UploadResponse, ValidationReport, ImportBatchSummary } from '../types/imports.types';
+import { omnichannelApi, type CareGroupSyncReport } from '../../omnichannel/api/omnichannel.api';
+import { CareGroupSyncReportCard } from '../../omnichannel/components/CareGroupSyncReportCard';
 
 interface CSUser {
   id: number;
+  code?: string | null;
+  display_label?: string;
   name: string | null;
   email: string;
   roles: string[];
+}
+
+function formatCsUserOption(u: CSUser): string {
+  if (u.display_label) return u.display_label;
+  const name = (u.name || '').trim();
+  const code = (u.code || '').trim();
+  if (name && code) {
+    if (name.toUpperCase().includes(code.toUpperCase())) return name;
+    return `${name} - ${code}`;
+  }
+  return name || code || u.email;
 }
 
 interface Props { onImportComplete?: () => void }
@@ -61,6 +76,8 @@ export const ImportWizard: React.FC<Props> = ({ onImportComplete }) => {
   const [busy, setBusy] = useState(false);
   const [csUsers, setCsUsers] = useState<CSUser[]>([]);
   const [assignedCsId, setAssignedCsId] = useState<number | undefined>(undefined);
+  const [careSyncReport, setCareSyncReport] = useState<CareGroupSyncReport | null>(null);
+  const [syncingCareGroups, setSyncingCareGroups] = useState(false);
 
   useEffect(() => {
     if (isAdminOrManage) {
@@ -121,12 +138,43 @@ export const ImportWizard: React.FC<Props> = ({ onImportComplete }) => {
     setStep(3);
   });
 
+  const runCareGroupResync = async () => {
+    try {
+      setSyncingCareGroups(true);
+      const syncRes = await omnichannelApi.syncAndMatchCareGroups({
+        refreshLiveGroups: true,
+        cs_id: assignedCsId,
+      });
+      setCareSyncReport(syncRes);
+      toast.success('Đã đồng bộ và đối sánh liên kết Nhóm Chăm sóc Zalo/LINE!');
+    } catch {
+      try {
+        const fallbackReport = await omnichannelApi.getCareGroupReport({
+          cs_id: assignedCsId,
+        });
+        setCareSyncReport(fallbackReport);
+      } catch {
+        // ignore fallback error
+      }
+    } finally {
+      setSyncingCareGroups(false);
+    }
+  };
+
   const confirm = () => run(async () => {
     if (!upload) return;
+    setSyncingCareGroups(true);
     const res = await importsApi.confirm(upload.importId, true, assignedCsId);
     setResult(res);
     setStep(4);
     onImportComplete?.();
+
+    if (res.care_group_sync_report) {
+      setCareSyncReport(res.care_group_sync_report as CareGroupSyncReport);
+      setSyncingCareGroups(false);
+    } else {
+      await runCareGroupResync();
+    }
   });
 
   const isValidateDisabled = Boolean(previews?.studentEnrollment && (!mappings.studentEnrollment.external_id || !mappings.studentEnrollment.package_code));
@@ -167,7 +215,7 @@ export const ImportWizard: React.FC<Props> = ({ onImportComplete }) => {
               <option value="">-- Mặc định: Gán cho tài khoản của bạn --</option>
               {csUsers.map((u) => (
                 <option key={u.id} value={u.id}>
-                  {u.name || u.email} ({u.email})
+                  {formatCsUserOption(u)} ({u.email})
                 </option>
               ))}
             </select>
@@ -252,10 +300,24 @@ export const ImportWizard: React.FC<Props> = ({ onImportComplete }) => {
         </div>
         {selectedCsUser && (
           <Badge variant="info" className="text-xs py-1 px-3">
-            CSKH phụ trách: <b>{selectedCsUser.name || selectedCsUser.email}</b>
+            CSKH phụ trách: <b>{formatCsUserOption(selectedCsUser)}</b>
           </Badge>
         )}
       </div>
+
+      {busy && (
+        <div className="rounded-xl border border-blue-200 bg-gradient-to-r from-blue-50 via-indigo-50/70 to-emerald-50 p-4 flex items-center gap-3 text-left shadow-xs">
+          <Loader2 className="w-5 h-5 text-blue-600 animate-spin shrink-0" />
+          <div className="text-xs text-blue-900">
+            <div className="font-bold">
+              Đang nhập hồ sơ học viên và tự động đồng bộ liên kết Nhóm Chăm sóc Zalo/LINE theo quy tắc [Mã CS - Mã HV]...
+            </div>
+            <div className="text-[11px] text-blue-700 mt-0.5">
+              Vui lòng giữ nguyên màn hình trong giây lát để hệ thống hoàn tất ghi dữ liệu và đối sánh tên nhóm Zalo/LINE.
+            </div>
+          </div>
+        </div>
+      )}
       <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
         {[
           ['Tổng khóa', report.summary.totalKeys, 'info'],
@@ -370,9 +432,26 @@ export const ImportWizard: React.FC<Props> = ({ onImportComplete }) => {
           </p>
         </div>
       ) : null}
+
+      <div className="pt-2">
+        <CareGroupSyncReportCard
+          report={careSyncReport}
+          isSyncing={syncingCareGroups}
+          onResync={runCareGroupResync}
+        />
+      </div>
+
       <div className="flex flex-wrap items-center justify-center gap-3">
-        <Button id="new-import-button" variant="outline" onClick={() => { setStep(1); setFile(null); setUpload(null); setReport(null); setResult(null); }}>
+        <Button id="new-import-button" variant="outline" onClick={() => { setStep(1); setFile(null); setUpload(null); setReport(null); setResult(null); setCareSyncReport(null); }}>
           Nhập file khác
+        </Button>
+        <Button
+          id="go-omnichannel-links-button"
+          variant="outline"
+          leftIcon={<Link2 className="w-4 h-4" />}
+          onClick={() => navigate('/omnichannel/student-links')}
+        >
+          Mở Ma trận Liên kết Nhóm Chăm sóc 360°
         </Button>
         <Button
           id="go-reconciliation-button"

@@ -1,4 +1,5 @@
 import { ImportBatchStatus, ImportType } from '@prisma/client';
+import type { CareGroupSyncReport } from '../zalo/student-care-group.contract';
 
 export type LogicalSheet = 'studentEnrollment' | 'attendance';
 export type ReconcileClassification = 'UPDATE' | 'CREATE' | 'REQUEST_TRANSFER' | 'REQUEST_CREATE' | 'CONFLICT' | 'INVALID' | 'SKIPPED_SCOPE';
@@ -125,6 +126,7 @@ export interface ImportBatchSummary {
   success_rows: number;
   failed_rows: number;
   conflict_attendances?: number;
+  care_group_sync_report?: CareGroupSyncReport | null;
   created_at: Date;
   completed_at: Date | null;
   uploaded_by: { id: number; name: string | null; email: string };

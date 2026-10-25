@@ -1,4 +1,5 @@
 import express, { Express, Request, Response, NextFunction } from 'express';
+import path from 'path';
 import cors from 'cors';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
@@ -28,11 +29,12 @@ const app: Express = express();
 const httpLog = createLogger('HTTP');
 
 // Middlewares
-app.use(helmet());
+app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 app.use(cors({
   origin: 'http://localhost:5173', // or frontend origin
   credentials: true,
 }));
+app.use('/uploads', express.static(path.resolve(process.cwd(), 'uploads')));
 app.use(express.json({
   verify: (req: any, _res, buf) => {
     if (req.originalUrl?.startsWith('/api/v1/line/webhook')) {

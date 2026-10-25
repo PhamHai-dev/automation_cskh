@@ -17,9 +17,11 @@ const WEEKDAY_ORDER = [2, 3, 4, 5, 6, 7, 8] as const;
 /**
  * Parses the compact Vietnamese schedule grammar used by the product.
  * Weekdays use 2..7 and Sunday is represented by CN (mapped internally to 8).
+ * Separators (spaces, commas, dashes, ...) are tolerated so legacy values
+ * like "2,4,6" keep working and normalize to the canonical "246".
  */
 export function parseSchedulePattern(input: string): ParsedSchedulePattern {
-  const normalized = input.trim().toUpperCase();
+  const normalized = input.trim().toUpperCase().replace(/[\s,;.|_\-/]+/g, '');
 
   if (normalized === 'LKCD') {
     return { kind: 'MANUAL_ONLY', canonical: 'LKCD', weekdays: [] };

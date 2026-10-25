@@ -482,23 +482,46 @@ export function attachListenersForAccount(accountId: number): void {
   });
 
   // ─── group_event ─────────────────────────────────────────────────────────
-  // Immediate refresh for avatar/name/setting changes (skip 6h cron delay)
+  // Immediate refresh for avatar/name/setting/create/join changes (skip 6h cron delay)
   listener.on('group_event', (event: any) => {
     const eventType = event?.type ?? 'unknown';
-    const groupId = event?.groupId;
+    const groupId = event?.groupId ?? event?.data?.groupId;
     log.info('Group event', { accountId, type: eventType, groupId, actorId: event?.actorId });
 
-    if ((eventType === 'update_avatar' || eventType === 'update' || eventType === 'update_setting') && groupId) {
-      if (groupHandler) {
-        groupHandler(accountId, String(groupId)).catch((err) =>
-          log.warn('group_event refresh failed', { accountId, error: String(err) }),
-        );
+    void (async () => {
+      try {
+        if (groupId) {
+          // Ensure group info is upserted in DB even for newly created/joined groups
+          const groupInfo = await resolveGroupInfo(api, String(groupId));
+          if (groupInfo.name || groupInfo.avatar || groupInfo.membersCount != null) {
+            const { zaloRepository } = await import('./zalo-repository');
+            await zaloRepository.upsertGroup(String(groupId), accountId, {
+              name: groupInfo.name || undefined,
+              avatar_url: groupInfo.avatar || undefined,
+              member_count: groupInfo.membersCount ?? undefined,
+            });
+          }
+          if (groupHandler) {
+            await groupHandler(accountId, String(groupId));
+          }
+          // Real-time: broadcast group update
+          emitToAccount(accountId, 'zalo:group-update', {
+            accountId,
+            type: eventType,
+            groupId: String(groupId),
+          });
+        }
+
+        const { syncAndMatchCareGroups } = await import('./student-care-group-matcher.service');
+        await syncAndMatchCareGroups({
+          triggeredBy: 'group_event',
+          zaloAccountId: accountId,
+          refreshLiveGroups: false,
+        });
+      } catch (err) {
+        log.warn('group_event refresh/match failed', { accountId, error: String(err) });
       }
-      // Real-time: broadcast group update
-      emitToAccount(accountId, 'zalo:group-update', {
-        accountId, type: eventType, groupId: String(groupId),
-      });
-    }
+    })();
   });
 
   // ─── closed ──────────────────────────────────────────────────────────────

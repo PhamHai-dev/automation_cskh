@@ -7,6 +7,8 @@ import { ImportsRepository } from './imports.repository';
 import { SheetPreviewData, UploadResponse, ValidationReport, ValidationErrorItem, ValidationWarningItem, SaveMappingDTO, ImportBatchSummary, RequestActor, ReconcileItem, ReconcileClassification, LogicalSheet, MonthAttendanceBlock } from './imports.types';
 import { AppError } from '../../middlewares/error.middleware';
 import { normalizeDateOnly, attendanceStatusLabel } from '../attendance/attendance.utils';
+import { runStudentCareGroupAutoSync } from '../zalo/student-care-group.contract';
+import { getIo } from '../../shared/realtime/socket-singleton';
 import {
   extractCellValue,
   extractCvhtCode,
@@ -1701,7 +1703,26 @@ export class ImportsService {
       this.cleanupTempFiles(importId, meta);
     }
 
-    return { ...updated, conflict_attendances: 0 };
+    getIo()?.emit('import:sync-progress', {
+      importId,
+      stage: 'MATCHING_CARE_GROUPS',
+      message: 'Đang tự động dò tìm và gắn liên kết Nhóm Chăm sóc Zalo/LINE cho học viên...',
+    });
+    const careGroupSyncReport = await runStudentCareGroupAutoSync({
+      triggeredBy: 'import',
+      refreshLiveGroups: true,
+    }).catch(() => null);
+    getIo()?.emit('import:sync-progress', {
+      importId,
+      stage: 'COMPLETED',
+      report: careGroupSyncReport,
+    });
+
+    return {
+      ...updated,
+      conflict_attendances: 0,
+      care_group_sync_report: careGroupSyncReport,
+    };
   }
 
   // Execute import
@@ -2160,7 +2181,26 @@ export class ImportsService {
       },
     });
 
-    return { ...updatedBatch, conflict_attendances: totalConflictAttendances };
+    getIo()?.emit('import:sync-progress', {
+      importId,
+      stage: 'MATCHING_CARE_GROUPS',
+      message: 'Đang tự động dò tìm và gắn liên kết Nhóm Chăm sóc Zalo/LINE cho học viên...',
+    });
+    const careGroupSyncReport = await runStudentCareGroupAutoSync({
+      triggeredBy: 'import',
+      refreshLiveGroups: true,
+    }).catch(() => null);
+    getIo()?.emit('import:sync-progress', {
+      importId,
+      stage: 'COMPLETED',
+      report: careGroupSyncReport,
+    });
+
+    return {
+      ...updatedBatch,
+      conflict_attendances: totalConflictAttendances,
+      care_group_sync_report: careGroupSyncReport,
+    };
   }
 
   // Get batch by ID
@@ -2417,7 +2457,7 @@ export class ImportsService {
     if (existing && existing.enrollments.length > 0) {
       // Approved transfer of existing enrollment
       const enrollment = existing.enrollments[0];
-      return prisma.$transaction(async (tx) => {
+      const transferResult = await prisma.$transaction(async (tx) => {
         const updateData: any = {
           cs_id: csId,
           external_synced_at: new Date(),
@@ -2455,9 +2495,17 @@ export class ImportsService {
 
         return { student: existing, enrollment: updatedEnrollment, request };
       });
+
+      await runStudentCareGroupAutoSync({
+        triggeredBy: 'import',
+        refreshLiveGroups: false,
+        studentIds: [existing.id],
+      }).catch(() => null);
+
+      return transferResult;
     }
 
-    return prisma.$transaction(async (tx) => {
+    const createResult = await prisma.$transaction(async (tx) => {
       let studentId = existing?.id;
       let student = existing as any;
       if (!studentId) {
@@ -2506,6 +2554,16 @@ export class ImportsService {
       await tx.auditLog.create({ data: { user_id: actor.id, action: 'IMPORT_REQUEST_APPROVED', entity_type: 'ImportCreateRequest', entity_id: String(id), before_data: before as any, after_data: request as any } });
       return { student, enrollment, enrollmentClass, request };
     });
+
+    if (createResult?.student?.id) {
+      await runStudentCareGroupAutoSync({
+        triggeredBy: 'import',
+        refreshLiveGroups: false,
+        studentIds: [createResult.student.id],
+      }).catch(() => null);
+    }
+
+    return createResult;
   }
 
 }

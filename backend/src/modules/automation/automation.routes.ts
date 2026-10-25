@@ -7,12 +7,16 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { authenticate } from '../../middlewares/auth.middleware';
 import { automationService } from './automation.service';
+import { broadcastRouter } from './broadcast.routes';
 import { prisma } from '../../prisma/client';
 
 const router = Router();
 
 // All automation endpoints require auth
 router.use(authenticate);
+
+// Broadcast & Scheduled Campaigns (/api/v1/automation/broadcasts)
+router.use('/broadcasts', broadcastRouter);
 
 // ─── Helpers ─────────────────────────────────────────────────────────
 

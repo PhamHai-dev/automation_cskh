@@ -17,8 +17,11 @@ type AdminTab = 'users' | 'settings';
 
 interface User {
   id: number;
+  code?: string | null;
+  display_label?: string;
   name: string;
   email: string;
+  phone?: string | null;
   staff_code?: string | null;
   roles: string[];
   active: boolean;
@@ -61,7 +64,15 @@ export const UsersPage: React.FC = () => {
   const [userToRevokeSessions, setUserToRevokeSessions] = useState<User | null>(null);
 
   // Form states
-  const [formData, setFormData] = useState({ name: '', email: '', password: '', staff_code: '', roles: [] as string[] });
+  const [formData, setFormData] = useState({
+    code: '',
+    name: '',
+    email: '',
+    phone: '',
+    password: '',
+    staff_code: '',
+    roles: [] as string[],
+  });
 
   const fetchUsers = async () => {
     try {
@@ -83,15 +94,17 @@ export const UsersPage: React.FC = () => {
     if (user) {
       setEditingUser(user);
       setFormData({
+        code: user.code || '',
         name: user.name,
         email: user.email,
+        phone: user.phone || '',
         password: '',
         staff_code: user.staff_code || '',
         roles: user.roles,
       });
     } else {
       setEditingUser(null);
-      setFormData({ name: '', email: '', password: '', staff_code: '', roles: ['CS'] });
+      setFormData({ code: '', name: '', email: '', phone: '', password: '', staff_code: '', roles: ['CS'] });
     }
     setIsModalOpen(true);
   };
@@ -115,7 +128,9 @@ export const UsersPage: React.FC = () => {
     try {
       if (editingUser) {
         await apiClient.patch(`/settings/users/${editingUser.id}`, {
+          code: formData.code || undefined,
           name: formData.name,
+          phone: formData.phone || undefined,
           staff_code: formData.staff_code.trim() || null,
           roles: formData.roles,
         });
@@ -123,6 +138,8 @@ export const UsersPage: React.FC = () => {
       } else {
         await apiClient.post('/settings/users', {
           ...formData,
+          code: formData.code || undefined,
+          phone: formData.phone || undefined,
           staff_code: formData.staff_code.trim() || null,
         });
         toast.success('Tạo tài khoản người dùng mới thành công!');
@@ -160,11 +177,14 @@ export const UsersPage: React.FC = () => {
 
   const filteredUsers = useMemo(() => {
     return users.filter((u) => {
+      const q = searchTerm.toLowerCase().trim();
       const matchSearch =
-        !searchTerm.trim() ||
-        u.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        u.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (u.staff_code && u.staff_code.toLowerCase().includes(searchTerm.toLowerCase()));
+        !q ||
+        u.name.toLowerCase().includes(q) ||
+        u.email.toLowerCase().includes(q) ||
+        (u.code && u.code.toLowerCase().includes(q)) ||
+        (u.staff_code && u.staff_code.toLowerCase().includes(q)) ||
+        (u.display_label && u.display_label.toLowerCase().includes(q));
 
       const matchRole = !roleFilter || u.roles.includes(roleFilter);
 
@@ -176,18 +196,40 @@ export const UsersPage: React.FC = () => {
 
   const columns: Column<User>[] = [
     {
+      header: 'Mã định danh (ID)',
+      cell: (item) => {
+        const isCS = item.roles.includes('CS');
+        return item.code ? (
+          <span className="font-mono font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-md text-xs">
+            {item.code}
+          </span>
+        ) : isCS ? (
+          <span className="font-mono text-amber-600 text-xs">CVHT--</span>
+        ) : (
+          <span className="font-mono text-slate-400 text-xs">#{item.id}</span>
+        );
+      },
+    },
+    {
       header: 'Họ tên & Email',
-      cell: (item) => (
-        <div className="flex items-center space-x-3">
-          <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-xs">
-            {item.name.charAt(0).toUpperCase()}
+      cell: (item) => {
+        const isCS = item.roles.includes('CS');
+        const fullDisplay = isCS && item.code ? `${item.name} - ${item.code}` : item.name;
+        return (
+          <div className="flex items-center space-x-3">
+            <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-xs">
+              {item.name.charAt(0).toUpperCase()}
+            </div>
+            <div>
+              <div className="font-bold text-slate-900 text-xs">{fullDisplay}</div>
+              <div className="text-slate-500 text-[11px]">
+                {item.email}
+                {item.phone ? ` · ${item.phone}` : ''}
+              </div>
+            </div>
           </div>
-          <div>
-            <div className="font-bold text-slate-900 text-xs">{item.name}</div>
-            <div className="text-slate-500 text-[11px]">{item.email}</div>
-          </div>
-        </div>
-      ),
+        );
+      },
     },
     {
       header: 'Mã nhân viên / CVHT',
@@ -374,27 +416,56 @@ export const UsersPage: React.FC = () => {
         }
       >
         <form id="user-form" onSubmit={handleSubmit} className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="sm:col-span-2">
+              <Input
+                label="Họ và tên *"
+                required
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                placeholder="Trần Thị Hải Yến"
+              />
+            </div>
+            <div>
+              <Input
+                label={formData.roles.includes('CS') ? 'Mã CSKH (CVHTxx)' : 'Mã nhân viên'}
+                value={formData.code}
+                onChange={(e) => setFormData({ ...formData, code: e.target.value })}
+                placeholder={formData.roles.includes('CS') ? 'Tự động: CVHT01...' : 'Tùy chọn'}
+              />
+            </div>
+          </div>
+          {formData.roles.includes('CS') && (
+            <div className="text-[11px] text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-1.5">
+              Định dạng hiển thị chuẩn CSKH:{' '}
+              <strong>
+                {formData.name.trim() || 'Họ và tên'} -{' '}
+                {formData.code.trim().toUpperCase() || formData.staff_code.trim().toUpperCase() || 'CVHTxx (tự động cấp từ 01)'}
+              </strong>
+            </div>
+          )}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Input
+              label="Địa chỉ Email *"
+              required
+              type="email"
+              disabled={!!editingUser}
+              value={formData.email}
+              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+              placeholder="user@example.com"
+            />
+            <Input
+              label="Số điện thoại"
+              value={formData.phone}
+              onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+              placeholder="0912345678"
+            />
+          </div>
           <Input
-            label="Họ và tên *"
-            required
-            value={formData.name}
-            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-            placeholder="Nguyễn Văn A"
-          />
-          <Input
-            label="Địa chỉ Email *"
-            required
-            type="email"
-            disabled={!!editingUser}
-            value={formData.email}
-            onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-            placeholder="user@example.com"
-          />
-          <Input
-            label="Mã CVHT / Nhân viên (staff_code)"
+            label="Mã nhân viên dùng cho Google Sheet (staff_code)"
             value={formData.staff_code}
             onChange={(e) => setFormData({ ...formData, staff_code: e.target.value.toUpperCase() })}
-            placeholder="VD: CVHT01, CVHT02, CVHT03..."
+            placeholder="Tự đồng bộ theo mã CVHTxx nếu để trống"
           />
           {!editingUser && (
             <Input

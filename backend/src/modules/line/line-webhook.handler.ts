@@ -24,6 +24,7 @@ import {
   emitLineGroupUpdate,
   emitLineMessage,
 } from './line-socket';
+import { runStudentCareGroupAutoSync } from '../zalo/student-care-group.contract';
 
 const log = createLogger('LineWebhook');
 
@@ -233,6 +234,12 @@ export class LineWebhookHandler {
           action: 'joined',
           timestamp: eventTime.toISOString(),
         });
+
+        void runStudentCareGroupAutoSync({
+          triggeredBy: 'group_event',
+          lineAccountId: accountId,
+          refreshLiveGroups: false,
+        }).catch(() => undefined);
         break;
       }
 
@@ -320,9 +327,27 @@ export class LineWebhookHandler {
         }
 
         if (isGroup && groupId) {
+          let groupNameFromSdk: string | undefined;
+          let groupAvatarFromSdk: string | undefined;
+          let groupMemberCountFromSdk: number | undefined;
+          if (oaAdapter) {
+            try {
+              const info = await oaAdapter.getGroupInfo(groupId);
+              groupNameFromSdk = info.groupName;
+              groupAvatarFromSdk = info.pictureUrl;
+              groupMemberCountFromSdk = info.memberCount;
+            } catch {
+              // ignore
+            }
+          }
           const group = await lineRepository.upsertGroup({
             line_group_id: groupId,
             line_account_id: accountId,
+            ...(groupNameFromSdk ? { name: groupNameFromSdk } : {}),
+            ...(groupAvatarFromSdk ? { avatar_url: groupAvatarFromSdk } : {}),
+            ...(groupMemberCountFromSdk !== undefined
+              ? { member_count: groupMemberCountFromSdk }
+              : {}),
           });
           if (userId) {
             await lineRepository.upsertGroupMember({
@@ -332,6 +357,11 @@ export class LineWebhookHandler {
               avatar_url: senderAvatar,
             });
           }
+          void runStudentCareGroupAutoSync({
+            triggeredBy: 'group_event',
+            lineAccountId: accountId,
+            refreshLiveGroups: false,
+          }).catch(() => undefined);
         }
 
         const replyTokenExpiresAt = replyToken ? new Date(Date.now() + 50_000) : undefined;
@@ -516,6 +546,12 @@ export class LineWebhookHandler {
       action: 'linked',
       timestamp: new Date().toISOString(),
     });
+
+    void runStudentCareGroupAutoSync({
+      triggeredBy: 'group_event',
+      lineAccountId: params.accountId,
+      refreshLiveGroups: false,
+    }).catch(() => undefined);
 
     if (params.oaAdapter && params.replyToken) {
       await prisma.lineConversation

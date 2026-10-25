@@ -4,6 +4,7 @@ import {
   normalizeSchedulePattern,
   normalizeScheduleTime,
 } from '../../shared/schedule/schedule-pattern';
+import { runStudentCareGroupAutoSync } from '../zalo/student-care-group.contract';
 
 class CustomError extends Error {
   status: number;
@@ -47,7 +48,15 @@ export class StudentsService {
       const existing = await this.repository.findByEmail(normalizedData.email.trim());
       if (existing) throw new CustomError('Student with this email already exists', 409);
     }
-    return this.repository.create(normalizedData, currentUserId);
+    const created = await this.repository.create(normalizedData, currentUserId);
+    if (created?.id) {
+      await runStudentCareGroupAutoSync({
+        triggeredBy: 'manual',
+        refreshLiveGroups: false,
+        studentIds: [created.id],
+      }).catch(() => null);
+    }
+    return created;
   }
 
   async updateStudent(id: number, data: UpdateStudentDTO) {
@@ -64,7 +73,13 @@ export class StudentsService {
       if (duplicateEmail) throw new CustomError('Student with this email already exists', 409);
     }
 
-    return this.repository.update(id, normalizedData);
+    const updated = await this.repository.update(id, normalizedData);
+    await runStudentCareGroupAutoSync({
+      triggeredBy: 'manual',
+      refreshLiveGroups: false,
+      studentIds: [id],
+    }).catch(() => null);
+    return updated;
   }
 
   private normalizeScheduleFields<T extends CreateStudentDTO | UpdateStudentDTO>(data: T): T {
