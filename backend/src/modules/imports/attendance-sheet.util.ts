@@ -101,6 +101,9 @@ export interface AttendanceMonthBlock {
 }
 
 const MONTH_LABEL_RE = /TH[ÁA]NG\s*(\d{1,2})\s*[\/\-.]\s*((?:19|20)\d{2})/i;
+/** `Tháng 1` / `THÁNG 01` without an explicit year (file Sổ CSKH marks the
+ *  year once in row 1, e.g. ô Y1 = 2026; the day headers in row 2 carry it). */
+const MONTH_LABEL_NO_YEAR_RE = /^TH[ÁA]NG\s*(\d{1,2})$/i;
 
 /**
  * Fold Vietnamese text for header matching: strip diacritics (NFD + combining
@@ -218,6 +221,33 @@ export function detectJlptMonthBlocks(
         month: parseInt(m[1], 10),
         year: parseInt(m[2], 10),
         label: text,
+      });
+      continue;
+    }
+    // KAIWA `3.Chấm buổi` (cham_soc_hoc_vien.xlsx) labels blocks `Tháng 1`
+    // (no year in the label). year = 0 is a safe placeholder: the block year
+    // below prefers dailyCols[0].year (the row-2 date headers carry the real
+    // year), so the placeholder is only used if the block has no date cells.
+    const mNoYear = text.match(MONTH_LABEL_NO_YEAR_RE);
+    if (mNoYear) {
+      const month = parseInt(mNoYear[1], 10);
+      if (month >= 1 && month <= 12) {
+        anchors.push({ col: c, month, year: 0, label: text });
+      }
+      continue;
+    }
+    // KAIWA `3.Chấm buổi` (cham_soc_hoc_vien.xlsx): months 4..12 store a Date
+    // cell in row 1 (e.g. 2026-10-01 at col MR) while row 2 at the same column
+    // is the "Số buổi đã học" summary header.
+    const d1 = cellDate(row1.getCell(c));
+    if (d1 && classifySummaryHeader(cellKeyText(row2.getCell(c))) === 'attended') {
+      const mNum = d1.getMonth() + 1;
+      const yNum = d1.getFullYear();
+      anchors.push({
+        col: c,
+        month: mNum,
+        year: yNum,
+        label: `Tháng ${mNum}/${yNum}`,
       });
     }
   }
@@ -455,22 +485,38 @@ const TEMPLATE_SOURCE_CANDIDATES = [
   '../docs/data/hoc_vien/hoc_vien_jlpt.xlsx',
 ];
 
-export function resolveAttendanceTemplateSource(): string {
+/** KAIWA layout lives in the shared Sổ CSKH workbook (1.Chăm sóc + 3.Chấm buổi). */
+const KAIWA_TEMPLATE_SOURCE_CANDIDATES = [
+  'docs/data/cham_soc_hoc_vien.xlsx',
+  '../docs/data/cham_soc_hoc_vien.xlsx',
+  'docs/data/cham_soc_hoc_vien_mock.xlsx',
+  '../docs/data/cham_soc_hoc_vien_mock.xlsx',
+];
+
+export function resolveProgramTemplateSource(programType: string): string {
+  const program = String(programType || '').trim().toUpperCase();
+  const rels = program === 'KAIWA' ? KAIWA_TEMPLATE_SOURCE_CANDIDATES : TEMPLATE_SOURCE_CANDIDATES;
   const roots = [process.cwd(), path.resolve(__dirname, '../../../..'), path.resolve(process.cwd(), '..')];
   for (const root of roots) {
-    for (const rel of TEMPLATE_SOURCE_CANDIDATES) {
+    for (const rel of rels) {
       const p = path.resolve(root, rel);
       if (fs.existsSync(p)) return p;
     }
   }
-  throw new AppError(500, 'Không tìm thấy file template docs/data/hoc_vien/hoc_vien_jlpt.xlsx');
+  throw new AppError(
+    500,
+    `Không tìm thấy file template cho chương trình ${program} (${rels.join(', ')})`
+  );
+}
+
+export function resolveAttendanceTemplateSource(): string {
+  return resolveProgramTemplateSource('JLPT');
 }
 
 const STRUCTURE_SHEET_MARKER = '__CSKH_STRUCTURE__';
 
 /**
- * Copy the structural rows of a worksheet into a brand new single-sheet
- * workbook, dropping every student row.
+ * Copy the structural rows of `sourceWs` into the worksheet `outWs`.
  *
  * ExcelJS's splice/`Row.commit()` paths silently corrupt rows whose cells use
  * *shared* formulas (the học-viện sheets have ~120k of them), so instead of
@@ -478,18 +524,20 @@ const STRUCTURE_SHEET_MARKER = '__CSKH_STRUCTURE__';
  * the sample formula row. A marker cell is appended after the header so the
  * backup engine knows exactly where data starts and can fill formula gaps when
  * appending a new row.
+ *
+ * `formulaRowMode`:
+ *  - 'full'    : copy the whole sample row (attendance sheets: row 3 of
+ *                `Chấm buổi` is almost pure formulas).
+ *  - 'formula' : copy ONLY cells carrying a formula (profile sheets: the sample
+ *                row is a real student - its text must not survive into the
+ *                template or it becomes a ghost enrollment).
  */
-function buildStructureOnlyWorkbook(
+function copyStructureRows(
   sourceWs: ExcelJS.Worksheet,
-  sheetName: string,
-  headerRow: number
-): { workbook: ExcelJS.Workbook; worksheet: ExcelJS.Worksheet; maxCol: number; formulaRowNumber: number } {
-  const outWb = new ExcelJS.Workbook();
-  outWb.created = new Date();
-  const outWs = outWb.addWorksheet(sheetName, {
-    views: [{ state: 'frozen', xSplit: 12, ySplit: headerRow }],
-  });
-
+  outWs: ExcelJS.Worksheet,
+  headerRow: number,
+  formulaRowMode: 'full' | 'formula' = 'full'
+): { maxCol: number; formulaRowNumber: number } {
   const maxCol = Math.max(sourceWs.columnCount, 1);
   const formulaRowNumber = headerRow + 1;
 
@@ -502,15 +550,34 @@ function buildStructureOnlyWorkbook(
     const dstRow = outWs.getRow(r);
     if (srcRow.height) dstRow.height = srcRow.height;
     if (srcRow.hidden) dstRow.hidden = true;
+    const isSampleRow = r === formulaRowNumber;
     for (let c = 1; c <= maxCol; c++) {
       const srcCell = srcRow.getCell(c);
       const val = srcCell.value;
       if (val === null || val === undefined || val === '') continue;
+      const formulaStr =
+        val && typeof val === 'object' && typeof (val as any).formula === 'string'
+          ? String((val as any).formula)
+          : '';
+      const isFormula = formulaStr.length > 0;
+      if (isSampleRow) {
+        // Trên dòng mẫu (headerRow + 1), chỉ giữ công thức tính toán thực sự
+        // (SUM, COUNTIF, SUMIF...), bỏ qua giá trị tĩnh của học viên mẫu và bỏ
+        // qua công thức giả lập `__xludf.DUMMYFUNCTION` (Google Sheets export)
+        // để học viên đầu tiên của CSKH luôn bắt đầu sạch ngay từ dòng headerRow + 1.
+        if (!isFormula) continue;
+        if (formulaStr.includes('DUMMYFUNCTION') || formulaStr.includes('!') || formulaStr.includes('#REF!')) {
+          continue;
+        }
+      }
       const dstCell = dstRow.getCell(c);
-      const isFormula = !!(val && typeof val === 'object' && (val as any).formula);
       try {
-        dstCell.value = val as any;
-        if (isFormula) delete (dstCell.value as any).shared;
+        if (isSampleRow && isFormula) {
+          dstCell.value = { formula: formulaStr, result: 0 } as any;
+        } else {
+          dstCell.value = val as any;
+          if (isFormula) delete (dstCell.value as any).shared;
+        }
       } catch {
         dstCell.value = normalizeCellComparable(val);
       }
@@ -537,6 +604,22 @@ function buildStructureOnlyWorkbook(
   // engine-generated. The backup engine clears the column-1 data rows it writes.
   outWs.getRow(headerRow).getCell(1).note = STRUCTURE_SHEET_MARKER;
 
+  return { maxCol, formulaRowNumber };
+}
+
+function buildStructureOnlyWorkbook(
+  sourceWs: ExcelJS.Worksheet,
+  sheetName: string,
+  headerRow: number,
+  formulaRowMode: 'full' | 'formula' = 'full'
+): { workbook: ExcelJS.Workbook; worksheet: ExcelJS.Worksheet; maxCol: number; formulaRowNumber: number } {
+  const outWb = new ExcelJS.Workbook();
+  outWb.created = new Date();
+  const outWs = outWb.addWorksheet(sheetName, {
+    views: [{ state: 'frozen', xSplit: 12, ySplit: headerRow }],
+  });
+
+  const { maxCol, formulaRowNumber } = copyStructureRows(sourceWs, outWs, headerRow, formulaRowMode);
   return { workbook: outWb, worksheet: outWs, maxCol, formulaRowNumber };
 }
 
@@ -661,6 +744,153 @@ export async function loadOrExtractAttendanceWorkbook(
     worksheet: reopened.worksheet,
     maxCol: info.maxCol,
     firstDataRow: info.firstDataRow,
+    isFresh: true,
+  };
+}
+
+/* ========================================================================== *
+ * 3b. Program workbook (profile sheet + attendance sheet, ONE file)
+ * ========================================================================== */
+
+export interface ProgramWorkbookResult {
+  workbook: ExcelJS.Workbook;
+  profileWorksheet: ExcelJS.Worksheet;
+  attendanceWorksheet: ExcelJS.Worksheet;
+  profileMaxCol: number;
+  attendanceMaxCol: number;
+  profileFirstDataRow: number;
+  attendanceFirstDataRow: number;
+  isFresh: boolean;
+}
+
+/**
+ * Load the per-(CSKH x program) backup workbook containing BOTH sheets:
+ *   KAIWA: `1.Chăm sóc` (header row 3) + `3.Chấm buổi` (header row 2)
+ *   JLPT : `Data JLPT_Inhouse` (header row 2) + `Chấm buổi` (header row 2)
+ *
+ * When the file is missing, was produced by the old single-sheet engine, or is
+ * force-refreshed, rebuild it from the program template
+ * (`resolveProgramTemplateSource`) keeping every structural row of both sheets
+ * (month blocks + sample formula row). The profile sample row keeps ONLY its
+ * formula cells so no ghost student text survives into the template.
+ */
+export async function loadOrExtractProgramWorkbook(opts: {
+  absPath: string;
+  programType: string;
+  profileSheetName: string;
+  profileHeaderRow: number;
+  attendanceSheetName: string;
+  attendanceHeaderRow: number;
+  forceFresh?: boolean;
+}): Promise<ProgramWorkbookResult> {
+  const {
+    absPath,
+    programType,
+    profileSheetName,
+    profileHeaderRow,
+    attendanceSheetName,
+    attendanceHeaderRow,
+    forceFresh,
+  } = opts;
+
+  const open = async (): Promise<{ workbook: ExcelJS.Workbook; profileWorksheet: ExcelJS.Worksheet; attendanceWorksheet: ExcelJS.Worksheet } | null> => {
+    if (!fs.existsSync(absPath)) return null;
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.readFile(absPath);
+    const profileWorksheet = workbook.getWorksheet(profileSheetName);
+    const attendanceWorksheet = workbook.getWorksheet(attendanceSheetName);
+    if (!profileWorksheet || !attendanceWorksheet) return null;
+    return { workbook, profileWorksheet, attendanceWorksheet };
+  };
+
+  if (!forceFresh) {
+    const loaded = await open();
+    if (loaded) {
+      const attendanceMaxCol = Math.max(loaded.attendanceWorksheet.columnCount, 1);
+      const profileMaxCol = Math.max(loaded.profileWorksheet.columnCount, 1);
+      if (attendanceMaxCol >= 100 && profileMaxCol >= 40) {
+        return {
+          workbook: loaded.workbook,
+          profileWorksheet: loaded.profileWorksheet,
+          attendanceWorksheet: loaded.attendanceWorksheet,
+          profileMaxCol,
+          attendanceMaxCol,
+          profileFirstDataRow: profileHeaderRow + 1,
+          attendanceFirstDataRow: attendanceHeaderRow + 1,
+          isFresh: false,
+        };
+      }
+      log.warn('Backup workbook thiếu cột (month block / profile), rebuild từ template', {
+        absPath,
+        attendanceMaxCol,
+        profileMaxCol,
+      });
+    }
+  }
+
+  // ---- Rebuild from the program template ----------------------------------
+  const sourcePath = resolveProgramTemplateSource(programType);
+  const buffer = fs.readFileSync(sourcePath);
+  const sourceWb = await loadOptimizedWorkbook(buffer, [
+    profileSheetName,
+    attendanceSheetName,
+    '1.Chăm sóc',
+    'Data JLPT_Inhouse',
+    'Chấm buổi',
+    '3.Chấm buổi',
+  ]);
+
+  const sourceProfile =
+    sourceWb.getWorksheet(profileSheetName) ||
+    (programType === 'KAIWA' ? sourceWb.getWorksheet('1.Chăm sóc') : sourceWb.getWorksheet('Data JLPT_Inhouse'));
+  const sourceAttendance =
+    sourceWb.getWorksheet(attendanceSheetName) ||
+    (programType === 'KAIWA' ? sourceWb.getWorksheet('3.Chấm buổi') : sourceWb.getWorksheet('Chấm buổi'));
+
+  if (!sourceProfile) {
+    throw new AppError(500, `Template ${programType} (${path.basename(sourcePath)}) thiếu sheet hồ sơ "${profileSheetName}"`);
+  }
+  if (!sourceAttendance) {
+    throw new AppError(500, `Template ${programType} (${path.basename(sourcePath)}) thiếu sheet điểm danh "${attendanceSheetName}"`);
+  }
+
+  const outWb = new ExcelJS.Workbook();
+  outWb.created = new Date();
+  const outProfile = outWb.addWorksheet(profileSheetName, {
+    views: [{ state: 'frozen', xSplit: 1, ySplit: profileHeaderRow }],
+  });
+  const outAttendance = outWb.addWorksheet(attendanceSheetName, {
+    views: [{ state: 'frozen', xSplit: 12, ySplit: attendanceHeaderRow }],
+  });
+
+  const profileStruct = copyStructureRows(sourceProfile, outProfile, profileHeaderRow, 'formula');
+  const attendanceStruct = copyStructureRows(sourceAttendance, outAttendance, attendanceHeaderRow, 'full');
+
+  const dir = path.dirname(absPath);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  await outWb.xlsx.writeFile(absPath);
+
+  const reopened = await open();
+  if (!reopened) {
+    throw new AppError(500, `Không mở được file backup vừa tạo: ${absPath}`);
+  }
+  log.info('Program workbook (2 sheet) rebuilt from template', {
+    absPath,
+    programType,
+    profileSheetName,
+    attendanceSheetName,
+    profileMaxCol: profileStruct.maxCol,
+    attendanceMaxCol: attendanceStruct.maxCol,
+  });
+
+  return {
+    workbook: reopened.workbook,
+    profileWorksheet: reopened.profileWorksheet,
+    attendanceWorksheet: reopened.attendanceWorksheet,
+    profileMaxCol: profileStruct.maxCol,
+    attendanceMaxCol: attendanceStruct.maxCol,
+    profileFirstDataRow: profileHeaderRow + 1,
+    attendanceFirstDataRow: attendanceHeaderRow + 1,
     isFresh: true,
   };
 }

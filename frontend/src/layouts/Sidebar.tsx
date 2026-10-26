@@ -20,6 +20,7 @@ import {
   CalendarCheck,
   ClipboardCheck,
   Settings,
+  Sliders,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -201,9 +202,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
           allowedRoles: ['ADMIN', 'MANAGE', 'CS', 'TEACHER'],
         },
         {
-          name: 'Quản trị & Cấu hình',
+          name: 'Người dùng & Phân quyền',
           path: '/settings/users',
           icon: <ShieldCheck className="w-5 h-5 shrink-0" />,
+          allowedRoles: ['ADMIN'],
+        },
+        {
+          name: 'Cấu hình',
+          path: '/settings/config',
+          icon: <Sliders className="w-5 h-5 shrink-0" />,
           allowedRoles: ['ADMIN'],
         },
       ],

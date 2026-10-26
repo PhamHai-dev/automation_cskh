@@ -5,6 +5,11 @@ import { AppLayout } from './layouts/AppLayout';
 import { LoginPage } from './pages/auth/LoginPage';
 import { HomePage } from './pages/home/HomePage';
 import { UsersPage } from './pages/admin/UsersPage';
+import {
+  AdminConfigPage,
+  AutoAttendanceConfigPage,
+  SheetBackupAdminConfigPage,
+} from './pages/admin/AdminConfigPage';
 import { PackagesPage } from './features/packages/pages/PackagesPage';
 import { TeachersPage } from './features/teachers/pages/TeachersPage';
 import { StudentsPage } from './features/students/pages/StudentsPage';
@@ -61,6 +66,10 @@ function App() {
             <Route element={<ProtectedRoute allowedRoles={['ADMIN']} />}>
               <Route path="/settings/users" element={<UsersPage />} />
               <Route path="/cai-dat/nguoi-dung" element={<Navigate to="/settings/users" replace />} />
+              <Route path="/settings/config" element={<AdminConfigPage />} />
+              <Route path="/settings/config/auto-attendance" element={<AutoAttendanceConfigPage />} />
+              <Route path="/settings/config/sheet-backup" element={<SheetBackupAdminConfigPage />} />
+              <Route path="/cai-dat/he-thong" element={<Navigate to="/settings/config" replace />} />
             </Route>
 
             {/* Admin & Manage */}

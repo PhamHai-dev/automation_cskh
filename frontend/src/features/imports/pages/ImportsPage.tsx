@@ -94,7 +94,7 @@ export const ImportsPage: React.FC = () => {
         className="mb-6"
         items={[
           { value: 'sheet-sync', label: 'Đồng bộ Google Sheet (JLPT & Kaiwa)', icon: <RefreshCw /> },
-          { value: 'sheet-backup', label: 'Backup Sổ CSKH (Sheet 1 & 3)', icon: <DatabaseBackup /> },
+          { value: 'sheet-backup', label: 'Backup Sổ CSKH (Kaiwa & JLPT)', icon: <DatabaseBackup /> },
           { value: 'wizard', label: 'Upload Hồ sơ (Sheet 1)', icon: <UploadCloud /> },
           { value: 'attendance', label: 'Điểm danh CSKH / GV', icon: <CalendarCheck /> },
           { value: 'history', label: 'Lịch sử nhập', icon: <History /> },

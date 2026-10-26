@@ -154,34 +154,53 @@ export interface SheetSyncResult {
 }
 
 export interface SheetBackupSheetStats {
+  sheetName?: string;
   totalEnrollments: number;
   unchangedRows: number;
   updatedRows: number;
   appendedRows: number;
   updatedCellsCount: number;
+  attendanceCellsWritten?: number;
 }
 
 export interface CsSheetBackupSummary {
+  configId?: number;
   csUserId?: number;
-  staffCode?: string;
-  status?: string;
+  staffCode?: string | null;
+  programType?: 'JLPT' | 'KAIWA' | string;
+  status?: 'SUCCESS' | 'FAILED' | string;
   syncedToGoogleSheet?: boolean;
   localFilePath?: string;
+  totalStudents?: number;
+  unchangedRows?: number;
+  updatedRows?: number;
+  appendedRows?: number;
+  updatedCellsCount?: number;
+  attendanceCellsWritten?: number;
+  yearFilter?: number | null;
+  backedUpAt?: string;
+  profile?: SheetBackupSheetStats;
+  attendance?: SheetBackupSheetStats;
+  // alias tương thích ngược
   sheet1?: SheetBackupSheetStats;
   sheet3?: SheetBackupSheetStats;
-  backedUpAt?: string;
 }
 
 export interface CsSheetBackupConfigItem {
   id: number;
   cs_user_id: number;
+  program_type: 'JLPT' | 'KAIWA' | string;
   name: string;
   target_spreadsheet_url?: string | null;
   target_spreadsheet_id?: string | null;
   local_backup_path?: string | null;
-  sheet1_name: string;
-  sheet3_name: string;
-  schedule_times?: string[] | null; // e.g. ["12:00", "21:00"]
+  profile_sheet_name: string;   // KAIWA: '1.Chăm sóc', JLPT: 'Data JLPT_Inhouse'
+  profile_header_row: number;   // KAIWA: 3, JLPT: 2
+  profile_enabled: boolean;
+  sheet_name: string;           // KAIWA: '3.Chấm buổi', JLPT: 'Chấm buổi'
+  header_row: number;           // 2
+  schedule_times?: string[] | null;
+  backup_year?: number | null;
   enabled: boolean;
   require_private_sheet: boolean;
   mask_sensitive_data: boolean;
@@ -189,25 +208,28 @@ export interface CsSheetBackupConfigItem {
   last_status?: string | null;
   last_summary?: CsSheetBackupSummary | null;
   last_error?: string | null;
-  hasLocalBackupFile?: boolean;
+  has_local_backup_file?: boolean;
   cs_user: {
     id: number;
     name: string | null;
     email: string;
     staff_code: string | null;
   };
-  studentCounts: {
+  student_counts: {
     total: number;
-    kaiwa: number;
-    jlpt: number;
+    attending: number;
   };
 }
 
 export interface UpdateCsSheetBackupConfigDTO {
   target_spreadsheet_url?: string | null;
-  sheet1_name?: string;
-  sheet3_name?: string;
+  profile_sheet_name?: string;
+  profile_header_row?: number;
+  profile_enabled?: boolean;
+  sheet_name?: string;
+  header_row?: number;
   schedule_times?: string[];
+  backup_year?: number | null;
   enabled?: boolean;
   require_private_sheet?: boolean;
   mask_sensitive_data?: boolean;

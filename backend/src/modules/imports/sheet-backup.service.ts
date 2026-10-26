@@ -49,8 +49,7 @@ import {
   detectJlptMonthBlocks,
   detectSheetYears,
   GoogleSafeValue,
-  extractAttendanceTemplate,
-  loadOrExtractAttendanceWorkbook,
+  loadOrExtractProgramWorkbook,
   normalizeCellComparable,
   pushDeltaToGoogleSheet,
   readTemplateAttendanceWorksheet,
@@ -58,6 +57,20 @@ import {
   toGoogleSafeValue,
   verifyTargetSpreadsheetSecurity,
 } from './attendance-sheet.util';
+import {
+  BackupRowResolveContext,
+  BackupMonthStats,
+  GlobalBackupColumnConfigMap,
+  ProgramColumnMappingConfig,
+  SheetColumnConfigItem,
+  SheetColumnMappingConfig,
+  buildCareMilestoneMap,
+  getEnabledColumns,
+  getGlobalBackupColumnConfig,
+  resetGlobalBackupColumnConfig,
+  resolveBackupFieldValue,
+  saveGlobalBackupColumnConfig,
+} from './profile-sheet.util';
 
 const log = createLogger('SheetBackupService');
 
@@ -68,6 +81,25 @@ export const DEFAULT_SHEET_NAME_BY_PROGRAM: Record<string, string> = {
   JLPT: 'Chấm buổi',
   KAIWA: '3.Chấm buổi',
 };
+
+/** Sheet HỒ SƠ mặc định theo chương trình (cùng workbook backup 2 sheet). */
+export const DEFAULT_PROFILE_SHEET_NAME_BY_PROGRAM: Record<string, string> = {
+  JLPT: 'Data JLPT_Inhouse',
+  KAIWA: '1.Chăm sóc',
+};
+
+export const DEFAULT_PROFILE_HEADER_ROW_BY_PROGRAM: Record<string, number> = {
+  JLPT: 2,
+  KAIWA: 3,
+};
+
+export function defaultProfileSheetFor(programType: string): string {
+  return DEFAULT_PROFILE_SHEET_NAME_BY_PROGRAM[normalizeProgramType(programType)] || '1.Chăm sóc';
+}
+
+export function defaultProfileHeaderRowFor(programType: string): number {
+  return DEFAULT_PROFILE_HEADER_ROW_BY_PROGRAM[normalizeProgramType(programType)] ?? 3;
+}
 
 export const DEFAULT_SCHEDULE_TIMES = ['12:00', '21:00'];
 
@@ -150,6 +182,9 @@ export interface ProgramBackupConfigItem {
   local_backup_path: string | null;
   sheet_name: string;
   header_row: number;
+  profile_sheet_name: string;
+  profile_header_row: number;
+  profile_enabled: boolean;
   schedule_times: string[];
   backup_year: number | null;
   enabled: boolean;
@@ -174,11 +209,26 @@ export interface ProgramBackupConfigItem {
 export interface UpdateProgramBackupConfigDTO {
   target_spreadsheet_url?: string | null;
   sheet_name?: string;
+  header_row?: number;
+  profile_sheet_name?: string;
+  profile_header_row?: number;
+  profile_enabled?: boolean;
   schedule_times?: string[];
   backup_year?: number | null;
   enabled?: boolean;
   require_private_sheet?: boolean;
   mask_sensitive_data?: boolean;
+}
+
+/** Stats delta của RIÊNG một sheet trong workbook 2 sheet. */
+export interface SheetBackupStats {
+  sheetName: string;
+  totalEnrollments: number;
+  unchangedRows: number;
+  updatedRows: number;
+  appendedRows: number;
+  updatedCellsCount: number;
+  attendanceCellsWritten?: number;
 }
 
 export interface ProgramBackupSummary {
@@ -196,6 +246,9 @@ export interface ProgramBackupSummary {
   attendanceCellsWritten: number;
   yearFilter: number | null;
   backedUpAt: string;
+  /** null khi profile_enabled = false. */
+  profile?: SheetBackupStats | null;
+  attendance?: SheetBackupStats | null;
 }
 
 export function normalizeProgramType(value?: string | null): string {
@@ -223,6 +276,8 @@ async function loadEnrollments(csUserId: number, programType: string) {
       student: true,
       package: true,
       cs: { select: { id: true, name: true, staff_code: true } },
+      // care_logs nuôi các cột "Nội dung chăm sóc sau buổi N" / "Kiểm tra lần N"
+      care_logs: { orderBy: { created_at: 'asc' } },
       enrollment_classes: {
         include: {
           class: {
@@ -320,7 +375,7 @@ export class SheetBackupService {
             data: {
               cs_user_id: user.id,
               program_type: program,
-              name: `Điểm danh ${program} - ${user.staff_code || user.name || user.email}`,
+              name: `Backup ${program} - ${user.staff_code || user.name || user.email}`,
               local_backup_path: this.relativeBackupPathFor(staffLabel, program),
               sheet_name: this.defaultSheetNameFor(program),
               header_row: 2,
@@ -330,6 +385,13 @@ export class SheetBackupService {
               mask_sensitive_data: false,
               last_status: 'IDLE',
             },
+          })
+          .then(async (created) => {
+            await this.setProfileMetaRaw(created.id, {
+              profile_sheet_name: defaultProfileSheetFor(program),
+              profile_header_row: defaultProfileHeaderRowFor(program),
+              profile_enabled: true,
+            });
           })
           .catch(async (err: any) => {
             // Unique violation (row created concurrently) is expected and harmless.
@@ -346,15 +408,70 @@ export class SheetBackupService {
     }
   }
 
+  /**
+   * Đọc/ghi 3 cột profile_* qua raw SQL để tương thích cả khi Prisma client
+   * runtime chưa được `prisma generate` lại trên máy đang chạy dev server.
+   */
+  private async loadProfileMetaMap(
+    ids: number[]
+  ): Promise<Map<number, { profile_sheet_name: string | null; profile_header_row: number | null; profile_enabled: number | boolean | null }>> {
+    const map = new Map<
+      number,
+      { profile_sheet_name: string | null; profile_header_row: number | null; profile_enabled: number | boolean | null }
+    >();
+    if (!ids.length) return map;
+    try {
+      const rows = await prisma.$queryRawUnsafe<
+        Array<{
+          id: number;
+          profile_sheet_name: string | null;
+          profile_header_row: number | null;
+          profile_enabled: number | boolean | null;
+        }>
+      >(
+        `SELECT id, profile_sheet_name, profile_header_row, profile_enabled FROM program_sheet_backup_configs WHERE id IN (${ids
+          .map((n) => Number(n))
+          .filter((n) => Number.isInteger(n))
+          .join(',')})`
+      );
+      for (const r of rows || []) map.set(Number(r.id), r);
+    } catch {
+      /* fallback dùng default theo program_type */
+    }
+    return map;
+  }
+
+  private async setProfileMetaRaw(
+    id: number,
+    patch: { profile_sheet_name?: string; profile_header_row?: number; profile_enabled?: boolean }
+  ): Promise<void> {
+    try {
+      if (patch.profile_sheet_name !== undefined) {
+        await prisma.$executeRaw`UPDATE program_sheet_backup_configs SET profile_sheet_name = ${patch.profile_sheet_name} WHERE id = ${id}`;
+      }
+      if (patch.profile_header_row !== undefined) {
+        await prisma.$executeRaw`UPDATE program_sheet_backup_configs SET profile_header_row = ${patch.profile_header_row} WHERE id = ${id}`;
+      }
+      if (patch.profile_enabled !== undefined) {
+        const flag = patch.profile_enabled ? 1 : 0;
+        await prisma.$executeRaw`UPDATE program_sheet_backup_configs SET profile_enabled = ${flag} WHERE id = ${id}`;
+      }
+    } catch (err: any) {
+      log.warn('setProfileMetaRaw warning', { id, error: err?.message });
+    }
+  }
+
   /* ------------------------------- B. Listing ---------------------------- */
 
   private toConfigItem(
     cfg: any,
-    counts: { total: number; attending: number }
+    counts: { total: number; attending: number },
+    profileMeta?: { profile_sheet_name: string | null; profile_header_row: number | null; profile_enabled: number | boolean | null } | null
   ): ProgramBackupConfigItem {
+    const program = normalizeProgramType(cfg.program_type);
     const relPath =
       cfg.local_backup_path ||
-      this.relativeBackupPathFor(cfg.cs_user?.staff_code || `CS${cfg.cs_user_id}`, cfg.program_type);
+      this.relativeBackupPathFor(cfg.cs_user?.staff_code || `CS${cfg.cs_user_id}`, program);
     const scheduleTimes =
       Array.isArray(cfg.schedule_times) && cfg.schedule_times.length > 0
         ? (cfg.schedule_times as string[]).map(String)
@@ -363,13 +480,23 @@ export class SheetBackupService {
     return {
       id: cfg.id,
       cs_user_id: cfg.cs_user_id,
-      program_type: normalizeProgramType(cfg.program_type),
+      program_type: program,
       name: cfg.name,
       target_spreadsheet_url: cfg.target_spreadsheet_url ?? null,
       target_spreadsheet_id: cfg.target_spreadsheet_id ?? null,
       local_backup_path: relPath.replace(/\\/g, '/'),
-      sheet_name: cfg.sheet_name || this.defaultSheetNameFor(cfg.program_type),
+      sheet_name: cfg.sheet_name || this.defaultSheetNameFor(program),
       header_row: cfg.header_row || 2,
+      profile_sheet_name:
+        profileMeta?.profile_sheet_name ?? cfg.profile_sheet_name ?? defaultProfileSheetFor(program),
+      profile_header_row:
+        Number(profileMeta?.profile_header_row ?? cfg.profile_header_row) || defaultProfileHeaderRowFor(program),
+      profile_enabled:
+        profileMeta?.profile_enabled === undefined || profileMeta?.profile_enabled === null
+          ? cfg.profile_enabled === undefined
+            ? true
+            : Boolean(cfg.profile_enabled)
+          : Boolean(Number(profileMeta.profile_enabled)),
       schedule_times: scheduleTimes,
       backup_year: cfg.backup_year ?? null,
       enabled: Boolean(cfg.enabled),
@@ -390,6 +517,36 @@ export class SheetBackupService {
       student_counts: counts,
       has_local_backup_file: fs.existsSync(this.resolveLocalBackupPath(relPath)),
     };
+  }
+
+  /* ----------------------- B2. Global Column Config ----------------------- */
+
+  public async getColumnConfigWithServiceAccount(): Promise<{
+    columnConfig: GlobalBackupColumnConfigMap;
+    serviceAccount: ServiceAccountInfo;
+  }> {
+    const [columnConfig, { info: serviceAccount }] = await Promise.all([
+      getGlobalBackupColumnConfig(),
+      this.sheetSyncService.getServiceAccountKey(),
+    ]);
+    return { columnConfig, serviceAccount };
+  }
+
+  public async saveColumnConfig(
+    input: Partial<GlobalBackupColumnConfigMap>,
+    userId?: number
+  ): Promise<{ columnConfig: GlobalBackupColumnConfigMap; serviceAccount: ServiceAccountInfo }> {
+    const columnConfig = await saveGlobalBackupColumnConfig(input, userId);
+    const { info: serviceAccount } = await this.sheetSyncService.getServiceAccountKey();
+    return { columnConfig, serviceAccount };
+  }
+
+  public async resetColumnConfig(
+    programType?: string | null,
+    userId?: number
+  ): Promise<{ columnConfig: GlobalBackupColumnConfigMap }> {
+    const columnConfig = await resetGlobalBackupColumnConfig(programType, userId);
+    return { columnConfig };
   }
 
   /**
@@ -476,6 +633,8 @@ export class SheetBackupService {
       }
     }
 
+    const profileMetaMap = await this.loadProfileMetaMap(rawConfigs.map((c) => c.id));
+
     return {
       configs: rawConfigs.map((cfg) =>
         this.toConfigItem(
@@ -483,7 +642,8 @@ export class SheetBackupService {
           countsByScope.get(`${cfg.cs_user_id}::${normalizeProgramType(cfg.program_type)}`) || {
             total: 0,
             attending: 0,
-          }
+          },
+          profileMetaMap.get(cfg.id) || null
         )
       ),
       serviceAccount,
@@ -505,6 +665,7 @@ export class SheetBackupService {
     }
 
     const data: Prisma.ProgramSheetBackupConfigUpdateInput = {};
+    const profilePatch: { profile_sheet_name?: string; profile_header_row?: number; profile_enabled?: boolean } = {};
 
     if (dto.target_spreadsheet_url !== undefined) {
       const url = dto.target_spreadsheet_url === null ? null : String(dto.target_spreadsheet_url).trim() || null;
@@ -513,6 +674,27 @@ export class SheetBackupService {
     }
     if (dto.sheet_name !== undefined) {
       data.sheet_name = String(dto.sheet_name || '').trim() || this.defaultSheetNameFor(existing.program_type);
+    }
+    if (dto.header_row !== undefined) {
+      const hr = Number(dto.header_row);
+      if (!Number.isInteger(hr) || hr < 1 || hr > 20) {
+        throw new AppError(400, 'header_row không hợp lệ (1..20)');
+      }
+      data.header_row = hr;
+    }
+    if (dto.profile_sheet_name !== undefined) {
+      profilePatch.profile_sheet_name =
+        String(dto.profile_sheet_name || '').trim() || defaultProfileSheetFor(existing.program_type);
+    }
+    if (dto.profile_header_row !== undefined) {
+      const phr = Number(dto.profile_header_row);
+      if (!Number.isInteger(phr) || phr < 1 || phr > 20) {
+        throw new AppError(400, 'profile_header_row không hợp lệ (1..20)');
+      }
+      profilePatch.profile_header_row = phr;
+    }
+    if (dto.profile_enabled !== undefined) {
+      profilePatch.profile_enabled = Boolean(dto.profile_enabled);
     }
     if (dto.schedule_times !== undefined) {
       const cleaned = (Array.isArray(dto.schedule_times) ? dto.schedule_times : [])
@@ -535,7 +717,12 @@ export class SheetBackupService {
     if (dto.require_private_sheet !== undefined) data.require_private_sheet = Boolean(dto.require_private_sheet);
     if (dto.mask_sensitive_data !== undefined) data.mask_sensitive_data = Boolean(dto.mask_sensitive_data);
 
-    await prisma.programSheetBackupConfig.update({ where: { id }, data });
+    if (Object.keys(data).length > 0) {
+      await prisma.programSheetBackupConfig.update({ where: { id }, data });
+    }
+    if (Object.keys(profilePatch).length > 0) {
+      await this.setProfileMetaRaw(id, profilePatch);
+    }
 
     const cfg = await prisma.programSheetBackupConfig.findUnique({
       where: { id },
@@ -543,8 +730,11 @@ export class SheetBackupService {
     });
     if (!cfg) throw new AppError(404, 'Không tìm thấy cấu hình sao lưu sau khi cập nhật');
 
-    const counts = await this.countsForConfig(cfg.cs_user_id, cfg.program_type);
-    return this.toConfigItem(cfg, counts);
+    const [counts, profileMetaMap] = await Promise.all([
+      this.countsForConfig(cfg.cs_user_id, cfg.program_type),
+      this.loadProfileMetaMap([cfg.id]),
+    ]);
+    return this.toConfigItem(cfg, counts, profileMetaMap.get(cfg.id) || null);
   }
 
   private async countsForConfig(csUserId: number, programType: string): Promise<{ total: number; attending: number }> {
@@ -776,67 +966,6 @@ export class SheetBackupService {
   }
 
   /**
-   * Nạp workbook baseline (file local) hoặc trích template. KHÔNG viết lại header:
-   * row 1 + row 2 lấy nguyên vẹn từ template nên giữ đủ 24 block tháng.
-   */
-  private async prepareWorkbook(
-    absPath: string,
-    sheetName: string,
-    headerRow: number,
-    neededMonths: Array<{ year: number; month: number }>,
-    forceFullRewrite: boolean
-  ): Promise<{
-    workbook: ExcelJS.Workbook;
-    worksheet: ExcelJS.Worksheet;
-    blocks: AttendanceMonthBlock[];
-    donor: AttendanceMonthBlock | null;
-    lastCol: number;
-    firstDataRow: number;
-    isFresh: boolean;
-  }> {
-    const loaded = await loadOrExtractAttendanceWorkbook(absPath, sheetName, headerRow, forceFullRewrite);
-    const blocks = detectJlptMonthBlocks(loaded.worksheet, headerRow).sort(
-      (a, b) => a.startCol - b.startCol
-    );
-
-    // Block mẫu để suy layout (block có cột B hay không) - lấy từ layout hiện có.
-    let donor: AttendanceMonthBlock | null = blocks[blocks.length - 1] || null;
-    if (!donor) {
-      try {
-        const tpl = await readTemplateAttendanceWorksheet(sheetName);
-        const tplBlocks = detectJlptMonthBlocks(tpl, headerRow);
-        donor = tplBlocks[tplBlocks.length - 1] || null;
-      } catch {
-        donor = null;
-      }
-    }
-
-    // Chỉ thêm block khi dữ liệu web cần tháng nằm ngoài layout hiện có.
-    let tail: AttendanceMonthBlock | null = blocks[blocks.length - 1] || null;
-    if (donor) {
-      for (const m of neededMonths) {
-        if (blocks.some((b) => b.year === m.year && b.month === m.month)) continue;
-        const created = this.appendMonthBlock(loaded.worksheet, tail, donor, m.year, m.month, headerRow);
-        blocks.push(created);
-        tail = created;
-      }
-      blocks.sort((a, b) => a.startCol - b.startCol);
-    }
-
-    const lastCol = Math.max(loaded.maxCol, tail ? tail.endCol : 0, FIXED_LAST_COL);
-
-    return {
-      workbook: loaded.workbook,
-      worksheet: loaded.worksheet,
-      blocks,
-      donor,
-      lastCol,
-      firstDataRow: headerRow + 1,
-      isFresh: loaded.isFresh,
-    };
-  }
-
-  /**
    * Nhân bản bộ công thức của dòng mẫu (dòng data đầu tiên) sang dòng data mới.
    * Chỉ dịch tham chiếu dòng tương đối; bỏ qua công thức cross-sheet (Setting!,
    * 'Điểm học tập'!) vì chúng vô nghĩa trong file backup độc lập.
@@ -864,50 +993,23 @@ export class SheetBackupService {
   }
 
   /**
-   * Index các dòng data hiện có theo khoá externalId::classCode.
-   *
-   * Một khoá có thể có NHIỀU dòng (cùng học viên, nhiều lớp hoặc trùng mã lớp
-   * rỗng). Giữ nguyên danh sách theo thứ tự dòng tăng dần để engine khớp theo
-   * "occurrence": enrollment thứ n của một khoá -> dòng thứ n của khoá đó.
-   * Cách khớp này ổn định qua các lần chạy (dòng vừa append lần trước sẽ nằm
-   * đúng vị trí n trong lần sau) nên không sinh dòng ma.
-   */
-  private indexSheetRows(
-    ws: ExcelJS.Worksheet,
-    headerRow: number
-  ): { rowsByKey: Map<string, number[]>; lastNonEmptyRow: number } {
-    const rowsByKey = new Map<string, number[]>();
-    let lastNonEmptyRow = headerRow;
-
-    for (let r = headerRow + 1; r <= ws.rowCount; r++) {
-      const row = ws.getRow(r);
-      const externalId = normalizeCellComparable(row.getCell(ATTENDANCE_COLS.externalId).value);
-      if (!externalId) continue;
-
-      lastNonEmptyRow = r;
-      const classCode = normalizeCellComparable(row.getCell(ATTENDANCE_COLS.classCode).value);
-      const key = this.rowKey(externalId, classCode);
-      const bucket = rowsByKey.get(key);
-      if (bucket) bucket.push(r);
-      else rowsByKey.set(key, [r]);
-    }
-
-    return { rowsByKey, lastNonEmptyRow };
-  }
-
-  private rowKey(externalId: string, classCode: string): string {
-    return `${externalId.toUpperCase()}::${(classCode || '').toUpperCase()}`;
-  }
-
-  /**
    * Giá trị hiện có của ô dưới dạng text chuẩn hoá để so diff. Với ô công thức
    * chỉ lấy cached result (formula là metadata, không phải dữ liệu) — đảm bảo
    * 2 phía so sánh luôn cùng kiểu, tránh "lúc nào cũng khác" gây churn.
+   *
+   * QUAN TRỌNG (bug churn đã reproduce): ExcelJS tự xoá `result: 0` falsy khi
+   * ghi file, nên lần đọc sau `raw.result === undefined`. Nếu truyền nguyên
+   * object `{ formula }` vào `normalizeCellComparable` -> `extractCellValue` sẽ
+   * lấy nhầm đối số cuối của công thức (`COUNTIF(range,"A")` -> `"A"`,
+   * `IFERROR(SUM(...),"-")` -> `"-"`) làm giá trị ô, khiến mọi lần chạy lại đều
+   * thấy "khác 0" và ghi lại (updatedCellsCount > 0 mãi). Với ô công thức không
+   * cached result, coi là rỗng (blankEqualsZero sẽ đồng nhất '' và '0').
    */
   private cellCurrentText(cell: ExcelJS.Cell): string {
     const raw: any = cell.value;
     if (raw && typeof raw === 'object' && (raw.formula || raw.sharedFormula)) {
-      return normalizeCellComparable(raw.result === undefined ? raw : raw.result);
+      if (raw.result === undefined || raw.result === null) return '';
+      return normalizeCellComparable(raw.result);
     }
     return normalizeCellComparable(raw);
   }
@@ -946,7 +1048,273 @@ export class SheetBackupService {
   }
 
   /**
-   * Chạy backup điểm danh cho MỘT config (CSKH x chương trình).
+   * Tính bộ thống kê buổi học & nghỉ của 1 enrollment để cung cấp cho resolver cột.
+   */
+  private computeEnrollmentStats(
+    enr: Awaited<ReturnType<typeof loadEnrollments>>[number],
+    yearFilter: number | null
+  ): BackupMonthStats {
+    let attendedAllTime = 0;
+    let attendedCurrentYear = 0;
+    let absentACount = 0;
+    let leaveBCount = 0;
+    let absentCCount = 0;
+    let teacherDCount = 0;
+    let techErrorECount = 0;
+    let totalRecordedSessions = 0;
+
+    for (const ec of enr.enrollment_classes) {
+      for (const att of ec.attendance || []) {
+        totalRecordedSessions++;
+        const dayKey = dateKeyUtc(att.class_session?.session_date);
+        const inScopedYear = yearFilter === null || (dayKey && Number(dayKey.slice(0, 4)) === yearFilter);
+
+        switch (att.status) {
+          case AttendanceStatus.ATTENDED:
+            attendedAllTime++;
+            if (inScopedYear) attendedCurrentYear++;
+            break;
+          case AttendanceStatus.ABSENT_UNAPPROVED_C:
+            attendedAllTime++;
+            absentCCount++;
+            if (inScopedYear) attendedCurrentYear++;
+            break;
+          case AttendanceStatus.ABSENT_APPROVED_A:
+            absentACount++;
+            break;
+          case AttendanceStatus.LEAVE_B:
+            leaveBCount++;
+            break;
+          case AttendanceStatus.TEACHER_ABSENT_D:
+            teacherDCount++;
+            break;
+          case AttendanceStatus.TECH_ERROR_E:
+            techErrorECount++;
+            break;
+        }
+      }
+    }
+
+    const totalSessions = Number(enr.total_sessions || 0);
+    const attendedPrevYears = Number(enr.attended_previous_years ?? 0);
+    let remainingSessions: number;
+    if (totalRecordedSessions > 0) {
+      remainingSessions = Math.max(0, totalSessions - (attendedPrevYears + attendedAllTime));
+    } else if (enr.external_remaining_sessions !== null && enr.external_remaining_sessions !== undefined) {
+      remainingSessions = Math.max(0, Number(enr.external_remaining_sessions));
+    } else {
+      remainingSessions = Math.max(0, totalSessions - attendedPrevYears);
+    }
+
+    return {
+      attendedCurrentYear:
+        totalRecordedSessions > 0
+          ? attendedCurrentYear
+          : Math.max(0, totalSessions - attendedPrevYears - remainingSessions),
+      attendedAllTime:
+        totalRecordedSessions > 0
+          ? attendedPrevYears + attendedAllTime
+          : Math.max(0, totalSessions - remainingSessions),
+      remainingSessions,
+      absentACount,
+      leaveBCount,
+      absentCCount,
+      teacherDCount,
+      techErrorECount,
+    };
+  }
+
+  /**
+   * Index các dòng hiện có của 1 worksheet theo các cột `isKey: true` (hoặc cột
+   * `student.external_id`). Giữ danh sách occurrence theo thứ tự dòng tăng dần.
+   */
+  private indexSheetRowsByMapping(
+    ws: ExcelJS.Worksheet,
+    headerRow: number,
+    sheetCfg: SheetColumnMappingConfig
+  ): { rowsByKey: Map<string, number[]>; lastNonEmptyRow: number } {
+    const rowsByKey = new Map<string, number[]>();
+    let lastNonEmptyRow = headerRow;
+
+    const extColCfg =
+      sheetCfg.columns.find((c) => c.fieldKey === 'student.external_id') ||
+      sheetCfg.columns.find((c) => c.isKey) ||
+      sheetCfg.columns[0];
+    const extCol = extColCfg ? extColCfg.col : 1;
+
+    const keyCols = sheetCfg.columns.filter((c) => c.isKey && c.enabled);
+    const effectiveKeyCols = keyCols.length > 0 ? keyCols : extColCfg ? [extColCfg] : [];
+
+    for (let r = headerRow + 1; r <= ws.rowCount; r++) {
+      const row = ws.getRow(r);
+      const externalId = normalizeCellComparable(row.getCell(extCol).value);
+      if (!externalId) continue;
+
+      lastNonEmptyRow = r;
+      const keyParts = effectiveKeyCols.map((kc) =>
+        normalizeCellComparable(row.getCell(kc.col).value).toUpperCase()
+      );
+      const key = keyParts.join('::') || externalId.toUpperCase();
+      const bucket = rowsByKey.get(key);
+      if (bucket) bucket.push(r);
+      else rowsByKey.set(key, [r]);
+    }
+
+    return { rowsByKey, lastNonEmptyRow };
+  }
+
+  private buildEnrollmentRowKey(
+    sheetCfg: SheetColumnMappingConfig,
+    ctx: BackupRowResolveContext,
+    fallbackExternalId: string
+  ): string {
+    const keyCols = sheetCfg.columns.filter((c) => c.isKey && c.enabled);
+    if (keyCols.length === 0) return fallbackExternalId.toUpperCase();
+    const parts = keyCols.map((kc) => {
+      if (kc.fieldKey === 'student.external_id') return fallbackExternalId.toUpperCase();
+      const resolved = resolveBackupFieldValue(kc.fieldKey, ctx);
+      return normalizeCellComparable(resolved.value).toUpperCase();
+    });
+    return parts.join('::') || fallbackExternalId.toUpperCase();
+  }
+
+  /**
+   * Ghi Sheet HỒ SƠ (`1.Chăm sóc` cho KAIWA / `Data JLPT_Inhouse` cho JLPT) theo
+   * cấu hình cột động `profileCfg`.
+   */
+  private runProfileSheetBackup(
+    ws: ExcelJS.Worksheet,
+    headerRow: number,
+    profileMaxCol: number,
+    profileCfg: SheetColumnMappingConfig,
+    enrollments: Awaited<ReturnType<typeof loadEnrollments>>,
+    config: { cs_user: { staff_code: string | null }; mask_sensitive_data: boolean },
+    yearFilter: number | null,
+    batchRanges: Array<{ range: string; values: GoogleSafeValue[][] }>
+  ): SheetBackupStats {
+    const firstDataRow = headerRow + 1;
+    const enabledCols = getEnabledColumns(profileCfg);
+    const maxConfiguredCol = enabledCols.reduce((m, c) => Math.max(m, c.col), profileMaxCol || 52);
+
+    const indexed = this.indexSheetRowsByMapping(ws, headerRow, profileCfg);
+    const claimedRows = new Set<number>();
+    const nextOccurrence = new Map<string, number>();
+    let lastRow = indexed.lastNonEmptyRow;
+
+    let unchangedRows = 0;
+    let updatedRows = 0;
+    let appendedRows = 0;
+    let updatedCellsCount = 0;
+
+    for (const enr of enrollments) {
+      const student = enr.student;
+      const externalId = String(student.external_id || enr.external_id || `HV_${student.id}`).trim();
+
+      const activeEc =
+        enr.enrollment_classes.find((ec) => ec.status === 'ACTIVE') ||
+        enr.enrollment_classes[enr.enrollment_classes.length - 1] ||
+        null;
+      const cls = activeEc?.class || null;
+      const schedule = cls?.class_schedules.find((sc) => sc.active) || cls?.class_schedules[0] || null;
+      const mainCt =
+        cls?.class_teachers.find((ct) => ct.role === 'MAIN' && ct.active) || cls?.class_teachers[0] || null;
+      const teacher = mainCt?.teacher || null;
+
+      const stats = this.computeEnrollmentStats(enr, yearFilter);
+      const careByMilestone = buildCareMilestoneMap((enr as any).care_logs || []);
+
+      const ctx: BackupRowResolveContext = {
+        student,
+        enrollment: enr,
+        pkg: enr.package,
+        cls,
+        schedule,
+        teacher,
+        csStaffCode: config.cs_user.staff_code,
+        maskSensitiveData: Boolean(config.mask_sensitive_data),
+        stats,
+        careByMilestone,
+      };
+
+      const key = this.buildEnrollmentRowKey(profileCfg, ctx, externalId);
+      const bucket = indexed.rowsByKey.get(key);
+      const seen = nextOccurrence.get(key) ?? 0;
+      nextOccurrence.set(key, seen + 1);
+
+      let targetRow: number | undefined = bucket && seen < bucket.length ? bucket[seen] : undefined;
+      if (targetRow !== undefined && claimedRows.has(targetRow)) targetRow = undefined;
+      let isNew = false;
+      if (targetRow === undefined) {
+        targetRow = ++lastRow;
+        isNew = true;
+        if (!bucket) indexed.rowsByKey.set(key, []);
+        indexed.rowsByKey.get(key)!.push(targetRow);
+      }
+      claimedRows.add(targetRow);
+      const row = ws.getRow(targetRow);
+      if (isNew) {
+        this.copyFormulaRow(ws, firstDataRow, targetRow, maxConfiguredCol);
+      }
+
+      let rowChanged = 0;
+      let rowMaxColWritten = maxConfiguredCol;
+
+      for (const colCfg of enabledCols) {
+        const resolved =
+          colCfg.fieldKey === 'student.external_id'
+            ? { value: externalId, hasValue: true }
+            : resolveBackupFieldValue(colCfg.fieldKey, ctx);
+
+        // Nếu cột không có nguồn dữ liệu DB (hasDbSource=false) và trống -> giữ nguyên ô trên sheet.
+        if (!resolved.hasValue && !colCfg.hasDbSource) continue;
+
+        const desiredVal = resolved.hasValue ? resolved.value : '';
+        const desiredStr = normalizeCellComparable(desiredVal);
+        const cell = row.getCell(colCfg.col);
+        const currentStr = this.cellCurrentText(cell);
+
+        if (!this.shouldWriteCell(currentStr, desiredStr, Boolean(colCfg.isFormulaPreserved))) {
+          continue;
+        }
+
+        if (colCfg.isFormulaPreserved) {
+          setCellValuePreservingFormula(cell, desiredVal);
+        } else {
+          cell.value = desiredVal as any;
+        }
+        rowChanged++;
+        rowMaxColWritten = Math.max(rowMaxColWritten, colCfg.col);
+      }
+
+      if (isNew) {
+        appendedRows++;
+      } else if (rowChanged > 0) {
+        updatedRows++;
+      } else {
+        unchangedRows++;
+      }
+      updatedCellsCount += rowChanged;
+
+      if (rowChanged > 0) {
+        batchRanges.push({
+          range: `'${ws.name}'!A${targetRow}:${colNumberToLetter(rowMaxColWritten)}${targetRow}`,
+          values: [this.readRowValues(row, rowMaxColWritten)],
+        });
+      }
+    }
+
+    return {
+      sheetName: ws.name,
+      totalEnrollments: enrollments.length,
+      unchangedRows,
+      updatedRows,
+      appendedRows,
+      updatedCellsCount,
+    };
+  }
+
+  /**
+   * Chạy backup cả 2 sheet (Hồ sơ + Điểm danh) cho MỘT config (CSKH x chương trình).
    * Thứ tự ưu tiên năm: opts.year > config.backup_year > tất cả.
    */
   public async runBackupForConfig(
@@ -960,8 +1328,31 @@ export class SheetBackupService {
     const programType = normalizeProgramType(config.program_type);
     const yearFilter = opts.year === undefined || opts.year === null ? (config.backup_year ?? null) : opts.year;
     const forceFullRewrite = Boolean(opts.forceFullRewrite);
-    const headerRow = config.header_row || 2;
-    const sheetName = config.sheet_name || this.defaultSheetNameFor(programType);
+
+    const columnConfigMap = await getGlobalBackupColumnConfig();
+    const programCols: ProgramColumnMappingConfig =
+      programType === 'KAIWA' ? columnConfigMap.KAIWA : columnConfigMap.JLPT;
+
+    // 3 cột profile_* đọc bằng raw SQL (Prisma client runtime có thể chưa regenerate)
+    const profileMeta = (await this.loadProfileMetaMap([config.id])).get(config.id) || null;
+
+    const attendanceHeaderRow = config.header_row || programCols.attendance.headerRow || 2;
+    const attendanceSheetName =
+      config.sheet_name || programCols.attendance.defaultSheetName || this.defaultSheetNameFor(programType);
+
+    const profileHeaderRow =
+      Number(profileMeta?.profile_header_row) ||
+      programCols.profile.headerRow ||
+      defaultProfileHeaderRowFor(programType);
+    const profileSheetName =
+      profileMeta?.profile_sheet_name ||
+      programCols.profile.defaultSheetName ||
+      defaultProfileSheetFor(programType);
+    const profileEnabled =
+      profileMeta?.profile_enabled === undefined || profileMeta?.profile_enabled === null
+        ? true
+        : Boolean(Number(profileMeta.profile_enabled));
+
     const absPath = this.resolveLocalBackupPath(
       config.local_backup_path || this.relativeBackupPathFor(config.cs_user.staff_code || `CS${config.cs_user_id}`, programType)
     );
@@ -976,9 +1367,70 @@ export class SheetBackupService {
       const months = this.scopedMonths(enrollments, yearFilter);
       const monthSet = new Set(months.map((m) => `${m.year}-${m.month}`));
 
-      const prepared = await this.prepareWorkbook(absPath, sheetName, headerRow, months, forceFullRewrite);
-      const ws = prepared.worksheet;
-      const indexed = this.indexSheetRows(ws, headerRow);
+      // 1. Nạp hoặc khởi tạo workbook 2 sheet (Sheet Hồ sơ + Sheet Điểm danh)
+      const wbLoaded = await loadOrExtractProgramWorkbook({
+        absPath,
+        programType,
+        profileSheetName,
+        profileHeaderRow,
+        attendanceSheetName,
+        attendanceHeaderRow,
+        forceFresh: forceFullRewrite,
+      });
+
+      const batchRanges: Array<{ range: string; values: GoogleSafeValue[][] }> = [];
+
+      // 2. Backup Sheet Hồ sơ (`1.Chăm sóc` cho KAIWA / `Data JLPT_Inhouse` cho JLPT)
+      let profileStats: SheetBackupStats | null = null;
+      if (profileEnabled) {
+        profileStats = this.runProfileSheetBackup(
+          wbLoaded.profileWorksheet,
+          profileHeaderRow,
+          wbLoaded.profileMaxCol,
+          programCols.profile,
+          enrollments,
+          config,
+          yearFilter,
+          batchRanges
+        );
+      }
+
+      // 3. Backup Sheet Điểm danh (`3.Chấm buổi` cho KAIWA / `Chấm buổi` cho JLPT)
+      const ws = wbLoaded.attendanceWorksheet;
+      const blocks = detectJlptMonthBlocks(ws, attendanceHeaderRow).sort((a, b) => a.startCol - b.startCol);
+
+      let donor: AttendanceMonthBlock | null = blocks[blocks.length - 1] || null;
+      if (!donor) {
+        try {
+          const tpl = await readTemplateAttendanceWorksheet(attendanceSheetName);
+          const tplBlocks = detectJlptMonthBlocks(tpl, attendanceHeaderRow);
+          donor = tplBlocks[tplBlocks.length - 1] || null;
+        } catch {
+          donor = null;
+        }
+      }
+
+      const enabledAttCols = getEnabledColumns(programCols.attendance);
+      const fixedLastCol = enabledAttCols.reduce(
+        (m, c) => Math.max(m, c.col),
+        programType === 'KAIWA' ? 28 : FIXED_LAST_COL
+      );
+
+      let tail: AttendanceMonthBlock | null = blocks[blocks.length - 1] || null;
+      if (donor) {
+        for (const m of months) {
+          if (blocks.some((b) => b.year === m.year && b.month === m.month)) continue;
+          const created = this.appendMonthBlock(ws, tail, donor, m.year, m.month, attendanceHeaderRow);
+          blocks.push(created);
+          tail = created;
+        }
+        blocks.sort((a, b) => a.startCol - b.startCol);
+      }
+
+      const lastCol = Math.max(wbLoaded.attendanceMaxCol, tail ? tail.endCol : 0, fixedLastCol);
+      const firstDataRow = attendanceHeaderRow + 1;
+
+      const indexed = this.indexSheetRowsByMapping(ws, attendanceHeaderRow, programCols.attendance);
       const claimedRows = new Set<number>();
       const nextOccurrence = new Map<string, number>();
       let lastRow = indexed.lastNonEmptyRow;
@@ -988,7 +1440,6 @@ export class SheetBackupService {
       let appendedRows = 0;
       let updatedCellsCount = 0;
       let attendanceCellsWritten = 0;
-      const batchRanges: Array<{ range: string; values: GoogleSafeValue[][] }> = [];
 
       for (const enr of enrollments) {
         const student = enr.student;
@@ -999,10 +1450,25 @@ export class SheetBackupService {
           enr.enrollment_classes[enr.enrollment_classes.length - 1] ||
           null;
         const cls = activeEc?.class || null;
-        const classCode = String(cls?.class_code || cls?.class_name || '').trim();
         const schedule = cls?.class_schedules.find((sc) => sc.active) || cls?.class_schedules[0] || null;
         const mainCt = cls?.class_teachers.find((ct) => ct.role === 'MAIN' && ct.active) || cls?.class_teachers[0] || null;
         const teacher = mainCt?.teacher || null;
+
+        const stats = this.computeEnrollmentStats(enr, yearFilter);
+        const careByMilestone = buildCareMilestoneMap((enr as any).care_logs || []);
+
+        const ctx: BackupRowResolveContext = {
+          student,
+          enrollment: enr,
+          pkg: enr.package,
+          cls,
+          schedule,
+          teacher,
+          csStaffCode: config.cs_user.staff_code,
+          maskSensitiveData: Boolean(config.mask_sensitive_data),
+          stats,
+          careByMilestone,
+        };
 
         // Điểm danh theo ngày (UTC key cho @db.Date) — 1 buổi/ngày gần nhất thắng
         const byDay = new Map<string, any>();
@@ -1014,7 +1480,7 @@ export class SheetBackupService {
         }
 
         // Xác định dòng đích theo khoá + occurrence thứ n (ổn định giữa các lần chạy)
-        const key = this.rowKey(externalId, classCode);
+        const key = this.buildEnrollmentRowKey(programCols.attendance, ctx, externalId);
         const bucket = indexed.rowsByKey.get(key);
         const seen = nextOccurrence.get(key) ?? 0;
         nextOccurrence.set(key, seen + 1);
@@ -1031,47 +1497,42 @@ export class SheetBackupService {
         claimedRows.add(targetRow);
         const row = ws.getRow(targetRow);
         if (isNew) {
-          this.copyFormulaRow(ws, prepared.firstDataRow, targetRow, prepared.lastCol);
+          this.copyFormulaRow(ws, firstDataRow, targetRow, lastCol);
         }
-
-        // --- Vùng cột cố định A..K (L thuộc công thức) ---
-        const desiredFixed: Record<number, string | number> = {
-          [ATTENDANCE_COLS.classCode]: classCode,
-          [ATTENDANCE_COLS.externalId]: externalId,
-          [ATTENDANCE_COLS.fullName]: student.full_name || '',
-          [ATTENDANCE_COLS.status]: this.formatStatusLabel(enr.status),
-          [ATTENDANCE_COLS.startTime]: schedule?.start_time || '',
-          [ATTENDANCE_COLS.cvht]: config.cs_user.staff_code || '',
-          [ATTENDANCE_COLS.schedulePattern]: schedule?.schedule_pattern || '',
-          [ATTENDANCE_COLS.durationMinutes]: schedule?.duration_minutes ?? '',
-          [ATTENDANCE_COLS.teacherCode]: teacher?.code || teacher?.name || '',
-          [ATTENDANCE_COLS.totalSessions]: enr.total_sessions ?? '',
-        };
 
         let rowChanged = 0;
         let rowAttChanged = 0;
-        let rowMaxColWritten = FIXED_LAST_COL;
+        let rowMaxColWritten = fixedLastCol;
 
-        for (const col of FIXED_WRITABLE_COLS) {
-          const desiredVal = desiredFixed[col];
+        // --- Vùng cột cố định theo cấu hình cột động (JLPT 12 cột, KAIWA 28 cột) ---
+        for (const colCfg of enabledAttCols) {
+          const resolved =
+            colCfg.fieldKey === 'student.external_id'
+              ? { value: externalId, hasValue: true }
+              : resolveBackupFieldValue(colCfg.fieldKey, ctx);
+
+          if (!resolved.hasValue && !colCfg.hasDbSource) continue;
+
+          const desiredVal = resolved.hasValue ? resolved.value : '';
           const desiredStr = normalizeCellComparable(desiredVal);
-          const currentStr = this.cellCurrentText(row.getCell(col));
-          if (!this.shouldWriteCell(currentStr, desiredStr)) continue;
-          row.getCell(col).value = desiredVal as any;
-          rowChanged++;
-        }
+          const cell = row.getCell(colCfg.col);
+          const currentStr = this.cellCurrentText(cell);
 
-        // Cached result cột L (công thức SUM giữ nguyên, chỉ cập nhật kết quả)
-        const attendedTotal = this.attendedInYear(enr, null);
-        const cellL = row.getCell(ATTENDANCE_COLS.attendedTotal);
-        const currentL = this.cellCurrentText(cellL);
-        if (this.shouldWriteCell(currentL, String(attendedTotal), true)) {
-          setCellValuePreservingFormula(cellL, attendedTotal);
+          if (!this.shouldWriteCell(currentStr, desiredStr, Boolean(colCfg.isFormulaPreserved))) {
+            continue;
+          }
+
+          if (colCfg.isFormulaPreserved) {
+            setCellValuePreservingFormula(cell, desiredVal);
+          } else {
+            cell.value = desiredVal as any;
+          }
           rowChanged++;
+          rowMaxColWritten = Math.max(rowMaxColWritten, colCfg.col);
         }
 
         // --- Các block tháng nằm trong phạm vi ghi ---
-        for (const block of prepared.blocks) {
+        for (const block of blocks) {
           const mk = `${block.year}-${block.month}`;
           if (!monthSet.has(mk)) continue;
           rowMaxColWritten = Math.max(rowMaxColWritten, block.endCol);
@@ -1152,10 +1613,20 @@ export class SheetBackupService {
         }
       }
 
-      // 4. Ghi file local
+      const attendanceStats: SheetBackupStats = {
+        sheetName: ws.name,
+        totalEnrollments: enrollments.length,
+        unchangedRows,
+        updatedRows,
+        appendedRows,
+        updatedCellsCount,
+        attendanceCellsWritten,
+      };
+
+      // 4. Ghi file local (1 workbook chứa cả 2 sheet)
       const dir = path.dirname(absPath);
       if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-      await prepared.workbook.xlsx.writeFile(absPath);
+      await wbLoaded.workbook.xlsx.writeFile(absPath);
 
       // 5. Đẩy delta lên Google Sheet (nếu có đích)
       let syncedToGoogleSheet = false;
@@ -1185,10 +1656,12 @@ export class SheetBackupService {
         unchangedRows,
         updatedRows,
         appendedRows,
-        updatedCellsCount,
+        updatedCellsCount: updatedCellsCount + (profileStats?.updatedCellsCount ?? 0),
         attendanceCellsWritten,
         yearFilter,
         backedUpAt: new Date().toISOString(),
+        profile: profileStats,
+        attendance: attendanceStats,
       };
 
       await prisma.programSheetBackupConfig.update({

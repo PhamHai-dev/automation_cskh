@@ -17,7 +17,6 @@ import {
   XCircle,
   Clock,
   Save,
-  Zap,
   ShieldCheck,
   FileSpreadsheet,
   Users,
@@ -80,9 +79,6 @@ export const GoogleSheetSyncPanel: React.FC = () => {
 
   // Service Account state for Private / Restricted Google Sheets
   const [serviceAccount, setServiceAccount] = useState<ServiceAccountInfo | null>(null);
-  const [showSaEditor, setShowSaEditor] = useState(false);
-  const [saJsonDraft, setSaJsonDraft] = useState('');
-  const [savingSa, setSavingSa] = useState(false);
 
   // Local editable drafts keyed by config.code
   const [drafts, setDrafts] = useState<Record<string, UpdateGoogleSheetSyncConfigDTO>>({});
@@ -254,29 +250,6 @@ export const GoogleSheetSyncPanel: React.FC = () => {
     }
   };
 
-  const handleSaveServiceAccount = async () => {
-    try {
-      setSavingSa(true);
-      const res = await importsApi.saveServiceAccount(saJsonDraft.trim() || null);
-      setServiceAccount(res.serviceAccount);
-      setShowSaEditor(false);
-      setSaJsonDraft('');
-      toast.success(
-        res.serviceAccount.configured
-          ? `Đã lưu Google Service Account (${res.serviceAccount.clientEmail})!`
-          : 'Đã xóa cấu hình Google Service Account trên DB.'
-      );
-    } catch (err: any) {
-      toast.error(
-        err.response?.data?.error?.message ||
-          err.response?.data?.message ||
-          'Không thể lưu Google Service Account JSON'
-      );
-    } finally {
-      setSavingSa(false);
-    }
-  };
-
   const handleCopyEmail = (email: string) => {
     navigator.clipboard.writeText(email);
     toast.success(`Đã sao chép email: ${email}`);
@@ -352,148 +325,88 @@ export const GoogleSheetSyncPanel: React.FC = () => {
       {/* Top Smart Sync Banner */}
       <div className="bg-gradient-to-r from-blue-50 via-indigo-50/70 to-teal-50/70 rounded-2xl border border-blue-200/80 p-4 sm:p-5 shadow-soft">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-          <div className="space-y-1.5">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-extrabold bg-blue-600 text-white shadow-2xs">
-                <Zap className="w-3.5 h-3.5" />
-                ĐỒNG BỘ THÔNG MINH 2 NGUỒN
-              </span>
-              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-indigo-100 text-indigo-800 border border-indigo-200">
-                SHA-256 Row Hash Diffing
-              </span>
-              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-teal-100 text-teal-800 border border-teal-200">
-                <ShieldCheck className="w-3.5 h-3.5" />
-                Phân quyền tự động theo Mã CVHT
-              </span>
-            </div>
+          <div className="space-y-1">
             <h3 className="text-sm sm:text-base font-extrabold text-slate-900">
-              Đồng bộ Google Sheet Tự động: Khóa Luyện thi (JLPT) & Khóa Giao tiếp (Kaiwa)
+              Đồng bộ Google Sheet vào Web (JLPT &amp; Kaiwa)
             </h3>
-            <p className="text-xs text-slate-600 max-w-3xl leading-relaxed">
-              Hệ thống tự động kiểm tra định kỳ, băm SHA-256 từng dòng để chỉ cập nhật các dòng có thay đổi, tự động quy chiếu số buổi (từ sheet{' '}
-              <strong className="text-slate-800">Setting</strong> đối với JLPT) và tự động phân bổ học viên về đúng tài khoản CSKH theo cột{' '}
-              <strong className="text-slate-800">Mã CVHT (CVHT01, CVHT02, CVHT03)</strong>.
+            <p className="text-xs text-slate-600">
+              Đọc danh sách học viên từ Google Sheet / file mẫu và phân bổ về từng CSKH theo cột <strong>CVHT</strong>.
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2 shrink-0">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => handleSyncAll(true)}
-              isLoading={syncingAll}
-              leftIcon={<RotateCcw className="w-4 h-4 text-amber-600" />}
-              className="bg-white border-amber-300 text-amber-900 hover:bg-amber-50 font-bold"
-            >
-              Làm mới toàn bộ (Force Full Sync)
-            </Button>
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={() => handleSyncAll(false)}
-              isLoading={syncingAll}
-              leftIcon={<RefreshCw className="w-4 h-4" />}
-              className="font-bold shadow-sm"
-            >
-              Đồng bộ cả 2 khóa (Sync All)
-            </Button>
-          </div>
-        </div>
-
-        {/* Private Sheet / Service Account Authentication Bar */}
-        <div className="mt-4 pt-3.5 border-t border-blue-200/70 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-          <div className="flex items-start sm:items-center gap-2.5 text-xs">
-            <KeyRound className="w-4 h-4 text-indigo-600 shrink-0 mt-0.5 sm:mt-0" />
-            <div>
-              <span className="font-bold text-slate-800">
-                Xác thực Google Sheet Riêng tư (Restricted):{' '}
+          <div className="flex flex-wrap items-start gap-2.5 shrink-0">
+            <div className="flex flex-col items-center">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handleSyncAll(true)}
+                isLoading={syncingAll}
+                disabled={!serviceAccount?.configured || syncingAll}
+                leftIcon={<RotateCcw className="w-4 h-4 text-amber-600" />}
+                className="bg-white border-amber-300 text-amber-900 hover:bg-amber-50 font-bold"
+                title={
+                  !serviceAccount?.configured
+                    ? 'Vui lòng cấu hình Google Service Account JSON tại trang Cấu hình Admin trước'
+                    : 'Quét và nạp lại toàn bộ các dòng từ đầu (bỏ qua bộ nhớ đệm)'
+                }
+              >
+                Làm mới toàn bộ
+              </Button>
+              <span className="text-[10px] text-slate-500 mt-1">
+                Quét lại tất cả các dòng từ đầu
               </span>
-              {serviceAccount?.configured && serviceAccount.clientEmail ? (
-                <span className="inline-flex flex-wrap items-center gap-1.5">
-                  <Badge variant="success" size="sm">Đã kết nối Service Account</Badge>
-                  <code className="px-2 py-0.5 bg-white border border-slate-200 rounded font-mono text-[11px] font-bold text-indigo-700">
-                    {serviceAccount.clientEmail}
-                  </code>
-                  <button
-                    type="button"
-                    onClick={() => handleCopyEmail(serviceAccount.clientEmail!)}
-                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-indigo-100 hover:bg-indigo-200 text-indigo-800 font-semibold text-[11px] transition-colors"
-                    title="Copy email này và bấm Share (Viewer) trên file Google Sheet"
-                  >
-                    <Copy className="w-3 h-3" />
-                    Copy Email để Share quyền xem
-                  </button>
-                </span>
-              ) : (
-                <span className="text-slate-600">
-                  Chưa cấu hình Service Account (Hiện đang dùng file local <code className="font-mono text-[11px] bg-white px-1 rounded">docs/data/hoc_vien/</code> hoặc link công khai). Nếu file Google Sheet khóa riêng tư, hãy gắn Service Account JSON.
-                </span>
-              )}
             </div>
-          </div>
 
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setShowSaEditor((prev) => !prev)}
-            leftIcon={<KeyRound className="w-3.5 h-3.5 text-indigo-600" />}
-            className="bg-white text-xs shrink-0"
-          >
-            {showSaEditor ? 'Đóng cấu hình Key' : serviceAccount?.configured ? 'Đổi Service Account JSON' : 'Cấu hình Service Account JSON'}
-          </Button>
-        </div>
-
-        {showSaEditor && (
-          <div className="mt-3 p-4 bg-white rounded-xl border border-indigo-200 space-y-3">
-            <div className="text-xs text-slate-700 space-y-1">
-              <p className="font-bold text-slate-900">
-                Hướng dẫn kết nối file Google Sheet chỉ người có quyền mới xem được:
-              </p>
-              <ol className="list-decimal list-inside space-y-0.5 text-slate-600">
-                <li>
-                  Vào <strong>Google Cloud Console → IAM &amp; Admin → Service Accounts</strong>, tạo 1 Service Account và bật <strong>Google Drive API</strong>.
-                </li>
-                <li>
-                  Vào tab <strong>Keys → Add Key → Create new key (JSON)</strong> để tải file <code className="font-mono">.json</code> về máy và dán nội dung vào ô bên dưới.
-                </li>
-                <li>
-                  Copy địa chỉ <code className="font-mono text-indigo-700">client_email</code> của Service Account, mở 2 file Google Sheet (JLPT &amp; Kaiwa) → bấm <strong>Chia sẻ (Share)</strong> → thêm email đó với quyền <strong>Người xem (Viewer)</strong>.
-                </li>
-              </ol>
-            </div>
-            <textarea
-              rows={5}
-              value={saJsonDraft}
-              onChange={(e) => setSaJsonDraft(e.target.value)}
-              placeholder='Dán toàn bộ nội dung file service-account.json vào đây: {"type": "service_account", "project_id": "...", "private_key": "-----BEGIN PRIVATE KEY-----...", "client_email": "...@...iam.gserviceaccount.com"}'
-              className="w-full text-xs font-mono p-2.5 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
-            />
-            <div className="flex items-center justify-end gap-2">
-              {serviceAccount?.configured && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    setSaJsonDraft('');
-                    handleSaveServiceAccount();
-                  }}
-                  isLoading={savingSa}
-                >
-                  Xóa Key trên DB
-                </Button>
-              )}
+            <div className="flex flex-col items-center">
               <Button
                 variant="primary"
                 size="sm"
-                onClick={handleSaveServiceAccount}
-                isLoading={savingSa}
-                leftIcon={<Save className="w-3.5 h-3.5" />}
+                onClick={() => handleSyncAll(false)}
+                isLoading={syncingAll}
+                disabled={!serviceAccount?.configured || syncingAll}
+                leftIcon={<RefreshCw className="w-4 h-4" />}
+                className="font-bold shadow-sm"
+                title={
+                  !serviceAccount?.configured
+                    ? 'Vui lòng cấu hình Google Service Account JSON tại trang Cấu hình Admin trước'
+                    : 'Chỉ cập nhật những dòng mới hoặc có thay đổi ở cả 2 khóa'
+                }
               >
-                Lưu Service Account JSON
+                Đồng bộ cả 2 khóa
               </Button>
+              <span className="text-[10px] text-slate-500 mt-1">
+                Chỉ nạp những dòng mới thay đổi
+              </span>
             </div>
           </div>
-        )}
+        </div>
+
+        {/* Service Account Status Bar */}
+        <div className="mt-3.5 pt-3 border-t border-blue-200/70 flex flex-wrap items-center justify-between gap-2 text-xs">
+          <div className="flex flex-wrap items-center gap-2">
+            <KeyRound className="w-4 h-4 text-indigo-600 shrink-0" />
+            <span className="font-bold text-slate-800">Tài khoản Google Sheet:</span>
+            {serviceAccount?.configured && serviceAccount.clientEmail ? (
+              <>
+                <Badge variant="success" size="sm">Đã kết nối</Badge>
+                <code className="px-2 py-0.5 bg-white border border-slate-200 rounded font-mono text-[11px] font-bold text-indigo-700">
+                  {serviceAccount.clientEmail}
+                </code>
+                <button
+                  type="button"
+                  onClick={() => handleCopyEmail(serviceAccount.clientEmail!)}
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-indigo-100 hover:bg-indigo-200 text-indigo-800 font-semibold text-[11px] transition-colors cursor-pointer"
+                  title="Copy email này để cấp quyền Xem (Viewer) trên Google Sheet"
+                >
+                  <Copy className="w-3 h-3" />
+                  Copy Email
+                </button>
+              </>
+            ) : (
+              <Badge variant="warning" size="sm">Chưa gắn Service Account</Badge>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* 2 Cards Grid: JLPT & KAIWA */}
@@ -854,8 +767,14 @@ export const GoogleSheetSyncPanel: React.FC = () => {
                     size="sm"
                     onClick={() => handleRunSync(cfg.code, true)}
                     isLoading={syncingCode === `${cfg.code}_full`}
+                    disabled={!serviceAccount?.configured || syncingCode !== null || syncingAll}
                     leftIcon={<RotateCcw className="w-3.5 h-3.5 text-amber-600" />}
                     className="border-amber-300 text-amber-900 hover:bg-amber-50"
+                    title={
+                      !serviceAccount?.configured
+                        ? 'Vui lòng cấu hình Google Service Account JSON tại trang Cấu hình Admin trước'
+                        : 'Quét và nạp lại toàn bộ dòng của khóa này'
+                    }
                   >
                     Quét lại toàn bộ
                   </Button>
@@ -864,7 +783,13 @@ export const GoogleSheetSyncPanel: React.FC = () => {
                     size="sm"
                     onClick={() => handleRunSync(cfg.code, false)}
                     isLoading={syncingCode === `${cfg.code}_diff`}
+                    disabled={!serviceAccount?.configured || syncingCode !== null || syncingAll}
                     leftIcon={<RefreshCw className="w-3.5 h-3.5" />}
+                    title={
+                      !serviceAccount?.configured
+                        ? 'Vui lòng cấu hình Google Service Account JSON tại trang Cấu hình Admin trước'
+                        : 'Chỉ nạp các dòng mới hoặc có thay đổi của khóa này'
+                    }
                   >
                     Đồng bộ thay đổi
                   </Button>

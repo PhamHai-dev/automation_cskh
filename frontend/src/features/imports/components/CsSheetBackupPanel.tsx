@@ -1,7 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { importsApi } from '../api/imports.api';
 import {
   CsSheetBackupConfigItem,
+  CsSheetBackupSummary,
   UpdateCsSheetBackupConfigDTO,
   ServiceAccountInfo,
   SheetBackupSheetStats,
@@ -18,7 +19,6 @@ import {
   XCircle,
   Clock,
   Save,
-  Zap,
   ShieldCheck,
   FileSpreadsheet,
   Users,
@@ -31,6 +31,7 @@ import {
   Lock,
   EyeOff,
   CalendarClock,
+  Filter,
 } from 'lucide-react';
 
 const SCHEDULE_PRESETS = [
@@ -48,6 +49,84 @@ const EMPTY_STATS: SheetBackupSheetStats = {
   updatedCellsCount: 0,
 };
 
+type ProgramFilter = 'ALL' | 'KAIWA' | 'JLPT';
+
+const PROGRAM_META: Record<
+  'KAIWA' | 'JLPT',
+  {
+    label: string;
+    badgeClass: string;
+    profileSheet: string;
+    profileHeaderRow: number;
+    attendanceSheet: string;
+    attendanceHeaderRow: number;
+    fileSlug: string;
+    profileCaption: string;
+    attendanceCaption: string;
+  }
+> = {
+  KAIWA: {
+    label: 'KAIWA • Sheet 1.Chăm sóc & 3.Chấm buổi',
+    badgeClass: 'bg-teal-600 text-white border-teal-700',
+    profileSheet: '1.Chăm sóc',
+    profileHeaderRow: 3,
+    attendanceSheet: '3.Chấm buổi',
+    attendanceHeaderRow: 2,
+    fileSlug: 'kaiwa',
+    profileCaption: 'Hồ sơ & Chăm sóc học viên',
+    attendanceCaption: 'Điểm danh theo năm học',
+  },
+  JLPT: {
+    label: 'JLPT • Sheet Data JLPT_Inhouse & Chấm buổi',
+    badgeClass: 'bg-indigo-600 text-white border-indigo-700',
+    profileSheet: 'Data JLPT_Inhouse',
+    profileHeaderRow: 2,
+    attendanceSheet: 'Chấm buổi',
+    attendanceHeaderRow: 2,
+    fileSlug: 'jlpt',
+    profileCaption: 'Dữ liệu lớp JLPT nội bộ',
+    attendanceCaption: 'Điểm danh theo năm học',
+  },
+};
+
+const getProgramKey = (programType?: string): 'KAIWA' | 'JLPT' =>
+  String(programType || '').toUpperCase() === 'JLPT' ? 'JLPT' : 'KAIWA';
+
+/**
+ * Trả về thống kê delta của 1 sheet, tương thích cả summary 2 sheet (profile/attendance),
+ * alias cũ (sheet1/sheet3) lẫn summary phẳng đời cũ (totalStudents / unchangedRows / ...).
+ */
+const resolveSheetStats = (
+  summary: CsSheetBackupSummary | null | undefined,
+  sheetKey: 'profile' | 'attendance',
+  legacyAliasKey: 'sheet1' | 'sheet3'
+): SheetBackupSheetStats => {
+  if (!summary) return EMPTY_STATS;
+
+  const direct = summary[sheetKey] || summary[legacyAliasKey];
+  if (direct) return direct;
+
+  // Fallback: summary phẳng đời cũ (chưa tách số liệu theo từng sheet)
+  const hasFlatData =
+    summary.totalStudents !== undefined ||
+    summary.unchangedRows !== undefined ||
+    summary.updatedRows !== undefined ||
+    summary.appendedRows !== undefined ||
+    summary.updatedCellsCount !== undefined;
+
+  if (!hasFlatData) return EMPTY_STATS;
+
+  return {
+    totalEnrollments: summary.totalStudents || 0,
+    unchangedRows: summary.unchangedRows || 0,
+    updatedRows: summary.updatedRows || 0,
+    appendedRows: summary.appendedRows || 0,
+    updatedCellsCount: summary.updatedCellsCount || 0,
+    attendanceCellsWritten:
+      sheetKey === 'attendance' ? summary.attendanceCellsWritten || 0 : undefined,
+  };
+};
+
 export const CsSheetBackupPanel: React.FC = () => {
   const toast = useToast();
   const { user } = useAuth();
@@ -57,18 +136,18 @@ export const CsSheetBackupPanel: React.FC = () => {
 
   const [configs, setConfigs] = useState<CsSheetBackupConfigItem[]>([]);
   const [serviceAccount, setServiceAccount] = useState<ServiceAccountInfo | null>(null);
+  const [availableYears, setAvailableYears] = useState<number[]>([]);
   const [loading, setLoading] = useState(true);
-  const [savingUserId, setSavingUserId] = useState<number | null>(null);
-  const [runningUserId, setRunningUserId] = useState<string | null>(null);
-  const [downloadingUserId, setDownloadingUserId] = useState<number | null>(null);
+  const [savingConfigId, setSavingConfigId] = useState<number | null>(null);
+  const [runningConfigId, setRunningConfigId] = useState<string | null>(null);
+  const [downloadingConfigId, setDownloadingConfigId] = useState<number | null>(null);
   const [runningAllMode, setRunningAllMode] = useState<'delta' | 'full' | null>(null);
 
-  // Service Account JSON Editor state
-  const [showSaEditor, setShowSaEditor] = useState(false);
-  const [saJsonDraft, setSaJsonDraft] = useState('');
-  const [savingSa, setSavingSa] = useState(false);
+  // Quick filters
+  const [programFilter, setProgramFilter] = useState<ProgramFilter>('ALL');
+  const [csFilterUserId, setCsFilterUserId] = useState<number | 'ALL'>('ALL');
 
-  // Editable drafts keyed by cs_user_id
+  // Editable drafts keyed by config id (cfg.id)
   const [drafts, setDrafts] = useState<Record<number, UpdateCsSheetBackupConfigDTO>>({});
   const [customTimeStrings, setCustomTimeStrings] = useState<Record<number, string>>({});
 
@@ -81,25 +160,33 @@ export const CsSheetBackupPanel: React.FC = () => {
       if (data?.serviceAccount) {
         setServiceAccount(data.serviceAccount);
       }
+      if (Array.isArray(data?.availableYears) && data.availableYears.length > 0) {
+        setAvailableYears(data.availableYears);
+      }
 
       const nextDrafts: Record<number, UpdateCsSheetBackupConfigDTO> = {};
       const nextTimeStrs: Record<number, string> = {};
 
       loadedConfigs.forEach((cfg) => {
+        const meta = PROGRAM_META[getProgramKey(cfg.program_type)];
         const times =
           cfg.schedule_times && cfg.schedule_times.length > 0
             ? cfg.schedule_times
             : ['12:00', '21:00'];
-        nextDrafts[cfg.cs_user_id] = {
+        nextDrafts[cfg.id] = {
           target_spreadsheet_url: cfg.target_spreadsheet_url || '',
-          sheet1_name: cfg.sheet1_name || '1.Chăm sóc',
-          sheet3_name: cfg.sheet3_name || '3.Chấm buổi',
+          profile_sheet_name: cfg.profile_sheet_name || meta.profileSheet,
+          profile_header_row: cfg.profile_header_row ?? meta.profileHeaderRow,
+          profile_enabled: cfg.profile_enabled ?? true,
+          sheet_name: cfg.sheet_name || meta.attendanceSheet,
+          header_row: cfg.header_row ?? meta.attendanceHeaderRow,
+          backup_year: cfg.backup_year ?? null,
           schedule_times: times,
           enabled: cfg.enabled ?? true,
           require_private_sheet: cfg.require_private_sheet ?? true,
           mask_sensitive_data: cfg.mask_sensitive_data ?? false,
         };
-        nextTimeStrs[cfg.cs_user_id] = times.join(', ');
+        nextTimeStrs[cfg.id] = times.join(', ');
       });
 
       setDrafts(nextDrafts);
@@ -119,11 +206,11 @@ export const CsSheetBackupPanel: React.FC = () => {
     fetchBackupConfigs();
   }, []);
 
-  const updateDraft = (csUserId: number, patch: Partial<UpdateCsSheetBackupConfigDTO>) => {
+  const updateDraft = (configId: number, patch: Partial<UpdateCsSheetBackupConfigDTO>) => {
     setDrafts((prev) => ({
       ...prev,
-      [csUserId]: {
-        ...(prev[csUserId] || {}),
+      [configId]: {
+        ...(prev[configId] || {}),
         ...patch,
       },
     }));
@@ -135,49 +222,61 @@ export const CsSheetBackupPanel: React.FC = () => {
     return found ? found.value : 'CUSTOM';
   };
 
-  const handleSchedulePresetChange = (csUserId: number, presetValue: string) => {
+  const handleSchedulePresetChange = (configId: number, presetValue: string) => {
     if (presetValue === 'CUSTOM') {
       return;
     }
     const preset = SCHEDULE_PRESETS.find((p) => p.value === presetValue);
     if (preset) {
-      updateDraft(csUserId, { schedule_times: preset.times });
+      updateDraft(configId, { schedule_times: preset.times });
       setCustomTimeStrings((prev) => ({
         ...prev,
-        [csUserId]: preset.times.join(', '),
+        [configId]: preset.times.join(', '),
       }));
     }
   };
 
-  const handleCustomTimeStringChange = (csUserId: number, raw: string) => {
-    setCustomTimeStrings((prev) => ({ ...prev, [csUserId]: raw }));
+  const handleCustomTimeStringChange = (configId: number, raw: string) => {
+    setCustomTimeStrings((prev) => ({ ...prev, [configId]: raw }));
     const parsed = raw
       .split(',')
       .map((s) => s.trim())
       .filter((s) => /^\d{1,2}:\d{2}$/.test(s));
     if (parsed.length > 0) {
-      updateDraft(csUserId, { schedule_times: parsed });
+      updateDraft(configId, { schedule_times: parsed });
     }
   };
 
-  const handleSaveConfig = async (csUserId: number, staffLabel: string) => {
-    const draft = drafts[csUserId];
+  const buildSavePayload = (
+    draft: UpdateCsSheetBackupConfigDTO,
+    meta: (typeof PROGRAM_META)['KAIWA']
+  ): UpdateCsSheetBackupConfigDTO => ({
+    target_spreadsheet_url: draft.target_spreadsheet_url?.trim() || null,
+    profile_sheet_name: draft.profile_sheet_name?.trim() || meta.profileSheet,
+    profile_header_row: Number(draft.profile_header_row ?? meta.profileHeaderRow),
+    profile_enabled: Boolean(draft.profile_enabled),
+    sheet_name: draft.sheet_name?.trim() || meta.attendanceSheet,
+    header_row: Number(draft.header_row ?? meta.attendanceHeaderRow),
+    backup_year: draft.backup_year ?? null,
+    schedule_times:
+      draft.schedule_times && draft.schedule_times.length > 0
+        ? draft.schedule_times
+        : ['12:00', '21:00'],
+    enabled: Boolean(draft.enabled),
+    require_private_sheet: Boolean(draft.require_private_sheet),
+    mask_sensitive_data: Boolean(draft.mask_sensitive_data),
+  });
+
+  const handleSaveConfig = async (cfg: CsSheetBackupConfigItem) => {
+    const configId = cfg.id;
+    const draft = drafts[configId];
     if (!draft) return;
+    const meta = PROGRAM_META[getProgramKey(cfg.program_type)];
+    const staffCode = cfg.cs_user?.staff_code || `CS0${configId}`;
+    const staffLabel = `${staffCode} (${getProgramKey(cfg.program_type)})`;
     try {
-      setSavingUserId(csUserId);
-      const payload: UpdateCsSheetBackupConfigDTO = {
-        target_spreadsheet_url: draft.target_spreadsheet_url?.trim() || null,
-        sheet1_name: draft.sheet1_name?.trim() || '1.Chăm sóc',
-        sheet3_name: draft.sheet3_name?.trim() || '3.Chấm buổi',
-        schedule_times:
-          draft.schedule_times && draft.schedule_times.length > 0
-            ? draft.schedule_times
-            : ['12:00', '21:00'],
-        enabled: Boolean(draft.enabled),
-        require_private_sheet: Boolean(draft.require_private_sheet),
-        mask_sensitive_data: Boolean(draft.mask_sensitive_data),
-      };
-      await importsApi.updateSheetBackupConfig(csUserId, payload);
+      setSavingConfigId(configId);
+      await importsApi.updateSheetBackupConfig(configId, buildSavePayload(draft, meta));
       toast.success(`Đã lưu cấu hình Backup Sổ CSKH cho ${staffLabel}!`);
       await fetchBackupConfigs();
     } catch (err: any) {
@@ -187,63 +286,66 @@ export const CsSheetBackupPanel: React.FC = () => {
           `Không thể lưu cấu hình cho ${staffLabel}`
       );
     } finally {
-      setSavingUserId(null);
+      setSavingConfigId(null);
     }
   };
 
   const handleRunBackup = async (
-    csUserId: number,
-    staffLabel: string,
+    cfg: CsSheetBackupConfigItem,
     forceFullRewrite = false
   ) => {
+    const configId = cfg.id;
+    const meta = PROGRAM_META[getProgramKey(cfg.program_type)];
+    const staffCode = cfg.cs_user?.staff_code || `CS0${configId}`;
+    const draft = drafts[configId];
     try {
-      setRunningUserId(`${csUserId}_${forceFullRewrite ? 'full' : 'delta'}`);
-      if (isAdminOrManage && drafts[csUserId]) {
-        const draft = drafts[csUserId];
-        await importsApi.updateSheetBackupConfig(csUserId, {
-          target_spreadsheet_url: draft.target_spreadsheet_url?.trim() || null,
-          sheet1_name: draft.sheet1_name?.trim() || '1.Chăm sóc',
-          sheet3_name: draft.sheet3_name?.trim() || '3.Chấm buổi',
-          schedule_times:
-            draft.schedule_times && draft.schedule_times.length > 0
-              ? draft.schedule_times
-              : ['12:00', '21:00'],
-          enabled: Boolean(draft.enabled),
-          require_private_sheet: Boolean(draft.require_private_sheet),
-          mask_sensitive_data: Boolean(draft.mask_sensitive_data),
-        });
+      setRunningConfigId(`${configId}_${forceFullRewrite ? 'full' : 'delta'}`);
+      if (isAdminOrManage && draft) {
+        await importsApi.updateSheetBackupConfig(configId, buildSavePayload(draft, meta));
       }
 
-      const res = await importsApi.runSheetBackup(csUserId, { forceFullRewrite });
-      const s1Cells = res?.sheet1?.updatedCellsCount ?? 0;
-      const s3Cells = res?.sheet3?.updatedCellsCount ?? 0;
-      const s1Rows = (res?.sheet1?.updatedRows ?? 0) + (res?.sheet1?.appendedRows ?? 0);
-      const s3Rows = (res?.sheet3?.updatedRows ?? 0) + (res?.sheet3?.appendedRows ?? 0);
+      const res = await importsApi.runSheetBackup(configId, {
+        forceFullRewrite,
+        year: draft?.backup_year ?? cfg.backup_year ?? null,
+      });
+
+      const profileStats = resolveSheetStats(res, 'profile', 'sheet1');
+      const attendanceStats = resolveSheetStats(res, 'attendance', 'sheet3');
+      const profileRows = (profileStats.updatedRows ?? 0) + (profileStats.appendedRows ?? 0);
+      const attendanceRows = (attendanceStats.updatedRows ?? 0) + (attendanceStats.appendedRows ?? 0);
 
       toast.success(
-        `Backup ${staffLabel} hoàn tất! Sheet 1: ${s1Rows} dòng (${s1Cells} ô), Sheet 3: ${s3Rows} dòng (${s3Cells} ô) cập nhật.`
+        `Backup ${staffCode} • ${getProgramKey(cfg.program_type)} hoàn tất! Sheet ${
+          draft?.profile_sheet_name || meta.profileSheet
+        }: ${profileRows} dòng (${profileStats.updatedCellsCount ?? 0} ô), Sheet ${
+          draft?.sheet_name || meta.attendanceSheet
+        }: ${attendanceRows} dòng (${attendanceStats.updatedCellsCount ?? 0} ô) cập nhật.`
       );
       await fetchBackupConfigs();
     } catch (err: any) {
       toast.error(
         err.response?.data?.error?.message ||
           err.response?.data?.message ||
-          `Backup sổ CSKH ${staffLabel} thất bại`
+          `Backup sổ CSKH ${staffCode} thất bại`
       );
     } finally {
-      setRunningUserId(null);
+      setRunningConfigId(null);
     }
   };
 
   const handleRunBackupAll = async (forceFullRewrite = false) => {
     try {
       setRunningAllMode(forceFullRewrite ? 'full' : 'delta');
-      const res = await importsApi.runSheetBackupAll({ forceFullRewrite });
+      const res = await importsApi.runSheetBackupAll({
+        forceFullRewrite,
+        programType: programFilter === 'ALL' ? null : programFilter,
+      });
       const count = res?.results?.length || configs.length;
+      const scopeLabel = programFilter === 'ALL' ? 'toàn bộ' : `chương trình ${programFilter}`;
       toast.success(
         forceFullRewrite
-          ? `Đã ghi đè toàn bộ (Force Full Backup) cho ${count} tài khoản CSKH!`
-          : `Đã thực hiện Delta Backup cho ${count} tài khoản CSKH!`
+          ? `Đã ghi đè toàn bộ (Force Full Backup) cho ${count} cấu hình CSKH (${scopeLabel})!`
+          : `Đã thực hiện Delta Backup cho ${count} cấu hình CSKH (${scopeLabel})!`
       );
       await fetchBackupConfigs();
     } catch (err: any) {
@@ -257,20 +359,23 @@ export const CsSheetBackupPanel: React.FC = () => {
     }
   };
 
-  const handleDownloadExcel = async (csUserId: number, staffCode?: string | null) => {
-    const code = staffCode || `CS${csUserId}`;
+  const handleDownloadExcel = async (cfg: CsSheetBackupConfigItem) => {
+    const configId = cfg.id;
+    const meta = PROGRAM_META[getProgramKey(cfg.program_type)];
+    const staffCode = cfg.cs_user?.staff_code || `CS${configId}`;
+    const excelFileName = `hoc_vien_${meta.fileSlug}_${staffCode}.xlsx`;
     try {
-      setDownloadingUserId(csUserId);
-      await importsApi.downloadCsSheetBackupExcel(csUserId, code, false);
-      toast.success(`Đã tải file cham_soc_hoc_vien_${code}.xlsx thành công!`);
+      setDownloadingConfigId(configId);
+      await importsApi.downloadCsSheetBackupExcel(configId, excelFileName, false);
+      toast.success(`Đã tải file ${excelFileName} thành công!`);
     } catch (err: any) {
       toast.error(
         err.response?.data?.error?.message ||
           err.response?.data?.message ||
-          `Không thể tải file cham_soc_hoc_vien_${code}.xlsx`
+          `Không thể tải file ${excelFileName}`
       );
     } finally {
-      setDownloadingUserId(null);
+      setDownloadingConfigId(null);
     }
   };
 
@@ -313,227 +418,174 @@ export const CsSheetBackupPanel: React.FC = () => {
     );
   };
 
-  // Filter cards for CS user if backend returns more than their own
-  const visibleConfigs = isAdminOrManage
-    ? configs
-    : configs.filter((c) => !user?.id || c.cs_user_id === user.id);
+  const csOptions = useMemo(() => {
+    const map = new Map<number, string>();
+    configs.forEach((c) => {
+      const code = c.cs_user?.staff_code || `CS${c.cs_user_id}`;
+      const name = c.cs_user?.name || c.name || '';
+      map.set(c.cs_user_id, name ? `${code} — ${name}` : code);
+    });
+    return Array.from(map.entries()).map(([id, label]) => ({ id, label }));
+  }, [configs]);
+
+  // Cards hiển thị: lọc theo quyền + chương trình + CSKH
+  const visibleConfigs = useMemo(() => {
+    let list = isAdminOrManage
+      ? configs
+      : configs.filter((c) => !user?.id || c.cs_user_id === user.id);
+
+    if (programFilter !== 'ALL') {
+      list = list.filter((c) => getProgramKey(c.program_type) === programFilter);
+    }
+    if (isAdminOrManage && csFilterUserId !== 'ALL') {
+      list = list.filter((c) => c.cs_user_id === csFilterUserId);
+    }
+    return list;
+  }, [configs, isAdminOrManage, user?.id, programFilter, csFilterUserId]);
 
   if (loading && configs.length === 0) {
     return (
       <div className="bg-surface rounded-2xl border border-border/80 p-12 flex items-center justify-center text-text-muted">
         <RefreshCw className="w-5 h-5 animate-spin mr-3 text-primary" />
         <span className="text-xs font-semibold">
-          Đang tải cấu hình Backup Sổ CSKH (Sheet 1.Chăm sóc &amp; 3.Chấm buổi)...
+          Đang tải cấu hình Backup Sổ CSKH (Kaiwa &amp; JLPT)...
         </span>
       </div>
     );
   }
+
+  const selectClass =
+    'w-full h-10 px-2.5 border border-border rounded-xl text-xs font-semibold bg-white text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/20 disabled:bg-slate-100 disabled:text-slate-500';
 
   return (
     <div className="space-y-5">
       {/* 1. Header Banner */}
       <div className="bg-gradient-to-r from-indigo-50 via-blue-50/80 to-emerald-50/70 rounded-2xl border border-indigo-200/80 p-4 sm:p-5 shadow-soft">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-          <div className="space-y-2">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-extrabold bg-indigo-600 text-white shadow-2xs">
-                <Zap className="w-3.5 h-3.5" />
-                Delta Cell Diffing (Chỉ ghi ô thay đổi)
-              </span>
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-blue-100 text-blue-800 border border-blue-200">
-                <FileSpreadsheet className="w-3.5 h-3.5" />
-                Google Sheets API v4 + File Excel (.xlsx)
-              </span>
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                <ShieldCheck className="w-3.5 h-3.5" />
-                Bảo mật 5 lớp: AES-256-GCM + Cô lập theo CVHT + Chặn Sheet công khai
-              </span>
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
-                <CalendarClock className="w-3.5 h-3.5" />
-                Lịch tự động 1–2 lần/ngày
-              </span>
-            </div>
-
+          <div className="space-y-1">
             <h3 className="text-sm sm:text-base font-extrabold text-slate-900">
-              Backup 2 Chiều từ Web về Sổ CSKH (<code className="font-mono text-indigo-700">1.Chăm sóc</code> &amp;{' '}
-              <code className="font-mono text-teal-700">3.Chấm buổi</code>)
+              Backup dữ liệu từ Web về Sổ CSKH (Kaiwa &amp; JLPT)
             </h3>
-            <p className="text-xs text-slate-600 max-w-4xl leading-relaxed">
-              Đồng bộ ngược hồ sơ học viên, nhật ký chăm sóc (60 cột Sheet <strong className="text-slate-800">1.Chăm sóc</strong>) và bảng điểm danh 12 tháng (466 cột Sheet <strong className="text-slate-800">3.Chấm buổi</strong>) từ Web về đúng file{' '}
-              <code className="font-mono text-[11px] bg-white px-1.5 py-0.5 rounded border border-slate-200 text-slate-800">
-                cham_soc_hoc_vien_&lt;CVHT&gt;.xlsx
-              </code>{' '}
-              và Google Sheet riêng của từng tài khoản CSKH.
+            <p className="text-xs text-slate-600">
+              Đổ dữ liệu học viên &amp; điểm danh từ Web về Sheet của từng CSKH:
+              {' '}<strong className="text-teal-800">Kaiwa</strong> (<code className="font-mono">1.Chăm sóc</code> &amp; <code className="font-mono">3.Chấm buổi</code>)
+              {' '}• <strong className="text-indigo-800">JLPT</strong> (<code className="font-mono">Data JLPT_Inhouse</code> &amp; <code className="font-mono">Chấm buổi</code>).
             </p>
           </div>
 
           {isAdminOrManage && (
-            <div className="flex flex-wrap items-center gap-2 shrink-0">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => handleRunBackupAll(true)}
-                isLoading={runningAllMode === 'full'}
-                disabled={runningAllMode !== null}
-                leftIcon={<RotateCcw className="w-4 h-4 text-amber-600" />}
-                className="bg-white border-amber-300 text-amber-900 hover:bg-amber-50 font-bold"
-              >
-                Ghi đè toàn bộ (Force Full Backup)
-              </Button>
-              <Button
-                variant="primary"
-                size="sm"
-                onClick={() => handleRunBackupAll(false)}
-                isLoading={runningAllMode === 'delta'}
-                disabled={runningAllMode !== null}
-                leftIcon={<RefreshCw className="w-4 h-4" />}
-                className="font-bold shadow-sm"
-              >
-                Backup Tất cả CSKH ngay
-              </Button>
-            </div>
-          )}
-        </div>
-
-        {/* Google Service Account Info Bar */}
-        <div className="mt-4 pt-3.5 border-t border-indigo-200/70 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-          <div className="flex items-start sm:items-center gap-2.5 text-xs">
-            <KeyRound className="w-4 h-4 text-indigo-600 shrink-0 mt-0.5 sm:mt-0" />
-            <div>
-              <span className="font-bold text-slate-800">
-                Google Service Account (Quyền ghi Google Sheet đích):{' '}
-              </span>
-              {serviceAccount?.configured && serviceAccount.clientEmail ? (
-                <span className="inline-flex flex-wrap items-center gap-1.5">
-                  <Badge variant="success" size="sm">Đã sẵn sàng</Badge>
-                  <code className="px-2 py-0.5 bg-white border border-slate-200 rounded font-mono text-[11px] font-bold text-indigo-700">
-                    {serviceAccount.clientEmail}
-                  </code>
-                  <button
-                    type="button"
-                    onClick={() => handleCopyEmail(serviceAccount.clientEmail!)}
-                    className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded bg-indigo-100 hover:bg-indigo-200 text-indigo-800 font-semibold text-[11px] transition-colors cursor-pointer"
-                    title="Copy Email để cấp quyền Editor (Người chỉnh sửa) trên file Google Sheet đích của từng CSKH"
-                  >
-                    <Copy className="w-3 h-3" />
-                    Copy Email để cấp quyền Editor (Người chỉnh sửa)
-                  </button>
-                </span>
-              ) : (
-                <span className="text-slate-600">
-                  Chưa gắn Service Account JSON (Hệ thống vẫn luôn xuất &amp; cập nhật đầy đủ ra file Excel chuẩn{' '}
-                  <code className="font-mono text-[11px] bg-white px-1 rounded">
-                    cham_soc_hoc_vien_&lt;CVHT&gt;.xlsx
-                  </code>{' '}
-                  trên server để tải về bất cứ lúc nào).
-                </span>
-              )}
-            </div>
-          </div>
-
-          {isAdminOrManage && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setShowSaEditor((prev) => !prev)}
-              leftIcon={<KeyRound className="w-3.5 h-3.5 text-indigo-600" />}
-              className="bg-white text-xs shrink-0"
-            >
-              {showSaEditor
-                ? 'Đóng cấu hình Key'
-                : serviceAccount?.configured
-                ? 'Đổi Service Account JSON'
-                : 'Cấu hình Service Account JSON'}
-            </Button>
-          )}
-        </div>
-
-        {showSaEditor && isAdminOrManage && (
-          <div className="mt-3 p-4 bg-white rounded-xl border border-indigo-200 space-y-3">
-            <div className="text-xs text-slate-700 space-y-1">
-              <p className="font-bold text-slate-900">
-                Cấu hình Google Service Account JSON (Mã hóa bảo mật AES-256-GCM):
-              </p>
-              <ol className="list-decimal list-inside space-y-0.5 text-slate-600">
-                <li>
-                  Vào <strong>Google Cloud Console → IAM &amp; Admin → Service Accounts</strong>, tạo 1 Service Account và bật <strong>Google Sheets API</strong> + <strong>Google Drive API</strong>.
-                </li>
-                <li>
-                  Vào tab <strong>Keys → Add Key → Create new key (JSON)</strong> để tải file <code className="font-mono">.json</code> về máy và dán toàn bộ nội dung vào ô bên dưới.
-                </li>
-                <li>
-                  Sau khi lưu, bấm <strong>Copy Email</strong> và mở file Google Sheet riêng của từng CSKH → bấm <strong>Chia sẻ (Share)</strong> → cấp quyền <strong>Người chỉnh sửa (Editor)</strong> cho email đó.
-                </li>
-              </ol>
-            </div>
-            <textarea
-              rows={5}
-              value={saJsonDraft}
-              onChange={(e) => setSaJsonDraft(e.target.value)}
-              placeholder='Dán toàn bộ nội dung file service-account.json vào đây: {"type": "service_account", "project_id": "...", "private_key": "-----BEGIN PRIVATE KEY-----...", "client_email": "...@...iam.gserviceaccount.com"}'
-              className="w-full text-xs font-mono p-2.5 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
-            />
-            <div className="flex items-center justify-end gap-2">
-              {serviceAccount?.configured && (
+            <div className="flex flex-wrap items-start gap-2.5 shrink-0">
+              <div className="flex flex-col items-center">
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={async () => {
-                    try {
-                      setSavingSa(true);
-                      const res = await importsApi.saveServiceAccount(null);
-                      setServiceAccount(res.serviceAccount);
-                      setSaJsonDraft('');
-                      setShowSaEditor(false);
-                      toast.success('Đã xóa cấu hình Google Service Account trên DB.');
-                    } catch (err: any) {
-                      toast.error(
-                        err.response?.data?.error?.message ||
-                          err.response?.data?.message ||
-                          'Không thể xóa Service Account'
-                      );
-                    } finally {
-                      setSavingSa(false);
-                    }
-                  }}
-                  isLoading={savingSa}
-                >
-                  Xóa Key trên DB
-                </Button>
-              )}
-              <Button
-                variant="primary"
-                size="sm"
-                onClick={async () => {
-                  try {
-                    setSavingSa(true);
-                    const res = await importsApi.saveServiceAccount(saJsonDraft.trim() || null);
-                    setServiceAccount(res.serviceAccount);
-                    setShowSaEditor(false);
-                    setSaJsonDraft('');
-                    toast.success(
-                      res.serviceAccount.configured
-                        ? `Đã mã hóa AES-256-GCM và lưu Google Service Account (${res.serviceAccount.clientEmail})!`
-                        : 'Đã xóa cấu hình Google Service Account.'
-                    );
-                  } catch (err: any) {
-                    toast.error(
-                      err.response?.data?.error?.message ||
-                        err.response?.data?.message ||
-                        'Không thể lưu Google Service Account JSON'
-                    );
-                  } finally {
-                    setSavingSa(false);
+                  onClick={() => handleRunBackupAll(true)}
+                  isLoading={runningAllMode === 'full'}
+                  disabled={!serviceAccount?.configured || runningAllMode !== null}
+                  leftIcon={<RotateCcw className="w-4 h-4 text-amber-600" />}
+                  className="bg-white border-amber-300 text-amber-900 hover:bg-amber-50 font-bold"
+                  title={
+                    !serviceAccount?.configured
+                      ? 'Vui lòng cấu hình Google Service Account JSON tại trang Cấu hình Admin trước'
+                      : 'Tạo lại toàn bộ dòng & ô từ đầu cho tất cả CSKH'
                   }
-                }}
-                isLoading={savingSa}
-                leftIcon={<Save className="w-3.5 h-3.5" />}
-              >
-                Lưu Service Account JSON
-              </Button>
+                >
+                  Ghi đè toàn bộ
+                </Button>
+                <span className="text-[10px] text-slate-500 mt-1">
+                  Làm mới lại toàn bộ dữ liệu
+                </span>
+              </div>
+
+              <div className="flex flex-col items-center">
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={() => handleRunBackupAll(false)}
+                  isLoading={runningAllMode === 'delta'}
+                  disabled={!serviceAccount?.configured || runningAllMode !== null}
+                  leftIcon={<RefreshCw className="w-4 h-4" />}
+                  className="font-bold shadow-sm"
+                  title={
+                    !serviceAccount?.configured
+                      ? 'Vui lòng cấu hình Google Service Account JSON tại trang Cấu hình Admin trước'
+                      : 'Chỉ cập nhật những ô có thay đổi cho tất cả CSKH'
+                  }
+                >
+                  Backup tất cả CSKH
+                </Button>
+                <span className="text-[10px] text-slate-500 mt-1">
+                  Chỉ ghi những ô mới thay đổi
+                </span>
+              </div>
             </div>
+          )}
+        </div>
+
+        {/* Google Service Account Status Bar */}
+        <div className="mt-3.5 pt-3 border-t border-indigo-200/70 flex flex-wrap items-center justify-between gap-2 text-xs">
+          <div className="flex flex-wrap items-center gap-2">
+            <KeyRound className="w-4 h-4 text-indigo-600 shrink-0" />
+            <span className="font-bold text-slate-800">Tài khoản Google Sheet:</span>
+            {serviceAccount?.configured && serviceAccount.clientEmail ? (
+              <>
+                <Badge variant="success" size="sm">Đã kết nối</Badge>
+                <code className="px-2 py-0.5 bg-white border border-slate-200 rounded font-mono text-[11px] font-bold text-indigo-700">
+                  {serviceAccount.clientEmail}
+                </code>
+                <button
+                  type="button"
+                  onClick={() => handleCopyEmail(serviceAccount.clientEmail!)}
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-indigo-100 hover:bg-indigo-200 text-indigo-800 font-semibold text-[11px] transition-colors cursor-pointer"
+                  title="Copy email này để cấp quyền Chỉnh sửa (Editor) trên Google Sheet"
+                >
+                  <Copy className="w-3 h-3" />
+                  Copy Email
+                </button>
+              </>
+            ) : (
+              <Badge variant="warning" size="sm">Chưa gắn Service Account</Badge>
+            )}
           </div>
+        </div>
+      </div>
+
+      {/* 1b. Quick Filters */}
+      <div className="bg-surface rounded-2xl border border-border/80 p-3.5 flex flex-wrap items-center gap-3">
+        <span className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-700">
+          <Filter className="w-3.5 h-3.5 text-indigo-600" />
+          Bộ lọc nhanh:
+        </span>
+        <select
+          value={programFilter}
+          onChange={(e) => setProgramFilter(e.target.value as ProgramFilter)}
+          className={`${selectClass} !h-9 max-w-xs`}
+        >
+          <option value="ALL">Tất cả chương trình</option>
+          <option value="KAIWA">KAIWA (Sheet 1.Chăm sóc &amp; 3.Chấm buổi)</option>
+          <option value="JLPT">JLPT (Sheet Data JLPT_Inhouse &amp; Chấm buổi)</option>
+        </select>
+
+        {isAdminOrManage && (
+          <select
+            value={String(csFilterUserId)}
+            onChange={(e) =>
+              setCsFilterUserId(e.target.value === 'ALL' ? 'ALL' : Number(e.target.value))
+            }
+            className={`${selectClass} !h-9 max-w-xs`}
+          >
+            <option value="ALL">Tất cả CSKH</option>
+            {csOptions.map((opt) => (
+              <option key={opt.id} value={opt.id}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
         )}
+
+        <span className="text-[11px] text-slate-500 font-semibold ml-auto">
+          Hiển thị {visibleConfigs.length} / {configs.length} cấu hình
+        </span>
       </div>
 
       {/* 2. CSKH Cards Grid */}
@@ -544,7 +596,7 @@ export const CsSheetBackupPanel: React.FC = () => {
             Chưa có cấu hình tài khoản CSKH nào để hiển thị
           </p>
           <p className="text-xs text-slate-500">
-            Vui lòng kiểm tra tài khoản nhân viên CSKH hoặc bấm làm mới trang.
+            Vui lòng đổi bộ lọc chương trình/CSKH, kiểm tra tài khoản nhân viên CSKH hoặc bấm làm mới trang.
           </p>
         </div>
       ) : (
@@ -554,45 +606,59 @@ export const CsSheetBackupPanel: React.FC = () => {
           } gap-5`}
         >
           {visibleConfigs.map((cfg) => {
-            const csUserId = cfg.cs_user_id;
-            const staffCode = cfg.cs_user?.staff_code || `CS0${csUserId}`;
+            const configId = cfg.id;
+            const programKey = getProgramKey(cfg.program_type);
+            const meta = PROGRAM_META[programKey];
+            const staffCode = cfg.cs_user?.staff_code || `CS0${configId}`;
             const staffName = cfg.cs_user?.name || cfg.name || `CSKH ${staffCode}`;
             const staffEmail = cfg.cs_user?.email || '';
-            const excelFileName = `cham_soc_hoc_vien_${staffCode}.xlsx`;
+            const excelFileName = `hoc_vien_${meta.fileSlug}_${staffCode}.xlsx`;
 
-            const draft: UpdateCsSheetBackupConfigDTO = drafts[csUserId] || {
+            const draft: UpdateCsSheetBackupConfigDTO = drafts[configId] || {
               target_spreadsheet_url: cfg.target_spreadsheet_url || '',
-              sheet1_name: cfg.sheet1_name || '1.Chăm sóc',
-              sheet3_name: cfg.sheet3_name || '3.Chấm buổi',
+              profile_sheet_name: cfg.profile_sheet_name || meta.profileSheet,
+              profile_header_row: cfg.profile_header_row ?? meta.profileHeaderRow,
+              profile_enabled: cfg.profile_enabled ?? true,
+              sheet_name: cfg.sheet_name || meta.attendanceSheet,
+              header_row: cfg.header_row ?? meta.attendanceHeaderRow,
+              backup_year: cfg.backup_year ?? null,
               schedule_times: cfg.schedule_times || ['12:00', '21:00'],
               enabled: cfg.enabled ?? true,
               require_private_sheet: cfg.require_private_sheet ?? true,
               mask_sensitive_data: cfg.mask_sensitive_data ?? false,
             };
 
-            const sheet1Stats: SheetBackupSheetStats =
-              cfg.last_summary?.sheet1 || EMPTY_STATS;
-            const sheet3Stats: SheetBackupSheetStats =
-              cfg.last_summary?.sheet3 || EMPTY_STATS;
+            const profileStats = resolveSheetStats(cfg.last_summary, 'profile', 'sheet1');
+            const attendanceStats = resolveSheetStats(cfg.last_summary, 'attendance', 'sheet3');
+
+            const profileSheetLabel = draft.profile_sheet_name || meta.profileSheet;
+            const attendanceSheetLabel = draft.sheet_name || meta.attendanceSheet;
 
             const currentPreset = getPresetValueForTimes(draft.schedule_times);
+            const yearOptions = availableYears.length > 0 ? availableYears : [2025, 2026];
 
             return (
               <div
-                key={cfg.id || csUserId}
+                key={configId}
                 className="bg-surface rounded-2xl border border-indigo-200/90 shadow-soft overflow-hidden flex flex-col justify-between"
               >
                 <div>
                   {/* Card Header */}
                   <div className="px-5 py-4 border-b bg-gradient-to-r from-indigo-50/70 via-slate-50 to-teal-50/50 border-indigo-200/70 flex flex-wrap items-start justify-between gap-3">
                     <div className="flex items-start gap-3">
-                      <div className="w-11 h-11 rounded-xl bg-indigo-600 text-white font-extrabold text-xs flex items-center justify-center shrink-0 shadow-xs tracking-tight">
+                      <div
+                        className={`w-11 h-11 rounded-xl text-white font-extrabold text-xs flex items-center justify-center shrink-0 shadow-xs tracking-tight ${
+                          programKey === 'KAIWA' ? 'bg-teal-600' : 'bg-indigo-600'
+                        }`}
+                      >
                         {staffCode}
                       </div>
                       <div>
                         <div className="flex flex-wrap items-center gap-2">
-                          <span className="px-2.5 py-0.5 rounded-md text-[11px] font-extrabold tracking-wide bg-indigo-100 text-indigo-800 border border-indigo-300 font-mono">
-                            {staffCode}
+                          <span
+                            className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-[11px] font-extrabold tracking-wide border ${meta.badgeClass}`}
+                          >
+                            {meta.label}
                           </span>
                           <h4 className="font-extrabold text-slate-900 text-sm">
                             {staffName}
@@ -604,17 +670,17 @@ export const CsSheetBackupPanel: React.FC = () => {
                           )}
                         </div>
 
-                        {/* Student Counts Breakdown */}
+                        {/* Student Counts */}
                         <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-900 text-white text-[11px] font-bold">
                             <Users className="w-3 h-3 text-indigo-300" />
-                            Tổng: {cfg.studentCounts?.total ?? 0} học viên
+                            Tổng: {cfg.student_counts?.total ?? 0} HV
                           </span>
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-teal-50 text-teal-800 border border-teal-200 text-[11px] font-bold">
-                            Kaiwa: {cfg.studentCounts?.kaiwa ?? 0}
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-800 border border-emerald-200 text-[11px] font-bold">
+                            Đang học/Chờ lớp: {cfg.student_counts?.attending ?? 0} HV
                           </span>
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-800 border border-indigo-200 text-[11px] font-bold">
-                            JLPT: {cfg.studentCounts?.jlpt ?? 0}
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200 text-[11px] font-bold font-mono">
+                            File chuẩn: {excelFileName}
                           </span>
                         </div>
                       </div>
@@ -648,22 +714,27 @@ export const CsSheetBackupPanel: React.FC = () => {
                             : 'Chưa chạy'}
                         </strong>
                       </div>
+                      <div className="text-[10px] font-bold text-slate-500">
+                        Cấu hình #{configId} • CSKH #{cfg.cs_user_id}
+                      </div>
                     </div>
                   </div>
 
                   {/* Card Body */}
                   <div className="p-5 space-y-4 text-xs">
-                    {/* Delta Stats Comparison: Sheet 1 & Sheet 3 */}
+                    {/* Delta Stats Comparison: Sheet Hồ sơ & Sheet Điểm danh */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                      {/* Sheet 1.Chăm sóc */}
+                      {/* Sheet Hồ sơ (profile) */}
                       <div className="rounded-xl bg-indigo-50/40 border border-indigo-200/80 p-3 space-y-2.5">
-                        <div className="flex items-center justify-between">
-                          <span className="font-extrabold text-indigo-950 text-xs flex items-center gap-1.5">
-                            <Layers className="w-3.5 h-3.5 text-indigo-600" />
-                            Sheet <code className="font-mono">{draft.sheet1_name || '1.Chăm sóc'}</code>
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-extrabold text-indigo-950 text-xs flex items-center gap-1.5 min-w-0">
+                            <Layers className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                            <span className="truncate">
+                              Sheet Hồ sơ: <code className="font-mono">{profileSheetLabel}</code>
+                            </span>
                           </span>
-                          <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-indigo-100 text-indigo-800">
-                            60 cột Hồ sơ &amp; Chăm sóc
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-indigo-100 text-indigo-800 shrink-0">
+                            {meta.profileCaption}
                           </span>
                         </div>
                         <div className="grid grid-cols-5 gap-1.5">
@@ -672,7 +743,7 @@ export const CsSheetBackupPanel: React.FC = () => {
                               Tổng dòng
                             </span>
                             <strong className="text-xs font-extrabold text-slate-900">
-                              {sheet1Stats.totalEnrollments}
+                              {profileStats.totalEnrollments}
                             </strong>
                           </div>
                           <div className="bg-white rounded-lg border border-slate-200/80 p-1.5 text-center">
@@ -680,7 +751,7 @@ export const CsSheetBackupPanel: React.FC = () => {
                               Giữ nguyên
                             </span>
                             <strong className="text-xs font-extrabold text-slate-600">
-                              {sheet1Stats.unchangedRows}
+                              {profileStats.unchangedRows}
                             </strong>
                           </div>
                           <div className="bg-blue-50/80 rounded-lg border border-blue-200/80 p-1.5 text-center">
@@ -688,7 +759,7 @@ export const CsSheetBackupPanel: React.FC = () => {
                               Cập nhật
                             </span>
                             <strong className="text-xs font-extrabold text-blue-700">
-                              {sheet1Stats.updatedRows}
+                              {profileStats.updatedRows}
                             </strong>
                           </div>
                           <div className="bg-emerald-50/80 rounded-lg border border-emerald-200/80 p-1.5 text-center">
@@ -696,7 +767,7 @@ export const CsSheetBackupPanel: React.FC = () => {
                               Thêm mới
                             </span>
                             <strong className="text-xs font-extrabold text-emerald-700">
-                              +{sheet1Stats.appendedRows}
+                              +{profileStats.appendedRows}
                             </strong>
                           </div>
                           <div className="bg-amber-50/90 rounded-lg border border-amber-200/90 p-1.5 text-center">
@@ -704,21 +775,28 @@ export const CsSheetBackupPanel: React.FC = () => {
                               Ô thay đổi
                             </span>
                             <strong className="text-xs font-extrabold text-amber-800">
-                              {sheet1Stats.updatedCellsCount}
+                              {profileStats.updatedCellsCount}
                             </strong>
                           </div>
                         </div>
+                        {!draft.profile_enabled && (
+                          <span className="block text-[10px] font-bold text-slate-500">
+                            Sheet hồ sơ đang TẮT đổ dữ liệu.
+                          </span>
+                        )}
                       </div>
 
-                      {/* Sheet 3.Chấm buổi */}
+                      {/* Sheet Điểm danh (attendance) */}
                       <div className="rounded-xl bg-teal-50/40 border border-teal-200/80 p-3 space-y-2.5">
-                        <div className="flex items-center justify-between">
-                          <span className="font-extrabold text-teal-950 text-xs flex items-center gap-1.5">
-                            <Layers className="w-3.5 h-3.5 text-teal-600" />
-                            Sheet <code className="font-mono">{draft.sheet3_name || '3.Chấm buổi'}</code>
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-extrabold text-teal-950 text-xs flex items-center gap-1.5 min-w-0">
+                            <Layers className="w-3.5 h-3.5 text-teal-600 shrink-0" />
+                            <span className="truncate">
+                              Sheet Điểm danh: <code className="font-mono">{attendanceSheetLabel}</code>
+                            </span>
                           </span>
-                          <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-teal-100 text-teal-800">
-                            466 cột Điểm danh 12 tháng
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-teal-100 text-teal-800 shrink-0">
+                            {meta.attendanceCaption}
                           </span>
                         </div>
                         <div className="grid grid-cols-5 gap-1.5">
@@ -727,7 +805,7 @@ export const CsSheetBackupPanel: React.FC = () => {
                               Tổng dòng
                             </span>
                             <strong className="text-xs font-extrabold text-slate-900">
-                              {sheet3Stats.totalEnrollments}
+                              {attendanceStats.totalEnrollments}
                             </strong>
                           </div>
                           <div className="bg-white rounded-lg border border-slate-200/80 p-1.5 text-center">
@@ -735,7 +813,7 @@ export const CsSheetBackupPanel: React.FC = () => {
                               Giữ nguyên
                             </span>
                             <strong className="text-xs font-extrabold text-slate-600">
-                              {sheet3Stats.unchangedRows}
+                              {attendanceStats.unchangedRows}
                             </strong>
                           </div>
                           <div className="bg-blue-50/80 rounded-lg border border-blue-200/80 p-1.5 text-center">
@@ -743,7 +821,7 @@ export const CsSheetBackupPanel: React.FC = () => {
                               Cập nhật
                             </span>
                             <strong className="text-xs font-extrabold text-blue-700">
-                              {sheet3Stats.updatedRows}
+                              {attendanceStats.updatedRows}
                             </strong>
                           </div>
                           <div className="bg-emerald-50/80 rounded-lg border border-emerald-200/80 p-1.5 text-center">
@@ -751,7 +829,7 @@ export const CsSheetBackupPanel: React.FC = () => {
                               Thêm mới
                             </span>
                             <strong className="text-xs font-extrabold text-emerald-700">
-                              +{sheet3Stats.appendedRows}
+                              +{attendanceStats.appendedRows}
                             </strong>
                           </div>
                           <div className="bg-amber-50/90 rounded-lg border border-amber-200/90 p-1.5 text-center">
@@ -759,10 +837,15 @@ export const CsSheetBackupPanel: React.FC = () => {
                               Ô thay đổi
                             </span>
                             <strong className="text-xs font-extrabold text-amber-800">
-                              {sheet3Stats.updatedCellsCount}
+                              {attendanceStats.updatedCellsCount}
                             </strong>
                           </div>
                         </div>
+                        {typeof attendanceStats.attendanceCellsWritten === 'number' && (
+                          <span className="block text-[10px] font-bold text-teal-800">
+                            Ô điểm danh đã ghi: {attendanceStats.attendanceCellsWritten}
+                          </span>
+                        )}
                       </div>
                     </div>
 
@@ -772,13 +855,13 @@ export const CsSheetBackupPanel: React.FC = () => {
                       </div>
                     )}
 
-                    {/* Storage Target, Schedule & Security Config */}
+                    {/* Storage Target, Sheets, Year, Schedule & Security Config */}
                     <div className="space-y-3 pt-1">
                       <div>
                         <label className="block font-bold text-slate-700 mb-1 flex items-center justify-between">
                           <span className="flex items-center gap-1">
                             <Link2 className="w-3.5 h-3.5 text-indigo-600" />
-                            <span>Link Google Sheet đích của CSKH ({staffCode})</span>
+                            <span>Link Google Sheet đích của CSKH ({staffCode} • {programKey})</span>
                           </span>
                           {!isAdminOrManage && (
                             <span className="text-[10px] font-semibold text-slate-500">
@@ -791,7 +874,7 @@ export const CsSheetBackupPanel: React.FC = () => {
                           value={draft.target_spreadsheet_url || ''}
                           disabled={!isAdminOrManage}
                           onChange={(e) =>
-                            updateDraft(csUserId, { target_spreadsheet_url: e.target.value })
+                            updateDraft(configId, { target_spreadsheet_url: e.target.value })
                           }
                         />
                         <span className="block text-[10px] text-slate-500 mt-1">
@@ -803,33 +886,77 @@ export const CsSheetBackupPanel: React.FC = () => {
                         </span>
                       </div>
 
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                        <div>
-                          <label className="block font-bold text-slate-700 mb-1">
-                            Tên Sheet 1 (Hồ sơ)
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div className="space-y-2">
+                          <label className="block font-bold text-slate-700">
+                            Tên Sheet Hồ sơ ({programKey})
                           </label>
                           <Input
-                            value={draft.sheet1_name || ''}
+                            value={draft.profile_sheet_name || ''}
                             disabled={!isAdminOrManage}
                             onChange={(e) =>
-                              updateDraft(csUserId, { sheet1_name: e.target.value })
+                              updateDraft(configId, { profile_sheet_name: e.target.value })
                             }
-                            placeholder="1.Chăm sóc"
+                            placeholder={meta.profileSheet}
                           />
+                          <label className="flex items-center gap-2 cursor-pointer select-none">
+                            <input
+                              type="checkbox"
+                              checked={Boolean(draft.profile_enabled)}
+                              disabled={!isAdminOrManage}
+                              onChange={(e) =>
+                                updateDraft(configId, { profile_enabled: e.target.checked })
+                              }
+                              className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                            />
+                            <span className="text-[11px] text-slate-700 font-semibold">
+                              Bật đổ dữ liệu vào Sheet Hồ sơ
+                            </span>
+                          </label>
                         </div>
 
-                        <div>
-                          <label className="block font-bold text-slate-700 mb-1">
-                            Tên Sheet 3 (Điểm danh)
+                        <div className="space-y-2">
+                          <label className="block font-bold text-slate-700">
+                            Tên Sheet Điểm danh ({programKey})
                           </label>
                           <Input
-                            value={draft.sheet3_name || ''}
+                            value={draft.sheet_name || ''}
                             disabled={!isAdminOrManage}
                             onChange={(e) =>
-                              updateDraft(csUserId, { sheet3_name: e.target.value })
+                              updateDraft(configId, { sheet_name: e.target.value })
                             }
-                            placeholder="3.Chấm buổi"
+                            placeholder={meta.attendanceSheet}
                           />
+                          <div className="text-[10px] text-slate-500 font-semibold">
+                            Dòng tiêu đề: Hồ sơ = <strong>{draft.profile_header_row ?? meta.profileHeaderRow}</strong>{' '}
+                            • Điểm danh = <strong>{draft.header_row ?? meta.attendanceHeaderRow}</strong>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <div>
+                          <label className="block font-bold text-slate-700 mb-1 flex items-center gap-1">
+                            <CalendarClock className="w-3.5 h-3.5 text-teal-600" />
+                            <span>Năm điểm danh</span>
+                          </label>
+                          <select
+                            value={draft.backup_year == null ? 'ALL' : String(draft.backup_year)}
+                            disabled={!isAdminOrManage}
+                            onChange={(e) =>
+                              updateDraft(configId, {
+                                backup_year: e.target.value === 'ALL' ? null : Number(e.target.value),
+                              })
+                            }
+                            className={selectClass}
+                          >
+                            <option value="ALL">Tất cả các năm</option>
+                            {yearOptions.map((y) => (
+                              <option key={y} value={y}>
+                                {y}
+                              </option>
+                            ))}
+                          </select>
                         </div>
 
                         <div>
@@ -841,9 +968,9 @@ export const CsSheetBackupPanel: React.FC = () => {
                             value={currentPreset}
                             disabled={!isAdminOrManage}
                             onChange={(e) =>
-                              handleSchedulePresetChange(csUserId, e.target.value)
+                              handleSchedulePresetChange(configId, e.target.value)
                             }
-                            className="w-full h-9 px-2.5 border border-border rounded-xl text-xs font-semibold bg-white text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/20 disabled:bg-slate-100 disabled:text-slate-500"
+                            className={selectClass}
                           >
                             {SCHEDULE_PRESETS.map((p) => (
                               <option key={p.value} value={p.value}>
@@ -852,24 +979,23 @@ export const CsSheetBackupPanel: React.FC = () => {
                             ))}
                           </select>
                         </div>
-                      </div>
 
-                      {/* Custom HH:mm Schedule Input */}
-                      <div>
-                        <label className="block font-bold text-slate-700 mb-1">
-                          Khung giờ chạy tự động trong ngày (Định dạng HH:mm, cách nhau bằng dấu phẩy)
-                        </label>
-                        <Input
-                          value={
-                            customTimeStrings[csUserId] ??
-                            (draft.schedule_times || ['12:00', '21:00']).join(', ')
-                          }
-                          disabled={!isAdminOrManage}
-                          onChange={(e) =>
-                            handleCustomTimeStringChange(csUserId, e.target.value)
-                          }
-                          placeholder="12:00, 21:00"
-                        />
+                        <div>
+                          <label className="block font-bold text-slate-700 mb-1">
+                            Khung giờ chạy trong ngày (HH:mm, cách nhau bằng dấu phẩy)
+                          </label>
+                          <Input
+                            value={
+                              customTimeStrings[configId] ??
+                              (draft.schedule_times || ['12:00', '21:00']).join(', ')
+                            }
+                            disabled={!isAdminOrManage}
+                            onChange={(e) =>
+                              handleCustomTimeStringChange(configId, e.target.value)
+                            }
+                            placeholder="12:00, 21:00"
+                          />
+                        </div>
                       </div>
 
                       {/* Security & Anti-Leak Checkboxes */}
@@ -885,7 +1011,7 @@ export const CsSheetBackupPanel: React.FC = () => {
                             checked={Boolean(draft.require_private_sheet)}
                             disabled={!isAdminOrManage}
                             onChange={(e) =>
-                              updateDraft(csUserId, {
+                              updateDraft(configId, {
                                 require_private_sheet: e.target.checked,
                               })
                             }
@@ -906,7 +1032,7 @@ export const CsSheetBackupPanel: React.FC = () => {
                             checked={Boolean(draft.mask_sensitive_data)}
                             disabled={!isAdminOrManage}
                             onChange={(e) =>
-                              updateDraft(csUserId, {
+                              updateDraft(configId, {
                                 mask_sensitive_data: e.target.checked,
                               })
                             }
@@ -927,7 +1053,7 @@ export const CsSheetBackupPanel: React.FC = () => {
                             checked={Boolean(draft.enabled)}
                             disabled={!isAdminOrManage}
                             onChange={(e) =>
-                              updateDraft(csUserId, {
+                              updateDraft(configId, {
                                 enabled: e.target.checked,
                               })
                             }
@@ -956,8 +1082,8 @@ export const CsSheetBackupPanel: React.FC = () => {
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => handleSaveConfig(csUserId, staffCode)}
-                        isLoading={savingUserId === csUserId}
+                        onClick={() => handleSaveConfig(cfg)}
+                        isLoading={savingConfigId === configId}
                         leftIcon={<Save className="w-3.5 h-3.5 text-slate-600" />}
                       >
                         Lưu cấu hình
@@ -969,8 +1095,8 @@ export const CsSheetBackupPanel: React.FC = () => {
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => handleDownloadExcel(csUserId, staffCode)}
-                      isLoading={downloadingUserId === csUserId}
+                      onClick={() => handleDownloadExcel(cfg)}
+                      isLoading={downloadingConfigId === configId}
                       leftIcon={<Download className="w-3.5 h-3.5 text-emerald-600" />}
                       className="bg-white border-emerald-300 text-emerald-900 hover:bg-emerald-50 font-bold"
                     >
@@ -978,12 +1104,35 @@ export const CsSheetBackupPanel: React.FC = () => {
                     </Button>
 
                     <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleRunBackup(cfg, true)}
+                      isLoading={runningConfigId === `${configId}_full`}
+                      disabled={!serviceAccount?.configured || runningConfigId !== null}
+                      leftIcon={<RotateCcw className="w-3.5 h-3.5 text-amber-600" />}
+                      className="bg-white border-amber-300 text-amber-900 hover:bg-amber-50 font-bold"
+                      title={
+                        !serviceAccount?.configured
+                          ? 'Vui lòng cấu hình Google Service Account JSON tại trang Cấu hình Admin trước'
+                          : 'Làm mới toàn bộ dòng & ô của thẻ này'
+                      }
+                    >
+                      Ghi đè (Full)
+                    </Button>
+
+                    <Button
                       variant="primary"
                       size="sm"
-                      onClick={() => handleRunBackup(csUserId, staffCode, false)}
-                      isLoading={runningUserId === `${csUserId}_delta`}
+                      onClick={() => handleRunBackup(cfg, false)}
+                      isLoading={runningConfigId === `${configId}_delta`}
+                      disabled={!serviceAccount?.configured || runningConfigId !== null}
                       leftIcon={<RefreshCw className="w-3.5 h-3.5" />}
                       className="font-bold"
+                      title={
+                        !serviceAccount?.configured
+                          ? 'Vui lòng cấu hình Google Service Account JSON tại trang Cấu hình Admin trước'
+                          : 'Chỉ cập nhật những ô có thay đổi của thẻ này'
+                      }
                     >
                       Cập nhật thay đổi (Delta Backup)
                     </Button>

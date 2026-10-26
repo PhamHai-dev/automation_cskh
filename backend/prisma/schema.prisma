@@ -1017,6 +1017,11 @@ model ProgramSheetBackupConfig {
   local_backup_path      String?
   sheet_name             String    @default("Chấm buổi") // JLPT="Chấm buổi", KAIWA="3.Chấm buổi"
   header_row             Int       @default(2)
+  // Sheet HỒ SƠ (1.Chăm sóc / Data JLPT_Inhouse) - backup song song với sheet điểm danh
+  // trong cùng 1 workbook. KAIWA header ở row 3 (data từ row 4), JLPT ở row 2 (data từ row 3).
+  profile_sheet_name     String? // null = dùng mặc định theo program_type
+  profile_header_row     Int       @default(3)
+  profile_enabled        Boolean   @default(true)
   schedule_times         Json? // e.g. ["12:00", "21:00"]
   enabled                Boolean   @default(true)
   require_private_sheet  Boolean   @default(true)

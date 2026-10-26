@@ -367,6 +367,36 @@ export class ImportsController {
     }
   };
 
+  getSheetBackupColumnConfig = async (_req: Request, res: Response, next: NextFunction) => {
+    try {
+      const data = await this.sheetBackupService.getColumnConfigWithServiceAccount();
+      res.status(200).json({ data, meta: null });
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  updateSheetBackupColumnConfig = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const user = (req as any).user;
+      const data = await this.sheetBackupService.saveColumnConfig(req.body || {}, user?.id);
+      res.status(200).json({ data, meta: null });
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  resetSheetBackupColumnConfig = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const user = (req as any).user;
+      const programType = req.body?.programType ? String(req.body.programType) : undefined;
+      const data = await this.sheetBackupService.resetColumnConfig(programType, user?.id);
+      res.status(200).json({ data, meta: null });
+    } catch (err) {
+      next(err);
+    }
+  };
+
   updateSheetBackupConfig = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const id = parseInt(req.params.id, 10);

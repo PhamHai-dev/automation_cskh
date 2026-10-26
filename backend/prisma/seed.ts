@@ -252,12 +252,16 @@ async function main() {
   const programBackupTemplates = [
     {
       program_type: 'JLPT',
+      profile_sheet_name: 'Data JLPT_Inhouse',
+      profile_header_row: 2,
       sheet_name: 'Chấm buổi',
       name: (label: string) => `Backup JLPT - ${label}`,
       path: (label: string) => `backups/cskh/hoc_vien_jlpt_${label}.xlsx`,
     },
     {
       program_type: 'KAIWA',
+      profile_sheet_name: '1.Chăm sóc',
+      profile_header_row: 3,
       sheet_name: '3.Chấm buổi',
       name: (label: string) => `Backup KAIWA - ${label}`,
       path: (label: string) => `backups/cskh/hoc_vien_kaiwa_${label}.xlsx`,
@@ -271,6 +275,9 @@ async function main() {
         where: { cs_user_id_program_type: { cs_user_id: csUser.id, program_type: tpl.program_type } },
         update: {
           name: tpl.name(staffLabel),
+          profile_sheet_name: tpl.profile_sheet_name,
+          profile_header_row: tpl.profile_header_row,
+          profile_enabled: true,
           sheet_name: tpl.sheet_name,
           local_backup_path: tpl.path(staffLabel),
           schedule_times: ['12:00', '21:00'],
@@ -278,11 +285,14 @@ async function main() {
           require_private_sheet: true,
           mask_sensitive_data: false,
           backup_year: null,
-        },
+        } as any,
         create: {
           cs_user_id: csUser.id,
           program_type: tpl.program_type,
           name: tpl.name(staffLabel),
+          profile_sheet_name: tpl.profile_sheet_name,
+          profile_header_row: tpl.profile_header_row,
+          profile_enabled: true,
           sheet_name: tpl.sheet_name,
           local_backup_path: tpl.path(staffLabel),
           header_row: 2,
@@ -292,7 +302,7 @@ async function main() {
           mask_sensitive_data: false,
           backup_year: null,
           last_status: 'IDLE',
-        },
+        } as any,
       });
     }
   }

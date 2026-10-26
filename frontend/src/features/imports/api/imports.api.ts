@@ -198,45 +198,48 @@ export const importsApi = {
     return res.data?.data || res.data;
   },
 
-  // CS Sheet Backup (Web -> Sheet 1.Chăm sóc & 3.Chấm buổi)
+  // CS Sheet Backup (Web -> Sheet Kaiwa & JLPT)
   getSheetBackupConfigs: async (): Promise<{
     configs: CsSheetBackupConfigItem[];
     serviceAccount?: ServiceAccountInfo;
+    availableYears?: number[];
   }> => {
     const res = await apiClient.get('/imports/sheet-backup/configs');
     return res.data?.data || res.data;
   },
 
   updateSheetBackupConfig: async (
-    csUserId: number,
+    configId: number,
     payload: UpdateCsSheetBackupConfigDTO
   ): Promise<CsSheetBackupConfigItem> => {
-    const res = await apiClient.put(`/imports/sheet-backup/configs/${csUserId}`, payload);
+    const res = await apiClient.put(`/imports/sheet-backup/configs/${configId}`, payload);
     return res.data?.data || res.data;
   },
 
   runSheetBackup: async (
-    csUserId: number,
-    options?: { forceFullRewrite?: boolean }
+    configId: number,
+    options?: { forceFullRewrite?: boolean; year?: number | null }
   ): Promise<CsSheetBackupSummary> => {
-    const res = await apiClient.post(`/imports/sheet-backup/configs/${csUserId}/run`, options || {});
+    const res = await apiClient.post(`/imports/sheet-backup/configs/${configId}/run`, options || {});
     return res.data?.data || res.data;
   },
 
   runSheetBackupAll: async (options?: {
     forceFullRewrite?: boolean;
+    year?: number | null;
+    programType?: string | null;
   }): Promise<{ results: CsSheetBackupSummary[] }> => {
     const res = await apiClient.post('/imports/sheet-backup/run-all', options || {});
     return res.data?.data || res.data;
   },
 
   downloadCsSheetBackupExcel: async (
-    csUserId: number,
-    staffCode?: string,
+    configId: number,
+    fileName: string,
     refresh = false
   ): Promise<void> => {
     const res = await apiClient.get(
-      `/imports/sheet-backup/configs/${csUserId}/download?refresh=${refresh}`,
+      `/imports/sheet-backup/configs/${configId}/download?refresh=${refresh}`,
       {
         responseType: 'blob',
       }
@@ -244,7 +247,7 @@ export const importsApi = {
     const url = window.URL.createObjectURL(new Blob([res.data]));
     const link = document.createElement('a');
     link.href = url;
-    link.setAttribute('download', `cham_soc_hoc_vien_${staffCode || csUserId}.xlsx`);
+    link.setAttribute('download', fileName);
     document.body.appendChild(link);
     link.click();
     link.remove();
