@@ -1,8 +1,10 @@
-// D8 owner ruling (A) 2026-10-26 — privileged assist-mark branch of
+// Owner ruling 2026-10-26 — privileged assist-mark branch of
 // reconciliation.service.markByTeacher enforces TWO INDEPENDENT conditions:
-//   1. Operator assist authority = existing isPrivileged (ADMIN/MANAGE policy;
-//      D8 grants no assist rights by itself — MANAGE is neither widened nor
-//      narrowed here).
+//   1. Operator assist authority = ADMIN ONLY (isAssistMarkPrivileged /
+//      assertAssistMarkAuthority). MANAGE is NOT allowed to assist-mark for a
+//      teacher; MANAGE continues to record CVHT opinions within its assigned
+//      group via markByCS / bulkApprovePending. Assist authority is a separate
+//      gate from conflict resolution (assertAdminResolver).
 //   2. The RECORDED teacher (data.teacherId) was validly assigned to the class
 //      AT THE SESSION DATE, per the D8 window rule (findEffectiveAssignment),
 //      with the teacher ACCOUNT still usable (teacher { active: true }).
@@ -20,6 +22,9 @@ jest.mock('../../../prisma/client', () => ({
       update: jest.fn(),
     },
     classTeacher: {
+      findMany: jest.fn(),
+    },
+    manageAssignment: {
       findMany: jest.fn(),
     },
     $transaction: jest.fn(),
@@ -43,6 +48,7 @@ import { AppError } from '../../../middlewares/error.middleware';
 const mockPrisma = prisma as unknown as {
   attendance: { findUnique: jest.Mock; update: jest.Mock };
   classTeacher: { findMany: jest.Mock };
+  manageAssignment: { findMany: jest.Mock };
   $transaction: jest.Mock;
   auditLog: { create: jest.Mock };
 };
@@ -175,20 +181,106 @@ describe('markByTeacher — privileged assist condition 2: assignment effective 
   });
 });
 
-describe('markByTeacher — privileged assist condition 1: operator authority is unchanged policy', () => {
-  it('MANAGE keeps assist authority exactly as before (isPrivileged unchanged — D8 grants none, revokes none)', async () => {
+describe('markByTeacher — condition 1 (owner ruling 2026-10-26): assist authority is ADMIN only, per thao tác', () => {
+  it('(a) ADMIN keeps assist-mark authority: D8-valid target teacher -> write succeeds', async () => {
     mockPrisma.classTeacher.findMany.mockResolvedValue([
-      { active: false, start_date: new Date('2026-01-01T00:00:00.000Z'), end_date: new Date('2026-12-31T00:00:00.000Z') },
+      { active: true, start_date: new Date('2026-06-01T00:00:00.000Z'), end_date: new Date('2026-06-30T00:00:00.000Z') },
     ]);
     mockSuccessfulWrite();
 
     const result = await service.markByTeacher(
       attendanceId,
       { status: AttendanceStatus.ATTENDED, teacherId: TEACHER_USER_ID },
-      MANAGE
+      ADMIN
     );
 
     expect(result.reconciliation_state).toBe(ReconciliationState.PENDING_CS);
+    expect(mockPrisma.classTeacher.findMany).toHaveBeenCalled();
+  });
+
+  it('(b) MANAGE assist-mark with teacherId -> 403 on the NEW authority gate even when the target teacher is perfectly D8-valid (proves authority gate, not the window)', async () => {
+    // A fully valid window is staged so a window failure is impossible; the
+    // 403 below can therefore only come from the ADMIN-only assist gate.
+    mockPrisma.classTeacher.findMany.mockResolvedValue([
+      { active: true, start_date: new Date('2026-06-01T00:00:00.000Z'), end_date: new Date('2026-06-30T00:00:00.000Z') },
+    ]);
+
+    const err = await service
+      .markByTeacher(attendanceId, { status: AttendanceStatus.ATTENDED, teacherId: TEACHER_USER_ID }, MANAGE)
+      .catch((e) => e);
+
+    expect(err).toBeInstanceOf(AppError);
+    expect((err as AppError).status).toBe(403);
+    expect((err as AppError).message).toBe(
+      'Chỉ Admin mới được điểm danh hộ giáo viên; MANAGE vui lòng ghi ý kiến CVHT trong nhóm phụ trách'
+    );
+    // Authority is evaluated BEFORE any D8 candidate lookup and before any write.
+    expect(mockPrisma.classTeacher.findMany).not.toHaveBeenCalled();
+    expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('(b2) MANAGE teacher-mark without teacherId also hits the authority 403 (no assist path for MANAGE at all; replaces the old 400 "chọn giáo viên")', async () => {
+    const err = await service
+      .markByTeacher(attendanceId, { status: AttendanceStatus.ATTENDED }, MANAGE)
+      .catch((e) => e);
+
+    expect(err).toBeInstanceOf(AppError);
+    expect((err as AppError).status).toBe(403);
+    expect((err as AppError).message).toBe(
+      'Chỉ Admin mới được điểm danh hộ giáo viên; MANAGE vui lòng ghi ý kiến CVHT trong nhóm phụ trách'
+    );
+    expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('(c) MANAGE cs-mark stays allowed group-scoped (ruling keeps CVHT opinions in the assigned group — NOT weakened by the assist gate)', async () => {
+    // resolveManageScope: MANAGE's group contains CS_ASSIGNED (the record's cs_id).
+    mockPrisma.manageAssignment.findMany.mockResolvedValue([
+      { cs_group: { members: [{ user_id: CS_ASSIGNED.id }] } },
+    ]);
+    mockSuccessfulWrite();
+
+    const result = await service.markByCS(
+      attendanceId,
+      { status: AttendanceStatus.ATTENDED, note: 'Ý kiến CVHT' },
+      MANAGE
+    );
+
+    expect(result).toBeDefined();
+    expect(mockPrisma.manageAssignment.findMany).toHaveBeenCalledWith({
+      where: { manage_user_id: MANAGE.id },
+      include: { cs_group: { include: { members: true } } },
+    });
+    expect(mockPrisma.$transaction).toHaveBeenCalled();
+  });
+
+  it('(c2) MANAGE cs-mark outside its group stays 403 (group scope pinned alongside the allow case)', async () => {
+    mockPrisma.manageAssignment.findMany.mockResolvedValue([
+      { cs_group: { members: [{ user_id: 99 }] } },
+    ]);
+
+    const err = await service
+      .markByCS(attendanceId, { status: AttendanceStatus.ATTENDED }, MANAGE)
+      .catch((e) => e);
+
+    expect(err).toBeInstanceOf(AppError);
+    expect((err as AppError).status).toBe(403);
+    expect((err as AppError).message).toBe('Bạn không phụ trách học viên này');
+    expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('(d) MANAGE resolve-conflict stays 403 (separate ADMIN-only adjudication authority, unchanged by this ruling)', async () => {
+    const err = await service
+      .resolveConflict(
+        attendanceId,
+        { finalStatus: AttendanceStatus.ATTENDED, resolutionNote: 'MANAGE tự phân xử' },
+        MANAGE
+      )
+      .catch((e) => e);
+
+    expect(err).toBeInstanceOf(AppError);
+    expect((err as AppError).status).toBe(403);
+    expect((err as AppError).message).toBe('Chỉ ADMIN được phân xử xung đột điểm danh');
+    expect(mockPrisma.attendance.findUnique).not.toHaveBeenCalled();
   });
 });
 

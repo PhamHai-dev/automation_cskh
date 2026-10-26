@@ -58,6 +58,28 @@ export class ReconciliationService {
     return actor.roles.includes('ADMIN') || actor.roles.includes('MANAGE');
   }
 
+  /**
+   * OWNER RULING 2026-10-26: assist-mark ("điểm danh hộ giáo viên") is a
+   * dedicated authority SEPARATE from the general privileged/read scope —
+   * ADMIN only. MANAGE keeps group-scoped CVHT writes (cs-mark / bulk-approve)
+   * and must record its teacher-side opinion as CVHT notes in the group
+   * instead. isPrivileged() (ADMIN||MANAGE) stays for read-scope sites; the
+   * assist branch below must never widen back to it. This is distinct from the
+   * D2 resolve-conflict adjudication authority (assertAdminResolver).
+   */
+  private isAssistMarkPrivileged(actor: Actor) {
+    return actor.roles.includes('ADMIN');
+  }
+
+  private assertAssistMarkAuthority(actor: Actor) {
+    if (!this.isAssistMarkPrivileged(actor)) {
+      throw new AppError(
+        403,
+        'Chỉ Admin mới được điểm danh hộ giáo viên; MANAGE vui lòng ghi ý kiến CVHT trong nhóm phụ trách'
+      );
+    }
+  }
+
   private deriveState(teacherStatus: AttendanceStatus | null, csStatus: AttendanceStatus | null) {
     if (!teacherStatus) return ReconciliationState.PENDING_TEACHER;
     if (!csStatus) return ReconciliationState.PENDING_CS;
@@ -243,10 +265,11 @@ export class ReconciliationService {
     if (!existing) throw new AppError(404, 'Không tìm thấy bản ghi điểm danh');
     if (existing.class_session?.status === 'CANCELLED') throw new AppError(409, 'Không thể điểm danh cho buổi học đã hủy');
 
-    if (this.isPrivileged(actor)) {
+    if (this.isAssistMarkPrivileged(actor)) {
       // Assist-mark enforces TWO independent conditions (owner 2026-10-26):
-      //   1. Operator assist authority: `this.isPrivileged(actor)` (ADMIN/MANAGE
-      //      per existing policy — D8 grants no assist-mark rights by itself).
+      //   1. Operator assist authority: ADMIN ONLY (`isAssistMarkPrivileged`).
+      //      MANAGE assist-mark was revoked by the owner ruling 2026-10-26 —
+      //      MANAGE ghi ý kiến CVHT trong nhóm phụ trách instead (see below).
       //   2. Target teacher (`data.teacherId`, with a usable `teacher.active = true`
       //      account) was validly assigned to the class AT THE SESSION DATE per D8
       //      (`findEffectiveAssignment` over all classTeacher rows without filtering
@@ -261,6 +284,12 @@ export class ReconciliationService {
       });
       const effective = findEffectiveAssignment(candidates, existing.class_session.session_date);
       if (!effective) throw new AppError(403, 'Giáo viên được chọn không phụ trách lớp này tại ngày dạy của buổi học');
+    } else if (this.isPrivileged(actor)) {
+      // MANAGE reaches the teacher-side channel but has no assist authority
+      // (owner ruling 2026-10-26): reject as 403 — previously this path either
+      // performed the assist (teacherId set, D8-valid) or failed with a 400
+      // prompting MANAGE to pick a teacher, which it can no longer do.
+      this.assertAssistMarkAuthority(actor);
     } else {
       if (data.teacherId && data.teacherId !== actor.id) {
         throw new AppError(403, 'Bạn không được điểm danh thay giáo viên khác');
