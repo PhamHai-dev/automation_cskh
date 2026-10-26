@@ -2,7 +2,7 @@
 
 _Bản này là cầu nối giữa bộ tài liệu `docs/khao-sat/` đã được ẩn danh (che bằng placeholder) và các artifact dữ liệu thật nằm ngoài git. Dữ liệu thật KHÔNG BAO GIỜ được commit; chỉ ghi lại định danh để đối chiếu về sau._
 
-_Cập nhật: 2026-10-25 theo quyết định của chủ dự án._
+_Cập nhật: 2026-10-26 theo quyết định của chủ dự án._
 
 ## 1. ZIP dữ liệu thật — không commit
 
@@ -13,7 +13,16 @@ _Cập nhật: 2026-10-25 theo quyết định của chủ dự án._
 
 Đường dẫn repo tuyệt đối: `D:\AI-for-Enterprise\Edura_Automation_CSKH\automation_cskh`.
 
-## 2. Ánh xạ placeholder đã dùng khi commit bản ẩn danh
+## 2. Đối soát snapshot quyền học (2026-10-26) — không commit
+
+- **Ngày xuất:** `2026-10-26`
+- **Lệnh đã chạy (chỉ-đọc):** `npx ts-node --transpile-only scripts/entitlement-reconciliation-export.ts --csv out/entitlement-reconciliation.csv` (chạy từ thư mục `backend/`)
+- **Vị trí file trên đĩa:** `backend/out/entitlement-reconciliation.csv` (kích thước `297.680` bytes)
+- **SHA-256:** `9f061a5eb8964c92e7defee5cb4780655fa864eef311054f124c027af69e2b5b`
+- **Thống kê tổng hợp chủ dự án ghi nhận:** `2390` enrollments / `1095` would-flip / `313` history-incomplete / `attendance_rows_final = 0` / `external missing 13`
+- **Chính sách lưu trữ:** chứa định danh thật — không commit; giữ ngoài Git như các ZIP nguồn (`backend/out/` đã chặn trong `.gitignore`).
+
+## 3. Ánh xạ placeholder đã dùng khi commit bản ẩn danh
 
 | Placeholder | Ý nghĩa nghiệp vụ giữ nguyên | Nơi tra giá trị gốc (KHÔNG ghi lại ở đây) |
 |---|---|---|
@@ -28,8 +37,8 @@ _Cập nhật: 2026-10-25 theo quyết định của chủ dự án._
 
 Giá trị máy KHÔNG che (hằng số trong code/seed, không phải tài khoản cá nhân): `auto-attendance@system.invalid`, `admin_auto_att_test@example.com`, `teacher@example.test` (fixture test).
 
-## 3. Quy tắc bảo vệ
+## 4. Quy tắc bảo vệ
 
-- `*.zip` dưới `docs/khao-sat*` đã được chặn trong `.gitignore` ở cấp repo — `git add docs/khao-sat` không thể quét nhầm ZIP.
-- Không sao chép giá trị gốc vào bất kỳ file nào khác trong repo; đối chiếu khi cần thì mở trực tiếp `khao-sat.zip` ngoài git.
+- `*.zip` dưới `docs/khao-sat*` và `backend/out/` đã được chặn trong `.gitignore` ở cấp repo — `git add` không thể quét nhầm ZIP hay CSV đối soát chứa định danh thật.
+- Không sao chép giá trị gốc vào bất kỳ file nào khác trong repo; đối chiếu khi cần thì mở trực tiếp `khao-sat.zip` hoặc `backend/out/entitlement-reconciliation.csv` ngoài git.
 - `backend/prisma/migrations/20261023050000_add_sheet_sync_staff_code/` và `backend/prisma/reset-all-passwords.ts`: artifact untracked có sẵn, không commit trên branch này, không sửa, không chạy.
