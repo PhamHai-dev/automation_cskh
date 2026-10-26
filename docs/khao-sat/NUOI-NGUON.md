@@ -19,7 +19,7 @@ _Cập nhật: 2026-10-26 theo quyết định của chủ dự án._
 - **Lệnh đã chạy (chỉ-đọc):** `npx ts-node --transpile-only scripts/entitlement-reconciliation-export.ts --csv out/entitlement-reconciliation.csv` (chạy từ thư mục `backend/`)
 - **Vị trí file trên đĩa:** `backend/out/entitlement-reconciliation.csv` (kích thước `297.680` bytes)
 - **SHA-256:** `9f061a5eb8964c92e7defee5cb4780655fa864eef311054f124c027af69e2b5b`
-- **Thống kê tổng hợp chủ dự án ghi nhận:** `2390` enrollments / `1095` would-flip / `313` history-incomplete / `attendance_rows_final = 0` / `external missing 13`
+- **Thống kê tổng hợp chủ dự án ghi nhận:** `2390` enrollments (`2373` HV) / `1095` would-flip / `313` history-incomplete (trùng khít `313` enrollment `STUDYING` có `attendance_rows_raw > 0` và `attendance_rows_final = 0`, gồm `298` enrollment có 1 dòng raw + `15` enrollment có 2..7 dòng raw = tổng `372` dòng `Attendance` raw; trong `313` enrollment này có `3` enrollment đồng thời `external_synced_at = null`) / `attendance_rows_final = 0` / `external missing 13`
 - **Chính sách lưu trữ:** chứa định danh thật — không commit; giữ ngoài Git như các ZIP nguồn (`backend/out/` đã chặn trong `.gitignore`).
 
 ## 3. Ánh xạ placeholder đã dùng khi commit bản ẩn danh
