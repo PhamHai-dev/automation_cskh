@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { PageContainer } from '../../../components/common/PageContainer';
 import { PageHeader } from '../../../components/common/PageHeader';
 import { Button } from '../../../components/ui/Button';
@@ -10,6 +11,7 @@ import { useAuth } from '../../../contexts/AuthContext';
 import { CareTaskList } from '../components/CareTaskList';
 import { CareTaskModal } from '../components/CareTaskModal';
 import { CareLogTimeline } from '../components/CareLogTimeline';
+import { EnrollmentSearchSelect } from '../components/EnrollmentSearchSelect';
 import { careApi } from '../api/care.api';
 import {
   CareTask,
@@ -24,7 +26,6 @@ import {
   Plus,
   ListTodo,
   History,
-  Search,
   AlertTriangle,
   Bell,
   CheckCheck,
@@ -87,6 +88,7 @@ const renderAttendanceStatusBadge = (status: string | null) => {
 export const CarePage: React.FC = () => {
   const toast = useToast();
   const { user } = useAuth();
+  const [searchParams] = useSearchParams();
   const isTeacherOnly = Boolean(
     user?.roles.includes('TEACHER') &&
       !user?.roles.includes('ADMIN') &&
@@ -94,9 +96,16 @@ export const CarePage: React.FC = () => {
       !user?.roles.includes('CS')
   );
 
-  const [activeTab, setActiveTab] = useState<CareTab>(() =>
-    isTeacherOnly ? 'notifications' : 'tasks'
-  );
+  const initialUrlTab = searchParams.get('tab');
+  const initialUrlEnrollmentId = Number(searchParams.get('enrollment_id')) || null;
+
+  const [activeTab, setActiveTab] = useState<CareTab>(() => {
+    if (isTeacherOnly) return 'notifications';
+    if (initialUrlTab === 'logs' || initialUrlTab === 'notifications' || initialUrlTab === 'tasks') {
+      return initialUrlTab;
+    }
+    return 'tasks';
+  });
 
   useEffect(() => {
     if (isTeacherOnly && activeTab !== 'notifications') {
@@ -115,8 +124,12 @@ export const CarePage: React.FC = () => {
   const [cancellingTaskId, setCancellingTaskId] = useState<number | null>(null);
 
   // Log State
-  const [selectedEnrollmentId, setSelectedEnrollmentId] = useState<number | null>(null);
-  const [inputEnrollmentId, setInputEnrollmentId] = useState('');
+  const [selectedEnrollmentId, setSelectedEnrollmentId] = useState<number | null>(
+    !isTeacherOnly ? initialUrlEnrollmentId : null
+  );
+  const [pendingEnrollmentId, setPendingEnrollmentId] = useState<number | null>(
+    !isTeacherOnly ? initialUrlEnrollmentId : null
+  );
   const [logs, setLogs] = useState<CareLog[]>([]);
   const [logsLoading, setLogsLoading] = useState(false);
 
@@ -195,11 +208,20 @@ export const CarePage: React.FC = () => {
 
   const handleSearchEnrollmentLogs = (e: React.FormEvent) => {
     e.preventDefault();
-    const id = parseInt(inputEnrollmentId, 10);
-    if (!id) return;
-    setSelectedEnrollmentId(id);
-    loadLogs(id);
+    if (!pendingEnrollmentId) {
+      toast.warning('Vui lòng chọn học viên / ghi danh cần tra cứu');
+      return;
+    }
+    setSelectedEnrollmentId(pendingEnrollmentId);
+    loadLogs(pendingEnrollmentId);
   };
+
+  useEffect(() => {
+    if (!isTeacherOnly && initialUrlEnrollmentId) {
+      loadLogs(initialUrlEnrollmentId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isTeacherOnly, initialUrlEnrollmentId]);
 
   // Notification Actions
   const handleMarkAsRead = async (id: number) => {
@@ -368,19 +390,20 @@ export const CarePage: React.FC = () => {
           <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-soft">
             <form onSubmit={handleSearchEnrollmentLogs} className="flex flex-wrap items-center gap-3">
               <label className="text-xs font-bold text-slate-700 whitespace-nowrap">
-                Tra cứu theo Mã Ghi danh (Enrollment ID):
+                Tra cứu theo Học viên / Ghi danh:
               </label>
-              <div className="relative flex-1 max-w-xs">
-                <input
-                  type="number"
-                  min={1}
-                  required
-                  placeholder="Nhập ID (VD: 1, 2, ...)"
-                  value={inputEnrollmentId}
-                  onChange={(e) => setInputEnrollmentId(e.target.value)}
-                  className="w-full pl-9 pr-3 py-1.5 border border-slate-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+              <div className="flex-1 min-w-[260px] max-w-md">
+                <EnrollmentSearchSelect
+                  value={pendingEnrollmentId}
+                  onChange={(id) => {
+                    setPendingEnrollmentId(id);
+                    if (id === null) {
+                      setSelectedEnrollmentId(null);
+                      setLogs([]);
+                    }
+                  }}
+                  placeholder="Tìm theo tên học viên, mã HV, mã ghi danh..."
                 />
-                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2" />
               </div>
               <Button type="submit" variant="primary" size="sm">
                 Xem lịch sử

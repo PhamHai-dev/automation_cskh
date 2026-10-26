@@ -171,6 +171,7 @@ interface AttendancePickerPopoverProps {
   rawAttendance?: Attendance | undefined;
   saving: boolean;
   canEditTeacherNote?: boolean;
+  canDeleteSession?: boolean;
   onSelectStatus: (
     session: ClassSession | undefined,
     status: AttendanceStatus,
@@ -182,7 +183,7 @@ interface AttendancePickerPopoverProps {
     teacherNote: string | null
   ) => void;
   onClear: (session: ClassSession) => void;
-  onDeleteSession: (session: ClassSession) => void;
+  onDeleteSession?: (session: ClassSession) => void;
   onClose: () => void;
 }
 
@@ -233,6 +234,7 @@ const AttendancePickerPopover: React.FC<AttendancePickerPopoverProps> = ({
   rawAttendance,
   saving,
   canEditTeacherNote = false,
+  canDeleteSession = false,
   onSelectStatus,
   onSaveNote,
   onClear,
@@ -355,19 +357,53 @@ const AttendancePickerPopover: React.FC<AttendancePickerPopoverProps> = ({
             {targetSession?.start_time && <span className="text-[10px] text-text-muted">({targetSession.start_time})</span>}
           </div>
         </div>
-        {targetSession && (
-          <button
-            id={`delete-session-${targetSession.id}`}
-            type="button"
-            disabled={saving}
-            onClick={() => onDeleteSession(targetSession)}
-            className="shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-bold text-rose-600 hover:bg-rose-50 disabled:opacity-50"
-            aria-label={`Xóa buổi ${targetSessionNumber}`}
-          >
-            Xóa buổi
-          </button>
-        )}
       </div>
+
+      {/* Khu vực nhập Bài học & Ghi chú GV theo buổi — đặt phía trên để GV gõ trước rồi bấm trạng thái 1 lần */}
+      {canEditTeacherNote && (
+        <div className="mb-2 border-b border-border/70 pb-2 space-y-1.5">
+          <div>
+            <label className="block text-[10px] font-bold text-text-secondary uppercase tracking-wide mb-0.5">
+              Bài học (Lesson)
+            </label>
+            <input
+              type="text"
+              value={lessonTopic}
+              onChange={(e) => {
+                const val = e.target.value;
+                setLessonTopic(val);
+                scheduleNoteAutoSave(val, teacherNote);
+              }}
+              onBlur={() => triggerNoteSaveNow(lessonTopic, teacherNote)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  triggerNoteSaveNow(lessonTopic, teacherNote);
+                }
+              }}
+              placeholder="VD: Bài 4, Kaiwa 2..."
+              className="w-full h-7 px-2 rounded-lg border border-border text-xs bg-white text-text-primary focus:outline-none focus:ring-1 focus:ring-primary select-text"
+            />
+          </div>
+          <div>
+            <label className="block text-[10px] font-bold text-text-secondary uppercase tracking-wide mb-0.5">
+              Ghi chú GV theo buổi
+            </label>
+            <textarea
+              rows={2}
+              value={teacherNote}
+              onChange={(e) => {
+                const val = e.target.value;
+                setTeacherNote(val);
+                scheduleNoteAutoSave(lessonTopic, val);
+              }}
+              onBlur={() => triggerNoteSaveNow(lessonTopic, teacherNote)}
+              placeholder="Nhận xét buổi học, BTVN..."
+              className="w-full px-2 py-1 rounded-lg border border-border text-xs bg-white text-text-primary focus:outline-none focus:ring-1 focus:ring-primary resize-none select-text"
+            />
+          </div>
+        </div>
+      )}
 
       <div className="flex flex-col gap-1" role="listbox" aria-label={`Danh sách trạng thái Buổi ${targetSessionNumber}`}>
         {POPOVER_STATUS_OPTIONS.map(({ status, label }) => {
@@ -412,53 +448,20 @@ const AttendancePickerPopover: React.FC<AttendancePickerPopoverProps> = ({
             Chưa điểm danh (Xóa trạng thái)
           </button>
         )}
-      </div>
 
-      {/* Khu vực nhập Bài học & Ghi chú GV theo buổi — chỉ hiển thị cho Giáo viên (auto-save) */}
-      {canEditTeacherNote && (
-        <div className="mt-2 border-t border-border/70 pt-2 space-y-1.5">
-          <div>
-            <label className="block text-[10px] font-bold text-text-secondary uppercase tracking-wide mb-0.5">
-              Bài học (Lesson)
-            </label>
-            <input
-              type="text"
-              value={lessonTopic}
-              onChange={(e) => {
-                const val = e.target.value;
-                setLessonTopic(val);
-                scheduleNoteAutoSave(val, teacherNote);
-              }}
-              onBlur={() => triggerNoteSaveNow(lessonTopic, teacherNote)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault();
-                  triggerNoteSaveNow(lessonTopic, teacherNote);
-                }
-              }}
-              placeholder="VD: Bài 4, Kaiwa 2..."
-              className="w-full h-7 px-2 rounded-lg border border-border text-xs bg-white text-text-primary focus:outline-none focus:ring-1 focus:ring-primary select-text"
-            />
-          </div>
-          <div>
-            <label className="block text-[10px] font-bold text-text-secondary uppercase tracking-wide mb-0.5">
-              Ghi chú GV theo buổi
-            </label>
-            <textarea
-              rows={2}
-              value={teacherNote}
-              onChange={(e) => {
-                const val = e.target.value;
-                setTeacherNote(val);
-                scheduleNoteAutoSave(lessonTopic, val);
-              }}
-              onBlur={() => triggerNoteSaveNow(lessonTopic, teacherNote)}
-              placeholder="Nhận xét buổi học, BTVN..."
-              className="w-full px-2 py-1 rounded-lg border border-border text-xs bg-white text-text-primary focus:outline-none focus:ring-1 focus:ring-primary resize-none select-text"
-            />
-          </div>
-        </div>
-      )}
+        {canDeleteSession && targetSession && onDeleteSession && (
+          <button
+            id={`delete-session-${targetSession.id}`}
+            type="button"
+            disabled={saving}
+            onClick={() => onDeleteSession(targetSession)}
+            className="mt-1 flex h-6 w-full items-center justify-center rounded-lg border border-rose-200/80 bg-rose-50/50 px-2 text-[10px] font-bold text-rose-600 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+            aria-label={`Xóa buổi ${targetSessionNumber}`}
+          >
+            Xóa buổi học #{targetSessionNumber} (toàn lớp)
+          </button>
+        )}
+      </div>
     </div>,
     document.body
   );
@@ -482,6 +485,7 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
 
   const toast = useToast();
   const { user } = useAuth();
+  const isAdmin = Boolean(user?.roles.includes('ADMIN'));
   const isAdminOrManage = Boolean(user?.roles.some((role) => role === 'ADMIN' || role === 'MANAGE'));
   const isCSOnly = Boolean(user?.roles.includes('CS') && !isAdminOrManage);
   const isTeacherOnly = Boolean(user?.roles.includes('TEACHER') && !isAdminOrManage && !user?.roles.includes('CS'));
@@ -494,8 +498,8 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
   // Tab 1 (Quick Attendance) specific date state (Default: Today)
   const [quickDate, setQuickDate] = useState<string>(() => toLocalDateString(new Date()));
 
-  // Filter mode for Tab 2 (Detailed): 'month' (default), 'week', 'year'
-  const [filterMode, setFilterMode] = useState<'month' | 'week' | 'year'>('month');
+  // Filter mode for Tab 2 (Detailed): 'month' (default), 'week'
+  const [filterMode, setFilterMode] = useState<'month' | 'week'>('month');
 
   // Selected date reference for Tab 2 & 3 (default: today)
   const [currentDate, setCurrentDate] = useState<Date>(() => new Date());
@@ -562,11 +566,6 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
         const d = new Date(monday);
         d.setDate(monday.getDate() + i);
         dates.push(d);
-      }
-    } else if (filterMode === 'month') {
-      const daysInMonth = new Date(year, month + 1, 0).getDate();
-      for (let i = 1; i <= daysInMonth; i++) {
-        dates.push(new Date(year, month, i));
       }
     } else {
       const daysInMonth = new Date(year, month + 1, 0).getDate();
@@ -841,10 +840,8 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
     const d = new Date(currentDate);
     if (filterMode === 'week') {
       d.setDate(d.getDate() - 7);
-    } else if (filterMode === 'month') {
-      d.setMonth(d.getMonth() - 1);
     } else {
-      d.setFullYear(d.getFullYear() - 1);
+      d.setMonth(d.getMonth() - 1);
     }
     setCurrentDate(d);
   };
@@ -853,10 +850,8 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
     const d = new Date(currentDate);
     if (filterMode === 'week') {
       d.setDate(d.getDate() + 7);
-    } else if (filterMode === 'month') {
-      d.setMonth(d.getMonth() + 1);
     } else {
-      d.setFullYear(d.getFullYear() + 1);
+      d.setMonth(d.getMonth() + 1);
     }
     setCurrentDate(d);
   };
@@ -1246,7 +1241,11 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
 
   const handleDeleteSession = async (session: ClassSession) => {
     const activeCount = Array.from(attendanceMap.values()).filter((item) => item.class_session_id === session.id).length;
-    if (activeCount > 0 && !window.confirm(`Buổi này có ${activeCount} bản ghi điểm danh. Xóa buổi sẽ xóa dữ liệu của toàn lớp. Tiếp tục?`)) return;
+    const confirmMsg =
+      activeCount > 0
+        ? `Buổi này có ${activeCount} bản ghi điểm danh. Xóa buổi học sẽ xóa dữ liệu của toàn lớp. Tiếp tục?`
+        : 'Bạn có chắc chắn muốn xóa buổi học này của toàn lớp?';
+    if (!window.confirm(confirmMsg)) return;
     setActiveCell(null);
     setActiveAnchorEl(null);
     setSavingSessionId(session.id);
@@ -1271,10 +1270,7 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
       const last = datesList[datesList.length - 1]?.toLocaleDateString('vi-VN') || '';
       return `Tuần: ${first} — ${last}`;
     }
-    if (filterMode === 'month') {
-      return `Tháng ${month} / ${year}`;
-    }
-    return `Năm ${year}`;
+    return `Tháng ${month} / ${year}`;
   }, [currentDate, filterMode, datesList]);
 
   // Reusable date cell: one compact badge for every real session in the day, plus '+' button for next session.
@@ -1683,17 +1679,6 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
                 }`}
               >
                 Theo tháng
-              </button>
-              <button
-                type="button"
-                onClick={() => setFilterMode('year')}
-                className={`px-3 py-1 rounded-lg transition-all ${
-                  filterMode === 'year'
-                    ? 'bg-surface text-primary shadow-xs font-bold'
-                    : 'text-text-muted hover:text-text-primary'
-                }`}
-              >
-                Theo năm
               </button>
             </div>
 
@@ -2813,12 +2798,6 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
               <span>{key === 'ATTENDED' ? 'Có mặt (Điền số buổi: 1, 2...)' : opt.label}</span>
             </div>
           ))}
-          <div className="flex items-center gap-1.5">
-            <span className="w-5 h-5 rounded flex items-center justify-center text-[10px] font-extrabold border border-blue-300 bg-blue-100 text-blue-700">
-              *
-            </span>
-            <span>Xanh nhạt: Điểm danh thủ công hôm nay</span>
-          </div>
         </div>
       </div>
 
@@ -2846,6 +2825,7 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
             rawAttendance={rawAttendance}
             saving={isSaving}
             canEditTeacherNote={isTeacherOnly}
+            canDeleteSession={isAdmin}
             onSelectStatus={(session, status, extra) =>
               handleStatusSelect(
                 activeCell.enrollmentClassId,

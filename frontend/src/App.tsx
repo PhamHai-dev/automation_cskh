@@ -10,21 +10,13 @@ import { TeachersPage } from './features/teachers/pages/TeachersPage';
 import { StudentsPage } from './features/students/pages/StudentsPage';
 import { StudentStudyReportPage } from './features/students/pages/StudentStudyReportPage';
 import { ClassesPage } from './features/classes/pages/ClassesPage';
-import { ClassSessionsPage } from './features/classes/pages/ClassSessionsPage';
-import { AttendanceSheetPage } from './features/classes/pages/AttendanceSheetPage';
 import { EnrollmentsPage } from './features/enrollments/pages/EnrollmentsPage';
 import { ImportsPage } from './features/imports/pages/ImportsPage';
 import { ImportApprovalQueuePage } from './features/imports/pages/ImportApprovalQueuePage';
 import { DashboardPage } from './features/dashboard/pages/DashboardPage';
 import { CarePage } from './features/care/pages/CarePage';
 import { ToastProvider } from './components/ui/Toast';
-import { ZaloAccountsPage } from './features/zalo/pages/ZaloAccountsPage';
 import { ZaloMonitorPage } from './features/zalo/pages/ZaloMonitorPage';
-import { LineAccountsPage } from './features/line/pages/LineAccountsPage';
-import { LineContactsPage } from './features/line/pages/LineContactsPage';
-import { LineGroupsPage } from './features/line/pages/LineGroupsPage';
-import { LineChatPage } from './features/line/pages/LineChatPage';
-import { StudentLineLinkPage } from './features/line/pages/StudentLineLinkPage';
 import { OmnichannelAccountsPage } from './features/omnichannel/pages/OmnichannelAccountsPage';
 import { OmnichannelInboxPage } from './features/omnichannel/pages/OmnichannelInboxPage';
 import { OmnichannelContactsPage } from './features/omnichannel/pages/OmnichannelContactsPage';
@@ -103,7 +95,7 @@ function App() {
               <Route path="/zalo/danh-ba" element={<OmnichannelContactsPage initialChannel="ZALO" />} />
               <Route path="/zalo/nhom" element={<OmnichannelGroupsPage initialTab="ZALO" />} />
               <Route path="/zalo/chat" element={<OmnichannelInboxPage initialMode="ZALO" />} />
-              <Route path="/zalo/standalone" element={<ZaloAccountsPage />} />
+              <Route path="/zalo/standalone" element={<Navigate to="/omnichannel/accounts?channel=ZALO" replace />} />
 
               <Route path="/line" element={<OmnichannelAccountsPage initialChannel="LINE_OA" />} />
               <Route path="/line/tai-khoan" element={<Navigate to="/omnichannel/accounts?channel=LINE_OA" replace />} />
@@ -111,11 +103,11 @@ function App() {
               <Route path="/line/nhom" element={<OmnichannelGroupsPage initialTab="LINE" />} />
               <Route path="/line/chat" element={<OmnichannelInboxPage initialMode="LINE" />} />
               <Route path="/line/lien-ket" element={<OmnichannelStudentLinksPage initialTab="LINE" />} />
-              <Route path="/line/standalone" element={<LineAccountsPage />} />
-              <Route path="/line/standalone-chat" element={<LineChatPage />} />
-              <Route path="/line/standalone-contacts" element={<LineContactsPage />} />
-              <Route path="/line/standalone-groups" element={<LineGroupsPage />} />
-              <Route path="/line/standalone-links" element={<StudentLineLinkPage />} />
+              <Route path="/line/standalone" element={<Navigate to="/omnichannel/accounts?channel=LINE_OA" replace />} />
+              <Route path="/line/standalone-chat" element={<Navigate to="/line/chat" replace />} />
+              <Route path="/line/standalone-contacts" element={<Navigate to="/omnichannel/contacts?channel=LINE" replace />} />
+              <Route path="/line/standalone-groups" element={<Navigate to="/omnichannel/groups?channel=LINE" replace />} />
+              <Route path="/line/standalone-links" element={<Navigate to="/line/lien-ket" replace />} />
 
               <Route path="/automation" element={<AutomationWorkflowsPage />} />
               <Route path="/automation/:id" element={<AutomationWorkflowDetailPage />} />
@@ -139,15 +131,6 @@ function App() {
 
               <Route path="/classes" element={<ClassesPage />} />
               <Route path="/lop-hoc" element={<Navigate to="/classes" replace />} />
-
-              <Route path="/classes/:classId/sessions" element={<ClassSessionsPage />} />
-              <Route path="/lop-hoc/:classId/buoi-hoc" element={<ClassSessionsPage />} />
-
-              <Route path="/classes/:classId/attendance" element={<AttendanceSheetPage />} />
-              <Route path="/lop-hoc/:classId/diem-danh" element={<AttendanceSheetPage />} />
-
-              <Route path="/classes/:classId/sessions/:sessionId/attendance" element={<AttendanceSheetPage />} />
-              <Route path="/lop-hoc/:classId/buoi-hoc/:sessionId/diem-danh" element={<AttendanceSheetPage />} />
             </Route>
           </Route>
         </Route>

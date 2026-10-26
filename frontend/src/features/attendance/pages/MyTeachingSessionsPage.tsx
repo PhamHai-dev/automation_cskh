@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Calendar,
   Clock,
@@ -6,7 +6,6 @@ import {
   CheckCircle2,
   BookOpen,
   User,
-  FileSpreadsheet,
   Check,
   UserRoundCheck,
 } from 'lucide-react';
@@ -36,7 +35,6 @@ const mintIdempotencyKey = (): string => {
 
 export const MyTeachingSessionsPage: React.FC = () => {
   const toast = useToast();
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { user } = useAuth();
   const isPrivileged = !!user?.roles.some((role) => role === 'ADMIN' || role === 'MANAGE');
@@ -68,16 +66,14 @@ export const MyTeachingSessionsPage: React.FC = () => {
   const [teacherNote, setTeacherNote] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Upload modal & summary
-  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
-  const [isUploading, setIsUploading] = useState(false);
-  const [uploadResult, setUploadResult] = useState<any | null>(null);
+  // Actual-session modal
   const [isActualSessionModalOpen, setIsActualSessionModalOpen] = useState(false);
   const [actualClassId, setActualClassId] = useState<number | ''>('');
   const [actualEnrollmentClassId, setActualEnrollmentClassId] = useState<number | ''>('');
   const [actualDate, setActualDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [actualStartTime, setActualStartTime] = useState('');
   const [actualEndTime, setActualEndTime] = useState('');
+  const [actualStatus, setActualStatus] = useState<AttendanceStatus>('ATTENDED');
   const [actualLessonTopic, setActualLessonTopic] = useState('');
   const [actualTeacherNote, setActualTeacherNote] = useState('');
   const [actualSessionKey, setActualSessionKey] = useState<string | null>(null);
@@ -234,10 +230,11 @@ export const MyTeachingSessionsPage: React.FC = () => {
       const attendance = session.attendance?.find((item: any) => item.enrollment_class_id === Number(actualEnrollmentClassId));
       if (!attendance?.id) throw new Error('Không nhận được hồ sơ điểm danh của ca thực học');
       await reconciliationApi.markByTeacher(attendance.id, {
-        status: 'ATTENDED',
-        lessonTopic: actualLessonTopic.trim() || undefined,
+        status: actualStatus,
+        ...(isPrivileged && selectedTeacherId ? { teacherId: selectedTeacherId } : {}),
+        lessonTopic: actualStatus === 'ATTENDED' ? actualLessonTopic.trim() || undefined : undefined,
         note: actualTeacherNote.trim() || undefined,
-        rawValue: `${actualEnrollmentClassId}-${actualLessonTopic.trim()}`,
+        rawValue: actualStatus === 'ATTENDED' ? `${actualEnrollmentClassId}-${actualLessonTopic.trim()}` : undefined,
       });
       toast.success('Đã ghi nhận ca thực học và điểm danh giáo viên.');
       setActualSessionKey(null);
@@ -257,29 +254,11 @@ export const MyTeachingSessionsPage: React.FC = () => {
     setActualEnrollmentClassId('');
     setActualStartTime('');
     setActualEndTime('');
+    setActualStatus('ATTENDED');
     setActualLessonTopic('');
     setActualTeacherNote('');
     setActualDate(new Date().toISOString().slice(0, 10));
     setIsActualSessionModalOpen(true);
-  };
-
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setIsUploading(true);
-    setUploadResult(null);
-    try {
-      const result = await reconciliationApi.uploadTeacherExcel(file);
-      setUploadResult(result);
-      toast.success(`Tải lên thành công! Đã xử lý ${result.processedCount} lượt điểm danh.`);
-      loadSessions();
-    } catch (err: any) {
-      toast.error(err.response?.data?.message || 'Lỗi khi tải file giao_vien.xlsx');
-    } finally {
-      setIsUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
-    }
   };
 
   return (
@@ -388,14 +367,71 @@ export const MyTeachingSessionsPage: React.FC = () => {
           </div>
           <div>
             <label className="block text-xs font-semibold text-text-primary mb-1">
-              Tên bài học / Chủ đề bài giảng <span className="text-teal-600 font-normal">(VD: K2 L4, K1-L1...)</span>
+              Trạng thái buổi học
             </label>
-            <Input
-              placeholder="Ví dụ: K2 L4 hoặc Kaiwa 2 Bài 4"
-              value={actualLessonTopic}
-              onChange={(e) => setActualLessonTopic(e.target.value)}
-            />
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              <Button
+                type="button"
+                variant={actualStatus === 'ATTENDED' ? 'primary' : 'outline'}
+                className="justify-start text-xs h-8 px-2.5"
+                onClick={() => setActualStatus('ATTENDED')}
+              >
+                🟢 Đã học
+              </Button>
+              <Button
+                type="button"
+                variant={actualStatus === 'ABSENT_APPROVED_A' ? 'primary' : 'outline'}
+                className="justify-start text-xs h-8 px-2.5"
+                onClick={() => setActualStatus('ABSENT_APPROVED_A')}
+              >
+                🟡 Nghỉ phép (A)
+              </Button>
+              <Button
+                type="button"
+                variant={actualStatus === 'ABSENT_UNAPPROVED_C' ? 'primary' : 'outline'}
+                className="justify-start text-xs h-8 px-2.5"
+                onClick={() => setActualStatus('ABSENT_UNAPPROVED_C')}
+              >
+                🔴 Vắng (C)
+              </Button>
+              <Button
+                type="button"
+                variant={actualStatus === 'LEAVE_B' ? 'primary' : 'outline'}
+                className="justify-start text-xs h-8 px-2.5"
+                onClick={() => setActualStatus('LEAVE_B')}
+              >
+                ⚪ Bảo lưu (B)
+              </Button>
+              <Button
+                type="button"
+                variant={actualStatus === 'TEACHER_ABSENT_D' ? 'primary' : 'outline'}
+                className="justify-start text-xs h-8 px-2.5"
+                onClick={() => setActualStatus('TEACHER_ABSENT_D')}
+              >
+                🟣 GV nghỉ (D)
+              </Button>
+              <Button
+                type="button"
+                variant={actualStatus === 'TECH_ERROR_E' ? 'primary' : 'outline'}
+                className="justify-start text-xs h-8 px-2.5"
+                onClick={() => setActualStatus('TECH_ERROR_E')}
+              >
+                🟠 Lỗi kỹ thuật (E)
+              </Button>
+            </div>
           </div>
+          {actualStatus === 'ATTENDED' && (
+            <div>
+              <label className="block text-xs font-semibold text-text-primary mb-1">
+                Tên bài học / Chủ đề bài giảng <span className="text-teal-600 font-normal">(VD: K2 L4, K1-L1...)</span>
+              </label>
+              <Input
+                placeholder="Ví dụ: K2 L4 hoặc Kaiwa 2 Bài 4"
+                value={actualLessonTopic}
+                onChange={(e) => setActualLessonTopic(e.target.value)}
+              />
+            </div>
+          )}
           <div>
             <label className="block text-xs font-semibold text-text-primary mb-1">
               Ghi chú của giáo viên (tùy chọn)
@@ -697,6 +733,22 @@ export const MyTeachingSessionsPage: React.FC = () => {
               >
                 ⚪ Bảo lưu (B)
               </Button>
+              <Button
+                type="button"
+                variant={selectedStatus === 'TEACHER_ABSENT_D' ? 'primary' : 'outline'}
+                className="justify-start text-xs h-9"
+                onClick={() => setSelectedStatus('TEACHER_ABSENT_D')}
+              >
+                🟣 GV nghỉ (D)
+              </Button>
+              <Button
+                type="button"
+                variant={selectedStatus === 'TECH_ERROR_E' ? 'primary' : 'outline'}
+                className="justify-start text-xs h-9"
+                onClick={() => setSelectedStatus('TECH_ERROR_E')}
+              >
+                🟠 Lỗi kỹ thuật (E)
+              </Button>
             </div>
           </div>
 
@@ -724,84 +776,6 @@ export const MyTeachingSessionsPage: React.FC = () => {
               onChange={(e) => setTeacherNote(e.target.value)}
             />
           </div>
-        </div>
-      </Modal>
-
-      {/* MODAL: Upload file giao_vien.xlsx */}
-      <Modal
-        isOpen={isUploadModalOpen}
-        onClose={() => {
-          setIsUploadModalOpen(false);
-          setUploadResult(null);
-        }}
-        title={
-          <div className="flex items-center gap-2 text-text-primary font-bold">
-            <FileSpreadsheet className="w-5 h-5 text-emerald-600" />
-            <span>Tải lên file lịch dạy giáo viên (giao_vien.xlsx)</span>
-          </div>
-        }
-        footer={
-          <div className="flex items-center justify-end gap-3 w-full">
-            <Button
-              variant="outline"
-              onClick={() => {
-                setIsUploadModalOpen(false);
-                setUploadResult(null);
-              }}
-            >
-              Đóng
-            </Button>
-          </div>
-        }
-      >
-        <div className="space-y-4">
-          <div className="border-2 border-dashed border-border/80 hover:border-teal-500 rounded-2xl p-6 text-center bg-surface-muted/30 transition-all">
-            <input
-              type="file"
-              ref={fileInputRef}
-              accept=".xlsx,.xls"
-              className="hidden"
-              onChange={handleFileUpload}
-            />
-            <FileSpreadsheet className="w-12 h-12 text-emerald-600 mx-auto mb-3" />
-            <p className="font-semibold text-sm text-text-primary">
-              Chọn file Excel giao_vien.xlsx của bạn
-            </p>
-            <p className="text-xs text-text-secondary mt-1">
-              Hệ thống tự động đọc sheet "2026 スケジュール", bóc tách mã học viên và tên bài học (VD: 420289324-K2 L4).
-            </p>
-            <Button
-              variant="primary"
-              className="mt-4"
-              disabled={isUploading}
-              onClick={() => fileInputRef.current?.click()}
-            >
-              {isUploading ? 'Đang đọc và đối soát file...' : 'Chọn file từ máy tính'}
-            </Button>
-          </div>
-
-          {uploadResult && (
-            <div className="bg-surface p-4 rounded-xl border border-border/80 space-y-2">
-              <h4 className="font-bold text-sm text-text-primary flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                Kết quả đối soát file Excel:
-              </h4>
-              <div className="grid grid-cols-3 gap-2 pt-2 text-center">
-                <div className="bg-emerald-500/10 border border-emerald-500/20 p-2 rounded-lg">
-                  <span className="text-xs text-emerald-700 font-medium">Khớp CSKH</span>
-                  <p className="text-lg font-bold text-emerald-700">{uploadResult.matchedCount}</p>
-                </div>
-                <div className="bg-amber-500/10 border border-amber-500/20 p-2 rounded-lg">
-                  <span className="text-xs text-amber-700 font-medium">Chờ đối soát</span>
-                  <p className="text-lg font-bold text-amber-700">{uploadResult.pendingCount}</p>
-                </div>
-                <div className="bg-rose-500/10 border border-rose-500/20 p-2 rounded-lg">
-                  <span className="text-xs text-rose-700 font-medium">Lệch ý kiến</span>
-                  <p className="text-lg font-bold text-rose-700">{uploadResult.conflictCount}</p>
-                </div>
-              </div>
-            </div>
-          )}
         </div>
       </Modal>
     </PageContainer>

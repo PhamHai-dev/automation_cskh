@@ -1,6 +1,5 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { useNavigate } from 'react-router-dom';
 import { classesApi } from '../api/classes.api';
 import { classSessionsApi, attendanceApi } from '../api/sessions.api';
 import {
@@ -135,7 +134,7 @@ const formatAssignmentDate = (raw?: string | null): string => {
 };
 
 type ClassAttendanceTab = 'quick' | 'detailed';
-type DetailedFilterMode = 'week' | 'month' | 'year';
+type DetailedFilterMode = 'week' | 'month';
 
 interface EnrolledStudentItem {
   enrollment_class_id: number;
@@ -161,7 +160,6 @@ export const ClassesPage: React.FC = () => {
   const isAdmin = Boolean(user?.roles?.includes('ADMIN'));
 
   const toast = useToast();
-  const navigate = useNavigate();
 
   const [classes, setClasses] = useState<Class[]>([]);
   const [loading, setLoading] = useState(true);
@@ -448,7 +446,7 @@ export const ClassesPage: React.FC = () => {
 
   const activeFiltersCount = (searchTerm ? 1 : 0) + (modelFilter ? 1 : 0);
 
-  // Dates list for Tab 2 (Điểm danh chi tiết: Theo tuần | Theo tháng | Theo năm)
+  // Dates list for Tab 2 (Điểm danh chi tiết: Theo tuần | Theo tháng)
   const periodDates = useMemo(() => {
     const dates: Date[] = [];
     const year = currentPeriodDate.getFullYear();
@@ -480,10 +478,7 @@ export const ClassesPage: React.FC = () => {
       const last = periodDates[periodDates.length - 1]?.toLocaleDateString('vi-VN') || '';
       return `Tuần: ${first} — ${last}`;
     }
-    if (detailedFilterMode === 'month') {
-      return `Tháng ${month} / ${year}`;
-    }
-    return `Năm ${year} (Tháng ${month})`;
+    return `Tháng ${month} / ${year}`;
   }, [currentPeriodDate, detailedFilterMode, periodDates]);
 
   // Stepper handlers for Tab 1 (Quick Day) and Tab 2 (Detailed Period)
@@ -497,10 +492,8 @@ export const ClassesPage: React.FC = () => {
     const next = new Date(currentPeriodDate);
     if (detailedFilterMode === 'week') {
       next.setDate(next.getDate() + delta * 7);
-    } else if (detailedFilterMode === 'month') {
-      next.setMonth(next.getMonth() + delta);
     } else {
-      next.setFullYear(next.getFullYear() + delta);
+      next.setMonth(next.getMonth() + delta);
     }
     setCurrentPeriodDate(next);
   };
@@ -790,30 +783,40 @@ export const ClassesPage: React.FC = () => {
     };
 
     return (
-      <input
-        type="text"
-        value={lessonVal}
-        onChange={(e) => {
-          const val = e.target.value;
-          setInlineDrafts((prev) => ({
-            ...prev,
-            [draftKey]: {
-              ...prev[draftKey],
-              lesson_topic: val,
-            },
-          }));
-          scheduleAutoSave(val, noteVal);
-        }}
-        onBlur={() => triggerSaveNow(lessonVal, noteVal)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') {
-            e.preventDefault();
-            triggerSaveNow(lessonVal, noteVal);
-          }
-        }}
-        placeholder="Nhập bài học..."
-        className="w-full min-w-[130px] h-8 px-2.5 rounded-lg border border-border/80 bg-white text-xs text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/40"
-      />
+      <div className="flex items-center gap-1 min-w-[130px]">
+        {daySessions.length > 1 && (
+          <span
+            title={`Ngày này có ${daySessions.length} ca học. Ô nhập nhanh này gắn với Ca 1 — bấm vào từng nút buổi để sửa riêng Bài học/Ghi chú của Ca 2+.`}
+            className="shrink-0 rounded bg-amber-50 border border-amber-200 px-1.5 py-0.5 text-[10px] font-bold text-amber-700 cursor-help"
+          >
+            Ca 1/{daySessions.length}
+          </span>
+        )}
+        <input
+          type="text"
+          value={lessonVal}
+          onChange={(e) => {
+            const val = e.target.value;
+            setInlineDrafts((prev) => ({
+              ...prev,
+              [draftKey]: {
+                ...prev[draftKey],
+                lesson_topic: val,
+              },
+            }));
+            scheduleAutoSave(val, noteVal);
+          }}
+          onBlur={() => triggerSaveNow(lessonVal, noteVal)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              triggerSaveNow(lessonVal, noteVal);
+            }
+          }}
+          placeholder="Nhập bài học..."
+          className="w-full min-w-[110px] h-8 px-2.5 rounded-lg border border-border/80 bg-white text-xs text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/40"
+        />
+      </div>
     );
   };
 
@@ -1430,7 +1433,7 @@ export const ClassesPage: React.FC = () => {
               </>
             ) : (
               <div className="flex flex-wrap items-center gap-2">
-                {/* Bộ chọn chế độ kỳ: Theo tuần | Theo tháng | Theo năm */}
+                {/* Bộ chọn chế độ kỳ: Theo tuần | Theo tháng */}
                 <div className="flex p-0.5 bg-surface-muted rounded-xl border border-border/60 text-xs font-semibold">
                   <button
                     type="button"
@@ -1453,17 +1456,6 @@ export const ClassesPage: React.FC = () => {
                     }`}
                   >
                     Theo tháng
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setDetailedFilterMode('year')}
-                    className={`px-3 py-1 rounded-lg transition-all ${
-                      detailedFilterMode === 'year'
-                        ? 'bg-surface text-primary shadow-xs font-bold'
-                        : 'text-text-muted hover:text-text-primary'
-                    }`}
-                  >
-                    Theo năm
                   </button>
                 </div>
 
@@ -1913,19 +1905,9 @@ export const ClassesPage: React.FC = () => {
                           </>
                         )}
 
-                        {/* Cột Thao tác (GIỮ NGUYÊN nút Buổi học) */}
+                        {/* Cột Thao tác */}
                         <td className="px-3 py-2 text-right whitespace-nowrap">
                           <div className="flex justify-end gap-1">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => navigate(`/classes/${cls.id}/sessions`)}
-                              title="Quản lý danh sách buổi học"
-                              leftIcon={<Calendar className="w-3.5 h-3.5" />}
-                              className="h-7 px-2 text-[11px] text-blue-600 border-blue-200 hover:bg-blue-50"
-                            >
-                              Buổi học
-                            </Button>
                             {canManageClasses && (
                               <Button
                                 variant="outline"
@@ -2189,6 +2171,49 @@ export const ClassesPage: React.FC = () => {
                 </button>
               </div>
 
+              <div className="mb-2.5 border-b border-border/70 pb-2 space-y-1.5">
+                <div>
+                  <label className="block text-[10px] font-bold text-text-secondary uppercase mb-0.5">
+                    Bài học (Lesson)
+                  </label>
+                  <input
+                    type="text"
+                    value={popoverLesson}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setPopoverLesson(val);
+                      schedulePopoverAutoSave(val, popoverNote);
+                    }}
+                    onBlur={() => triggerPopoverSaveNow(popoverLesson, popoverNote)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        triggerPopoverSaveNow(popoverLesson, popoverNote);
+                      }
+                    }}
+                    placeholder="VD: Bài 4, Kaiwa 2..."
+                    className="w-full h-7 px-2 rounded-lg border border-border bg-white text-xs text-text-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-text-secondary uppercase mb-0.5">
+                    Ghi chú GV theo buổi
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={popoverNote}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setPopoverNote(val);
+                      schedulePopoverAutoSave(popoverLesson, val);
+                    }}
+                    onBlur={() => triggerPopoverSaveNow(popoverLesson, popoverNote)}
+                    placeholder="Nhận xét buổi học, BTVN..."
+                    className="w-full px-2 py-1 rounded-lg border border-border bg-white text-xs text-text-primary focus:outline-none focus:ring-1 focus:ring-primary resize-none"
+                  />
+                </div>
+              </div>
+
               <div className="space-y-1">
                 {POPOVER_STATUS_OPTIONS.map(({ status, label }) => {
                   const cfg = STATUS_CONFIG[status];
@@ -2238,49 +2263,6 @@ export const ClassesPage: React.FC = () => {
                     Xóa trạng thái điểm danh
                   </button>
                 )}
-              </div>
-
-              <div className="mt-2.5 border-t border-border/70 pt-2 space-y-1.5">
-                <div>
-                  <label className="block text-[10px] font-bold text-text-secondary uppercase mb-0.5">
-                    Bài học (Lesson)
-                  </label>
-                  <input
-                    type="text"
-                    value={popoverLesson}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      setPopoverLesson(val);
-                      schedulePopoverAutoSave(val, popoverNote);
-                    }}
-                    onBlur={() => triggerPopoverSaveNow(popoverLesson, popoverNote)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        triggerPopoverSaveNow(popoverLesson, popoverNote);
-                      }
-                    }}
-                    placeholder="VD: Bài 4, Kaiwa 2..."
-                    className="w-full h-7 px-2 rounded-lg border border-border bg-white text-xs text-text-primary focus:outline-none focus:ring-1 focus:ring-primary"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold text-text-secondary uppercase mb-0.5">
-                    Ghi chú GV theo buổi
-                  </label>
-                  <textarea
-                    rows={2}
-                    value={popoverNote}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      setPopoverNote(val);
-                      schedulePopoverAutoSave(popoverLesson, val);
-                    }}
-                    onBlur={() => triggerPopoverSaveNow(popoverLesson, popoverNote)}
-                    placeholder="Nhận xét buổi học, BTVN..."
-                    className="w-full px-2 py-1 rounded-lg border border-border bg-white text-xs text-text-primary focus:outline-none focus:ring-1 focus:ring-primary resize-none"
-                  />
-                </div>
               </div>
             </div>,
             document.body

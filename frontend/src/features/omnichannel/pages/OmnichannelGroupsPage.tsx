@@ -433,7 +433,7 @@ export const OmnichannelGroupsPage: React.FC<{ initialTab?: GroupsViewTab }> = (
                   )}
                   <button
                     type="button"
-                    onClick={() => navigate('/omnichannel/inbox')}
+                    onClick={() => navigate('/omnichannel/chat')}
                     className="px-2.5 py-1 rounded-lg border border-border text-xs font-medium text-text-secondary hover:bg-surface-muted flex items-center gap-1"
                   >
                     <MessageSquare className="w-3 h-3" />

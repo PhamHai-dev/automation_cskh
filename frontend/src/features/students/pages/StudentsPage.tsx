@@ -1469,7 +1469,7 @@ export const StudentsPage: React.FC = () => {
     }),
 
     // --- CÁC CỘT ĐẶC THÙ CỦA KHÓA JLPT (Đọc/Ghi trực tiếp program_metadata) ---
-    ...(programFilter === 'JLPT' || programFilter === 'ALL'
+    ...(programFilter === 'JLPT'
       ? [
           {
             key: 'satisfaction_score_b18',

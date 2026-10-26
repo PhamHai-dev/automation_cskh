@@ -9,6 +9,7 @@ import { ArrowRight, Check, Eye, EyeOff, GraduationCap, Lock, Mail, ShieldCheck,
 
 const DEMO_ACCOUNTS = [
   { label: 'Quản trị viên', role: 'ADMIN', email: 'admin@gmail.com', icon: ShieldCheck },
+  { label: 'Quản lý CSKH', role: 'MANAGE', email: 'manage@gmail.com', icon: ShieldCheck },
   { label: 'CSKH 1', role: 'CS', email: 'cskh1@gmail.com', icon: UserRound },
   { label: 'CSKH 2', role: 'CS', email: 'cskh2@gmail.com', icon: UserRound },
   { label: 'CSKH 3', role: 'CS', email: 'cskh3@gmail.com', icon: UserRound },
@@ -18,7 +19,6 @@ const DEMO_ACCOUNTS = [
 export const LoginPage: React.FC = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [rememberMe, setRememberMe] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showDemoAccounts, setShowDemoAccounts] = useState(false);
   const [error, setError] = useState('');
@@ -103,12 +103,7 @@ export const LoginPage: React.FC = () => {
             />
 
             <div>
-              <div className="mb-1.5 flex items-center justify-between">
-                <label htmlFor="login-password" className="text-[11px] font-semibold text-text-primary">Mật khẩu</label>
-                <button id="forgot-password" type="button" className="text-[11px] font-medium text-primary transition-colors hover:text-primary-hover focus-visible:outline-none focus-visible:underline">
-                  Quên mật khẩu?
-                </button>
-              </div>
+              <label htmlFor="login-password" className="mb-1.5 block text-[11px] font-semibold text-text-primary">Mật khẩu</label>
               <Input
                 id="login-password"
                 type={showPassword ? 'text' : 'password'}
@@ -133,17 +128,6 @@ export const LoginPage: React.FC = () => {
               />
             </div>
 
-            <label htmlFor="remember-login" className="flex cursor-pointer items-center gap-1.5 pt-0.5 text-[11px] text-text-secondary">
-              <input
-                id="remember-login"
-                type="checkbox"
-                checked={rememberMe}
-                onChange={(event) => setRememberMe(event.target.checked)}
-                className="h-3.5 w-3.5 rounded border-border-strong text-primary accent-primary focus:ring-2 focus:ring-primary/30"
-              />
-              Ghi nhớ đăng nhập
-            </label>
-
             <Button
               id="login-submit"
               type="submit"
@@ -157,29 +141,33 @@ export const LoginPage: React.FC = () => {
             </Button>
           </form>
 
-          <div className="my-4 flex items-center gap-3 text-[11px] text-text-muted" aria-hidden="true">
-            <span className="h-px flex-1 bg-border-strong" />
-            <span>Bạn muốn khám phá hệ thống?</span>
-            <span className="h-px flex-1 bg-border-strong" />
-          </div>
+          {import.meta.env.DEV && (
+            <>
+              <div className="my-4 flex items-center gap-3 text-[11px] text-text-muted" aria-hidden="true">
+                <span className="h-px flex-1 bg-border-strong" />
+                <span>Bạn muốn khám phá hệ thống?</span>
+                <span className="h-px flex-1 bg-border-strong" />
+              </div>
 
-          <button
-            id="demo-accounts-toggle"
-            type="button"
-            onClick={() => setShowDemoAccounts(true)}
-            className="mx-auto flex items-center gap-1.5 text-[12px] font-semibold text-primary transition-colors hover:text-primary-hover focus-visible:outline-none focus-visible:underline"
-          >
-            Trải nghiệm bản demo
-            <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
-          </button>
+              <button
+                id="demo-accounts-toggle"
+                type="button"
+                onClick={() => setShowDemoAccounts(true)}
+                className="mx-auto flex items-center gap-1.5 text-[12px] font-semibold text-primary transition-colors hover:text-primary-hover focus-visible:outline-none focus-visible:underline"
+              >
+                Trải nghiệm bản demo
+                <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+              </button>
+            </>
+          )}
 
         </div>
 
-        <p className="mt-5 text-[10px] text-text-muted">Cần hỗ trợ? <button id="contact-admin" type="button" className="font-semibold text-text-secondary underline underline-offset-2 hover:text-primary">Liên hệ quản trị viên</button></p>
+        <p className="mt-5 text-[10px] text-text-muted">Cần hỗ trợ? Liên hệ quản trị viên để được cấp lại mật khẩu</p>
         <p className="mt-5 text-[10px] text-text-muted">© 2026 CSKH Automation</p>
       </section>
 
-      {showDemoAccounts && (
+      {import.meta.env.DEV && showDemoAccounts && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/20 px-4 py-6 backdrop-blur-[3px]" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setShowDemoAccounts(false)}>
           <section id="demo-accounts-dialog" role="dialog" aria-modal="true" aria-labelledby="demo-accounts-title" className="w-full max-w-[390px] rounded-2xl border border-primary-border/70 bg-white p-5 shadow-[0_24px_70px_-20px_rgba(15,23,42,0.35)]">
             <div className="flex items-start justify-between gap-4">
