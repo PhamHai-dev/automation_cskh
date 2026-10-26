@@ -1,32 +1,48 @@
 /**
- * Care-milestone ordinal STABILITY scenarios (owner item #4 — pin actual
- * behavior, NOT a D1 re-decision; basis locked in
- * automation-session-number.test.ts).
+ * Care-milestone ordinal STABILITY scenarios (owner items S1a/S2c + mandatory
+ * acceptance (a)–(f), approved design 2026-10-26 — FIXED CONTRACT, replaces the
+ * previous "pin actual behavior" suite).
  *
- * Mock-only: same in-memory FINAL-ATTENDED row store + fakeCount evaluator as
- * automation-session-number.test.ts, extended with a stateful delivery store
- * that emulates the real unique constraint
- * `@@unique([attendance_id, automation_step_id])`
- * (schema.prisma MessageDelivery; idempotency lookup =
- * automation-repository.findDeliveryForIdempotency). `findUnique` on the
- * composite key throws the same P2002 shape Prisma 5 throws for a violating
- * `create`, so the read-check + unique-index double protection is exercised
- * exactly as production would see it.
+ * New contract: milestone occurrence identity is `(enrollment_id,
+ * automation_step_id)` (each AutomationStep uniquely encodes milestone_key
+ * `(workflow_id, session_number, trigger_event)` via schema.prisma's
+ * @@unique). `attendance_id` on MessageDelivery is the CURRENT trigger-evidence
+ * basis, never the identity. Both mechanisms are combined:
+ *  (A) occurrence dedup — a repeat trigger reaching the same milestone with a
+ *      different basis NEVER creates a second row; unsent occurrences REBIND
+ *      the basis in place; SENT/SENDING history is never mutated or re-sent;
+ *  (B) forward re-evaluation across the enrollment (reconcileEnrollmentMilestones)
+ *      — milestones whose ordinal basis appeared/shifted/dropped/reactivated
+ *      are healed on every FINAL write, and pending ones are cancelled when
+ *      the enrollment drops below their ordinal (including CONFLICT
+ *      transitions via cancelPendingDeliveries).
+ *
+ * Mock-only: in-memory FINAL-ATTENDED row store + fakeCount evaluator (same
+ * basis as automation-session-number.test.ts), extended with a stateful
+ * delivery store that:
+ *  - emulates the real DB unique `(attendance_id, automation_step_id)` as the
+ *    secondary backstop (create throws the P2002 shape Prisma 5 throws);
+ *  - supports findMany over enrollment_id / enrollment_id+step / attendance+step
+ *    shapes so the occurrence engine and the wide pass run WITHOUT the schema
+ *    migration being applied;
+ *  - applies `update` in place (id-preserving REBIND / reactivate / cancel).
+ * No $transaction is provided, so the engine falls back to serial execution +
+ * the in-process per-enrollment lock — exactly the ordering a Serializable
+ * transaction converges to under contention (real-DB concurrency is proven in
+ * milestone-dedup-reeval.acceptance.integration.test.ts).
  *
  * Semantics recap (resolveEnrollmentSessionNumber, automation-trigger.service.ts):
  * ordinal = 1 + count of FINAL (MATCHED/RESOLVED, not soft-deleted) ATTENDED
- * rows STRICTLY BEFORE this row in (session_date, created_at, id) order,
- * evaluated from DB state AT EVENT TIME. Rows finalizing out of that order can
- * therefore observe a PREVIOUSLY FINALIZED later row while not counting an
- * earlier row that is still non-FINAL — the ordinal is a function of
- * finalization timing, not of the stable total order. The scenarios below pin
- * what the pipeline does in those cases.
+ * rows STRICTLY BEFORE this row in (session_date, created_at, id) order.
+ * reconcileEnrollmentMilestones enumerates the same K7 list enrollment-wide:
+ * the k-th row is the current basis of ordinal session_number = k.
  */
 
 jest.mock('../../../prisma/client', () => ({
   prisma: {
     attendance: {
       findUnique: jest.fn(),
+      findMany: jest.fn(),
       count: jest.fn(),
     },
     enrollment: {
@@ -38,6 +54,7 @@ jest.mock('../../../prisma/client', () => ({
     messageDelivery: {
       findUnique: jest.fn(),
       findFirst: jest.fn(),
+      findMany: jest.fn(),
       create: jest.fn(),
       createMany: jest.fn(),
       update: jest.fn(),
@@ -54,8 +71,12 @@ jest.mock('../automation-bullmq-adapter', () => ({
 }));
 
 import { prisma } from '../../../prisma/client';
-import { enqueueDelivery } from '../automation-bullmq-adapter';
-import { handleAttendanceEvent } from '../automation-trigger.service';
+import { enqueueDelivery, cancelDelivery } from '../automation-bullmq-adapter';
+import {
+  cancelPendingDeliveries,
+  handleAttendanceEvent,
+  reconcileEnrollmentMilestones,
+} from '../automation-trigger.service';
 
 // ─── In-memory FINAL-ATTENDED row store (same harness as session-number tests) ─
 
@@ -80,10 +101,11 @@ const sameDate = (a: Date, b: Date) => a.getTime() === b.getTime();
  */
 function fakeCount(where: any): number {
   return rows.filter((r) => {
-    if (r.enrollment_id !== where.enrollment_class.enrollment_id) return false;
+    if (where.enrollment_class?.enrollment_id !== undefined && r.enrollment_id !== where.enrollment_class.enrollment_id) return false;
     if (r.status !== where.status) return false;
     if (!where.reconciliation_state.in.includes(r.reconciliation_state)) return false;
     if ((r.deleted_at ?? null) !== where.deleted_at) return false;
+    if (!where.OR) return true; // enrollment-wide count (reconcile fallback)
     return where.OR.some((branch: any) => {
       if (branch.class_session.session_date.lt !== undefined) {
         return r.session_date < branch.class_session.session_date.lt;
@@ -96,18 +118,36 @@ function fakeCount(where: any): number {
   }).length;
 }
 
-// ─── Stateful delivery store emulating @@unique([attendance_id, automation_step_id]) ─
+/** K7 qualification for findMany (no OR clause shape). */
+function qualifying(where: any): FakeRow[] {
+  return rows.filter((r) => {
+    if (where?.enrollment_class?.enrollment_id !== undefined && r.enrollment_id !== where.enrollment_class.enrollment_id) return false;
+    if (where?.status && r.status !== where.status) return false;
+    if (where?.reconciliation_state?.in && !where.reconciliation_state.in.includes(r.reconciliation_state)) return false;
+    if (where && 'deleted_at' in where && (r.deleted_at ?? null) !== where.deleted_at) return false;
+    return true;
+  });
+}
+
+// ─── Stateful delivery store ─────────────────────────────────────────────────
+// Identity: (enrollment_id, automation_step_id) = ONE occurrence.
+// Backstop:  (attendance_id, automation_step_id) unique (legacy DB index).
 
 interface FakeDelivery {
   id: number;
+  enrollment_id: number;
   attendance_id: number;
   automation_step_id: number;
+  status: string;
+  queue_job_id: string | null;
+  error_message: string | null;
   rendered_content: string;
   variables_snapshot: Record<string, any>;
 }
 
 let deliveries: FakeDelivery[] = [];
 let deliverySeq = 9000;
+let currentSteps: any[] = []; // active steps visible to the occurrence engine
 
 const p2002 = () =>
   Object.assign(new Error('Unique constraint failed on the fields, `(attendance_id, automation_step_id)`'), {
@@ -121,15 +161,22 @@ function findDeliveryRow(attendanceId: number, stepId: number): FakeDelivery | n
   return deliveries.find((d) => d.attendance_id === attendanceId && d.automation_step_id === stepId) ?? null;
 }
 
+function occKey(enrollmentId: number, stepId: number) {
+  return `${enrollmentId}:${stepId}`;
+}
+function occurrenceRows(enrollmentId: number, stepId: number): FakeDelivery[] {
+  return deliveries.filter((d) => d.enrollment_id === enrollmentId && d.automation_step_id === stepId);
+}
+
 // ─── Fixtures (mirroring automation-session-number.test.ts) ─────────────────
 
 const DAY1 = new Date('2026-10-17T00:00:00Z');
 const DAY2 = new Date('2026-10-18T00:00:00Z');
 
-function stepFixture(sessionNumber: number, id: number) {
+function stepFixture(sessionNumber: number, id: number, workflowId = 7, enrollmentId = 300) {
   return {
     id,
-    workflow_id: 7,
+    workflow_id: workflowId,
     session_number: sessionNumber,
     trigger_event: 'ATTENDED' as const,
     delay_minutes: 5,
@@ -138,17 +185,19 @@ function stepFixture(sessionNumber: number, id: number) {
     message_content: `Mừng HV {{student_name}} hoàn thành buổi ${sessionNumber}!`,
     message_variables: ['student_name', 'session_number'],
     active: true,
-    workflow: { id: 7, name: 'Care milestone', owner_cs_id: 50 },
+    workflow: { id: workflowId, name: `Care milestone W${workflowId}`, owner_cs_id: 50 },
   };
 }
 
 function attendanceFixture(overrides: {
   id: number;
+  enrollmentId?: number;
   sessionDate: Date;
   createdAt: Date;
   status?: string;
   reconciliationState?: string;
 }) {
+  const enrollmentId = overrides.enrollmentId ?? 300;
   return {
     id: overrides.id,
     status: overrides.status ?? 'ATTENDED',
@@ -156,12 +205,12 @@ function attendanceFixture(overrides: {
     created_at: overrides.createdAt,
     enrollment_class: {
       enrollment: {
-        id: 300,
-        student_id: 400,
+        id: enrollmentId,
+        student_id: enrollmentId === 301 ? 401 : 400,
         cs_id: 50,
         total_sessions: 24,
         auto_message_enabled: true,
-        student: { id: 400, full_name: 'Nguyễn Văn A', phone: '0988767563' },
+        student: { id: enrollmentId === 301 ? 401 : 400, full_name: enrollmentId === 301 ? 'Trần Văn B' : 'Nguyễn Văn A', phone: '0988767563' },
         cs: { id: 50, name: 'CS Hương' },
         package: { name: 'Gói N3' },
         enrollment_classes: [{ class: { id: 20, class_name: 'N3-K12' } }],
@@ -182,11 +231,11 @@ function rowFixture(
   id: number,
   sessionDate: Date,
   createdAt: Date,
-  overrides?: Partial<Pick<FakeRow, 'status' | 'reconciliation_state' | 'deleted_at'>>,
+  overrides?: Partial<Pick<FakeRow, 'status' | 'reconciliation_state' | 'deleted_at' | 'enrollment_id'>>,
 ): FakeRow {
   return {
     id,
-    enrollment_id: 300,
+    enrollment_id: overrides?.enrollment_id ?? 300,
     session_date: sessionDate,
     created_at: createdAt,
     status: overrides?.status ?? 'ATTENDED',
@@ -197,100 +246,181 @@ function rowFixture(
 
 /** Captures the session_number that findMatchingSteps was queried with. */
 function lastQuerySessionNumber(): number | undefined {
-  const call = (prisma.automationStep.findMany as jest.Mock).mock.calls.at(-1);
-  return call?.[0]?.where?.session_number;
+  const calls = (prisma.automationStep.findMany as jest.Mock).mock.calls;
+  for (let i = calls.length - 1; i >= 0; i--) {
+    const sn = calls[i]?.[0]?.where?.session_number;
+    if (sn !== undefined) return sn;
+  }
+  return undefined;
+}
+
+function installStepMock(steps: any[]) {
+  currentSteps = steps;
+  (prisma.automationStep.findMany as jest.Mock).mockImplementation(async ({ where }) => {
+    // Wide pass: no session_number — return all active ATTENDED steps.
+    if (where.session_number === undefined) {
+      if (where.trigger_event === undefined) return [];
+      return steps.filter((s) => s.trigger_event === where.trigger_event);
+    }
+    return steps.filter(
+      (s) => s.session_number === where.session_number && s.trigger_event === where.trigger_event,
+    );
+  });
+}
+
+function snapshot(pairs: Array<[number, number, string]>) {
+  expect(deliveries.map((d) => [d.attendance_id, d.automation_step_id, d.status])).toEqual(pairs);
+}
+
+function occurrences(stepId: number, enrollmentId = 300): FakeDelivery[] {
+  return occurrenceRows(enrollmentId, stepId);
+}
+
+function resetHarness() {
+  jest.clearAllMocks();
+  rows = [];
+  deliveries = [];
+  deliverySeq = 9000;
+  currentSteps = [];
+
+  (prisma.attendance.count as jest.Mock).mockImplementation(async ({ where }) => fakeCount(where));
+  (prisma.attendance.findMany as jest.Mock).mockImplementation(async ({ where }) => {
+    const list = qualifying(where).map((r) => ({
+      ...r,
+      class_session: {
+        session_date: r.session_date,
+        class: { class_name: 'N3-K12', class_teachers: [{ teacher: { name: 'Sensei Tanaka' } }] },
+      },
+    }));
+    return list.sort((a: any, b: any) => a.session_date - b.session_date || a.created_at - b.created_at || a.id - b.id);
+  });
+  (prisma.enrollment.findUnique as jest.Mock).mockImplementation(async ({ where }) => {
+    const id = where.id;
+    const sid = id === 301 ? 401 : 400;
+    return {
+      id,
+      student_id: sid,
+      cs_id: 50,
+      total_sessions: 24,
+      auto_message_enabled: true,
+      student: { id: sid, full_name: id === 301 ? 'Trần Văn B' : 'Nguyễn Văn A', phone: '0988767563', line_uid: null },
+      cs: { id: 50, name: 'CS Hương' },
+      package: { name: 'Gói N3' },
+    };
+  });
+  (prisma.zaloContactRelation.findFirst as jest.Mock).mockResolvedValue({
+    id: 10,
+    student_id: 400,
+    zalo_account_id: 12,
+    relation_status: 'FRIEND',
+  });
+
+  (prisma.messageDelivery.findUnique as jest.Mock).mockImplementation(async ({ where }) => {
+    const comp = where?.attendance_id_automation_step_id;
+    if (comp) return findDeliveryRow(comp.attendance_id, comp.automation_step_id);
+    const byId = where?.id;
+    if (byId !== undefined) return deliveries.find((d) => d.id === byId) ?? null;
+    throw new Error(`fake delivery findUnique: unsupported where shape ${JSON.stringify(where)}`);
+  });
+  (prisma.messageDelivery.findFirst as jest.Mock).mockImplementation(async ({ where }) =>
+    where?.attendance_id !== undefined && where?.automation_step_id !== undefined
+      ? findDeliveryRow(where.attendance_id, where.automation_step_id)
+      : null,
+  );
+  (prisma.messageDelivery.findMany as jest.Mock).mockImplementation(async ({ where }) => {
+    if (where?.enrollment_id !== undefined && where?.automation_step_id !== undefined) {
+      return occurrenceRows(where.enrollment_id, where.automation_step_id);
+    }
+    if (where?.enrollment_id !== undefined && where?.automation_step?.trigger_event) {
+      const ev = where.automation_step.trigger_event;
+      return deliveries.filter((d) => d.enrollment_id === where.enrollment_id).map((d) => {
+        const step = currentSteps.find((s) => s.id === d.automation_step_id);
+        return {
+          ...d,
+          automation_step: {
+            id: d.automation_step_id,
+            workflow_id: step?.workflow_id ?? null,
+            session_number: step?.session_number ?? null,
+            trigger_event: step?.trigger_event ?? ev,
+            channel: step?.channel ?? 'ZALO_PERSONAL',
+            target_group_id: step?.target_group_id ?? null,
+            message_content: step?.message_content ?? '',
+            delay_minutes: step?.delay_minutes ?? 0,
+            workflow: step?.workflow ?? { id: 7, name: 'Care milestone W7', active: true, owner_cs_id: 50 },
+          },
+        };
+      });
+    }
+    if (where?.enrollment_id !== undefined) {
+      return deliveries.filter((d) => d.enrollment_id === where.enrollment_id);
+    }
+    throw new Error(`fake delivery findMany: unsupported where shape ${JSON.stringify(where)}`);
+  });
+  (prisma.messageDelivery.create as jest.Mock).mockImplementation(async ({ data }) => {
+    if (findDeliveryRow(data.attendance_id, data.automation_step_id)) throw p2002();
+    const d: FakeDelivery = {
+      id: ++deliverySeq,
+      enrollment_id: data.enrollment_id,
+      attendance_id: data.attendance_id,
+      automation_step_id: data.automation_step_id,
+      status: 'SCHEDULED',
+      queue_job_id: null,
+      error_message: null,
+      rendered_content: data.rendered_content,
+      variables_snapshot: data.variables_snapshot,
+    };
+    deliveries.push(d);
+    return { ...d };
+  });
+  (prisma.messageDelivery.createMany as jest.Mock).mockImplementation(async ({ data }) => {
+    const list = Array.isArray(data) ? data : [data];
+    for (const x of list) if (findDeliveryRow(x.attendance_id, x.automation_step_id)) throw p2002();
+    for (const x of list) {
+      deliveries.push({
+        id: ++deliverySeq,
+        enrollment_id: x.enrollment_id,
+        attendance_id: x.attendance_id,
+        automation_step_id: x.automation_step_id,
+        status: 'SCHEDULED',
+        queue_job_id: null,
+        error_message: null,
+        rendered_content: x.rendered_content,
+        variables_snapshot: x.variables_snapshot,
+      });
+    }
+    return { count: list.length };
+  });
+  (prisma.messageDelivery.update as jest.Mock).mockImplementation(async ({ where, data }) => {
+    const d = deliveries.find((x) => x.id === where.id);
+    if (!d) throw new Error(`fake delivery update: row ${where.id} not found`);
+    for (const [k, v] of Object.entries(data ?? {})) {
+      if (v === undefined) continue;
+      (d as any)[k] = v === null ? null : v;
+    }
+    return { ...d };
+  });
+  (enqueueDelivery as jest.Mock).mockImplementation(async ({ deliveryId }) => `automation:delivery:${deliveryId}`);
+  (cancelDelivery as jest.Mock).mockResolvedValue(undefined);
 }
 
 // ─── Suite ───────────────────────────────────────────────────────────────────
 
-describe('Care-milestone ordinal stability (item #4) — out-of-order finalization', () => {
+describe('Care-milestone occurrence contract (S1a/S2c fixed) — out-of-order finalization', () => {
   // Stable total order for DAY2 rows: A id=901 @01:00, B id=902 @09:00.
   const A_CREATED = new Date('2026-10-18T01:00:00Z');
   const B_CREATED = new Date('2026-10-18T09:00:00Z');
 
-  beforeEach(() => {
-    jest.clearAllMocks();
-    rows = [];
-    deliveries = [];
-    deliverySeq = 9000;
+  beforeEach(resetHarness);
 
-    (prisma.attendance.count as jest.Mock).mockImplementation(async ({ where }) => fakeCount(where));
-    (prisma.enrollment.findUnique as jest.Mock).mockResolvedValue({
-      student_id: 400,
-      student: { id: 400, line_uid: null },
-    });
-    (prisma.zaloContactRelation.findFirst as jest.Mock).mockResolvedValue({
-      id: 10,
-      student_id: 400,
-      zalo_account_id: 12,
-      relation_status: 'FRIEND',
-    });
-
-    // Composite-unique findUnique over the store; any other where shape is a
-    // harness bug → fail loudly.
-    (prisma.messageDelivery.findUnique as jest.Mock).mockImplementation(async ({ where }) => {
-      const comp = where?.attendance_id_automation_step_id;
-      if (comp) {
-        return findDeliveryRow(comp.attendance_id, comp.automation_step_id);
-      }
-      const byId = where?.id;
-      if (byId !== undefined) return deliveries.find((d) => d.id === byId) ?? null;
-      throw new Error(`fake delivery findUnique: unsupported where shape ${JSON.stringify(where)}`);
-    });
-    // `by` lookup used only to verify post-race persistence state.
-    (prisma.messageDelivery.findFirst as jest.Mock).mockImplementation(async ({ where }) =>
-      where?.attendance_id !== undefined && where?.automation_step_id !== undefined
-        ? findDeliveryRow(where.attendance_id, where.automation_step_id)
-        : null,
-    );
-    (prisma.messageDelivery.create as jest.Mock).mockImplementation(async ({ data }) => {
-      if (findDeliveryRow(data.attendance_id, data.automation_step_id)) throw p2002();
-      const d = {
-        id: ++deliverySeq,
-        attendance_id: data.attendance_id,
-        automation_step_id: data.automation_step_id,
-        rendered_content: data.rendered_content,
-        variables_snapshot: data.variables_snapshot,
-      };
-      deliveries.push(d);
-      return d;
-    });
-    (prisma.messageDelivery.createMany as jest.Mock).mockImplementation(async ({ data }) => {
-      const list = Array.isArray(data) ? data : [data];
-      for (const x of list) if (findDeliveryRow(x.attendance_id, x.automation_step_id)) throw p2002();
-      for (const x of list) {
-        deliveries.push({
-          id: ++deliverySeq,
-          attendance_id: x.attendance_id,
-          automation_step_id: x.automation_step_id,
-          rendered_content: x.rendered_content,
-          variables_snapshot: x.variables_snapshot,
-        });
-      }
-      return { count: list.length };
-    });
-    (prisma.messageDelivery.update as jest.Mock).mockResolvedValue({});
-    (enqueueDelivery as jest.Mock).mockImplementation(async () => `automation:delivery:${++deliverySeq}`);
-  });
-
-  it('S1a late row A recomputes the SAME ordinal B already used (5) and the dedupe does NOT stop a second (A, milestone) delivery — pins the cross-row duplicate milestone as the actual behavior', async () => {
-    // 4 earlier-day finals, so the stable total order would be A=5, B=6.
+  it('acceptance (a): B@09:00 finalizes first, then A@01:00 — milestone 5 fires ONCE (basis rebinds to A, never a second row) and milestone 6 heals without any duplicate', async () => {
+    // 4 earlier-day finals, so the stable total order is A=5, B=6.
     rows = [
       rowFixture(801, new Date('2026-10-14T00:00:00Z'), new Date('2026-10-14T01:00:00Z')),
       rowFixture(802, new Date('2026-10-15T00:00:00Z'), new Date('2026-10-15T01:00:00Z')),
       rowFixture(803, new Date('2026-10-16T00:00:00Z'), new Date('2026-10-16T01:00:00Z')),
       rowFixture(804, DAY1, new Date('2026-10-17T01:00:00Z')),
     ];
-    // Milestone step configured at session_number 5 (the number B observes
-    // first, and that A will ALSO observe when it finalizes late).
-    const step5 = stepFixture(5, 41);
-    const step6 = stepFixture(6, 42);
-    (prisma.automationStep.findMany as jest.Mock).mockImplementation(async ({ where }) => {
-      const out: any[] = [];
-      if (where.session_number === 5) out.push(step5);
-      if (where.session_number === 6) out.push(step6);
-      return out;
-    });
+    installStepMock([stepFixture(5, 41), stepFixture(6, 42)]);
 
     // ── B (id 902, created 09:00) goes MATCHED FIRST; A is still non-FINAL.
     rows.push(rowFixture(902, DAY2, B_CREATED));
@@ -299,83 +429,66 @@ describe('Care-milestone ordinal stability (item #4) — out-of-order finalizati
     );
     const resB = await handleAttendanceEvent(902);
 
-    // B strictly-before count = 4 (A not FINAL and not in store; nothing else
-    // same-day precedes B among FINAL rows) → ordinal 5.
+    // B observes ordinal 5 → milestone 5 fires once, occurrence keyed to
+    // (enrollment 300, step 41) with basis B.
     expect(lastQuerySessionNumber()).toBe(5);
-    // Milestone 5 fires once, keyed to (902, 41).
     expect(resB.deliveriesCreated).toBe(1);
-    expect(deliveries.map((d) => [d.attendance_id, d.automation_step_id])).toEqual([[902, 41]]);
+    snapshot([[902, 41, 'QUEUED']]);
+    expect(occurrences(41)).toHaveLength(1);
+    expect(enqueueDelivery).toHaveBeenCalledTimes(1);
 
-    // ── A (id 901, created 01:00) finalizes AFTER B.
+    // ── A (id 901, created 01:00) finalizes AFTER B — A becomes the ordinal-5
+    // basis and B shifts to ordinal 6.
     rows.push(rowFixture(901, DAY2, A_CREATED));
     (prisma.attendance.findUnique as jest.Mock).mockResolvedValue(
       attendanceFixture({ id: 901, sessionDate: DAY2, createdAt: A_CREATED }),
     );
     const resA = await handleAttendanceEvent(901);
 
-    // FINDING (pinned, reported — not redesigned): A's strictly-before count is
-    // also 4 — B comes AFTER A in (created_at) so it never counts for A — so A
-    // recomputes the SAME ordinal 5 that B already consumed. The idempotency
-    // lookup queries (901, 41), finds nothing (the existing delivery is keyed
-    // to 902), and a SECOND delivery for milestone 5 is created for the same
-    // enrollment+number. The unique key (attendance_id, automation_step_id)
-    // only dedupes per-row, never per-milestone.
-    expect(lastQuerySessionNumber()).toBe(5);
-    expect(resA.deliveriesCreated).toBe(1);
-    expect(deliveries.map((d) => d.attendance_id).sort()).toEqual([901, 902]);
-    expect(deliveries.filter((d) => d.automation_step_id === 41).length).toBe(2);
+    // Milestone 5: STILL exactly ONE occurrence row (same id) — the unsent
+    // SCHEDULED/QUEUED row REBINDS attendance_id 902 -> 901 in place. No second
+    // delivery, no second enqueue for step 41.
+    expect(occurrences(41)).toHaveLength(1);
+    expect(occurrences(41)[0].attendance_id).toBe(901);
+    expect(resA.details.some((d) => d.stepId === 41 && d.status === 'SKIPPED_DUPLICATE')).toBe(true);
 
-    // Meanwhile milestone 6 (B's stable-order ordinal) has NOT fired yet: the
-    // CONFLICT/late-finalization transitions themselves emit no events for
-    // other rows — only a NEW event on B re-evaluates B (see S2c for the same
-    // neighbour-shift gap).
-    expect(deliveries.some((d) => d.automation_step_id === 42)).toBe(false);
+    // Milestone 6: healed by the forward re-evaluation of the SAME event — the
+    // ordinal-6 basis (B) now exists, so step 42 fires exactly once.
+    const step6 = occurrences(42);
+    expect(step6).toHaveLength(1);
+    expect(step6[0].attendance_id).toBe(902);
+    expect(step6[0].status).toBe('QUEUED');
 
-    // Stable invariant that IS guaranteed: no (attendance, step) pair is ever
-    // created twice. A further event on B recomputes from live state — now A is
-    // FINAL and strictly precedes B, so B observes ordinal 6 and the SAME event
-    // self-heals the skipped milestone 6 while milestone 5 stays double-delivered
-    // ((902,41) + (901,41)) — cross-row duplication is NOT prevented by the
-    // per-row unique key.
+    // The whole store: one row per milestone, zero duplicates.
+    expect(deliveries.length).toBe(2);
+    const pairs = deliveries.map((d) => [d.attendance_id, d.automation_step_id]).sort();
+    expect(pairs).toEqual([[901, 41], [902, 42]]);
+    // Enqueues: step41 creation, step42 creation (from A's event). The rebind
+    // of step41 did not enqueue a duplicate job (already QUEUED for deliveryId).
+    expect(enqueueDelivery).toHaveBeenCalledTimes(2);
+
+    // Replay on B recomputes 6 → its own occurrence exists → SKIPPED_DUPLICATE;
+    // nothing grows.
     (prisma.attendance.findUnique as jest.Mock).mockResolvedValue(
       attendanceFixture({ id: 902, sessionDate: DAY2, createdAt: B_CREATED }),
     );
     const resB2 = await handleAttendanceEvent(902);
-    expect(lastQuerySessionNumber()).toBe(6);
-    expect(resB2.deliveriesCreated).toBe(1);
-    expect(deliveries.map((d) => [d.attendance_id, d.automation_step_id])).toEqual([
-      [902, 41],
-      [901, 41],
-      [902, 42],
-    ]);
-
-    // Third event on B → its (902,42) hits the unique → SKIPPED_DUPLICATE,
-    // store frozen.
+    expect(resB2.deliveriesCreated).toBe(0);
+    expect(deliveries.length).toBe(2);
+    expect(new Set(deliveries.map((d) => occKey(d.enrollment_id, d.automation_step_id))).size).toBe(2);
     const resB3 = await handleAttendanceEvent(902);
     expect(resB3.deliveriesCreated).toBe(0);
-    expect(resB3.deliveriesSkipped).toBe(1);
-    expect(resB3.details[0]).toEqual(expect.objectContaining({ stepId: 42, status: 'SKIPPED_DUPLICATE' }));
-    expect(deliveries.length).toBe(3);
-    const pairs = deliveries.map((d) => uniqKey(d.attendance_id, d.automation_step_id));
-    expect(new Set(pairs).size).toBe(pairs.length);
+    expect(deliveries.length).toBe(2);
   });
 
-  it('S1b in-order finalization keeps ordinals monotonic (A=4 fires step4 once, B=5 fires step5 once) — each row gets exactly one delivery per step', async () => {
+  it('S1b in-order finalization keeps ordinals monotonic (A=4 fires step4 once, B=5 fires step5 once) — each milestone exactly one occurrence', async () => {
     rows = [
       rowFixture(801, new Date('2026-10-15T00:00:00Z'), new Date('2026-10-15T01:00:00Z')),
       rowFixture(802, new Date('2026-10-16T00:00:00Z'), new Date('2026-10-16T01:00:00Z')),
       rowFixture(803, DAY1, new Date('2026-10-17T01:00:00Z')),
     ];
-    const step4 = stepFixture(4, 41);
-    const step5 = stepFixture(5, 42);
-    (prisma.automationStep.findMany as jest.Mock).mockImplementation(async ({ where }) => {
-      const out: any[] = [];
-      if (where.session_number === 4) out.push(step4);
-      if (where.session_number === 5) out.push(step5);
-      return out;
-    });
+    installStepMock([stepFixture(4, 41), stepFixture(5, 42)]);
 
-    // A finalizes first (its natural position in the total order).
     rows.push(rowFixture(901, DAY2, A_CREATED));
     (prisma.attendance.findUnique as jest.Mock).mockResolvedValue(
       attendanceFixture({ id: 901, sessionDate: DAY2, createdAt: A_CREATED }),
@@ -384,7 +497,6 @@ describe('Care-milestone ordinal stability (item #4) — out-of-order finalizati
     expect(lastQuerySessionNumber()).toBe(4);
     expect(resA.deliveriesCreated).toBe(1);
 
-    // B finalizes second: A is FINAL and strictly precedes B → ordinal 5.
     rows.push(rowFixture(902, DAY2, B_CREATED));
     (prisma.attendance.findUnique as jest.Mock).mockResolvedValue(
       attendanceFixture({ id: 902, sessionDate: DAY2, createdAt: B_CREATED }),
@@ -393,9 +505,6 @@ describe('Care-milestone ordinal stability (item #4) — out-of-order finalizati
     expect(lastQuerySessionNumber()).toBe(5);
     expect(resB.deliveriesCreated).toBe(1);
 
-    // Exactly one delivery per (row, step) — milestone 4 fired once,
-    // milestone 5 fired once, no cross-row duplication because ordinals were
-    // observed monotonically.
     expect(deliveries.map((d) => [d.attendance_id, d.automation_step_id])).toEqual([
       [901, 41],
       [902, 42],
@@ -403,8 +512,7 @@ describe('Care-milestone ordinal stability (item #4) — out-of-order finalizati
     expect(enqueueDelivery).toHaveBeenCalledTimes(2);
   });
 
-  it('S1c replay storm: per-row (attendance, step) dedupe is the stable guarantee — replays never grow the delivery set', async () => {
-    // 4 earlier-day finals + row 901 FINAL: ordinal 5.
+  it('S1c replay storm: per-(enrollment, step) occurrence dedupe is the stable guarantee — replays never grow the delivery set', async () => {
     rows = [
       rowFixture(801, new Date('2026-10-14T00:00:00Z'), new Date('2026-10-14T01:00:00Z')),
       rowFixture(802, new Date('2026-10-15T00:00:00Z'), new Date('2026-10-15T01:00:00Z')),
@@ -412,400 +520,412 @@ describe('Care-milestone ordinal stability (item #4) — out-of-order finalizati
       rowFixture(804, DAY1, new Date('2026-10-17T01:00:00Z')),
       rowFixture(901, DAY2, A_CREATED),
     ];
-    const step5 = stepFixture(5, 41);
-    const step6 = stepFixture(6, 42);
-    (prisma.automationStep.findMany as jest.Mock).mockImplementation(async ({ where }) => {
-      const out: any[] = [];
-      if (where.session_number === 5) out.push(step5);
-      if (where.session_number === 6) out.push(step6);
-      return out;
-    });
+    installStepMock([stepFixture(5, 41), stepFixture(6, 42)]);
 
-    // 901's first event → one delivery (901, 41).
     (prisma.attendance.findUnique as jest.Mock).mockResolvedValue(
       attendanceFixture({ id: 901, sessionDate: DAY2, createdAt: A_CREATED }),
     );
     const res1 = await handleAttendanceEvent(901);
     expect(res1.deliveriesCreated).toBe(1);
 
-    // Replay 901 five more times: ordinal stays 5, (901,41) exists → every hit
-    // is SKIPPED_DUPLICATE, store frozen.
     for (let i = 0; i < 5; i++) {
       const res = await handleAttendanceEvent(901);
       expect(res.deliveriesCreated).toBe(0);
-      expect(res.deliveriesSkipped).toBe(1);
-      expect(res.details[0]).toEqual(
-        expect.objectContaining({ stepId: 41, status: 'SKIPPED_DUPLICATE' }),
-      );
+      expect(res.details.some((d) => d.stepId === 41 && d.status === 'SKIPPED_DUPLICATE')).toBe(true);
     }
     expect(deliveries.length).toBe(1);
     expect(prisma.messageDelivery.create).toHaveBeenCalledTimes(1);
     expect(enqueueDelivery).toHaveBeenCalledTimes(1);
 
-    // Now the out-of-order neighbour B (created 09:00) finalizes. A replay of
-    // 901 after that still dedupes for step 5, and B's own ordinal (6) lands on
-    // its own step without ever duplicating a pair — the per-row invariant
-    // survives the late arrival; cross-row milestone re-firing is pinned in S1a.
+    // The out-of-order neighbour B (created 09:00) finalizes: B's own ordinal
+    // (6) lands on its own step; replays of both stay deduped.
     rows.push(rowFixture(902, DAY2, B_CREATED));
     (prisma.attendance.findUnique as jest.Mock).mockResolvedValue(
       attendanceFixture({ id: 902, sessionDate: DAY2, createdAt: B_CREATED }),
     );
     const resB = await handleAttendanceEvent(902);
-    expect(resB.deliveriesCreated).toBe(1); // (902, step6)
+    expect(resB.deliveriesCreated).toBe(1); // (902, step 42)
     (prisma.attendance.findUnique as jest.Mock).mockResolvedValue(
       attendanceFixture({ id: 901, sessionDate: DAY2, createdAt: A_CREATED }),
     );
-    const resA2 = await handleAttendanceEvent(901); // 901 replay post-B-arrival
+    const resA2 = await handleAttendanceEvent(901);
     expect(resA2.deliveriesCreated).toBe(0);
-    expect(resA2.deliveriesSkipped).toBe(1); // (901,41) unique hit
     (prisma.attendance.findUnique as jest.Mock).mockResolvedValue(
       attendanceFixture({ id: 902, sessionDate: DAY2, createdAt: B_CREATED }),
     );
     const resB2 = await handleAttendanceEvent(902);
     expect(resB2.deliveriesCreated).toBe(0);
-    expect(resB2.deliveriesSkipped).toBe(1); // (902,42) unique hit
-    const pairs = deliveries.map((d) => uniqKey(d.attendance_id, d.automation_step_id));
-    expect(new Set(pairs).size).toBe(pairs.length);
+    const oKeys = deliveries.map((d) => occKey(d.enrollment_id, d.automation_step_id));
+    expect(new Set(oKeys).size).toBe(oKeys.length);
     expect(deliveries.length).toBe(2);
   });
-});
 
-describe('Care-milestone ordinal stability (item #4) — FINAL → CONFLICT → FINAL', () => {
-  const C_CREATED = new Date('2026-10-18T01:00:00Z');
-  const D_CREATED = new Date('2026-10-18T09:00:00Z');
-
-  beforeEach(() => {
-    // Reuse the identical harness setup.
-    jest.clearAllMocks();
-    rows = [];
-    deliveries = [];
-    deliverySeq = 9000;
-
-    (prisma.attendance.count as jest.Mock).mockImplementation(async ({ where }) => fakeCount(where));
-    (prisma.enrollment.findUnique as jest.Mock).mockResolvedValue({
-      student_id: 400,
-      student: { id: 400, line_uid: null },
-    });
-    (prisma.zaloContactRelation.findFirst as jest.Mock).mockResolvedValue({
-      id: 10,
-      student_id: 400,
-      zalo_account_id: 12,
-      relation_status: 'FRIEND',
-    });
-    (prisma.messageDelivery.findUnique as jest.Mock).mockImplementation(async ({ where }) => {
-      const comp = where?.attendance_id_automation_step_id;
-      if (comp) return findDeliveryRow(comp.attendance_id, comp.automation_step_id);
-      const byId = where?.id;
-      if (byId !== undefined) return deliveries.find((d) => d.id === byId) ?? null;
-      throw new Error(`fake delivery findUnique: unsupported where shape ${JSON.stringify(where)}`);
-    });
-    (prisma.messageDelivery.findFirst as jest.Mock).mockImplementation(async ({ where }) =>
-      where?.attendance_id !== undefined && where?.automation_step_id !== undefined
-        ? findDeliveryRow(where.attendance_id, where.automation_step_id)
-        : null,
-    );
-    (prisma.messageDelivery.create as jest.Mock).mockImplementation(async ({ data }) => {
-      if (findDeliveryRow(data.attendance_id, data.automation_step_id)) throw p2002();
-      const d = {
-        id: ++deliverySeq,
-        attendance_id: data.attendance_id,
-        automation_step_id: data.automation_step_id,
-        rendered_content: data.rendered_content,
-        variables_snapshot: data.variables_snapshot,
-      };
-      deliveries.push(d);
-      return d;
-    });
-    (prisma.messageDelivery.createMany as jest.Mock).mockImplementation(async ({ data }) => {
-      const list = Array.isArray(data) ? data : [data];
-      for (const x of list) if (findDeliveryRow(x.attendance_id, x.automation_step_id)) throw p2002();
-      for (const x of list) {
-        deliveries.push({
-          id: ++deliverySeq,
-          attendance_id: x.attendance_id,
-          automation_step_id: x.automation_step_id,
-          rendered_content: x.rendered_content,
-          variables_snapshot: x.variables_snapshot,
-        });
-      }
-      return { count: list.length };
-    });
-    (prisma.messageDelivery.update as jest.Mock).mockResolvedValue({});
-    (enqueueDelivery as jest.Mock).mockImplementation(async () => `automation:delivery:${++deliverySeq}`);
-  });
-
-  it('S2a CONFLICT recompute: C drops out, D recomputes down from 5 to 4 on its own next event; already-created deliveries are never re-created or undone', async () => {
-    rows = [
-      rowFixture(801, new Date('2026-10-15T00:00:00Z'), new Date('2026-10-15T01:00:00Z')),
-      rowFixture(802, new Date('2026-10-16T00:00:00Z'), new Date('2026-10-16T01:00:00Z')),
-      rowFixture(803, DAY1, new Date('2026-10-17T01:00:00Z')),
-      rowFixture(901, DAY2, C_CREATED), // C — same-day, strictly before D
-      rowFixture(902, DAY2, D_CREATED), // D
-    ];
-    const step4 = stepFixture(4, 41);
-    const step5 = stepFixture(5, 42);
-    (prisma.automationStep.findMany as jest.Mock).mockImplementation(async ({ where }) => {
-      const out: any[] = [];
-      if (where.session_number === 4) out.push(step4);
-      if (where.session_number === 5) out.push(step5);
-      return out;
-    });
-
-    // Both FINAL, in order: C=4 fires step4 (C,41); D=5 fires step5 (D,42).
-    (prisma.attendance.findUnique as jest.Mock).mockResolvedValue(
-      attendanceFixture({ id: 901, sessionDate: DAY2, createdAt: C_CREATED }),
-    );
-    const resC = await handleAttendanceEvent(901);
-    expect(lastQuerySessionNumber()).toBe(4);
-    expect(resC.deliveriesCreated).toBe(1);
-    (prisma.attendance.findUnique as jest.Mock).mockResolvedValue(
-      attendanceFixture({ id: 902, sessionDate: DAY2, createdAt: D_CREATED }),
-    );
-    const resD = await handleAttendanceEvent(902);
-    expect(lastQuerySessionNumber()).toBe(5);
-    expect(resD.deliveriesCreated).toBe(1);
-    expect(deliveries.map((d) => [d.attendance_id, d.automation_step_id])).toEqual([
-      [901, 41],
-      [902, 42],
-    ]);
-
-    // ── Reconciliation flips C to CONFLICT (C stops qualifying).
-    rows = rows.map((r) => (r.id === 901 ? { ...r, reconciliation_state: 'CONFLICT' } : r));
-    // A NEW event on D (e.g. re-mark / updateAttendance) recomputes from live
-    // state: strictly-before = 801,802,803 (C excluded) → ordinal 4 again.
-    (prisma.attendance.findUnique as jest.Mock).mockResolvedValue(
-      attendanceFixture({ id: 902, sessionDate: DAY2, createdAt: D_CREATED }),
-    );
-    const resD2 = await handleAttendanceEvent(902);
-    expect(lastQuerySessionNumber()).toBe(4);
-    // Progress recomputes correctly: D now sits on step 4 (41)...
-    expect(prisma.automationStep.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: expect.objectContaining({ session_number: 4 }) }),
-    );
-    // ...and the (D,41) pair has no delivery yet, so the code creates one —
-    // pinned actual behavior. The already-created (901,41) and (902,42)
-    // deliveries are NOT touched (no cancel, no duplicate, no undo).
-    expect(resD2.deliveriesCreated).toBe(1);
-    expect(deliveries.map((d) => [d.attendance_id, d.automation_step_id])).toEqual([
-      [901, 41],
-      [902, 42],
-      [902, 41],
-    ]);
-  });
-
-  it('S2b re-finalization of the SAME (attendance, step) after CONFLICT→MATCHED is deduped: SKIPPED_DUPLICATE, zero new deliveries', async () => {
-    rows = [
-      rowFixture(801, new Date('2026-10-15T00:00:00Z'), new Date('2026-10-15T01:00:00Z')),
-      rowFixture(802, new Date('2026-10-16T00:00:00Z'), new Date('2026-10-16T01:00:00Z')),
-      rowFixture(803, DAY1, new Date('2026-10-17T01:00:00Z')),
-      rowFixture(901, DAY2, C_CREATED),
-    ];
-    const step4 = stepFixture(4, 41);
-    (prisma.automationStep.findMany as jest.Mock).mockImplementation(async ({ where }) =>
-      where.session_number === 4 ? [step4] : [],
-    );
-
-    // C FINAL: ordinal 4 → delivery (901, 41).
-    (prisma.attendance.findUnique as jest.Mock).mockResolvedValue(
-      attendanceFixture({ id: 901, sessionDate: DAY2, createdAt: C_CREATED }),
-    );
-    const res1 = await handleAttendanceEvent(901);
-    expect(res1.deliveriesCreated).toBe(1);
-    expect(deliveries.length).toBe(1);
-
-    // C → CONFLICT: events on C now short-circuit before step matching
-    // (automation-trigger.service.ts:91) — NO delivery created, NO cancel
-    // (pinned: the pipeline only ever ADDs; undoing pending deliveries needs a
-    // separate cancelPendingDeliveries call, which handleAttendanceEvent does
-    // not make). Assert via DELTAS: the first FINAL event already queried
-    // steps and created one delivery, so call counts must not increase.
-    const stepQueriesAfterRes1 = (prisma.automationStep.findMany as jest.Mock).mock.calls.length;
-    const createsAfterRes1 = (prisma.messageDelivery.create as jest.Mock).mock.calls.length;
-    rows = rows.map((r) => (r.id === 901 ? { ...r, reconciliation_state: 'CONFLICT' } : r));
-    (prisma.attendance.findUnique as jest.Mock).mockResolvedValue(
-      attendanceFixture({
-        id: 901,
-        sessionDate: DAY2,
-        createdAt: C_CREATED,
-        reconciliationState: 'CONFLICT',
-      }),
-    );
-    const res2 = await handleAttendanceEvent(901);
-    expect(res2.deliveriesCreated).toBe(0);
-    expect(res2.deliveriesSkipped).toBe(0);
-    expect(res2.details).toEqual([]);
-    expect((prisma.automationStep.findMany as jest.Mock).mock.calls.length).toBe(stepQueriesAfterRes1);
-    expect((prisma.messageDelivery.create as jest.Mock).mock.calls.length).toBe(createsAfterRes1);
-    expect(deliveries.length).toBe(1);
-
-    // C → RESOLVED (FINAL again) + re-finalization event: recomputed ordinal is
-    // 4 again → same (attendance, step) → SKIPPED_DUPLICATE via the unique.
-    rows = rows.map((r) => (r.id === 901 ? { ...r, reconciliation_state: 'RESOLVED' } : r));
-    (prisma.attendance.findUnique as jest.Mock).mockResolvedValue(
-      attendanceFixture({
-        id: 901,
-        sessionDate: DAY2,
-        createdAt: C_CREATED,
-        reconciliationState: 'RESOLVED',
-      }),
-    );
-    const res3 = await handleAttendanceEvent(901);
-    expect(res3.deliveriesCreated).toBe(0);
-    expect(res3.deliveriesSkipped).toBe(1);
-    expect(res3.details[0]).toEqual(
-      expect.objectContaining({ stepId: 41, status: 'SKIPPED_DUPLICATE' }),
-    );
-    expect(deliveries.length).toBe(1);
-    expect(prisma.messageDelivery.create).toHaveBeenCalledTimes(1);
-    expect(enqueueDelivery).toHaveBeenCalledTimes(1);
-  });
-
-  it('S2c FINDING (pinned): after a CONFLICT shift, a DIFFERENT row that now occupies the milestone number is not re-evaluated by the event that caused the shift — milestone stays unfired until an unrelated later event lands it', async () => {
+  it('acceptance (c): basis attendance of a milestone is replaced by another attendance — dedup by (enrollment, step) holds; unsent occurrence updates basis, SENT occurrence is untouched', async () => {
     rows = [
       rowFixture(801, new Date('2026-10-15T00:00:00Z'), new Date('2026-10-15T01:00:00Z')),
       rowFixture(802, new Date('2026-10-16T00:00:00Z'), new Date('2026-10-16T01:00:00Z')),
       rowFixture(803, DAY1, new Date('2026-10-17T01:00:00Z')),
     ];
-    const step4 = stepFixture(4, 41);
-    (prisma.automationStep.findMany as jest.Mock).mockImplementation(async ({ where }) =>
-      where.session_number === 4 ? [step4] : [],
-    );
+    installStepMock([stepFixture(4, 41)]);
 
-    // E (905, @01:00) FINAL first: ordinal 4 → milestone fires on E.
-    rows.push(rowFixture(905, DAY2, C_CREATED));
+    // X finalizes at ordinal 4 → unsent SCHEDULED occurrence.
+    rows.push(rowFixture(950, DAY2, A_CREATED));
     (prisma.attendance.findUnique as jest.Mock).mockResolvedValue(
-      attendanceFixture({ id: 905, sessionDate: DAY2, createdAt: C_CREATED }),
+      attendanceFixture({ id: 950, sessionDate: DAY2, createdAt: A_CREATED }),
     );
-    const resE = await handleAttendanceEvent(905);
-    expect(lastQuerySessionNumber()).toBe(4);
-    expect(resE.deliveriesCreated).toBe(1);
-    expect(deliveries.map((d) => [d.attendance_id, d.automation_step_id])).toEqual([[905, 41]]);
+    await handleAttendanceEvent(950);
+    expect(occurrences(41)).toHaveLength(1);
+    expect(occurrences(41)[0].attendance_id).toBe(950);
 
-    // G (906, @09:00) FINAL: ordinal 5 → step 4 does not match (no step at 5
-    // configured) → nothing fires. Correct at this point.
-    rows.push(rowFixture(906, DAY2, D_CREATED));
+    // A LATER-created row Y finalizes; then a NEW earlier row Z (00:30)
+    // finalizes and becomes the ordinal-4 basis → occurrence rebinds to Z.
+    rows.push(rowFixture(951, DAY2, B_CREATED));
+    rows.push(rowFixture(949, DAY2, new Date('2026-10-18T00:30:00Z')));
     (prisma.attendance.findUnique as jest.Mock).mockResolvedValue(
-      attendanceFixture({ id: 906, sessionDate: DAY2, createdAt: D_CREATED }),
+      attendanceFixture({ id: 949, sessionDate: DAY2, createdAt: new Date('2026-10-18T00:30:00Z') }),
     );
-    const resG = await handleAttendanceEvent(906);
-    expect(lastQuerySessionNumber()).toBe(5);
-    expect(resG.deliveriesCreated).toBe(0);
+    const resZ = await handleAttendanceEvent(949);
+    expect(resZ.deliveriesCreated).toBe(0);
+    expect(occurrences(41)).toHaveLength(1); // one row, same identity
+    expect(occurrences(41)[0].id).toBeDefined();
+    const rowId = occurrences(41)[0].id;
+    expect(occurrences(41)[0].attendance_id).toBe(949); // basis updated in place
+    // No second create attempt for step 41.
+    const step41Creates = (prisma.messageDelivery.create as jest.Mock).mock.calls.filter(
+      (c: any) => c[0].data.automation_step_id === 41,
+    );
+    expect(step41Creates).toHaveLength(1);
+    void rowId;
 
-    // E drops to CONFLICT. No re-event happens → the milestone-4 slot is now
-    // occupied by G (G's stable ordinal drops to 4), but NOTHING fires:
-    // the CONFLICT transition itself emits no handleAttendanceEvent for E or
-    // G, and handleAttendanceEvent only ever evaluates the row it is called
-    // with (it never re-evaluates shifted neighbours).
-    rows = rows.map((r) => (r.id === 905 ? { ...r, reconciliation_state: 'CONFLICT' } : r));
-    expect(deliveries.length).toBe(1); // no delivery for G yet — pinned gap
-    expect(prisma.messageDelivery.create).toHaveBeenCalledTimes(1);
-
-    // The milestone only lands when an UNRELATED later event hits G (e.g.
-    // re-mark/updateAttendance): the recompute happens inside that event and
-    // fires step 4 exactly once for (906, 41).
+    // SENT occurrence: basis replacement NEVER mutates or re-sends it.
+    occurrences(41)[0].status = 'SENT';
+    rows.push(rowFixture(948, new Date('2026-10-17T23:00:00Z'), new Date('2026-10-18T00:00:00Z')));
     (prisma.attendance.findUnique as jest.Mock).mockResolvedValue(
-      attendanceFixture({ id: 906, sessionDate: DAY2, createdAt: D_CREATED }),
+      attendanceFixture({ id: 948, sessionDate: DAY2, createdAt: new Date('2026-10-18T00:00:00Z') }),
     );
-    const resG2 = await handleAttendanceEvent(906);
-    expect(lastQuerySessionNumber()).toBe(4);
-    expect(resG2.deliveriesCreated).toBe(1);
-    expect(deliveries.map((d) => [d.attendance_id, d.automation_step_id])).toEqual([
-      [905, 41],
-      [906, 41],
-    ]);
-    // The already-delivered milestone on the now-CONFLICT row E is never
-    // undone by these transitions (add-only semantics).
-  });
-});
-
-describe('Care-milestone ordinal stability (item #4) — idempotency race', () => {
-  beforeEach(() => {
-    jest.clearAllMocks();
-    rows = [];
-    deliveries = [];
-    deliverySeq = 9000;
-    (prisma.attendance.count as jest.Mock).mockImplementation(async ({ where }) => fakeCount(where));
-    (prisma.enrollment.findUnique as jest.Mock).mockResolvedValue({
-      student_id: 400,
-      student: { id: 400, line_uid: null },
-    });
-    (prisma.zaloContactRelation.findFirst as jest.Mock).mockResolvedValue({
-      id: 10,
-      student_id: 400,
-      zalo_account_id: 12,
-      relation_status: 'FRIEND',
-    });
-    (prisma.messageDelivery.findUnique as jest.Mock).mockResolvedValue(null);
-    (prisma.messageDelivery.create as jest.Mock).mockImplementation(async ({ data }) => {
-      if (findDeliveryRow(data.attendance_id, data.automation_step_id)) throw p2002();
-      const d = {
-        id: ++deliverySeq,
-        attendance_id: data.attendance_id,
-        automation_step_id: data.automation_step_id,
-        rendered_content: data.rendered_content,
-        variables_snapshot: data.variables_snapshot,
-      };
-      deliveries.push(d);
-      return d;
-    });
-    (prisma.messageDelivery.createMany as jest.Mock).mockImplementation(async ({ data }) => {
-      const list = Array.isArray(data) ? data : [data];
-      for (const x of list) if (findDeliveryRow(x.attendance_id, x.automation_step_id)) throw p2002();
-      for (const x of list) {
-        deliveries.push({
-          id: ++deliverySeq,
-          attendance_id: x.attendance_id,
-          automation_step_id: x.automation_step_id,
-          rendered_content: x.rendered_content,
-          variables_snapshot: x.variables_snapshot,
-        });
-      }
-      return { count: list.length };
-    });
-    (prisma.messageDelivery.update as jest.Mock).mockResolvedValue({});
-    (enqueueDelivery as jest.Mock).mockResolvedValue('automation:delivery:9000');
+    const resLate = await handleAttendanceEvent(948);
+    expect(occurrences(41)).toHaveLength(1);
+    expect(occurrences(41)[0].status).toBe('SENT');
+    expect(occurrences(41)[0].attendance_id).toBe(949); // historical trigger kept
+    expect(resLate.details.some((d) => d.stepId === 41 && d.status === 'SKIPPED_DUPLICATE')).toBe(true);
   });
 
-  it('S3 concurrent double event on the same (attendance, step): the read-check loses the race but the DB unique index rejects the duplicate — no second delivery persists, no enqueue (and handleAttendanceEvent survives the error)', async () => {
-    // Both parallel invocations read findUnique → null (check-then-create TOCT
-    // window), then both attempt create; the store's unique emulation throws
-    // P2002 for the loser. The trigger catches it at the outer try/catch
-    // (automation-trigger.service.ts:237) and returns without incrementing
-    // deliveriesCreated.
+  it('acceptance (d): two concurrent requests reaching the same milestone create exactly ONE occurrence and ONE enqueue per step', async () => {
     rows = [
       rowFixture(801, new Date('2026-10-15T00:00:00Z'), new Date('2026-10-15T01:00:00Z')),
       rowFixture(802, new Date('2026-10-16T00:00:00Z'), new Date('2026-10-16T01:00:00Z')),
       rowFixture(803, DAY1, new Date('2026-10-17T01:00:00Z')),
       rowFixture(901, DAY2, new Date('2026-10-18T01:00:00Z')),
     ];
-    const step4 = stepFixture(4, 41);
-    (prisma.automationStep.findMany as jest.Mock).mockResolvedValue([step4]);
+    installStepMock([stepFixture(4, 41)]);
     (prisma.attendance.findUnique as jest.Mock).mockResolvedValue(
       attendanceFixture({ id: 901, sessionDate: DAY2, createdAt: new Date('2026-10-18T01:00:00Z') }),
     );
 
     const [r1, r2] = await Promise.all([handleAttendanceEvent(901), handleAttendanceEvent(901)]);
 
-    // Exactly ONE delivery row persisted for (901, 41); one call "created" it,
-    // the other failed on the unique constraint and reported zero (no throw
-    // escapes — the whole loop for the second call aborts inside the catch).
-    const forPair = deliveries.filter(
-      (d) => d.attendance_id === 901 && d.automation_step_id === 41,
-    );
-    expect(forPair.length).toBe(1);
+    expect(occurrences(41)).toHaveLength(1);
     expect([r1.deliveriesCreated, r2.deliveriesCreated].sort()).toEqual([0, 1]);
-    // Only the winning delivery is enqueued — the loser never reaches
-    // enqueueDelivery for this step.
     expect(enqueueDelivery).toHaveBeenCalledTimes(1);
-    // A sequential retry of the losing event now sees the persisted delivery →
-    // clean SKIPPED_DUPLICATE (dedupe converges).
-    (prisma.messageDelivery.findUnique as jest.Mock).mockImplementation(async ({ where }) => {
-      const comp = where?.attendance_id_automation_step_id;
-      return comp ? findDeliveryRow(comp.attendance_id, comp.automation_step_id) : null;
-    });
-    const r3 = await handleAttendanceEvent(901);
-    expect(r3.deliveriesCreated).toBe(0);
-    expect(r3.deliveriesSkipped).toBe(1);
+    const loser = r1.deliveriesCreated === 0 ? r1 : r2;
+    expect(loser.details.some((d) => d.status === 'SKIPPED_DUPLICATE')).toBe(true);
     expect(deliveries.length).toBe(1);
+  });
+});
+
+describe('Care-milestone occurrence contract — FINAL → CONFLICT → FINAL', () => {
+  const C_CREATED = new Date('2026-10-18T01:00:00Z');
+  const D_CREATED = new Date('2026-10-18T09:00:00Z');
+
+  beforeEach(resetHarness);
+
+  it('S2a CONFLICT drop: pending occurrence on the shifting milestone rebinds (no new row) and the milestone above the new count cancels — acceptance (b) half 1', async () => {
+    rows = [
+      rowFixture(801, new Date('2026-10-15T00:00:00Z'), new Date('2026-10-15T01:00:00Z')),
+      rowFixture(802, new Date('2026-10-16T00:00:00Z'), new Date('2026-10-16T01:00:00Z')),
+      rowFixture(803, DAY1, new Date('2026-10-17T01:00:00Z')),
+      rowFixture(901, DAY2, C_CREATED), // C — same-day, strictly before D
+    ];
+    installStepMock([stepFixture(4, 41), stepFixture(5, 42)]);
+
+    (prisma.attendance.findUnique as jest.Mock).mockResolvedValue(
+      attendanceFixture({ id: 901, sessionDate: DAY2, createdAt: C_CREATED }),
+    );
+    const resC = await handleAttendanceEvent(901);
+    expect(lastQuerySessionNumber()).toBe(4);
+    expect(resC.deliveriesCreated).toBe(1);
+
+    rows.push(rowFixture(902, DAY2, D_CREATED)); // D finalizes second
+    (prisma.attendance.findUnique as jest.Mock).mockResolvedValue(
+      attendanceFixture({ id: 902, sessionDate: DAY2, createdAt: D_CREATED }),
+    );
+    const resD = await handleAttendanceEvent(902);
+    expect(lastQuerySessionNumber()).toBe(5);
+    expect(resD.deliveriesCreated).toBe(1);
+    snapshot([[901, 41, 'QUEUED'], [902, 42, 'QUEUED']]);
+
+    // ── Reconciliation flips C to CONFLICT (C stops qualifying). The CONFLICT
+    // writer calls cancelPendingDeliveries — now enrollment-wide:
+    rows = rows.map((r) => (r.id === 901 ? { ...r, reconciliation_state: 'CONFLICT' } : r));
+    (prisma.attendance.findUnique as jest.Mock).mockResolvedValue(
+      attendanceFixture({ id: 901, sessionDate: DAY2, createdAt: C_CREATED, reconciliationState: 'CONFLICT' }),
+    );
+    const cancelledCount = await cancelPendingDeliveries(901);
+    // Count now 4: D is the ordinal-4 basis (REBIND, one row) and the ordinal-5
+    // milestone fell below its step → its unsent occurrence CANCELS.
+    const occ41 = occurrences(41);
+    expect(occ41).toHaveLength(1);
+    expect(occ41[0].attendance_id).toBe(902);
+    expect(occ41[0].status).toBe('QUEUED');
+    const occ42 = occurrences(42);
+    expect(occ42).toHaveLength(1);
+    expect(occ42[0].status).toBe('CANCELLED');
+    expect(cancelledCount).toBeGreaterThanOrEqual(1);
+    expect(cancelDelivery).toHaveBeenCalledWith(occ42[0].id);
+  });
+
+  it('S2b re-finalization of the SAME (attendance, step) after CONFLICT→FINAL is deduped: SKIPPED_DUPLICATE, zero new deliveries', async () => {
+    rows = [
+      rowFixture(801, new Date('2026-10-15T00:00:00Z'), new Date('2026-10-15T01:00:00Z')),
+      rowFixture(802, new Date('2026-10-16T00:00:00Z'), new Date('2026-10-16T01:00:00Z')),
+      rowFixture(803, DAY1, new Date('2026-10-17T01:00:00Z')),
+      rowFixture(901, DAY2, C_CREATED),
+    ];
+    installStepMock([stepFixture(4, 41)]);
+
+    (prisma.attendance.findUnique as jest.Mock).mockResolvedValue(
+      attendanceFixture({ id: 901, sessionDate: DAY2, createdAt: C_CREATED }),
+    );
+    const res1 = await handleAttendanceEvent(901);
+    expect(res1.deliveriesCreated).toBe(1);
+    expect(deliveries.length).toBe(1);
+
+    // C → CONFLICT: events on C short-circuit before step matching (FINAL gate).
+    rows = rows.map((r) => (r.id === 901 ? { ...r, reconciliation_state: 'CONFLICT' } : r));
+    (prisma.attendance.findUnique as jest.Mock).mockResolvedValue(
+      attendanceFixture({ id: 901, sessionDate: DAY2, createdAt: C_CREATED, reconciliationState: 'CONFLICT' }),
+    );
+    const createsBefore = (prisma.messageDelivery.create as jest.Mock).mock.calls.length;
+    const res2 = await handleAttendanceEvent(901);
+    expect(res2.deliveriesCreated).toBe(0);
+    expect((prisma.messageDelivery.create as jest.Mock).mock.calls.length).toBe(createsBefore);
+
+    // C → RESOLVED + re-finalization event: ordinal 4 again → same occurrence.
+    rows = rows.map((r) => (r.id === 901 ? { ...r, reconciliation_state: 'RESOLVED' } : r));
+    (prisma.attendance.findUnique as jest.Mock).mockResolvedValue(
+      attendanceFixture({ id: 901, sessionDate: DAY2, createdAt: C_CREATED, reconciliationState: 'RESOLVED' }),
+    );
+    const res3 = await handleAttendanceEvent(901);
+    expect(res3.deliveriesCreated).toBe(0);
+    expect(res3.details.some((d) => d.stepId === 41 && d.status === 'SKIPPED_DUPLICATE')).toBe(true);
+    expect(deliveries.length).toBe(1);
+    expect(prisma.messageDelivery.create).toHaveBeenCalledTimes(1);
+    expect(enqueueDelivery).toHaveBeenCalledTimes(1);
+  });
+
+  it('acceptance (b) half 2: FINAL→CONFLICT→FINAL cancels the unsent occurrence once and REACTIVATES the SAME row once (never a second row; SENT steps never re-sent)', async () => {
+    rows = [
+      rowFixture(801, new Date('2026-10-15T00:00:00Z'), new Date('2026-10-15T01:00:00Z')),
+      rowFixture(802, new Date('2026-10-16T00:00:00Z'), new Date('2026-10-16T01:00:00Z')),
+      rowFixture(803, DAY1, new Date('2026-10-17T01:00:00Z')),
+    ];
+    installStepMock([stepFixture(4, 41)]);
+
+    // E (905, @01:00) FINAL: ordinal 4 → milestone fires on E.
+    rows.push(rowFixture(905, DAY2, C_CREATED));
+    (prisma.attendance.findUnique as jest.Mock).mockResolvedValue(
+      attendanceFixture({ id: 905, sessionDate: DAY2, createdAt: C_CREATED }),
+    );
+    const resE = await handleAttendanceEvent(905);
+    expect(resE.deliveriesCreated).toBe(1);
+    const occId = occurrences(41)[0].id;
+
+    // E drops to CONFLICT → wide cancel pass cancels the UNSENT occurrence.
+    rows = rows.map((r) => (r.id === 905 ? { ...r, reconciliation_state: 'CONFLICT' } : r));
+    (prisma.attendance.findUnique as jest.Mock).mockResolvedValue(
+      attendanceFixture({ id: 905, sessionDate: DAY2, createdAt: C_CREATED, reconciliationState: 'CONFLICT' }),
+    );
+    await cancelPendingDeliveries(905);
+    expect(occurrences(41)).toHaveLength(1);
+    expect(occurrences(41)[0].status).toBe('CANCELLED');
+
+    // G (906, @09:00) finalizes while E is CONFLICT: G is the ordinal-4 basis.
+    rows.push(rowFixture(906, DAY2, D_CREATED));
+    (prisma.attendance.findUnique as jest.Mock).mockResolvedValue(
+      attendanceFixture({ id: 906, sessionDate: DAY2, createdAt: D_CREATED }),
+    );
+    const resG = await handleAttendanceEvent(906);
+    // Row 5 "drops below milestone then rises back": the CANCELLED occurrence
+    // REACTIVATES in place (same row id) — never a second row.
+    expect(occurrences(41)).toHaveLength(1);
+    expect(occurrences(41)[0].id).toBe(occId);
+    expect(occurrences(41)[0].status).toBe('QUEUED');
+    expect(occurrences(41)[0].attendance_id).toBe(906);
+    expect(resG.deliveriesCreated).toBe(1); // reactivation counts as (re-)creation of the send
+    expect(deliveries.length).toBe(1);
+
+    // E returns to FINAL before G in the total order → basis shifts back to E.
+    rows = rows.map((r) => (r.id === 905 ? { ...r, reconciliation_state: 'RESOLVED' } : r));
+    (prisma.attendance.findUnique as jest.Mock).mockResolvedValue(
+      attendanceFixture({ id: 905, sessionDate: DAY2, createdAt: C_CREATED, reconciliationState: 'RESOLVED' }),
+    );
+    await handleAttendanceEvent(905);
+    expect(occurrences(41)).toHaveLength(1);
+    expect(occurrences(41)[0].id).toBe(occId);
+    expect(occurrences(41)[0].attendance_id).toBe(905);
+
+    // Mark the occurrence SENT, then drop E again — history never mutates,
+    // nothing re-sends, nothing cancels.
+    occurrences(41)[0].status = 'SENT';
+    rows = rows.map((r) => (r.id === 905 ? { ...r, reconciliation_state: 'CONFLICT' } : r));
+    await cancelPendingDeliveries(905);
+    expect(occurrences(41)[0].status).toBe('SENT');
+    expect(occurrences(41)[0].attendance_id).toBe(905);
+    // And a later FINAL event cannot re-send it:
+    rows = rows.map((r) => (r.id === 905 ? { ...r, reconciliation_state: 'MATCHED' } : r));
+    (prisma.attendance.findUnique as jest.Mock).mockResolvedValue(
+      attendanceFixture({ id: 905, sessionDate: DAY2, createdAt: C_CREATED }),
+    );
+    const resSent = await handleAttendanceEvent(905);
+    expect(resSent.details.some((d) => d.stepId === 41 && d.status === 'SKIPPED_DUPLICATE')).toBe(true);
+    expect(deliveries.length).toBe(1);
+  });
+
+  it('S2c neighbor shift heals WITHOUT waiting for an unrelated event: the event that changes reconciliation re-evaluates every affected milestone', async () => {
+    rows = [
+      rowFixture(801, new Date('2026-10-15T00:00:00Z'), new Date('2026-10-15T01:00:00Z')),
+      rowFixture(802, new Date('2026-10-16T00:00:00Z'), new Date('2026-10-16T01:00:00Z')),
+      rowFixture(803, DAY1, new Date('2026-10-17T01:00:00Z')),
+    ];
+    installStepMock([stepFixture(4, 41)]);
+
+    // E (905) FINAL first: milestone 4 fires on E.
+    rows.push(rowFixture(905, DAY2, C_CREATED));
+    (prisma.attendance.findUnique as jest.Mock).mockResolvedValue(
+      attendanceFixture({ id: 905, sessionDate: DAY2, createdAt: C_CREATED }),
+    );
+    await handleAttendanceEvent(905);
+    expect(occurrences(41)).toHaveLength(1);
+    expect(occurrences(41)[0].attendance_id).toBe(905);
+
+    // G (906) finalizes LATER (E still FINAL): G takes ordinal 5, milestone 4
+    // keeps E as basis — no change.
+    rows.push(rowFixture(906, DAY2, D_CREATED));
+    (prisma.attendance.findUnique as jest.Mock).mockResolvedValue(
+      attendanceFixture({ id: 906, sessionDate: DAY2, createdAt: D_CREATED }),
+    );
+    await handleAttendanceEvent(906);
+    expect(occurrences(41)).toHaveLength(1);
+    expect(occurrences(41)[0].attendance_id).toBe(905);
+    expect(deliveries.length).toBe(1);
+  });
+
+  it('legacy duplicate convergence: two pre-existing rows for one (enrollment, step) heal to ONE canonical occurrence without inserts', async () => {
+    // Simulate history written by the OLD per-row design: milestone 5 has a
+    // row keyed to 902 while the stable basis (count=5) is 901.
+    rows = [
+      rowFixture(801, new Date('2026-10-14T00:00:00Z'), new Date('2026-10-14T01:00:00Z')),
+      rowFixture(802, new Date('2026-10-15T00:00:00Z'), new Date('2026-10-15T01:00:00Z')),
+      rowFixture(803, new Date('2026-10-16T00:00:00Z'), new Date('2026-10-16T01:00:00Z')),
+      rowFixture(804, DAY1, new Date('2026-10-17T01:00:00Z')),
+      rowFixture(901, DAY2, C_CREATED),
+      rowFixture(902, DAY2, D_CREATED),
+    ];
+    installStepMock([stepFixture(5, 41)]);
+    deliveries.push(
+      { id: 9100, enrollment_id: 300, attendance_id: 901, automation_step_id: 41, status: 'CANCELLED', queue_job_id: null, error_message: 'legacy', rendered_content: 'x', variables_snapshot: {} },
+      { id: 9101, enrollment_id: 300, attendance_id: 902, automation_step_id: 41, status: 'SCHEDULED', queue_job_id: null, error_message: null, rendered_content: 'y', variables_snapshot: {} },
+    );
+
+    const out = await reconcileEnrollmentMilestones(300, { deliveryPolicy: 'SEND' });
+
+    // One canonical row survives as the occurrence for ordinal 5 (basis 901):
+    // the legacy rows converge — the SCHEDULED row on 902 is the most-advanced
+    // and gets REBOUND to 901; the CANCELLED extra on 901 is not eligible for
+    // reactivation while an unsent sibling exists (superseded / protected
+    // history). Either way: NO new row, no second SENT path.
+    const for41 = occurrences(41);
+    expect(for41.length).toBe(2); // history rows preserved (no destructive deletes)
+    const active = for41.filter((d) => ['SCHEDULED', 'QUEUED'].includes(d.status));
+    expect(active).toHaveLength(1); // exactly one live occurrence
+    expect(active[0].attendance_id).toBe(901);
+    expect(out.details.length).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe('Care-milestone occurrence contract — policy & enrollment isolation', () => {
+  beforeEach(resetHarness);
+
+  it('acceptance (e): NO_SEND advances the (read-only) progress basis and cancels invalidated pendings, but creates ZERO deliveries', async () => {
+    rows = [
+      rowFixture(801, new Date('2026-10-15T00:00:00Z'), new Date('2026-10-15T01:00:00Z')),
+      rowFixture(802, new Date('2026-10-16T00:00:00Z'), new Date('2026-10-16T01:00:00Z')),
+      rowFixture(803, DAY1, new Date('2026-10-17T01:00:00Z')),
+      rowFixture(901, DAY2, new Date('2026-10-18T01:00:00Z')),
+    ];
+    installStepMock([stepFixture(4, 41), stepFixture(5, 42)]);
+    (prisma.attendance.findUnique as jest.Mock).mockResolvedValue(
+      attendanceFixture({ id: 901, sessionDate: DAY2, createdAt: new Date('2026-10-18T01:00:00Z') }),
+    );
+
+    const res = await handleAttendanceEvent(901, { deliveryPolicy: 'NO_SEND' });
+    expect(res.deliveriesCreated).toBe(0);
+    expect(deliveries).toHaveLength(0);
+    expect(enqueueDelivery).not.toHaveBeenCalled();
+    // Progress is derived from the K7 query itself — count is already 4:
+    const qualifying = await prisma.attendance.findMany({
+      where: {
+        enrollment_class: { enrollment_id: 300 },
+        status: 'ATTENDED',
+        reconciliation_state: { in: ['MATCHED', 'RESOLVED'] },
+        deleted_at: null,
+      },
+    });
+    expect(qualifying).toHaveLength(4);
+
+    // A pending created under a prior SEND pass still cancels under NO_SEND.
+    await handleAttendanceEvent(901); // SEND default → creates occurrence
+    expect(deliveries).toHaveLength(1);
+    rows = rows.map((r) => (r.id === 801 ? { ...r, reconciliation_state: 'CONFLICT' } : r));
+    (prisma.attendance.findUnique as jest.Mock).mockResolvedValue(
+      attendanceFixture({ id: 801, sessionDate: new Date('2026-10-15T00:00:00Z'), createdAt: new Date('2026-10-15T01:00:00Z'), reconciliationState: 'CONFLICT' }),
+    );
+    const createdBefore = (prisma.messageDelivery.create as jest.Mock).mock.calls.length;
+    await cancelPendingDeliveries(801); // NO_SEND-wide
+    expect(deliveries.filter((d) => d.status === 'CANCELLED')).toHaveLength(1);
+    expect((prisma.messageDelivery.create as jest.Mock).mock.calls.length).toBe(createdBefore);
+  });
+
+  it('acceptance (f): two enrollments of the SAME student keep fully independent milestones — reaching step 5 on enrollment 1 does not suppress enrollment 2', async () => {
+    const A_CREATED = new Date('2026-10-18T01:00:00Z');
+    const fourEarlier = (enr: number) => [
+      rowFixture(enr * 1000 + 1, new Date('2026-10-14T00:00:00Z'), new Date('2026-10-14T01:00:00Z'), { enrollment_id: enr }),
+      rowFixture(enr * 1000 + 2, new Date('2026-10-15T00:00:00Z'), new Date('2026-10-15T01:00:00Z'), { enrollment_id: enr }),
+      rowFixture(enr * 1000 + 3, new Date('2026-10-16T00:00:00Z'), new Date('2026-10-16T01:00:00Z'), { enrollment_id: enr }),
+      rowFixture(enr * 1000 + 4, DAY1, new Date('2026-10-17T01:00:00Z'), { enrollment_id: enr }),
+    ];
+    rows = [...fourEarlier(300), ...fourEarlier(301), rowFixture(901, DAY2, A_CREATED, { enrollment_id: 300 })];
+    installStepMock([stepFixture(5, 41)]);
+
+    (prisma.attendance.findUnique as jest.Mock).mockResolvedValue(
+      attendanceFixture({ id: 901, enrollmentId: 300, sessionDate: DAY2, createdAt: A_CREATED }),
+    );
+    const res1 = await handleAttendanceEvent(901);
+    expect(res1.deliveriesCreated).toBe(1);
+    expect(occurrences(41, 300)).toHaveLength(1);
+
+    rows.push(rowFixture(911, DAY2, A_CREATED, { enrollment_id: 301 }));
+    (prisma.attendance.findUnique as jest.Mock).mockResolvedValue(
+      attendanceFixture({ id: 911, enrollmentId: 301, sessionDate: DAY2, createdAt: A_CREATED }),
+    );
+    const res2 = await handleAttendanceEvent(911);
+    expect(res2.deliveriesCreated).toBe(1);
+    expect(occurrences(41, 301)).toHaveLength(1);
+
+    // Independent identities AND independent bases: enrol1 basis 901,
+    // enrol2 basis 911 — nothing suppressed across enrollments.
+    expect(occurrences(41, 300)[0].attendance_id).toBe(901);
+    expect(occurrences(41, 301)[0].attendance_id).toBe(911);
+    expect(enqueueDelivery).toHaveBeenCalledTimes(2);
   });
 });

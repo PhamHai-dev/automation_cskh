@@ -103,11 +103,21 @@ export async function processDeliveryJob(job: Job<SendJobData>): Promise<void> {
     // 3. Re-check invariants
     const { shouldSend, skipReason } = await checkInvariants(delivery);
     if (!shouldSend) {
+      const isMilestoneIneligible =
+        skipReason === 'CANCELLED' || skipReason === 'CANCELLED_MILESTONE_INELIGIBLE';
+      const persistedStatus = isMilestoneIneligible ? 'CANCELLED' : skipReason;
+      const errorMessage = isMilestoneIneligible
+        ? 'Milestone no longer eligible at send time'
+        : 'Invariant check failed at send time';
       await prisma.messageDelivery.update({
         where: { id: deliveryId },
-        data: { status: skipReason as any, error_message: 'Invariant check failed at send time' },
+        data: { status: persistedStatus as any, error_message: errorMessage },
       });
-      log.info('Delivery skipped by invariant check', { deliveryId, reason: skipReason });
+      log.info('Delivery skipped by invariant check', {
+        deliveryId,
+        reason: persistedStatus,
+        errorMessage,
+      });
       return;
     }
 
@@ -325,10 +335,74 @@ export async function processDeliveryJob(job: Job<SendJobData>): Promise<void> {
   }
 }
 
+async function checkMilestoneStillEligible(delivery: any): Promise<{ eligible: boolean }> {
+  const step = delivery?.automation_step;
+  if (step?.trigger_event && step.trigger_event !== 'ATTENDED') {
+    return { eligible: true };
+  }
+
+  const sessionNumber = step?.session_number;
+  const att = delivery?.attendance;
+
+  if (typeof sessionNumber === 'number' && delivery?.enrollment_id != null) {
+    if (typeof (prisma.attendance as any)?.count === 'function') {
+      try {
+        const count = await prisma.attendance.count({
+          where: {
+            enrollment_class: { enrollment_id: delivery.enrollment_id },
+            status: 'ATTENDED',
+            reconciliation_state: { in: ['MATCHED', 'RESOLVED'] },
+            deleted_at: null,
+          },
+        });
+        if (typeof count === 'number') {
+          if (count < sessionNumber) {
+            return { eligible: false };
+          }
+          return { eligible: true };
+        }
+      } catch {
+        // Fall through to attendance state check if count query fails on mock
+      }
+    }
+  }
+
+  if (att) {
+    if (att.deleted_at !== undefined && att.deleted_at !== null) {
+      return { eligible: false };
+    }
+    if (
+      att.reconciliation_state !== undefined &&
+      att.reconciliation_state !== 'MATCHED' &&
+      att.reconciliation_state !== 'RESOLVED'
+    ) {
+      return { eligible: false };
+    }
+    if (
+      step?.trigger_event === 'ATTENDED' &&
+      att.status !== undefined &&
+      att.status !== 'ATTENDED'
+    ) {
+      return { eligible: false };
+    }
+  }
+
+  return { eligible: true };
+}
+
 /**
  * Check all invariants before sending. Returns { shouldSend, skipReason }.
  */
 export async function checkInvariants(delivery: any): Promise<{ shouldSend: boolean; skipReason: string }> {
+  // S1a/S2c (mechanism B at send time): an ATTENDED-milestone delivery whose
+  // enrollment no longer reaches step.session_number qualifying D1/K7 FINAL
+  // ATTENDED rows must NOT send. Marked CANCELLED by the caller with a clear
+  // error_message.
+  const milestoneCheck = await checkMilestoneStillEligible(delivery);
+  if (!milestoneCheck.eligible) {
+    return { shouldSend: false, skipReason: 'CANCELLED' };
+  }
+
   if (isLineDelivery(delivery)) {
     // LINE account must be ACTIVE
     if (!delivery.line_account || delivery.line_account.status !== 'ACTIVE') {

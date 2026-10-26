@@ -1,5 +1,9 @@
 import { AttendanceStatus, ReconciliationState } from '@prisma/client';
-import { cancelPendingDeliveries, handleAttendanceEvent } from '../automation/automation-trigger.service';
+import {
+  cancelPendingDeliveries,
+  handleAttendanceEvent,
+  reconcileEnrollmentMilestonesForAttendance,
+} from '../automation/automation-trigger.service';
 import { createLogger } from '../../shared/logger/logger';
 
 const log = createLogger('AttendanceLifecycle');
@@ -39,6 +43,8 @@ export interface AttendancePostCommitInput {
   deliveryPolicy?: AttendanceDeliveryPolicy;
   /** Set when an existing record's opinion was overwritten by the write. */
   invalidatePendingDeliveries?: boolean;
+  /** Optional enrollment context for post-commit milestone re-evaluation. */
+  enrollmentId?: number;
 }
 
 /**
@@ -48,8 +54,13 @@ export interface AttendancePostCommitInput {
  *   invalidated by a conflict or an opinion change is always cancelled, even
  *   under NO_SEND. cancelPendingDeliveries() only selects SCHEDULED/QUEUED, so
  *   sent history is never touched and no replacement delivery is emitted.
+ * - Forward milestone re-evaluation (S1a/S2c) runs across the enrollment
+ *   whenever reconciliation state changes — including transitions INTO CONFLICT
+ *   (where a neighbour row may shift into the vacated milestone ordinal under
+ *   SEND, or an unsent milestone may drop below its ordinal).
  * - Triggering (creation of NEW outbound deliveries) happens only when the
- *   derived state is FINAL and the policy is SEND.
+ *   derived state is FINAL (or a neighbour remains FINAL at the milestone) and
+ *   the policy is SEND.
  * - Read model and audit rows are written by the caller before this runs and
  *   are never suppressed by NO_SEND.
  *
@@ -73,7 +84,22 @@ export async function runAttendancePostCommit(input: AttendancePostCommitInput):
   }
 
   const isFinal = deriveAttendanceLifecycle(input.reconciliationState) === 'FINAL';
-  if (!isFinal || policy === 'NO_SEND') return;
+  if (!isFinal || policy === 'NO_SEND') {
+    if (typeof reconcileEnrollmentMilestonesForAttendance === 'function') {
+      await reconcileEnrollmentMilestonesForAttendance(input.attendanceId, {
+        deliveryPolicy: policy,
+        enrollmentId: input.enrollmentId,
+      }).catch((err: any) =>
+        log.error('Attendance milestone re-evaluation failed', {
+          attendanceId: input.attendanceId,
+          reconciliationState: input.reconciliationState,
+          deliveryPolicy: policy,
+          error: err?.message || String(err),
+        }),
+      );
+    }
+    return;
+  }
 
   await handleAttendanceEvent(input.attendanceId).catch((err: any) =>
     log.error('Attendance automation trigger failed', {

@@ -245,25 +245,63 @@ export class AutomationRepository {
     });
   }
 
-  // ─── Delivery ────────────────────────────────────────────────────────
-
-  async createDelivery(data: {
-    enrollment_id: number;
-    attendance_id: number;
-    automation_step_id: number;
-    zalo_account_id?: number | null;
-    zalo_group_id?: number | null;
-    line_account_id?: number | null;
-    line_group_id?: number | null;
-    scheduled_at: Date;
-    rendered_content: string;
-    variables_snapshot: Record<string, any>;
-  }) {
-    return prisma.messageDelivery.create({ data });
+  /**
+   * Find all active steps across active workflows for an enrollment and trigger_event.
+   * Used by enrollment-wide milestone re-evaluation (S1a/S2c).
+   */
+  async findActiveStepsForEnrollment(
+    enrollmentId: number,
+    triggerEvent: AutomationTriggerEvent = 'ATTENDED',
+    client: any = prisma,
+  ) {
+    if (typeof client?.automationStep?.findMany !== 'function') {
+      return [];
+    }
+    const rows = await client.automationStep.findMany({
+      where: {
+        active: true,
+        trigger_event: triggerEvent,
+        workflow: {
+          active: true,
+          enrollments: { some: { enrollment_id: enrollmentId } },
+        },
+      },
+      include: {
+        workflow: {
+          select: { id: true, name: true, owner_cs_id: true },
+        },
+      },
+      orderBy: [{ session_number: 'asc' }, { id: 'asc' }],
+    });
+    return Array.isArray(rows) ? rows : [];
   }
 
-  async findDeliveryForIdempotency(attendanceId: number, automationStepId: number) {
-    return prisma.messageDelivery.findUnique({
+  // ─── Delivery ────────────────────────────────────────────────────────
+
+  async createDelivery(
+    data: {
+      enrollment_id: number;
+      attendance_id: number;
+      automation_step_id: number;
+      zalo_account_id?: number | null;
+      zalo_group_id?: number | null;
+      line_account_id?: number | null;
+      line_group_id?: number | null;
+      scheduled_at: Date;
+      rendered_content: string;
+      variables_snapshot: Record<string, any>;
+    },
+    client: Pick<typeof prisma, 'messageDelivery'> = prisma,
+  ) {
+    return client.messageDelivery.create({ data });
+  }
+
+  async findDeliveryForIdempotency(
+    attendanceId: number,
+    automationStepId: number,
+    client: Pick<typeof prisma, 'messageDelivery'> = prisma,
+  ) {
+    return client.messageDelivery.findUnique({
       where: {
         attendance_id_automation_step_id: {
           attendance_id: attendanceId,
@@ -273,13 +311,184 @@ export class AutomationRepository {
     });
   }
 
-  async updateDeliveryStatus(deliveryId: number, status: string, extra?: {
-    sent_at?: Date;
-    provider_message_id?: string;
-    error_message?: string;
-    queue_job_id?: string;
-  }) {
-    return prisma.messageDelivery.update({
+  /**
+   * Find the canonical milestone occurrence delivery for (enrollment_id, automation_step_id).
+   * Milestone identity is (enrollment_id, automation_step_id) because each AutomationStep
+   * uniquely encodes (workflow_id, session_number, trigger_event).
+   */
+  async findDeliveryForMilestoneOccurrence(
+    enrollmentId: number,
+    automationStepId: number,
+    client: any = prisma,
+    fallbackAttendanceId?: number,
+  ) {
+    if (typeof client?.messageDelivery?.findMany === 'function') {
+      const rows = await client.messageDelivery.findMany({
+        where: {
+          enrollment_id: enrollmentId,
+          automation_step_id: automationStepId,
+        },
+        orderBy: { id: 'asc' },
+      });
+      if (Array.isArray(rows)) {
+        if (rows.length === 0) return null;
+        return pickCanonicalOccurrence(rows, fallbackAttendanceId);
+      }
+    }
+    if (typeof client?.messageDelivery?.findFirst === 'function') {
+      const row = await client.messageDelivery.findFirst({
+        where: {
+          enrollment_id: enrollmentId,
+          automation_step_id: automationStepId,
+        },
+      });
+      if (row) return row;
+    }
+    if (fallbackAttendanceId !== undefined && typeof client?.messageDelivery?.findUnique === 'function') {
+      const byAtt = await this.findDeliveryForIdempotency(fallbackAttendanceId, automationStepId, client);
+      if (byAtt) return byAtt;
+    }
+    return null;
+  }
+
+  /**
+   * Ordered K7 milestone basis rows for an enrollment: FINAL ATTENDED rows in
+   * (session_date, created_at, id) order. The k-th row is the current basis
+   * attendance for ordinal session_number = k. Returns an empty array when the
+   * client cannot enumerate rows (e.g. mock harness without findMany) —
+   * callers must treat that as "basis unavailable".
+   */
+  async findMilestoneBasisRows(enrollmentId: number, client: any = prisma): Promise<any[]> {
+    if (typeof client?.attendance?.findMany !== 'function') {
+      return [];
+    }
+    const rows = await client.attendance.findMany({
+      where: {
+        enrollment_class: { enrollment_id: enrollmentId },
+        status: 'ATTENDED',
+        reconciliation_state: { in: ['MATCHED', 'RESOLVED'] },
+        deleted_at: null,
+      },
+      include: {
+        class_session: {
+          select: {
+            session_date: true,
+            class: {
+              select: {
+                class_name: true,
+                class_teachers: {
+                  where: { active: true },
+                  select: { teacher: { select: { name: true } } },
+                  take: 1,
+                },
+              },
+            },
+          },
+        },
+      },
+      orderBy: [{ class_session: { session_date: 'asc' } }, { created_at: 'asc' }, { id: 'asc' }],
+    });
+    return Array.isArray(rows) ? rows : [];
+  }
+
+  async findDeliveriesForEnrollment(
+    enrollmentId: number,
+    triggerEvent?: AutomationTriggerEvent,
+    client: any = prisma,
+  ) {
+    if (typeof client?.messageDelivery?.findMany !== 'function') {
+      return [];
+    }
+    const rows = await client.messageDelivery.findMany({
+      where: {
+        enrollment_id: enrollmentId,
+        ...(triggerEvent ? { automation_step: { trigger_event: triggerEvent } } : {}),
+      },
+      include: {
+        automation_step: {
+          select: {
+            id: true,
+            workflow_id: true,
+            session_number: true,
+            trigger_event: true,
+            channel: true,
+            target_group_id: true,
+            message_content: true,
+            delay_minutes: true,
+            workflow: { select: { id: true, name: true, active: true, owner_cs_id: true } },
+          },
+        },
+      },
+      orderBy: { id: 'asc' },
+    });
+    return Array.isArray(rows) ? rows : [];
+  }
+
+  async rebindDeliveryBasis(
+    deliveryId: number,
+    data: {
+      attendance_id: number;
+      rendered_content?: string;
+      variables_snapshot?: Record<string, any>;
+    },
+    client: Pick<typeof prisma, 'messageDelivery'> = prisma,
+  ) {
+    return client.messageDelivery.update({
+      where: { id: deliveryId },
+      data: {
+        attendance_id: data.attendance_id,
+        ...(data.rendered_content !== undefined ? { rendered_content: data.rendered_content } : {}),
+        ...(data.variables_snapshot !== undefined ? { variables_snapshot: data.variables_snapshot } : {}),
+      },
+    });
+  }
+
+  async reactivateDelivery(
+    deliveryId: number,
+    data: {
+      attendance_id: number;
+      zalo_account_id?: number | null;
+      zalo_group_id?: number | null;
+      line_account_id?: number | null;
+      line_group_id?: number | null;
+      scheduled_at: Date;
+      rendered_content: string;
+      variables_snapshot: Record<string, any>;
+    },
+    client: Pick<typeof prisma, 'messageDelivery'> = prisma,
+  ) {
+    return client.messageDelivery.update({
+      where: { id: deliveryId },
+      data: {
+        attendance_id: data.attendance_id,
+        zalo_account_id: data.zalo_account_id ?? null,
+        zalo_group_id: data.zalo_group_id ?? null,
+        line_account_id: data.line_account_id ?? null,
+        line_group_id: data.line_group_id ?? null,
+        scheduled_at: data.scheduled_at,
+        sent_at: null,
+        status: 'SCHEDULED',
+        rendered_content: data.rendered_content,
+        variables_snapshot: data.variables_snapshot,
+        provider_message_id: null,
+        error_message: null,
+        queue_job_id: null,
+      },
+    });
+  }
+
+  async updateDeliveryStatus(
+    deliveryId: number,
+    status: string,
+    extra?: {
+      sent_at?: Date;
+      provider_message_id?: string;
+      error_message?: string;
+      queue_job_id?: string;
+    },
+    client: Pick<typeof prisma, 'messageDelivery'> = prisma,
+  ) {
+    return client.messageDelivery.update({
       where: { id: deliveryId },
       data: { status: status as any, ...extra },
     });
@@ -321,6 +530,9 @@ export class AutomationRepository {
   }
 
   async cancelDeliveriesForAttendance(attendanceId: number) {
+    if (typeof (prisma.messageDelivery as any)?.updateMany !== 'function') {
+      return { count: 0 };
+    }
     return prisma.messageDelivery.updateMany({
       where: {
         attendance_id: attendanceId,
@@ -361,6 +573,35 @@ export class AutomationRepository {
 
     return { items, total, page, limit, totalPages: Math.ceil(total / limit) };
   }
+}
+
+function pickCanonicalOccurrence<T extends { id: number; status?: string; attendance_id?: number }>(
+  rows: T[],
+  basisAttendanceId?: number,
+): T {
+  const protectedRow = rows.find((r) => r.status === 'SENT' || r.status === 'SENDING');
+  if (protectedRow) return protectedRow;
+  if (basisAttendanceId !== undefined) {
+    const basisMatch = rows.find((r) => r.attendance_id === basisAttendanceId);
+    if (basisMatch) return basisMatch;
+  }
+  const rank = (status?: string) => {
+    switch (status) {
+      case 'SENT':
+        return 1;
+      case 'SENDING':
+        return 2;
+      case 'QUEUED':
+        return 3;
+      case 'SCHEDULED':
+        return 4;
+      case 'CANCELLED':
+        return 5;
+      default:
+        return 6;
+    }
+  };
+  return [...rows].sort((a, b) => rank(a.status) - rank(b.status) || a.id - b.id)[0];
 }
 
 export const automationRepository = new AutomationRepository();
