@@ -75,14 +75,77 @@ describe('approveCreateRequest is a real CAS (E.5)', () => {
     expect(mockPrisma.auditLog.create).toHaveBeenCalledTimes(1);
   });
 
-  it('stale version loses the claim (count 0) => 409 and NO audit row', async () => {
+  it('stale version loses the claim (count 0) => 409 BEFORE any student/enrollment/audit write', async () => {
     mockPrisma.importCreateRequest.updateMany.mockResolvedValue({ count: 0 });
     mockPrisma.$transaction.mockImplementation(async (fn: any) => fn(mockPrisma));
 
     await expect(
       service.approveCreateRequest(50, actor, { version: 3 }),
-    ).rejects.toMatchObject({ status: 409 });
+    ).rejects.toMatchObject({ status: 409, message: 'Yêu cầu đã thay đổi, vui lòng tải lại' });
+    expect(mockPrisma.student.create).not.toHaveBeenCalled();
+    expect(mockPrisma.enrollment.create).not.toHaveBeenCalled();
+    expect(mockPrisma.enrollment.update).not.toHaveBeenCalled();
     expect(mockPrisma.auditLog.create).not.toHaveBeenCalled();
+  });
+
+  it('claims CAS BEFORE materializing student and enrollment (call order check)', async () => {
+    const order: string[] = [];
+    mockPrisma.importCreateRequest.updateMany.mockImplementation(async () => {
+      order.push('cas_claim');
+      return { count: 1 };
+    });
+    mockPrisma.importCreateRequest.findUnique.mockResolvedValue({ ...pendingRequest, status: 'APPROVED', version: 4 });
+    mockPrisma.student.create.mockImplementation(async () => {
+      order.push('student_create');
+      return { id: 900 };
+    });
+    mockPrisma.enrollment.create.mockImplementation(async () => {
+      order.push('enrollment_create');
+      return { id: 910 };
+    });
+    mockPrisma.auditLog.create.mockImplementation(async () => {
+      order.push('audit_create');
+      return {};
+    });
+    mockPrisma.$transaction.mockImplementation(async (fn: any) => fn(mockPrisma));
+
+    await service.approveCreateRequest(50, actor, { version: 3 });
+    expect(order).toEqual(['cas_claim', 'student_create', 'enrollment_create', 'audit_create']);
+  });
+
+  it('cross-request race on students.external_id unique (P2002 on external_id) maps to 409', async () => {
+    mockPrisma.importCreateRequest.updateMany.mockResolvedValue({ count: 1 });
+    mockPrisma.importCreateRequest.findUnique.mockResolvedValue({ ...pendingRequest, status: 'APPROVED', version: 4 });
+    const p2002ExternalId = Object.assign(new Error('Unique constraint failed'), {
+      code: 'P2002',
+      meta: { target: 'students_external_id_key' },
+    });
+    mockPrisma.student.create.mockRejectedValueOnce(p2002ExternalId);
+    mockPrisma.$transaction.mockImplementation(async (fn: any) => fn(mockPrisma));
+
+    await expect(
+      service.approveCreateRequest(50, actor, { version: 3 }),
+    ).rejects.toMatchObject({
+      status: 409,
+      message: 'Học viên với mã này vừa được tạo bởi yêu cầu khác, vui lòng tải lại',
+    });
+    expect(mockPrisma.enrollment.create).not.toHaveBeenCalled();
+    expect(mockPrisma.auditLog.create).not.toHaveBeenCalled();
+  });
+
+  it('unrelated P2002 unique violations are NOT blanket-mapped to 409 (remain unmapped for 500)', async () => {
+    mockPrisma.importCreateRequest.updateMany.mockResolvedValue({ count: 1 });
+    mockPrisma.importCreateRequest.findUnique.mockResolvedValue({ ...pendingRequest, status: 'APPROVED', version: 4 });
+    const unrelatedP2002 = Object.assign(new Error('Unique constraint failed on external_sync_key'), {
+      code: 'P2002',
+      meta: { target: 'enrollments_external_sync_key_key' },
+    });
+    mockPrisma.enrollment.create.mockRejectedValueOnce(unrelatedP2002);
+    mockPrisma.$transaction.mockImplementation(async (fn: any) => fn(mockPrisma));
+
+    await expect(
+      service.approveCreateRequest(50, actor, { version: 3 }),
+    ).rejects.toBe(unrelatedP2002);
   });
 });
 

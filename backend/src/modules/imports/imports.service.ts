@@ -2509,23 +2509,10 @@ export class ImportsService {
       // Approved transfer of existing enrollment
       const enrollment = existing.enrollments[0];
       const transferResult = await prisma.$transaction(async (tx) => {
-        const updateData: any = {
-          cs_id: csId,
-          external_synced_at: new Date(),
-        };
-        if (saleId) {
-          updateData.sale_id = saleId;
-          updateData.sale_name = saleName;
-        }
-        const updatedEnrollment = await tx.enrollment.update({
-          where: { id: enrollment.id },
-          data: updateData,
-        });
-
-        // CAS claim: the version+status guard is part of the write predicate, so
-        // only one concurrent reviewer at the same version can move PENDING ->
-        // APPROVED. A losing claim matches 0 rows and throws, rolling back this
-        // transaction's enrollment writes (no duplicate approval, no double audit).
+        // CAS claim FIRST: the version+status guard is part of the write
+        // predicate, so only one concurrent reviewer at the same version can
+        // move PENDING -> APPROVED. Claiming before child writes ensures the
+        // loser rejects immediately without touching enrollment/audit rows.
         const claim = await tx.importCreateRequest.updateMany({
           where: { id, status: ImportCreateRequestStatus.PENDING, version: dto.version },
           data: {
@@ -2538,6 +2525,19 @@ export class ImportsService {
         });
         if (claim.count === 0) throw new AppError(409, 'Yêu cầu đã thay đổi, vui lòng tải lại');
         const request = await tx.importCreateRequest.findUnique({ where: { id } });
+
+        const updateData: any = {
+          cs_id: csId,
+          external_synced_at: new Date(),
+        };
+        if (saleId) {
+          updateData.sale_id = saleId;
+          updateData.sale_name = saleName;
+        }
+        const updatedEnrollment = await tx.enrollment.update({
+          where: { id: enrollment.id },
+          data: updateData,
+        });
 
         await tx.auditLog.create({
           data: {
@@ -2563,21 +2563,61 @@ export class ImportsService {
     }
 
     const createResult = await prisma.$transaction(async (tx) => {
+      // CAS claim FIRST inside the transaction — before materializing Student,
+      // Enrollment, Class, EnrollmentClass, Attendance, or AuditLog. Under
+      // MySQL InnoDB row locking on import_create_requests(id), a second
+      // concurrent reviewer on the same request blocks here until the winner
+      // commits, then sees count === 0 and throws 409 without ever reaching
+      // tx.student.create (which previously surfaced P2002 / 500).
+      const claim = await tx.importCreateRequest.updateMany({
+        where: { id, status: ImportCreateRequestStatus.PENDING, version: dto.version },
+        data: {
+          status: ImportCreateRequestStatus.APPROVED,
+          assigned_cs_id: csId,
+          reviewed_by_id: actor.id,
+          reviewed_at: new Date(),
+          version: { increment: 1 },
+        },
+      });
+      if (claim.count === 0) throw new AppError(409, 'Yêu cầu đã thay đổi, vui lòng tải lại');
+      const request = await tx.importCreateRequest.findUnique({ where: { id } });
+
       let studentId = existing?.id;
       let student = existing as any;
       if (!studentId) {
-        const created = await tx.student.create({
-          data: {
-            external_id: before.external_id,
-            full_name: snapshot.full_name || before.external_id,
-            phone: snapshot.phone || null,
-            email: snapshot.email || null,
-            gender: snapshot.gender || null,
-            occupation: snapshot.occupation || null,
-          },
-        });
-        studentId = created.id;
-        student = created;
+        try {
+          const created = await tx.student.create({
+            data: {
+              external_id: before.external_id,
+              full_name: snapshot.full_name || before.external_id,
+              phone: snapshot.phone || null,
+              email: snapshot.email || null,
+              gender: snapshot.gender || null,
+              occupation: snapshot.occupation || null,
+            },
+          });
+          studentId = created.id;
+          student = created;
+        } catch (err: any) {
+          // Cross-request race that cannot be front-ordered by single-row CAS:
+          // two DISTINCT import_create_requests for the same new external_id
+          // both pass the pre-read `existing` check and each wins its own row's
+          // CAS claim, then race on `students.students_external_id_key`
+          // (`Student.external_id @unique`). Map ONLY that specific constraint
+          // to 409 so the transaction rolls back cleanly (including the CAS
+          // claim above) and the operator reloads; all other P2002 violations
+          // rethrow as 500 so genuine data/schema bugs remain visible.
+          const target = err?.meta?.target;
+          const isStudentExternalIdUnique =
+            err?.code === 'P2002' &&
+            (typeof target === 'string'
+              ? target.includes('external_id')
+              : Array.isArray(target) && target.includes('external_id'));
+          if (isStudentExternalIdUnique) {
+            throw new AppError(409, 'Học viên với mã này vừa được tạo bởi yêu cầu khác, vui lòng tải lại');
+          }
+          throw err;
+        }
       }
 
       const enrollment = await tx.enrollment.create({
@@ -2607,12 +2647,6 @@ export class ImportsService {
         await this.applyAttendance(tx, enrollmentClass.id, cls.id, snapshot.attendance || [], actor.id);
       }
 
-      // CAS claim (same predicate reasoning as the transfer branch above): a
-      // concurrent reviewer at the same version matches 0 rows and rolls back
-      // this transaction's student/enrollment/class writes.
-      const claim = await tx.importCreateRequest.updateMany({ where: { id, status: ImportCreateRequestStatus.PENDING, version: dto.version }, data: { status: ImportCreateRequestStatus.APPROVED, assigned_cs_id: csId, reviewed_by_id: actor.id, reviewed_at: new Date(), version: { increment: 1 } } });
-      if (claim.count === 0) throw new AppError(409, 'Yêu cầu đã thay đổi, vui lòng tải lại');
-      const request = await tx.importCreateRequest.findUnique({ where: { id } });
       await tx.auditLog.create({ data: { user_id: actor.id, action: 'IMPORT_REQUEST_APPROVED', entity_type: 'ImportCreateRequest', entity_id: String(id), before_data: before as any, after_data: request as any } });
       return { student, enrollment, enrollmentClass, request };
     });
