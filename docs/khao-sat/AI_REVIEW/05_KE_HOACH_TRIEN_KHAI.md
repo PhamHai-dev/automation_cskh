@@ -37,6 +37,15 @@ Bảng phương án mục D (lượt 23/10, gắn nhãn [ĐỀ-XUẤT]) được
    - **Hai phương án xử lý nền lịch sử trước khi chuyển Broadcast sang số dư tính toán (chủ dự án chọn một trong hai; tuyệt đối không tự suy ra từ file CSV hay cột `external_remaining_sessions`):**
      * **Phương án 1 — Nhập chi tiết lịch sử buổi học có bằng chứng theo chế độ `NO_SEND`:** import các buổi đã học có đầy đủ bằng chứng với cờ `NO_SEND` (không kích hoạt gửi tin) và hoàn tất đối soát hai phía để có bản ghi `FINAL`, từ đó calculator tính `consumed` / `remaining` trực tiếp trên chuỗi `Attendance` đầy đủ.
      * **Phương án 2 — Xác lập số dư đầu kỳ đã kiểm tra tại một ngày mốc (cutoff):** chốt số dư đầu kỳ đã được xác minh tại ngày mốc `T_cutoff` và chỉ tính các buổi thực học phát sinh **sau** `T_cutoff`; phương án này bắt buộc phải có quy tắc ngày mốc rõ ràng và cơ chế **chống đếm trùng** với dữ liệu lịch sử trước `T_cutoff`.
+     * **Chỉ đạo của chủ dự án 2026-10-26 cho Phương án 2 (tách hai loại nền — bắt buộc nếu chọn số dư đầu kỳ để đưa hệ thống vào vận hành sớm):**
+       Nếu chọn số dư đầu kỳ để đưa hệ thống vào vận hành sớm, cần tách hai loại nền:
+
+       | Nền dữ liệu | Dùng cho |
+       |---|---|
+       | Quyền học đã sử dụng/số còn lại tại cutoff | Entitlement và remaining |
+       | Số ca thực học hợp lệ trước cutoff | Tiến trình chăm sóc và đánh giá theo D1 |
+
+       Không thể suy số ca thực học từ `total − remaining`, vì phần tiêu thụ có thể gồm nghỉ C. Phương án cutoff vẫn khả thi, nhưng một số dư quyền học duy nhất chưa đủ khôi phục mốc chăm sóc. **Lý do kỹ thuật (đối chiếu A.3/C.5):** `consumed` (K5) đếm cả bản ghi final `ABSENT_UNAPPROVED_C` (nghỉ không phép C vẫn tiêu thụ quyền học), trong khi mốc chăm/đánh giá theo D1 (K7) chỉ đếm các bản ghi final `status = ATTENDED` — nên `total − remaining` là cận trên của số buổi nghỉ C chưa tách bạch, không phải số ca thực học. Do đó Phương án 2 cần **hai nền dữ liệu riêng tại `T_cutoff`**: (1) số dư quyền học (hoặc `consumed`) để calculator tính `remaining`, và (2) số ca thực học hợp lệ (`ATTENDED` final) trước cutoff làm gốc cộng dồn K7; chỉ cung cấp một số dư quyền học duy nhất là **chưa đủ** để khôi phục mốc chăm sóc.
    - **Hạng mục mở riêng — hai vị trí lệch canonical ngoài broadcast (tách bạch *số tính toán* với *snapshot ngoài*):**
      * `backend/src/modules/imports/imports.service.ts:2352` — xuất danh sách học viên ghi `remaining_sessions: enr?.external_remaining_sessions ?? ''` (chỉ đọc **snapshot ngoài**, không có cột số dư tính toán của calculator).
      * `backend/src/modules/imports/sheet-backup.service.ts:864-866` — khi enrollment chưa có bản ghi attendance trên web, fallback dùng `external_remaining_sessions ?? Math.max(0, total_sessions − attended_previous_years)`, vừa **gộp `attended_previous_years` vào remaining** vừa **clamp `≥ 0`**, trái quy tắc canonical D10/Q-012 (calculator không fold opening balance, remaining unclamped). Cần tách rõ cột số dư tính toán và cột snapshot đối soát ngoài khi đồng bộ với quyết định lật broadcast.

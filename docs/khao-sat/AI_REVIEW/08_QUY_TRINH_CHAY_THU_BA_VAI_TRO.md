@@ -144,6 +144,13 @@ Tạo bộ dữ liệu tách biệt với hậu tố định danh dễ dọn d�
      - **Cả hai ý kiến gốc được giữ nguyên không bị ghi đè:** `teacher_status = ATTENDED`, `cs_status = ABSENT_UNAPPROVED_C`, `teacher_note` và `cs_note` giữ nguyên; bổ sung `resolved_by_id = <ID Admin>`, `resolved_at`, `resolution_note`.
      - Tab **Lịch sử đối soát (`History`)** (`GET /api/v1/attendance-reconciliation/history`) xuất hiện bản ghi hành động `ATTENDANCE_CONFLICT_RESOLVED` với người thực hiện là Admin và nội dung `resolutionNote`.
      - Nếu enrollment có gắn workflow automation (ở chế độ mock hoặc tạm dừng worker), mỗi mốc `(enrollment_id, automation_step_id)` tại `session_number = 1` và `session_number = 2` chỉ sinh **đúng 1 bản ghi `MessageDelivery`** (S1a/S2c: mốc 1 gắn `attendance1Id`, mốc 2 gắn `attendance2Id`; khi chạy dưới chính sách `NO_SEND` thì tạo `0` delivery mới).
+4. **Bước 3b (Kiểm tra bổ sung 2 cổng phân quyền & D8 vừa khép kín ngày `2026-10-26`):**
+   - **Cổng 1 — Điểm danh hộ GV (`assist-mark` — `POST /api/v1/attendance-reconciliation/:id/teacher-mark` kèm `teacherId`) khóa chỉ `ADMIN`:**
+     - Thử gọi `POST /api/v1/attendance-reconciliation/:id/teacher-mark` có truyền `teacherId` bằng tài khoản `MANAGE` → kỳ vọng nhận **`403 Forbidden`** (quyền đánh hộ GV chỉ dành cho `ADMIN`; tài khoản `MANAGE` vẫn tiếp tục thực hiện bình thường nghĩa vụ CVHT `POST /:id/cs-mark` và `bulk-approve` trong các nhóm được phân công).
+     - Khi gọi bằng tài khoản `ADMIN`, hệ thống kiểm tra đồng thời quyền `ADMIN` của người thao tác và cửa sổ hiệu lực `[start_date, end_date]` của `teacherId` tại `session_date` theo D8.
+   - **Cổng 2 — Kết thúc phân công GV có `end_date` tường minh & kiểm tra D8 khi Import Excel điểm danh:**
+     - Admin thực hiện kết thúc phân công GV qua `PATCH /api/v1/classes/:id/teachers/:assignmentId/end` với `end_date` bắt buộc → hệ thống cập nhật `active = false`, lưu `end_date` tường minh và ghi `AuditLog`.
+     - Sau khi phân công đã kết thúc (`active = false`, `end_date = 2026-10-31`), thử đánh hộ hoặc **import Excel điểm danh** (`attendance-import.service.ts` — `POST /api/v1/attendance-reconciliation/import-excel/confirm`): buổi học có `session_date` nằm trong `[start_date, end_date]` (`2026-10-20`) được chấp nhận hợp lệ; buổi học có `session_date` nằm ngoài cửa sổ (`2026-11-05`) hoặc phân công `active = false` thiếu `end_date` bị chặn theo quy tắc D8.
 
 ---
 
@@ -212,5 +219,7 @@ Nếu chủ dự án tạo fixture thủ công trên DB test/staging để bấm
 - **Trạng thái hiện tại:** các fix nằm trên nhánh `feature/attendance-workflows-2026-10-25`; **production chỉ đạt điều kiện sau khi merge + deploy + kiểm tra lại sau deploy**.
 - **Phân định rõ mức độ kiểm chứng:**
   - **Đã kiểm chứng bằng integration test có DB (`automation_cskh_test`):** toàn bộ chuỗi request HTTP khớp đúng trình tự gọi của UI cho cả 3 vai trò (`three-role-ui-flow.acceptance.integration.test.ts` và `attendance-e2e.acceptance.integration.test.ts`), với các adapter gửi tin ngoài (`BullMQ`, `Zalo`, `LINE`) được mock để không phát sinh giao dịch thật.
-  - **Đã kiểm chứng nhánh hỗ trợ đặc quyền D8 (Lane B):** `markByTeacher` khi `ADMIN`/`MANAGE` điểm danh hộ GV có `ClassTeacher.active = false` nhưng cửa sổ `[start_date, end_date]` bao phủ `session_date` đã được kiểm thử xanh trong Bước 5 của `three-role-ui-flow.acceptance.integration.test.ts` (ngày trong cửa sổ trả `200 OK`, ngày ngoài cửa sổ trả `403`).
+  - **Đã kiểm chứng nhánh hỗ trợ đặc quyền & hai cổng kiểm soát D8 (cập nhật `2026-10-26`):**
+    1. **Điểm danh hộ GV (`assist-mark` — `POST /:id/teacher-mark` kèm `teacherId`) khóa chỉ `ADMIN`:** chỉ `ADMIN` được phép đánh hộ khi cửa sổ `[start_date, end_date]` của GV được ghi nhận bao phủ `session_date` (ngày trong cửa sổ trả `200 OK`, ngày ngoài cửa sổ hoặc `active = false` thiếu `end_date` trả `403`); tài khoản `MANAGE` gọi đánh hộ nhận `403`, trong khi `MANAGE` vẫn tiếp tục thực hiện `cs-mark` / `bulk-approve` trong các nhóm được phân công.
+    2. **Kết thúc phân công GV & kiểm tra D8 khi Import Excel:** thao tác Admin "Kết thúc phân công" (`PATCH /api/v1/classes/:id/teachers/:assignmentId/end` bắt buộc `end_date` tường minh + ghi `AuditLog`) và kiểm tra hiệu lực phân công theo `session_date` (D8) trên luồng import Excel điểm danh (`attendance-import.service.ts`).
   - **Chưa thực hiện trong bước chuẩn bị này:** chưa khởi chạy server backend/frontend, chưa bật worker/cron, và chưa bấm thử trên trình duyệt thật (chờ chủ dự án duyệt và trực tiếp thực hiện theo quy trình trên).

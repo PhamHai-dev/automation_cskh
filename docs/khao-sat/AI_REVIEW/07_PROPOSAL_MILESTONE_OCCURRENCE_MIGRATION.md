@@ -1,6 +1,6 @@
 # 07 — Đề xuất Migration (v2): Milestone Occurrence, Bảo toàn Lịch sử & Ràng buộc Duy nhất có Phạm vi (S1a / S2c)
 
-**Phiên bản:** v2.0 (Bản viết lại toàn diện sau phản hồi của Owner)  
+**Phiên bản:** v2.2 (Cập nhật Mục 7 theo chỉ đạo của Owner ngày 2026-10-26 về Cutover, Single Active Authority, Fail-Closed & Quy trình Rollback 5 bước)  
 **Ngày cập nhật:** 2026-10-26  
 **Phạm vi:** `MessageDelivery` / `AutomationStep` (`backend/prisma/schema.prisma`, `backend/src/modules/automation/*`)  
 **Trạng thái:** Đề xuất kỹ thuật trình duyệt — **TUYỆT ĐỐI KHÔNG tự chạy migration hay SQL biến đổi dữ liệu trên bất kỳ DB nào** khi chưa có phê duyệt tường minh của Owner.
@@ -12,7 +12,8 @@
 | Phiên bản | Ngày | Nội dung thay đổi |
 |---|---|---|
 | **v1.0** | 2026-10-26 | Bản nháp đầu tiên đề xuất `@@unique([enrollment_id, automation_step_id])` toàn cục trên `message_deliveries` kèm bước tiền xử lý `DELETE` các bản ghi trùng lịch sử. |
-| **v2.1** | 2026-10-26 | **Cập nhật triển khai sớm (Task 1 & Task 2) và bổ sung Mục 7 (`S1 — Kế hoạch chuyển đổi (cutover) & Rollback`)**:<br>1. Triển khai ngay trong code `AutomationService.updateStep` / `deleteStep` guard bảo vệ định danh bước (`session_number`, `trigger_event`) và chặn xóa bước khi đã có `MessageDelivery` (409).<br>2. Triển khai ngay trong `automation-worker.ts` cơ chế retry trên cùng `delivery.id` khi `status = 'FAILED'` (`retry_count < 3`), kiểm tra lại `checkInvariants` + `checkMilestoneStillEligible` ở mỗi lần retry, phân biệt 3 lớp lỗi (`PRE_SEND`, `UNCERTAIN_SEND` cho Zalo & LINE Personal `@evex/linejs`, và `LINE OA` retry an toàn nhờ header `X-Line-Retry-Key`), không bao giờ blind-resend dòng `SENDING`.<br>3. Bổ sung kế hoạch Cutover & Rollback chi tiết cho Phương án S1 (`milestone_occurrences`): backfill chỉ thêm mới (`INSERT ... SELECT`, zero `DELETE`), xử lý các nhóm trùng lặp lịch sử đã `CANCELLED`-superseded, thứ tự bật feature-switch (fallback an toàn khi bảng chưa tồn tại), quy trình rollback (`DROP TABLE milestone_occurrences` không chạm `message_deliveries`), và danh mục Preconditions & Owner Sign-off. |
+| **v2.2** | 2026-10-26 | **Viết lại & gia cố Mục 7 (`S1 — Kế hoạch chuyển đổi (Cutover) & Rollback`) theo 4 yêu cầu bắt buộc của Owner (2026-10-26):**<br>1. **Bảo toàn 100% lịch sử cho nhóm có nhiều `SENT`/`SENDING`:** Giữ nguyên `0 DELETE` trên `message_deliveries`; dòng chính gắn vào `milestone_occurrences.canonical_delivery_id` (`current_delivery_id`), đồng thời mọi dòng lịch sử (bao gồm toàn bộ các dòng `SENT`/`SENDING` thứ 2 trở đi của cùng cặp `(enrollment_id, automation_step_id)`) được liên kết tường minh qua cột `message_deliveries.milestone_occurrence_id` để không có bất kỳ bản ghi `SENT`/`SENDING` quá khứ nào bị mồ côi khỏi occurrence.<br>2. **Chỉ một cơ chế gửi có hiệu lực tại mọi thời điểm (`MILESTONE_STORAGE_MODE = LEGACY_DELIVERY_SCAN \| S1_OCCURRENCE_TABLE`) & Fail-Closed khi lỗi DB:** Loại bỏ hoàn toàn cơ chế "bắt lỗi truy cập bảng mới rồi âm thầm fallback". Khi đang ở `S1_OCCURRENCE_TABLE`, mọi lỗi truy vấn/kết nối/quyền trên `milestone_occurrences` bắt buộc **fail-closed** (ném lỗi, hủy giao dịch, không xếp hàng gửi tin, cảnh báo vận hành).<br>3. **Quy trình Rollback vận hành 5 bước (R1–R5) bảo toàn chống gửi trùng cho cả dữ liệu phát sinh sau cutover:** Đóng cổng worker tạm thời (R1) $\rightarrow$ Đồng bộ ngược & hội tụ các dòng `message_deliveries` phát sinh sau `T_cutover` (R2) $\rightarrow$ Đối soát bất biến chống gửi trùng giữa 2 bảng (R3) $\rightarrow$ Chuyển `MILESTONE_STORAGE_MODE` về `LEGACY_DELIVERY_SCAN` và mở lại worker (R4) $\rightarrow$ `DROP TABLE milestone_occurrences` chỉ là bước dọn dẹp cuối cùng sau khi Owner ký xác nhận ổn định (R5). |
+| **v2.1** | 2026-10-26 | **Cập nhật triển khai sớm (Task 1 & Task 2) và bổ sung bản nháp Mục 7**:<br>1. Triển khai ngay trong code `AutomationService.updateStep` / `deleteStep` guard bảo vệ định danh bước (`session_number`, `trigger_event`) và chặn xóa bước khi đã có `MessageDelivery` (409).<br>2. Triển khai ngay trong `automation-worker.ts` cơ chế retry trên cùng `delivery.id` khi `status = 'FAILED'` (`retry_count < 3`), kiểm tra lại `checkInvariants` + `checkMilestoneStillEligible` ở mỗi lần retry, phân biệt 3 lớp lỗi (`PRE_SEND`, `UNCERTAIN_SEND` cho Zalo & LINE Personal `@evex/linejs`, và `LINE OA` retry an toàn nhờ header `X-Line-Retry-Key`), không bao giờ blind-resend dòng `SENDING`. |
 | **v2.0** | 2026-10-26 | **Bản viết lại theo chỉ đạo phản biện của Owner (2026-10-26)** — Bác bỏ hoàn toàn việc chạy v1.0 nguyên trạng và giải quyết 5 điểm bắt buộc:<br>1. **Cấm dùng `DELETE` làm bước dọn dữ liệu mặc định**: Thay bằng truy vấn kiểm toán chỉ đọc (Read-only Duplicate Report), khẳng định nguyên tắc *"chống gửi trùng tương lai ≠ xóa bằng chứng gửi trùng quá khứ"*, quy tắc hội tụ tất định cho các bản ghi chưa gửi (`CANCELLED` + hủy job BullMQ, giữ nguyên dòng), và điều kiện tiên quyết trước mọi DDL.<br>2. **Thu hẹp phạm vi ràng buộc (Scoped Uniqueness)**: Khảo sát toàn bộ 6 `AutomationTriggerEvent`; chứng minh các bước `non-ATTENDED` có thể phát sinh hợp lệ $\ge 2$ `MessageDelivery` cho cùng `(enrollment_id, automation_step_id)`; cung cấp giải pháp MySQL 8.0 chỉ khóa nhóm mốc `ATTENDED` (bảng `milestone_occurrences` hoặc Generated Column có điều kiện).<br>3. **Ngữ nghĩa chỉnh sửa `AutomationStep`**: Phân loại trường cho phép sửa vs trường định danh cần khóa khi đã có delivery; quy định `rendered_content` + `variables_snapshot` là nguồn sự thật lịch sử; sửa cấu hình/nội dung bước không cấp quyền gửi lại mốc đã `SENT`.<br>4. **Phục hồi trạng thái `SENDING` & Retry**: Quy định `SENDING` không phải bằng chứng nhà cung cấp đã nhận; cơ chế đối soát LINE (`X-Line-Retry-Key`) vs Zalo (`zca-js`); cấm tạo dòng mới khi đang retry dòng cũ; ghi nhận điểm lệch hiện tại trong `automation-worker.ts` khi retry từ `FAILED`.<br>5. **Tính nhất quán khi Rebind & `NO_SEND`**: Ghim chặt hành vi thực tế của code (kèm unit/integration test) khi rebind occurrence đang `SCHEDULED`/`QUEUED`, hành vi của BullMQ worker khi job payload mang `attendanceId` cũ, và cam kết `NO_SEND` không kích hoạt lại dòng `CANCELLED`. |
 
 ---
@@ -448,6 +449,17 @@ Bên cạnh cam kết *"không tạo dòng `MessageDelivery` mới (`0 new rows`
 
 Mục này quy định quy trình chuyển đổi không gián đoạn (zero-loss, additive-only cutover) và kế hoạch hoàn tác (rollback) cho **Phương án S1 (Bảng `milestone_occurrences`)** khi Owner phê duyệt thực thi migration.
 
+> **Chỉ đạo của Owner (2026-10-26):** *"Với S1, mình vẫn ủng hộ hướng bảng occurrence riêng; chưa duyệt cách rollback chỉ bằng drop bảng. Mô tả 'không DELETE delivery cũ' đã tốt hơn nhiều. Nhưng trước khi chạy migration cần chứng minh: (1) Giữ đủ lịch sử, đặc biệt các nhóm có nhiều SENT hoặc SENDING. (2) Chỉ một cơ chế gửi có hiệu lực trong lúc chuyển đổi. (3) Rollback sau khi đã phát sinh occurrence/delivery mới vẫn giữ được chống gửi trùng. (4) Lỗi truy cập bảng mới không bị coi nhầm là 'chưa có bảng' rồi âm thầm fallback. Việc drop bảng mới có thể là bước cuối của rollback sau đối soát; bản thân nó chưa phải toàn bộ phương án rollback."*
+>
+> **Bảng ánh xạ 4 yêu cầu bắt buộc → giải pháp → bằng chứng nghiệm thu (mỗi dòng phải kiểm chứng được trên Staging trước khi trình Owner ký C5):**
+>
+> | Yêu cầu của Owner | Giải pháp quy định trong Mục 7 | Bằng chứng nghiệm thu |
+>|---|---|---|
+> | **(a)** Giữ đủ lịch sử, đặc biệt các nhóm có nhiều `SENT`/`SENDING` | Mục 7.1 + 7.1b: `0 DELETE` trên `message_deliveries`; báo cáo trước migration (§2.2) liệt kê mọi nhóm nhiều `SENT`/`SENDING`; dòng canonical gắn vào `milestone_occurrences.canonical_delivery_id`; **mọi dòng `SENT`/`SENDING` còn lại được liên kết ngược về occurrence qua cột mới `message_deliveries.milestone_occurrence_id`** | Checklist C4 + C6: `0` dòng `SENT`/`SENDING` của bước `ATTENDED` có `milestone_occurrence_id IS NULL` sau backfill |
+> | **(b)** Chỉ một cơ chế gửi có hiệu lực trong lúc chuyển đổi | Mục 7.4: cờ môi trường **`MILESTONE_STORAGE_MODE = LEGACY_DELIVERY_SCAN \| S1_OCCURRENCE_TABLE`** (Single Active Authority) + cửa sổ tạm dừng worker < 1 phút + delta-sync; cấm tuyệt đối ghi/đọc song song hai cơ chế quyết định gửi | Checklist C7: thử nghiệm đổi mode trên Staging, xác nhận mọi luồng gửi chỉ đi qua đúng một cơ chế |
+> | **(c)** Rollback sau khi đã phát sinh occurrence/delivery mới vẫn giữ chống gửi trùng | Mục 7.5: quy trình rollback **5 bước R1–R5** (đóng worker → reverse reconciliation → đối soát bất biến → đổi mode + mở worker → drop chỉ là dọn dẹp cuối) | Checklist C8: chạy đủ R1–R4 trên Staging với dữ liệu phát sinh sau giả lập `T_cutover`, `0` vi phạm UNIQUE |
+> | **(d)** Lỗi truy cập bảng mới không bị coi nhầm là "chưa có bảng" rồi âm thầm fallback | Mục 7.4b: **Fail-Closed** — khi mode = `S1_OCCURRENCE_TABLE`, mọi lỗi DB trên `milestone_occurrences` phải ném lỗi + abort + không enqueue + cảnh báo; startup probe fail-fast; cấm mọi `try/catch → fallback legacy` | Checklist C9: fault-injection (rename bảng tạm / thu hồi quyền) xác nhận worker **từ chối gửi** thay vì fallback |
+
 ### 7.1. Nguyên tắc chuyển đổi: Chỉ thêm mới (Additive-Only, Zero `DELETE`)
 
 1. **Không xóa, không cắt bớt bất kỳ dòng nào trong `message_deliveries`:**
@@ -456,6 +468,70 @@ Mục này quy định quy trình chuyển đổi không gián đoạn (zero-los
    Dòng được chọn để nạp vào `milestone_occurrences.canonical_delivery_id` và `basis_attendance_id` tuân theo đúng hàm xếp hạng tất định `pickCanonicalOccurrence` (Mục 2.3):
    - Ưu tiên 1: `SENT` (1) $\rightarrow$ `SENDING` (2) (nếu có nhiều dòng cùng trạng thái thì lấy `id ASC` nhỏ nhất).
    - Ưu tiên 2: `QUEUED` (3) $\rightarrow$ `SCHEDULED` (4) $\rightarrow$ `CANCELLED` (5) $\rightarrow$ `FAILED` / `SKIPPED_*` (6), lấy `id ASC` nhỏ nhất.
+
+### 7.1b. Bảo toàn TOÀN BỘ lịch sử khi một cặp `(enrollment_id, automation_step_id)` có nhiều `SENT` hoặc `SENDING` (Yêu cầu a)
+
+Đây là điểm mà phương án "chỉ có `canonical_delivery_id` một chiều" chưa đủ: nếu chỉ trỏ `milestone_occurrences.canonical_delivery_id` vào 1 dòng duy nhất, các dòng `SENT`/`SENDING` **lịch sử thứ hai trở đi** trong cùng nhóm sẽ không còn liên kết nào ngược về occurrence — chúng tồn tại trong `message_deliveries` nhưng "mồ côi" đối với mọi truy vấn bắt đầu từ `milestone_occurrences`. Quy định bắt buộc để đóng khoảng trống đó:
+
+1. **`message_deliveries` giữ 100% dòng lịch sử `SENT`/`SENDING`, không đụng tới (`0 DELETE`):**
+   Toàn bộ bản ghi (kể cả các bản ghi trùng `SENT`/`SENDING` phát sinh trước commit `0970bec`, tức trước khi có cơ chế Milestone Occurrence ở tầng ứng dụng) nằm nguyên vị trí cũ với nguyên mọi trường bằng chứng (`id`, `sent_at`, `provider_message_id`, `rendered_content`, `variables_snapshot`, `attendance_id`, tài khoản kênh…). Không sửa `status` của bất kỳ dòng `SENT`/`SENDING` lịch sử nào.
+2. **Báo cáo trước migration liệt kê tường minh mọi nhóm nhiều `SENT`/`SENDING`:**
+   Mục 2.2 (Truy vấn 1 & 2) chạy ở dạng **báo cáo snapshot đính kèm hồ sơ migration** (checklist C1). Với mỗi cặp `(enrollment_id, automation_step_id)` có `sent_count >= 2` hoặc `sending_count >= 2` (kể cả sau khi đã phân định `SENDING` treo), báo cáo phải nêu: danh sách toàn bộ `md.id` trong nhóm kèm `attendance_id`, `sent_at`, `provider_message_id`, và dòng nào được chọn làm canonical theo Mục 2.3. Owner duyệt danh sách này **trước khi** chạy DDL.
+3. **Liên kết hai chiều occurrence ↔ mọi dòng delivery lịch sử qua cột mới `message_deliveries.milestone_occurrence_id`:**
+   - `milestone_occurrences.canonical_delivery_id` (đã có ở DDL Mục 3.2; Owner gọi là `current_delivery_id` — trỏ dòng đại diện duy nhất mà cơ chế gửi sẽ tôn trọng).
+   - **Cột mở rộng mới (nullable, additive-only)** trên `message_deliveries`:
+
+```sql
+-- Cột liên kết ngược (nullable FK): mọi dòng ATTENDED delivery — canonical LẪN các dòng SENT/SENDING/CANCELLED lịch sử
+-- — đều trỏ về occurrence của mốc đó. Thêm cột NULL-safe, không sửa bất kỳ dòng nào hiện có.
+ALTER TABLE `message_deliveries`
+  ADD COLUMN `milestone_occurrence_id` INT NULL DEFAULT NULL,
+  ADD INDEX `message_deliveries_milestone_occurrence_id_idx` (`milestone_occurrence_id`),
+  ADD CONSTRAINT `message_deliveries_milestone_occurrence_id_fkey`
+    FOREIGN KEY (`milestone_occurrence_id`) REFERENCES `milestone_occurrences`(`id`)
+    ON DELETE SET NULL ON UPDATE CASCADE;
+```
+
+   - **Bước liên kết sau backfill (UPDATE chỉ ghi đè cột mới, không đổi `status` hay bất kỳ trường bằng chứng nào):**
+
+```sql
+-- Gán milestone_occurrence_id cho TOÀN BỘ dòng delivery của bước ATTENDED
+-- (canonical + mọi dòng SENT/SENDING/CANCELLED/FAILED lịch sử trong cùng nhóm):
+UPDATE `message_deliveries` md
+INNER JOIN `automation_steps` s ON s.id = md.automation_step_id
+INNER JOIN `milestone_occurrences` mo
+  ON mo.enrollment_id = md.enrollment_id
+ AND mo.automation_step_id = md.automation_step_id
+SET md.`milestone_occurrence_id` = mo.`id`
+WHERE s.`trigger_event` = 'ATTENDED'
+  AND md.`milestone_occurrence_id` IS NULL;
+```
+
+4. **Bất biến kiểm chứng (không một dòng `SENT`/`SENDING` nào mồ côi khỏi occurrence):**
+
+```sql
+-- Truy vấn nghiệm thu C6 (READ-ONLY) — phải trả về 0 hàng:
+-- Mọi dòng SENT/SENDING của bước ATTENDED phải mang milestone_occurrence_id (kể cả các dòng lịch sử thứ 2+ không được chọn làm canonical).
+SELECT md.id, md.enrollment_id, md.automation_step_id, md.status, md.sent_at, md.provider_message_id
+FROM `message_deliveries` md
+INNER JOIN `automation_steps` s ON s.id = md.automation_step_id
+WHERE s.`trigger_event` = 'ATTENDED'
+  AND md.`status` IN ('SENT', 'SENDING')
+  AND md.`milestone_occurrence_id` IS NULL;
+
+-- Truy vấn đối soát hai chiều C4b (READ-ONLY) — 0 hàng vi phạm:
+-- canonical_delivery_id của mọi occurrence phải thuộc chính nhóm (enrollment_id, automation_step_id) và được liên kết ngược về nó.
+SELECT mo.id
+FROM `milestone_occurrences` mo
+LEFT JOIN `message_deliveries` cd
+  ON cd.id = mo.canonical_delivery_id
+ AND cd.enrollment_id = mo.enrollment_id
+ AND cd.automation_step_id = mo.automation_step_id
+ AND cd.milestone_occurrence_id = mo.id
+WHERE cd.id IS NULL;
+```
+
+5. **Ngữ nghĩa khi truy vấn lịch sử:** mọi câu hỏi kiểu *"milestone này từng được gửi bao nhiêu lần, bằng chứng ở đâu"* giờ trả lời được từ **cả hai phía**: từ occurrence (`SELECT md.* FROM message_deliveries md WHERE md.milestone_occurrence_id = <mo.id> ORDER BY md.id`) liệt kê đủ toàn bộ `SENT`/`SENDING` quá khứ; từ dòng delivery (`md.milestone_occurrence_id`) biết ngay dòng đó thuộc mốc nào và có phải canonical hiện hành không (`cd.id = mo.canonical_delivery_id`).
 
 ### 7.2. Xử lý các nhóm trùng lặp lịch sử & các dòng đã `CANCELLED`-Superseded trước khi Backfill
 
@@ -528,43 +604,211 @@ ON DUPLICATE KEY UPDATE
   `updated_at` = VALUES(`updated_at`);
 ```
 
-### 7.4. Thứ tự triển khai & Cơ chế chuyển đổi có kiểm soát (Feature-Switch Ordering)
+### 7.4. Thứ tự chuyển đổi (Cutover) & Cơ chế Một Thẩm Quyền Duy Nhất (`MILESTONE_STORAGE_MODE` — Yêu cầu b)
 
-Để đảm bảo quá trình nâng cấp không gây gián đoạn (zero-downtime) và tương thích hoàn toàn với môi trường chưa chạy migration (như bộ test hiện tại):
+Bản v2.1 từng mô tả cơ chế *"nếu bảng `milestone_occurrences` chưa tồn tại thì tự động fallback về `message_deliveries`"*. Owner đã bác bỏ điểm này vì hai rủi ro nghiêm trọng: (1) nếu hai cơ chế cùng hoạt động hoặc chuyển đổi không đồng bộ giữa API và Worker thì có thể phát sinh hai đường quyết định gửi song song; (2) nếu dùng `try/catch` để đoán "chưa có bảng" rồi fallback thì một lỗi kết nối/quyền/lock tạm thời trên bảng mới sẽ bị coi nhầm là "bảng chưa tạo", làm hệ thống âm thầm bỏ qua khóa `UNIQUE (enrollment_id, automation_step_id)` và có nguy cơ gửi trùng.
 
-1. **Giai đoạn 1 — Trạng thái hiện tại (Pre-DDL / App-Layer Active):**
-   - `automation-trigger.service.ts` và `automation-repository.ts` đã vận hành đầy đủ logic Milestone Occurrence dựa trên truy vấn `message_deliveries` + khóa giao dịch `Serializable` theo `Enrollment`.
-   - `automation.service.ts` đã khóa sửa `session_number`/`trigger_event` và chặn xóa `AutomationStep` khi đã có delivery.
-   - `automation-worker.ts` đã phân loại 3 lớp lỗi retry (`PRE_SEND`, `UNCERTAIN_SEND`, `LINE OA Retry-Key`) và kiểm tra lại `checkMilestoneStillEligible` ở mỗi lần retry.
-2. **Giai đoạn 2 — Tạo bảng & Backfill (DDL + Additive Backfill):**
-   - Thực thi DDL tạo bảng `milestone_occurrences` (Mục 3.2) và chạy câu lệnh `INSERT ... SELECT` (Mục 7.3).
-   - Tại thời điểm này, bảng `message_deliveries` không hề bị khóa ghi dài hạn hay xóa dòng; ứng dụng đang chạy vẫn hoạt động bình thường.
-3. **Giai đoạn 3 — Bật đọc/ghi song song qua Feature-Switch (Graceful Fallback):**
-   - Trong `automation-repository.ts`, phương thức tra cứu/ghi occurrence kiểm tra khả năng sẵn sàng của model ` prisma.milestoneOccurrence` (hoặc cờ cấu hình `MILESTONE_OCCURRENCE_TABLE_ENABLED`):
-     - **Khi bảng `milestone_occurrences` hiện diện và được bật:** Mọi thao tác tạo mới, rebind `basis_attendance_id`, hủy `CANCELLED`, hoặc kích hoạt lại (`reactivate`) của bước `ATTENDED` sẽ `UPSERT` trên `milestone_occurrences` (nhờ `UNIQUE(enrollment_id, automation_step_id)` cấp DB chặn tuyệt đối race condition) đồng thời cập nhật dòng `MessageDelivery` được trỏ bởi `canonical_delivery_id`.
-     - **Nếu bảng `milestone_occurrences` chưa tồn tại (hoặc cờ tắt / môi trường mock test cũ):** Hệ thống tự động fallback về hành vi hiện tại (`findDeliveryForMilestoneOccurrence` trên `message_deliveries`), không làm gãy bất kỳ luồng nghiệp vụ hay test nào.
+Do đó, thiết kế v2.2 thay thế hoàn toàn bằng **cờ cấu hình tường minh một thẩm quyền duy nhất (Single Active Authority)**:
 
-### 7.5. Kế hoạch Hoàn tác (Rollback Plan)
+```env
+# Chỉ nhận đúng 1 trong 2 giá trị tường minh (mặc định khi chưa cutover: LEGACY_DELIVERY_SCAN):
+MILESTONE_STORAGE_MODE=LEGACY_DELIVERY_SCAN   # hoặc S1_OCCURRENCE_TABLE
+```
 
-Vì toàn bộ thiết kế S1 tuân thủ nguyên tắc **Additive-Only** (không xóa dòng, không sửa đổi cấu trúc cột sẵn có của `message_deliveries`, và mọi lần tạo/rebind/cancel/send vẫn cập nhật đầy đủ trên dòng `message_deliveries` canonical):
+Tại mọi thời điểm, trên toàn bộ các tiến trình (`backend API` và `automation-worker`), **chỉ có đúng một cơ chế giữ thẩm quyền quyết định gửi** cho các bước `trigger_event = 'ATTENDED'`:
 
-1. **Bước 1 (Tắt đọc bảng mới ở tầng App — nếu đã bật Giai đoạn 3):**
-   Chuyển cờ `MILESTONE_OCCURRENCE_TABLE_ENABLED=false` (hoặc revert commit đọc bảng `milestone_occurrences`). Hệ thống lập tức quay về sử dụng `findDeliveryForMilestoneOccurrence` trực tiếp trên `message_deliveries` mà không mất bất kỳ trạng thái nào.
-2. **Bước 2 (Hoàn tác Schema DB — nếu cần gỡ bỏ hoàn toàn DDL):**
-   ```sql
-   DROP TABLE IF EXISTS `milestone_occurrences`;
-   ```
-   - **Tác động tới `message_deliveries`:** **Bằng 0 (Untouched 100%).** Toàn bộ lịch sử giao phát tin nhắn (`SENT`, `SENDING`, `SCHEDULED`, `QUEUED`, `CANCELLED`, `FAILED`, `SKIPPED_*`) vẫn còn nguyên vẹn trong `message_deliveries`.
+| Chế độ `MILESTONE_STORAGE_MODE` | Nguồn sự thật & Khóa chống trùng có hiệu lực | Hành vi đọc / ghi của `automation-trigger.service.ts` & `automation-worker.ts` |
+|---|---|---|
+| **`LEGACY_DELIVERY_SCAN`** *(Mặc định trước cutover & trong bộ test chưa chạy DDL S1)* | Bảng `message_deliveries` + khóa giao dịch `Serializable` (`SELECT id FROM enrollments WHERE id = ? FOR UPDATE`) + `pickCanonicalOccurrence` | Đọc và ghi trực tiếp trên `message_deliveries` như commit `0970bec`. **Không** đọc bảng `milestone_occurrences` để ra quyết định gửi, kể cả khi bảng `milestone_occurrences` đã được tạo trên DB để chuẩn bị backfill. |
+| **`S1_OCCURRENCE_TABLE`** *(Sau khi nghiệm thu backfill & bật cutover)* | Bảng `milestone_occurrences` với khóa cứng `UNIQUE (enrollment_id, automation_step_id)` cấp InnoDB + bản ghi `message_deliveries` được trỏ bởi `canonical_delivery_id` | Mọi thao tác tạo mới, rebind `basis_attendance_id`, hủy `CANCELLED`, hoặc `reactivate` của bước `ATTENDED` **bắt buộc** đi qua `milestone_occurrences` trước (nắm giữ khóa `UNIQUE (enrollment_id, automation_step_id)`), đồng thời ghi/cập nhật bản ghi tương ứng trên `message_deliveries` (`milestone_occurrence_id = mo.id`, `canonical_delivery_id = md.id`). |
+
+#### Trình tự Cutover 2 giai đoạn (không chạy song song hai cơ chế quyết định gửi):
+
+1. **Giai đoạn 1 — Pre-Cutover (Tạo bảng & Backfill khi `MILESTONE_STORAGE_MODE = LEGACY_DELIVERY_SCAN`):**
+   - **Bước 1.1:** Trong khi hệ thống vẫn chạy ở `MILESTONE_STORAGE_MODE = LEGACY_DELIVERY_SCAN`, thực thi DDL tạo bảng `milestone_occurrences` (Mục 3.2) và thêm cột nullable `message_deliveries.milestone_occurrence_id` (Mục 7.1b).
+   - **Bước 1.2 (Cửa sổ tạm dừng ngắn < 1 phút hoặc chạy Backfill + Delta-Sync):**
+     - Tạm dừng tiến trình `automation-worker` (hoặc đặt cửa sổ bảo trì ngắn < 1 phút để không có giao dịch ghi mới nào đua với backfill).
+     - Chạy câu lệnh Backfill `INSERT INTO milestone_occurrences ... SELECT ...` (Mục 7.3) và câu lệnh `UPDATE message_deliveries SET milestone_occurrence_id = mo.id ...` (Mục 7.1b).
+     - Chạy lại một lượt **Delta-Sync** (cùng câu lệnh `INSERT ... ON DUPLICATE KEY UPDATE` và `UPDATE ... WHERE milestone_occurrence_id IS NULL`) ngay sau khi đóng cổng ghi tạm thời để bắt kịp 100% các bản ghi phát sinh tới giây cuối cùng trước điểm cắt `T_cutover`.
+2. **Giai đoạn 2 — Đối soát nghiệm thu & Chuyển mạch (`Cutover` sang `S1_OCCURRENCE_TABLE`):**
+   - **Bước 2.1 (Chạy bộ truy vấn đối soát bắt buộc trước khi đổi mode):**
+     - Kiểm tra `0` nhóm thiếu occurrence: số dòng trong `milestone_occurrences` bằng đúng `COUNT(DISTINCT enrollment_id, automation_step_id)` của các bước `ATTENDED` trong `message_deliveries` (Checklist C4).
+     - Kiểm tra `0` dòng `SENT`/`SENDING` mồ côi: truy vấn C6 (Mục 7.1b) trả về **0 hàng** (`0` bản ghi `SENT`/`SENDING` thuộc `ATTENDED` có `milestone_occurrence_id IS NULL`).
+     - Kiểm tra đối khớp 1-1 giữa `milestone_occurrences.(status, canonical_delivery_id, basis_attendance_id)` và kết quả `pickCanonicalOccurrence` trên `message_deliveries` (Checklist C4b).
+   - **Bước 2.2 (Khởi động kiểm tra Startup Probe & Đổi mode đồng bộ):**
+     - Cập nhật cấu hình `MILESTONE_STORAGE_MODE = S1_OCCURRENCE_TABLE` đồng thời cho `backend API` và `automation-worker`, sau đó mở lại `automation-worker`.
+     - Ghi nhận mốc thời gian `T_cutover` vào nhật ký vận hành để làm mốc đối chiếu nếu cần rollback.
+
+---
+
+### 7.4b. Quy tắc Fail-Closed khi lỗi truy cập bảng mới — CẤM âm thầm Fallback (Yêu cầu d)
+
+Để loại bỏ triệt để nguy cơ *"lỗi truy cập bảng mới bị coi nhầm là chưa có bảng rồi âm thầm fallback về cơ chế cũ gây gửi trùng"*, hệ thống áp dụng quy tắc **Fail-Closed tuyệt đối**:
+
+1. **Kiểm tra cấu hình & Startup Probe khi khởi động (`Fail-Fast on Boot`):**
+   - Nếu `MILESTONE_STORAGE_MODE` mang giá trị ngoài tập hợp hợp lệ `{LEGACY_DELIVERY_SCAN, S1_OCCURRENCE_TABLE}`, tiến trình từ chối khởi động ngay lập tức (`Invalid MILESTONE_STORAGE_MODE`).
+   - Khi `MILESTONE_STORAGE_MODE = S1_OCCURRENCE_TABLE`, ngay lúc khởi động (`server.ts` và `automation-worker.ts`), hệ thống thực thi truy vấn thăm dò `SELECT 1 FROM milestone_occurrences LIMIT 1`. Nếu bảng chưa tồn tại (`ER_NO_SUCH_TABLE` / `P2021`), thiếu quyền `SELECT/INSERT/UPDATE`, hoặc kết nối DB lỗi $\rightarrow$ **tiến trình dừng khởi động ngay lập tức (fail-fast)**, tuyệt đối không tự chuyển về `LEGACY_DELIVERY_SCAN`.
+2. **Fail-Closed trong thời gian chạy (`Runtime Fail-Closed — Zero Silent Fallback`):**
+   - Khi `MILESTONE_STORAGE_MODE = S1_OCCURRENCE_TABLE`, nếu bất kỳ truy vấn đọc/ghi nào trên `milestone_occurrences` gặp lỗi (lỗi kết nối MySQL, deadlock vượt quá số lần retry, timeout, thiếu quyền, bảng bị khóa hoặc không truy cập được):
+     - **Bắt buộc ném lỗi (`throw`) và rollback giao dịch DB hiện tại.**
+     - **TUYỆT ĐỐI KHÔNG enqueue job lên BullMQ và KHÔNG phát tin qua Zalo/LINE.**
+     - **TUYỆT ĐỐI KHÔNG có bất kỳ khối `catch` nào bắt lỗi truy vấn `milestone_occurrences` để gọi sang `findDeliveryForMilestoneOccurrence` trên `message_deliveries`.**
+     - Ghi log mức `ERROR` kèm mã cảnh báo vận hành (`MILESTONE_OCCURRENCE_STORAGE_FAILURE`) để kỹ thuật xử lý sự cố hạ tầng.
+   - **Tại sao Fail-Closed bảo toàn chống gửi trùng:** Khi DB gặp sự cố tạm thời ở chế độ `S1_OCCURRENCE_TABLE`, việc dừng gửi (abort) giữ hệ thống ở phía an toàn (không có tin nhắn nào lọt ra ngoài mà không đi qua khóa `UNIQUE (enrollment_id, automation_step_id)`). Sau khi DB phục hồi, lần đối soát hoặc lượt chạy tiếp theo sẽ đánh giá lại trên `milestone_occurrences` một cách nhất quán.
+
+---
+
+### 7.5. Quy trình Hoàn tác (Rollback Protocol 5 Bước — Bảo toàn chống gửi trùng cho cả dữ liệu phát sinh sau Cutover — Yêu cầu c)
+
+> **Nguyên tắc cốt lõi theo chỉ đạo của Owner:** Việc `DROP TABLE milestone_occurrences` **không phải** là phương án rollback tự thân, mà chỉ có thể là bước dọn dẹp cuối cùng sau khi đã hoàn tất đối soát. Nếu sau thời điểm `T_cutover` hệ thống đã tạo hoặc cập nhật các occurrence/delivery mới dưới chế độ `S1_OCCURRENCE_TABLE`, quy trình rollback bắt buộc phải đảm bảo bộ máy `LEGACY_DELIVERY_SCAN` khi tiếp quản lại sẽ nhìn thấy **chính xác cùng trạng thái đã gửi / đang chờ / đã hủy** và **không bao giờ gửi trùng** bất kỳ mốc nào đã phát sinh sau cutover.
+
+Quy trình Rollback vận hành gồm **5 bước bắt buộc theo đúng thứ tự (`R1` $\rightarrow$ `R5`)**:
+
+#### Bước R1 — Đóng cổng phát tin tạm thời (Freeze Outbound Dispatch)
+- Tạm dừng tiến trình BullMQ worker (`automation-worker`) hoặc bật cờ tạm dừng phát tin để đảm bảo **không còn job gửi tin nào đang bay giữa chừng (`in-flight`)** trong lúc thực hiện đồng bộ ngược và chuyển chế độ.
+- Chờ mọi lời gọi HTTP Zalo/LINE đang thực thi kết thúc (hoặc kiểm tra không còn bản ghi `status = 'SENDING'` mới phát sinh).
+
+#### Bước R2 — Đồng bộ ngược & Hội tụ (Reverse Reconciliation) các occurrence/delivery phát sinh sau `T_cutover`
+Vì bộ máy `LEGACY_DELIVERY_SCAN` đọc trực tiếp bảng `message_deliveries` theo cặp `(enrollment_id, automation_step_id)`, trước khi chuyển mode về `LEGACY_DELIVERY_SCAN`, phải kiểm tra và đồng bộ toàn bộ các dòng trong `milestone_occurrences` có `updated_at >= T_cutover`:
+
+1. **Đảm bảo mọi occurrence phát sinh sau `T_cutover` đều có bản ghi `message_deliveries` đại diện đầy đủ:**
+   - Trong thiết kế S1, mỗi khi tạo hoặc cập nhật `milestone_occurrences`, ứng dụng luôn tạo/cập nhật bản ghi `message_deliveries` được trỏ bởi `canonical_delivery_id`.
+   - Kiểm tra và đồng bộ trạng thái từ `milestone_occurrences` sang bản ghi `message_deliveries` canonical (phòng trường hợp có bất kỳ độ lệch trạng thái hoặc `basis_attendance_id` nào sau `T_cutover`):
+
+```sql
+-- R2.1: Đồng bộ trạng thái và attendance căn cứ từ milestone_occurrences về dòng message_deliveries canonical
+UPDATE `message_deliveries` md
+INNER JOIN `milestone_occurrences` mo
+  ON mo.`canonical_delivery_id` = md.`id`
+SET
+  md.`status` = mo.`status`,
+  md.`attendance_id` = mo.`basis_attendance_id`,
+  md.`milestone_occurrence_id` = mo.`id`
+WHERE mo.`updated_at` >= @T_cutover
+  AND (
+    md.`status` <> mo.`status`
+    OR md.`attendance_id` <> mo.`basis_attendance_id`
+    OR md.`milestone_occurrence_id` IS NULL
+  );
+```
+
+2. **Khử mọi bản ghi `SCHEDULED`/`QUEUED` dư thừa trong `message_deliveries` để `LEGACY_DELIVERY_SCAN` không gửi lặp:**
+   - Nếu trong cùng một cặp `(enrollment_id, automation_step_id)` thuộc bước `ATTENDED` đã có occurrence ở trạng thái `SENT` hoặc `SENDING` (hoặc đã có `canonical_delivery_id` khác), mọi bản ghi `message_deliveries` khác đang ở trạng thái chưa gửi (`SCHEDULED`, `QUEUED`) **bắt buộc** phải được chuyển sang `CANCELLED` kèm vết kiểm toán và gỡ job khỏi Redis/BullMQ:
+
+```sql
+-- R2.2: Chuyển mọi dòng SCHEDULED/QUEUED không phải canonical (hoặc khi mốc đã SENT/SENDING) sang CANCELLED
+UPDATE `message_deliveries` md
+INNER JOIN `milestone_occurrences` mo
+  ON mo.`enrollment_id` = md.`enrollment_id`
+ AND mo.`automation_step_id` = md.`automation_step_id`
+SET
+  md.`status` = 'CANCELLED',
+  md.`error_message` = CONCAT(
+    'Rollback reconciliation: superseded by canonical occurrence #',
+    mo.`id`,
+    ' (canonical delivery #',
+    IFNULL(mo.`canonical_delivery_id`, 0),
+    ')'
+  ),
+  md.`milestone_occurrence_id` = mo.`id`
+WHERE md.`status` IN ('SCHEDULED', 'QUEUED')
+  AND (
+    mo.`status` IN ('SENT', 'SENDING', 'CANCELLED')
+    OR (mo.`canonical_delivery_id` IS NOT NULL AND md.`id` <> mo.`canonical_delivery_id`)
+  );
+```
+   - Đồng thời, với mọi `md.queue_job_id` của các dòng vừa chuyển sang `CANCELLED` ở R2.2, gọi script gỡ job khỏi hàng đợi BullMQ (`automation:delivery:${md.id}`).
+
+#### Bước R3 — Đối soát bất biến chống gửi trùng trước khi mở lại chế độ cũ (Pre-Switch Invariant Verification)
+Chạy truy vấn kiểm tra chỉ đọc (`SELECT`) xác nhận: với **mọi** cặp `(enrollment_id, automation_step_id)` thuộc các bước `trigger_event = 'ATTENDED'`, kết quả chọn dòng đại diện của thuật toán `LEGACY_DELIVERY_SCAN` trên bảng `message_deliveries` khớp **100%** với `milestone_occurrences`:
+
+```sql
+-- R3 (READ-ONLY): Kiểm tra đối khớp 100% giữa milestone_occurrences và kết quả quét message_deliveries của LEGACY_DELIVERY_SCAN.
+-- Tiêu chí ĐẠT: Truy vấn phải trả về 0 hàng (mismatch_count = 0).
+SELECT
+  mo.id AS occurrence_id,
+  mo.enrollment_id,
+  mo.automation_step_id,
+  mo.canonical_delivery_id AS mo_canonical_delivery_id,
+  mo.status AS mo_status,
+  mo.basis_attendance_id AS mo_basis_attendance_id,
+  legacy_pick.id AS legacy_canonical_delivery_id,
+  legacy_pick.status AS legacy_status,
+  legacy_pick.attendance_id AS legacy_basis_attendance_id
+FROM `milestone_occurrences` mo
+LEFT JOIN (
+  SELECT
+    md.id,
+    md.enrollment_id,
+    md.automation_step_id,
+    md.attendance_id,
+    md.status,
+    ROW_NUMBER() OVER (
+      PARTITION BY md.enrollment_id, md.automation_step_id
+      ORDER BY
+        CASE md.status
+          WHEN 'SENT' THEN 1
+          WHEN 'SENDING' THEN 2
+          WHEN 'QUEUED' THEN 3
+          WHEN 'SCHEDULED' THEN 4
+          WHEN 'CANCELLED' THEN 5
+          ELSE 6
+        END ASC,
+        CASE
+          WHEN md.error_message LIKE 'Superseded duplicate%'
+            OR md.error_message LIKE 'Rollback reconciliation:%' THEN 1
+          ELSE 0
+        END ASC,
+        md.id ASC
+    ) AS rn
+  FROM `message_deliveries` md
+  INNER JOIN `automation_steps` s ON s.id = md.automation_step_id
+  WHERE s.trigger_event = 'ATTENDED'
+) AS legacy_pick
+  ON legacy_pick.enrollment_id = mo.enrollment_id
+ AND legacy_pick.automation_step_id = mo.automation_step_id
+ AND legacy_pick.rn = 1
+WHERE
+  legacy_pick.id IS NULL
+  OR legacy_pick.id <> mo.canonical_delivery_id
+  OR legacy_pick.status <> mo.status
+  OR legacy_pick.attendance_id <> mo.basis_attendance_id;
+```
+
+- Kiểm tra bổ sung: xác nhận `groups_with_sent_plus_pending = 0` và `groups_with_multiple_pending = 0` trên Truy vấn 2 (Mục 2.2) cho toàn bộ `trigger_event = 'ATTENDED'`.
+- **Chốt chặn:** Nếu truy vấn R3 trả về bất kỳ dòng nào khác `0`, **tuyệt đối không chuyển mode và không bật lại worker** cho đến khi xử lý xong dòng lệch đó.
+
+#### Bước R4 — Chuyển `MILESTONE_STORAGE_MODE` về `LEGACY_DELIVERY_SCAN` và mở lại Worker
+- Chỉ sau khi Bước R3 đạt `0` dòng lệch, đổi cấu hình `MILESTONE_STORAGE_MODE = LEGACY_DELIVERY_SCAN` trên cả `backend API` và `automation-worker`.
+- Khởi động lại / mở lại `automation-worker`. Từ thời điểm này, `LEGACY_DELIVERY_SCAN` tiếp quản hoàn toàn mà không gửi trùng bất kỳ occurrence nào đã phát sinh trước hoặc sau `T_cutover`.
+
+#### Bước R5 — Giữ bảng `milestone_occurrences` để đối chiếu hậu kiểm; `DROP TABLE` chỉ là bước dọn dẹp cuối cùng (Optional Cleanup)
+- **Không xóa ngay bảng `milestone_occurrences` khi vừa rollback xong ở Bước R4.** Giữ nguyên bảng `milestone_occurrences` và cột `message_deliveries.milestone_occurrence_id` ở trạng thái đóng băng (chỉ đọc) để phục vụ đối chiếu kiểm toán sau rollback.
+- Chỉ khi hệ thống đã vận hành ổn định trên `LEGACY_DELIVERY_SCAN` và **Owner ký xác nhận hoàn tất đối soát sau rollback**, nếu muốn gỡ bỏ hoàn toàn DDL mới thực thi lệnh dọn dẹp cuối cùng:
+  ```sql
+  -- CHỈ CHẠY SAU KHI ĐÃ HOÀN TẤT R1-R4 VÀ CÓ XÁC NHẬN CỦA OWNER:
+  ALTER TABLE `message_deliveries`
+    DROP FOREIGN KEY `message_deliveries_milestone_occurrence_id_fkey`,
+    DROP INDEX `message_deliveries_milestone_occurrence_id_idx`,
+    DROP COLUMN `milestone_occurrence_id`;
+  DROP TABLE IF EXISTS `milestone_occurrences`;
+  ```
+
+---
 
 ### 7.6. Danh mục Điều kiện Tiên quyết & Phê duyệt của Owner (Preconditions & Owner Sign-Off Checklist)
 
-Trước khi thực thi DDL và Backfill của Phương án S1 trên môi trường Staging / Production, cần hoàn tất bảng kiểm (checklist) sau:
+Trước khi thực thi DDL, Backfill và Cutover của Phương án S1 trên môi trường Staging / Production, toàn bộ 9 hạng mục kiểm chứng (**C1 – C9**) dưới đây phải được hoàn tất:
 
 | Mã | Hạng mục kiểm tra / Phê duyệt | Tiêu chí đạt (Pass Criteria) | Người xác nhận |
 |---|---|---|---|
-| **C1** | Chạy Truy vấn kiểm toán chỉ đọc 1 & 2 (Mục 2.2) | Lưu kết quả snapshot ra file kiểm toán trước khi thao tác. | Kỹ thuật / Vận hành |
+| **C1** | Chạy Truy vấn kiểm toán chỉ đọc 1 & 2 (Mục 2.2) | Lưu kết quả snapshot ra file kiểm toán trước khi thao tác, liệt kê đầy đủ mọi nhóm `(enrollment_id, automation_step_id)` có $\ge 2$ dòng `SENT`/`SENDING`. | Kỹ thuật / Vận hành |
 | **C2** | Kiểm tra Precondition P2 (Hội tụ các dòng chưa gửi trùng) | `groups_with_sent_plus_pending = 0` và `groups_with_multiple_pending = 0` đối với `trigger_event = 'ATTENDED'`. | Kỹ thuật |
 | **C3** | Kiểm tra Precondition P3 (Đối soát dòng `SENDING` treo) | Không còn bản ghi `status = 'SENDING'` nào quá 5 phút chưa được phân định trước lúc cutover. | Vận hành CSKH |
-| **C4** | Kiểm chứng hậu Backfill (`SELECT COUNT`) | Số dòng trong `milestone_occurrences` khớp chính xác 100% với `COUNT(DISTINCT enrollment_id, automation_step_id)` của các bước `ATTENDED` trong `message_deliveries`; số dòng `message_deliveries` trước và sau backfill bằng nhau tuyệt đối (`0 rows deleted`). | Kỹ thuật |
-| **C5** | Phê duyệt tường minh của Owner | Owner ký duyệt cho phép chạy DDL tạo bảng `milestone_occurrences` và script Backfill chỉ thêm mới. | **Owner** |
+| **C4** | Kiểm chứng hậu Backfill (`SELECT COUNT` & đối khớp canonical) | Số dòng trong `milestone_occurrences` khớp 100% với `COUNT(DISTINCT enrollment_id, automation_step_id)` của các bước `ATTENDED` trong `message_deliveries`; truy vấn đối soát C4b trả về `0` dòng lệch; `0 rows deleted` trên `message_deliveries`. | Kỹ thuật |
+| **C5** | Phê duyệt tường minh của Owner trước khi chạy trên DB mục tiêu | Owner ký duyệt báo cáo C1–C4 và cho phép chạy DDL + Backfill + Cutover. | **Owner** |
+| **C6** | Kiểm chứng liên kết lịch sử đa `SENT`/`SENDING` (Yêu cầu a) | Truy vấn C6 (Mục 7.1b) trả về **0 hàng**: mọi dòng `SENT`/`SENDING` lịch sử của bước `ATTENDED` (bao gồm cả dòng thứ 2+ không phải canonical) đều có `milestone_occurrence_id IS NOT NULL` trỏ đúng về occurrence của mốc đó. | Kỹ thuật |
+| **C7** | Kiểm chứng Một Thẩm Quyền Duy Nhất `MILESTONE_STORAGE_MODE` (Yêu cầu b) | Thực nghiệm trên Staging xác nhận ở mỗi giá trị `LEGACY_DELIVERY_SCAN` hoặc `S1_OCCURRENCE_TABLE` chỉ có đúng một cơ chế quyết định gửi hoạt động, không chạy song song hai luồng. | Kỹ thuật |
+| **C8** | Diễn tập Rollback R1–R4 có dữ liệu phát sinh sau `T_cutover` (Yêu cầu c) | Trên Staging, sau khi tạo/gửi/rebind occurrence mới dưới `S1_OCCURRENCE_TABLE`, chạy quy trình R1 $\rightarrow$ R4: truy vấn R3 trả về `0` dòng lệch và sau khi quay về `LEGACY_DELIVERY_SCAN` không phát sinh bất kỳ lệnh gửi trùng nào. | Kỹ thuật |
+| **C9** | Kiểm chứng Fail-Closed khi lỗi truy cập `milestone_occurrences` (Yêu cầu d) | Thực nghiệm fault-injection trên Staging (đổi tên bảng tạm thời hoặc thu hồi quyền khi đang ở `S1_OCCURRENCE_TABLE`): xác nhận hệ thống **báo lỗi & dừng gửi (fail-closed)**, tuyệt đối **không** tự động fallback sang `message_deliveries`. | Kỹ thuật |
 
