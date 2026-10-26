@@ -25,5 +25,10 @@ export const classesApi = {
   assignTeacher: async (id: number, data: AssignTeacherDTO): Promise<any> => {
     const res = await apiClient.post(`/classes/${id}/teachers`, data);
     return res.data.data;
+  },
+
+  endTeacherAssignment: async (classId: number, assignmentId: number, data: { end_date: string | null }): Promise<any> => {
+    const res = await apiClient.patch(`/classes/${classId}/teachers/${assignmentId}/end`, data);
+    return res.data.data;
   }
 };

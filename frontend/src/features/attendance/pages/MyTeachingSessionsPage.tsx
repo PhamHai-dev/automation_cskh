@@ -40,6 +40,10 @@ export const MyTeachingSessionsPage: React.FC = () => {
 
   const { user } = useAuth();
   const isPrivileged = !!user?.roles.some((role) => role === 'ADMIN' || role === 'MANAGE');
+  // D8 assist-mark ("chấm hộ giáo viên") is ADMIN-only per backend
+  // isAssistMarkPrivileged (reconciliation.service.ts); MANAGE keeps read-only
+  // viewing of another teacher's schedule via teacher-sessions (ADMIN/MANAGE).
+  const isAdmin = !!user?.roles.includes('ADMIN');
   const canRecordActual = !!user?.roles.includes('TEACHER') && !isPrivileged;
 
   const [sessions, setSessions] = useState<any[]>([]);
@@ -148,6 +152,7 @@ export const MyTeachingSessionsPage: React.FC = () => {
   }, [hasContext, toast]);
 
   const handleOpenMarkModal = (session: any, ec: any, status: AttendanceStatus) => {
+    if (isPrivileged && !isAdmin) return;
     setSelectedSession(session);
     setSelectedEnrollmentClass(ec);
     const existingAtt = ec.attendance?.find((a: any) => a.class_session_id === session.id && !a.deleted_at);
@@ -160,6 +165,11 @@ export const MyTeachingSessionsPage: React.FC = () => {
 
   const handleConfirmMark = async () => {
     if (!selectedSession || !selectedEnrollmentClass) return;
+    if (isPrivileged && !isAdmin) return;
+    if (isPrivileged && !selectedTeacherId) {
+      toast.warning('Hãy chọn giáo viên cần hỗ trợ');
+      return;
+    }
 
     const rawValue = selectedStatus === 'ATTENDED'
       ? `${selectedEnrollmentClass.enrollment?.student?.external_id || ''}-${lessonTopic.trim()}`
@@ -175,6 +185,7 @@ export const MyTeachingSessionsPage: React.FC = () => {
         // CSKH/teacher dual-opinion state is derived and downstream automation runs once.
         await reconciliationApi.markByTeacher(attendanceId, {
           status: selectedStatus,
+          ...(isPrivileged ? { teacherId: selectedTeacherId } : {}),
           lessonTopic: selectedStatus === 'ATTENDED' ? lessonTopic.trim() || undefined : undefined,
           note: teacherNote.trim() || undefined,
           rawValue,
@@ -502,7 +513,7 @@ export const MyTeachingSessionsPage: React.FC = () => {
 
                     {session.class?.enrollment_classes?.map((ec: any) => {
                       const student = ec.enrollment?.student;
-                      const att = ec.attendance?.find((a: any) => a.class_session_id === session.id) || ec.attendance?.[0];
+                      const att = ec.attendance?.find((a: any) => a.class_session_id === session.id && !a.deleted_at);
 
                       return (
                         <div key={ec.id} className="bg-surface-muted/60 p-3 rounded-xl border border-border/60">
@@ -552,44 +563,52 @@ export const MyTeachingSessionsPage: React.FC = () => {
 
                           {/* Quick Mark Buttons for this student */}
                           <div className="mt-3 pt-2.5 border-t border-border/40">
-                            <span className="text-[11px] font-semibold text-text-muted block mb-1.5">
-                              Điểm danh nhanh:
-                            </span>
-                            <div className="flex flex-wrap gap-1.5">
-                              <Button
-                                size="sm"
-                                variant="primary"
-                                className="h-7 text-xs px-2.5 bg-emerald-600 hover:bg-emerald-700"
-                                onClick={() => handleOpenMarkModal(session, ec, 'ATTENDED')}
-                              >
-                                <Check className="w-3.5 h-3.5 mr-1" />
-                                Đã học
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="h-7 text-xs px-2"
-                                onClick={() => handleOpenMarkModal(session, ec, 'ABSENT_APPROVED_A')}
-                              >
-                                Nghỉ phép (A)
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="h-7 text-xs px-2 text-rose-600 border-rose-300 hover:bg-rose-50"
-                                onClick={() => handleOpenMarkModal(session, ec, 'ABSENT_UNAPPROVED_C')}
-                              >
-                                Vắng (C)
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="h-7 text-xs px-2 text-text-muted"
-                                onClick={() => handleOpenMarkModal(session, ec, 'LEAVE_B')}
-                              >
-                                Bảo lưu (B)
-                              </Button>
-                            </div>
+                            {isPrivileged && !isAdmin ? (
+                              <Badge variant="neutral" size="sm">
+                                MANAGE chỉ xem lịch dạy — chỉ Admin mới chấm hộ giáo viên
+                              </Badge>
+                            ) : (
+                              <>
+                                <span className="text-[11px] font-semibold text-text-muted block mb-1.5">
+                                  Điểm danh nhanh:
+                                </span>
+                                <div className="flex flex-wrap gap-1.5">
+                                  <Button
+                                    size="sm"
+                                    variant="primary"
+                                    className="h-7 text-xs px-2.5 bg-emerald-600 hover:bg-emerald-700"
+                                    onClick={() => handleOpenMarkModal(session, ec, 'ATTENDED')}
+                                  >
+                                    <Check className="w-3.5 h-3.5 mr-1" />
+                                    Đã học
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-7 text-xs px-2"
+                                    onClick={() => handleOpenMarkModal(session, ec, 'ABSENT_APPROVED_A')}
+                                  >
+                                    Nghỉ phép (A)
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-7 text-xs px-2 text-rose-600 border-rose-300 hover:bg-rose-50"
+                                    onClick={() => handleOpenMarkModal(session, ec, 'ABSENT_UNAPPROVED_C')}
+                                  >
+                                    Vắng (C)
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="h-7 text-xs px-2 text-text-muted"
+                                    onClick={() => handleOpenMarkModal(session, ec, 'LEAVE_B')}
+                                  >
+                                    Bảo lưu (B)
+                                  </Button>
+                                </div>
+                              </>
+                            )}
                           </div>
                         </div>
                       );
@@ -624,7 +643,7 @@ export const MyTeachingSessionsPage: React.FC = () => {
             <Button
               variant="primary"
               onClick={handleConfirmMark}
-              disabled={isSubmitting}
+              disabled={isSubmitting || (isPrivileged && !isAdmin)}
             >
               {isSubmitting ? 'Đang lưu...' : 'Lưu Điểm Danh'}
             </Button>

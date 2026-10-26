@@ -6,12 +6,16 @@ import { classSessionsApi, attendanceApi } from '../api/sessions.api';
 import {
   Class,
   ClassSession,
+  ClassTeacherAssignment,
+  ClassTeacherRole,
   Attendance,
   AttendanceStatus,
   CreateClassDTO,
   UpdateClassDTO,
   formatClassCode,
 } from '../types/classes.types';
+import { teachersApi } from '../../teachers/api/teachers.api';
+import { Teacher } from '../../teachers/types/teachers.types';
 import { formatSessionDate, toLocalDateString } from '../components/AttendanceMatrix';
 import { PageContainer } from '../../../components/common/PageContainer';
 import { PageHeader } from '../../../components/common/PageHeader';
@@ -39,6 +43,7 @@ import {
   Check,
   BookOpen,
   Users,
+  UserRoundCheck,
 } from 'lucide-react';
 
 const MODEL_CONFIG: Record<string, { label: string; className: string }> = {
@@ -110,6 +115,25 @@ const POPOVER_STATUS_OPTIONS: Array<{ status: AttendanceStatus; label: string }>
 
 const DAY_OF_WEEK_NAMES = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
 
+const TEACHER_ROLE_CONFIG: Record<
+  ClassTeacherRole,
+  { label: string; variant: 'info' | 'accent' | 'warning' }
+> = {
+  MAIN: { label: 'Giáo viên chính', variant: 'info' },
+  ASSISTANT: { label: 'Giáo viên phụ', variant: 'accent' },
+  SUBSTITUTE: { label: 'Giáo viên dạy thay', variant: 'warning' },
+};
+
+const formatAssignmentDate = (raw?: string | null): string => {
+  if (!raw) return '—';
+  const ymd = formatSessionDate(raw);
+  const parts = ymd.split('-');
+  if (parts.length === 3) {
+    return `${parts[2]}/${parts[1]}/${parts[0]}`;
+  }
+  return ymd || '—';
+};
+
 type ClassAttendanceTab = 'quick' | 'detailed';
 type DetailedFilterMode = 'week' | 'month' | 'year';
 
@@ -134,6 +158,7 @@ export const ClassesPage: React.FC = () => {
       !user?.roles?.includes('CS')
   );
   const canManageClasses = Boolean(user?.roles?.some((r) => ['ADMIN', 'MANAGE'].includes(r)));
+  const isAdmin = Boolean(user?.roles?.includes('ADMIN'));
 
   const toast = useToast();
   const navigate = useNavigate();
@@ -204,6 +229,31 @@ export const ClassesPage: React.FC = () => {
     level: '',
     active: true,
   });
+
+  // Modal Phân công Giáo viên (D8 — Admin kết thúc phân công, ADMIN/MANAGE thêm phân công)
+  const [isAssignmentModalOpen, setIsAssignmentModalOpen] = useState(false);
+  const [assignmentClassId, setAssignmentClassId] = useState<number | null>(null);
+  // Luôn lấy dữ liệu mới nhất từ danh sách lớp để modal tự render lại sau khi refresh.
+  const assignmentClass = useMemo(
+    () => classes.find((c) => c.id === assignmentClassId) || null,
+    [classes, assignmentClassId]
+  );
+  const [assignmentTeachers, setAssignmentTeachers] = useState<Teacher[]>([]);
+  const [endingAssignmentId, setEndingAssignmentId] = useState<number | null>(null);
+  const [endDateDraft, setEndDateDraft] = useState('');
+  const [endingAssignment, setEndingAssignment] = useState(false);
+  const [newAssignment, setNewAssignment] = useState<{
+    teacher_id: string;
+    role: ClassTeacherRole;
+    start_date: string;
+    end_date: string;
+  }>({
+    teacher_id: '',
+    role: 'MAIN',
+    start_date: toLocalDateString(new Date()),
+    end_date: '',
+  });
+  const [assigningTeacher, setAssigningTeacher] = useState(false);
 
   // Chuẩn hóa sinh mã lớp tiếp theo dạng class_0001, class_0002...
   const generateNextClassCode = () => {
@@ -1065,6 +1115,92 @@ export const ClassesPage: React.FC = () => {
     }
   };
 
+  useEffect(() => {
+    if (!canManageClasses) return;
+    teachersApi
+      .list()
+      .then((items) => setAssignmentTeachers(items.filter((t) => t.active)))
+      .catch(() => toast.error('Không thể tải danh sách giáo viên'));
+  }, [canManageClasses, toast]);
+
+  const openAssignmentModal = (cls: Class) => {
+    setAssignmentClassId(cls.id);
+    setEndingAssignmentId(null);
+    setEndDateDraft(toLocalDateString(new Date()));
+    setNewAssignment({
+      teacher_id: '',
+      role: 'MAIN',
+      start_date: toLocalDateString(new Date()),
+      end_date: '',
+    });
+    setIsAssignmentModalOpen(true);
+  };
+
+  const closeAssignmentModal = () => {
+    if (assigningTeacher || endingAssignment) return;
+    setIsAssignmentModalOpen(false);
+    setAssignmentClassId(null);
+    setEndingAssignmentId(null);
+  };
+
+  const handleConfirmEndAssignment = async (row: ClassTeacherAssignment) => {
+    if (!assignmentClass) return;
+    setEndingAssignment(true);
+    try {
+      await classesApi.endTeacherAssignment(assignmentClass.id, row.id, {
+        end_date: endDateDraft || null,
+      });
+      toast.success(
+        `Đã kết thúc phân công ${row.teacher?.name || 'giáo viên'} từ ngày ${formatAssignmentDate(endDateDraft)}`
+      );
+      setEndingAssignmentId(null);
+      await fetchClasses(true);
+    } catch (err: any) {
+      toast.error(
+        err.response?.data?.message ||
+          err.response?.data?.error?.message ||
+          'Không thể kết thúc phân công giáo viên'
+      );
+    } finally {
+      setEndingAssignment(false);
+    }
+  };
+
+  const handleAssignTeacherSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!assignmentClass) return;
+    const teacherId = Number(newAssignment.teacher_id);
+    if (!teacherId) {
+      toast.warning('Vui lòng chọn giáo viên cần phân công.');
+      return;
+    }
+    setAssigningTeacher(true);
+    try {
+      await classesApi.assignTeacher(assignmentClass.id, {
+        teacher_id: teacherId,
+        role: newAssignment.role,
+        start_date: newAssignment.start_date || undefined,
+        end_date: newAssignment.end_date || undefined,
+      });
+      toast.success('Đã phân công giáo viên cho lớp học!');
+      setNewAssignment({
+        teacher_id: '',
+        role: 'MAIN',
+        start_date: toLocalDateString(new Date()),
+        end_date: '',
+      });
+      await fetchClasses(true);
+    } catch (err: any) {
+      toast.error(
+        err.response?.data?.message ||
+          err.response?.data?.error?.message ||
+          'Không thể phân công giáo viên'
+      );
+    } finally {
+      setAssigningTeacher(false);
+    }
+  };
+
   // Handle Quick Create Session + Note (Teacher only)
   const handleCreateQuickSession = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1533,6 +1669,8 @@ export const ClassesPage: React.FC = () => {
                   const singleStudent = isOneToOne ? students[0] : undefined;
                   const isExpanded = !collapsedClassIds.has(cls.id);
                   const mainTeacher =
+                    cls.class_teachers?.find((t) => t.role === 'MAIN' && t.active !== false)?.teacher ||
+                    cls.class_teachers?.find((t) => t.active !== false)?.teacher ||
                     cls.class_teachers?.find((t) => t.role === 'MAIN')?.teacher ||
                     cls.class_teachers?.[0]?.teacher;
                   const schedule = cls.class_schedules?.[0];
@@ -1788,6 +1926,18 @@ export const ClassesPage: React.FC = () => {
                             >
                               Buổi học
                             </Button>
+                            {canManageClasses && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => openAssignmentModal(cls)}
+                                leftIcon={<UserRoundCheck className="w-3.5 h-3.5" />}
+                                title="Quản lý phân công giáo viên"
+                                className="h-7 px-2 text-[11px] text-teal-700 border-teal-200 hover:bg-teal-50"
+                              >
+                                Phân công GV
+                              </Button>
+                            )}
                             {canManageClasses && (
                               <Button
                                 variant="ghost"
@@ -2343,6 +2493,224 @@ export const ClassesPage: React.FC = () => {
             </div>
           )}
         </form>
+      </Modal>
+
+      {/* Modal Phân công Giáo viên */}
+      <Modal
+        isOpen={isAssignmentModalOpen && !!assignmentClass}
+        onClose={closeAssignmentModal}
+        title={
+          assignmentClass
+            ? `Phân công Giáo viên — ${assignmentClass.class_name}`
+            : 'Phân công Giáo viên'
+        }
+        size="lg"
+        closeOnOutsideClick={!assigningTeacher && !endingAssignment}
+        footer={
+          <div className="flex justify-end">
+            <Button
+              variant="outline"
+              size="sm"
+              type="button"
+              onClick={closeAssignmentModal}
+              disabled={assigningTeacher || endingAssignment}
+            >
+              Đóng
+            </Button>
+          </div>
+        }
+      >
+        {assignmentClass && (
+          <div className="space-y-6">
+            {/* Danh sách phân công hiện có */}
+            <div>
+              <h4 className="text-xs font-bold uppercase tracking-wider text-text-secondary mb-2.5">
+                Danh sách phân công hiện tại
+              </h4>
+              {!assignmentClass.class_teachers || assignmentClass.class_teachers.length === 0 ? (
+                <div className="rounded-xl border border-border/70 bg-slate-50/70 p-4 text-center text-xs text-text-muted italic">
+                  Lớp học chưa có phân công giáo viên nào.
+                </div>
+              ) : (
+                <div className="overflow-x-auto rounded-xl border border-border/80">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-slate-50 text-text-secondary border-b border-border/80">
+                      <tr>
+                        <th className="px-3 py-2 font-semibold">Giáo viên</th>
+                        <th className="px-3 py-2 font-semibold">Vai trò</th>
+                        <th className="px-3 py-2 font-semibold">Trạng thái</th>
+                        <th className="px-3 py-2 font-semibold">Từ ngày</th>
+                        <th className="px-3 py-2 font-semibold">Đến ngày</th>
+                        {isAdmin && <th className="px-3 py-2 font-semibold text-right">Thao tác</th>}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border/60 bg-white">
+                      {assignmentClass.class_teachers.map((row) => {
+                        const roleCfg = TEACHER_ROLE_CONFIG[row.role] || {
+                          label: row.role,
+                          variant: 'neutral' as const,
+                        };
+                        const isEndingThisRow = endingAssignmentId === row.id;
+
+                        return (
+                          <tr key={row.id} className="hover:bg-slate-50/60">
+                            <td className="px-3 py-2.5">
+                              <div className="font-semibold text-text-primary">
+                                {row.teacher?.name || `GV #${row.teacher_id}`}
+                              </div>
+                              <div className="text-[11px] font-mono text-text-muted">
+                                {row.teacher?.code || '—'}
+                              </div>
+                            </td>
+                            <td className="px-3 py-2.5 whitespace-nowrap">
+                              <Badge variant={roleCfg.variant} size="sm">
+                                {roleCfg.label}
+                              </Badge>
+                            </td>
+                            <td className="px-3 py-2.5 whitespace-nowrap">
+                              {row.active ? (
+                                <Badge variant="success" size="sm" dot>
+                                  Đang phân công
+                                </Badge>
+                              ) : (
+                                <Badge variant="neutral" size="sm">
+                                  Đã kết thúc
+                                </Badge>
+                              )}
+                            </td>
+                            <td className="px-3 py-2.5 whitespace-nowrap text-text-secondary">
+                              {formatAssignmentDate(row.start_date)}
+                            </td>
+                            <td className="px-3 py-2.5 whitespace-nowrap text-text-secondary">
+                              {formatAssignmentDate(row.end_date)}
+                            </td>
+                            {isAdmin && (
+                              <td className="px-3 py-2.5 text-right whitespace-nowrap">
+                                {row.active && !isEndingThisRow && (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    type="button"
+                                    onClick={() => {
+                                      setEndingAssignmentId(row.id);
+                                      setEndDateDraft(toLocalDateString(new Date()));
+                                    }}
+                                    className="h-7 px-2 text-[11px] text-rose-600 border-rose-200 hover:bg-rose-50"
+                                  >
+                                    Kết thúc phân công
+                                  </Button>
+                                )}
+                                {row.active && isEndingThisRow && (
+                                  <div className="inline-flex items-center gap-1.5">
+                                    <input
+                                      type="date"
+                                      value={endDateDraft}
+                                      onChange={(e) => setEndDateDraft(e.target.value)}
+                                      disabled={endingAssignment}
+                                      className="h-7 rounded-lg border border-border px-2 text-xs text-text-primary bg-white focus:outline-none focus:ring-2 focus:ring-primary"
+                                    />
+                                    <Button
+                                      variant="danger"
+                                      size="sm"
+                                      type="button"
+                                      disabled={endingAssignment}
+                                      onClick={() => handleConfirmEndAssignment(row)}
+                                      className="h-7 px-2 text-[11px]"
+                                    >
+                                      {endingAssignment ? 'Đang lưu...' : 'Xác nhận kết thúc'}
+                                    </Button>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      type="button"
+                                      disabled={endingAssignment}
+                                      onClick={() => setEndingAssignmentId(null)}
+                                      className="h-7 px-2 text-[11px]"
+                                    >
+                                      Hủy
+                                    </Button>
+                                  </div>
+                                )}
+                              </td>
+                            )}
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            {/* Thêm phân công mới */}
+            <form
+              onSubmit={handleAssignTeacherSubmit}
+              className="rounded-xl border border-border/80 bg-slate-50/60 p-4 space-y-3"
+            >
+              <h4 className="text-xs font-bold uppercase tracking-wider text-text-secondary">
+                Thêm phân công
+              </h4>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <Select
+                  label="Giáo viên *"
+                  value={newAssignment.teacher_id}
+                  onChange={(e) =>
+                    setNewAssignment((prev) => ({ ...prev, teacher_id: e.target.value }))
+                  }
+                  options={[
+                    { value: '', label: 'Chọn giáo viên...' },
+                    ...assignmentTeachers.map((t) => ({
+                      value: t.id,
+                      label: `${t.name} · ${t.code}`,
+                    })),
+                  ]}
+                />
+                <Select
+                  label="Vai trò *"
+                  value={newAssignment.role}
+                  onChange={(e) =>
+                    setNewAssignment((prev) => ({
+                      ...prev,
+                      role: e.target.value as ClassTeacherRole,
+                    }))
+                  }
+                  options={[
+                    { value: 'MAIN', label: 'Giáo viên chính' },
+                    { value: 'ASSISTANT', label: 'Giáo viên phụ' },
+                    { value: 'SUBSTITUTE', label: 'Giáo viên dạy thay' },
+                  ]}
+                />
+                <Input
+                  type="date"
+                  label="Ngày bắt đầu"
+                  value={newAssignment.start_date}
+                  onChange={(e) =>
+                    setNewAssignment((prev) => ({ ...prev, start_date: e.target.value }))
+                  }
+                />
+                <Input
+                  type="date"
+                  label="Ngày kết thúc (tùy chọn)"
+                  value={newAssignment.end_date}
+                  onChange={(e) =>
+                    setNewAssignment((prev) => ({ ...prev, end_date: e.target.value }))
+                  }
+                />
+              </div>
+              <div className="flex justify-end pt-1">
+                <Button
+                  variant="primary"
+                  size="sm"
+                  type="submit"
+                  disabled={assigningTeacher}
+                  leftIcon={<UserRoundCheck className="w-3.5 h-3.5" />}
+                >
+                  {assigningTeacher ? 'Đang phân công...' : 'Phân công'}
+                </Button>
+              </div>
+            </form>
+          </div>
+        )}
       </Modal>
     </PageContainer>
   );

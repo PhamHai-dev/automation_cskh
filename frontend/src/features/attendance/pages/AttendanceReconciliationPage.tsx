@@ -270,8 +270,8 @@ export const AttendanceReconciliationPage: React.FC = () => {
 
   const handleOpenCSMark = (record: AttendanceRecord) => {
     setSelectedRecord(record);
-    setCsStatus('ATTENDED');
-    setCsNote('');
+    setCsStatus(record.cs_status || 'ATTENDED');
+    setCsNote(record.cs_note || '');
     setIsCSMarkModalOpen(true);
   };
 

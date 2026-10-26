@@ -17,7 +17,10 @@ export class AutomationRepository {
       where: { id },
       include: {
         owner: { select: { id: true, name: true, email: true } },
-        steps: { orderBy: [{ session_number: 'asc' }, { trigger_event: 'asc' }] },
+        steps: {
+          orderBy: [{ session_number: 'asc' }, { trigger_event: 'asc' }],
+          include: { _count: { select: { deliveries: true } } },
+        },
         _count: { select: { enrollments: true, steps: true } },
       },
     });

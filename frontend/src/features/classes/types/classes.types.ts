@@ -1,14 +1,21 @@
 import { Teacher } from '../../teachers/types/teachers.types';
 
-export interface ClassTeacher {
+export type ClassTeacherRole = 'MAIN' | 'ASSISTANT' | 'SUBSTITUTE';
+
+export interface ClassTeacherAssignment {
   id: number;
   class_id: number;
   teacher_id: number;
-  role: 'MAIN' | 'ASSISTANT' | 'SUBSTITUTE';
+  role: ClassTeacherRole;
+  active: boolean;
   start_date: string | null;
   end_date: string | null;
+  created_at?: string;
+  updated_at?: string;
   teacher?: Teacher;
 }
+
+export type ClassTeacher = ClassTeacherAssignment;
 
 export type ClassModelType = '1:1' | '1:2' | '1:n' | string;
 
@@ -20,7 +27,7 @@ export interface Class {
   model_type: ClassModelType;
   attendance_source: 'LEARNING_SYSTEM' | 'ZOOM';
   active: boolean;
-  class_teachers?: ClassTeacher[];
+  class_teachers?: ClassTeacherAssignment[];
   class_sessions?: ClassSession[];
   enrollment_classes?: any[];
   class_schedules?: any[];
