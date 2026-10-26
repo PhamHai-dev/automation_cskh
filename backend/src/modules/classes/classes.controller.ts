@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { ClassesService } from './classes.service';
-import { createClassSchema, updateClassSchema, assignTeacherSchema } from './classes.schema';
+import { createClassSchema, updateClassSchema, assignTeacherSchema, endTeacherAssignmentSchema } from './classes.schema';
 
 const classesService = new ClassesService();
 
@@ -59,6 +59,22 @@ export class ClassesController {
       const validated = assignTeacherSchema.parse({ body: req.body });
       const assignment = await classesService.assignTeacher(id, validated.body);
       res.status(201).json({ data: assignment, meta: null });
+    } catch (error: any) {
+      if (error.name === 'ZodError') {
+        res.status(400).json({ error: { code: 'VALIDATION_ERROR', message: 'Invalid data', details: error.errors } });
+        return;
+      }
+      next(error);
+    }
+  }
+
+  async endTeacherAssignment(req: Request, res: Response, next: NextFunction) {
+    try {
+      const classId = parseInt(req.params.id, 10);
+      const assignmentId = parseInt(req.params.assignmentId, 10);
+      const validated = endTeacherAssignmentSchema.parse({ body: req.body ?? {} });
+      const assignment = await classesService.endTeacherAssignment(classId, assignmentId, validated.body, req.user);
+      res.json({ data: assignment, meta: null });
     } catch (error: any) {
       if (error.name === 'ZodError') {
         res.status(400).json({ error: { code: 'VALIDATION_ERROR', message: 'Invalid data', details: error.errors } });

@@ -21,6 +21,7 @@ jest.mock('../../automation/automation-bullmq-adapter', () => ({
 }));
 
 import request from 'supertest';
+import ExcelJS from 'exceljs';
 import { app } from '../../../app';
 import { prisma } from '../../../prisma/client';
 import { signTestToken } from '../../../shared/utils/test-helper';
@@ -112,8 +113,22 @@ describe('D8 assist-mark ruling A + termination-date ruling B1 (owner 2026-10-26
 
   afterAll(async () => {
     // Children before users (RESTRICT FK edges), same idiom as d8_hist tests.
-    await prisma.messageDelivery.deleteMany({ where: { attendance_id: { in: attendanceIds } } });
-    await prisma.attendance.deleteMany({ where: { id: { in: attendanceIds } } });
+    await prisma.messageDelivery.deleteMany({
+      where: {
+        OR: [
+          { attendance_id: { in: attendanceIds } },
+          { attendance: { class_session: { class_id: { in: classIds } } } },
+        ],
+      },
+    });
+    await prisma.attendance.deleteMany({
+      where: {
+        OR: [
+          { id: { in: attendanceIds } },
+          { class_session: { class_id: { in: classIds } } },
+        ],
+      },
+    });
     await prisma.classSession.deleteMany({ where: { class_id: { in: classIds } } });
     await prisma.classTeacher.deleteMany({ where: { class_id: { in: classIds } } });
     await prisma.enrollmentClass.deleteMany({ where: { enrollment_id: enrollmentId } });
@@ -216,5 +231,166 @@ describe('D8 assist-mark ruling A + termination-date ruling B1 (owner 2026-10-26
     expect(withEnd.status).toBe(201);
     expect(withEnd.body.data.end_date).toBeTruthy();
     expect(withEnd.body.data.active).toBe(false);
+  });
+
+  it('PATCH /classes/:id/teachers/:assignmentId/end ("Kết thúc phân công") ends assignment on 2026-10-22 with AuditLog, and teacher Excel import allows 2026-10-15 (in window) while blocking 2026-10-25 (after end_date)', async () => {
+    // Use a dedicated class + student so the teacher workbook matches a single active EnrollmentClass.
+    const importStudent = await prisma.student.create({
+      data: { external_id: `HV_IMP_${NS}`, full_name: 'Import D8 Learner' },
+    });
+    const importEnrollment = await prisma.enrollment.create({
+      data: {
+        student_id: importStudent.id,
+        package_id: packageId,
+        cs_id: csId,
+        total_sessions: 10,
+        status: EnrollmentStatus.STUDYING,
+      },
+    });
+    const cls = await prisma.class.create({
+      data: {
+        class_name: `Lớp EndAssign ${NS}`,
+        class_code: `CLSEND_${NS}`,
+        model_type: ClassModelType.ONE_TO_ONE,
+        attendance_source: 'LEARNING_SYSTEM',
+      },
+    });
+    classIds.push(cls.id);
+
+    const assignment = await prisma.classTeacher.create({
+      data: {
+        class_id: cls.id,
+        teacher_id: teacherRecId,
+        role: 'MAIN',
+        active: true,
+        start_date: new Date('2026-10-01T00:00:00.000Z'),
+        end_date: null,
+      },
+    });
+    await prisma.enrollmentClass.create({
+      data: {
+        enrollment_id: importEnrollment.id,
+        class_id: cls.id,
+        sequence_no: 1,
+        status: EnrollmentClassStatus.ACTIVE,
+      },
+    });
+
+    const teacherToken = signTestToken(teacherUserId, ['TEACHER']);
+    const csToken = signTestToken(csId, ['CS']);
+
+    try {
+      // 1. Non-Admin rejected with 403
+      const forbiddenRes = await request(app)
+        .patch(`/api/v1/classes/${cls.id}/teachers/${assignment.id}/end`)
+        .set('Authorization', `Bearer ${csToken}`)
+        .send({ end_date: '2026-10-22' });
+      expect(forbiddenRes.status).toBe(403);
+
+      // 2. Missing end_date rejected with 422 (never defaulted to today)
+      const missingEndRes = await request(app)
+        .patch(`/api/v1/classes/${cls.id}/teachers/${assignment.id}/end`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({});
+      expect(missingEndRes.status).toBe(422);
+      expect(missingEndRes.body.message).toBe('Vui lòng nhập ngày kết thúc phân công khi cho GV ngừng phụ trách lớp');
+
+      // 3. end_date < start_date rejected with 422
+      const invertedRes = await request(app)
+        .patch(`/api/v1/classes/${cls.id}/teachers/${assignment.id}/end`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ end_date: '2026-09-30' });
+      expect(invertedRes.status).toBe(422);
+      expect(invertedRes.body.message).toBe('Ngày kết thúc phân công phải lớn hơn hoặc bằng ngày bắt đầu');
+
+      // 4. Wrong classId rejected with 404
+      const wrongClassRes = await request(app)
+        .patch(`/api/v1/classes/99999999/teachers/${assignment.id}/end`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ end_date: '2026-10-22' });
+      expect(wrongClassRes.status).toBe(404);
+
+      // 5. Admin ends assignment on 2026-10-22 -> 200, row preserved in place, AuditLog written
+      const endRes = await request(app)
+        .patch(`/api/v1/classes/${cls.id}/teachers/${assignment.id}/end`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ end_date: '2026-10-22' });
+      expect(endRes.status).toBe(200);
+      expect(endRes.body.data.id).toBe(assignment.id);
+      expect(endRes.body.data.active).toBe(false);
+      expect(new Date(endRes.body.data.end_date).toISOString().slice(0, 10)).toBe('2026-10-22');
+
+      const dbAssignment = await prisma.classTeacher.findUnique({ where: { id: assignment.id } });
+      expect(dbAssignment).not.toBeNull();
+      expect(dbAssignment?.active).toBe(false);
+      expect(dbAssignment?.start_date?.toISOString().slice(0, 10)).toBe('2026-10-01');
+      expect(dbAssignment?.end_date?.toISOString().slice(0, 10)).toBe('2026-10-22');
+
+      const audit = await prisma.auditLog.findFirst({
+        where: {
+          action: 'CLASS_TEACHER_ASSIGNMENT_ENDED',
+          entity_type: 'class_teacher',
+          entity_id: String(assignment.id),
+          user_id: adminId,
+        },
+      });
+      expect(audit).not.toBeNull();
+      expect((audit?.before_data as any)?.active).toBe(true);
+      expect((audit?.after_data as any)?.active).toBe(false);
+
+      // 6. Teacher imports Excel with 2026-10-15 (inside [2026-10-01, 2026-10-22]) and 2026-10-25 (after end_date)
+      const wb = new ExcelJS.Workbook();
+      const ws = wb.addWorksheet('Lịch dạy');
+      ws.getRow(1).getCell(1).value = 'Model';
+      ws.getRow(1).getCell(2).value = 'Mã HV';
+      ws.getRow(1).getCell(6).value = 'Giờ học';
+      ws.getRow(1).getCell(7).value = '2026-10-15';
+      ws.getRow(1).getCell(8).value = '2026-10-25';
+
+      ws.getRow(2).getCell(1).value = '1:1';
+      ws.getRow(2).getCell(2).value = `HV_IMP_${NS}`;
+      ws.getRow(2).getCell(6).value = '19:00 - 19:30';
+      ws.getRow(2).getCell(7).value = 'X';
+      ws.getRow(2).getCell(8).value = 'X';
+      const xlsxBuf = Buffer.from((await wb.xlsx.writeBuffer()) as ArrayBuffer);
+
+      const previewRes = await request(app)
+        .post('/api/v1/attendance-reconciliation/import-excel/preview')
+        .set('Authorization', `Bearer ${teacherToken}`)
+        .field('source', 'TEACHER')
+        .field('targetYear', '2026')
+        .attach('file', xlsxBuf, 'teacher-schedule.xlsx');
+
+      expect(previewRes.status).toBe(200);
+      const items = previewRes.body.data.items as Array<{ targetDate: string; classification: string; defaultAction: string }>;
+      expect(items).toHaveLength(2);
+      const item15 = items.find((i) => i.targetDate === '2026-10-15')!;
+      const item25 = items.find((i) => i.targetDate === '2026-10-25')!;
+      expect(item15.classification).toBe('CREATE');
+      expect(item15.defaultAction).toBe('APPLY');
+      expect(item25.classification).toBe('OUT_OF_SCOPE');
+      expect(item25.defaultAction).toBe('SKIP');
+
+      const confirmRes = await request(app)
+        .post('/api/v1/attendance-reconciliation/import-excel/confirm')
+        .set('Authorization', `Bearer ${teacherToken}`)
+        .field('source', 'TEACHER')
+        .field('targetYear', '2026')
+        .attach('file', xlsxBuf, 'teacher-schedule.xlsx');
+
+      expect(confirmRes.status).toBe(200);
+      expect(confirmRes.body.data.createdAttendances).toBe(1);
+      expect(confirmRes.body.data.skipped).toBe(1);
+
+      const sessions = await prisma.classSession.findMany({ where: { class_id: cls.id } });
+      expect(sessions).toHaveLength(1);
+      expect(sessions[0].session_date.toISOString().slice(0, 10)).toBe('2026-10-15');
+    } finally {
+      await prisma.attendance.deleteMany({ where: { class_session: { class_id: cls.id } } });
+      await prisma.classSession.deleteMany({ where: { class_id: cls.id } });
+      await prisma.enrollmentClass.deleteMany({ where: { enrollment_id: importEnrollment.id } });
+      await prisma.enrollment.deleteMany({ where: { id: importEnrollment.id } });
+      await prisma.student.deleteMany({ where: { id: importStudent.id } });
+    }
   });
 });

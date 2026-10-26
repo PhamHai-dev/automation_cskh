@@ -137,4 +137,20 @@ export class ClassesRepository {
       }
     });
   }
+
+  async findTeacherAssignment(classId: number, assignmentId: number) {
+    return prisma.classTeacher.findFirst({
+      where: { id: assignmentId, class_id: classId },
+    });
+  }
+
+  async endTeacherAssignment(assignmentId: number, endDate: Date) {
+    return prisma.classTeacher.update({
+      where: { id: assignmentId },
+      data: {
+        active: false,
+        end_date: endDate,
+      },
+    });
+  }
 }

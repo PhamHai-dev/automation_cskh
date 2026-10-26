@@ -27,3 +27,13 @@ export interface AssignTeacherDTO {
   active?: boolean;
 }
 
+/**
+ * D8 owner ruling (2026-10-26): Admin "Kết thúc phân công" requires an
+ * EXPLICIT end_date — never defaulted to today. Optional here so the service
+ * validator produces the termination-specific 422 messages instead of a
+ * generic 400 Zod error.
+ */
+export interface EndTeacherAssignmentDTO {
+  end_date?: string | Date | null;
+}
+

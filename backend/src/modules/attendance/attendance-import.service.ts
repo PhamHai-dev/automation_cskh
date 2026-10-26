@@ -3,6 +3,7 @@ import ExcelJS from 'exceljs';
 import { AttendanceDeliveryPolicy, AttendancePostCommitInput, deriveAttendanceReconciliationState, runAttendancePostCommit } from './attendance-lifecycle';
 import { prisma } from '../../prisma/client';
 import { addMinutes, normalizeClassModel, normalizeDateOnly, parseAttendanceValue, parseTimeSlot, remapDateYear } from './attendance.utils';
+import { findEffectiveAssignment } from './teacher-assignment';
 
 export type AttendanceImportSource = 'CSKH' | 'TEACHER';
 export type AttendanceImportAction = 'APPLY' | 'KEEP_DATABASE' | 'SKIP';
@@ -110,7 +111,7 @@ export class AttendanceImportService {
     const enrollmentClass = enrollmentClasses[0];
     base.enrollmentClassId = enrollmentClass.id;
     base.classId = enrollmentClass.class_id;
-    if (!(await this.inScope(enrollmentClass, input.actor, input.source))) { messages.push('Lớp hoặc học viên nằm ngoài data scope của tài khoản upload'); return { ...base, classification: 'OUT_OF_SCOPE', defaultAction: 'SKIP' }; }
+    if (!(await this.inScope(enrollmentClass, input.actor, input.source, input.targetDate))) { messages.push('Lớp hoặc học viên nằm ngoài data scope của tài khoản upload'); return { ...base, classification: 'OUT_OF_SCOPE', defaultAction: 'SKIP' }; }
     const duration = this.durationMinutes(input.startTime, input.endTime);
     if (duration <= 0) { messages.push('Khung giờ không hợp lệ'); return { ...base, classification: 'INVALID', defaultAction: 'SKIP' }; }
     for (let index = 0; index < input.parsed.sessionCount; index += 1) {
@@ -162,7 +163,15 @@ export class AttendanceImportService {
     for (const item of preview.items) {
       const action = actions[item.id] || item.defaultAction;
       const status = item.status;
-      if (action !== 'APPLY' || !status || !item.targetDate || !item.enrollmentClassId || !item.classId) {
+      if (
+        action !== 'APPLY' ||
+        item.classification === 'OUT_OF_SCOPE' ||
+        item.classification === 'INVALID' ||
+        !status ||
+        !item.targetDate ||
+        !item.enrollmentClassId ||
+        !item.classId
+      ) {
         skipped += 1;
         items.push({ id: item.id, externalId: item.externalId, cellAddress: item.cellAddress, targetDate: item.targetDate, rawValue: item.rawValue, action, createdSessions: 0, createdAttendances: 0, updatedAttendances: 0, skipped: true });
         continue;
@@ -271,18 +280,28 @@ export class AttendanceImportService {
   }
 
   private durationMinutes(startTime: string, endTime: string) { const value = (time: string) => Number(time.slice(0, 2)) * 60 + Number(time.slice(3, 5)); return value(endTime) - value(startTime); }
-  private async inScope(enrollmentClass: { class_id: number; enrollment: { cs_id: number | null } }, actor: AttendanceImportActor, source: AttendanceImportSource): Promise<boolean> {
+  private async inScope(enrollmentClass: { class_id: number; enrollment: { cs_id: number | null } }, actor: AttendanceImportActor, source: AttendanceImportSource, sessionDate: Date): Promise<boolean> {
     if (actor.roles.includes('ADMIN') || actor.roles.includes('MANAGE')) return true;
     if (source === 'CSKH') return actor.roles.includes('CS') && enrollmentClass.enrollment.cs_id === actor.id;
     if (!actor.roles.includes('TEACHER')) return false;
-    const assignment = await prisma.classTeacher.findFirst({
+    // D8 (owner ruling 2026-10-26): teacher upload scope is evaluated per
+    // SESSION DATE, mirroring attendance.service.assertWriteScope. Fetch ALL of
+    // the teacher's assignment rows for the class regardless of the current
+    // `active` flag — `active` records today's state, not history — and let
+    // findEffectiveAssignment decide. Consequences: an `active:false` row whose
+    // explicit [start_date, end_date] window covers the session date authorizes
+    // the historical import (a teacher may import sessions they actually
+    // taught), while `active:false` WITHOUT an explicit end_date is the
+    // ambiguous-removal boundary and never authorizes (Admin verification
+    // path); an `active:true` row does NOT authorize dates outside its
+    // [start_date, end_date] window. Never default or infer an end date here.
+    const candidates = await prisma.classTeacher.findMany({
       where: {
         class_id: enrollmentClass.class_id,
-        active: true,
         teacher: { user_id: actor.id, active: true },
       },
-      select: { id: true },
+      select: { active: true, start_date: true, end_date: true },
     });
-    return Boolean(assignment);
+    return Boolean(findEffectiveAssignment(candidates, sessionDate));
   }
 }

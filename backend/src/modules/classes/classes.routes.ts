@@ -19,4 +19,8 @@ router.patch('/:id', requireRoles(['ADMIN', 'MANAGE']), controller.update);
 // Assign teacher
 router.post('/:id/teachers', requireRoles(['ADMIN', 'MANAGE']), controller.assignTeacher);
 
+// End teacher assignment (Admin-only, D8 2026-10-26)
+router.patch('/:id/teachers/:assignmentId/end', requireRoles(['ADMIN']), controller.endTeacherAssignment);
+router.patch('/:id/teachers/:assignmentId', requireRoles(['ADMIN']), controller.endTeacherAssignment);
+
 export { router as classesRouter };
