@@ -26,6 +26,13 @@ export interface SendJobData {
   attendanceId: number;
 }
 
+/**
+ * Maximum BullMQ delivery attempts configured in automation-bullmq-adapter.ts (`attempts: 3`).
+ */
+export const MAX_DELIVERY_ATTEMPTS = 3;
+export const PRE_SEND_ERROR_PREFIX = 'PRE_SEND:';
+export const UNCERTAIN_SEND_ERROR_PREFIX = 'UNCERTAIN_SEND:';
+
 function isLineDelivery(delivery: any): boolean {
   return (
     delivery.line_account_id != null ||
@@ -34,9 +41,55 @@ function isLineDelivery(delivery: any): boolean {
 }
 
 /**
+ * Verify whether a LINE delivery uses an adapter that actually transmits the
+ * deterministic `X-Line-Retry-Key` HTTP header to the provider:
+ *   - `LineAccountPool` (`src/modules/line/line-pool.ts:248-254, 300-306`) forwards
+ *     `retryKey` to `LineOaAdapter.sendMessageWithReplyFallback` for `OA` accounts,
+ *     and `LineOaAdapter.invokePushMessage` (`src/modules/line/line-oa.adapter.ts:287-305`)
+ *     passes `retryKey` as the 2nd argument to `@line/bot-sdk` `MessagingApiClient.pushMessage`,
+ *     which sets the `X-Line-Retry-Key` header (24h provider dedupe; HTTP 409 handled
+ *     idempotently at `line-oa.adapter.ts:242-250`).
+ *   - By contrast, for `PERSONAL` accounts (`src/modules/line/line-pool.ts:265, 317` ->
+ *     `LinePersonalAdapter.sendMessage` in `src/modules/line/line-personal.adapter.ts:725-779`),
+ *     `@evex/linejs` TalkService ignores `retryKey` and does NOT send `X-Line-Retry-Key`.
+ *     Inbound/outbound webhook & pool dedupe (`line-webhook.handler.ts`, `line-pool.ts:332-384`)
+ *     keys on `line_msg_id` (`providerMessageId`), which is only known after the send returns.
+ */
+function hasLineRetryKeyHeaderSupport(delivery: any): boolean {
+  return delivery?.line_account?.account_type !== 'PERSONAL';
+}
+
+function formatPreSendError(err: any): string {
+  const raw = err?.message ?? String(err);
+  return raw.startsWith(PRE_SEND_ERROR_PREFIX) ? raw : `${PRE_SEND_ERROR_PREFIX} ${raw}`;
+}
+
+/**
+ * Detect errors thrown inside a dispatcher before any HTTP/Thrift request is transmitted.
+ */
+function isPreDispatchError(err: any): boolean {
+  if (!err) return false;
+  if (err.preSend === true) return true;
+  const code = err.code;
+  if (code === 'LINE_OA_QUOTA_EXHAUSTED' || code === 'LINE_RATE_LIMIT_EXCEEDED') {
+    return true;
+  }
+  const msg = String(err.message ?? err);
+  return (
+    msg.startsWith(PRE_SEND_ERROR_PREFIX) ||
+    msg.includes('LINE Group ID missing') ||
+    msg.includes('Group ID missing') ||
+    msg.includes('is not ready') ||
+    msg.includes('adapter not found') ||
+    msg.includes('client is not connected') ||
+    msg.includes('does not expose sendMessage')
+  );
+}
+
+/**
  * Deterministic UUID v4-format retry key derived from deliveryId for LINE idempotency.
  */
-function buildLineRetryKey(deliveryId: number): string {
+export function buildLineRetryKey(deliveryId: number): string {
   const hash = crypto.createHash('sha256').update(`edura:line:delivery:${deliveryId}`).digest('hex');
   return [
     hash.slice(0, 8),
@@ -52,6 +105,7 @@ function buildLineRetryKey(deliveryId: number): string {
  */
 export async function processDeliveryJob(job: Job<SendJobData>): Promise<void> {
   const { deliveryId } = job.data;
+  const maxAttempts = job?.opts?.attempts ?? MAX_DELIVERY_ATTEMPTS;
 
   try {
     // 1. Load delivery with full context
@@ -91,8 +145,48 @@ export async function processDeliveryJob(job: Job<SendJobData>): Promise<void> {
       return;
     }
 
-    // 2. Re-check invariant: delivery still SCHEDULED/QUEUED
-    if (!['SCHEDULED', 'QUEUED'].includes(delivery.status)) {
+    // 2. Top gate:
+    //   - SCHEDULED / QUEUED: normal first attempt.
+    //   - FAILED: accepted for retry on the SAME delivery.id row ONLY when
+    //     retry_count < maxAttempts(3) AND the failure is NOT marked UNCERTAIN_SEND.
+    //   - SENDING: NEVER blind-resend a SENDING row. A row left in SENDING means a prior
+    //     worker crashed/timed out mid-flight after entering the dispatch section; because
+    //     SENDING != unsent, the row stays SENDING/UNCERTAIN pending operator verification
+    //     per provider capability, while the app-layer occurrence engine protects it via
+    //     MILESTONE_PROTECTED_STATUSES (includes SENDING and SENT).
+    if (delivery.status === 'SENDING') {
+      log.warn('Delivery is in SENDING (crashed mid-send / uncertain outcome) — never blind-resend; skipping', {
+        deliveryId,
+        status: delivery.status,
+      });
+      return;
+    }
+
+    if (delivery.status === 'FAILED') {
+      const retryCount = typeof delivery.retry_count === 'number' ? delivery.retry_count : 0;
+      const errMsg = String(delivery.error_message ?? '');
+      if (errMsg.startsWith(UNCERTAIN_SEND_ERROR_PREFIX)) {
+        log.warn('Delivery failed with UNCERTAIN_SEND — skipping automatic retry', {
+          deliveryId,
+          retryCount,
+          errorMessage: errMsg,
+        });
+        return;
+      }
+      if (retryCount >= maxAttempts) {
+        log.info('Delivery failed at max attempts — skipping', {
+          deliveryId,
+          retryCount,
+          maxAttempts,
+        });
+        return;
+      }
+      log.info('Retrying FAILED delivery on same row — re-checking invariants and milestone eligibility', {
+        deliveryId,
+        retryCount,
+        maxAttempts,
+      });
+    } else if (!['SCHEDULED', 'QUEUED'].includes(delivery.status)) {
       log.info('Delivery no longer pending — skipping', {
         deliveryId,
         status: delivery.status,
@@ -100,7 +194,7 @@ export async function processDeliveryJob(job: Job<SendJobData>): Promise<void> {
       return;
     }
 
-    // 3. Re-check invariants
+    // 3. Re-check invariants (including checkMilestoneStillEligible on EVERY initial & retry attempt)
     const { shouldSend, skipReason } = await checkInvariants(delivery);
     if (!shouldSend) {
       const isMilestoneIneligible =
@@ -142,20 +236,57 @@ export async function processDeliveryJob(job: Job<SendJobData>): Promise<void> {
         return;
       }
 
-      const ready = await dispatcher.ensureAccountReady(lineAccountId);
-      if (!ready) {
+      // 4a-1. LINE pre-send phase (everything before dispatcher.send* is Class 1: PRE_SEND definite-unsent)
+      let targetLineGroupId: string | null = null;
+      let lineTarget: { targetId: string; isGroup: boolean } | null = null;
+      try {
+        const ready = await dispatcher.ensureAccountReady(lineAccountId);
+        if (!ready) {
+          await prisma.messageDelivery.update({
+            where: { id: deliveryId },
+            data: {
+              status: 'SKIPPED_ACCOUNT_INACTIVE',
+              error_message: 'LINE account not ready in pool',
+            },
+          });
+          log.warn('LINE account not ready — skipping', { deliveryId, lineAccountId });
+          return;
+        }
+
+        if (delivery.line_group_id) {
+          targetLineGroupId = delivery.line_group?.line_group_id ?? null;
+          if (!targetLineGroupId) {
+            throw new Error('LINE Group ID missing');
+          }
+        } else {
+          lineTarget = await resolvePersonalTargetLine(delivery);
+          if (!lineTarget) {
+            await prisma.messageDelivery.update({
+              where: { id: deliveryId },
+              data: { status: 'SKIPPED_NOT_FRIEND', error_message: 'No friend line_uid resolved' },
+            });
+            log.info('No friend LINE UID resolved — skipping', { deliveryId });
+            return;
+          }
+        }
+      } catch (preErr: any) {
+        const errorMessage = formatPreSendError(preErr);
         await prisma.messageDelivery.update({
           where: { id: deliveryId },
           data: {
-            status: 'SKIPPED_ACCOUNT_INACTIVE',
-            error_message: 'LINE account not ready in pool',
+            status: 'FAILED',
+            error_message: errorMessage,
+            retry_count: { increment: 1 },
           },
         });
-        log.warn('LINE account not ready — skipping', { deliveryId, lineAccountId });
-        return;
+        log.error('LINE pre-send error (definite-unsent, will retry on same row)', {
+          deliveryId,
+          error: errorMessage,
+        });
+        throw preErr;
       }
 
-      // Mark SENDING
+      // 4a-2. Mark SENDING right before network dispatch
       await prisma.messageDelivery.update({
         where: { id: deliveryId },
         data: { status: 'SENDING' },
@@ -166,47 +297,32 @@ export async function processDeliveryJob(job: Job<SendJobData>): Promise<void> {
         const retryKey = buildLineRetryKey(deliveryId);
 
         if (delivery.line_group_id) {
-          const targetLineGroupId = delivery.line_group?.line_group_id;
-          if (!targetLineGroupId) {
-            throw new Error('LINE Group ID missing');
-          }
           const sent = await dispatcher.sendGroupMessage({
             lineAccountId,
-            targetLineGroupId,
+            targetLineGroupId: targetLineGroupId!,
+            content: delivery.rendered_content,
+            retryKey,
+            sentVia: 'automation',
+          });
+          providerMessageId = sent?.providerMessageId ?? null;
+        } else if (lineTarget!.isGroup) {
+          const sent = await dispatcher.sendGroupMessage({
+            lineAccountId,
+            targetLineGroupId: lineTarget!.targetId,
             content: delivery.rendered_content,
             retryKey,
             sentVia: 'automation',
           });
           providerMessageId = sent?.providerMessageId ?? null;
         } else {
-          const lineTarget = await resolvePersonalTargetLine(delivery);
-          if (!lineTarget) {
-            await prisma.messageDelivery.update({
-              where: { id: deliveryId },
-              data: { status: 'SKIPPED_NOT_FRIEND', error_message: 'No friend line_uid resolved' },
-            });
-            log.info('No friend LINE UID resolved — skipping', { deliveryId });
-            return;
-          }
-          if (lineTarget.isGroup) {
-            const sent = await dispatcher.sendGroupMessage({
-              lineAccountId,
-              targetLineGroupId: lineTarget.targetId,
-              content: delivery.rendered_content,
-              retryKey,
-              sentVia: 'automation',
-            });
-            providerMessageId = sent?.providerMessageId ?? null;
-          } else {
-            const sent = await dispatcher.sendPersonalMessage({
-              lineAccountId,
-              targetLineUid: lineTarget.targetId,
-              content: delivery.rendered_content,
-              retryKey,
-              sentVia: 'automation',
-            });
-            providerMessageId = sent?.providerMessageId ?? null;
-          }
+          const sent = await dispatcher.sendPersonalMessage({
+            lineAccountId,
+            targetLineUid: lineTarget!.targetId,
+            content: delivery.rendered_content,
+            retryKey,
+            sentVia: 'automation',
+          });
+          providerMessageId = sent?.providerMessageId ?? null;
         }
 
         await prisma.messageDelivery.update({
@@ -226,66 +342,103 @@ export async function processDeliveryJob(job: Job<SendJobData>): Promise<void> {
           providerMessageId,
         });
       } catch (sendErr: any) {
+        const rawErrMsg = sendErr?.message ?? String(sendErr);
+
+        // Class (1): Dispatcher threw before any HTTP/Thrift send (e.g., quota/rate-limit/not-ready)
+        if (isPreDispatchError(sendErr)) {
+          const errorMessage = formatPreSendError(sendErr);
+          await prisma.messageDelivery.update({
+            where: { id: deliveryId },
+            data: {
+              status: 'FAILED',
+              error_message: errorMessage,
+              retry_count: { increment: 1 },
+            },
+          });
+          log.error('LINE pre-dispatch error (definite-unsent, will retry on same row)', {
+            deliveryId,
+            error: errorMessage,
+          });
+          throw sendErr;
+        }
+
+        // Class (3) vs Class (2):
+        // LINE OA (`hasLineRetryKeyHeaderSupport === true`) passes `X-Line-Retry-Key` to
+        // `@line/bot-sdk` `pushMessage(payload, retryKey)` -> safe to auto-retry on the same row.
+        // LINE PERSONAL (`@evex/linejs`) does NOT send `X-Line-Retry-Key` -> treat like Class (2) UNCERTAIN_SEND.
+        if (hasLineRetryKeyHeaderSupport(delivery)) {
+          await prisma.messageDelivery.update({
+            where: { id: deliveryId },
+            data: {
+              status: 'FAILED',
+              error_message: rawErrMsg,
+              retry_count: { increment: 1 },
+            },
+          });
+          log.error('LINE OA send failed (retryable via X-Line-Retry-Key on same row)', {
+            deliveryId,
+            error: rawErrMsg,
+          });
+          throw sendErr;
+        }
+
+        const uncertainMsg = `${UNCERTAIN_SEND_ERROR_PREFIX} ${rawErrMsg} — kiểm tra lịch sử thread LINE trước khi thử lại`;
         await prisma.messageDelivery.update({
           where: { id: deliveryId },
           data: {
             status: 'FAILED',
-            error_message: sendErr?.message ?? String(sendErr),
+            error_message: uncertainMsg,
             retry_count: { increment: 1 },
           },
         });
-        log.error('LINE send failed', { deliveryId, error: sendErr?.message ?? String(sendErr) });
-        throw sendErr;
+        log.error('LINE PERSONAL send failed without X-Line-Retry-Key (uncertain outcome, not auto-retrying)', {
+          deliveryId,
+          error: uncertainMsg,
+        });
+        return;
       }
       return;
     }
 
-    // 4b. Zalo delivery path: Get Zalo API from pool (try reconnect if not connected)
+    // 4b. Zalo delivery path
+    // 4b-1. Zalo pre-send phase (pool lookup/reconnect + target resolution before api.sendMessage = Class 1: PRE_SEND)
     const zaloAccountId = delivery.zalo_account_id!;
-    let api = zaloPool.getApi(zaloAccountId);
-    if (!api) {
-      // Attempt auto-reconnect before giving up
-      const reconnected = await zaloPool.tryReconnect(zaloAccountId);
-      if (reconnected) {
-        api = zaloPool.getApi(zaloAccountId);
-        log.info('Zalo account auto-reconnected before send', { deliveryId, zaloAccountId });
-      }
-    }
-    if (!api) {
-      await prisma.messageDelivery.update({
-        where: { id: deliveryId },
-        data: {
-          status: 'SKIPPED_ACCOUNT_INACTIVE',
-          error_message: 'Zalo account not connected in pool',
-        },
-      });
-      log.warn('Zalo account not connected — skipping', {
-        deliveryId,
-        zaloAccountId: delivery.zalo_account_id,
-      });
-      return;
-    }
+    let api: any = null;
+    let groupId: string | null = null;
+    let zaloTarget: { targetId: string; threadType: 0 | 1 } | null = null;
 
-    // 5. Mark SENDING
-    await prisma.messageDelivery.update({
-      where: { id: deliveryId },
-      data: { status: 'SENDING' },
-    });
-
-    // 6. Send message
     try {
-      let providerMessageId: string | null = null;
+      api = zaloPool.getApi(zaloAccountId);
+      if (!api) {
+        // Attempt auto-reconnect before giving up
+        const reconnected = await zaloPool.tryReconnect(zaloAccountId);
+        if (reconnected) {
+          api = zaloPool.getApi(zaloAccountId);
+          log.info('Zalo account auto-reconnected before send', { deliveryId, zaloAccountId });
+        }
+      }
+      if (!api) {
+        await prisma.messageDelivery.update({
+          where: { id: deliveryId },
+          data: {
+            status: 'SKIPPED_ACCOUNT_INACTIVE',
+            error_message: 'Zalo account not connected in pool',
+          },
+        });
+        log.warn('Zalo account not connected — skipping', {
+          deliveryId,
+          zaloAccountId: delivery.zalo_account_id,
+        });
+        return;
+      }
 
       if (delivery.zalo_group_id) {
-        // Send to group — zca-js: sendMessage(content, threadId, threadType=1)
-        const groupId = delivery.zalo_group?.zalo_group_id;
+        groupId = delivery.zalo_group?.zalo_group_id ?? null;
         if (!groupId) {
           throw new Error('Group ID missing');
         }
-        const sent = await api.sendMessage(delivery.rendered_content, groupId, 1);
-        providerMessageId = sent?.data?.messageId ?? sent?.msgId ?? sent?.messageId ?? null;
       } else {
-        const zaloTarget = await resolvePersonalTargetZalo(delivery);
+        zaloTarget = await resolvePersonalTargetZalo(delivery);
         if (!zaloTarget) {
           await prisma.messageDelivery.update({
             where: { id: deliveryId },
@@ -294,48 +447,107 @@ export async function processDeliveryJob(job: Job<SendJobData>): Promise<void> {
           log.info('No friend UID resolved — skipping', { deliveryId });
           return;
         }
-        // zca-js: sendMessage(content, threadId, threadType: 0 for User, 1 for Care Group)
-        const sent = await api.sendMessage(delivery.rendered_content, zaloTarget.targetId, zaloTarget.threadType);
-        providerMessageId = sent?.data?.messageId ?? sent?.msgId ?? sent?.messageId ?? null;
       }
-
-      // 7. Mark SENT
-      await prisma.messageDelivery.update({
-        where: { id: deliveryId },
-        data: {
-          status: 'SENT',
-          sent_at: new Date(),
-          provider_message_id: providerMessageId,
-          error_message: null,
-        },
-      });
-
-      log.info('Delivery sent', {
-        deliveryId,
-        zaloAccountId: delivery.zalo_account_id,
-        groupId: delivery.zalo_group_id ?? null,
-        providerMessageId,
-      });
-    } catch (sendErr: any) {
-      // 8. Mark FAILED
+    } catch (preErr: any) {
+      const errorMessage = formatPreSendError(preErr);
       await prisma.messageDelivery.update({
         where: { id: deliveryId },
         data: {
           status: 'FAILED',
-          error_message: sendErr?.message ?? String(sendErr),
+          error_message: errorMessage,
           retry_count: { increment: 1 },
         },
       });
-      log.error('Send failed', { deliveryId, error: sendErr?.message ?? String(sendErr) });
-      throw sendErr; // Let BullMQ retry (up to attempts config)
+      log.error('Zalo pre-send error (definite-unsent, will retry on same row)', {
+        deliveryId,
+        error: errorMessage,
+      });
+      throw preErr;
     }
+
+    // 5. Mark SENDING right before api.sendMessage
+    await prisma.messageDelivery.update({
+      where: { id: deliveryId },
+      data: { status: 'SENDING' },
+    });
+
+    // 6. Send message via Zalo (zca-js has no idempotency key: exception during api.sendMessage
+    //    with provider_message_id still null is Class 2 UNCERTAIN_SEND -> do NOT auto-retry)
+    let providerMessageId: string | null = null;
+    try {
+      if (delivery.zalo_group_id) {
+        // Send to group — zca-js: sendMessage(content, threadId, threadType=1)
+        const sent = await api.sendMessage(delivery.rendered_content, groupId!, 1);
+        providerMessageId = sent?.data?.messageId ?? sent?.msgId ?? sent?.messageId ?? null;
+      } else {
+        // zca-js: sendMessage(content, threadId, threadType: 0 for User, 1 for Care Group)
+        const sent = await api.sendMessage(
+          delivery.rendered_content,
+          zaloTarget!.targetId,
+          zaloTarget!.threadType,
+        );
+        providerMessageId = sent?.data?.messageId ?? sent?.msgId ?? sent?.messageId ?? null;
+      }
+    } catch (sendErr: any) {
+      if (isPreDispatchError(sendErr)) {
+        const errorMessage = formatPreSendError(sendErr);
+        await prisma.messageDelivery.update({
+          where: { id: deliveryId },
+          data: {
+            status: 'FAILED',
+            error_message: errorMessage,
+            retry_count: { increment: 1 },
+          },
+        });
+        log.error('Zalo pre-dispatch error (definite-unsent, will retry on same row)', {
+          deliveryId,
+          error: errorMessage,
+        });
+        throw sendErr;
+      }
+
+      // Class (2): Exception DURING api.sendMessage with provider_message_id still null = UNCERTAIN
+      const rawErrMsg = sendErr?.message ?? String(sendErr);
+      const uncertainMsg = `${UNCERTAIN_SEND_ERROR_PREFIX} ${rawErrMsg} — kiểm tra lịch sử thread Zalo trước khi thử lại`;
+      await prisma.messageDelivery.update({
+        where: { id: deliveryId },
+        data: {
+          status: 'FAILED',
+          error_message: uncertainMsg,
+          retry_count: { increment: 1 },
+        },
+      });
+      log.error('Zalo send failed (uncertain outcome, not auto-retrying)', {
+        deliveryId,
+        error: uncertainMsg,
+      });
+      return; // Do NOT rethrow — job ends; operator verifies Zalo thread before manual retry
+    }
+
+    // 7. Mark SENT
+    await prisma.messageDelivery.update({
+      where: { id: deliveryId },
+      data: {
+        status: 'SENT',
+        sent_at: new Date(),
+        provider_message_id: providerMessageId,
+        error_message: null,
+      },
+    });
+
+    log.info('Delivery sent', {
+      deliveryId,
+      zaloAccountId: delivery.zalo_account_id,
+      groupId: delivery.zalo_group_id ?? null,
+      providerMessageId,
+    });
   } catch (err: any) {
     log.error('processDeliveryJob error', { deliveryId, error: err.message });
     throw err;
   }
 }
 
-async function checkMilestoneStillEligible(delivery: any): Promise<{ eligible: boolean }> {
+export async function checkMilestoneStillEligible(delivery: any): Promise<{ eligible: boolean }> {
   const step = delivery?.automation_step;
   if (step?.trigger_event && step.trigger_event !== 'ATTENDED') {
     return { eligible: true };

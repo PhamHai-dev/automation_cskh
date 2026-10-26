@@ -98,6 +98,12 @@ export class AutomationRepository {
     return prisma.automationStep.delete({ where: { id: stepId } });
   }
 
+  async countDeliveriesForStep(stepId: number): Promise<number> {
+    return prisma.messageDelivery.count({
+      where: { automation_step_id: stepId },
+    });
+  }
+
   // ─── Enrollment (add/remove HV vào workflow) ─────────────────────────
 
   async addEnrollment(workflowId: number, enrollmentId: number, addedBy: number) {
