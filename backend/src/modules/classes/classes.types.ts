@@ -22,7 +22,8 @@ export interface UpdateClassDTO {
 export interface AssignTeacherDTO {
   teacher_id: number;
   role: 'MAIN' | 'ASSISTANT' | 'SUBSTITUTE';
-  start_date?: string | Date;
-  end_date?: string | Date;
+  start_date?: string | Date | null;
+  end_date?: string | Date | null;
+  active?: boolean;
 }
 

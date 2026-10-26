@@ -217,16 +217,29 @@ describe('D8 historical-assignment authorization (owner verdict 2026-10-26)', ()
     expect(res.status).toBe(403);
   });
 
-  it('Admin-assisted mark path still works for an out-of-window teacher (privileged bypass is separate)', async () => {
-    // ADMIN can teacher-mark on behalf of the out-of-window teacher via the
-    // privileged branch (markByTeacher isPrivileged + data.teacherId).
-    const res = await request(app)
+  it('Admin-assisted mark uses the SAME session-date window rule (owner ruling A 2026-10-26)', async () => {
+    // The privileged assist-mark branch is NOT a blind bypass: condition 2
+    // requires the target teacher's assignment to be effective AT the session
+    // date (D8 window rule). revokedCT is active=false with window
+    // [2026-01-01, 2026-12-31] (end AFTER session date) -> ADMIN assist allowed.
+    const assistInWindow = await request(app)
+      .post(`/api/v1/attendance-reconciliation/${revokedAttendanceId}/teacher-mark`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ status: AttendanceStatus.LEAVE_B, teacherId: teacherUserId, note: 'D8 admin assist trong window' });
+    expect(assistInWindow.status).toBe(200);
+
+    // The expired class's window ENDED (2026-05-01) BEFORE the session date
+    // (2026-06-15): even for ADMIN assist the teacher was not assigned at the
+    // session date -> 403 (this expectation CHANGED with ruling A: the old
+    // active:true lookup would have allowed it because the row was still
+    // active:true despite the expired window).
+    const assistOutOfWindow = await request(app)
       .post(`/api/v1/attendance-reconciliation/${expiredAttendanceId}/teacher-mark`)
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ status: AttendanceStatus.ATTENDED, teacherId: teacherUserId });
-    // Admin branch validates an ACTIVE classTeacher row exists for the chosen
-    // teacher (unchanged by this slice); the expired-window row is still
-    // active:true so the lookup succeeds.
-    expect(res.status).toBe(200);
+    expect(assistOutOfWindow.status).toBe(403);
+    expect(assistOutOfWindow.body.message).toBe(
+      'Giáo viên được chọn không phụ trách lớp này tại ngày dạy của buổi học'
+    );
   });
 });

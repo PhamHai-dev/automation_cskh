@@ -244,16 +244,23 @@ export class ReconciliationService {
     if (existing.class_session?.status === 'CANCELLED') throw new AppError(409, 'Không thể điểm danh cho buổi học đã hủy');
 
     if (this.isPrivileged(actor)) {
+      // Assist-mark enforces TWO independent conditions (owner 2026-10-26):
+      //   1. Operator assist authority: `this.isPrivileged(actor)` (ADMIN/MANAGE
+      //      per existing policy — D8 grants no assist-mark rights by itself).
+      //   2. Target teacher (`data.teacherId`, with a usable `teacher.active = true`
+      //      account) was validly assigned to the class AT THE SESSION DATE per D8
+      //      (`findEffectiveAssignment` over all classTeacher rows without filtering
+      //      on current `active`; inactive rows missing `end_date` are rejected).
       if (!data.teacherId) throw new AppError(400, 'Vui lòng chọn giáo viên được hỗ trợ');
-      const assignment = await prisma.classTeacher.findFirst({
+      const candidates = await prisma.classTeacher.findMany({
         where: {
           class_id: existing.class_session.class_id,
-          active: true,
           teacher: { active: true, user_id: data.teacherId },
         },
-        select: { id: true },
+        select: { active: true, start_date: true, end_date: true },
       });
-      if (!assignment) throw new AppError(403, 'Giáo viên được chọn không phụ trách lớp này');
+      const effective = findEffectiveAssignment(candidates, existing.class_session.session_date);
+      if (!effective) throw new AppError(403, 'Giáo viên được chọn không phụ trách lớp này tại ngày dạy của buổi học');
     } else {
       if (data.teacherId && data.teacherId !== actor.id) {
         throw new AppError(403, 'Bạn không được điểm danh thay giáo viên khác');

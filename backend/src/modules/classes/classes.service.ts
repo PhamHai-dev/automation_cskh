@@ -157,7 +157,37 @@ export class ClassesService {
     return this.formatClass(updated);
   }
 
+  /**
+   * D8 (owner ruling 2026-10-26): an inactive teacher assignment (`active: false`)
+   * MUST carry an explicit `end_date` (no silent default to today). Also rejects
+   * inverted windows (`end_date < start_date`) whenever both bounds are supplied.
+   */
+  assertValidTeacherAssignmentWindow(data: Pick<AssignTeacherDTO, 'active' | 'start_date' | 'end_date'>) {
+    const rawEnd = typeof data.end_date === 'string' ? data.end_date.trim() : data.end_date;
+    const rawStart = typeof data.start_date === 'string' ? data.start_date.trim() : data.start_date;
+
+    if (data.active === false) {
+      if (!rawEnd) {
+        throw new CustomError('Vui lòng nhập ngày kết thúc phân công khi cho GV ngừng phụ trách lớp', 422);
+      }
+      const parsedEnd = new Date(rawEnd);
+      if (Number.isNaN(parsedEnd.getTime())) {
+        throw new CustomError('Vui lòng nhập ngày kết thúc phân công khi cho GV ngừng phụ trách lớp', 422);
+      }
+    }
+
+    if (rawStart && rawEnd) {
+      const parsedStart = new Date(rawStart);
+      const parsedEnd = new Date(rawEnd);
+      if (!Number.isNaN(parsedStart.getTime()) && !Number.isNaN(parsedEnd.getTime()) && parsedEnd < parsedStart) {
+        throw new CustomError('Ngày kết thúc phân công phải lớn hơn hoặc bằng ngày bắt đầu', 422);
+      }
+    }
+  }
+
   async assignTeacher(classId: number, data: AssignTeacherDTO) {
+    this.assertValidTeacherAssignmentWindow(data);
+
     const existing = await this.repository.findById(classId);
     if (!existing) throw new CustomError('Class not found', 404);
 

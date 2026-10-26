@@ -132,7 +132,8 @@ export class ClassesRepository {
         teacher_id: data.teacher_id,
         role: data.role,
         start_date: startDate,
-        end_date: endDate
+        end_date: endDate,
+        ...(data.active !== undefined ? { active: data.active } : {}),
       }
     });
   }

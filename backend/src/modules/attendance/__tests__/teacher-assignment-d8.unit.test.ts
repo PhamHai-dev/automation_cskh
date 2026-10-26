@@ -65,10 +65,10 @@ describe('isTeacherAssignmentEffectiveOn (D8 + 2026-10-26 owner verdict)', () =>
       ).toBe(true);
     });
 
-    it('inactive with half-open start_date <= session date IS effective', () => {
+    it('inactive with half-open start_date (start_date=2026-01-01, end_date=null) is NOT effective (missing end_date does not grant infinite authority)', () => {
       expect(
         isTeacherAssignmentEffectiveOn({ active: false, start_date: DAY('2026-01-01'), end_date: null }, SESSION)
-      ).toBe(true);
+      ).toBe(false);
     });
 
     it('inactive with half-open end_date >= session date IS effective', () => {
@@ -93,10 +93,11 @@ describe('isTeacherAssignmentEffectiveOn (D8 + 2026-10-26 owner verdict)', () =>
 });
 
 describe('findEffectiveAssignment (D8 + 2026-10-26 owner verdict)', () => {
-  it('returns an inactive assignment when its window covers the session date', () => {
+  it('returns an inactive assignment when its window has an explicit end_date covering the session date', () => {
     const windowlessRemoved = { active: false, start_date: null, end_date: null };
+    const halfOpenMissingEnd = { active: false, start_date: DAY('2026-01-01'), end_date: null };
     const historicalMatch = { active: false, start_date: DAY('2026-06-01'), end_date: DAY('2026-06-30') };
-    expect(findEffectiveAssignment([windowlessRemoved, historicalMatch], SESSION)).toBe(historicalMatch);
+    expect(findEffectiveAssignment([windowlessRemoved, halfOpenMissingEnd, historicalMatch], SESSION)).toBe(historicalMatch);
   });
 
   it('returns the first assignment effective on the session date across multiple rows', () => {
@@ -105,11 +106,12 @@ describe('findEffectiveAssignment (D8 + 2026-10-26 owner verdict)', () => {
     expect(findEffectiveAssignment([expiredInactive, currentMatch], SESSION)).toBe(currentMatch);
   });
 
-  it('returns null when no assignment is effective at that date (expired, future, or windowless-inactive)', () => {
+  it('returns null when no assignment is effective at that date (expired, future, or inactive missing end_date)', () => {
     const expired = { active: false, start_date: DAY('2026-01-01'), end_date: DAY('2026-05-01') };
     const future = { active: true, start_date: DAY('2026-12-01'), end_date: null };
     const windowlessRemoved = { active: false, start_date: null, end_date: null };
-    expect(findEffectiveAssignment([expired, future, windowlessRemoved], SESSION)).toBeNull();
+    const halfOpenMissingEnd = { active: false, start_date: DAY('2026-01-01'), end_date: null };
+    expect(findEffectiveAssignment([expired, future, windowlessRemoved, halfOpenMissingEnd], SESSION)).toBeNull();
   });
 
   it('empty candidate list yields null', () => {
@@ -118,9 +120,19 @@ describe('findEffectiveAssignment (D8 + 2026-10-26 owner verdict)', () => {
 });
 
 describe('isTeacherAssignmentEffectiveInRange (getTeacherSessions range filter)', () => {
-  it('rejects active=false with no window bounds even when range is open', () => {
+  it('rejects active=false with end_date=null (whether start_date is null or non-null) even when range is open', () => {
     expect(
       isTeacherAssignmentEffectiveInRange({ active: false, start_date: null, end_date: null }, null, null)
+    ).toBe(false);
+    expect(
+      isTeacherAssignmentEffectiveInRange({ active: false, start_date: DAY('2026-01-01'), end_date: null }, null, null)
+    ).toBe(false);
+    expect(
+      isTeacherAssignmentEffectiveInRange(
+        { active: false, start_date: DAY('2026-01-01'), end_date: null },
+        DAY('2026-06-01'),
+        DAY('2026-06-30'),
+      )
     ).toBe(false);
   });
 
