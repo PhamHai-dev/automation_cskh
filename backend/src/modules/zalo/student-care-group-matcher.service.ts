@@ -305,26 +305,114 @@ export async function syncAndMatchCareGroups(
   // ── Step 2: Load Eligible Students & Groups from DB ───────────────────────
   await ensureAllCsUsersHaveCodes();
 
-  // Clean up invalid/orphan ZaloContactRelation rows (no group, no friend UID, no display_name, or archived account)
+  // ── Non-destructive candidate collection (replaces the former orphan sweep) ─
+  // OWNER RULING (2026-10-26): the previous unscoped
+  // prisma.zaloContactRelation.deleteMany({ OR: [three-null-metadata rows,
+  // archived-account rows] }) here was a CODE-CONFIRMED data-loss hazard (no
+  // production loss observed) — any concurrent sync (login / webhook /
+  // health-check / import-approval all reach syncAndMatchCareGroups) could
+  // silently delete freshly created FRIEND relations whose metadata had not
+  // been backfilled yet. Three null metadata fields only prove information is
+  // MISSING, not that the relation is invalid, so this path now only COLLECTS
+  // and LOGS such rows as candidates and deletes NOTHING.
+  //
+  // Archived-account relations are likewise kept here; the owner allows their
+  // cleanup only with clear evidence + a recorded rule. Deletions of any kind
+  // must come from an explicit, separately-reviewed maintenance operation —
+  // intentionally NOT built here.
+  //
+  // Backfill coverage: when the sync matches a care group for a student, the
+  // existing zaloContactRelation upsert below (keyed by
+  // student_id + zalo_account_id) already fills zalo_group_id,
+  // friend_zalo_uid, display_name and avatar_url for that relation — so
+  // missing-metadata rows whose account owns a matched group get backfilled
+  // automatically. Rows that cannot be backfilled from data this flow already
+  // fetches remain logged as candidates.
+  //
+  // RESIDUAL RISK (flagged for owner): because nothing is deleted anymore,
+  // candidate rows accumulate over time and need a future maintenance-operation
+  // decision.
   try {
-    await (prisma.zaloContactRelation as any)?.deleteMany?.({
-      where: {
-        OR: [
-          {
-            zalo_group_id: null,
-            friend_zalo_uid: null,
-            display_name: null,
-          },
-          {
-            zalo_account: {
-              archived_at: { not: null },
+    const candidateRows: unknown[] =
+      (await (prisma.zaloContactRelation as any)?.findMany?.({
+        where: {
+          OR: [
+            {
+              zalo_group_id: null,
+              friend_zalo_uid: null,
+              display_name: null,
             },
-          },
+            {
+              zalo_account: {
+                archived_at: { not: null },
+              },
+            },
+          ],
+        },
+        select: {
+          id: true,
+          student_id: true,
+          zalo_account_id: true,
+          relation_status: true,
+          zalo_group_id: true,
+          friend_zalo_uid: true,
+          display_name: true,
+          zalo_account: { select: { archived_at: true } },
+        },
+        take: 500,
+      })) ?? [];
+
+    if (candidateRows.length > 0) {
+      type CandidateRow = {
+        id: number;
+        student_id: number;
+        zalo_account_id: number;
+        relation_status: string;
+        zalo_group_id: number | null;
+        friend_zalo_uid: string | null;
+        display_name: string | null;
+        zalo_account?: { archived_at: Date | null } | null;
+      };
+      const rows = candidateRows as CandidateRow[];
+      const isMissingAllMetadata = (r: CandidateRow) =>
+        r.zalo_group_id == null && r.friend_zalo_uid == null && r.display_name == null;
+      const isArchivedAccount = (r: CandidateRow) => r.zalo_account?.archived_at != null;
+
+      const missingMetadataRows = rows.filter(isMissingAllMetadata);
+      const archivedAccountRows = rows.filter(isArchivedAccount);
+
+      const DETAIL_CAP = 50;
+      const toDetail = (r: CandidateRow) => ({
+        relationId: r.id,
+        studentId: r.student_id,
+        zaloAccountId: r.zalo_account_id,
+        relationStatus: r.relation_status,
+        missingFields: [
+          ...(r.zalo_group_id == null ? ['zalo_group_id'] : []),
+          ...(r.friend_zalo_uid == null ? ['friend_zalo_uid'] : []),
+          ...(r.display_name == null ? ['display_name'] : []),
         ],
-      },
-    });
+        archivedAccount: isArchivedAccount(r),
+      });
+
+      log.warn('Care-group sync kept ZaloContactRelation candidates (no deletions performed)', {
+        triggeredBy,
+        scannedCount: rows.length,
+        scanTruncated: rows.length >= 500,
+        missingMetadataBackfill: {
+          count: missingMetadataRows.length,
+          note: 'Kept; needs metadata backfill (upsert fills these when a care group matches this student+account)',
+          relations: missingMetadataRows.slice(0, DETAIL_CAP).map(toDetail),
+        },
+        archivedAccountMaintenance: {
+          count: archivedAccountRows.length,
+          note: 'Kept; cleanup only via an explicit, separately-reviewed maintenance operation',
+          relations: archivedAccountRows.slice(0, DETAIL_CAP).map(toDetail),
+        },
+      });
+    }
   } catch (err) {
-    log.warn('Cleanup of orphan ZaloContactRelation rows non-critical warning', {
+    log.warn('ZaloContactRelation candidate collection (non-destructive) failed', {
       error: String(err),
     });
   }
