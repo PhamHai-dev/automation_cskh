@@ -724,6 +724,30 @@ describe('Acceptance (DB): S1a/S2c milestone occurrence dedup & forward re-evalu
     });
     expect(afterCancel).toHaveLength(1);
     expect(afterCancel[0].status).toBe('CANCELLED');
+    const cancelledId = afterCancel[0].id;
+
+    // Owner Point 5: under NO_SEND, if the 5th row returns to FINAL (making step 5 eligible again),
+    // the existing CANCELLED occurrence must NOT be reactivated or enqueued!
+    const enqueuesBeforeNoSendReactivate = (enqueueDelivery as jest.Mock).mock.calls.length;
+    await prisma.attendance.update({
+      where: { id: fifthAtt.id },
+      data: { reconciliation_state: ReconciliationState.MATCHED },
+    });
+    await runAttendancePostCommit({
+      attendanceId: fifthAtt.id,
+      reconciliationState: ReconciliationState.MATCHED,
+      deliveryPolicy: 'NO_SEND',
+    });
+    await handleAttendanceEvent(fifthAtt.id, { deliveryPolicy: 'NO_SEND' });
+    await reconcileEnrollmentMilestones(enrollmentId, { deliveryPolicy: 'NO_SEND' });
+
+    const afterNoSendReeligible = await prisma.messageDelivery.findMany({
+      where: { enrollment_id: enrollmentId },
+    });
+    expect(afterNoSendReeligible).toHaveLength(1);
+    expect(afterNoSendReeligible[0].id).toBe(cancelledId);
+    expect(afterNoSendReeligible[0].status).toBe('CANCELLED');
+    expect((enqueueDelivery as jest.Mock).mock.calls.length).toBe(enqueuesBeforeNoSendReactivate);
   });
 
   it('(f) two different enrollments of the SAME student have completely independent milestones', async () => {
@@ -766,5 +790,141 @@ describe('Acceptance (DB): S1a/S2c milestone occurrence dedup & forward re-evalu
     expect(deliv1[0].id).not.toBe(deliv2[0].id);
     expect(deliv1[0].attendance_id).toBe(lastAtt1Id);
     expect(deliv2[0].attendance_id).toBe(lastAtt2Id);
+  });
+
+  it('(g) Rebind consistency (Owner Point 5): rebinding a SCHEDULED/QUEUED occurrence refreshes rendered_content & variables_snapshot in place, keeps scheduled_at, and stale BullMQ job payload reads fresh content from DB at send time', async () => {
+    const { enrollmentId, ecId } = await createStudentAndEnrollment('REBIND_CONS');
+
+    // Second class to observe class_name change in rendered_content & variables_snapshot on rebind
+    const cls2 = await prisma.class.create({
+      data: {
+        class_name: `Lớp Chuyển ${NS}`,
+        class_code: `CLS2_${NS}`,
+        model_type: ClassModelType.ONE_TO_ONE,
+        attendance_source: 'LEARNING_SYSTEM',
+      },
+    });
+    const ec2 = await prisma.enrollmentClass.create({
+      data: {
+        enrollment_id: enrollmentId,
+        class_id: cls2.id,
+        sequence_no: 2,
+        status: EnrollmentClassStatus.ACTIVE,
+      },
+    });
+    createdEnrollmentClassIds.push(ec2.id);
+
+    // Temporarily include {{class_name}} in step 5 template to verify render refresh on rebind
+    await prisma.automationStep.update({
+      where: { id: step5Id },
+      data: {
+        message_content:
+          'Chúc mừng {{student_name}} hoàn thành mốc buổi {{session_number}} tại {{class_name}}!',
+        message_variables: ['student_name', 'session_number', 'class_name'] as any,
+      },
+    });
+
+    try {
+      const earlierDates = ['2026-10-10', '2026-10-11', '2026-10-12', '2026-10-13'];
+      for (const d of earlierDates) {
+        await createAttendanceRow({
+          ecId,
+          sessionDate: d,
+          createdAt: new Date(`${d}T01:00:00.000Z`),
+        });
+      }
+
+      // A @01:00 on transferred class cls2 (initially PENDING_CS); B @09:00 on original class (MATCHED first)
+      const sA = await prisma.classSession.create({
+        data: {
+          class_id: cls2.id,
+          session_number: ++sessionSeq,
+          session_date: new Date('2026-10-18T00:00:00.000Z'),
+          start_time: '08:00',
+          end_time: '08:30',
+          created_by_id: adminId,
+        },
+      });
+      createdSessionIds.push(sA.id);
+      const attA = await prisma.attendance.create({
+        data: {
+          enrollment_class_id: ec2.id,
+          class_session_id: sA.id,
+          status: AttendanceStatus.ATTENDED,
+          teacher_status: AttendanceStatus.ATTENDED,
+          cs_status: null,
+          source: AttendanceSource.MANUAL,
+          reconciliation_state: ReconciliationState.PENDING_CS,
+          created_by_id: adminId,
+          cs_user_id: csId,
+          created_at: new Date('2026-10-18T01:00:00.000Z'),
+        },
+      });
+
+      const attB = await createAttendanceRow({
+        ecId,
+        sessionDate: '2026-10-18',
+        createdAt: new Date('2026-10-18T09:00:00.000Z'),
+        reconciliationState: ReconciliationState.MATCHED,
+      });
+
+      // 1. B finalizes first -> creates step 5 occurrence with class_name = `Lớp ${NS}`
+      await handleAttendanceEvent(attB.id);
+      const beforeRebind = await prisma.messageDelivery.findFirstOrThrow({
+        where: { enrollment_id: enrollmentId, automation_step_id: step5Id },
+      });
+      expect(beforeRebind.attendance_id).toBe(attB.id);
+      expect(beforeRebind.rendered_content).toContain(`Lớp ${NS}`);
+      expect((beforeRebind.variables_snapshot as any)?.class_name).toBe(`Lớp ${NS}`);
+      const originalScheduledAt = beforeRebind.scheduled_at.getTime();
+      const capturedJobPayload = (enqueueDelivery as jest.Mock).mock.calls[0][0] as SendJobData;
+      expect(capturedJobPayload.attendanceId).toBe(attB.id);
+
+      // 2. A finalizes second -> step 5 occurrence rebinds in place from attB to attA (`Lớp Chuyển ${NS}`)
+      await prisma.attendance.update({
+        where: { id: attA.id },
+        data: {
+          cs_status: AttendanceStatus.ATTENDED,
+          reconciliation_state: ReconciliationState.MATCHED,
+        },
+      });
+      await handleAttendanceEvent(attA.id);
+
+      const afterRebind = await prisma.messageDelivery.findUniqueOrThrow({
+        where: { id: beforeRebind.id },
+      });
+      expect(afterRebind.attendance_id).toBe(attA.id);
+      expect(afterRebind.rendered_content).toContain(`Lớp Chuyển ${NS}`);
+      expect((afterRebind.variables_snapshot as any)?.class_name).toBe(`Lớp Chuyển ${NS}`);
+      expect(afterRebind.scheduled_at.getTime()).toBe(originalScheduledAt);
+
+      // 3. Execute the already-enqueued BullMQ job (still carrying old attendanceId = attB.id in job.data):
+      //    processDeliveryJob loads delivery by deliveryId from DB and sends the refreshed rendered_content!
+      const mockSendMessage = jest.fn().mockResolvedValue({ data: { messageId: 'pmid_rebind_1' } });
+      (zaloPool.getApi as jest.Mock).mockReturnValue({ sendMessage: mockSendMessage });
+      await processDeliveryJob({
+        id: `automation:delivery:${beforeRebind.id}`,
+        data: capturedJobPayload, // stale attendanceId = attB.id
+      } as unknown as Job<SendJobData>);
+
+      expect(mockSendMessage).toHaveBeenCalledTimes(1);
+      expect(mockSendMessage.mock.calls[0][0]).toContain(`Lớp Chuyển ${NS}`);
+      const sentRow = await prisma.messageDelivery.findUniqueOrThrow({ where: { id: beforeRebind.id } });
+      expect(sentRow.status).toBe('SENT');
+      expect(sentRow.provider_message_id).toBe('pmid_rebind_1');
+    } finally {
+      await prisma.automationStep.update({
+        where: { id: step5Id },
+        data: {
+          message_content: 'Chúc mừng {{student_name}} hoàn thành mốc buổi {{session_number}}!',
+          message_variables: ['student_name', 'session_number'] as any,
+        },
+      });
+      await prisma.messageDelivery.deleteMany({ where: { enrollment_id: enrollmentId } });
+      await prisma.attendance.deleteMany({ where: { enrollment_class_id: ec2.id } });
+      await prisma.classSession.deleteMany({ where: { class_id: cls2.id } });
+      await prisma.enrollmentClass.deleteMany({ where: { id: ec2.id } });
+      await prisma.class.deleteMany({ where: { id: cls2.id } });
+    }
   });
 });

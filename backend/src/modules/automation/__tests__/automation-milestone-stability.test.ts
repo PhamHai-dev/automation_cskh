@@ -70,13 +70,23 @@ jest.mock('../automation-bullmq-adapter', () => ({
   cancelDelivery: jest.fn(),
 }));
 
+jest.mock('../../zalo/zalo-pool', () => ({
+  zaloPool: {
+    getApi: jest.fn(),
+    tryReconnect: jest.fn(),
+  },
+}));
+
+import type { Job } from 'bullmq';
 import { prisma } from '../../../prisma/client';
 import { enqueueDelivery, cancelDelivery } from '../automation-bullmq-adapter';
+import { zaloPool } from '../../zalo/zalo-pool';
 import {
   cancelPendingDeliveries,
   handleAttendanceEvent,
   reconcileEnrollmentMilestones,
 } from '../automation-trigger.service';
+import { processDeliveryJob, type SendJobData } from '../automation-worker';
 
 // ─── In-memory FINAL-ATTENDED row store (same harness as session-number tests) ─
 
@@ -88,6 +98,8 @@ interface FakeRow {
   status: string;
   reconciliation_state: string;
   deleted_at: Date | null;
+  class_name?: string;
+  teacher_name?: string;
 }
 
 let rows: FakeRow[] = [];
@@ -139,6 +151,7 @@ interface FakeDelivery {
   attendance_id: number;
   automation_step_id: number;
   status: string;
+  scheduled_at?: Date;
   queue_job_id: string | null;
   error_message: string | null;
   rendered_content: string;
@@ -196,8 +209,12 @@ function attendanceFixture(overrides: {
   createdAt: Date;
   status?: string;
   reconciliationState?: string;
+  className?: string;
+  teacherName?: string;
 }) {
   const enrollmentId = overrides.enrollmentId ?? 300;
+  const className = overrides.className ?? 'N3-K12';
+  const teacherName = overrides.teacherName ?? 'Sensei Tanaka';
   return {
     id: overrides.id,
     status: overrides.status ?? 'ATTENDED',
@@ -213,15 +230,15 @@ function attendanceFixture(overrides: {
         student: { id: enrollmentId === 301 ? 401 : 400, full_name: enrollmentId === 301 ? 'Trần Văn B' : 'Nguyễn Văn A', phone: '0988767563' },
         cs: { id: 50, name: 'CS Hương' },
         package: { name: 'Gói N3' },
-        enrollment_classes: [{ class: { id: 20, class_name: 'N3-K12' } }],
+        enrollment_classes: [{ class: { id: 20, class_name: className } }],
       },
-      class: { id: 20, class_name: 'N3-K12' },
+      class: { id: 20, class_name: className },
     },
     class_session: {
       session_date: overrides.sessionDate,
       class: {
-        class_name: 'N3-K12',
-        class_teachers: [{ teacher: { id: 5, name: 'Sensei Tanaka' } }],
+        class_name: className,
+        class_teachers: [{ teacher: { id: 5, name: teacherName } }],
       },
     },
   };
@@ -231,7 +248,7 @@ function rowFixture(
   id: number,
   sessionDate: Date,
   createdAt: Date,
-  overrides?: Partial<Pick<FakeRow, 'status' | 'reconciliation_state' | 'deleted_at' | 'enrollment_id'>>,
+  overrides?: Partial<Pick<FakeRow, 'status' | 'reconciliation_state' | 'deleted_at' | 'enrollment_id' | 'class_name' | 'teacher_name'>>,
 ): FakeRow {
   return {
     id,
@@ -241,6 +258,8 @@ function rowFixture(
     status: overrides?.status ?? 'ATTENDED',
     reconciliation_state: overrides?.reconciliation_state ?? 'MATCHED',
     deleted_at: overrides?.deleted_at ?? null,
+    class_name: overrides?.class_name,
+    teacher_name: overrides?.teacher_name,
   };
 }
 
@@ -289,7 +308,10 @@ function resetHarness() {
       ...r,
       class_session: {
         session_date: r.session_date,
-        class: { class_name: 'N3-K12', class_teachers: [{ teacher: { name: 'Sensei Tanaka' } }] },
+        class: {
+          class_name: r.class_name ?? 'N3-K12',
+          class_teachers: [{ teacher: { name: r.teacher_name ?? 'Sensei Tanaka' } }],
+        },
       },
     }));
     return list.sort((a: any, b: any) => a.session_date - b.session_date || a.created_at - b.created_at || a.id - b.id);
@@ -312,14 +334,40 @@ function resetHarness() {
     id: 10,
     student_id: 400,
     zalo_account_id: 12,
+    friend_zalo_uid: 'zuid_400',
     relation_status: 'FRIEND',
   });
 
-  (prisma.messageDelivery.findUnique as jest.Mock).mockImplementation(async ({ where }) => {
+  (prisma.messageDelivery.findUnique as jest.Mock).mockImplementation(async ({ where, include }) => {
     const comp = where?.attendance_id_automation_step_id;
     if (comp) return findDeliveryRow(comp.attendance_id, comp.automation_step_id);
     const byId = where?.id;
-    if (byId !== undefined) return deliveries.find((d) => d.id === byId) ?? null;
+    if (byId !== undefined) {
+      const found = deliveries.find((d) => d.id === byId) ?? null;
+      if (!found || !include) return found;
+      const step = currentSteps.find((s) => s.id === found.automation_step_id);
+      const att = rows.find((r) => r.id === found.attendance_id);
+      return {
+        ...found,
+        zalo_account_id: 12,
+        zalo_group_id: null,
+        line_account_id: null,
+        line_group_id: null,
+        automation_step: step ?? { id: found.automation_step_id, session_number: 5, trigger_event: 'ATTENDED', channel: 'ZALO_PERSONAL' },
+        enrollment: {
+          id: found.enrollment_id,
+          student_id: 400,
+          student: { id: 400, full_name: 'Nguyễn Văn A', phone: '0988767563', zalo_uid: 'zuid_400', line_uid: null },
+        },
+        zalo_account: { id: 12, status: 'ACTIVE', zalo_uid: 'zalo_cs', display_name: 'CS Zalo' },
+        zalo_group: null,
+        line_account: null,
+        line_group: null,
+        attendance: att
+          ? { ...att, enrollment_class: { enrollment_id: found.enrollment_id } }
+          : { id: found.attendance_id, status: 'ATTENDED', reconciliation_state: 'MATCHED', deleted_at: null },
+      };
+    }
     throw new Error(`fake delivery findUnique: unsupported where shape ${JSON.stringify(where)}`);
   });
   (prisma.messageDelivery.findFirst as jest.Mock).mockImplementation(async ({ where }) =>
@@ -364,6 +412,7 @@ function resetHarness() {
       attendance_id: data.attendance_id,
       automation_step_id: data.automation_step_id,
       status: 'SCHEDULED',
+      scheduled_at: data.scheduled_at,
       queue_job_id: null,
       error_message: null,
       rendered_content: data.rendered_content,
@@ -927,5 +976,163 @@ describe('Care-milestone occurrence contract — policy & enrollment isolation',
     expect(occurrences(41, 300)[0].attendance_id).toBe(901);
     expect(occurrences(41, 301)[0].attendance_id).toBe(911);
     expect(enqueueDelivery).toHaveBeenCalledTimes(2);
+  });
+
+  it('rebind consistency (Point 5): rebinding a SCHEDULED/QUEUED occurrence refreshes rendered_content & variables_snapshot in place while keeping scheduled_at and without re-enqueuing', async () => {
+    const A_CREATED = new Date('2026-10-18T01:00:00Z');
+    const B_CREATED = new Date('2026-10-18T09:00:00Z');
+
+    rows = [
+      rowFixture(801, new Date('2026-10-14T00:00:00Z'), new Date('2026-10-14T01:00:00Z')),
+      rowFixture(802, new Date('2026-10-15T00:00:00Z'), new Date('2026-10-15T01:00:00Z')),
+      rowFixture(803, new Date('2026-10-16T00:00:00Z'), new Date('2026-10-16T01:00:00Z')),
+      rowFixture(804, DAY1, new Date('2026-10-17T01:00:00Z')),
+      // B (902) finalizes first on class N3-K12 with Sensei Tanaka
+      rowFixture(902, DAY2, B_CREATED, { class_name: 'N3-K12', teacher_name: 'Sensei Tanaka' }),
+    ];
+
+    const stepWithClassTeacher = {
+      ...stepFixture(5, 41),
+      message_content:
+        'Chào {{student_name}}, mốc buổi {{session_number}} lớp {{class_name}} cùng GV {{teacher_name}}!',
+      message_variables: ['student_name', 'session_number', 'class_name', 'teacher_name'],
+    };
+    installStepMock([stepWithClassTeacher]);
+
+    (prisma.attendance.findUnique as jest.Mock).mockResolvedValue(
+      attendanceFixture({
+        id: 902,
+        sessionDate: DAY2,
+        createdAt: B_CREATED,
+        className: 'N3-K12',
+        teacherName: 'Sensei Tanaka',
+      }),
+    );
+
+    const resB = await handleAttendanceEvent(902);
+    expect(resB.deliveriesCreated).toBe(1);
+    expect(enqueueDelivery).toHaveBeenCalledTimes(1);
+
+    const occBefore = occurrences(41)[0];
+    expect(occBefore.attendance_id).toBe(902);
+    expect(occBefore.rendered_content).toContain('N3-K12');
+    expect(occBefore.rendered_content).toContain('Sensei Tanaka');
+    expect(occBefore.variables_snapshot).toMatchObject({
+      class_name: 'N3-K12',
+      teacher_name: 'Sensei Tanaka',
+      session_number: 5,
+    });
+    const fixedScheduledAt = new Date('2026-10-18T09:00:05.000Z');
+    occBefore.scheduled_at = fixedScheduledAt;
+    const originalDeliveryId = occBefore.id;
+    const originalQueueJobId = occBefore.queue_job_id;
+
+    // Now earlier same-day session A (901 @01:00) finalizes on transferred class N3-K99 with Sensei Sato.
+    // A becomes ordinal 5 (basis of step 41 shifts 902 -> 901).
+    rows.push(
+      rowFixture(901, DAY2, A_CREATED, { class_name: 'N3-K99', teacher_name: 'Sensei Sato' }),
+    );
+    (prisma.attendance.findUnique as jest.Mock).mockResolvedValue(
+      attendanceFixture({
+        id: 901,
+        sessionDate: DAY2,
+        createdAt: A_CREATED,
+        className: 'N3-K99',
+        teacherName: 'Sensei Sato',
+      }),
+    );
+
+    const resA = await handleAttendanceEvent(901);
+    expect(resA.deliveriesCreated).toBe(0);
+    // No second enqueue on rebind:
+    expect(enqueueDelivery).toHaveBeenCalledTimes(1);
+
+    const occAfter = occurrences(41);
+    expect(occAfter).toHaveLength(1);
+    expect(occAfter[0].id).toBe(originalDeliveryId);
+    expect(occAfter[0].attendance_id).toBe(901);
+    // rendered_content & variables_snapshot ARE refreshed to the new basis A:
+    expect(occAfter[0].rendered_content).toContain('N3-K99');
+    expect(occAfter[0].rendered_content).toContain('Sensei Sato');
+    expect(occAfter[0].rendered_content).not.toContain('N3-K12');
+    expect(occAfter[0].variables_snapshot).toMatchObject({
+      class_name: 'N3-K99',
+      teacher_name: 'Sensei Sato',
+      session_number: 5,
+    });
+    // scheduled_at and queue_job_id are KEPT unchanged:
+    expect(occAfter[0].scheduled_at).toEqual(fixedScheduledAt);
+    expect(occAfter[0].queue_job_id).toBe(originalQueueJobId);
+
+    // Finally, when the already-enqueued BullMQ job (still carrying old attendanceId = 902 in job.data)
+    // executes, processDeliveryJob loads the delivery by deliveryId from DB and sends the refreshed content!
+    const enqueuedJobPayload = (enqueueDelivery as jest.Mock).mock.calls[0][0] as SendJobData;
+    expect(enqueuedJobPayload.attendanceId).toBe(902); // stale attendanceId in BullMQ job payload
+    const mockSendMessage = jest.fn().mockResolvedValue({ data: { messageId: 'zalo_msg_901' } });
+    (zaloPool.getApi as jest.Mock).mockReturnValue({ sendMessage: mockSendMessage });
+
+    await processDeliveryJob({
+      id: `automation:delivery:${originalDeliveryId}`,
+      data: enqueuedJobPayload,
+    } as unknown as Job<SendJobData>);
+
+    expect(mockSendMessage).toHaveBeenCalledTimes(1);
+    expect(mockSendMessage.mock.calls[0][0]).toContain('N3-K99');
+    expect(mockSendMessage.mock.calls[0][0]).toContain('Sensei Sato');
+    expect(occAfter[0].status).toBe('SENT');
+  });
+
+  it('NO_SEND non-reactivation (Point 5): under NO_SEND, an existing CANCELLED occurrence is NEVER reactivated and NEVER enqueued when the milestone becomes eligible again', async () => {
+    const C_CREATED = new Date('2026-10-18T01:00:00Z');
+    rows = [
+      rowFixture(801, new Date('2026-10-15T00:00:00Z'), new Date('2026-10-15T01:00:00Z')),
+      rowFixture(802, new Date('2026-10-16T00:00:00Z'), new Date('2026-10-16T01:00:00Z')),
+      rowFixture(803, DAY1, new Date('2026-10-17T01:00:00Z')),
+      rowFixture(901, DAY2, C_CREATED),
+    ];
+    installStepMock([stepFixture(4, 41)]);
+
+    // 1. Create occurrence under SEND (ordinal 4 reached)
+    (prisma.attendance.findUnique as jest.Mock).mockResolvedValue(
+      attendanceFixture({ id: 901, sessionDate: DAY2, createdAt: C_CREATED }),
+    );
+    await handleAttendanceEvent(901, { deliveryPolicy: 'SEND' });
+    expect(occurrences(41)).toHaveLength(1);
+    expect(occurrences(41)[0].status).toBe('QUEUED');
+    const cancelledId = occurrences(41)[0].id;
+
+    // 2. Drop 901 to CONFLICT -> occurrence transitions to CANCELLED
+    rows = rows.map((r) => (r.id === 901 ? { ...r, reconciliation_state: 'CONFLICT' } : r));
+    (prisma.attendance.findUnique as jest.Mock).mockResolvedValue(
+      attendanceFixture({ id: 901, sessionDate: DAY2, createdAt: C_CREATED, reconciliationState: 'CONFLICT' }),
+    );
+    await cancelPendingDeliveries(901);
+    expect(occurrences(41)[0].status).toBe('CANCELLED');
+
+    // 3. 901 returns to FINAL (RESOLVED), making ordinal 4 eligible again, but under NO_SEND:
+    //    Neither handleAttendanceEvent(NO_SEND) nor reconcileEnrollmentMilestones(NO_SEND) may reactivate or enqueue!
+    const enqueuesBefore = (enqueueDelivery as jest.Mock).mock.calls.length;
+    const createsBefore = (prisma.messageDelivery.create as jest.Mock).mock.calls.length;
+    const updatesBefore = (prisma.messageDelivery.update as jest.Mock).mock.calls.length;
+    rows = rows.map((r) => (r.id === 901 ? { ...r, reconciliation_state: 'RESOLVED' } : r));
+    (prisma.attendance.findUnique as jest.Mock).mockResolvedValue(
+      attendanceFixture({ id: 901, sessionDate: DAY2, createdAt: C_CREATED, reconciliationState: 'RESOLVED' }),
+    );
+
+    const resNoSendEvent = await handleAttendanceEvent(901, { deliveryPolicy: 'NO_SEND' });
+    expect(resNoSendEvent.deliveriesCreated).toBe(0);
+    expect(occurrences(41)).toHaveLength(1);
+    expect(occurrences(41)[0].id).toBe(cancelledId);
+    expect(occurrences(41)[0].status).toBe('CANCELLED');
+    expect((enqueueDelivery as jest.Mock).mock.calls.length).toBe(enqueuesBefore);
+    expect((prisma.messageDelivery.create as jest.Mock).mock.calls.length).toBe(createsBefore);
+    expect((prisma.messageDelivery.update as jest.Mock).mock.calls.length).toBe(updatesBefore);
+
+    const resNoSendWide = await reconcileEnrollmentMilestones(300, { deliveryPolicy: 'NO_SEND' });
+    expect(resNoSendWide.deliveriesCreated).toBe(0);
+    expect(occurrences(41)[0].status).toBe('CANCELLED');
+    expect((enqueueDelivery as jest.Mock).mock.calls.length).toBe(enqueuesBefore);
+    expect((prisma.messageDelivery.create as jest.Mock).mock.calls.length).toBe(createsBefore);
+    expect((prisma.messageDelivery.update as jest.Mock).mock.calls.length).toBe(updatesBefore);
   });
 });
