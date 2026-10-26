@@ -2,7 +2,7 @@ import { prisma } from '../../prisma/client';
 import { AttendanceStatus, ReconciliationState, AttendanceSource, Prisma } from '@prisma/client';
 import ExcelJS from 'exceljs';
 import { runAttendancePostCommit } from './attendance-lifecycle';
-import { findEffectiveAssignment } from './teacher-assignment';
+import { findEffectiveAssignment, isTeacherAssignmentEffectiveInRange } from './teacher-assignment';
 import { handleAttendanceEvent, cancelPendingDeliveries } from '../automation/automation-trigger.service';
 import { createLogger } from '../../shared/logger/logger';
 import { AppError } from '../../middlewares/error.middleware';
@@ -67,12 +67,14 @@ export class ReconciliationService {
   private async assertTeacherScope(actor: Actor, classId: number, sessionDate: Date) {
     if (this.isPrivileged(actor)) return;
     if (!actor.roles.includes('TEACHER')) throw new AppError(403, 'Vai trò không được phép điểm danh phía giáo viên');
-    // D8 (approved 2026-10-25): authority is the assignment EFFECTIVE AT THE
-    // SESSION DATE, not "active today". Windows with null bounds are unbounded;
-    // missing/expired evidence falls through to 403 (Admin-assisted mark is
-    // the separate privileged path above).
+    // D8 (owner verdict 2026-10-26): fetch ALL of this teacher's assignment
+    // rows for the class (any current active state) and let the helper decide.
+    // `active` records today's state, not history; a now-inactive row whose
+    // window contained the session date still authorizes the mark (acceptance
+    // case #14). Ambiguity rule (active=false with no window data) is pinned
+    // in teacher-assignment.ts.
     const candidates = await prisma.classTeacher.findMany({
-      where: { class_id: classId, teacher: { user_id: actor.id, active: true } },
+      where: { class_id: classId, teacher: { user_id: actor.id } },
       select: { active: true, start_date: true, end_date: true },
     });
     const effective = findEffectiveAssignment(candidates, sessionDate);
@@ -1041,21 +1043,36 @@ export class ReconciliationService {
       throw new AppError(404, 'Không tìm thấy hồ sơ giáo viên đang hoạt động');
     }
 
+    // D8 (owner verdict 2026-10-26): do NOT pre-filter active:true at the DB
+    // query — fetch all of the teacher's assignment rows (selecting active,
+    // start_date, end_date) and let the helper decide which classes/sessions
+    // fall inside an effective window.
     const classTeachers = await prisma.classTeacher.findMany({
-      where: { teacher_id: teacherId, active: true },
-      select: { class_id: true },
+      where: { teacher_id: teacherId },
+      select: { class_id: true, active: true, start_date: true, end_date: true },
     });
-    const classIds = classTeachers.map((ct) => ct.class_id);
+
+    const rangeStart = query.startDate ? new Date(`${query.startDate}T00:00:00.000Z`) : null;
+    const rangeEnd = query.endDate ? new Date(`${query.endDate}T00:00:00.000Z`) : null;
+
+    const byClass = new Map<number, typeof classTeachers>();
+    for (const ct of classTeachers) {
+      if (!isTeacherAssignmentEffectiveInRange(ct, rangeStart, rangeEnd)) continue;
+      const list = byClass.get(ct.class_id) ?? [];
+      list.push(ct);
+      byClass.set(ct.class_id, list);
+    }
+    const classIds = Array.from(byClass.keys());
     if (classIds.length === 0) return [];
 
     const dateFilter: Prisma.DateTimeFilter = {};
-    if (query.startDate) dateFilter.gte = new Date(`${query.startDate}T00:00:00.000Z`);
-    if (query.endDate) dateFilter.lte = new Date(`${query.endDate}T00:00:00.000Z`);
+    if (rangeStart) dateFilter.gte = rangeStart;
+    if (rangeEnd) dateFilter.lte = rangeEnd;
 
-    return prisma.classSession.findMany({
+    const sessions = await prisma.classSession.findMany({
       where: {
         class_id: { in: classIds },
-        ...(query.startDate || query.endDate ? { session_date: dateFilter } : {}),
+        ...(rangeStart || rangeEnd ? { session_date: dateFilter } : {}),
       },
       orderBy: [{ session_date: 'desc' }, { start_time: 'asc' }],
       include: {
@@ -1077,6 +1094,10 @@ export class ReconciliationService {
         },
       },
     });
+
+    return sessions.filter((s) =>
+      findEffectiveAssignment(byClass.get(s.class_id) ?? [], s.session_date) !== null
+    );
   }
 }
 

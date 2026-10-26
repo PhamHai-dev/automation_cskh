@@ -140,6 +140,62 @@ describe('markByTeacher — CANCELLED session guard (C.6)', () => {
   });
 });
 
+describe('markByTeacher — D8 inactive assignment within window (owner verdict 2026-10-26)', () => {
+  it('queries classTeacher with NO active filter and allows active=false when the window covers session_date', async () => {
+    mockPrisma.attendance.findUnique.mockResolvedValue(teacherRecord('SCHEDULED'));
+    mockPrisma.classTeacher.findMany.mockResolvedValue([
+      {
+        active: false,
+        start_date: new Date('2026-06-01T00:00:00.000Z'),
+        end_date: new Date('2026-06-30T00:00:00.000Z'),
+      },
+    ]); // revoked AFTER the session date, window still covers it -> authorized
+    const updated = {
+      ...teacherRecord('SCHEDULED'),
+      teacher_status: AttendanceStatus.ATTENDED,
+      reconciliation_state: ReconciliationState.PENDING_CS,
+    };
+    mockPrisma.$transaction.mockImplementation(async (fn: any) => {
+      mockPrisma.attendance.update.mockResolvedValue(updated);
+      return fn({ attendance: mockPrisma.attendance, auditLog: mockPrisma.auditLog });
+    });
+
+    const result = await service.markByTeacher(attendanceId, { status: AttendanceStatus.ATTENDED }, TEACHER);
+
+    expect(result.reconciliation_state).toBe(ReconciliationState.PENDING_CS);
+    expect(mockPrisma.classTeacher.findMany).toHaveBeenCalledWith({
+      where: { class_id: 5, teacher: { user_id: TEACHER.id } },
+      select: { active: true, start_date: true, end_date: true },
+    });
+  });
+
+  it('403 when active=false carries no window data (ambiguous removal boundary)', async () => {
+    mockPrisma.attendance.findUnique.mockResolvedValue(teacherRecord('SCHEDULED'));
+    mockPrisma.classTeacher.findMany.mockResolvedValue([{ active: false, start_date: null, end_date: null }]);
+
+    const err = await service
+      .markByTeacher(attendanceId, { status: AttendanceStatus.ATTENDED }, TEACHER)
+      .catch((e) => e);
+
+    expect(err).toBeInstanceOf(AppError);
+    expect((err as AppError).status).toBe(403);
+    expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('403 when the only inactive rows have windows that exclude session_date', async () => {
+    mockPrisma.attendance.findUnique.mockResolvedValue(teacherRecord('SCHEDULED'));
+    mockPrisma.classTeacher.findMany.mockResolvedValue([
+      { active: false, start_date: null, end_date: new Date('2026-05-31T00:00:00.000Z') },
+      { active: false, start_date: new Date('2026-07-01T00:00:00.000Z'), end_date: null },
+    ]);
+
+    await expect(
+      service.markByTeacher(attendanceId, { status: AttendanceStatus.ATTENDED }, TEACHER)
+    ).rejects.toMatchObject({ status: 403 });
+    expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+  });
+});
+
 describe('markByCS — CANCELLED session guard (C.6)', () => {
   it('throws 409 on a CANCELLED session before CS scope or write', async () => {
     mockPrisma.attendance.findUnique.mockResolvedValue(csRecord('CANCELLED'));

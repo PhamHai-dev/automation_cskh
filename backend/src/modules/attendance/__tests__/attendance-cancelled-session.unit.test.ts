@@ -264,3 +264,57 @@ describe('updateAttendance / resetAttendance — CANCELLED session guard (C.6)',
     expect(repo.reset).not.toHaveBeenCalled();
   });
 });
+
+describe('assertWriteScope — D8 inactive assignment within window (owner verdict 2026-10-26)', () => {
+  it('queries classTeacher without active:true filter and allows active=false when window covers session_date', async () => {
+    mockPrisma.enrollmentClass.findUnique.mockResolvedValue({ id: enrollmentClassId, class_id: classId });
+    mockPrisma.classSession.findFirst.mockResolvedValue(sessionRow('SCHEDULED'));
+    mockPrisma.classTeacher.findMany.mockResolvedValue([
+      {
+        active: false,
+        start_date: new Date('2026-06-01T00:00:00.000Z'),
+        end_date: new Date('2026-06-30T00:00:00.000Z'),
+      },
+    ]);
+    repo.findByEnrollmentClassAndSession.mockResolvedValue(null);
+    const marked = { id: 88, reconciliation_state: 'PENDING_CS' };
+    repo.mark.mockResolvedValue(marked);
+
+    const result = await service.markAttendance(
+      classId,
+      sessionId,
+      { enrollment_class_id: enrollmentClassId, status: 'ATTENDED', side: 'TEACHER' },
+      TEACHER
+    );
+
+    expect(result).toBe(marked);
+    expect(mockPrisma.classTeacher.findMany).toHaveBeenCalledWith({
+      where: { class_id: classId, teacher: { user_id: TEACHER.id } },
+      select: { active: true, start_date: true, end_date: true },
+    });
+  });
+
+  it('rejects with 403 when active=false has no window bounds (ambiguous removal boundary) or expired end_date', async () => {
+    mockPrisma.enrollmentClass.findUnique.mockResolvedValue({ id: enrollmentClassId, class_id: classId });
+    mockPrisma.classSession.findFirst.mockResolvedValue(sessionRow('SCHEDULED'));
+    mockPrisma.classTeacher.findMany.mockResolvedValue([
+      { active: false, start_date: null, end_date: null },
+      {
+        active: false,
+        start_date: new Date('2026-01-01T00:00:00.000Z'),
+        end_date: new Date('2026-05-31T00:00:00.000Z'),
+      },
+    ]);
+
+    await expect(
+      service.markAttendance(
+        classId,
+        sessionId,
+        { enrollment_class_id: enrollmentClassId, status: 'ATTENDED', side: 'TEACHER' },
+        TEACHER
+      )
+    ).rejects.toMatchObject({ status: 403 });
+    expect(repo.mark).not.toHaveBeenCalled();
+  });
+});
+

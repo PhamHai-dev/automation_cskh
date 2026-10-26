@@ -43,12 +43,14 @@ export class AttendanceService {
   private async assertWriteScope(actor: AttendanceActor, side: AttendanceSide, classId: number, enrollmentClassId: number, sessionDate: Date) {
     if (actor.roles.includes('ADMIN') || actor.roles.includes('MANAGE')) return;
     if (side === 'TEACHER') {
-      // D8 (approved 2026-10-25): the assignment must be EFFECTIVE AT THE
-      // SESSION DATE (null window bounds = unbounded), not merely "active
-      // today". Expired/missing evidence is 403; Admin-assisted marking is the
-      // separate privileged path above.
+      // D8 (owner verdict 2026-10-26): fetch ALL of this teacher's assignment
+      // rows for the class (any current active state) and let the helper
+      // decide. `active` is today's state, not history; a now-inactive row
+      // whose window contained the session date still authorizes the mark
+      // (acceptance case #14). Ambiguity rule (active=false with no window
+      // data) is pinned in teacher-assignment.ts.
       const candidates = await prisma.classTeacher.findMany({
-        where: { class_id: classId, teacher: { user_id: actor.id, active: true } },
+        where: { class_id: classId, teacher: { user_id: actor.id } },
         select: { active: true, start_date: true, end_date: true },
       });
       const effective = findEffectiveAssignment(candidates, sessionDate);
