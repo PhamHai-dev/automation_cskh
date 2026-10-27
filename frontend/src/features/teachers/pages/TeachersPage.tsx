@@ -12,6 +12,7 @@ import { Input } from '../../../components/ui/Input';
 import { Select } from '../../../components/ui/Select';
 import { Modal } from '../../../components/ui/Modal';
 import { useToast } from '../../../components/ui/Toast';
+import { useQuery, invalidateQueries } from '../../../hooks/useQuery';
 import { Edit, Plus, Search, UserPlus, Key } from 'lucide-react';
 
 const TEACHER_TYPE_LABELS: Record<string, string> = {
@@ -22,17 +23,49 @@ const TEACHER_TYPE_LABELS: Record<string, string> = {
 
 export const TeachersPage: React.FC = () => {
   const toast = useToast();
-  const [searchParams] = useSearchParams();
-  const [teachers, setTeachers] = useState<Teacher[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [searchParams, setSearchParams] = useSearchParams();
   const [searchTerm, setSearchTerm] = useState(() => searchParams.get('search') || '');
-  const [typeFilter, setTypeFilter] = useState('');
-  const [accountStatusFilter, setAccountStatusFilter] = useState('');
+  const [typeFilter, setTypeFilter] = useState(() => searchParams.get('type') || '');
+  const [accountStatusFilter, setAccountStatusFilter] = useState(
+    () => searchParams.get('accountStatus') || ''
+  );
 
   useEffect(() => {
-    const q = searchParams.get('search');
-    if (q !== null) setSearchTerm(q);
+    const q = searchParams.get('search') || '';
+    const t = searchParams.get('type') || '';
+    const a = searchParams.get('accountStatus') || '';
+    if (q !== searchTerm) setSearchTerm(q);
+    if (t !== typeFilter) setTypeFilter(t);
+    if (a !== accountStatusFilter) setAccountStatusFilter(a);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
+
+  useEffect(() => {
+    const next = new URLSearchParams(searchParams);
+    if (searchTerm.trim()) next.set('search', searchTerm.trim());
+    else next.delete('search');
+    if (typeFilter) next.set('type', typeFilter);
+    else next.delete('type');
+    if (accountStatusFilter) next.set('accountStatus', accountStatusFilter);
+    else next.delete('accountStatus');
+
+    if (next.toString() !== searchParams.toString()) {
+      setSearchParams(next, { replace: true });
+    }
+  }, [searchTerm, typeFilter, accountStatusFilter, searchParams, setSearchParams]);
+
+  const {
+    data: teachers = [],
+    isLoading: loading,
+  } = useQuery({
+    queryKey: ['teachers', 'list'],
+    queryFn: (signal) => teachersApi.list(undefined, signal),
+    staleTime: 5 * 60 * 1000,
+    keepPreviousData: true,
+    onError: (err: any) => {
+      toast.error(err.response?.data?.error?.message || 'Không thể tải danh sách giáo viên');
+    },
+  });
 
   // Modal states: Edit / Create Teacher Info
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -54,22 +87,6 @@ export const TeachersPage: React.FC = () => {
     teacher_type: 'VIETNAMESE' as 'VIETNAMESE' | 'JAPANESE' | 'OTHER',
     active: true,
   });
-
-  const fetchTeachers = async () => {
-    try {
-      setLoading(true);
-      const data = await teachersApi.list();
-      setTeachers(data);
-    } catch (err: any) {
-      toast.error(err.response?.data?.error?.message || 'Không thể tải danh sách giáo viên');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchTeachers();
-  }, []);
 
   const openModal = (teacher?: Teacher) => {
     if (teacher) {
@@ -140,7 +157,7 @@ export const TeachersPage: React.FC = () => {
         toast.success('Thêm giáo viên mới thành công!');
       }
       closeModal();
-      fetchTeachers();
+      invalidateQueries(['teachers', 'classes', 'students']);
     } catch (err: any) {
       toast.error(err.response?.data?.error?.message || 'Thao tác không thành công');
     }
@@ -157,7 +174,7 @@ export const TeachersPage: React.FC = () => {
       });
       toast.success(`Đã cấp tài khoản đăng nhập thành công cho ${provisioningTeacher.name}!`);
       closeProvisionModal();
-      fetchTeachers();
+      invalidateQueries('teachers');
     } catch (err: any) {
       toast.error(err.response?.data?.error?.message || 'Cấp tài khoản không thành công');
     } finally {

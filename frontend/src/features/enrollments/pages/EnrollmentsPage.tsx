@@ -1,6 +1,6 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { enrollmentsApi } from '../api/enrollments.api';
-import { Enrollment } from '../types/enrollments.types';
 import {
   EnrollmentFilterState,
   INITIAL_ENROLLMENT_FILTERS,
@@ -18,12 +18,15 @@ import {
   compareSessionsInDay,
   formatSessionDate,
   formatClassCode,
+  toLocalDateString,
 } from '../../classes/components/AttendanceMatrix';
 import { classSessionsApi, attendanceApi } from '../../classes/api/sessions.api';
 import { ClassSession, Attendance, AttendanceStatus, AttendanceSide } from '../../classes/types/classes.types';
 import { BarChart3, Calendar, Zap } from 'lucide-react';
 import { useColumnVisibility } from '../../preferences/hooks/useColumnVisibility';
 import { PreferenceScope } from '../../preferences/columns';
+import { useDebouncedValue } from '../../../hooks/useDebouncedValue';
+import { useQuery, invalidateQueries } from '../../../hooks/useQuery';
 
 const DEFAULT_STATUS_BY_TAB: Record<AttendanceTab, string> = {
   quick: 'STUDYING',
@@ -36,37 +39,125 @@ export const EnrollmentsPage: React.FC = () => {
   const { user } = useAuth();
   const isCS = user?.roles.includes('CS') && !user?.roles.includes('ADMIN') && !user?.roles.includes('MANAGE');
 
-  const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [searchParams, setSearchParams] = useSearchParams();
 
-  // Tab & Filters state
-  const [activeTab, setActiveTab] = useState<AttendanceTab>('quick');
-  const [programFilter, setProgramFilter] = useState<'ALL' | 'KAIWA' | 'JLPT'>('ALL');
+  // Tab & Filters state synced with URL
+  const [activeTab, setActiveTab] = useState<AttendanceTab>(() => {
+    const t = searchParams.get('tab');
+    return t === 'detailed' || t === 'stats' ? t : 'quick';
+  });
+
+  const [programFilter, setProgramFilter] = useState<'ALL' | 'KAIWA' | 'JLPT'>(() => {
+    const p = (searchParams.get('program') || '').toUpperCase();
+    return p === 'KAIWA' || p === 'JLPT' ? p : 'ALL';
+  });
+
   const prefScope: PreferenceScope = `enrollments.${activeTab}`;
   const { visible: visibleColumns } = useColumnVisibility(prefScope);
 
-  const [filters, setFilters] = useState<EnrollmentFilterState>(() => ({
-    ...INITIAL_ENROLLMENT_FILTERS,
-    statusFilter: DEFAULT_STATUS_BY_TAB['quick'],
-  }));
+  const [filters, setFilters] = useState<EnrollmentFilterState>(() => {
+    const initTab: AttendanceTab =
+      searchParams.get('tab') === 'detailed'
+        ? 'detailed'
+        : searchParams.get('tab') === 'stats'
+        ? 'stats'
+        : 'quick';
+    const urlStatus = searchParams.get('status');
+    return {
+      ...INITIAL_ENROLLMENT_FILTERS,
+      searchQuery: searchParams.get('search') || '',
+      statusFilter: urlStatus !== null ? urlStatus : DEFAULT_STATUS_BY_TAB[initTab],
+    };
+  });
 
-  const fetchEnrollments = async () => {
-    try {
-      setLoading(true);
-      const data = await enrollmentsApi.list({
-        sale: filters.selectedSale || undefined,
-      });
-      setEnrollments(data);
-    } catch (err: any) {
-      toast.error(err.response?.data?.error?.message || 'Không thể tải danh sách ghi danh');
-    } finally {
-      setLoading(false);
-    }
-  };
-
+  // Sync URL -> searchQuery when global search navigates here
   useEffect(() => {
-    fetchEnrollments();
-  }, [filters.selectedSale]);
+    const q = searchParams.get('search');
+    if (q !== null && q !== filters.searchQuery) {
+      setFilters((prev) => ({ ...prev, searchQuery: q }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
+  // Debounce text inputs in EnrollmentFilterBar (300ms)
+  const debouncedSearchQuery = useDebouncedValue(filters.searchQuery, 300);
+  const debouncedPackageName = useDebouncedValue(filters.packageName, 300);
+  const debouncedClassName = useDebouncedValue(filters.className, 300);
+  const debouncedSchedulePattern = useDebouncedValue(filters.schedulePattern, 300);
+  const debouncedStartTime = useDebouncedValue(filters.startTime, 300);
+
+  // Sync tab, program, search, status to URL
+  useEffect(() => {
+    const next = new URLSearchParams(searchParams);
+    if (activeTab !== 'quick') next.set('tab', activeTab);
+    else next.delete('tab');
+
+    if (programFilter !== 'ALL') next.set('program', programFilter);
+    else next.delete('program');
+
+    if (filters.searchQuery.trim()) next.set('search', filters.searchQuery.trim());
+    else next.delete('search');
+
+    if (filters.statusFilter !== DEFAULT_STATUS_BY_TAB[activeTab]) {
+      next.set('status', filters.statusFilter);
+    } else {
+      next.delete('status');
+    }
+
+    if (next.toString() !== searchParams.toString()) {
+      setSearchParams(next, { replace: true });
+    }
+  }, [activeTab, programFilter, filters.searchQuery, filters.statusFilter, searchParams, setSearchParams]);
+
+  // Visible session date range from AttendanceMatrix
+  const [visibleRange, setVisibleRange] = useState<{ from: string; to: string }>(() => {
+    const now = new Date();
+    const day = now.getDay();
+    const diff = now.getDate() - day + (day === 0 ? -6 : 1);
+    const monday = new Date(now.getFullYear(), now.getMonth(), diff);
+    const sunday = new Date(monday);
+    sunday.setDate(monday.getDate() + 6);
+    return {
+      from: toLocalDateString(monday),
+      to: toLocalDateString(sunday),
+    };
+  });
+
+  const handleVisibleRangeChange = useCallback((range: { from: string; to: string }) => {
+    setVisibleRange((prev) =>
+      prev.from === range.from && prev.to === range.to ? prev : range
+    );
+  }, []);
+
+  const queryParams = useMemo(
+    () => ({
+      sale: filters.selectedSale || undefined,
+      session_from: visibleRange.from,
+      session_to: visibleRange.to,
+    }),
+    [filters.selectedSale, visibleRange.from, visibleRange.to]
+  );
+
+  const {
+    data: paginatedResult,
+    isLoading: loading,
+    isFetching,
+  } = useQuery({
+    queryKey: ['enrollments', 'paginated', queryParams],
+    queryFn: (signal) => enrollmentsApi.listPaginated(queryParams, signal),
+    staleTime: 30 * 1000,
+    keepPreviousData: true,
+    onError: (err: any) => {
+      toast.error(err.response?.data?.error?.message || 'Không thể tải danh sách ghi danh');
+    },
+  });
+
+  const enrollments = useMemo(() => paginatedResult?.data || [], [paginatedResult]);
+  const meta = paginatedResult?.meta;
+
+  const fetchEnrollments = useCallback(async () => {
+    invalidateQueries(['enrollments', 'classes', 'students']);
+  }, []);
 
   const handleTabChange = (tab: AttendanceTab) => {
     setActiveTab(tab);
@@ -137,6 +228,7 @@ export const EnrollmentsPage: React.FC = () => {
             sale_name: enr.sale_name || enr.cs?.name || '—',
             program_type: enr.program_type || 'KAIWA',
             cs_staff_code: enr.cs?.staff_code || null,
+            attendance_stats: ec.attendance_stats,
           });
         });
       } else {
@@ -209,69 +301,81 @@ export const EnrollmentsPage: React.FC = () => {
   // Map total attended sessions for each student to enable accurate reactive session filtering
   const attendedSessionsMap = useMemo(() => {
     const map = new Map<number, number>();
+    listStudents.forEach((s) => {
+      const pre = s.attendance_stats?.ADMIN?.totalAttended;
+      if (typeof pre === 'number') {
+        map.set(s.enrollment_class_id, pre);
+      }
+    });
     allAttendances.forEach((a) => {
       if ((a as any).deleted_at) return;
+      if (map.has(a.enrollment_class_id) && listStudents.find((s) => s.enrollment_class_id === a.enrollment_class_id)?.attendance_stats?.ADMIN) {
+        return;
+      }
       if (a.status === 'ATTENDED') {
         const cur = map.get(a.enrollment_class_id) || 0;
         map.set(a.enrollment_class_id, cur + 1);
       }
     });
     return map;
-  }, [allAttendances]);
+  }, [allAttendances, listStudents]);
 
-  // Dynamic lists for filter dropdowns
+  // Dynamic lists for filter dropdowns (combining backend filterOptions with local data)
   const salesList = useMemo(() => {
-    const set = new Set<string>();
+    const set = new Set<string>(meta?.filterOptions?.salesList || []);
     enrollments.forEach((e) => {
       if (e.sale_name) set.add(e.sale_name);
       if (e.cs?.name) set.add(e.cs.name);
       if (e.cs?.email) set.add(e.cs.email);
     });
     return Array.from(set).filter(Boolean).sort();
-  }, [enrollments]);
+  }, [enrollments, meta]);
 
   const packagesList = useMemo(() => {
-    const set = new Set<string>();
+    const set = new Set<string>(meta?.filterOptions?.packagesList || []);
     listStudents.forEach((s) => {
       if (s.package_name && s.package_name !== 'Gói học' && s.package_name !== '-') {
         set.add(s.package_name);
       }
     });
     return Array.from(set).sort();
-  }, [listStudents]);
+  }, [listStudents, meta]);
 
   const teachersList = useMemo(() => {
-    const set = new Set<string>();
+    const set = new Set<string>(meta?.filterOptions?.teachersList || []);
     listStudents.forEach((s) => {
       if (s.teacher_name && s.teacher_name !== 'Chưa xếp GV' && s.teacher_name !== 'Giáo viên') {
         set.add(s.teacher_name);
       }
     });
     return Array.from(set).sort();
-  }, [listStudents]);
+  }, [listStudents, meta]);
 
   const teacherCodesList = useMemo(() => {
-    const set = new Set<string>();
+    const set = new Set<string>(meta?.filterOptions?.teacherCodesList || []);
     listStudents.forEach((s) => {
       if (s.teacher_code && s.teacher_code !== '—' && s.teacher_code !== 'GV_--') {
         set.add(s.teacher_code);
       }
     });
     return Array.from(set).sort();
-  }, [listStudents]);
+  }, [listStudents, meta]);
 
   const classesList = useMemo(() => {
-    const set = new Set<string>();
+    const set = new Set<string>(meta?.filterOptions?.classesList || []);
     listStudents.forEach((s) => {
       if (s.class_name && s.class_name !== 'Chưa xếp lớp' && s.class_name !== '—' && s.class_name !== 'Lớp học') {
         set.add(s.class_name);
       }
     });
     return Array.from(set).sort();
-  }, [listStudents]);
+  }, [listStudents, meta]);
 
   // Counts by program_type for the switcher
   const programCounts = useMemo(() => {
+    if (meta?.facets?.programCounts) {
+      return meta.facets.programCounts;
+    }
     let kaiwa = 0;
     let jlpt = 0;
     listStudents.forEach((s) => {
@@ -283,13 +387,15 @@ export const EnrollmentsPage: React.FC = () => {
       }
     });
     return { all: listStudents.length, kaiwa, jlpt };
-  }, [listStudents]);
+  }, [listStudents, meta]);
 
-  // Main filtered students list with all requested criteria
+  // Main filtered students list with all requested criteria (using debounced text fields)
   const matrixStudents = useMemo(() => {
-    const query = filters.searchQuery.trim().toLocaleLowerCase('vi-VN');
-    const pkgQuery = filters.packageName.trim().toLocaleLowerCase('vi-VN');
-    const classQuery = filters.className.trim().toLocaleLowerCase('vi-VN');
+    const query = debouncedSearchQuery.trim().toLocaleLowerCase('vi-VN');
+    const pkgQuery = debouncedPackageName.trim().toLocaleLowerCase('vi-VN');
+    const classQuery = debouncedClassName.trim().toLocaleLowerCase('vi-VN');
+    const schedQuery = debouncedSchedulePattern.trim().toLowerCase();
+    const startTimeQuery = debouncedStartTime.trim().toLowerCase();
 
     return listStudents.filter((student) => {
       // 0. Program filter (ALL | KAIWA | JLPT)
@@ -374,7 +480,6 @@ export const EnrollmentsPage: React.FC = () => {
         ? student.total_sessions - attended
         : ((student.remaining_sessions ?? 0) - attendedCurrent);
 
-      // 4. Lọc theo Tổng số buổi, Số buổi đã học, Số buổi còn lại (Bằng hoặc Khoảng)
       // Tổng số buổi
       if (filters.totalSessionsOp === 'EXACT') {
         if (filters.totalSessionsExact !== '' && total !== Number(filters.totalSessionsExact)) return false;
@@ -422,21 +527,21 @@ export const EnrollmentsPage: React.FC = () => {
         if (filters.endDateTo && (!stEndDate || stEndDate > filters.endDateTo)) return false;
       }
 
-      // 7. Lọc theo Lịch học, Giờ học (nhập text tìm kiếm)
+      // 7. Lọc theo Lịch học, Giờ học (nhập text tìm kiếm, debounced)
       if (
-        filters.schedulePattern.trim() &&
+        schedQuery &&
         !(student.schedule_pattern || '')
           .toLowerCase()
-          .includes(filters.schedulePattern.trim().toLowerCase())
+          .includes(schedQuery)
       ) {
         return false;
       }
 
       if (
-        filters.startTime.trim() &&
+        startTimeQuery &&
         !(student.start_time || '')
           .toLowerCase()
-          .includes(filters.startTime.trim().toLowerCase())
+          .includes(startTimeQuery)
       ) {
         return false;
       }
@@ -452,7 +557,17 @@ export const EnrollmentsPage: React.FC = () => {
 
       return true;
     });
-  }, [listStudents, filters, attendedSessionsMap, programFilter]);
+  }, [
+    listStudents,
+    filters,
+    debouncedSearchQuery,
+    debouncedPackageName,
+    debouncedClassName,
+    debouncedSchedulePattern,
+    debouncedStartTime,
+    attendedSessionsMap,
+    programFilter,
+  ]);
 
   const handleResetFilters = () => {
     setFilters({
@@ -642,6 +757,8 @@ export const EnrollmentsPage: React.FC = () => {
             visibleColumns={visibleColumns}
             onRefresh={fetchEnrollments}
             onSaveCustom={handleCustomSaveAll}
+            onVisibleRangeChange={handleVisibleRangeChange}
+            isFetchingData={isFetching}
           />
         )}
       </div>

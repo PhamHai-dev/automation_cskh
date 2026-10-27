@@ -29,6 +29,8 @@ import { Select } from '../../../components/ui/Select';
 import { Modal } from '../../../components/ui/Modal';
 import { useToast } from '../../../components/ui/Toast';
 import { useAuth } from '../../../contexts/AuthContext';
+import { useDebouncedValue } from '../../../hooks/useDebouncedValue';
+import { useQuery, invalidateQueries } from '../../../hooks/useQuery';
 import {
   Edit,
   Plus,
@@ -164,30 +166,91 @@ export const ClassesPage: React.FC = () => {
 
   const toast = useToast();
 
-  const [classes, setClasses] = useState<Class[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Filters & URL sync
+  const [searchParams, setSearchParams] = useSearchParams();
 
   // 2 Tab lớn ở đầu trang: 'quick' (Điểm danh nhanh - 1 ngày) & 'detailed' (Điểm danh chi tiết - Ma trận tháng)
-  const [activeTab, setActiveTab] = useState<ClassAttendanceTab>('quick');
+  const [activeTab, setActiveTab] = useState<ClassAttendanceTab>(() =>
+    searchParams.get('tab') === 'detailed' ? 'detailed' : 'quick'
+  );
 
-  // Filters
-  const [searchParams] = useSearchParams();
   const [searchTerm, setSearchTerm] = useState(() => searchParams.get('search') || '');
-  const [modelFilter, setModelFilter] = useState('');
+  const debouncedSearch = useDebouncedValue(searchTerm.trim(), 300);
+  const [modelFilter, setModelFilter] = useState(() => searchParams.get('model') || '');
 
   useEffect(() => {
-    const q = searchParams.get('search');
-    if (q !== null) setSearchTerm(q);
+    const q = searchParams.get('search') || '';
+    if (q !== searchTerm) setSearchTerm(q);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
-  // Tab 1 (Điểm danh nhanh): 1 ngày đang chọn (mặc định Hôm nay)
-  const [selectedDate, setSelectedDate] = useState<string>(() => toLocalDateString(new Date()));
+  // Tab 1 (Điểm danh nhanh): 1 ngày đang chọn (mặc định Hôm nay hoặc từ URL)
+  const [selectedDate, setSelectedDate] = useState<string>(() => {
+    const urlDate = searchParams.get('date');
+    return urlDate && /^\d{4}-\d{2}-\d{2}$/.test(urlDate)
+      ? urlDate
+      : toLocalDateString(new Date());
+  });
 
   // Tab 2 (Lịch sử & Bảng tháng): Chế độ lọc kỳ (Theo tuần | Theo tháng), chế độ hiển thị (Bảng điểm danh | Nhật ký bài học), và lọc chỉ ngày có buổi học
   const [detailedFilterMode, setDetailedFilterMode] = useState<DetailedFilterMode>('month');
   const [detailedViewMode, setDetailedViewMode] = useState<DetailedViewMode>('matrix');
   const [onlyDaysWithSessions, setOnlyDaysWithSessions] = useState<boolean>(false);
-  const [currentPeriodDate, setCurrentPeriodDate] = useState<Date>(() => new Date());
+  const [currentPeriodDate, setCurrentPeriodDate] = useState<Date>(() => {
+    const urlDate = searchParams.get('date');
+    if (urlDate && /^\d{4}-\d{2}-\d{2}$/.test(urlDate)) {
+      const [y, m, d] = urlDate.split('-').map(Number);
+      return new Date(y, m - 1, d);
+    }
+    return new Date();
+  });
+
+  // Pagination cho danh sách lớp (synced with URL)
+  const [classPage, setClassPage] = useState<number>(
+    () => Math.max(1, Number(searchParams.get('page')) || 1)
+  );
+  const [classPageSize, setClassPageSize] = useState<number>(
+    () => Math.max(1, Number(searchParams.get('pageSize')) || 20)
+  );
+
+  // Sync search, model, tab, date, page, pageSize to URL
+  useEffect(() => {
+    const next = new URLSearchParams(searchParams);
+    if (searchTerm.trim()) next.set('search', searchTerm.trim());
+    else next.delete('search');
+    if (modelFilter) next.set('model', modelFilter);
+    else next.delete('model');
+    if (activeTab !== 'quick') next.set('tab', activeTab);
+    else next.delete('tab');
+
+    const activeDateStr =
+      activeTab === 'quick' ? selectedDate : toLocalDateString(currentPeriodDate);
+    const todayStr = toLocalDateString(new Date());
+    if (activeDateStr && activeDateStr !== todayStr) {
+      next.set('date', activeDateStr);
+    } else {
+      next.delete('date');
+    }
+
+    if (classPage > 1) next.set('page', String(classPage));
+    else next.delete('page');
+    if (classPageSize !== 20) next.set('pageSize', String(classPageSize));
+    else next.delete('pageSize');
+
+    if (next.toString() !== searchParams.toString()) {
+      setSearchParams(next, { replace: true });
+    }
+  }, [
+    searchTerm,
+    modelFilter,
+    activeTab,
+    selectedDate,
+    currentPeriodDate,
+    classPage,
+    classPageSize,
+    searchParams,
+    setSearchParams,
+  ]);
 
   // Collapsed state for 1:2 / 1:n classes (empty set = all expanded by default)
   const [collapsedClassIds, setCollapsedClassIds] = useState<Set<number>>(new Set());
@@ -251,12 +314,6 @@ export const ClassesPage: React.FC = () => {
   // Modal Phân công Giáo viên (D8 — Admin kết thúc phân công, ADMIN/MANAGE thêm phân công)
   const [isAssignmentModalOpen, setIsAssignmentModalOpen] = useState(false);
   const [assignmentClassId, setAssignmentClassId] = useState<number | null>(null);
-  // Luôn lấy dữ liệu mới nhất từ danh sách lớp để modal tự render lại sau khi refresh.
-  const assignmentClass = useMemo(
-    () => classes.find((c) => c.id === assignmentClassId) || null,
-    [classes, assignmentClassId]
-  );
-  const [assignmentTeachers, setAssignmentTeachers] = useState<Teacher[]>([]);
   const [endingAssignmentId, setEndingAssignmentId] = useState<number | null>(null);
   const [endDateDraft, setEndDateDraft] = useState('');
   const [endingAssignment, setEndingAssignment] = useState(false);
@@ -272,6 +329,78 @@ export const ClassesPage: React.FC = () => {
     end_date: '',
   });
   const [assigningTeacher, setAssigningTeacher] = useState(false);
+
+  // Tính khoảng ngày của kỳ đang xem (session_from, session_to, summary_month)
+  const sessionWindowParams = useMemo(() => {
+    if (activeTab === 'quick') {
+      const [y, m] = selectedDate.split('-').map(Number);
+      const firstDay = new Date(y, m - 1, 1);
+      const lastDay = new Date(y, m, 0);
+      return {
+        session_from: toLocalDateString(firstDay),
+        session_to: toLocalDateString(lastDay),
+        summary_month: `${y}-${String(m).padStart(2, '0')}`,
+      };
+    }
+
+    const year = currentPeriodDate.getFullYear();
+    const month = currentPeriodDate.getMonth();
+    const summaryMonth = `${year}-${String(month + 1).padStart(2, '0')}`;
+
+    if (detailedFilterMode === 'week') {
+      const day = currentPeriodDate.getDay();
+      const diff = currentPeriodDate.getDate() - day + (day === 0 ? -6 : 1);
+      const monday = new Date(year, month, diff);
+      const sunday = new Date(monday);
+      sunday.setDate(monday.getDate() + 6);
+      const monthFirst = new Date(year, month, 1);
+      const monthLast = new Date(year, month + 1, 0);
+      const fromDate = monday < monthFirst ? monday : monthFirst;
+      const toDate = sunday > monthLast ? sunday : monthLast;
+      return {
+        session_from: toLocalDateString(fromDate),
+        session_to: toLocalDateString(toDate),
+        summary_month: summaryMonth,
+      };
+    }
+
+    const firstDay = new Date(year, month, 1);
+    const lastDay = new Date(year, month + 1, 0);
+    return {
+      session_from: toLocalDateString(firstDay),
+      session_to: toLocalDateString(lastDay),
+      summary_month: summaryMonth,
+    };
+  }, [activeTab, selectedDate, currentPeriodDate, detailedFilterMode]);
+
+  const {
+    data: paginatedResult,
+    isLoading: loading,
+    isFetching,
+  } = useQuery({
+    queryKey: ['classes', 'paginated', sessionWindowParams],
+    queryFn: (signal) => classesApi.listPaginated(sessionWindowParams, signal),
+    staleTime: 30 * 1000,
+    keepPreviousData: true,
+    onError: (err: any) => {
+      toast.error(err.response?.data?.error?.message || 'Không thể tải danh sách lớp học');
+    },
+  });
+
+  const classes = useMemo(() => paginatedResult?.data || [], [paginatedResult]);
+
+  // Luôn lấy dữ liệu mới nhất từ danh sách lớp để modal tự render lại sau khi refresh.
+  const assignmentClass = useMemo(
+    () => classes.find((c) => c.id === assignmentClassId) || null,
+    [classes, assignmentClassId]
+  );
+
+  // Chống chấm nhầm trên dữ liệu cũ khi đang tải kỳ mới
+  useEffect(() => {
+    if (isFetching && activeQuickPickerKey) {
+      setActiveQuickPickerKey(null);
+    }
+  }, [isFetching, activeQuickPickerKey]);
 
   // Chuẩn hóa sinh mã lớp tiếp theo dạng class_0001, class_0002...
   const generateNextClassCode = () => {
@@ -289,21 +418,9 @@ export const ClassesPage: React.FC = () => {
     return `class_${String(maxNum + 1).padStart(4, '0')}`;
   };
 
-  const fetchClasses = async (silent = false) => {
-    try {
-      if (!silent) setLoading(true);
-      const data = await classesApi.list();
-      setClasses(data);
-    } catch (err: any) {
-      toast.error(err.response?.data?.error?.message || 'Không thể tải danh sách lớp học');
-    } finally {
-      if (!silent) setLoading(false);
-    }
+  const fetchClasses = async (_silent = false) => {
+    invalidateQueries(['classes', 'enrollments', 'students']);
   };
-
-  useEffect(() => {
-    fetchClasses();
-  }, []);
 
   const normalizeModel = (model?: string | null): '1:1' | '1:2' | '1:n' => {
     if (model === 'ONE_TO_TWO' || model === '1:2') return '1:2';
@@ -387,6 +504,29 @@ export const ClassesPage: React.FC = () => {
     const currentMonth = currentPeriodDate.getMonth() + 1;
     const monthPrefix = `${currentYear}-${String(currentMonth).padStart(2, '0')}`;
 
+    const precomputedTotalByEcId = new Map<number, number>();
+    classes.forEach((cls) => {
+      cls.enrollment_classes?.forEach((ec: any) => {
+        if (ec.attendance_stats) {
+          const totalVal = isTeacher
+            ? ec.attendance_stats.totalAttendedTeacher ??
+              ec.attendance_stats.TEACHER?.totalAttended
+            : ec.attendance_stats.totalAttendedAdmin ??
+              ec.attendance_stats.ADMIN?.totalAttended;
+          if (typeof totalVal === 'number') {
+            precomputedTotalByEcId.set(ec.id, totalVal);
+            stats.set(ec.id, {
+              totalAttended: totalVal,
+              monthAttended:
+                typeof ec.attendance_stats.monthAttended === 'number'
+                  ? ec.attendance_stats.monthAttended
+                  : 0,
+            });
+          }
+        }
+      });
+    });
+
     attendanceByEcAndSession.forEach((att) => {
       const ecId = att.enrollment_class_id;
       const effectiveStatus = isTeacher
@@ -398,7 +538,9 @@ export const ClassesPage: React.FC = () => {
       const dStr = formatSessionDate(sess?.session_date);
 
       const cur = stats.get(ecId) || { totalAttended: 0, monthAttended: 0 };
-      cur.totalAttended += 1;
+      if (!precomputedTotalByEcId.has(ecId)) {
+        cur.totalAttended += 1;
+      }
       if (dStr && dStr.startsWith(monthPrefix)) {
         cur.monthAttended += 1;
       }
@@ -406,11 +548,11 @@ export const ClassesPage: React.FC = () => {
     });
 
     return stats;
-  }, [attendanceByEcAndSession, sessionsById, currentPeriodDate, isTeacher]);
+  }, [classes, attendanceByEcAndSession, sessionsById, currentPeriodDate, isTeacher]);
 
-  // Filtered classes
+  // Filtered classes (using debouncedSearch)
   const filteredClasses = useMemo(() => {
-    const q = searchTerm.trim().toLowerCase();
+    const q = debouncedSearch.trim().toLowerCase();
     return classes.filter((c) => {
       const formattedCode = formatClassCode(c.class_code, c.id).toLowerCase();
       const students = getStudentsOfClass(c);
@@ -430,7 +572,7 @@ export const ClassesPage: React.FC = () => {
 
       return matchSearch && matchModel;
     });
-  }, [classes, searchTerm, modelFilter]);
+  }, [classes, debouncedSearch, modelFilter]);
 
   const activeFiltersCount = (searchTerm ? 1 : 0) + (modelFilter ? 1 : 0);
 
@@ -747,13 +889,14 @@ export const ClassesPage: React.FC = () => {
     [tableClasses]
   );
 
-  // Pagination cho danh sách lớp
-  const [classPage, setClassPage] = useState(1);
-  const [classPageSize, setClassPageSize] = useState(20);
-
+  const isFirstClassFilterRenderRef = useRef(true);
   useEffect(() => {
+    if (isFirstClassFilterRenderRef.current) {
+      isFirstClassFilterRenderRef.current = false;
+      return;
+    }
     setClassPage(1);
-  }, [searchTerm, modelFilter, activeTab, onlyClassesWithDaySessions, selectedDate]);
+  }, [debouncedSearch, modelFilter, activeTab, onlyClassesWithDaySessions, selectedDate]);
 
   const classTotalPages = Math.max(1, Math.ceil(tableClasses.length / classPageSize));
   const classPageSafe = Math.min(classPage, classTotalPages);
@@ -1324,7 +1467,7 @@ export const ClassesPage: React.FC = () => {
                 <>
                   <button
                     type="button"
-                    disabled={isSavingRow}
+                    disabled={isSavingRow || isFetching}
                     onClick={() => {
                       setSelectedCa(cls.id, dateStr, caNo);
                       setActiveQuickPickerKey(pickerKey);
@@ -1360,7 +1503,7 @@ export const ClassesPage: React.FC = () => {
                   {isLastCa && (
                     <button
                       type="button"
-                      disabled={isAddingCa}
+                      disabled={isAddingCa || isFetching}
                       onClick={() => handleAddCaForClass(cls, dateStr, st)}
                       title={`Thêm Ca ${totalCa + 1} trong ngày này`}
                       className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-dashed border-primary/50 bg-white text-xs font-extrabold text-primary transition hover:border-primary hover:bg-primary-soft disabled:opacity-50"
@@ -1381,7 +1524,7 @@ export const ClassesPage: React.FC = () => {
                       <button
                         key={status}
                         type="button"
-                        disabled={isSavingRow}
+                        disabled={isSavingRow || isFetching}
                         onClick={async () => {
                           setActiveQuickPickerKey(null);
                           setSelectedCa(cls.id, dateStr, caNo);
@@ -1603,13 +1746,21 @@ export const ClassesPage: React.FC = () => {
     }
   };
 
-  useEffect(() => {
-    if (!canManageClasses) return;
-    teachersApi
-      .list()
-      .then((items) => setAssignmentTeachers(items.filter((t) => t.active)))
-      .catch(() => toast.error('Không thể tải danh sách giáo viên'));
-  }, [canManageClasses, toast]);
+  const { data: allTeachersData = [] } = useQuery<Teacher[]>({
+    queryKey: ['teachers', 'list'],
+    queryFn: (signal) => teachersApi.list(undefined, signal),
+    staleTime: 5 * 60 * 1000,
+    keepPreviousData: true,
+    enabled: canManageClasses,
+    onError: () => {
+      toast.error('Không thể tải danh sách giáo viên');
+    },
+  });
+
+  const assignmentTeachers = useMemo(
+    () => allTeachersData.filter((t) => t.active),
+    [allTeachersData]
+  );
 
   const openAssignmentModal = (cls: Class) => {
     setAssignmentClassId(cls.id);
@@ -1857,6 +2008,13 @@ export const ClassesPage: React.FC = () => {
               <span className="font-bold text-text-primary">{tableStudentsCount}</span>
               <span className="text-text-muted">học viên</span>
             </span>
+
+            {isFetching && !loading && (
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-[11px] font-bold text-blue-700 animate-pulse">
+                <span className="h-2 w-2 rounded-full bg-blue-600" />
+                <span>Đang đồng bộ dữ liệu...</span>
+              </span>
+            )}
 
             {activeTab === 'quick' && (
               <label
@@ -2460,7 +2618,7 @@ export const ClassesPage: React.FC = () => {
                                           >
                                             <button
                                               type="button"
-                                              disabled={isBulkSaving || students.length === 0}
+                                              disabled={isBulkSaving || isFetching || students.length === 0}
                                               onClick={() => {
                                                 setSelectedCa(cls.id, selectedDate, caNo);
                                                 handleBulkMarkWholeClass(
@@ -2485,7 +2643,7 @@ export const ClassesPage: React.FC = () => {
                                             {isLastCa && (
                                               <button
                                                 type="button"
-                                                disabled={isAddingCa}
+                                                disabled={isAddingCa || isFetching}
                                                 onClick={() =>
                                                   handleAddCaForClass(cls, selectedDate)
                                                 }
@@ -2627,7 +2785,7 @@ export const ClassesPage: React.FC = () => {
                                       onClick={() =>
                                         handleBulkMarkWholeClass(cls, dStr, 'ATTENDED')
                                       }
-                                      disabled={savingKey === `class_${cls.id}_${dStr}_s1`}
+                                      disabled={savingKey === `class_${cls.id}_${dStr}_s1` || isFetching}
                                       title={`Chấm Có mặt cả lớp (${students.length} học viên) ngày ${dStr}`}
                                       className="inline-flex h-6 items-center justify-center gap-0.5 rounded-md border border-slate-300 bg-white px-1.5 text-[10px] font-semibold text-slate-600 transition hover:border-primary hover:bg-primary-soft hover:text-primary disabled:opacity-50"
                                     >

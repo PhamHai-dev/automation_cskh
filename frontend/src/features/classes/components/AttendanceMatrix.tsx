@@ -56,6 +56,11 @@ export interface StudentRow {
   sale_name?: string | null;        // Sale phụ trách
   program_type?: 'JLPT' | 'KAIWA' | string; // Khóa học (JLPT / KAIWA)
   cs_staff_code?: string | null;    // Mã CVHT phụ trách
+  attendance_stats?: {
+    ADMIN?: { totalAttended: number; totalAbsentA: number; totalAbsentC: number; totalTeacherD: number };
+    TEACHER?: { totalAttended: number; totalAbsentA: number; totalAbsentC: number; totalTeacherD: number };
+    CS?: { totalAttended: number; totalAbsentA: number; totalAbsentC: number; totalTeacherD: number };
+  };
 }
 
 export interface AttendanceMatrixProps {
@@ -73,6 +78,8 @@ export interface AttendanceMatrixProps {
   activeTab?: AttendanceTab;
   titleHeader?: React.ReactNode;
   visibleColumns?: Record<string, boolean>;
+  onVisibleRangeChange?: (range: { from: string; to: string }) => void;
+  isFetchingData?: boolean;
 }
 
 export type AttendanceTab = 'quick' | 'detailed' | 'stats';
@@ -602,6 +609,8 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
   activeTab: controlledActiveTab,
   titleHeader,
   visibleColumns,
+  onVisibleRangeChange,
+  isFetchingData = false,
 }) => {
   const isColVisible = (key: string): boolean => {
     if (!visibleColumns) return true;
@@ -729,6 +738,49 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
     }
   }, [activeTab, quickDate, datesList, bulkDate]);
 
+  // Notify parent of visible date range (session_from, session_to)
+  const onVisibleRangeChangeRef = useRef(onVisibleRangeChange);
+  onVisibleRangeChangeRef.current = onVisibleRangeChange;
+
+  useEffect(() => {
+    if (!onVisibleRangeChangeRef.current) return;
+    if (activeTab === 'quick') {
+      const [y, m, d] = quickDate.split('-').map(Number);
+      const refDate = new Date(y, m - 1, d);
+      const day = refDate.getDay();
+      const diff = refDate.getDate() - day + (day === 0 ? -6 : 1);
+      const monday = new Date(refDate.getFullYear(), refDate.getMonth(), diff);
+      const sunday = new Date(monday);
+      sunday.setDate(monday.getDate() + 6);
+      onVisibleRangeChangeRef.current({
+        from: toDateString(monday),
+        to: toDateString(sunday),
+      });
+    } else if (activeTab === 'detailed' && filterMode === 'week' && datesList.length > 0) {
+      onVisibleRangeChangeRef.current({
+        from: toDateString(datesList[0]),
+        to: toDateString(datesList[datesList.length - 1]),
+      });
+    } else {
+      const year = currentDate.getFullYear();
+      const month = currentDate.getMonth();
+      const firstDay = new Date(year, month, 1);
+      const lastDay = new Date(year, month + 1, 0);
+      onVisibleRangeChangeRef.current({
+        from: toDateString(firstDay),
+        to: toDateString(lastDay),
+      });
+    }
+  }, [activeTab, quickDate, currentDate, filterMode, datesList]);
+
+  // Close open popover when fetching new range/filter data to prevent mis-marking
+  useEffect(() => {
+    if (isFetchingData && activeCell) {
+      setActiveCell(null);
+      setActiveAnchorEl(null);
+    }
+  }, [isFetchingData, activeCell]);
+
   const effectiveSessions = useMemo(() => {
     const byId = new Map<number, ClassSession>();
     [...sessions, ...createdSessions].forEach((session) => byId.set(session.id, session));
@@ -824,7 +876,23 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
     const currentMonth = currentDate.getMonth() + 1;
     const monthPrefix = `${currentYear}-${String(currentMonth).padStart(2, '0')}`;
 
+    const baseAttendanceByKey = new Map<string, Attendance>();
+    attendances.forEach((a) => {
+      if ((a as any).deleted_at) return;
+      baseAttendanceByKey.set(`${a.enrollment_class_id}_session_${a.class_session_id}`, a);
+    });
+
+    const getStatusForSide = (a?: Attendance | null): AttendanceStatus | null | undefined => {
+      if (!a || (a as any).deleted_at) return null;
+      return selectedSide === 'ADMIN'
+        ? a.status
+        : selectedSide === 'TEACHER'
+        ? a.teacher_status
+        : a.cs_status;
+    };
+
     students.forEach((s) => {
+      const precomputed = s.attendance_stats?.[selectedSide];
       let totalAttended = 0;
       let totalAbsentA = 0;
       let totalAbsentC = 0;
@@ -854,14 +922,15 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
         }
 
         const status = opt.status;
-        const count = 1;
-        if (status === 'ATTENDED') totalAttended += count;
-        else if (status === 'ABSENT_APPROVED_A') totalAbsentA++;
-        else if (status === 'ABSENT_UNAPPROVED_C') totalAbsentC++;
-        else if (status === 'TEACHER_ABSENT_D') totalTeacherD++;
+        if (!precomputed) {
+          if (status === 'ATTENDED') totalAttended += 1;
+          else if (status === 'ABSENT_APPROVED_A') totalAbsentA++;
+          else if (status === 'ABSENT_UNAPPROVED_C') totalAbsentC++;
+          else if (status === 'TEACHER_ABSENT_D') totalTeacherD++;
+        }
 
         if (dStr && dStr.startsWith(monthPrefix)) {
-          if (status === 'ATTENDED') monthAttended += count;
+          if (status === 'ATTENDED') monthAttended += 1;
           else if (status === 'ABSENT_APPROVED_A') monthAbsentA++;
           else if (status === 'LEAVE_B') monthLeaveB++;
           else if (status === 'ABSENT_UNAPPROVED_C') monthAbsentC++;
@@ -883,22 +952,18 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
 
         if (!dStr || clearedKeys.has(`${s.enrollment_class_id}_session_${a.class_session_id}`)) return;
 
-        const status =
-          selectedSide === 'ADMIN'
-            ? a.status
-            : selectedSide === 'TEACHER'
-            ? a.teacher_status
-            : a.cs_status;
+        const status = getStatusForSide(a);
         if (!status) return;
-        const count = 1;
 
-        if (status === 'ATTENDED') totalAttended += count;
-        else if (status === 'ABSENT_APPROVED_A') totalAbsentA++;
-        else if (status === 'ABSENT_UNAPPROVED_C') totalAbsentC++;
-        else if (status === 'TEACHER_ABSENT_D') totalTeacherD++;
+        if (!precomputed) {
+          if (status === 'ATTENDED') totalAttended += 1;
+          else if (status === 'ABSENT_APPROVED_A') totalAbsentA++;
+          else if (status === 'ABSENT_UNAPPROVED_C') totalAbsentC++;
+          else if (status === 'TEACHER_ABSENT_D') totalTeacherD++;
+        }
 
         if (dStr.startsWith(monthPrefix)) {
-          if (status === 'ATTENDED') monthAttended += count;
+          if (status === 'ATTENDED') monthAttended += 1;
           else if (status === 'ABSENT_APPROVED_A') monthAbsentA++;
           else if (status === 'LEAVE_B') monthLeaveB++;
           else if (status === 'ABSENT_UNAPPROVED_C') monthAbsentC++;
@@ -906,6 +971,70 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
           else if (status === 'TECH_ERROR_E') monthTechE++;
         }
       });
+
+      if (precomputed) {
+        totalAttended = precomputed.totalAttended || 0;
+        totalAbsentA = precomputed.totalAbsentA || 0;
+        totalAbsentC = precomputed.totalAbsentC || 0;
+        totalTeacherD = precomputed.totalTeacherD || 0;
+
+        const applyDelta = (st: AttendanceStatus | null | undefined, sign: 1 | -1) => {
+          if (!st) return;
+          if (st === 'ATTENDED') totalAttended += sign;
+          else if (st === 'ABSENT_APPROVED_A') totalAbsentA += sign;
+          else if (st === 'ABSENT_UNAPPROVED_C') totalAbsentC += sign;
+          else if (st === 'TEACHER_ABSENT_D') totalTeacherD += sign;
+        };
+
+        // Adjust for optimistic updates
+        Object.entries(optimisticUpdates).forEach(([key, opt]) => {
+          const parts = key.split('_');
+          const ecIdStr = parts[0];
+          const dStr = parts[1];
+          if (parseInt(ecIdStr, 10) !== s.enrollment_class_id) return;
+          const daySessions = getSessionsForCell(s.enrollment_class_id, dStr);
+          const targetSess = daySessions[opt.sessionIndex ?? 0];
+          const oldAtt = targetSess
+            ? baseAttendanceByKey.get(`${s.enrollment_class_id}_session_${targetSess.id}`)
+            : undefined;
+          const oldStatus = getStatusForSide(oldAtt);
+          if (oldStatus !== opt.status) {
+            applyDelta(oldStatus, -1);
+            applyDelta(opt.status, 1);
+          }
+        });
+
+        // Adjust for popover overrides & clearedKeys
+        const touchedSessionKeys = new Set<string>();
+        attendanceOverrides.forEach((_, key) => {
+          if (key.startsWith(`${s.enrollment_class_id}_session_`)) {
+            touchedSessionKeys.add(key);
+          }
+        });
+        clearedKeys.forEach((key) => {
+          if (key.startsWith(`${s.enrollment_class_id}_session_`)) {
+            touchedSessionKeys.add(key);
+          }
+        });
+
+        touchedSessionKeys.forEach((key) => {
+          const sessionId = Number(key.split('_session_')[1]);
+          if (suppressedSessionIds.has(sessionId)) return;
+          const oldStatus = getStatusForSide(baseAttendanceByKey.get(key));
+          const newStatus = clearedKeys.has(key)
+            ? null
+            : getStatusForSide(attendanceOverrides.get(key));
+          if (oldStatus !== newStatus) {
+            applyDelta(oldStatus, -1);
+            applyDelta(newStatus, 1);
+          }
+        });
+
+        totalAttended = Math.max(0, totalAttended);
+        totalAbsentA = Math.max(0, totalAbsentA);
+        totalAbsentC = Math.max(0, totalAbsentC);
+        totalTeacherD = Math.max(0, totalTeacherD);
+      }
 
       statsMap.set(s.enrollment_class_id, {
         totalAttended,
@@ -924,6 +1053,8 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
     return statsMap;
   }, [
     students,
+    attendances,
+    attendanceOverrides,
     rawAttendanceMap,
     effectiveSessions,
     sessionsByClassAndDate,
@@ -1779,6 +1910,12 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
       {/* Unified filters, save action and active-tab controls */}
       <div className="flex flex-wrap items-center gap-2.5 border-b border-border/80 bg-slate-50/60 p-3 sm:px-4">
         {titleHeader}
+        {isFetchingData && (
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-[11px] font-bold text-blue-700 animate-pulse">
+            <span className="h-2 w-2 rounded-full bg-blue-600" />
+            <span>Đang đồng bộ dữ liệu...</span>
+          </span>
+        )}
         <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-2">
           {activeTab === 'quick' && (
             <>
@@ -1966,7 +2103,7 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
             <button
               type="button"
               onClick={handleBulkApplyAttended}
-              disabled={bulkSaving}
+              disabled={bulkSaving || isFetchingData}
               aria-label={`Đánh dấu có mặt cho ${selectedStudents.size} học viên`}
               className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg bg-emerald-600 px-3 font-bold text-white shadow-sm transition hover:bg-emerald-700 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
             >
@@ -1977,7 +2114,7 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
                 key={status}
                 type="button"
                 onClick={() => handleBulkApplyAbsent(status)}
-                disabled={bulkSaving}
+                disabled={bulkSaving || isFetchingData}
                 aria-label={`${STATUS_CONFIG[status].label} cho ${selectedStudents.size} học viên`}
                 className={`inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border px-2.5 font-bold transition hover:-translate-y-px hover:shadow-sm active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-50 ${STATUS_CONFIG[status].bg} ${STATUS_CONFIG[status].text} ${STATUS_CONFIG[status].border}`}
                 title={STATUS_CONFIG[status].label}
@@ -1989,7 +2126,7 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
             <button
               type="button"
               onClick={handleBulkClear}
-              disabled={bulkSaving}
+              disabled={bulkSaving || isFetchingData}
               aria-label={`Chuyển Chưa điểm danh cho ${selectedStudents.size} học viên`}
               className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-border bg-surface-muted px-2.5 font-bold text-text-secondary transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
               title="Chuyển sang Chưa điểm danh"
