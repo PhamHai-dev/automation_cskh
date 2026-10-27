@@ -1,4 +1,14 @@
-import { PrismaClient, EnrollmentStatus, AttendanceStatus, CareTaskStatus, CareTaskPriority, CareTaskType, CareLogOutcome } from '@prisma/client';
+import {
+  PrismaClient,
+  EnrollmentStatus,
+  EnrollmentClassStatus,
+  AttendanceStatus,
+  CareTaskStatus,
+  CareTaskPriority,
+  CareTaskType,
+  CareLogOutcome,
+  ClassSessionStatus,
+} from '@prisma/client';
 import { prisma } from '../../prisma/client';
 import { isCareMilestoneAttendance, isConsumedAttendance } from '../enrollments/enrollment-entitlement';
 import { DashboardFilterParams } from './dashboard.types';
@@ -690,6 +700,343 @@ export class DashboardRepository {
         };
       })
       .sort((a, b) => b.total_logs - a.total_logs);
+  }
+
+  // =====================================================================
+  //  Command Center Home queries
+  // =====================================================================
+
+  async getHomeRawData(csIds: number[] | null, sinceDate: Date, sessionWindowStart: Date) {
+    const enrollWhere: any = csIds !== null ? { cs_id: { in: csIds } } : {};
+    const classWhere: any = {
+      active: true,
+      ...(csIds !== null
+        ? {
+            enrollment_classes: {
+              some: {
+                enrollment: { cs_id: { in: csIds } },
+              },
+            },
+          }
+        : {}),
+    };
+    const attWhere: any = {
+      deleted_at: null,
+      class_session: {
+        session_date: { gte: sinceDate },
+      },
+      ...(csIds !== null
+        ? {
+            enrollment_class: {
+              enrollment: { cs_id: { in: csIds } },
+            },
+          }
+        : {}),
+    };
+    const taskScopeWhere: any = csIds !== null ? { assigned_to_id: { in: csIds } } : {};
+    const sessionWhere: any = {
+      status: { not: ClassSessionStatus.CANCELLED },
+      session_date: { gte: sessionWindowStart },
+      ...(csIds !== null
+        ? {
+            class: {
+              enrollment_classes: {
+                some: {
+                  enrollment: { cs_id: { in: csIds } },
+                },
+              },
+            },
+          }
+        : {}),
+    };
+
+    const [
+      enrollmentsForStudents,
+      activeClasses,
+      recentAttendances,
+      pendingTaskCount,
+      recentTasksCreated,
+      pendingTasksList,
+      candidateSessions,
+    ] = await Promise.all([
+      this.db.enrollment.findMany({
+        where: enrollWhere,
+        select: { student_id: true, created_at: true },
+      }),
+      this.db.class.findMany({
+        where: classWhere,
+        select: { id: true, created_at: true },
+      }),
+      this.db.attendance.findMany({
+        where: attWhere,
+        select: {
+          status: true,
+          class_session: { select: { session_date: true } },
+        },
+      }),
+      this.db.careTask.count({
+        where: { ...taskScopeWhere, status: CareTaskStatus.PENDING },
+      }),
+      this.db.careTask.findMany({
+        where: {
+          ...taskScopeWhere,
+          created_at: { gte: sinceDate },
+        },
+        select: { created_at: true },
+      }),
+      this.db.careTask.findMany({
+        where: { ...taskScopeWhere, status: CareTaskStatus.PENDING },
+        take: 50,
+        orderBy: [{ due_at: 'asc' }, { created_at: 'desc' }],
+        select: {
+          id: true,
+          title: true,
+          type: true,
+          priority: true,
+          status: true,
+          due_at: true,
+          created_at: true,
+          enrollment_id: true,
+          enrollment: {
+            select: {
+              student_id: true,
+              student: { select: { full_name: true } },
+              package: { select: { name: true, code: true } },
+              enrollment_classes: {
+                where: {
+                  status: { in: [EnrollmentClassStatus.ACTIVE, EnrollmentClassStatus.PLANNED] },
+                },
+                take: 1,
+                orderBy: { sequence_no: 'desc' },
+                select: {
+                  class: { select: { class_name: true } },
+                },
+              },
+            },
+          },
+        },
+      }),
+      this.db.classSession.findMany({
+        where: sessionWhere,
+        take: 30,
+        orderBy: [{ session_date: 'asc' }, { start_time: 'asc' }, { session_number: 'asc' }],
+        select: {
+          id: true,
+          class_id: true,
+          session_date: true,
+          start_time: true,
+          end_time: true,
+          status: true,
+          teacher_id: true,
+          class_schedule: {
+            select: { start_time: true, duration_minutes: true },
+          },
+          class: {
+            select: {
+              class_name: true,
+              class_code: true,
+              level: true,
+              model_type: true,
+              class_teachers: {
+                where: { active: true },
+                orderBy: { role: 'asc' },
+                select: {
+                  role: true,
+                  teacher: { select: { name: true } },
+                },
+              },
+              enrollment_classes: {
+                where: {
+                  status: { in: [EnrollmentClassStatus.ACTIVE, EnrollmentClassStatus.PLANNED] },
+                },
+                select: { id: true },
+              },
+            },
+          },
+        },
+      }),
+    ]);
+
+    const sessionTeacherIds = Array.from(
+      new Set(
+        candidateSessions
+          .map((s) => s.teacher_id)
+          .filter((id): id is number => typeof id === 'number'),
+      ),
+    );
+
+    const [teachersById, usersById] =
+      sessionTeacherIds.length > 0
+        ? await Promise.all([
+            this.db.teacher.findMany({
+              where: {
+                OR: [{ id: { in: sessionTeacherIds } }, { user_id: { in: sessionTeacherIds } }],
+              },
+              select: { id: true, user_id: true, name: true },
+            }),
+            this.db.user.findMany({
+              where: { id: { in: sessionTeacherIds } },
+              select: { id: true, name: true },
+            }),
+          ])
+        : [[], []];
+
+    const sessionTeacherNameMap = new Map<number, string>();
+    for (const u of usersById) {
+      if (u.name) sessionTeacherNameMap.set(u.id, u.name);
+    }
+    for (const t of teachersById) {
+      sessionTeacherNameMap.set(t.id, t.name);
+      if (t.user_id) sessionTeacherNameMap.set(t.user_id, t.name);
+    }
+
+    return {
+      enrollmentsForStudents,
+      activeClasses,
+      recentAttendances,
+      pendingTaskCount,
+      recentTasksCreated,
+      pendingTasksList,
+      candidateSessions,
+      sessionTeacherNameMap,
+    };
+  }
+
+  // =====================================================================
+  //  Global Header Search queries
+  // =====================================================================
+
+  async getTeacherAssignedClassIds(userId: number): Promise<number[]> {
+    const rows = await this.db.classTeacher.findMany({
+      where: {
+        teacher: { user_id: userId },
+      },
+      select: { class_id: true },
+    });
+    return Array.from(new Set(rows.map((r) => r.class_id)));
+  }
+
+  async searchStudents(
+    q: string,
+    limit: number,
+    scope: { mode: 'ALL' } | { mode: 'CS'; csIds: number[] } | { mode: 'TEACHER'; classIds: number[] },
+  ) {
+    if (scope.mode === 'CS' && scope.csIds.length === 0) return [];
+    if (scope.mode === 'TEACHER' && scope.classIds.length === 0) return [];
+
+    const scopeWhere: any =
+      scope.mode === 'CS'
+        ? { enrollments: { some: { cs_id: { in: scope.csIds } } } }
+        : scope.mode === 'TEACHER'
+          ? {
+              enrollments: {
+                some: {
+                  enrollment_classes: {
+                    some: { class_id: { in: scope.classIds } },
+                  },
+                },
+              },
+            }
+          : {};
+
+    return this.db.student.findMany({
+      where: {
+        ...scopeWhere,
+        OR: [
+          { full_name: { contains: q } },
+          { external_id: { contains: q } },
+          { phone: { contains: q } },
+          { email: { contains: q } },
+        ],
+      },
+      take: limit,
+      orderBy: { updated_at: 'desc' },
+      select: {
+        id: true,
+        full_name: true,
+        external_id: true,
+        phone: true,
+        enrollments: {
+          take: 1,
+          orderBy: { created_at: 'desc' },
+          select: {
+            package: { select: { name: true, code: true } },
+          },
+        },
+      },
+    });
+  }
+
+  async searchClasses(
+    q: string,
+    limit: number,
+    scope: { mode: 'ALL' } | { mode: 'CS'; csIds: number[] } | { mode: 'TEACHER'; classIds: number[] },
+  ) {
+    if (scope.mode === 'CS' && scope.csIds.length === 0) return [];
+    if (scope.mode === 'TEACHER' && scope.classIds.length === 0) return [];
+
+    const scopeWhere: any =
+      scope.mode === 'CS'
+        ? {
+            enrollment_classes: {
+              some: {
+                enrollment: { cs_id: { in: scope.csIds } },
+              },
+            },
+          }
+        : scope.mode === 'TEACHER'
+          ? { id: { in: scope.classIds } }
+          : {};
+
+    return this.db.class.findMany({
+      where: {
+        ...scopeWhere,
+        OR: [
+          { class_name: { contains: q } },
+          { class_code: { contains: q } },
+          { level: { contains: q } },
+        ],
+      },
+      take: limit,
+      orderBy: { updated_at: 'desc' },
+      select: {
+        id: true,
+        class_name: true,
+        class_code: true,
+        level: true,
+        model_type: true,
+        class_teachers: {
+          where: { active: true },
+          orderBy: { role: 'asc' },
+          select: {
+            role: true,
+            teacher: { select: { name: true } },
+          },
+        },
+      },
+    });
+  }
+
+  async searchTeachers(q: string, limit: number, activeOnly: boolean) {
+    return this.db.teacher.findMany({
+      where: {
+        ...(activeOnly ? { active: true } : {}),
+        OR: [
+          { name: { contains: q } },
+          { code: { contains: q } },
+          { phone: { contains: q } },
+          { email: { contains: q } },
+        ],
+      },
+      take: limit,
+      orderBy: { updated_at: 'desc' },
+      select: {
+        id: true,
+        name: true,
+        code: true,
+        teacher_type: true,
+      },
+    });
   }
 }
 

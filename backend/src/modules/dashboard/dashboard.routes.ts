@@ -56,4 +56,17 @@ router.get(
   controller.getPerformance
 );
 
+// ---- Command Center Home & Header Global Search ----
+router.get(
+  '/home',
+  requireRoles(['ADMIN', 'MANAGE', 'CS']),
+  controller.getHome
+);
+
+router.get(
+  '/search',
+  requireRoles(['ADMIN', 'MANAGE', 'CS', 'TEACHER']),
+  controller.globalSearch
+);
+
 export { router as dashboardRouter };

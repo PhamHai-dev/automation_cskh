@@ -36,13 +36,14 @@ describe('PreferencesService', () => {
       });
     });
 
-    it('accepts all 5 valid scopes', async () => {
+    it('accepts all 6 valid scopes', async () => {
       const validScopes: PreferenceScope[] = [
         'enrollments.quick',
         'enrollments.detailed',
         'enrollments.stats',
         'students.tab1',
         'students.tab2',
+        'home.quick_links',
       ];
 
       for (const scope of validScopes) {

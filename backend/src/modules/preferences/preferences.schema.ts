@@ -7,6 +7,7 @@ export const PREFERENCE_SCOPES = [
   'enrollments.stats',
   'students.tab1',
   'students.tab2',
+  'home.quick_links',
 ] as const;
 
 export type PreferenceScope = (typeof PREFERENCE_SCOPES)[number];
