@@ -126,3 +126,6 @@ export interface PerformancePayload {
     tasks_done_pct: number;
   }>;
 }
+
+export * from './home.types';
+

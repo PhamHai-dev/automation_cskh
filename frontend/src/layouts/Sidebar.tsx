@@ -22,6 +22,8 @@ import {
   ClipboardCheck,
   Settings,
   Sliders,
+  Headphones,
+  ArrowRight,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -311,6 +313,29 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </div>
           );
         })}
+      </div>
+
+      {/* Support Card */}
+      <div className="bg-primary-soft/80 border border-primary-border/60 rounded-2xl p-3.5 mx-3 mb-3 shrink-0">
+        <div className="flex items-start gap-2.5">
+          <div className="w-8 h-8 rounded-xl bg-white text-primary flex items-center justify-center shadow-xs border border-primary-border/50 shrink-0">
+            <Headphones className="w-4 h-4" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="text-xs font-bold text-text-primary">Cần hỗ trợ?</div>
+            <p className="text-[11px] text-text-secondary leading-relaxed mt-0.5">
+              Liên hệ đội ngũ CSKH để được trợ giúp nhanh chóng.
+            </p>
+          </div>
+        </div>
+        <NavLink
+          to={hasPermission(['ADMIN', 'MANAGE', 'CS']) ? '/omnichannel/chat' : '/care'}
+          onClick={onMobileClose}
+          className="mt-2.5 w-full inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl bg-white hover:bg-primary hover:text-white text-primary border border-primary-border/70 text-xs font-semibold transition-colors shadow-xs"
+        >
+          <span>Liên hệ hỗ trợ</span>
+          <ArrowRight className="w-3.5 h-3.5" />
+        </NavLink>
       </div>
 
       {/* Footer Info */}

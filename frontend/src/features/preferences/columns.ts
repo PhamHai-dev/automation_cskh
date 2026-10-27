@@ -7,7 +7,8 @@ export type PreferenceScope =
   | 'enrollments.detailed'
   | 'enrollments.stats'
   | 'students.tab1'
-  | 'students.tab2';
+  | 'students.tab2'
+  | 'home.quick_links';
 
 export interface ColumnMeta {
   key: string;
@@ -156,6 +157,20 @@ export const STUDENT_TAB2_COLUMNS: ColumnMeta[] = [
   { key: 'account_created_at',    label: 'Ngày tạo tài khoản',   defaultVisible: false },
 ];
 
+export const HOME_QUICK_LINKS_COLUMNS: ColumnMeta[] = [
+  { key: 'students',         label: 'Danh sách học viên',    defaultVisible: true },
+  { key: 'classes',          label: 'Lớp học & điểm danh',   defaultVisible: true },
+  { key: 'care',             label: 'Chăm sóc học viên',     defaultVisible: true },
+  { key: 'enrollments',      label: 'Quản lý ghi danh',      defaultVisible: true },
+  { key: 'reconciliation',   label: 'Đối soát điểm danh',    defaultVisible: true },
+  { key: 'dashboard',        label: 'Báo cáo & thống kê',    defaultVisible: true },
+  { key: 'omnichannel_chat', label: 'Hộp thư Đa kênh',       defaultVisible: false },
+  { key: 'automation',       label: 'Kịch bản Tự động',      defaultVisible: false },
+  { key: 'imports',          label: 'Nhập & Xuất Excel',     defaultVisible: false },
+  { key: 'packages',         label: 'Gói học & Khóa học',    defaultVisible: false },
+  { key: 'teachers',         label: 'Quản lý Giáo viên',     defaultVisible: false },
+];
+
 // ─── Registry map by scope ────────────────────────────────────────────────────
 export const COLUMNS_BY_SCOPE: Record<PreferenceScope, ColumnMeta[]> = {
   'enrollments.quick':    ENROLLMENT_QUICK_COLUMNS,
@@ -163,6 +178,7 @@ export const COLUMNS_BY_SCOPE: Record<PreferenceScope, ColumnMeta[]> = {
   'enrollments.stats':    ENROLLMENT_STATS_COLUMNS,
   'students.tab1':        STUDENT_TAB1_COLUMNS,
   'students.tab2':        STUDENT_TAB2_COLUMNS,
+  'home.quick_links':     HOME_QUICK_LINKS_COLUMNS,
 };
 
 /**

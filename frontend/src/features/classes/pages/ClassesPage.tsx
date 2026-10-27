@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { classesApi } from '../api/classes.api';
 import { classSessionsApi, attendanceApi } from '../api/sessions.api';
 import {
@@ -170,8 +171,14 @@ export const ClassesPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<ClassAttendanceTab>('quick');
 
   // Filters
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchParams] = useSearchParams();
+  const [searchTerm, setSearchTerm] = useState(() => searchParams.get('search') || '');
   const [modelFilter, setModelFilter] = useState('');
+
+  useEffect(() => {
+    const q = searchParams.get('search');
+    if (q !== null) setSearchTerm(q);
+  }, [searchParams]);
 
   // Tab 1 (Điểm danh nhanh): 1 ngày đang chọn (mặc định Hôm nay)
   const [selectedDate, setSelectedDate] = useState<string>(() => toLocalDateString(new Date()));

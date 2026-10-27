@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { studentsApi } from '../api/students.api';
 import { careApi } from '../../care/api/care.api';
 import { Student, CreateStudentDTO } from '../types/students.types';
@@ -207,12 +207,18 @@ export const StudentsPage: React.FC = () => {
   const [addingMilestone, setAddingMilestone] = useState(false);
 
   // Filter states
+  const [searchParams] = useSearchParams();
   const [programFilter, setProgramFilter] = useState<'ALL' | 'KAIWA' | 'JLPT'>('ALL');
   const [cvhtFilter, setCvhtFilter] = useState('');
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchTerm, setSearchTerm] = useState(() => searchParams.get('search') || '');
   const [genderFilter, setGenderFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [saleFilter, setSaleFilter] = useState('');
+
+  useEffect(() => {
+    const q = searchParams.get('search');
+    if (q !== null) setSearchTerm(q);
+  }, [searchParams]);
 
   // Modal states
   const [isModalOpen, setIsModalOpen] = useState(false);
