@@ -43,6 +43,7 @@ import {
   BookOpen,
   Users,
   UserRoundCheck,
+  Trash2,
 } from 'lucide-react';
 
 const MODEL_CONFIG: Record<string, { label: string; className: string }> = {
@@ -197,6 +198,15 @@ export const ClassesPage: React.FC = () => {
   // Ô đang bung bảng 6 trạng thái ở Tab Nhập điểm danh, key `${enrollment_class_id}_${dateStr}_s${ca}`
   // Mặc định null → mọi dòng học viên chỉ hiện dấu "—" gọn hoặc "Ca n: Trạng thái" đã chọn.
   const [activeQuickPickerKey, setActiveQuickPickerKey] = useState<string | null>(null);
+  // Xác nhận xóa ca đã có điểm danh (Modal); ca trống bấm lầm "+" sẽ được gỡ ngay không hỏi lại
+  const [deleteCaTarget, setDeleteCaTarget] = useState<{
+    cls: Class;
+    dateStr: string;
+    caNumber: number;
+    session: ClassSession;
+    attendanceRowCount: number;
+  } | null>(null);
+  const [deletingCa, setDeletingCa] = useState(false);
 
   // Ngăn input bài học/ghi chú lớp trước ghi đè bài học vừa chọn ở thẻ lớp
   const lastClassLessonRef = useRef<Record<string, string>>({});
@@ -612,7 +622,7 @@ export const ClassesPage: React.FC = () => {
     });
   };
 
-  // Thêm ca mới cho cả lớp (1 nút cấp lớp hoặc nút "+" cạnh dấu "—"):
+  // Thêm ca mới cho cả lớp (nút "+" nhỏ ở cuối danh sách ca — dòng lớp hoặc dòng học viên):
   // Tạo đúng 1 buổi ClassSession mới cho ngày đó, tự động thêm hàng Ca n+1 cho Điểm danh + Bài học + Ghi chú,
   // và nếu bấm "+" từ dòng 1 học viên cụ thể thì mở luôn bộ chọn trạng thái của học viên đó ở Ca n+1.
   const handleAddCaForClass = async (
@@ -638,6 +648,87 @@ export const ClassesPage: React.FC = () => {
     } catch (err: any) {
       toast.error(err.response?.data?.message || 'Không thể thêm ca học');
     } finally {
+      setSavingKey((prev) => (prev === key ? null : prev));
+    }
+  };
+
+  // Gỡ bỏ 1 ca học (xử lý case bấm lầm "+"):
+  // - Ca CHƯA có bản ghi điểm danh nào → xóa ngay, không hỏi lại (chỉ gỡ "ca ma").
+  // - Ca ĐÃ có điểm danh → mở hộp thoại xác nhận vì xóa ca sẽ xóa luôn các bản ghi điểm danh của ca đó.
+  const requestDeleteCa = (cls: Class, dateStr: string, caNumber: number) => {
+    if (!isTeacher) return;
+    const session = getDaySessions(cls.id, dateStr)[caNumber - 1];
+    if (!session) return;
+    const attendanceRows = getStudentsOfClass(cls).filter(
+      (s) => attendanceByEcAndSession.get(`${s.enrollment_class_id}_session_${session.id}`)?.id
+    );
+    if (attendanceRows.length === 0) {
+      void performDeleteCa(cls, dateStr, caNumber, session, false);
+      return;
+    }
+    setDeleteCaTarget({
+      cls,
+      dateStr,
+      caNumber,
+      session,
+      attendanceRowCount: attendanceRows.length,
+    });
+  };
+
+  const performDeleteCa = async (
+    cls: Class,
+    dateStr: string,
+    caNumber: number,
+    session: ClassSession,
+    confirmed: boolean
+  ) => {
+    const key = `delca_${session.id}`;
+    setSavingKey(key);
+    setDeletingCa(true);
+    try {
+      await classSessionsApi.remove(cls.id, session.id, confirmed);
+
+      // Dọn toàn bộ nháp của ngày này thuộc lớp (số thứ tự các ca sau sẽ tự dời xuống nên
+      // nháp cũ theo ca có thể lệch vị trí — an toàn nhất là bỏ hết nháp chưa lưu của ngày đó)
+      setClassLessonDrafts((prev) => {
+        const next = { ...prev };
+        Object.keys(next).forEach((k) => {
+          if (k.startsWith(`${cls.id}_${dateStr}_s`)) delete next[k];
+        });
+        return next;
+      });
+      setInlineDrafts((prev) => {
+        const next = { ...prev };
+        Object.keys(next).forEach((k) => {
+          if (k.includes(`_${dateStr}_s`)) delete next[k];
+        });
+        return next;
+      });
+      Object.keys(lastClassLessonRef.current).forEach((k) => {
+        if (k.startsWith(`classlesson_${cls.id}_${dateStr}_s`)) delete lastClassLessonRef.current[k];
+      });
+
+      const remainingCa = Math.max(0, getDaySessions(cls.id, dateStr).length - 1);
+      setSelectedCa(cls.id, dateStr, Math.max(1, Math.min(caNumber, remainingCa)));
+      setActiveQuickPickerKey(null);
+      setDeleteCaTarget(null);
+      setDrawerState((prev) => {
+        if (!prev || prev.classId !== cls.id || prev.dateStr !== dateStr) return prev;
+        if (remainingCa === 0) return null;
+        return { ...prev, caNumber: Math.min(prev.caNumber, remainingCa) };
+      });
+      toast.success(
+        `Đã xóa Ca ${caNumber} (${formatSessionDate(dateStr)}) của lớp ${formatClassCode(cls.class_code, cls.id)}`
+      );
+      await fetchClasses(true);
+    } catch (err: any) {
+      toast.error(
+        err.response?.data?.message ||
+          err.response?.data?.error?.message ||
+          'Không thể xóa ca học'
+      );
+    } finally {
+      setDeletingCa(false);
       setSavingKey((prev) => (prev === key ? null : prev));
     }
   };
@@ -1035,7 +1126,8 @@ export const ClassesPage: React.FC = () => {
     ).length;
   };
 
-  // Ô nhập Bài học chung cấp lớp cho 1 ca cụ thể (tự động xếp chồng Ca 1..Ca N khi phát sinh ca n+1)
+  // Ô nhập Bài học chung cấp lớp cho 1 ca cụ thể (tự động xếp chồng Ca 1..Ca N khi phát sinh ca n+1,
+  // nhãn Ca tĩnh — không nhảy màu theo thao tác chọn ca bên cột Điểm danh)
   const renderClassCaLessonInput = (
     cls: Class,
     dateStr: string,
@@ -1044,17 +1136,11 @@ export const ClassesPage: React.FC = () => {
     isOneToOne: boolean
   ) => {
     const val = getClassLessonValue(cls, dateStr, caNumber);
-    const isSelectedCa = getSelectedCa(cls.id, dateStr) === caNumber;
     return (
       <div key={caNumber} className="flex min-h-7 items-center gap-1.5">
         {totalCa > 1 && (
           <span
-            onClick={() => setSelectedCa(cls.id, dateStr, caNumber)}
-            className={`inline-flex h-6 shrink-0 cursor-pointer items-center rounded-md border px-1.5 text-[10px] font-extrabold transition ${
-              isSelectedCa
-                ? 'border-indigo-300 bg-indigo-100 text-indigo-900'
-                : 'border-border/70 bg-white text-slate-500 hover:bg-slate-100'
-            }`}
+            className="inline-flex h-6 shrink-0 items-center rounded-md border border-border/70 bg-slate-100 px-1.5 text-[10px] font-bold text-slate-600"
             title={`Ca ${caNumber}`}
           >
             Ca {caNumber}
@@ -1063,7 +1149,6 @@ export const ClassesPage: React.FC = () => {
         <input
           type="text"
           value={val}
-          onFocus={() => setSelectedCa(cls.id, dateStr, caNumber)}
           onChange={(e) =>
             setClassLessonDrafts((prev) => ({
               ...prev,
@@ -1135,7 +1220,6 @@ export const ClassesPage: React.FC = () => {
         <input
           type="text"
           value={noteVal}
-          onFocus={() => setSelectedCa(cls.id, dateStr, caNumber)}
           onChange={(e) => {
             const val = e.target.value;
             setInlineDrafts((prev) => ({
@@ -1287,6 +1371,7 @@ export const ClassesPage: React.FC = () => {
           const pickerKey = `${st.enrollment_class_id}_${dateStr}_s${caNo}`;
           const isOpen = activeQuickPickerKey === pickerKey;
           const isLastCa = caNo === totalCa;
+          const isDeletingThisCa = Boolean(sess && savingKey === `delca_${sess.id}`);
 
           return (
             <div key={caNo} className="flex min-h-7 flex-wrap items-center gap-1">
@@ -1294,7 +1379,7 @@ export const ClassesPage: React.FC = () => {
                 <>
                   <button
                     type="button"
-                    disabled={isSavingRow}
+                    disabled={isSavingRow || isDeletingThisCa}
                     onClick={() => {
                       setSelectedCa(cls.id, dateStr, caNo);
                       setActiveQuickPickerKey(pickerKey);
@@ -1338,6 +1423,22 @@ export const ClassesPage: React.FC = () => {
                       <Plus className="h-3.5 w-3.5" />
                     </button>
                   )}
+
+                  {sess && (
+                    <button
+                      type="button"
+                      disabled={isDeletingThisCa}
+                      onClick={() => requestDeleteCa(cls, dateStr, caNo)}
+                      title={
+                        countMarkedInCa(cls, dateStr, caNo) === 0
+                          ? `Gỡ bỏ Ca ${caNo} (chưa chấm điểm danh)`
+                          : `Xóa Ca ${caNo} của lớp`
+                      }
+                      className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-transparent text-slate-400 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-50"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  )}
                 </>
               ) : (
                 <div className="inline-flex flex-wrap items-center gap-1 rounded-xl border border-primary/40 bg-white p-1 shadow-xs">
@@ -1369,6 +1470,21 @@ export const ClassesPage: React.FC = () => {
                       </button>
                     );
                   })}
+                  {sess && (
+                    <button
+                      type="button"
+                      disabled={isDeletingThisCa}
+                      onClick={() => {
+                        setActiveQuickPickerKey(null);
+                        requestDeleteCa(cls, dateStr, caNo);
+                      }}
+                      title={`Xóa Ca ${caNo} của lớp`}
+                      className="inline-flex h-6 items-center gap-0.5 rounded-md border border-rose-200 bg-rose-50/70 px-1.5 text-[11px] font-bold text-rose-700 transition hover:bg-rose-100 disabled:opacity-50"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                      <span>Xóa ca</span>
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => setActiveQuickPickerKey(null)}
@@ -2417,12 +2533,16 @@ export const ClassesPage: React.FC = () => {
                                         const caNo = idx + 1;
                                         const totalCa = getVisibleCaCount(cls, selectedDate);
                                         const isLastCa = caNo === totalCa;
+                                        const sess = getDaySessions(cls.id, selectedDate)[caNo - 1];
                                         const marked = countMarkedInCa(cls, selectedDate, caNo);
                                         const isBulkSaving =
                                           savingKey ===
                                           `class_${cls.id}_${selectedDate}_s${caNo}`;
                                         const isAddingCa =
                                           savingKey === `addca_${cls.id}_${selectedDate}`;
+                                        const isDeletingThisCa = Boolean(
+                                          sess && savingKey === `delca_${sess.id}`
+                                        );
                                         return (
                                           <div
                                             key={caNo}
@@ -2430,7 +2550,11 @@ export const ClassesPage: React.FC = () => {
                                           >
                                             <button
                                               type="button"
-                                              disabled={isBulkSaving || students.length === 0}
+                                              disabled={
+                                                isBulkSaving ||
+                                                isDeletingThisCa ||
+                                                students.length === 0
+                                              }
                                               onClick={() => {
                                                 setSelectedCa(cls.id, selectedDate, caNo);
                                                 handleBulkMarkWholeClass(
@@ -2463,6 +2587,24 @@ export const ClassesPage: React.FC = () => {
                                                 className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-dashed border-primary/60 bg-white text-xs font-extrabold text-primary transition hover:border-primary hover:bg-primary-soft disabled:opacity-50"
                                               >
                                                 <Plus className="h-3.5 w-3.5" />
+                                              </button>
+                                            )}
+
+                                            {sess && (
+                                              <button
+                                                type="button"
+                                                disabled={isDeletingThisCa}
+                                                onClick={() =>
+                                                  requestDeleteCa(cls, selectedDate, caNo)
+                                                }
+                                                title={
+                                                  marked === 0
+                                                    ? `Gỡ bỏ Ca ${caNo} (chưa chấm điểm danh)`
+                                                    : `Xóa Ca ${caNo} của cả lớp`
+                                                }
+                                                className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-transparent text-slate-400 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-50"
+                                              >
+                                                <Trash2 className="h-3.5 w-3.5" />
                                               </button>
                                             )}
                                           </div>
@@ -2815,9 +2957,76 @@ export const ClassesPage: React.FC = () => {
               <span className="inline-block w-2.5 h-2.5 rounded-full bg-indigo-600 border border-white shadow-2xs" />
               <span>Có Bài học / Ghi chú GV</span>
             </div>
+            {isTeacher && (
+              <div className="flex items-center gap-1.5 text-text-muted">
+                <Trash2 className="h-3.5 w-3.5" />
+                <span>Bấm biểu tượng thùng rác cạnh một ca để gỡ bỏ ca (ca chưa chấm sẽ gỡ ngay)</span>
+              </div>
+            )}
           </div>
         </div>
       </div>
+
+      {/* Xác nhận xóa ca đã có điểm danh (xóa ca sẽ xóa luôn các bản ghi điểm danh của ca đó) */}
+      <Modal
+        isOpen={!!deleteCaTarget}
+        onClose={() => !deletingCa && setDeleteCaTarget(null)}
+        title={`Xóa Ca ${deleteCaTarget?.caNumber || ''}?`}
+        size="sm"
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              type="button"
+              onClick={() => setDeleteCaTarget(null)}
+              disabled={deletingCa}
+            >
+              Hủy
+            </Button>
+            <Button
+              variant="danger"
+              size="sm"
+              type="button"
+              disabled={deletingCa}
+              leftIcon={<Trash2 className="h-4 w-4" />}
+              onClick={() => {
+                if (!deleteCaTarget) return;
+                void performDeleteCa(
+                  deleteCaTarget.cls,
+                  deleteCaTarget.dateStr,
+                  deleteCaTarget.caNumber,
+                  deleteCaTarget.session,
+                  true
+                );
+              }}
+            >
+              {deletingCa ? 'Đang xóa...' : 'Xóa ca & điểm danh'}
+            </Button>
+          </div>
+        }
+      >
+        {deleteCaTarget && (
+          <div className="space-y-3 text-sm">
+            <p className="font-semibold text-text-primary">
+              {deleteCaTarget.cls.class_name}
+              <span className="ml-1.5 font-mono text-xs text-text-muted">
+                ({formatClassCode(deleteCaTarget.cls.class_code, deleteCaTarget.cls.id)})
+              </span>{' '}
+              · {formatSessionDate(deleteCaTarget.dateStr)} · Ca {deleteCaTarget.caNumber}
+            </p>
+            <p className="rounded-lg border border-rose-200 bg-rose-50/80 px-3 py-2 text-xs text-rose-800">
+              Ca này đang có <strong>{deleteCaTarget.attendanceRowCount}</strong> bản ghi điểm danh.
+              Xóa ca sẽ xóa toàn bộ điểm danh, bài học và ghi chú của ca đó — thao tác này{' '}
+              <strong>không thể hoàn tác</strong>.
+            </p>
+            <p className="text-xs text-text-muted">
+              Nếu chỉ muốn chọn lại trạng thái cho 1 học viên, hãy bấm Hủy rồi chọn mã mới ở ô
+              Điểm danh.
+            </p>
+          </div>
+        )}
+      </Modal>
 
       {/* Ngăn chi tiết ca học (Drawer) — GV xem/sửa 1 buổi */}
       <AttendanceSessionDrawer
@@ -2848,6 +3057,7 @@ export const ClassesPage: React.FC = () => {
         canEditTeacherFields={isTeacher}
         canEditCsFields={false}
         canMarkStatus={isTeacher}
+        canDeleteSession={isTeacher}
         saving={!!savingKey}
         onSaveStatusAndNotes={async ({ session, sessionNumber, status, lesson_topic, teacher_note }) => {
           if (!drawerState || !isTeacher) return;
@@ -2880,6 +3090,15 @@ export const ClassesPage: React.FC = () => {
         onClearStatus={async (session) => {
           if (!drawerState || !isTeacher) return;
           await handleClearAttendance(drawerState.classId, drawerState.enrollmentClassId, session);
+        }}
+        onDeleteSession={(session) => {
+          if (!drawerState || !isTeacher) return;
+          const cls = classes.find((c) => c.id === drawerState.classId);
+          if (!cls) return;
+          const idx = getDaySessions(cls.id, drawerState.dateStr).findIndex(
+            (s) => s.id === session.id
+          );
+          requestDeleteCa(cls, drawerState.dateStr, idx >= 0 ? idx + 1 : drawerState.caNumber);
         }}
       />
 
