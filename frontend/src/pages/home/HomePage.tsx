@@ -197,7 +197,7 @@ export const HomePage: React.FC = () => {
   const primaryRole = userRoles[0] || 'ADMIN';
   const roleLabel = ROLE_LABELS[primaryRole] || 'Quản trị viên';
 
-  const { data, loading, removeTask } = useHomeDashboard();
+  const { data, loading, removeTask } = useHomeDashboard(isCommandCenterRole);
 
   if (!isCommandCenterRole) {
     return <TeacherHomeView userName={user?.name || roleLabel} />;

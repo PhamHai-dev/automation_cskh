@@ -21,12 +21,16 @@ const EMPTY_PAYLOAD: HomeDashboardPayload = {
   upcoming_sessions: [],
 };
 
-export const useHomeDashboard = (): UseHomeDashboardResult => {
+export const useHomeDashboard = (enabled = true): UseHomeDashboardResult => {
   const [data, setData] = useState<HomeDashboardPayload | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(enabled);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
+    if (!enabled) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
@@ -46,7 +50,7 @@ export const useHomeDashboard = (): UseHomeDashboardResult => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [enabled]);
 
   useEffect(() => {
     load();

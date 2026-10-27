@@ -73,7 +73,7 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar, sidebarOpen }) 
   const primaryRole = user?.roles?.[0] || 'CS';
   const roleConfig = ROLE_DISPLAY_NAMES[primaryRole] || { label: primaryRole, variant: 'neutral' as const };
   const canSearch = Boolean(
-    user?.roles?.some((r) => ['ADMIN', 'MANAGE', 'CS'].includes(r))
+    user?.roles?.some((r) => ['ADMIN', 'MANAGE', 'CS', 'TEACHER'].includes(r))
   );
 
   // Debounced 300ms global search
@@ -261,171 +261,170 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar, sidebarOpen }) 
         </nav>
       </div>
 
-      {/* ── Center: Global Search Input ──────────────────────────────────────── */}
-      {canSearch && (
-        <div
-          ref={searchContainerRef}
-          className="relative flex-1 max-w-md mx-auto hidden md:block"
-        >
+      {/* ── Right: Global Search + Notifications Bell + User Profile ─────────── */}
+      <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+        {canSearch && (
           <div
-            className={`flex items-center gap-2.5 h-10 px-4 rounded-full bg-surface-muted/80 border transition-all duration-150 ${
-              searchFocused
-                ? 'bg-surface border-primary ring-2 ring-primary/15 shadow-xs'
-                : 'border-border/80 hover:border-slate-300'
-            }`}
+            ref={searchContainerRef}
+            className="relative w-64 lg:w-80 xl:w-96 hidden md:block"
           >
-            <Search className="w-4 h-4 text-text-muted shrink-0" />
-            <input
-              ref={searchInputRef}
-              type="text"
-              value={searchQuery}
-              onFocus={() => setSearchFocused(true)}
-              onChange={(e) => {
-                setSearchQuery(e.target.value);
-                if (!searchFocused) setSearchFocused(true);
-              }}
-              placeholder="Tìm kiếm học viên, lớp học, giáo viên..."
-              className="w-full bg-transparent text-xs sm:text-sm text-text-primary placeholder:text-text-muted focus:outline-none"
-            />
-            {searchLoading && (
-              <Loader2 className="w-3.5 h-3.5 text-primary animate-spin shrink-0" />
-            )}
-            {searchQuery && !searchLoading && (
-              <button
-                type="button"
-                onClick={() => {
-                  setSearchQuery('');
-                  searchInputRef.current?.focus();
+            <div
+              className={`flex items-center gap-2.5 h-10 px-4 rounded-full bg-surface-muted/80 border transition-all duration-150 ${
+                searchFocused
+                  ? 'bg-surface border-primary ring-2 ring-primary/15 shadow-xs'
+                  : 'border-border/80 hover:border-slate-300'
+              }`}
+            >
+              <Search className="w-4 h-4 text-text-muted shrink-0" />
+              <input
+                ref={searchInputRef}
+                type="text"
+                value={searchQuery}
+                onFocus={() => setSearchFocused(true)}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  if (!searchFocused) setSearchFocused(true);
                 }}
-                className="p-0.5 rounded-full text-text-muted hover:text-text-primary hover:bg-slate-200/70 transition-colors"
-                aria-label="Xóa tìm kiếm"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            )}
-          </div>
-
-          {/* Search Results Dropdown */}
-          {showSearchDropdown && (
-            <div className="absolute left-0 right-0 mt-2 bg-surface rounded-2xl border border-border shadow-soft-lg overflow-hidden z-50 max-h-[420px] overflow-y-auto">
-              {searchLoading && totalSearchHits === 0 ? (
-                <div className="p-6 text-center text-xs text-text-muted flex items-center justify-center gap-2">
-                  <Loader2 className="w-4 h-4 animate-spin text-primary" />
-                  <span>Đang tìm kiếm...</span>
-                </div>
-              ) : totalSearchHits === 0 ? (
-                <div className="p-6 text-center text-xs text-text-muted">
-                  Không tìm thấy kết quả phù hợp cho{' '}
-                  <span className="font-semibold text-text-primary">
-                    &ldquo;{searchQuery.trim()}&rdquo;
-                  </span>
-                </div>
-              ) : (
-                <div className="divide-y divide-border/60">
-                  {/* Học viên */}
-                  {searchResults.students.length > 0 && (
-                    <div className="p-2">
-                      <div className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-text-muted flex items-center gap-1.5">
-                        <Users className="w-3.5 h-3.5 text-blue-600" />
-                        <span>Học viên</span>
-                      </div>
-                      {searchResults.students.map((s) => (
-                        <button
-                          key={`student-${s.id}`}
-                          type="button"
-                          onClick={() =>
-                            handleSelectSearchResult(
-                              `/students?search=${encodeURIComponent(s.full_name)}`
-                            )
-                          }
-                          className="w-full text-left px-2.5 py-2 rounded-xl hover:bg-surface-muted transition-colors flex items-center justify-between gap-2 group"
-                        >
-                          <div className="min-w-0">
-                            <div className="text-xs font-semibold text-text-primary group-hover:text-primary truncate">
-                              {s.full_name}
-                            </div>
-                            <div className="text-[11px] text-text-muted truncate">
-                              {s.subtitle}
-                            </div>
-                          </div>
-                          <ArrowRight className="w-3.5 h-3.5 text-text-muted opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
-                        </button>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Lớp học */}
-                  {searchResults.classes.length > 0 && (
-                    <div className="p-2">
-                      <div className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-text-muted flex items-center gap-1.5">
-                        <GraduationCap className="w-3.5 h-3.5 text-emerald-600" />
-                        <span>Lớp học</span>
-                      </div>
-                      {searchResults.classes.map((c) => (
-                        <button
-                          key={`class-${c.id}`}
-                          type="button"
-                          onClick={() =>
-                            handleSelectSearchResult(
-                              `/classes?search=${encodeURIComponent(c.class_name)}`
-                            )
-                          }
-                          className="w-full text-left px-2.5 py-2 rounded-xl hover:bg-surface-muted transition-colors flex items-center justify-between gap-2 group"
-                        >
-                          <div className="min-w-0">
-                            <div className="text-xs font-semibold text-text-primary group-hover:text-primary truncate">
-                              {c.class_name}
-                            </div>
-                            <div className="text-[11px] text-text-muted truncate">
-                              {c.subtitle}
-                            </div>
-                          </div>
-                          <ArrowRight className="w-3.5 h-3.5 text-text-muted opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
-                        </button>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Giáo viên */}
-                  {searchResults.teachers.length > 0 && (
-                    <div className="p-2">
-                      <div className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-text-muted flex items-center gap-1.5">
-                        <UserCheck className="w-3.5 h-3.5 text-violet-600" />
-                        <span>Giáo viên</span>
-                      </div>
-                      {searchResults.teachers.map((t) => (
-                        <button
-                          key={`teacher-${t.id}`}
-                          type="button"
-                          onClick={() =>
-                            handleSelectSearchResult(
-                              `/teachers?search=${encodeURIComponent(t.name)}`
-                            )
-                          }
-                          className="w-full text-left px-2.5 py-2 rounded-xl hover:bg-surface-muted transition-colors flex items-center justify-between gap-2 group"
-                        >
-                          <div className="min-w-0">
-                            <div className="text-xs font-semibold text-text-primary group-hover:text-primary truncate">
-                              {t.name}
-                            </div>
-                            <div className="text-[11px] text-text-muted truncate">
-                              {t.subtitle}
-                            </div>
-                          </div>
-                          <ArrowRight className="w-3.5 h-3.5 text-text-muted opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                placeholder="Tìm kiếm học viên, lớp học, giáo viên..."
+                className="w-full bg-transparent text-xs sm:text-sm text-text-primary placeholder:text-text-muted focus:outline-none"
+              />
+              {searchLoading && (
+                <Loader2 className="w-3.5 h-3.5 text-primary animate-spin shrink-0" />
+              )}
+              {searchQuery && !searchLoading && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchQuery('');
+                    searchInputRef.current?.focus();
+                  }}
+                  className="p-0.5 rounded-full text-text-muted hover:text-text-primary hover:bg-slate-200/70 transition-colors"
+                  aria-label="Xóa tìm kiếm"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
               )}
             </div>
-          )}
-        </div>
-      )}
 
-      {/* ── Right: Notifications Bell + User Profile & Logout ────────────────── */}
-      <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+            {/* Search Results Dropdown */}
+            {showSearchDropdown && (
+              <div className="absolute left-0 right-0 mt-2 bg-surface rounded-2xl border border-border shadow-soft-lg overflow-hidden z-50 max-h-[420px] overflow-y-auto">
+                {searchLoading && totalSearchHits === 0 ? (
+                  <div className="p-6 text-center text-xs text-text-muted flex items-center justify-center gap-2">
+                    <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                    <span>Đang tìm kiếm...</span>
+                  </div>
+                ) : totalSearchHits === 0 ? (
+                  <div className="p-6 text-center text-xs text-text-muted">
+                    Không tìm thấy kết quả phù hợp cho{' '}
+                    <span className="font-semibold text-text-primary">
+                      &ldquo;{searchQuery.trim()}&rdquo;
+                    </span>
+                  </div>
+                ) : (
+                  <div className="divide-y divide-border/60">
+                    {/* Học viên */}
+                    {searchResults.students.length > 0 && (
+                      <div className="p-2">
+                        <div className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-text-muted flex items-center gap-1.5">
+                          <Users className="w-3.5 h-3.5 text-blue-600" />
+                          <span>Học viên</span>
+                        </div>
+                        {searchResults.students.map((s) => (
+                          <button
+                            key={`student-${s.id}`}
+                            type="button"
+                            onClick={() =>
+                              handleSelectSearchResult(
+                                `/students?search=${encodeURIComponent(s.full_name)}`
+                              )
+                            }
+                            className="w-full text-left px-2.5 py-2 rounded-xl hover:bg-surface-muted transition-colors flex items-center justify-between gap-2 group"
+                          >
+                            <div className="min-w-0">
+                              <div className="text-xs font-semibold text-text-primary group-hover:text-primary truncate">
+                                {s.full_name}
+                              </div>
+                              <div className="text-[11px] text-text-muted truncate">
+                                {s.subtitle}
+                              </div>
+                            </div>
+                            <ArrowRight className="w-3.5 h-3.5 text-text-muted opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Lớp học */}
+                    {searchResults.classes.length > 0 && (
+                      <div className="p-2">
+                        <div className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-text-muted flex items-center gap-1.5">
+                          <GraduationCap className="w-3.5 h-3.5 text-emerald-600" />
+                          <span>Lớp học</span>
+                        </div>
+                        {searchResults.classes.map((c) => (
+                          <button
+                            key={`class-${c.id}`}
+                            type="button"
+                            onClick={() =>
+                              handleSelectSearchResult(
+                                `/classes?search=${encodeURIComponent(c.class_name)}`
+                              )
+                            }
+                            className="w-full text-left px-2.5 py-2 rounded-xl hover:bg-surface-muted transition-colors flex items-center justify-between gap-2 group"
+                          >
+                            <div className="min-w-0">
+                              <div className="text-xs font-semibold text-text-primary group-hover:text-primary truncate">
+                                {c.class_name}
+                              </div>
+                              <div className="text-[11px] text-text-muted truncate">
+                                {c.subtitle}
+                              </div>
+                            </div>
+                            <ArrowRight className="w-3.5 h-3.5 text-text-muted opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Giáo viên */}
+                    {searchResults.teachers.length > 0 && (
+                      <div className="p-2">
+                        <div className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-text-muted flex items-center gap-1.5">
+                          <UserCheck className="w-3.5 h-3.5 text-violet-600" />
+                          <span>Giáo viên</span>
+                        </div>
+                        {searchResults.teachers.map((t) => (
+                          <button
+                            key={`teacher-${t.id}`}
+                            type="button"
+                            onClick={() =>
+                              handleSelectSearchResult(
+                                `/teachers?search=${encodeURIComponent(t.name)}`
+                              )
+                            }
+                            className="w-full text-left px-2.5 py-2 rounded-xl hover:bg-surface-muted transition-colors flex items-center justify-between gap-2 group"
+                          >
+                            <div className="min-w-0">
+                              <div className="text-xs font-semibold text-text-primary group-hover:text-primary truncate">
+                                {t.name}
+                              </div>
+                              <div className="text-[11px] text-text-muted truncate">
+                                {t.subtitle}
+                              </div>
+                            </div>
+                            <ArrowRight className="w-3.5 h-3.5 text-text-muted opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Notification Bell */}
         <div ref={notifContainerRef} className="relative">
           <button
