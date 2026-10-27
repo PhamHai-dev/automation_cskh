@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { teachersApi } from '../api/teachers.api';
 import { Teacher, CreateTeacherDTO, UpdateTeacherDTO } from '../types/teachers.types';
 import { PageContainer } from '../../../components/common/PageContainer';
@@ -21,11 +22,17 @@ const TEACHER_TYPE_LABELS: Record<string, string> = {
 
 export const TeachersPage: React.FC = () => {
   const toast = useToast();
+  const [searchParams] = useSearchParams();
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [loading, setLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchTerm, setSearchTerm] = useState(() => searchParams.get('search') || '');
   const [typeFilter, setTypeFilter] = useState('');
   const [accountStatusFilter, setAccountStatusFilter] = useState('');
+
+  useEffect(() => {
+    const q = searchParams.get('search');
+    if (q !== null) setSearchTerm(q);
+  }, [searchParams]);
 
   // Modal states: Edit / Create Teacher Info
   const [isModalOpen, setIsModalOpen] = useState(false);

@@ -1,6 +1,8 @@
 import { apiClient } from '../../../api/client';
 import { PreferenceScope } from '../columns';
 
+export type { PreferenceScope } from '../columns';
+
 export interface PreferenceData {
   scope: PreferenceScope;
   value: Record<string, boolean>;
@@ -14,6 +16,11 @@ export const preferencesApi = {
   },
 
   save: async (scope: PreferenceScope, value: Record<string, boolean>): Promise<PreferenceData> => {
+    const { data } = await apiClient.put<PreferenceData>(`/me/preferences/${scope}`, { value });
+    return data;
+  },
+
+  set: async (scope: PreferenceScope, value: Record<string, boolean>): Promise<PreferenceData> => {
     const { data } = await apiClient.put<PreferenceData>(`/me/preferences/${scope}`, { value });
     return data;
   },
