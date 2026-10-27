@@ -95,12 +95,18 @@ export const TeacherAttendanceTrackingPage: React.FC = () => {
   const loadCount = useCallback(async () => {
     if (!hasContext) return setPendingCount(0);
     try {
-      const result = await reconciliationApi.getTeacherTrackingCount({ teacherId, classId });
+      const result = await reconciliationApi.getTeacherTrackingCount({
+        teacherId,
+        classId,
+        startDate: startDate || undefined,
+        endDate: endDate || undefined,
+        search: appliedSearch || undefined,
+      });
       setPendingCount(result.count);
     } catch (error: any) {
       toast.error(error.response?.data?.message || 'Không thể tải số lượt chờ điểm danh');
     }
-  }, [hasContext, teacherId, classId, toast]);
+  }, [hasContext, teacherId, classId, startDate, endDate, appliedSearch, toast]);
 
   const loadData = useCallback(async () => {
     if (!hasContext) {
@@ -206,7 +212,17 @@ export const TeacherAttendanceTrackingPage: React.FC = () => {
     { header: 'Học viên', cell: (item) => <div><div className="font-semibold">{item.student?.full_name || '—'}</div><div className="text-xs text-text-muted">{item.student?.external_id || 'Chưa có mã'}</div></div> },
     { header: 'Lớp / buổi', cell: (item) => <div><div className="font-medium">{item.class?.class_name || '—'}</div><div className="text-xs text-text-muted">{item.session ? `${dateLabel(item.session.session_date)} · Buổi ${item.session.session_number}` : '—'}</div></div> },
     { header: 'Thay đổi', cell: (item) => <div className="flex items-center gap-2 whitespace-nowrap"><Badge variant="neutral">{statusLabel(item.from_status)}</Badge><span className="text-text-muted">→</span><Badge variant="accent">{statusLabel(item.to_status)}</Badge></div> },
-    { header: 'Ghi chú', cell: (item) => <span className="text-text-secondary">{item.note || '—'}</span> },
+    {
+      header: 'Bài học / Ghi chú',
+      cell: (item) => (
+        <div className="space-y-0.5">
+          {item.lesson_topic && (
+            <div className="text-xs font-semibold text-teal-700">Bài: {item.lesson_topic}</div>
+          )}
+          <div className="text-text-secondary">{item.note || (!item.lesson_topic ? '—' : '')}</div>
+        </div>
+      ),
+    },
     { header: 'Người thao tác', cell: (item) => <span className="font-medium">{item.performed_by}</span> },
   ];
 

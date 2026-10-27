@@ -125,6 +125,9 @@ export interface Attendance {
   teacher_submitted_at?: string | null;
   cs_submitted_at?: string | null;
   reconciliation_state?: ReconciliationState;
+  resolved_by_id?: number | null;
+  resolved_at?: string | null;
+  resolution_note?: string | null;
   created_by_id: number;
   created_by?: { id: number; name: string; email: string };
   enrollment_class?: {

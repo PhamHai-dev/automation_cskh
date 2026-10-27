@@ -33,6 +33,22 @@ const mintIdempotencyKey = (): string => {
   return `actual-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
 };
 
+const toLocalDateString = (d: Date): string => {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+};
+
+const STATUS_LABELS: Record<string, string> = {
+  ATTENDED: 'Đã học',
+  ABSENT_APPROVED_A: 'Vắng có phép (A)',
+  LEAVE_B: 'Nghỉ phép dài hạn (B)',
+  ABSENT_UNAPPROVED_C: 'Vắng không phép (C)',
+  TEACHER_ABSENT_D: 'Giáo viên nghỉ (D)',
+  TECH_ERROR_E: 'Lỗi kỹ thuật (E)',
+};
+
 export const MyTeachingSessionsPage: React.FC = () => {
   const toast = useToast();
 
@@ -70,7 +86,7 @@ export const MyTeachingSessionsPage: React.FC = () => {
   const [isActualSessionModalOpen, setIsActualSessionModalOpen] = useState(false);
   const [actualClassId, setActualClassId] = useState<number | ''>('');
   const [actualEnrollmentClassId, setActualEnrollmentClassId] = useState<number | ''>('');
-  const [actualDate, setActualDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [actualDate, setActualDate] = useState(() => toLocalDateString(new Date()));
   const [actualStartTime, setActualStartTime] = useState('');
   const [actualEndTime, setActualEndTime] = useState('');
   const [actualStatus, setActualStatus] = useState<AttendanceStatus>('ATTENDED');
@@ -81,7 +97,7 @@ export const MyTeachingSessionsPage: React.FC = () => {
   const calculateDates = useCallback(() => {
     const today = new Date();
     if (dateRangeFilter === 'today') {
-      const ymd = today.toISOString().slice(0, 10);
+      const ymd = toLocalDateString(today);
       return { start: ymd, end: ymd };
     }
     if (dateRangeFilter === 'week') {
@@ -91,16 +107,16 @@ export const MyTeachingSessionsPage: React.FC = () => {
       const lastDay = new Date(firstDay);
       lastDay.setDate(firstDay.getDate() + 6);
       return {
-        start: firstDay.toISOString().slice(0, 10),
-        end: lastDay.toISOString().slice(0, 10),
+        start: toLocalDateString(firstDay),
+        end: toLocalDateString(lastDay),
       };
     }
     // month
     const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
     const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0);
     return {
-      start: firstDay.toISOString().slice(0, 10),
-      end: lastDay.toISOString().slice(0, 10),
+      start: toLocalDateString(firstDay),
+      end: toLocalDateString(lastDay),
     };
   }, [dateRangeFilter]);
 
@@ -196,8 +212,8 @@ export const MyTeachingSessionsPage: React.FC = () => {
           enrollment_class_id: selectedEnrollmentClass.id,
           status: selectedStatus,
           side: 'TEACHER',
-          lesson_topic: selectedStatus === 'ATTENDED' ? lessonTopic.trim() || undefined : undefined,
-          teacher_note: teacherNote.trim() || undefined,
+          lesson_topic: selectedStatus === 'ATTENDED' ? lessonTopic.trim() || null : null,
+          teacher_note: teacherNote.trim() || null,
         });
       }
 
@@ -588,11 +604,10 @@ export const MyTeachingSessionsPage: React.FC = () => {
                           {att?.teacher_status && (
                             <div className="mt-2 text-xs text-text-secondary bg-surface p-2 rounded-lg border border-border/40">
                               <span className="font-semibold text-teal-700">Đã báo: </span>
-                              {att.teacher_status === 'ATTENDED' ? (
-                                <span>Đã học {att.lesson_topic ? `(Bài: ${att.lesson_topic})` : ''}</span>
-                              ) : (
-                                <span>{att.teacher_status}</span>
-                              )}
+                              <span>
+                                {STATUS_LABELS[att.teacher_status] || att.teacher_status}
+                                {att.lesson_topic ? ` (Bài: ${att.lesson_topic})` : ''}
+                              </span>
                               {att.teacher_note && <div className="italic mt-0.5">"{att.teacher_note}"</div>}
                             </div>
                           )}

@@ -156,6 +156,7 @@ export interface TeacherTrackingHistoryItem {
   attendance_id: number;
   from_status: AttendanceStatus;
   to_status: AttendanceStatus;
+  lesson_topic?: string | null;
   note: string | null;
   performed_by: string;
   created_at: string;

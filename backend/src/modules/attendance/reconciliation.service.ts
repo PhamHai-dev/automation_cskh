@@ -806,6 +806,7 @@ export class ReconciliationService {
       where: { id: { in: attendanceIds } },
       select: {
         id: true,
+        lesson_topic: true,
         enrollment_class: { select: { enrollment: { select: { student: { select: { id: true, full_name: true, external_id: true } } } } } },
         class_session: { select: {
           id: true, session_number: true, session_date: true, start_time: true, end_time: true,
@@ -823,6 +824,7 @@ export class ReconciliationService {
         attendance_id: Number(entry.entity_id),
         from_status: before.teacher_status as AttendanceStatus,
         to_status: after.teacher_status as AttendanceStatus,
+        lesson_topic: after.lesson_topic ?? attendance?.lesson_topic ?? null,
         note: after.teacher_note ?? null,
         performed_by: entry.user?.name || entry.user?.email || 'N/A',
         created_at: entry.created_at,
