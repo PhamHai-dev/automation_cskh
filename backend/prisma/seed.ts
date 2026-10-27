@@ -130,6 +130,17 @@ async function main() {
     },
   });
 
+  const manageUser = await prisma.user.create({
+    data: {
+      name: 'Quản lý CSKH',
+      email: 'manage@gmail.com',
+      password_hash: passwordHash,
+      roles: ['MANAGE'],
+      active: true,
+      created_by_id: admin.id,
+    },
+  });
+
   const csUsers = await Promise.all([
     prisma.user.create({
       data: {
@@ -199,7 +210,12 @@ async function main() {
   await prisma.cSGroupMember.createMany({
     data: csUsers.map((user) => ({ cs_group_id: group.id, user_id: user.id })),
   });
-  await prisma.manageAssignment.create({ data: { manage_user_id: admin.id, cs_group_id: group.id } });
+  await prisma.manageAssignment.createMany({
+    data: [
+      { manage_user_id: admin.id, cs_group_id: group.id },
+      { manage_user_id: manageUser.id, cs_group_id: group.id },
+    ],
+  });
 
   // CareMilestoneConfig cho cả Kaiwa và JLPT: [1, 3, 10, 15, 20, 25, 27, 30, 35, 40]
   const milestones = [1, 3, 10, 15, 20, 25, 27, 30, 35, 40];

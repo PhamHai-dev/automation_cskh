@@ -48,6 +48,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const logout = async () => {
     try {
       await apiClient.post('/auth/logout');
+    } catch {
+      // Ignore network or expired-session errors on logout; always clear client state
     } finally {
       localStorage.removeItem('accessToken');
       setUser(null);
