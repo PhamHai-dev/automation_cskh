@@ -212,6 +212,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           path: '/imports',
           icon: <FileSpreadsheet className="w-5 h-5 shrink-0" />,
           allowedRoles: ['ADMIN', 'MANAGE', 'CS', 'TEACHER'],
+          end: true,
         },
         {
           name: 'Hàng đợi Phê duyệt Nhập liệu',
