@@ -38,6 +38,7 @@ import {
 import { prisma } from '../../prisma/client';
 import { createLogger } from '../../shared/logger/logger';
 import { AppError } from '../../middlewares/error.middleware';
+import { isConsumedAttendance } from '../enrollments/enrollment-entitlement';
 import { ImportsService } from './imports.service';
 import { SheetSyncService, ServiceAccountInfo } from './sheet-sync.service';
 import {
@@ -884,9 +885,13 @@ export class SheetBackupService {
     templateBlock: AttendanceMonthBlock,
     year: number,
     month: number,
-    headerRow: number
+    headerRow: number,
+    fixedLastColForProgram: number
   ): AttendanceMonthBlock {
-    const startCol = afterBlock ? afterBlock.endCol + 1 : FIXED_LAST_COL + 1;
+    // Sheet trống (chưa có block nào) phải khởi block SAU vùng cột cố định của
+    // đúng chương trình (JLPT=12, KAIWA=28) — dùng hằng FIXED_LAST_COL sẽ đè
+    // lên các cột stats KAIWA.
+    const startCol = afterBlock ? afterBlock.endCol + 1 : fixedLastColForProgram + 1;
     const donor = templateBlock.summaryCols;
 
     const summaryCols: AttendanceMonthBlock['summaryCols'] = {};
@@ -1049,35 +1054,40 @@ export class SheetBackupService {
 
   /**
    * Tính bộ thống kê buổi học & nghỉ của 1 enrollment để cung cấp cho resolver cột.
+   * Áp dụng chuẩn entitlement C.4/E.3: chỉ các bản ghi FINAL (MATCHED/RESOLVED) có
+   * trạng thái tiêu thụ buổi (ATTENDED / ABSENT_UNAPPROVED_C) mới được tính vào
+   * consumed; mỗi dòng tính 1 buổi (không gộp các buổi trùng ngày); remaining
+   * khi đã có điểm danh web không bị clamp về 0 (âm = tín hiệu "nợ buổi" Q-012)
+   * và không trộn số dư đối soát ngoài (external_remaining_sessions / attended_previous_years).
    */
   private computeEnrollmentStats(
     enr: Awaited<ReturnType<typeof loadEnrollments>>[number],
     yearFilter: number | null
   ): BackupMonthStats {
-    let attendedAllTime = 0;
-    let attendedCurrentYear = 0;
+    let consumedSessions = 0;
+    let consumedInScopedYear = 0;
     let absentACount = 0;
     let leaveBCount = 0;
     let absentCCount = 0;
     let teacherDCount = 0;
     let techErrorECount = 0;
-    let totalRecordedSessions = 0;
+    let nonDeletedWebRows = 0;
 
     for (const ec of enr.enrollment_classes) {
       for (const att of ec.attendance || []) {
-        totalRecordedSessions++;
+        if (att.deleted_at) continue;
+        nonDeletedWebRows++;
         const dayKey = dateKeyUtc(att.class_session?.session_date);
         const inScopedYear = yearFilter === null || (dayKey && Number(dayKey.slice(0, 4)) === yearFilter);
 
+        if (isConsumedAttendance(att)) {
+          consumedSessions++;
+          if (inScopedYear) consumedInScopedYear++;
+        }
+
         switch (att.status) {
-          case AttendanceStatus.ATTENDED:
-            attendedAllTime++;
-            if (inScopedYear) attendedCurrentYear++;
-            break;
           case AttendanceStatus.ABSENT_UNAPPROVED_C:
-            attendedAllTime++;
             absentCCount++;
-            if (inScopedYear) attendedCurrentYear++;
             break;
           case AttendanceStatus.ABSENT_APPROVED_A:
             absentACount++;
@@ -1097,24 +1107,21 @@ export class SheetBackupService {
 
     const totalSessions = Number(enr.total_sessions || 0);
     const attendedPrevYears = Number(enr.attended_previous_years ?? 0);
-    let remainingSessions: number;
-    if (totalRecordedSessions > 0) {
-      remainingSessions = Math.max(0, totalSessions - (attendedPrevYears + attendedAllTime));
-    } else if (enr.external_remaining_sessions !== null && enr.external_remaining_sessions !== undefined) {
-      remainingSessions = Math.max(0, Number(enr.external_remaining_sessions));
-    } else {
-      remainingSessions = Math.max(0, totalSessions - attendedPrevYears);
-    }
+    const hasWebAttendance = nonDeletedWebRows > 0;
+
+    const remainingSessions = hasWebAttendance
+      ? totalSessions - consumedSessions
+      : enr.external_remaining_sessions !== null && enr.external_remaining_sessions !== undefined
+        ? Number(enr.external_remaining_sessions)
+        : Math.max(0, totalSessions - attendedPrevYears);
 
     return {
-      attendedCurrentYear:
-        totalRecordedSessions > 0
-          ? attendedCurrentYear
-          : Math.max(0, totalSessions - attendedPrevYears - remainingSessions),
-      attendedAllTime:
-        totalRecordedSessions > 0
-          ? attendedPrevYears + attendedAllTime
-          : Math.max(0, totalSessions - remainingSessions),
+      attendedCurrentYear: hasWebAttendance
+        ? consumedInScopedYear
+        : Math.max(0, totalSessions - attendedPrevYears - remainingSessions),
+      attendedAllTime: hasWebAttendance
+        ? attendedPrevYears + consumedSessions
+        : Math.max(0, totalSessions - remainingSessions),
       remainingSessions,
       absentACount,
       leaveBCount,
@@ -1420,7 +1427,15 @@ export class SheetBackupService {
       if (donor) {
         for (const m of months) {
           if (blocks.some((b) => b.year === m.year && b.month === m.month)) continue;
-          const created = this.appendMonthBlock(ws, tail, donor, m.year, m.month, attendanceHeaderRow);
+          const created = this.appendMonthBlock(
+            ws,
+            tail,
+            donor,
+            m.year,
+            m.month,
+            attendanceHeaderRow,
+            fixedLastCol
+          );
           blocks.push(created);
           tail = created;
         }

@@ -493,11 +493,16 @@ describe('Program Sheet Backup (2-Sheet JLPT & KAIWA + Admin Column Config) Inte
           class_session_id: sessionJlpt.id,
         },
       },
-      update: { status: AttendanceStatus.ABSENT_UNAPPROVED_C, deleted_at: null },
+      update: {
+        status: AttendanceStatus.ABSENT_UNAPPROVED_C,
+        reconciliation_state: 'MATCHED',
+        deleted_at: null,
+      },
       create: {
         enrollment_class_id: ec1.id,
         class_session_id: sessionJlpt.id,
         status: AttendanceStatus.ABSENT_UNAPPROVED_C,
+        reconciliation_state: 'MATCHED',
         source: AttendanceSource.MANUAL,
         created_by_id: adminId,
       },
@@ -522,11 +527,16 @@ describe('Program Sheet Backup (2-Sheet JLPT & KAIWA + Admin Column Config) Inte
           class_session_id: sessionKaiwa.id,
         },
       },
-      update: { status: AttendanceStatus.ATTENDED, deleted_at: null },
+      update: {
+        status: AttendanceStatus.ATTENDED,
+        reconciliation_state: 'MATCHED',
+        deleted_at: null,
+      },
       create: {
         enrollment_class_id: ec2.id,
         class_session_id: sessionKaiwa.id,
         status: AttendanceStatus.ATTENDED,
+        reconciliation_state: 'MATCHED',
         source: AttendanceSource.MANUAL,
         created_by_id: adminId,
       },
@@ -751,7 +761,7 @@ describe('Program Sheet Backup (2-Sheet JLPT & KAIWA + Admin Column Config) Inte
     expect(cellText(profileRow!, 17)).toBe('1999-05-15'); // Q: DOB
     expect(cellText(profileRow!, 18)).toBe('Kỹ sư IT'); // R: Nghề nghiệp
     expect(cellText(profileRow!, 19)).toBe(TEST_STAFF_CODE); // S: CVHT
-    expect(cellText(profileRow!, 20)).toBe('27'); // T: Số buổi còn lại (30 - (2 prev + 1 attended))
+    expect(cellText(profileRow!, 20)).toBe('29'); // T: Số buổi còn lại (30 - 1 consumed; prev-years 2 tách riêng ở cột AI)
     expect(cellText(profileRow!, 21)).toBe('2026-10-01'); // U: Ngày bắt đầu học
     expect(cellText(profileRow!, 22)).toBe('Đang học'); // V: Trạng thái
     expect(cellText(profileRow!, 24)).toBe('20:00'); // X: Giờ học (1)
@@ -800,7 +810,7 @@ describe('Program Sheet Backup (2-Sheet JLPT & KAIWA + Admin Column Config) Inte
     expect(cellText(attRow!, 6)).toBe('GV Việt Nam'); // F: Khoá học
     expect(cellText(attRow!, 7)).toBe('hv_sbkpg_kaiwa@example.com'); // G: Email
     expect(cellText(attRow!, 8)).toBe('Lớp 1-1'); // H: Mô hình
-    expect(cellText(attRow!, 9)).toBe('27'); // I: Số buổi còn lại
+    expect(cellText(attRow!, 9)).toBe('29'); // I: Số buổi còn lại (30 - 1 consumed)
     expect(cellText(attRow!, 10)).toBe('2026-10-01'); // J: Ngày bắt đầu học
     expect(cellText(attRow!, 11)).toBe('Đang học'); // K: Trạng thái
     expect(cellText(attRow!, 13)).toBe('20:00'); // M: Giờ học (1)
