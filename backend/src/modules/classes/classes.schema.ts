@@ -27,7 +27,17 @@ export const assignTeacherSchema = z.object({
   body: z.object({
     teacher_id: z.number().int().positive(),
     role: z.enum(['MAIN', 'ASSISTANT', 'SUBSTITUTE']),
-    start_date: z.string().optional(),
-    end_date: z.string().optional(),
+    start_date: z.string().nullable().optional(),
+    end_date: z.string().nullable().optional(),
+    active: z.boolean().optional(),
+  })
+});
+
+// D8 owner ruling (2026-10-26): body stays permissive — the mandatory/invalid
+// end_date checks live in ClassesService.assertValidTeacherAssignmentWindow so
+// callers get the 422 Vietnamese termination messages (never a generic 400).
+export const endTeacherAssignmentSchema = z.object({
+  body: z.object({
+    end_date: z.string().nullable().optional(),
   })
 });

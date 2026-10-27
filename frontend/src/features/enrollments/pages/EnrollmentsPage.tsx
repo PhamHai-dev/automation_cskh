@@ -15,6 +15,7 @@ import {
   AttendanceMatrix,
   AttendanceTab,
   StudentRow,
+  compareSessionsInDay,
   formatSessionDate,
   formatClassCode,
 } from '../../classes/components/AttendanceMatrix';
@@ -490,7 +491,7 @@ export const EnrollmentsPage: React.FC = () => {
     for (const { classId, dateStr, items } of byClassAndDate.values()) {
       const existingSessions = (await classSessionsApi.list(classId))
         .filter((s) => formatSessionDate(s.session_date) === dateStr)
-        .sort((a, b) => (a.start_time || '').localeCompare(b.start_time || '') || a.session_number - b.session_number || a.id - b.id);
+        .sort(compareSessionsInDay);
       let session = existingSessions[sessionIndex];
       if (!session) {
         session = await classSessionsApi.create(classId, { session_date: dateStr });
@@ -578,9 +579,9 @@ export const EnrollmentsPage: React.FC = () => {
         onChange={handleTabChange}
         className="mb-4"
         items={[
-          { value: 'quick', label: 'Điểm danh nhanh', icon: <Zap /> },
-          { value: 'detailed', label: 'Điểm danh chi tiết', icon: <Calendar /> },
-          { value: 'stats', label: 'Thống kê', icon: <BarChart3 /> },
+          { value: 'quick', label: 'Nhập điểm danh', icon: <Zap /> },
+          { value: 'detailed', label: 'Lịch sử & Bảng tháng', icon: <Calendar /> },
+          { value: 'stats', label: 'Thống kê chuyên cần', icon: <BarChart3 /> },
         ]}
       />
 

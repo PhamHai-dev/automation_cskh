@@ -162,62 +162,115 @@ describe('Workbook Reconciliation, Sale Table & CS Assignment (Decision 32)', ()
   });
 
   afterAll(async () => {
-    // Teardown test data
-    await prisma.importCreateRequest.deleteMany({
-      where: { external_id: { in: ['HV_WB_001', 'HV_WB_NEW', 'HV_WB_CS1'] } },
-    });
-    await prisma.attendance.deleteMany({
+    // Children before users (pattern: attendance-e2e.acceptance.integration.test.ts afterAll).
+    // RESTRICT edges that can block user.deleteMany:
+    //   attendances.created_by_id / cs_user_id / teacher_user_id / resolved_by_id,
+    //   class_sessions.created_by_id, enrollments.cs_id, care_logs.cs_id,
+    //   care_tasks.assigned_to_id, import_create_requests.requested_by_id /
+    //   reviewed_by_id, import_batches.uploaded_by_id, audit_logs.user_id,
+    //   auth_sessions.user_id, message_deliveries.attendance_id -> attendances.
+    const userIds = [adminId, csId, cs2Id, teacherUserId].filter((id): id is number => Boolean(id));
+    const extIds = ['HV_WB_001', 'HV_WB_NEW', 'HV_WB_CS1'];
+    const classCodes = ['CLS_TEACHER_WB', 'Lớp Test WB', 'Lớp Teacher WB Assigned', 'Lớp Unassigned Teacher'];
+
+    const attendanceWhere = {
+      OR: [
+        { enrollment_class: { enrollment: { student: { external_id: { in: extIds } } } } },
+        { class_session: { class: { OR: [{ class_code: { in: classCodes } }, { class_name: { in: classCodes } }] } } },
+        ...(userIds.length > 0
+          ? [
+              { created_by_id: { in: userIds } },
+              { cs_user_id: { in: userIds } },
+              { teacher_user_id: { in: userIds } },
+              { resolved_by_id: { in: userIds } },
+            ]
+          : []),
+      ],
+    };
+    const attendanceIds = (await prisma.attendance.findMany({ where: attendanceWhere, select: { id: true } })).map((a) => a.id);
+    if (attendanceIds.length > 0) {
+      await prisma.messageDelivery.deleteMany({ where: { attendance_id: { in: attendanceIds } } });
+    }
+    await prisma.attendance.deleteMany({ where: attendanceWhere });
+
+    await prisma.classSession.deleteMany({
       where: {
-        enrollment_class: {
-          enrollment: {
-            student: { external_id: { in: ['HV_WB_001', 'HV_WB_NEW', 'HV_WB_CS1'] } },
-          },
-        },
+        OR: [
+          { class: { OR: [{ class_code: { in: classCodes } }, { class_name: { in: classCodes } }] } },
+          ...(userIds.length > 0 ? [{ created_by_id: { in: userIds } }] : []),
+        ],
       },
     });
-    await prisma.classSession.deleteMany({
-      where: { class: { class_code: { in: ['CLS_TEACHER_WB', 'Lớp Test WB'] } } },
-    });
     await prisma.classTeacher.deleteMany({
-      where: { teacher_id: teacherId },
+      where: {
+        OR: [
+          ...(teacherId ? [{ teacher_id: teacherId }] : []),
+          { class: { OR: [{ class_code: { in: classCodes } }, { class_name: { in: classCodes } }] } },
+        ],
+      },
     });
     await prisma.enrollmentClass.deleteMany({
       where: {
-        enrollment: {
-          student: { external_id: { in: ['HV_WB_001', 'HV_WB_NEW', 'HV_WB_CS1'] } },
-        },
+        OR: [
+          { enrollment: { student: { external_id: { in: extIds } } } },
+          { class: { OR: [{ class_code: { in: classCodes } }, { class_name: { in: classCodes } }] } },
+        ],
       },
     });
-    await prisma.class.deleteMany({
-      where: { class_code: { in: ['CLS_TEACHER_WB', 'Lớp Test WB'] } },
+    await prisma.careLog.deleteMany({
+      where: {
+        OR: [
+          { enrollment: { student: { external_id: { in: extIds } } } },
+          ...(userIds.length > 0 ? [{ cs_id: { in: userIds } }] : []),
+        ],
+      },
+    });
+    await prisma.careTask.deleteMany({
+      where: {
+        OR: [
+          { enrollment: { student: { external_id: { in: extIds } } } },
+          ...(userIds.length > 0 ? [{ assigned_to_id: { in: userIds } }] : []),
+        ],
+      },
+    });
+    await prisma.importCreateRequest.deleteMany({
+      where: {
+        OR: [
+          { external_id: { in: extIds } },
+          ...(userIds.length > 0
+            ? [
+                { requested_by_id: { in: userIds } },
+                { assigned_cs_id: { in: userIds } },
+                { reviewed_by_id: { in: userIds } },
+              ]
+            : []),
+        ],
+      },
     });
     await prisma.enrollment.deleteMany({
       where: {
-        student: { external_id: { in: ['HV_WB_001', 'HV_WB_NEW', 'HV_WB_CS1'] } },
+        OR: [
+          { student: { external_id: { in: extIds } } },
+          ...(userIds.length > 0 ? [{ cs_id: { in: userIds } }] : []),
+        ],
       },
     });
-    await prisma.student.deleteMany({
-      where: { external_id: { in: ['HV_WB_001', 'HV_WB_NEW', 'HV_WB_CS1'] } },
+    await prisma.student.deleteMany({ where: { external_id: { in: extIds } } });
+    await prisma.class.deleteMany({
+      where: { OR: [{ class_code: { in: classCodes } }, { class_name: { in: classCodes } }] },
     });
-    await prisma.package.deleteMany({
-      where: { code: { in: ['PKG_WB_1'] } },
-    });
-    await prisma.sale.deleteMany({
-      where: { code: { in: ['SALE_WB_01', 'SALE_WB_02', 'SALE_ORIG'] } },
-    });
-    await prisma.importRow.deleteMany({
-      where: { import_batch: { uploaded_by_id: { in: [adminId, csId, cs2Id, teacherUserId] } } },
-    });
-    await prisma.importBatch.deleteMany({
-      where: { uploaded_by_id: { in: [adminId, csId, cs2Id, teacherUserId] } },
-    });
-    await prisma.auditLog.deleteMany({
-      where: { user_id: { in: [adminId, csId, cs2Id, teacherUserId] } },
-    });
-    await prisma.teacher.deleteMany({ where: { user_id: teacherUserId } });
-    await prisma.user.deleteMany({
-      where: { id: { in: [adminId, csId, cs2Id, teacherUserId] } },
-    });
+    await prisma.package.deleteMany({ where: { code: { in: ['PKG_WB_1'] } } });
+    await prisma.sale.deleteMany({ where: { code: { in: ['SALE_WB_01', 'SALE_WB_02', 'SALE_ORIG'] } } });
+    if (userIds.length > 0) {
+      await prisma.importRow.deleteMany({ where: { import_batch: { uploaded_by_id: { in: userIds } } } });
+      await prisma.importBatch.deleteMany({ where: { uploaded_by_id: { in: userIds } } });
+      await prisma.automationStep.deleteMany({ where: { workflow: { owner_cs_id: { in: userIds } } } });
+      await prisma.automationWorkflow.deleteMany({ where: { owner_cs_id: { in: userIds } } });
+      await prisma.authSession.deleteMany({ where: { user_id: { in: userIds } } });
+      await prisma.auditLog.deleteMany({ where: { user_id: { in: userIds } } });
+      await prisma.teacher.deleteMany({ where: { user_id: { in: userIds } } });
+      await prisma.user.deleteMany({ where: { id: { in: userIds } } });
+    }
     await prisma.$disconnect();
   });
 
@@ -312,7 +365,83 @@ describe('Workbook Reconciliation, Sale Table & CS Assignment (Decision 32)', ()
     expect(enr2?.sale_name).toBe('SALE_WB_02');
     expect(enr2?.cs_id).toBe(csId);
 
-    // Verify Attendance preserved
+    // Verify Attendance under current workbook contract (commit fd25616,
+    // 2026-10-12; imports.service.ts:~1667; docs/product/business-rules.md
+    // "Quy tắc Sheet 3 (3.Chấm buổi) và workbook GV: Tách hoàn toàn khỏi Sheet 1;
+    // dùng tab Điểm danh CSKH / GV"):
+    //   1) `confirmWorkbook` is profile-only — Sheet 3 cells in a combined
+    //      WORKBOOK batch do NOT write Attendance rows on confirm; the 2026-09-01
+    //      'X' cell therefore remains un-materialized at this stage.
+    //   2) Pre-existing 2026-09-02 ABSENT_APPROVED_A record is preserved.
+    const attendances = await prisma.attendance.findMany({
+      where: {
+        enrollment_class: {
+          enrollment: { student: { external_id: 'HV_WB_001' } },
+        },
+      },
+      include: { class_session: true },
+    });
+
+    const session1Attendance = attendances.find((a) => a.class_session.session_date.toISOString().startsWith('2026-09-01'));
+    expect(session1Attendance).toBeUndefined();
+
+    const session2Attendance = attendances.find((a) => a.class_session.session_date.toISOString().startsWith('2026-09-02'));
+    expect(session2Attendance?.status).toBe('ABSENT_APPROVED_A');
+  });
+
+  it('Sheet 3 attendance lane (POST /attendance-reconciliation/import-excel preview -> confirm): materializes 2026-09-01 ATTENDED and preserves 2026-09-02', async () => {
+    // Contract successor to the legacy workbook-confirm Sheet-3 write (commit
+    // fd25616; attendance-import.service.ts:58-77): CSKH Sheet 3 places date
+    // headers on row 2, student external_id in col 1, start time in col 13
+    // (Giờ học (1)), class reference in col 23, and attendance marks in the
+    // date columns. Empty cells are ignored, so 2026-09-02 stays ABSENT_APPROVED_A.
+    const wb = new ExcelJS.Workbook();
+    const ws3 = wb.addWorksheet('3.Chấm buổi');
+    ws3.addRow(['Sheet 3 — Chấm buổi']); // row 1 banner; CSKH date header is row 2
+    const headerRow = new Array(24).fill('');
+    headerRow[0] = 'ID';
+    headerRow[12] = 'Giờ học (1)'; // col 13 (1-based)
+    headerRow[22] = 'Lớp'; // col 23 (1-based)
+    headerRow[23] = '2026-09-01'; // col 24
+    headerRow.push('2026-09-02'); // col 25
+    ws3.addRow(headerRow);
+
+    const rowHv1 = new Array(25).fill('');
+    rowHv1[0] = 'HV_WB_001';
+    rowHv1[12] = '19:00';
+    rowHv1[22] = 'Lớp Teacher WB Assigned';
+    rowHv1[23] = 'X'; // 2026-09-01 -> ATTENDED
+    rowHv1[24] = ''; // 2026-09-02 empty -> untouched
+    ws3.addRow(rowHv1);
+
+    const buffer = Buffer.from(await wb.xlsx.writeBuffer());
+
+    const previewRes = await request(app)
+      .post('/api/v1/attendance-reconciliation/import-excel/preview')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .field('source', 'CSKH')
+      .field('targetYear', '2026')
+      .attach('file', buffer, 'cskh_sheet3.xlsx');
+
+    expect(previewRes.status).toBe(200);
+    const items = previewRes.body.data.items as Array<{ id: string; externalId: string; targetDate: string; status: string; classification: string }>;
+    const hv1Item = items.find((i) => i.externalId === 'HV_WB_001' && i.targetDate === '2026-09-01');
+    expect(hv1Item).toBeDefined();
+    expect(hv1Item?.status).toBe('ATTENDED');
+    expect(hv1Item?.classification).toBe('CREATE');
+
+    const actions: Record<string, string> = { [hv1Item!.id]: 'APPLY' };
+    const confirmRes = await request(app)
+      .post('/api/v1/attendance-reconciliation/import-excel/confirm')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .field('source', 'CSKH')
+      .field('targetYear', '2026')
+      .field('actions', JSON.stringify(actions))
+      .attach('file', buffer, 'cskh_sheet3.xlsx');
+
+    expect(confirmRes.status).toBe(200);
+    expect(confirmRes.body.data.createdAttendances).toBe(1);
+
     const attendances = await prisma.attendance.findMany({
       where: {
         enrollment_class: {
@@ -324,6 +453,8 @@ describe('Workbook Reconciliation, Sale Table & CS Assignment (Decision 32)', ()
 
     const session1Attendance = attendances.find((a) => a.class_session.session_date.toISOString().startsWith('2026-09-01'));
     expect(session1Attendance?.status).toBe('ATTENDED');
+    expect(session1Attendance?.cs_status).toBe('ATTENDED');
+    expect(session1Attendance?.reconciliation_state).toBe('PENDING_TEACHER');
 
     const session2Attendance = attendances.find((a) => a.class_session.session_date.toISOString().startsWith('2026-09-02'));
     expect(session2Attendance?.status).toBe('ABSENT_APPROVED_A');

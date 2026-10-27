@@ -51,6 +51,9 @@ export interface CreateStudentDTO {
 }
 
 export interface UpdateStudentDTO {
+  /** Explicit enrollment target belonging to this student and the actor's scope. */
+  enrollment_id: number;
+
   // Student core info
   external_id?: string;
   full_name?: string;

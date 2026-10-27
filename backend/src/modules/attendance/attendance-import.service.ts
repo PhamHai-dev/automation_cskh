@@ -1,7 +1,9 @@
 import { AttendanceSource, AttendanceStatus, ClassModelType, EnrollmentClassStatus, EnrollmentStatus, ReconciliationState } from '@prisma/client';
 import ExcelJS from 'exceljs';
+import { AttendanceDeliveryPolicy, AttendancePostCommitInput, deriveAttendanceReconciliationState, runAttendancePostCommit } from './attendance-lifecycle';
 import { prisma } from '../../prisma/client';
 import { addMinutes, normalizeClassModel, normalizeDateOnly, parseAttendanceValue, parseTimeSlot, remapDateYear } from './attendance.utils';
+import { findEffectiveAssignment } from './teacher-assignment';
 
 export type AttendanceImportSource = 'CSKH' | 'TEACHER';
 export type AttendanceImportAction = 'APPLY' | 'KEEP_DATABASE' | 'SKIP';
@@ -109,7 +111,7 @@ export class AttendanceImportService {
     const enrollmentClass = enrollmentClasses[0];
     base.enrollmentClassId = enrollmentClass.id;
     base.classId = enrollmentClass.class_id;
-    if (!(await this.inScope(enrollmentClass, input.actor, input.source))) { messages.push('Lớp hoặc học viên nằm ngoài data scope của tài khoản upload'); return { ...base, classification: 'OUT_OF_SCOPE', defaultAction: 'SKIP' }; }
+    if (!(await this.inScope(enrollmentClass, input.actor, input.source, input.targetDate))) { messages.push('Lớp hoặc học viên nằm ngoài data scope của tài khoản upload'); return { ...base, classification: 'OUT_OF_SCOPE', defaultAction: 'SKIP' }; }
     const duration = this.durationMinutes(input.startTime, input.endTime);
     if (duration <= 0) { messages.push('Khung giờ không hợp lệ'); return { ...base, classification: 'INVALID', defaultAction: 'SKIP' }; }
     for (let index = 0; index < input.parsed.sessionCount; index += 1) {
@@ -138,7 +140,21 @@ export class AttendanceImportService {
     return { ...base, classification: allUnchanged ? 'UNCHANGED' : hasConflict ? 'CONFLICT' : 'CREATE', defaultAction: allUnchanged ? 'KEEP_DATABASE' : hasConflict ? 'SKIP' : 'APPLY' };
   }
 
-  async commit(preview: { items: AttendanceImportItem[] }, actor: AttendanceImportActor, actions: Record<string, AttendanceImportAction> = {}) {
+  async commit(
+    preview: { items: AttendanceImportItem[] },
+    actor: AttendanceImportActor,
+    actions: Record<string, AttendanceImportAction> = {},
+    options: {
+      deliveryPolicy?: AttendanceDeliveryPolicy;
+      deliveryPolicies?: Record<string, AttendanceDeliveryPolicy>;
+    } = {},
+  ) {
+    // Importer requests that omit policy remain NO_SEND: this path historically
+    // wrote the read model without triggering outbound delivery. An explicit
+    // SEND opt-in is accepted only through this request/batch context. Per-item
+    // overrides allow mixed batches. Never infer policy from dates, source or
+    // reconciliation state, or persist it on Attendance.
+    const deliveryPolicy = options.deliveryPolicy ?? 'NO_SEND';
     let createdSessions = 0;
     let createdAttendances = 0;
     let updatedAttendances = 0;
@@ -147,12 +163,22 @@ export class AttendanceImportService {
     for (const item of preview.items) {
       const action = actions[item.id] || item.defaultAction;
       const status = item.status;
-      if (action !== 'APPLY' || !status || !item.targetDate || !item.enrollmentClassId || !item.classId) {
+      if (
+        action !== 'APPLY' ||
+        item.classification === 'OUT_OF_SCOPE' ||
+        item.classification === 'INVALID' ||
+        !status ||
+        !item.targetDate ||
+        !item.enrollmentClassId ||
+        !item.classId
+      ) {
         skipped += 1;
         items.push({ id: item.id, externalId: item.externalId, cellAddress: item.cellAddress, targetDate: item.targetDate, rawValue: item.rawValue, action, createdSessions: 0, createdAttendances: 0, updatedAttendances: 0, skipped: true });
         continue;
       }
       const itemResult = { id: item.id, externalId: item.externalId, cellAddress: item.cellAddress, targetDate: item.targetDate, rawValue: item.rawValue, action, createdSessions: 0, createdAttendances: 0, updatedAttendances: 0, skipped: false };
+      const itemDownstream: AttendancePostCommitInput[] = [];
+      const itemDeliveryPolicy = options.deliveryPolicies?.[item.id] ?? deliveryPolicy;
       await prisma.$transaction(async (tx) => {
         for (const plan of item.sessionPlans) {
           let sessionId = plan.sessionId;
@@ -191,7 +217,14 @@ export class AttendanceImportService {
           const existing = await tx.attendance.findUnique({ where: { enrollment_class_id_class_session_id: { enrollment_class_id: item.enrollmentClassId!, class_session_id: sessionId } } });
           const isTeacher = item.source === 'TEACHER';
           const otherStatus = isTeacher ? existing?.cs_status : existing?.teacher_status;
-          const reconciliationState = otherStatus ? (otherStatus === status ? ReconciliationState.MATCHED : ReconciliationState.CONFLICT) : (isTeacher ? ReconciliationState.PENDING_CS : ReconciliationState.PENDING_TEACHER);
+          const reconciliationState = deriveAttendanceReconciliationState(
+            isTeacher ? status : otherStatus,
+            isTeacher ? otherStatus : status,
+          );
+          const invalidatePendingDeliveries = Boolean(existing && (
+            existing.teacher_status !== (isTeacher ? status : existing.teacher_status) ||
+            existing.cs_status !== (isTeacher ? existing.cs_status : status)
+          ));
           const sideData: any = isTeacher
             ? { teacher_status: status, teacher_raw_value: item.rawValue, teacher_user_id: actor.id, teacher_submitted_at: new Date(), ...(item.lessonTopic ? { lesson_topic: item.lessonTopic } : {}) }
             : { cs_status: status, cs_raw_value: item.rawValue, cs_user_id: actor.id, cs_submitted_at: new Date() };
@@ -204,6 +237,7 @@ export class AttendanceImportService {
               reconciliation_state: existing.reconciliation_state,
             };
             await tx.attendance.update({ where: { id: existing.id }, data: updateData });
+            itemDownstream.push({ attendanceId: existing.id, reconciliationState, deliveryPolicy: itemDeliveryPolicy, invalidatePendingDeliveries });
             updatedAttendances += 1;
             itemResult.updatedAttendances += 1;
             await tx.auditLog.create({
@@ -218,6 +252,7 @@ export class AttendanceImportService {
             });
           } else {
             const created = await tx.attendance.create({ data: { enrollment_class_id: item.enrollmentClassId!, class_session_id: sessionId, status, source: isTeacher ? AttendanceSource.TEACHER_UPLOAD : AttendanceSource.EXCEL_IMPORT, reconciliation_state: reconciliationState, created_by_id: actor.id, ...sideData } });
+            itemDownstream.push({ attendanceId: created.id, reconciliationState, deliveryPolicy: itemDeliveryPolicy });
             createdAttendances += 1;
             itemResult.createdAttendances += 1;
             await tx.auditLog.create({
@@ -232,24 +267,41 @@ export class AttendanceImportService {
           }
         }
       });
+      // Drain this item's downstream immediately after its transaction commits,
+      // before processing the next item, so a later item throwing/rolling back
+      // never strands already-durable cancellation or trigger work. NO_SEND (the
+      // default here) still allows cancellation for invalidated pending deliveries.
+      for (const entry of itemDownstream) {
+        await runAttendancePostCommit(entry);
+      }
       items.push(itemResult);
     }
     return { createdSessions, createdAttendances, updatedAttendances, skipped, items };
   }
 
   private durationMinutes(startTime: string, endTime: string) { const value = (time: string) => Number(time.slice(0, 2)) * 60 + Number(time.slice(3, 5)); return value(endTime) - value(startTime); }
-  private async inScope(enrollmentClass: { class_id: number; enrollment: { cs_id: number | null } }, actor: AttendanceImportActor, source: AttendanceImportSource): Promise<boolean> {
+  private async inScope(enrollmentClass: { class_id: number; enrollment: { cs_id: number | null } }, actor: AttendanceImportActor, source: AttendanceImportSource, sessionDate: Date): Promise<boolean> {
     if (actor.roles.includes('ADMIN') || actor.roles.includes('MANAGE')) return true;
     if (source === 'CSKH') return actor.roles.includes('CS') && enrollmentClass.enrollment.cs_id === actor.id;
     if (!actor.roles.includes('TEACHER')) return false;
-    const assignment = await prisma.classTeacher.findFirst({
+    // D8 (owner ruling 2026-10-26): teacher upload scope is evaluated per
+    // SESSION DATE, mirroring attendance.service.assertWriteScope. Fetch ALL of
+    // the teacher's assignment rows for the class regardless of the current
+    // `active` flag — `active` records today's state, not history — and let
+    // findEffectiveAssignment decide. Consequences: an `active:false` row whose
+    // explicit [start_date, end_date] window covers the session date authorizes
+    // the historical import (a teacher may import sessions they actually
+    // taught), while `active:false` WITHOUT an explicit end_date is the
+    // ambiguous-removal boundary and never authorizes (Admin verification
+    // path); an `active:true` row does NOT authorize dates outside its
+    // [start_date, end_date] window. Never default or infer an end date here.
+    const candidates = await prisma.classTeacher.findMany({
       where: {
         class_id: enrollmentClass.class_id,
-        active: true,
         teacher: { user_id: actor.id, active: true },
       },
-      select: { id: true },
+      select: { active: true, start_date: true, end_date: true },
     });
-    return Boolean(assignment);
+    return Boolean(findEffectiveAssignment(candidates, sessionDate));
   }
 }

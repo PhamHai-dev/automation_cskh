@@ -46,20 +46,15 @@ const ENROLLMENT_INCLUDES = {
 };
 
 export class EnrollmentsRepository {
-  async findAllByCS(csId: number, saleIdentifier?: string, programType?: string) {
+  async findAllByCS(csId: number, programType?: string) {
+    // B.5/D9: CS scope is enrollment.cs_id only. The former ?sale= identifier
+    // (sale_name / cs.name / cs.email OR-match) could let a CS widen scope to
+    // another CS's enrollments by guessing a name/email; name/email are plain
+    // handover data and are never an access grant.
     return prisma.enrollment.findMany({
       where: {
+        cs_id: csId,
         ...(programType ? { program_type: programType } : {}),
-        OR: [
-          { cs_id: csId },
-          ...(saleIdentifier
-            ? [
-                { sale_name: { equals: saleIdentifier } },
-                { cs: { name: { equals: saleIdentifier } } },
-                { cs: { email: { equals: saleIdentifier } } },
-              ]
-            : []),
-        ],
       },
       include: ENROLLMENT_INCLUDES,
       orderBy: { created_at: 'desc' },

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Calendar,
   Clock,
@@ -6,7 +6,6 @@ import {
   CheckCircle2,
   BookOpen,
   User,
-  FileSpreadsheet,
   Check,
   UserRoundCheck,
 } from 'lucide-react';
@@ -25,15 +24,44 @@ import { teachersApi } from '../../teachers/api/teachers.api';
 import type { Teacher } from '../../teachers/types/teachers.types';
 import { reconciliationApi } from '../api/reconciliation.api';
 import { AttendanceStatus } from '../types/reconciliation.types';
+import { classSessionsApi, attendanceApi } from '../../classes/api/sessions.api';
+import { classesApi } from '../../classes/api/classes.api';
+
+// Mint a fresh, opaque intent key (backend regex allows letters/digits/_/-).
+const mintIdempotencyKey = (): string => {
+  if (typeof globalThis.crypto?.randomUUID === 'function') return globalThis.crypto.randomUUID();
+  return `actual-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
+};
+
+const toLocalDateString = (d: Date): string => {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+};
+
+const STATUS_LABELS: Record<string, string> = {
+  ATTENDED: 'Đã học',
+  ABSENT_APPROVED_A: 'Vắng có phép (A)',
+  LEAVE_B: 'Nghỉ phép dài hạn (B)',
+  ABSENT_UNAPPROVED_C: 'Vắng không phép (C)',
+  TEACHER_ABSENT_D: 'Giáo viên nghỉ (D)',
+  TECH_ERROR_E: 'Lỗi kỹ thuật (E)',
+};
 
 export const MyTeachingSessionsPage: React.FC = () => {
   const toast = useToast();
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { user } = useAuth();
   const isPrivileged = !!user?.roles.some((role) => role === 'ADMIN' || role === 'MANAGE');
+  // D8 assist-mark ("chấm hộ giáo viên") is ADMIN-only per backend
+  // isAssistMarkPrivileged (reconciliation.service.ts); MANAGE keeps read-only
+  // viewing of another teacher's schedule via teacher-sessions (ADMIN/MANAGE).
+  const isAdmin = !!user?.roles.includes('ADMIN');
+  const canRecordActual = !!user?.roles.includes('TEACHER') && !isPrivileged;
 
   const [sessions, setSessions] = useState<any[]>([]);
+  const [availableClasses, setAvailableClasses] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
   // Teacher scope (only for ADMIN/MANAGE — backend requires an explicit teacherId)
@@ -54,15 +82,22 @@ export const MyTeachingSessionsPage: React.FC = () => {
   const [teacherNote, setTeacherNote] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Upload modal & summary
-  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
-  const [isUploading, setIsUploading] = useState(false);
-  const [uploadResult, setUploadResult] = useState<any | null>(null);
+  // Actual-session modal
+  const [isActualSessionModalOpen, setIsActualSessionModalOpen] = useState(false);
+  const [actualClassId, setActualClassId] = useState<number | ''>('');
+  const [actualEnrollmentClassId, setActualEnrollmentClassId] = useState<number | ''>('');
+  const [actualDate, setActualDate] = useState(() => toLocalDateString(new Date()));
+  const [actualStartTime, setActualStartTime] = useState('');
+  const [actualEndTime, setActualEndTime] = useState('');
+  const [actualStatus, setActualStatus] = useState<AttendanceStatus>('ATTENDED');
+  const [actualLessonTopic, setActualLessonTopic] = useState('');
+  const [actualTeacherNote, setActualTeacherNote] = useState('');
+  const [actualSessionKey, setActualSessionKey] = useState<string | null>(null);
 
   const calculateDates = useCallback(() => {
     const today = new Date();
     if (dateRangeFilter === 'today') {
-      const ymd = today.toISOString().slice(0, 10);
+      const ymd = toLocalDateString(today);
       return { start: ymd, end: ymd };
     }
     if (dateRangeFilter === 'week') {
@@ -72,16 +107,16 @@ export const MyTeachingSessionsPage: React.FC = () => {
       const lastDay = new Date(firstDay);
       lastDay.setDate(firstDay.getDate() + 6);
       return {
-        start: firstDay.toISOString().slice(0, 10),
-        end: lastDay.toISOString().slice(0, 10),
+        start: toLocalDateString(firstDay),
+        end: toLocalDateString(lastDay),
       };
     }
     // month
     const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
     const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0);
     return {
-      start: firstDay.toISOString().slice(0, 10),
-      end: lastDay.toISOString().slice(0, 10),
+      start: toLocalDateString(firstDay),
+      end: toLocalDateString(lastDay),
     };
   }, [dateRangeFilter]);
 
@@ -118,10 +153,21 @@ export const MyTeachingSessionsPage: React.FC = () => {
     loadSessions();
   }, [loadSessions]);
 
+  useEffect(() => {
+    if (!hasContext) {
+      setAvailableClasses([]);
+      return;
+    }
+    classesApi.list()
+      .then((items) => setAvailableClasses(items.filter((item) => item.active)))
+      .catch(() => toast.error('Không thể tải danh sách lớp phụ trách'));
+  }, [hasContext, toast]);
+
   const handleOpenMarkModal = (session: any, ec: any, status: AttendanceStatus) => {
+    if (isPrivileged && !isAdmin) return;
     setSelectedSession(session);
     setSelectedEnrollmentClass(ec);
-    const existingAtt = ec.attendance?.[0];
+    const existingAtt = ec.attendance?.find((a: any) => a.class_session_id === session.id && !a.deleted_at);
     setSelectedAttendance(existingAtt || null);
     setSelectedStatus(status);
     setLessonTopic(existingAtt?.lesson_topic || '');
@@ -131,50 +177,104 @@ export const MyTeachingSessionsPage: React.FC = () => {
 
   const handleConfirmMark = async () => {
     if (!selectedSession || !selectedEnrollmentClass) return;
+    if (isPrivileged && !isAdmin) return;
+    if (isPrivileged && !selectedTeacherId) {
+      toast.warning('Hãy chọn giáo viên cần hỗ trợ');
+      return;
+    }
+
+    const rawValue = selectedStatus === 'ATTENDED'
+      ? `${selectedEnrollmentClass.enrollment?.student?.external_id || ''}-${lessonTopic.trim()}`
+      : undefined;
 
     setIsSubmitting(true);
     try {
       const attendanceId = selectedAttendance?.id;
 
-      if (!attendanceId) {
-        toast.warning('Buổi học chưa có hồ sơ điểm danh ban đầu. Vui lòng liên hệ CSKH.');
-        return;
+      if (attendanceId) {
+        // Existing attendance row (skeleton from a prior create, or an already-recorded mark):
+        // write the teacher opinion onto THAT single record via the reconciliation route so the
+        // CSKH/teacher dual-opinion state is derived and downstream automation runs once.
+        await reconciliationApi.markByTeacher(attendanceId, {
+          status: selectedStatus,
+          ...(isPrivileged ? { teacherId: selectedTeacherId } : {}),
+          lessonTopic: selectedStatus === 'ATTENDED' ? lessonTopic.trim() || undefined : undefined,
+          note: teacherNote.trim() || undefined,
+          rawValue,
+        });
+      } else {
+        // Scheduled session that has no attendance row yet: use the existing per-session
+        // attendance upsert route. Its (enrollment_class_id + class_session_id) unique key means
+        // a retry of the same student/session replays onto the SAME row (one record) and records
+        // the teacher opinion there — never a second row, and CVHT keeps its own column on it.
+        // The dedicated "Ghi ca thực học" flow is what creates a brand-new ClassSession.
+        await attendanceApi.mark(selectedSession.class.id, selectedSession.id, {
+          enrollment_class_id: selectedEnrollmentClass.id,
+          status: selectedStatus,
+          side: 'TEACHER',
+          lesson_topic: selectedStatus === 'ATTENDED' ? lessonTopic.trim() || null : null,
+          teacher_note: teacherNote.trim() || null,
+        });
       }
-
-      await reconciliationApi.markByTeacher(attendanceId, {
-        status: selectedStatus,
-        lessonTopic: selectedStatus === 'ATTENDED' ? lessonTopic.trim() || undefined : undefined,
-        note: teacherNote.trim() || undefined,
-        rawValue: selectedStatus === 'ATTENDED' ? `${selectedEnrollmentClass.enrollment?.student?.external_id || ''}-${lessonTopic.trim()}` : undefined,
-      });
 
       toast.success('Điểm danh thành công! Dữ liệu đã được gửi đối soát với CSKH.');
       setIsMarkModalOpen(false);
       loadSessions();
     } catch (err: any) {
-      toast.error(err.response?.data?.message || 'Không thể ghi nhận điểm danh');
+      toast.error(err.response?.data?.message || err.message || 'Không thể ghi nhận điểm danh');
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setIsUploading(true);
-    setUploadResult(null);
+  const handleCreateActualSession = async () => {
+    if (!actualClassId || !actualEnrollmentClassId || !actualDate) {
+      toast.warning('Hãy chọn lớp, học viên và ngày dạy');
+      return;
+    }
+    setIsSubmitting(true);
     try {
-      const result = await reconciliationApi.uploadTeacherExcel(file);
-      setUploadResult(result);
-      toast.success(`Tải lên thành công! Đã xử lý ${result.processedCount} lượt điểm danh.`);
+      const key = actualSessionKey || mintIdempotencyKey();
+      setActualSessionKey(key);
+      const session = await classSessionsApi.createActual(Number(actualClassId), {
+        idempotency_key: key,
+        enrollment_class_id: Number(actualEnrollmentClassId),
+        session_date: actualDate,
+        start_time: actualStartTime || undefined,
+        end_time: actualEndTime || undefined,
+      });
+      const attendance = session.attendance?.find((item: any) => item.enrollment_class_id === Number(actualEnrollmentClassId));
+      if (!attendance?.id) throw new Error('Không nhận được hồ sơ điểm danh của ca thực học');
+      await reconciliationApi.markByTeacher(attendance.id, {
+        status: actualStatus,
+        ...(isPrivileged && selectedTeacherId ? { teacherId: selectedTeacherId } : {}),
+        lessonTopic: actualStatus === 'ATTENDED' ? actualLessonTopic.trim() || undefined : undefined,
+        note: actualTeacherNote.trim() || undefined,
+        rawValue: actualStatus === 'ATTENDED' ? `${actualEnrollmentClassId}-${actualLessonTopic.trim()}` : undefined,
+      });
+      toast.success('Đã ghi nhận ca thực học và điểm danh giáo viên.');
+      setActualSessionKey(null);
+      setIsActualSessionModalOpen(false);
       loadSessions();
     } catch (err: any) {
-      toast.error(err.response?.data?.message || 'Lỗi khi tải file giao_vien.xlsx');
+      // Keep actualSessionKey while the modal stays open so a retry replays one session.
+      toast.error(err.response?.data?.message || err.message || 'Không thể ghi nhận ca thực học');
     } finally {
-      setIsUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
+      setIsSubmitting(false);
     }
+  };
+
+  const openActualSessionModal = () => {
+    setActualSessionKey(null);
+    setActualClassId('');
+    setActualEnrollmentClassId('');
+    setActualStartTime('');
+    setActualEndTime('');
+    setActualStatus('ATTENDED');
+    setActualLessonTopic('');
+    setActualTeacherNote('');
+    setActualDate(new Date().toISOString().slice(0, 10));
+    setIsActualSessionModalOpen(true);
   };
 
   return (
@@ -184,8 +284,18 @@ export const MyTeachingSessionsPage: React.FC = () => {
         description="Xem ca học hôm nay/tuần này, điểm danh nhanh bài học hoặc nhập workbook qua luồng preview/xác nhận an toàn."
         actions={
           <div className="flex items-center gap-2">
+            {canRecordActual && (
+              <Button
+                variant="primary"
+                onClick={openActualSessionModal}
+                title="Ghi ca thực học sau khi dạy"
+              >
+                <CheckCircle2 className="w-4 h-4 mr-1.5" />
+                Ghi ca thực học
+              </Button>
+            )}
             <Button
-              variant="primary"
+              variant="outline"
               onClick={() => { window.location.assign('/imports?tab=attendance'); }}
             >
               <Upload className="w-4 h-4 mr-1.5" />
@@ -194,6 +304,164 @@ export const MyTeachingSessionsPage: React.FC = () => {
           </div>
         }
       />
+
+      {/* MODAL: Ghi ca thực học — create session + attendance skeleton, then chain the teacher mark */}
+      <Modal
+        isOpen={isActualSessionModalOpen}
+        closeOnOutsideClick={!isSubmitting}
+        onClose={() => {
+          // Do not discard the in-flight intent while a request is pending; closing mid-retry
+          // would let a reopen mint a fresh key and create an unintended duplicate session.
+          if (isSubmitting) return;
+          setActualSessionKey(null);
+          setIsActualSessionModalOpen(false);
+        }}
+        title={
+          <div className="flex items-center gap-2 text-text-primary font-bold">
+            <CheckCircle2 className="w-5 h-5 text-teal-600" />
+            <span>Ghi nhận ca thực học</span>
+          </div>
+        }
+        footer={
+          <div className="flex items-center justify-end gap-3 w-full">
+            <Button
+              variant="outline"
+              onClick={() => {
+                if (isSubmitting) return;
+                setActualSessionKey(null);
+                setIsActualSessionModalOpen(false);
+              }}
+              disabled={isSubmitting}
+            >
+              Hủy
+            </Button>
+            <Button variant="primary" onClick={handleCreateActualSession} disabled={isSubmitting}>
+              {isSubmitting ? 'Đang lưu...' : 'Ghi nhận & điểm danh'}
+            </Button>
+          </div>
+        }
+      >
+        <div className="space-y-4">
+          <p className="text-xs text-text-muted">
+            Lịch 1-1 linh hoạt: bạn có thể ghi nhận ca sau khi dạy, kể cả khi chưa có buổi học được lên lịch trước.
+            Hai ca trong cùng một ngày là hợp lệ — mỗi lần bấm tạo mới dùng một khóa ý định riêng, còn bấm lại do lỗi
+            mạng dùng cùng khóa và chỉ tạo một bản ghi.
+          </p>
+          <fieldset disabled={isSubmitting || !!actualSessionKey} className="space-y-4">
+          <Select
+            id="actual-class-select"
+            label="Lớp học"
+            value={actualClassId === '' ? '' : String(actualClassId)}
+            onChange={(event) => {
+              setActualClassId(event.target.value ? Number(event.target.value) : '');
+              setActualEnrollmentClassId('');
+            }}
+            options={[
+              { value: '', label: 'Chọn lớp...' },
+              ...availableClasses.map((cls: any) => ({ value: String(cls.id), label: cls.class_name })),
+            ]}
+          />
+          <Select
+            id="actual-enrollment-class-select"
+            label="Học viên (enrollment trong lớp)"
+            value={actualEnrollmentClassId === '' ? '' : String(actualEnrollmentClassId)}
+            onChange={(event) => setActualEnrollmentClassId(event.target.value ? Number(event.target.value) : '')}
+            options={[
+              { value: '', label: actualClassId ? 'Chọn học viên...' : 'Chọn lớp trước' },
+              ...((availableClasses.find((cls: any) => String(cls.id) === String(actualClassId))?.enrollment_classes || [])
+                .filter((ec: any) => ec.status === 'ACTIVE')
+                .map((ec: any) => ({
+                  value: String(ec.id),
+                  label: `${ec.enrollment?.student?.full_name || ec.id} • ${ec.enrollment?.student?.external_id || 'N/A'}`,
+                }))),
+            ]}
+          />
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <Input type="date" label="Ngày dạy" value={actualDate} onChange={(event) => setActualDate(event.target.value)} />
+            <Input type="time" label="Bắt đầu (tùy chọn)" value={actualStartTime} onChange={(event) => setActualStartTime(event.target.value)} />
+            <Input type="time" label="Kết thúc (tùy chọn)" value={actualEndTime} onChange={(event) => setActualEndTime(event.target.value)} />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-text-primary mb-1">
+              Trạng thái buổi học
+            </label>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              <Button
+                type="button"
+                variant={actualStatus === 'ATTENDED' ? 'primary' : 'outline'}
+                className="justify-start text-xs h-8 px-2.5"
+                onClick={() => setActualStatus('ATTENDED')}
+              >
+                🟢 Đã học
+              </Button>
+              <Button
+                type="button"
+                variant={actualStatus === 'ABSENT_APPROVED_A' ? 'primary' : 'outline'}
+                className="justify-start text-xs h-8 px-2.5"
+                onClick={() => setActualStatus('ABSENT_APPROVED_A')}
+              >
+                🟡 Nghỉ phép (A)
+              </Button>
+              <Button
+                type="button"
+                variant={actualStatus === 'ABSENT_UNAPPROVED_C' ? 'primary' : 'outline'}
+                className="justify-start text-xs h-8 px-2.5"
+                onClick={() => setActualStatus('ABSENT_UNAPPROVED_C')}
+              >
+                🔴 Vắng (C)
+              </Button>
+              <Button
+                type="button"
+                variant={actualStatus === 'LEAVE_B' ? 'primary' : 'outline'}
+                className="justify-start text-xs h-8 px-2.5"
+                onClick={() => setActualStatus('LEAVE_B')}
+              >
+                ⚪ Bảo lưu (B)
+              </Button>
+              <Button
+                type="button"
+                variant={actualStatus === 'TEACHER_ABSENT_D' ? 'primary' : 'outline'}
+                className="justify-start text-xs h-8 px-2.5"
+                onClick={() => setActualStatus('TEACHER_ABSENT_D')}
+              >
+                🟣 GV nghỉ (D)
+              </Button>
+              <Button
+                type="button"
+                variant={actualStatus === 'TECH_ERROR_E' ? 'primary' : 'outline'}
+                className="justify-start text-xs h-8 px-2.5"
+                onClick={() => setActualStatus('TECH_ERROR_E')}
+              >
+                🟠 Lỗi kỹ thuật (E)
+              </Button>
+            </div>
+          </div>
+          {actualStatus === 'ATTENDED' && (
+            <div>
+              <label className="block text-xs font-semibold text-text-primary mb-1">
+                Tên bài học / Chủ đề bài giảng <span className="text-teal-600 font-normal">(VD: K2 L4, K1-L1...)</span>
+              </label>
+              <Input
+                placeholder="Ví dụ: K2 L4 hoặc Kaiwa 2 Bài 4"
+                value={actualLessonTopic}
+                onChange={(e) => setActualLessonTopic(e.target.value)}
+              />
+            </div>
+          )}
+          <div>
+            <label className="block text-xs font-semibold text-text-primary mb-1">
+              Ghi chú của giáo viên (tùy chọn)
+            </label>
+            <Textarea
+              placeholder="Ghi nhận thái độ học viên, lỗi phát âm, nhắc nhở làm BTVN..."
+              rows={2}
+              value={actualTeacherNote}
+              onChange={(e) => setActualTeacherNote(e.target.value)}
+            />
+          </div>
+          </fieldset>
+        </div>
+      </Modal>
 
       {/* Teacher selector — only for ADMIN/MANAGE */}
       {isPrivileged && (
@@ -297,7 +565,7 @@ export const MyTeachingSessionsPage: React.FC = () => {
 
                     {session.class?.enrollment_classes?.map((ec: any) => {
                       const student = ec.enrollment?.student;
-                      const att = ec.attendance?.find((a: any) => a.class_session_id === session.id) || ec.attendance?.[0];
+                      const att = ec.attendance?.find((a: any) => a.class_session_id === session.id && !a.deleted_at);
 
                       return (
                         <div key={ec.id} className="bg-surface-muted/60 p-3 rounded-xl border border-border/60">
@@ -336,55 +604,62 @@ export const MyTeachingSessionsPage: React.FC = () => {
                           {att?.teacher_status && (
                             <div className="mt-2 text-xs text-text-secondary bg-surface p-2 rounded-lg border border-border/40">
                               <span className="font-semibold text-teal-700">Đã báo: </span>
-                              {att.teacher_status === 'ATTENDED' ? (
-                                <span>Đã học {att.lesson_topic ? `(Bài: ${att.lesson_topic})` : ''}</span>
-                              ) : (
-                                <span>{att.teacher_status}</span>
-                              )}
+                              <span>
+                                {STATUS_LABELS[att.teacher_status] || att.teacher_status}
+                                {att.lesson_topic ? ` (Bài: ${att.lesson_topic})` : ''}
+                              </span>
                               {att.teacher_note && <div className="italic mt-0.5">"{att.teacher_note}"</div>}
                             </div>
                           )}
 
                           {/* Quick Mark Buttons for this student */}
                           <div className="mt-3 pt-2.5 border-t border-border/40">
-                            <span className="text-[11px] font-semibold text-text-muted block mb-1.5">
-                              Điểm danh nhanh:
-                            </span>
-                            <div className="flex flex-wrap gap-1.5">
-                              <Button
-                                size="sm"
-                                variant="primary"
-                                className="h-7 text-xs px-2.5 bg-emerald-600 hover:bg-emerald-700"
-                                onClick={() => handleOpenMarkModal(session, ec, 'ATTENDED')}
-                              >
-                                <Check className="w-3.5 h-3.5 mr-1" />
-                                Đã học
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="h-7 text-xs px-2"
-                                onClick={() => handleOpenMarkModal(session, ec, 'ABSENT_APPROVED_A')}
-                              >
-                                Nghỉ phép (A)
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="h-7 text-xs px-2 text-rose-600 border-rose-300 hover:bg-rose-50"
-                                onClick={() => handleOpenMarkModal(session, ec, 'ABSENT_UNAPPROVED_C')}
-                              >
-                                Vắng (C)
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="h-7 text-xs px-2 text-text-muted"
-                                onClick={() => handleOpenMarkModal(session, ec, 'LEAVE_B')}
-                              >
-                                Bảo lưu (B)
-                              </Button>
-                            </div>
+                            {isPrivileged && !isAdmin ? (
+                              <Badge variant="neutral" size="sm">
+                                MANAGE chỉ xem lịch dạy — chỉ Admin mới chấm hộ giáo viên
+                              </Badge>
+                            ) : (
+                              <>
+                                <span className="text-[11px] font-semibold text-text-muted block mb-1.5">
+                                  Điểm danh nhanh:
+                                </span>
+                                <div className="flex flex-wrap gap-1.5">
+                                  <Button
+                                    size="sm"
+                                    variant="primary"
+                                    className="h-7 text-xs px-2.5 bg-emerald-600 hover:bg-emerald-700"
+                                    onClick={() => handleOpenMarkModal(session, ec, 'ATTENDED')}
+                                  >
+                                    <Check className="w-3.5 h-3.5 mr-1" />
+                                    Đã học
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-7 text-xs px-2"
+                                    onClick={() => handleOpenMarkModal(session, ec, 'ABSENT_APPROVED_A')}
+                                  >
+                                    Nghỉ phép (A)
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-7 text-xs px-2 text-rose-600 border-rose-300 hover:bg-rose-50"
+                                    onClick={() => handleOpenMarkModal(session, ec, 'ABSENT_UNAPPROVED_C')}
+                                  >
+                                    Vắng (C)
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="h-7 text-xs px-2 text-text-muted"
+                                    onClick={() => handleOpenMarkModal(session, ec, 'LEAVE_B')}
+                                  >
+                                    Bảo lưu (B)
+                                  </Button>
+                                </div>
+                              </>
+                            )}
                           </div>
                         </div>
                       );
@@ -419,7 +694,7 @@ export const MyTeachingSessionsPage: React.FC = () => {
             <Button
               variant="primary"
               onClick={handleConfirmMark}
-              disabled={isSubmitting}
+              disabled={isSubmitting || (isPrivileged && !isAdmin)}
             >
               {isSubmitting ? 'Đang lưu...' : 'Lưu Điểm Danh'}
             </Button>
@@ -473,6 +748,22 @@ export const MyTeachingSessionsPage: React.FC = () => {
               >
                 ⚪ Bảo lưu (B)
               </Button>
+              <Button
+                type="button"
+                variant={selectedStatus === 'TEACHER_ABSENT_D' ? 'primary' : 'outline'}
+                className="justify-start text-xs h-9"
+                onClick={() => setSelectedStatus('TEACHER_ABSENT_D')}
+              >
+                🟣 GV nghỉ (D)
+              </Button>
+              <Button
+                type="button"
+                variant={selectedStatus === 'TECH_ERROR_E' ? 'primary' : 'outline'}
+                className="justify-start text-xs h-9"
+                onClick={() => setSelectedStatus('TECH_ERROR_E')}
+              >
+                🟠 Lỗi kỹ thuật (E)
+              </Button>
             </div>
           </div>
 
@@ -500,84 +791,6 @@ export const MyTeachingSessionsPage: React.FC = () => {
               onChange={(e) => setTeacherNote(e.target.value)}
             />
           </div>
-        </div>
-      </Modal>
-
-      {/* MODAL: Upload file giao_vien.xlsx */}
-      <Modal
-        isOpen={isUploadModalOpen}
-        onClose={() => {
-          setIsUploadModalOpen(false);
-          setUploadResult(null);
-        }}
-        title={
-          <div className="flex items-center gap-2 text-text-primary font-bold">
-            <FileSpreadsheet className="w-5 h-5 text-emerald-600" />
-            <span>Tải lên file lịch dạy giáo viên (giao_vien.xlsx)</span>
-          </div>
-        }
-        footer={
-          <div className="flex items-center justify-end gap-3 w-full">
-            <Button
-              variant="outline"
-              onClick={() => {
-                setIsUploadModalOpen(false);
-                setUploadResult(null);
-              }}
-            >
-              Đóng
-            </Button>
-          </div>
-        }
-      >
-        <div className="space-y-4">
-          <div className="border-2 border-dashed border-border/80 hover:border-teal-500 rounded-2xl p-6 text-center bg-surface-muted/30 transition-all">
-            <input
-              type="file"
-              ref={fileInputRef}
-              accept=".xlsx,.xls"
-              className="hidden"
-              onChange={handleFileUpload}
-            />
-            <FileSpreadsheet className="w-12 h-12 text-emerald-600 mx-auto mb-3" />
-            <p className="font-semibold text-sm text-text-primary">
-              Chọn file Excel giao_vien.xlsx của bạn
-            </p>
-            <p className="text-xs text-text-secondary mt-1">
-              Hệ thống tự động đọc sheet "2026 スケジュール", bóc tách mã học viên và tên bài học (VD: 420289324-K2 L4).
-            </p>
-            <Button
-              variant="primary"
-              className="mt-4"
-              disabled={isUploading}
-              onClick={() => fileInputRef.current?.click()}
-            >
-              {isUploading ? 'Đang đọc và đối soát file...' : 'Chọn file từ máy tính'}
-            </Button>
-          </div>
-
-          {uploadResult && (
-            <div className="bg-surface p-4 rounded-xl border border-border/80 space-y-2">
-              <h4 className="font-bold text-sm text-text-primary flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                Kết quả đối soát file Excel:
-              </h4>
-              <div className="grid grid-cols-3 gap-2 pt-2 text-center">
-                <div className="bg-emerald-500/10 border border-emerald-500/20 p-2 rounded-lg">
-                  <span className="text-xs text-emerald-700 font-medium">Khớp CSKH</span>
-                  <p className="text-lg font-bold text-emerald-700">{uploadResult.matchedCount}</p>
-                </div>
-                <div className="bg-amber-500/10 border border-amber-500/20 p-2 rounded-lg">
-                  <span className="text-xs text-amber-700 font-medium">Chờ đối soát</span>
-                  <p className="text-lg font-bold text-amber-700">{uploadResult.pendingCount}</p>
-                </div>
-                <div className="bg-rose-500/10 border border-rose-500/20 p-2 rounded-lg">
-                  <span className="text-xs text-rose-700 font-medium">Lệch ý kiến</span>
-                  <p className="text-lg font-bold text-rose-700">{uploadResult.conflictCount}</p>
-                </div>
-              </div>
-            </div>
-          )}
         </div>
       </Modal>
     </PageContainer>

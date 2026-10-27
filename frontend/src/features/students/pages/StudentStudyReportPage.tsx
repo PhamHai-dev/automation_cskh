@@ -2,8 +2,10 @@ import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { studentsApi } from '../api/students.api';
 import { Student } from '../types/students.types';
+import { Enrollment } from '../../enrollments/types/enrollments.types';
 import { PageContainer } from '../../../components/common/PageContainer';
 import { Button } from '../../../components/ui/Button';
+import { Select } from '../../../components/ui/Select';
 import { useToast } from '../../../components/ui/Toast';
 import { ArrowLeft, Save, CheckCircle2, Printer } from 'lucide-react';
 
@@ -106,6 +108,27 @@ const createInitialReportData = (raw?: Partial<StudyReportData> | null): StudyRe
   },
 });
 
+const hydrateReportFromEnrollment = (enr?: Enrollment): StudyReportData => {
+  const savedReport = (enr?.program_metadata as any)?.study_report as
+    | Partial<StudyReportData>
+    | null
+    | undefined;
+  return createInitialReportData({
+    ...(savedReport || {}),
+    exchange_with_student:
+      savedReport?.exchange_with_student !== undefined
+        ? savedReport.exchange_with_student
+        : enr?.exchange_info || '',
+  });
+};
+
+const enrollmentLabel = (enr: Enrollment): string => {
+  const program = enr.program_type || 'Không rõ chương trình';
+  const pkg = enr.package?.code || enr.package?.name || 'Gói';
+  const className = enr.enrollment_classes?.[0]?.class?.class_name || 'chưa có lớp';
+  return `${program} • ${pkg} • Lớp ${className}`;
+};
+
 export const StudentStudyReportPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -116,6 +139,8 @@ export const StudentStudyReportPage: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [report, setReport] = useState<StudyReportData>(() => createInitialReportData());
+  const [selectedEnrollmentId, setSelectedEnrollmentId] = useState<number | null>(null);
+  const [hydratedSnapshot, setHydratedSnapshot] = useState<string>(() => JSON.stringify(createInitialReportData()));
 
   useEffect(() => {
     const fetchDetail = async () => {
@@ -124,17 +149,11 @@ export const StudentStudyReportPage: React.FC = () => {
         setLoading(true);
         const data = await studentsApi.get(Number(id));
         setStudent(data);
-        const enr = data.enrollments?.[0];
-        const savedReport = (enr?.program_metadata as any)?.study_report;
-        setReport(
-          createInitialReportData({
-            ...savedReport,
-            exchange_with_student:
-              savedReport?.exchange_with_student !== undefined
-                ? savedReport.exchange_with_student
-                : enr?.exchange_info || '',
-          })
-        );
+        // D11 policy (renamed from reused-D9 to avoid the Sale↔CS backlog code):
+        // only auto-select when the student has exactly one enrollment; with
+        // several, the user must pick explicitly (never implicitly guess).
+        const list = data.enrollments ?? [];
+        setSelectedEnrollmentId(list.length === 1 ? list[0].id : null);
       } catch (err: any) {
         toast.error(err.response?.data?.error?.message || 'Không thể tải báo cáo học tập của học viên');
       } finally {
@@ -144,22 +163,56 @@ export const StudentStudyReportPage: React.FC = () => {
     fetchDetail();
   }, [id]);
 
+  // Re-hydrate the form whenever the selected enrollment changes (also covers
+  // the initial auto-selection after fetch).
+  useEffect(() => {
+    if (!student || selectedEnrollmentId == null) return;
+    const enr = student.enrollments?.find((e) => e.id === selectedEnrollmentId);
+    if (!enr) return;
+    const next = hydrateReportFromEnrollment(enr);
+    setReport(next);
+    setHydratedSnapshot(JSON.stringify(next));
+  }, [student, selectedEnrollmentId]);
+
+  const enrollments = student?.enrollments ?? [];
+  const selectedEnrollment =
+    selectedEnrollmentId != null
+      ? enrollments.find((e) => e.id === selectedEnrollmentId)
+      : undefined;
+  const isDirty = JSON.stringify(report) !== hydratedSnapshot;
+
+  const handleEnrollmentChange = (val: string) => {
+    const nextId = val ? Number(val) : null;
+    if (nextId === selectedEnrollmentId) return;
+    if (isDirty) {
+      toast.info('Phiếu chưa lưu sẽ bị bỏ khi đổi gói');
+    }
+    setSelectedEnrollmentId(nextId);
+    setSavedAt(null);
+  };
+
   const handleSave = async () => {
     if (!student) return;
-    const enr = student.enrollments?.[0];
+    const enr = selectedEnrollment;
+    if (!enr?.id) {
+      toast.error('Không xác định được gói ghi danh để cập nhật');
+      return;
+    }
     try {
       setSaving(true);
       const nextMeta = {
-        ...(enr?.program_metadata || {}),
+        ...(enr.program_metadata || {}),
         study_report: report,
       };
       await studentsApi.update(student.id, {
-        program_type: (enr?.program_type as any) || 'KAIWA',
+        enrollment_id: enr.id,
+        program_type: (enr.program_type as any) || 'KAIWA',
         program_metadata: nextMeta,
         exchange_info: report.exchange_with_student,
         study_report_url: `/students/${student.id}/study-report`,
       });
       setSavedAt(new Date().toLocaleTimeString('vi-VN'));
+      setHydratedSnapshot(JSON.stringify(report));
       toast.success('Đã lưu Báo cáo học tập thành công!');
     } catch (err: any) {
       toast.error(err.response?.data?.error?.message || 'Không thể lưu báo cáo học tập');
@@ -219,7 +272,7 @@ export const StudentStudyReportPage: React.FC = () => {
     );
   }
 
-  const enr = student.enrollments?.[0];
+  const enr = selectedEnrollment;
   const ec = enr?.enrollment_classes?.[0];
   const teacher =
     ec?.class?.class_teachers?.[0]?.teacher?.name ||
@@ -664,6 +717,7 @@ export const StudentStudyReportPage: React.FC = () => {
             size="sm"
             onClick={handleSave}
             isLoading={saving}
+            disabled={enrollments.length > 1 && selectedEnrollmentId == null}
             leftIcon={<Save className="w-4 h-4" />}
           >
             Lưu báo cáo
@@ -671,7 +725,44 @@ export const StudentStudyReportPage: React.FC = () => {
         </div>
       </div>
 
+      {/* Explicit enrollment picker (D11: never implicitly guess when multiple exist) */}
+      {enrollments.length > 1 && (
+        <div className="mb-4 max-w-5xl mx-auto print:hidden">
+          <div className="flex items-end gap-3">
+            <div className="w-80 max-w-full">
+              <Select
+                label="Gói ghi danh"
+                value={selectedEnrollmentId ?? ''}
+                onChange={(e) => handleEnrollmentChange(e.target.value)}
+              >
+                <option value="">-- Vui lòng chọn gói ghi danh --</option>
+                {enrollments.map((e) => (
+                  <option key={e.id} value={e.id}>
+                    {enrollmentLabel(e)}
+                  </option>
+                ))}
+              </Select>
+            </div>
+            {selectedEnrollmentId == null && (
+              <span className="text-xs text-text-muted pb-2.5">
+                Học viên có nhiều gói ghi danh — hãy chọn gói cần điền phiếu báo cáo.
+              </span>
+            )}
+            {isDirty && selectedEnrollmentId != null && (
+              <span className="text-xs text-amber-600 font-medium pb-2.5">
+                Phiếu đang có thay đổi chưa lưu.
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Sheet 1 Container (giống bố cục Theo_doi_hoc_tap.xlsx) */}
+      {enrollments.length > 1 && selectedEnrollmentId == null ? (
+        <div className="max-w-5xl mx-auto py-16 text-center text-sm text-text-muted bg-white rounded-xl border border-slate-400 shadow-soft mb-10">
+          Vui lòng chọn gói ghi danh
+        </div>
+      ) : (
       <div className="max-w-5xl mx-auto bg-white rounded-xl border border-slate-400 shadow-soft overflow-hidden mb-10">
         <table className="w-full border-collapse text-xs text-slate-900">
           <tbody>
@@ -811,6 +902,7 @@ export const StudentStudyReportPage: React.FC = () => {
           </tbody>
         </table>
       </div>
+      )}
     </PageContainer>
   );
 };

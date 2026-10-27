@@ -1,5 +1,6 @@
 import { PrismaClient, EnrollmentStatus, AttendanceStatus, CareTaskStatus, CareTaskPriority, CareTaskType, CareLogOutcome } from '@prisma/client';
 import { prisma } from '../../prisma/client';
+import { isCareMilestoneAttendance, isConsumedAttendance } from '../enrollments/enrollment-entitlement';
 import { DashboardFilterParams } from './dashboard.types';
 
 export class DashboardRepository {
@@ -364,18 +365,28 @@ export class DashboardRepository {
         id: true,
         total_sessions: true,
         enrollment_classes: {
-          select: { attendance: { select: { id: true } } },
+          select: {
+            attendance: {
+              select: {
+                status: true,
+                reconciliation_state: true,
+                deleted_at: true,
+              },
+            },
+          },
         },
       },
     });
 
     let count = 0;
     for (const e of enrollments) {
-      const attended = e.enrollment_classes.reduce(
-        (sum, ec) => sum + ec.attendance.length,
+      // C.4: consume only FINAL (MATCHED/RESOLVED) consuming-status rows;
+      // deleted and provisional rows never count (enrollment-entitlement).
+      const consumed = e.enrollment_classes.reduce(
+        (sum, ec) => sum + ec.attendance.filter((att) => isConsumedAttendance(att)).length,
         0,
       );
-      const remaining = e.total_sessions - attended;
+      const remaining = e.total_sessions - consumed;
       if (remaining >= 0 && remaining <= 10) count += 1;
     }
     return count;
@@ -409,7 +420,17 @@ export class DashboardRepository {
       where,
       select: {
         id: true,
-        enrollment_classes: { select: { attendance: { select: { id: true } } } },
+        enrollment_classes: {
+          select: {
+            attendance: {
+              select: {
+                status: true,
+                reconciliation_state: true,
+                deleted_at: true,
+              },
+            },
+          },
+        },
         care_logs: { select: { after_session_number: true } },
       },
     });
@@ -418,8 +439,14 @@ export class DashboardRepository {
       let reached = 0;
       let covered = 0;
       for (const e of enrollments) {
+        // D1 (approved 2026-10-25): the CARE milestone basis (K7) is FINAL
+        // personal ATTENDED rows only — a rest-without-permit (C) consumes
+        // entitlement (K5, see countNearCompletion) but does NOT advance the
+        // "học đủ N buổi" care milestone. Two deliberate same-day ATTENDED
+        // finals count as 2. Evaluation milestones are a separate catalog and
+        // must not reuse this count (K7 ≠ K5 invariant, 05 §A.3).
         const attended = e.enrollment_classes.reduce(
-          (sum, ec) => sum + ec.attendance.length,
+          (sum, ec) => sum + ec.attendance.filter((att) => isCareMilestoneAttendance(att)).length,
           0,
         );
         if (attended >= m.session_number) {

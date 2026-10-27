@@ -1,7 +1,9 @@
+import { ReconciliationState } from '@prisma/client';
 import { AttendanceRepository } from './attendance.repository';
 import { AttendanceSide, MarkAttendanceDTO, BulkMarkAttendanceDTO, UpdateAttendanceDTO } from './attendance.types';
 import { prisma } from '../../prisma/client';
-import { handleAttendanceEvent, cancelPendingDeliveries } from '../automation/automation-trigger.service';
+import { runAttendancePostCommit } from './attendance-lifecycle';
+import { findEffectiveAssignment } from './teacher-assignment';
 import { createLogger } from '../../shared/logger/logger';
 import { AppError } from '../../middlewares/error.middleware';
 
@@ -38,14 +40,21 @@ export class AttendanceService {
     return available[0];
   }
 
-  private async assertWriteScope(actor: AttendanceActor, side: AttendanceSide, classId: number, enrollmentClassId: number) {
+  private async assertWriteScope(actor: AttendanceActor, side: AttendanceSide, classId: number, enrollmentClassId: number, sessionDate: Date) {
     if (actor.roles.includes('ADMIN') || actor.roles.includes('MANAGE')) return;
     if (side === 'TEACHER') {
-      const assigned = await prisma.classTeacher.findFirst({
-        where: { class_id: classId, active: true, teacher: { user_id: actor.id, active: true } },
-        select: { id: true },
+      // D8 (owner verdict 2026-10-26): fetch ALL of this teacher's assignment
+      // rows for the class (any current active state) and let the helper
+      // decide. `active` is today's state, not history; a now-inactive row
+      // whose window contained the session date still authorizes the mark
+      // (acceptance case #14). Ambiguity rule (active=false with no window
+      // data) is pinned in teacher-assignment.ts.
+      const candidates = await prisma.classTeacher.findMany({
+        where: { class_id: classId, teacher: { user_id: actor.id } },
+        select: { active: true, start_date: true, end_date: true },
       });
-      if (!assigned) throw new AppError(403, 'Bạn không được phân công active cho lớp này');
+      const effective = findEffectiveAssignment(candidates, sessionDate);
+      if (!effective) throw new AppError(403, 'Bạn không được phân công cho lớp này tại ngày dạy của buổi học');
       return;
     }
     const enrollmentClass = await prisma.enrollmentClass.findFirst({
@@ -56,15 +65,10 @@ export class AttendanceService {
   }
 
   private async runDownstream(attendance: { id: number; reconciliation_state: string }) {
-    if (attendance.reconciliation_state === 'MATCHED' || attendance.reconciliation_state === 'RESOLVED') {
-      await handleAttendanceEvent(attendance.id).catch((err: any) =>
-        log.error('Automation trigger failed', { attendanceId: attendance.id, error: err.message }),
-      );
-    } else if (attendance.reconciliation_state === 'CONFLICT') {
-      await cancelPendingDeliveries(attendance.id).catch((err: any) =>
-        log.error('Cancel pending deliveries failed', { attendanceId: attendance.id, error: err.message }),
-      );
-    }
+    await runAttendancePostCommit({
+      attendanceId: attendance.id,
+      reconciliationState: attendance.reconciliation_state as ReconciliationState,
+    });
   }
 
   private async notifyOnAdminMark(attendanceId: number, actor: AttendanceActor) {
@@ -198,6 +202,11 @@ export class AttendanceService {
   }
 
   async listBySession(classId: number, sessionId: number) {
+    const session = await prisma.classSession.findFirst({
+      where: { id: sessionId, class_id: classId },
+      select: { id: true },
+    });
+    if (!session) throw new AppError(404, 'Không tìm thấy buổi học trong lớp này');
     return this.repository.findBySession(classId, sessionId);
   }
 
@@ -207,8 +216,9 @@ export class AttendanceService {
     if (!enrollmentClass) throw new AppError(404, 'Không tìm thấy ghi danh lớp');
     const session = await prisma.classSession.findFirst({ where: { id: sessionId, class_id: classId } });
     if (!session) throw new AppError(404, 'Không tìm thấy buổi học trong lớp này');
+    if (session.status === 'CANCELLED') throw new AppError(409, 'Không thể điểm danh cho buổi học đã hủy');
     if (enrollmentClass.class_id !== classId) throw new AppError(409, 'Ghi danh không thuộc lớp này');
-    await this.assertWriteScope(actor, side, classId, data.enrollment_class_id);
+    await this.assertWriteScope(actor, side, classId, data.enrollment_class_id, session.session_date);
 
     const before = await this.repository.findByEnrollmentClassAndSession(data.enrollment_class_id, sessionId);
     const result = await this.repository.mark(
@@ -236,11 +246,12 @@ export class AttendanceService {
     const side = this.resolveSide(actor, data.side);
     const session = await prisma.classSession.findFirst({ where: { id: sessionId, class_id: classId } });
     if (!session) throw new AppError(404, 'Không tìm thấy buổi học trong lớp này');
+    if (session.status === 'CANCELLED') throw new AppError(409, 'Không thể điểm danh cho buổi học đã hủy');
     for (const item of data.items) {
       const ec = await prisma.enrollmentClass.findUnique({ where: { id: item.enrollment_class_id } });
       if (!ec) throw new AppError(404, `Không tìm thấy ghi danh ${item.enrollment_class_id}`);
       if (ec.class_id !== classId) throw new AppError(409, `Ghi danh ${item.enrollment_class_id} không thuộc lớp này`);
-      await this.assertWriteScope(actor, side, classId, item.enrollment_class_id);
+      await this.assertWriteScope(actor, side, classId, item.enrollment_class_id, session.session_date);
     }
     const sanitizedItems = data.items.map((item) => ({
       ...item,
@@ -261,10 +272,11 @@ export class AttendanceService {
   async updateAttendance(attendanceId: number, data: UpdateAttendanceDTO, actor: AttendanceActor, classId?: number, sessionId?: number) {
     const before = await this.repository.findById(attendanceId);
     if (!before) throw new AppError(404, 'Không tìm thấy điểm danh');
+    if (before.class_session?.status === 'CANCELLED') throw new AppError(409, 'Không thể điểm danh cho buổi học đã hủy');
     if (classId && before.class_session.class_id !== classId) throw new AppError(409, 'Điểm danh không thuộc lớp này');
     if (sessionId && before.class_session_id !== sessionId) throw new AppError(409, 'Điểm danh không thuộc buổi này');
     const side = this.resolveSide(actor, data.side);
-    await this.assertWriteScope(actor, side, before.class_session.class_id, before.enrollment_class_id);
+    await this.assertWriteScope(actor, side, before.class_session.class_id, before.enrollment_class_id, before.class_session.session_date);
     const sanitizedData: UpdateAttendanceDTO = {
       ...data,
       lesson_topic: side === 'TEACHER' ? data.lesson_topic : undefined,
@@ -282,10 +294,11 @@ export class AttendanceService {
   async resetAttendance(attendanceId: number, actor: AttendanceActor, requestedSide?: AttendanceSide, classId?: number, sessionId?: number) {
     const before = await this.repository.findById(attendanceId);
     if (!before) throw new AppError(404, 'Không tìm thấy điểm danh');
+    if (before.class_session?.status === 'CANCELLED') throw new AppError(409, 'Không thể điểm danh cho buổi học đã hủy');
     if (classId && before.class_session.class_id !== classId) throw new AppError(409, 'Điểm danh không thuộc lớp này');
     if (sessionId && before.class_session_id !== sessionId) throw new AppError(409, 'Điểm danh không thuộc buổi này');
     const side = this.resolveSide(actor, requestedSide);
-    await this.assertWriteScope(actor, side, before.class_session.class_id, before.enrollment_class_id);
+    await this.assertWriteScope(actor, side, before.class_session.class_id, before.enrollment_class_id, before.class_session.session_date);
     const result = await this.repository.reset(attendanceId, actor.id, side);
     await this.logAudit(actor.id, 'RESET_SIDE', 'Attendance', String(attendanceId), before, result);
     return result;

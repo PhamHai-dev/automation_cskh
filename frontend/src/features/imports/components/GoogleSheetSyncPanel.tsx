@@ -27,7 +27,25 @@ import {
   Copy,
 } from 'lucide-react';
 
-const DEFAULT_CVHT_CODES = ['CVHT01', 'CVHT02', 'CVHT03'];
+/**
+ * Build the ordered list of CVHT codes from loaded CS users (`staff_code`)
+ * unioned with any codes already stored in the config/draft `cvht_mapping`.
+ */
+const deriveCvhtCodes = (
+  users: CsUserOption[],
+  ...mappings: Array<Record<string, number> | undefined | null>
+): string[] => {
+  const seen = new Set<string>();
+  const add = (raw?: string | null) => {
+    const code = raw?.trim().toUpperCase();
+    if (code) seen.add(code);
+  };
+  users.forEach((u) => add(u.staff_code));
+  mappings.forEach((m) => {
+    if (m) Object.keys(m).forEach((k) => add(k));
+  });
+  return Array.from(seen).sort();
+};
 
 const DEFAULT_CONFIGS: GoogleSheetSyncConfig[] = [
   {
@@ -101,10 +119,11 @@ export const GoogleSheetSyncPanel: React.FC = () => {
       loadedConfigs.forEach((cfg) => {
         // Pre-populate CVHT mapping from staff_code if empty
         const initialMapping: Record<string, number> = { ...(cfg.cvht_mapping || {}) };
-        DEFAULT_CVHT_CODES.forEach((code) => {
+        const dynamicCodes = deriveCvhtCodes(loadedUsers, cfg.cvht_mapping);
+        dynamicCodes.forEach((code) => {
           if (!initialMapping[code]) {
             const matchedUser = loadedUsers.find(
-              (u) => u.staff_code?.toUpperCase() === code
+              (u) => u.staff_code?.trim().toUpperCase() === code
             );
             if (matchedUser) {
               initialMapping[code] = matchedUser.id;
@@ -424,6 +443,7 @@ export const GoogleSheetSyncPanel: React.FC = () => {
           };
           const summary = cfg.last_summary;
           const byCvht = summary?.byCvht || {};
+          const cvhtCodes = deriveCvhtCodes(csUsers, cfg.cvht_mapping, draft.cvht_mapping);
 
           return (
             <div
@@ -693,7 +713,7 @@ export const GoogleSheetSyncPanel: React.FC = () => {
                       </div>
 
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                        {DEFAULT_CVHT_CODES.map((cvhtCode) => {
+                        {cvhtCodes.map((cvhtCode) => {
                           const selectedId = draft.cvht_mapping?.[cvhtCode] || '';
                           return (
                             <div

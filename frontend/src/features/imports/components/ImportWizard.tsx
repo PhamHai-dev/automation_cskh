@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowRight, CheckCircle2, FileSpreadsheet, Upload, AlertTriangle, UserCheck, Scale, Loader2, Link2 } from 'lucide-react';
+import { ArrowRight, CheckCircle2, FileSpreadsheet, Upload, AlertTriangle, UserCheck, Scale, Loader2, Link2, History } from 'lucide-react';
 import { Button } from '../../../components/ui/Button';
 import { Badge } from '../../../components/ui/Badge';
 import { Card } from '../../../components/ui/Card';
@@ -167,7 +167,6 @@ export const ImportWizard: React.FC<Props> = ({ onImportComplete }) => {
     const res = await importsApi.confirm(upload.importId, true, assignedCsId);
     setResult(res);
     setStep(4);
-    onImportComplete?.();
 
     if (res.care_group_sync_report) {
       setCareSyncReport(res.care_group_sync_report as CareGroupSyncReport);
@@ -445,6 +444,16 @@ export const ImportWizard: React.FC<Props> = ({ onImportComplete }) => {
         <Button id="new-import-button" variant="outline" onClick={() => { setStep(1); setFile(null); setUpload(null); setReport(null); setResult(null); setCareSyncReport(null); }}>
           Nhập file khác
         </Button>
+        {onImportComplete && (
+          <Button
+            id="view-import-history-button"
+            variant="outline"
+            leftIcon={<History className="w-4 h-4" />}
+            onClick={() => onImportComplete()}
+          >
+            Xem lịch sử nhập
+          </Button>
+        )}
         <Button
           id="go-omnichannel-links-button"
           variant="outline"

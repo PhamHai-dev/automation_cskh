@@ -11,6 +11,27 @@
 
 const mockEmit = jest.fn();
 
+// Logger is mocked so candidate-collection assertions can pin log.warn calls.
+// NOTE: the mock factory defers dereferencing mockLoggerWarn until warn() is
+// CALLED (same idiom as mockEmit above) — referencing it when the factory
+// runs would hit a TDZ error because jest hoists mocks above module requires.
+const mockLoggerWarn = jest.fn();
+
+jest.mock('../../../shared/logger/logger', () => ({
+  createLogger: () => ({
+    debug: () => undefined,
+    info: () => undefined,
+    warn: (message: string, meta?: Record<string, unknown>) => mockLoggerWarn(message, meta),
+    error: () => undefined,
+  }),
+  logger: {
+    debug: () => undefined,
+    info: () => undefined,
+    warn: (message: string, meta?: Record<string, unknown>) => mockLoggerWarn(message, meta),
+    error: () => undefined,
+  },
+}));
+
 jest.mock('../../../shared/realtime/socket-singleton', () => ({
   getIo: jest.fn(() => ({ emit: mockEmit })),
   emitToAccount: jest.fn(),
@@ -37,6 +58,8 @@ jest.mock('../../../prisma/client', () => ({
     },
     zaloContactRelation: {
       upsert: jest.fn(),
+      findMany: jest.fn(),
+      // Kept in the mock so a test can assert the destructive sweep is NEVER called.
       deleteMany: jest.fn(),
     },
     lineContactRelation: {
@@ -328,7 +351,20 @@ describe('Student Care Group Matcher Service (student-care-group-matcher.service
       expect(mockEmit).toHaveBeenCalledWith('omnichannel:sync-complete', report);
     });
 
-    test('ignores orphan/archived FRIEND relations with null group/uid/display_name and formats valid USER links with (Cá nhân)', async () => {
+    // CONTRACT CHANGE (owner ruling 2026-10-26, data-loss hazard fix):
+    // This test previously pinned the destructive behavior ("Orphan cleanup
+    // was executed" / expect(deleteMany).toHaveBeenCalledTimes(1)). The
+    // unscoped deleteMany in syncAndMatchCareGroups could silently delete
+    // freshly created FRIEND relations with not-yet-backfilled metadata from
+    // any concurrent sync path (login / webhook / health-check /
+    // import-approval). Three null metadata fields only prove information is
+    // MISSING, not that the relation is invalid. The sync now KEEPS such
+    // rows, logs them as candidates, and performs ZERO deletions; the
+    // link-validity classification in the report (such rows never count as
+    // linked) is unchanged. Archived-account relations are kept too — their
+    // cleanup must come from an explicit, separately-reviewed maintenance
+    // operation, not from this sync path.
+    test('KEEPS orphan (all-null metadata) and archived-account FRIEND relations, logs them as candidates, and NEVER deletes; valid USER links still format with (Cá nhân)', async () => {
       (prisma.user.findMany as jest.Mock).mockResolvedValue([
         { id: 10, code: 'CVHT01', roles: ['CS'] },
       ]);
@@ -447,17 +483,76 @@ describe('Student Care Group Matcher Service (student-care-group-matcher.service
 
       (prisma.zaloGroup.findMany as jest.Mock).mockResolvedValue([]);
       (prisma.lineGroup.findMany as jest.Mock).mockResolvedValue([]);
-      (prisma.zaloContactRelation.deleteMany as jest.Mock).mockResolvedValue({ count: 2 });
+      // Candidate collection now reads instead of deleting: relation 1 has all
+      // three metadata fields null, relation 2 sits on an archived account.
+      (prisma.zaloContactRelation.findMany as jest.Mock).mockResolvedValue([
+        {
+          id: 1,
+          student_id: 201,
+          zalo_account_id: 1,
+          relation_status: 'FRIEND',
+          zalo_group_id: null,
+          friend_zalo_uid: null,
+          display_name: null,
+          zalo_account: { archived_at: null },
+        },
+        {
+          id: 2,
+          student_id: 202,
+          zalo_account_id: 2,
+          relation_status: 'FRIEND',
+          zalo_group_id: null,
+          friend_zalo_uid: 'uid_archived',
+          display_name: 'Nick Archived',
+          zalo_account: { archived_at: new Date('2026-01-01T00:00:00Z') },
+        },
+      ]);
 
       const report = await syncAndMatchCareGroups({
         triggeredBy: 'manual',
         refreshLiveGroups: false,
       });
 
-      // Orphan cleanup was executed
-      expect(prisma.zaloContactRelation.deleteMany).toHaveBeenCalledTimes(1);
+      // NEW CONTRACT: the sync path performs ZERO deletions.
+      expect(prisma.zaloContactRelation.deleteMany).not.toHaveBeenCalled();
+      expect(prisma.lineContactRelation.deleteMany).not.toHaveBeenCalled();
+
+      // NEW CONTRACT: kept rows are logged as backfill/maintenance candidates
+      // (ids + missing fields only, no PII).
+      expect(prisma.zaloContactRelation.findMany).toHaveBeenCalledTimes(1);
+      const candidateLog = mockLoggerWarn.mock.calls.find(
+        ([msg]) => typeof msg === 'string' && msg.includes('kept ZaloContactRelation candidates'),
+      );
+      expect(candidateLog).toBeDefined();
+      const candidateMeta = candidateLog![1] as any;
+      expect(candidateMeta.triggeredBy).toBe('manual');
+      expect(candidateMeta.scannedCount).toBe(2);
+      expect(candidateMeta.missingMetadataBackfill.count).toBe(1);
+      expect(candidateMeta.missingMetadataBackfill.relations).toEqual([
+        expect.objectContaining({
+          relationId: 1,
+          studentId: 201,
+          zaloAccountId: 1,
+          missingFields: ['zalo_group_id', 'friend_zalo_uid', 'display_name'],
+          archivedAccount: false,
+        }),
+      ]);
+      expect(candidateMeta.archivedAccountMaintenance.count).toBe(1);
+      expect(candidateMeta.archivedAccountMaintenance.relations).toEqual([
+        expect.objectContaining({
+          relationId: 2,
+          studentId: 202,
+          zaloAccountId: 2,
+          archivedAccount: true,
+        }),
+      ]);
+      // No PII beyond ids in the candidate payload.
+      const payloadText = JSON.stringify(candidateMeta);
+      expect(payloadText).not.toContain('Học Viên');
+      expect(payloadText).not.toContain('Nick Archived');
 
       // Only student 203 is counted as linked; students 201 and 202 are unlinked
+      // (validity CLASSIFICATION is unchanged — the rows are simply kept now).
       expect(report.totalEligibleStudents).toBe(3);
       expect(report.linkedStudentsCount).toBe(1);
       expect(report.unlinkedStudentsCount).toBe(2);
@@ -479,6 +574,63 @@ describe('Student Care Group Matcher Service (student-care-group-matcher.service
       );
 
       expect(report.unlinkedItems.map((u) => u.studentId)).toEqual([201, 202]);
+    });
+
+    test('candidate collection keeps relations even when zero candidates exist, and never calls deleteMany', async () => {
+      (prisma.user.findMany as jest.Mock).mockResolvedValue([]);
+      (prisma.student.findMany as jest.Mock).mockResolvedValue([]);
+      (prisma.zaloGroup.findMany as jest.Mock).mockResolvedValue([]);
+      (prisma.lineGroup.findMany as jest.Mock).mockResolvedValue([]);
+      (prisma.zaloContactRelation.findMany as jest.Mock).mockResolvedValue([]);
+
+      await syncAndMatchCareGroups({ triggeredBy: 'manual', refreshLiveGroups: false });
+
+      expect(prisma.zaloContactRelation.findMany).toHaveBeenCalledTimes(1);
+      expect(prisma.zaloContactRelation.deleteMany).not.toHaveBeenCalled();
+      // No candidate warning when there is nothing to report.
+      expect(
+        mockLoggerWarn.mock.calls.some(([msg]) =>
+          typeof msg === 'string' && msg.includes('kept ZaloContactRelation candidates'),
+        ),
+      ).toBe(false);
+    });
+
+    // MOCK-LEVEL CONCURRENCY REGRESSION for the historic collision scenario:
+    // two syncs running concurrently (as login/webhook/import-approval paths
+    // can do) while FRIEND relations with the three-null metadata shape
+    // exist. Under the old code the second run's unscoped deleteMany would
+    // wipe the first run's not-yet-backfilled rows; under the new contract
+    // NO run may invoke deleteMany at all — candidate collection is read-only
+    // (findMany) and relations survive.
+    test('concurrent sync runs never invoke deleteMany (mock-level race regression)', async () => {
+      (prisma.user.findMany as jest.Mock).mockResolvedValue([]);
+      (prisma.student.findMany as jest.Mock).mockResolvedValue([]);
+      (prisma.zaloGroup.findMany as jest.Mock).mockResolvedValue([]);
+      (prisma.lineGroup.findMany as jest.Mock).mockResolvedValue([]);
+      (prisma.zaloContactRelation.findMany as jest.Mock).mockResolvedValue([
+        {
+          id: 11,
+          student_id: 301,
+          zalo_account_id: 3,
+          relation_status: 'FRIEND',
+          zalo_group_id: null,
+          friend_zalo_uid: null,
+          display_name: null,
+          zalo_account: { archived_at: null },
+        },
+      ]);
+
+      const [r1, r2] = await Promise.all([
+        syncAndMatchCareGroups({ triggeredBy: 'login', refreshLiveGroups: false, silent: true }),
+        syncAndMatchCareGroups({ triggeredBy: 'import', refreshLiveGroups: false, silent: true }),
+      ]);
+
+      expect(r1.totalEligibleStudents).toBe(0);
+      expect(r2.totalEligibleStudents).toBe(0);
+      // Both concurrent runs completed; neither deleted anything.
+      expect(prisma.zaloContactRelation.deleteMany).not.toHaveBeenCalled();
+      expect(prisma.lineContactRelation.deleteMany).not.toHaveBeenCalled();
+      expect(prisma.zaloContactRelation.findMany).toHaveBeenCalledTimes(2);
     });
 
     test('registers runner with student-care-group.contract so runStudentCareGroupAutoSync works', async () => {

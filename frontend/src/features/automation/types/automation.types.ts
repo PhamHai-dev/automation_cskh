@@ -99,6 +99,7 @@ export interface AutomationStep {
   active: boolean;
   created_at: string;
   updated_at: string;
+  _count?: { deliveries: number };
 }
 
 export interface AutomationEnrollment {

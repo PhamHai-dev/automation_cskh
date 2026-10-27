@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { PageContainer } from '../../../components/common/PageContainer';
 import { PageHeader } from '../../../components/common/PageHeader';
@@ -11,29 +11,76 @@ import { GoogleSheetSyncPanel } from '../components/GoogleSheetSyncPanel';
 import { CsSheetBackupPanel } from '../components/CsSheetBackupPanel';
 import { AttendanceExcelImportPanel } from '../../attendance/components/AttendanceExcelImportPanel';
 import { importsApi } from '../api/imports.api';
+import { useAuth } from '../../../contexts/AuthContext';
 import { CalendarCheck, DatabaseBackup, Download, History, RefreshCw, UploadCloud } from 'lucide-react';
+
+type ImportTabValue = 'sheet-sync' | 'sheet-backup' | 'wizard' | 'attendance' | 'history';
+
+const TAB_ORDER: ImportTabValue[] = ['sheet-sync', 'sheet-backup', 'wizard', 'attendance', 'history'];
+
+const TAB_LABELS: Record<ImportTabValue, { label: string; icon: React.ReactNode }> = {
+  'sheet-sync': { label: 'Đồng bộ Google Sheet (JLPT & Kaiwa)', icon: <RefreshCw /> },
+  'sheet-backup': { label: 'Backup Sổ CSKH (Kaiwa & JLPT)', icon: <DatabaseBackup /> },
+  wizard: { label: 'Upload Hồ sơ (Sheet 1)', icon: <UploadCloud /> },
+  attendance: { label: 'Điểm danh CSKH / GV', icon: <CalendarCheck /> },
+  history: { label: 'Lịch sử nhập', icon: <History /> },
+};
 
 export const ImportsPage: React.FC = () => {
   const toast = useToast();
-  const [searchParams] = useSearchParams();
-  const [activeTab, setActiveTab] = useState<
-    'sheet-sync' | 'sheet-backup' | 'wizard' | 'attendance' | 'history'
-  >(() => {
-    const tab = searchParams.get('tab');
-    if (tab === 'sheet-backup') return 'sheet-backup';
-    if (tab === 'attendance') return 'attendance';
-    if (tab === 'wizard') return 'wizard';
-    if (tab === 'history') return 'history';
-    return 'sheet-sync';
-  });
+  const { user } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [isExportingStudents, setIsExportingStudents] = useState(false);
   const [isExportingAttendance, setIsExportingAttendance] = useState(false);
 
+  const roles = useMemo(() => user?.roles ?? [], [user]);
+  const isAdminOrManage = roles.includes('ADMIN') || roles.includes('MANAGE');
+  const isCS = roles.includes('CS');
+
+  // Tab khả dụng theo vai trò (khớp guard backend trong imports.routes.ts):
+  // - ADMIN/MANAGE: toàn bộ 5 tab (sheet-sync guard ADMIN+MANAGE)
+  // - CS: sheet-backup (GET configs cho phép CS) + wizard/attendance/history
+  // - TEACHER (và vai trò khác): chỉ attendance + history
+  const allowedTabs = useMemo<ImportTabValue[]>(() => {
+    if (isAdminOrManage) return TAB_ORDER;
+    if (isCS) return TAB_ORDER.filter((t) => t !== 'sheet-sync');
+    return ['attendance', 'history'];
+  }, [isAdminOrManage, isCS]);
+
+  // Tab mặc định = tab đầu tiên được phép (ADMIN/MANAGE→sheet-sync, CS→sheet-backup, TEACHER→attendance)
+  const defaultTab = allowedTabs[0];
+
+  const resolveAllowedTab = useCallback(
+    (rawTab: string | null): ImportTabValue => {
+      if (rawTab && (allowedTabs as string[]).includes(rawTab)) {
+        return rawTab as ImportTabValue;
+      }
+      return defaultTab;
+    },
+    [allowedTabs, defaultTab],
+  );
+
+  const [activeTab, setActiveTab] = useState<ImportTabValue>(() =>
+    resolveAllowedTab(searchParams.get('tab')),
+  );
+
   useEffect(() => {
-    const tab = searchParams.get('tab');
-    if (tab === 'attendance') setActiveTab('attendance');
-    if (tab === 'sheet-backup') setActiveTab('sheet-backup');
-  }, [searchParams]);
+    setActiveTab(resolveAllowedTab(searchParams.get('tab')));
+  }, [searchParams, resolveAllowedTab]);
+
+  const effectiveTab: ImportTabValue = allowedTabs.includes(activeTab) ? activeTab : defaultTab;
+
+  const selectTab = (value: ImportTabValue) => {
+    const next = resolveAllowedTab(value);
+    setActiveTab(next);
+    setSearchParams(
+      (prev) => {
+        prev.set('tab', next);
+        return prev;
+      },
+      { replace: true },
+    );
+  };
 
   const handleExportStudents = async () => {
     try {
@@ -89,23 +136,20 @@ export const ImportsPage: React.FC = () => {
 
       <HorizontalTabs
         ariaLabel="Nhập và xuất dữ liệu"
-        value={activeTab}
-        onChange={setActiveTab}
+        value={effectiveTab}
+        onChange={selectTab}
         className="mb-6"
-        items={[
-          { value: 'sheet-sync', label: 'Đồng bộ Google Sheet (JLPT & Kaiwa)', icon: <RefreshCw /> },
-          { value: 'sheet-backup', label: 'Backup Sổ CSKH (Kaiwa & JLPT)', icon: <DatabaseBackup /> },
-          { value: 'wizard', label: 'Upload Hồ sơ (Sheet 1)', icon: <UploadCloud /> },
-          { value: 'attendance', label: 'Điểm danh CSKH / GV', icon: <CalendarCheck /> },
-          { value: 'history', label: 'Lịch sử nhập', icon: <History /> },
-        ]}
+        items={allowedTabs.map((tab) => ({
+          value: tab,
+          ...TAB_LABELS[tab],
+        }))}
       />
 
-      {activeTab === 'sheet-sync' && <GoogleSheetSyncPanel />}
-      {activeTab === 'sheet-backup' && <CsSheetBackupPanel />}
-      {activeTab === 'wizard' && <ImportWizard onImportComplete={() => setActiveTab('history')} />}
-      {activeTab === 'attendance' && <AttendanceExcelImportPanel />}
-      {activeTab === 'history' && <ImportHistoryTable />}
+      {effectiveTab === 'sheet-sync' && <GoogleSheetSyncPanel />}
+      {effectiveTab === 'sheet-backup' && <CsSheetBackupPanel />}
+      {effectiveTab === 'wizard' && <ImportWizard onImportComplete={() => selectTab('history')} />}
+      {effectiveTab === 'attendance' && <AttendanceExcelImportPanel />}
+      {effectiveTab === 'history' && <ImportHistoryTable />}
     </PageContainer>
   );
 };

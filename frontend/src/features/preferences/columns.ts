@@ -93,10 +93,10 @@ export const STUDENT_TAB1_COLUMNS: ColumnMeta[] = [
   // tab1 extras
   { key: 'payment_status',      label: 'Trạng thái thanh toán', defaultVisible: true },
   { key: 'package_name',        label: 'Gói học / Mã khóa',     defaultVisible: true },
-  { key: 'khoa_hoc',            label: 'Khóa học',              defaultVisible: true },
+  { key: 'khoa_hoc',            label: 'Khóa học',              defaultVisible: false },
   { key: 'level',               label: 'Trình độ / Gói SP',     defaultVisible: true },
   { key: 'total_sessions',      label: 'Tổng số buổi',          defaultVisible: true },
-  { key: 'class_model',         label: 'Mô hình lớp / Mã gói',  defaultVisible: true },
+  { key: 'class_model',         label: 'Mô hình lớp / Mã gói',  defaultVisible: false },
   { key: 'class_code',          label: 'Mã lớp',                defaultVisible: true },
   { key: 'sales_note',          label: 'Ghi chú sale',          defaultVisible: false },
   { key: 'date_of_birth',       label: 'Ngày sinh',             defaultVisible: false },

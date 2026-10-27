@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { CareLog, CareOutcome, CreateCareLogDTO } from '../types/care.types';
 import { Button } from '../../../components/ui/Button';
 import { Badge } from '../../../components/ui/Badge';
+import { useToast } from '../../../components/ui/Toast';
 import { MessageSquare, Calendar, User, Plus } from 'lucide-react';
 
 interface CareLogTimelineProps {
@@ -28,6 +29,7 @@ export const CareLogTimeline: React.FC<CareLogTimelineProps> = ({
   onAddLog,
   loading = false,
 }) => {
+  const toast = useToast();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [formData, setFormData] = useState<CreateCareLogDTO>({
@@ -44,7 +46,7 @@ export const CareLogTimeline: React.FC<CareLogTimelineProps> = ({
       setIsModalOpen(false);
       setFormData({ after_session_number: 1, outcome: 'POSITIVE', content: '' });
     } catch (err: any) {
-      alert(err.response?.data?.error?.message || 'Có lỗi khi lưu nhật ký chăm sóc');
+      toast.error(err.response?.data?.error?.message || 'Có lỗi khi lưu nhật ký chăm sóc');
     } finally {
       setSubmitting(false);
     }

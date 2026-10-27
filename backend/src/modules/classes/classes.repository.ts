@@ -132,8 +132,25 @@ export class ClassesRepository {
         teacher_id: data.teacher_id,
         role: data.role,
         start_date: startDate,
-        end_date: endDate
+        end_date: endDate,
+        ...(data.active !== undefined ? { active: data.active } : {}),
       }
+    });
+  }
+
+  async findTeacherAssignment(classId: number, assignmentId: number) {
+    return prisma.classTeacher.findFirst({
+      where: { id: assignmentId, class_id: classId },
+    });
+  }
+
+  async endTeacherAssignment(assignmentId: number, endDate: Date) {
+    return prisma.classTeacher.update({
+      where: { id: assignmentId },
+      data: {
+        active: false,
+        end_date: endDate,
+      },
     });
   }
 }

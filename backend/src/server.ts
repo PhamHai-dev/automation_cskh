@@ -25,91 +25,100 @@ const server = app.listen(PORT, async () => {
   registerZaloSocketHandlers(io);
   registerLineSocketHandlers(io);
 
-  // Wire listener-factory to pool events FIRST (message/friend/group routing).
-  // Must run before init(): reconnectAll() emits session:connected synchronously
-  // during boot, and a late subscription would miss those events.
-  wirePoolEvents();
+  const isTestOrIsolated =
+    env.NODE_ENV === 'test' || process.env.DISABLE_EXTERNAL_WORKERS === 'true';
 
-  // Initialize Zalo pool — restore active sessions from DB
-  try {
-    await zaloPool.init();
-  } catch (err) {
-    log.warn('Zalo pool init failed (continuing without Zalo)', {
-      error: err instanceof Error ? err.message : String(err),
+  if (isTestOrIsolated) {
+    log.info('External channels & background schedulers skipped in test/isolated mode', {
+      nodeEnv: env.NODE_ENV,
     });
-  }
+  } else {
+    // Wire listener-factory to pool events FIRST (message/friend/group routing).
+    // Must run before init(): reconnectAll() emits session:connected synchronously
+    // during boot, and a late subscription would miss those events.
+    wirePoolEvents();
 
-  // Initialize LINE Hybrid pool (OA + Personal) — restore active sessions from DB
-  try {
-    await linePool.init();
-  } catch (err) {
-    log.warn('LINE pool init failed (continuing without LINE)', {
-      error: err instanceof Error ? err.message : String(err),
-    });
-  }
-
-  // Start Zalo & LINE health check crons (every 5 min reconnect + quota refresh + hourly ghost cleanup)
-  try {
-    startZaloHealthCheck();
-    startLineHealthCheck();
-    log.info('Zalo & LINE health checks started');
-  } catch (err) {
-    log.warn('Health check start failed (continuing)', {
-      error: err instanceof Error ? err.message : String(err),
-    });
-  }
-
-  // Start friend sync cron (every 15 min for all connected accounts)
-  try {
-    const { startFriendSyncCron } = await import('./modules/zalo/friend-sync-cron');
-    startFriendSyncCron(io);
-    log.info('Friend sync cron started');
-  } catch (err) {
-    log.warn('Friend sync cron start failed (continuing)', {
-      error: err instanceof Error ? err.message : String(err),
-    });
-  }
-
-  // Start automation delivery worker
-  try {
-    const worker = startAutomationWorker();
-    if (worker) {
-      log.info('Automation worker started');
+    // Initialize Zalo pool — restore active sessions from DB
+    try {
+      await zaloPool.init();
+    } catch (err) {
+      log.warn('Zalo pool init failed (continuing without Zalo)', {
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
-  } catch (err) {
-    log.warn('Automation worker start failed (continuing without automation)', {
-      error: err instanceof Error ? err.message : String(err),
-    });
-  }
 
-  // Start auto attendance background scheduler
-  try {
-    startAutoAttendanceScheduler();
-    log.info('Auto attendance scheduler started');
-  } catch (err) {
-    log.warn('Auto attendance scheduler start failed (continuing)', {
-      error: err instanceof Error ? err.message : String(err),
-    });
-  }
+    // Initialize LINE Hybrid pool (OA + Personal) — restore active sessions from DB
+    try {
+      await linePool.init();
+    } catch (err) {
+      log.warn('LINE pool init failed (continuing without LINE)', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
 
-  // Start Google Sheet sync background scheduler
-  try {
-    startGoogleSheetSyncScheduler();
-    log.info('Google Sheet sync scheduler started');
-  } catch (err) {
-    log.warn('Google Sheet sync scheduler start failed (continuing)', {
-      error: err instanceof Error ? err.message : String(err),
-    });
-  }
+    // Start Zalo & LINE health check crons (every 5 min reconnect + quota refresh + hourly ghost cleanup)
+    try {
+      startZaloHealthCheck();
+      startLineHealthCheck();
+      log.info('Zalo & LINE health checks started');
+    } catch (err) {
+      log.warn('Health check start failed (continuing)', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
 
-  // Start CS Sheet backup background scheduler
-  try {
-    startCsSheetBackupScheduler();
-    log.info('CS Sheet backup scheduler started');
-  } catch (err) {
-    log.warn('CS Sheet backup scheduler start failed (continuing)', {
-      error: err instanceof Error ? err.message : String(err),
-    });
+    // Start friend sync cron (every 15 min for all connected accounts)
+    try {
+      const { startFriendSyncCron } = await import('./modules/zalo/friend-sync-cron');
+      startFriendSyncCron(io);
+      log.info('Friend sync cron started');
+    } catch (err) {
+      log.warn('Friend sync cron start failed (continuing)', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+
+    // Start automation delivery worker
+    try {
+      const worker = startAutomationWorker();
+      if (worker) {
+        log.info('Automation worker started');
+      }
+    } catch (err) {
+      log.warn('Automation worker start failed (continuing without automation)', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+
+    // Start auto attendance background scheduler
+    try {
+      startAutoAttendanceScheduler();
+      log.info('Auto attendance scheduler started');
+    } catch (err) {
+      log.warn('Auto attendance scheduler start failed (continuing)', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+
+    // Start Google Sheet sync background scheduler
+    try {
+      startGoogleSheetSyncScheduler();
+      log.info('Google Sheet sync scheduler started');
+    } catch (err) {
+      log.warn('Google Sheet sync scheduler start failed (continuing)', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+
+    // Start CS Sheet backup background scheduler
+    try {
+      startCsSheetBackupScheduler();
+      log.info('CS Sheet backup scheduler started');
+    } catch (err) {
+      log.warn('CS Sheet backup scheduler start failed (continuing)', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 
   log.info('Server started', {

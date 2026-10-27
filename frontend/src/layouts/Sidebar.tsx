@@ -3,6 +3,7 @@ import { NavLink } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { reconciliationApi } from '../features/attendance/api/reconciliation.api';
 import {
+  Home,
   LayoutDashboard,
   HeartHandshake,
   FileCheck2,
@@ -73,6 +74,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
       title: 'TỔNG QUAN',
       items: [
         {
+          name: 'Trang chủ Điều phối',
+          path: '/',
+          icon: <Home className="w-5 h-5 shrink-0" />,
+          end: true,
+        },
+        {
           name: 'Báo cáo Thống kê',
           path: '/dashboard',
           icon: <LayoutDashboard className="w-5 h-5 shrink-0" />,
@@ -107,6 +114,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
       title: 'ĐÀO TẠO & LỚP HỌC',
       items: [
         {
+          name: 'Lớp học & Điểm danh',
+          path: '/classes',
+          icon: <GraduationCap className="w-5 h-5 shrink-0" />,
+          allowedRoles: ['ADMIN', 'MANAGE', 'CS', 'TEACHER'],
+        },
+        {
           name: 'Đối soát Điểm danh',
           path: '/attendance/reconciliation',
           icon: <ClipboardCheck className="w-5 h-5 shrink-0" />,
@@ -127,14 +140,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
       ],
     },
     {
-      title: 'GIÁO VIÊN',
+      title: 'LỊCH DẠY GIÁO VIÊN',
       items: [
-        {
-          name: 'Lớp học & Điểm danh',
-          path: '/classes',
-          icon: <GraduationCap className="w-5 h-5 shrink-0" />,
-          allowedRoles: ['ADMIN', 'MANAGE', 'CS', 'TEACHER'],
-        },
         {
           name: 'Lịch dạy của tôi',
           path: '/teacher/my-sessions',
@@ -160,19 +167,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
           allowedRoles: ['ADMIN', 'MANAGE', 'CS'],
         },
         {
-          name: 'Tài khoản & Bảo mật',
-          path: '/omnichannel/accounts',
-          icon: <ShieldCheck className="w-5 h-5 shrink-0" />,
-          allowedRoles: ['ADMIN', 'MANAGE', 'CS'],
-          end: true,
-        },
-        {
-          name: 'Danh bạ Đa kênh',
-          path: '/omnichannel/contacts',
-          icon: <Users className="w-5 h-5 shrink-0" />,
-          allowedRoles: ['ADMIN', 'MANAGE', 'CS'],
-        },
-        {
           name: 'Nhóm Lớp Đa kênh',
           path: '/omnichannel/groups',
           icon: <Users className="w-5 h-5 shrink-0" />,
@@ -185,7 +179,25 @@ export const Sidebar: React.FC<SidebarProps> = ({
           allowedRoles: ['ADMIN', 'MANAGE', 'CS'],
         },
         {
-          name: 'Automation Workflow',
+          name: 'Danh bạ Đa kênh',
+          path: '/omnichannel/contacts',
+          icon: <Users className="w-5 h-5 shrink-0" />,
+          allowedRoles: ['ADMIN', 'MANAGE', 'CS'],
+        },
+        {
+          name: 'Tài khoản & Bảo mật',
+          path: '/omnichannel/accounts',
+          icon: <ShieldCheck className="w-5 h-5 shrink-0" />,
+          allowedRoles: ['ADMIN', 'MANAGE', 'CS'],
+          end: true,
+        },
+      ],
+    },
+    {
+      title: 'TỰ ĐỘNG HÓA & CHIẾN DỊCH',
+      items: [
+        {
+          name: 'Kịch bản & Phát tin',
           path: '/automation',
           icon: <Zap className="w-5 h-5 shrink-0" />,
           allowedRoles: ['ADMIN', 'MANAGE', 'CS'],
@@ -200,6 +212,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
           path: '/imports',
           icon: <FileSpreadsheet className="w-5 h-5 shrink-0" />,
           allowedRoles: ['ADMIN', 'MANAGE', 'CS', 'TEACHER'],
+        },
+        {
+          name: 'Hàng đợi Phê duyệt Nhập liệu',
+          path: '/imports/approval-queue',
+          icon: <ShieldCheck className="w-5 h-5 shrink-0" />,
+          allowedRoles: ['ADMIN', 'MANAGE'],
         },
         {
           name: 'Người dùng & Phân quyền',

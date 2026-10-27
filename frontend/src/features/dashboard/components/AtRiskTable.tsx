@@ -1,8 +1,11 @@
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import { AlertTriangle } from 'lucide-react';
 import type { CarePayload } from '../types/dashboard.types';
 
 export const AtRiskTable: React.FC<{ data: CarePayload['at_risk'] }> = ({ data }) => {
+  const navigate = useNavigate();
+
   if (!data.length) {
     return (
       <div className="py-8 text-center text-sm text-text-muted">
@@ -28,10 +31,15 @@ export const AtRiskTable: React.FC<{ data: CarePayload['at_risk'] }> = ({ data }
           {data.map((r) => (
             <tr key={r.enrollment_id} className="hover:bg-red-50/40">
               <td className="py-2.5 px-3 font-medium text-text-primary">
-                <span className="inline-flex items-center gap-1.5">
-                  <AlertTriangle className="w-4 h-4 text-red-500" />
-                  {r.student_name}
-                </span>
+                <button
+                  type="button"
+                  onClick={() => navigate(`/care?tab=logs&enrollment_id=${r.enrollment_id}`)}
+                  className="inline-flex items-center gap-1.5 text-left font-semibold text-text-primary hover:text-primary hover:underline cursor-pointer"
+                  title={`Xem nhật ký chăm sóc (Ghi danh #${r.enrollment_id})`}
+                >
+                  <AlertTriangle className="w-4 h-4 text-red-500 shrink-0" />
+                  <span>{r.student_name}</span>
+                </button>
               </td>
               <td className="py-2.5 px-3 text-text-secondary">
                 {r.after_session_number ? `Buổi ${r.after_session_number}` : '—'}

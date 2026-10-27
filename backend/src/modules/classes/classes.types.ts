@@ -22,7 +22,18 @@ export interface UpdateClassDTO {
 export interface AssignTeacherDTO {
   teacher_id: number;
   role: 'MAIN' | 'ASSISTANT' | 'SUBSTITUTE';
-  start_date?: string | Date;
-  end_date?: string | Date;
+  start_date?: string | Date | null;
+  end_date?: string | Date | null;
+  active?: boolean;
+}
+
+/**
+ * D8 owner ruling (2026-10-26): Admin "Kết thúc phân công" requires an
+ * EXPLICIT end_date — never defaulted to today. Optional here so the service
+ * validator produces the termination-specific 422 messages instead of a
+ * generic 400 Zod error.
+ */
+export interface EndTeacherAssignmentDTO {
+  end_date?: string | Date | null;
 }
 

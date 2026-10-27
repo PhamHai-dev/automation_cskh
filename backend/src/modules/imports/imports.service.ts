@@ -1,13 +1,15 @@
 import fs from 'fs';
 import path from 'path';
 import ExcelJS from 'exceljs';
-import { ImportBatchStatus, ImportRowStatus, ImportType, AttendanceStatus, AttendanceSource, EnrollmentStatus, EnrollmentClassStatus, ImportCreateRequestStatus, ClassModelType, Prisma, CareLogOutcome, ReconciliationState } from '@prisma/client';
+import { ImportBatchStatus, ImportRowStatus, ImportType, AttendanceStatus, AttendanceSource, EnrollmentStatus, EnrollmentClassStatus, ImportCreateRequestStatus, Prisma, CareLogOutcome, ReconciliationState } from '@prisma/client';
 import { prisma } from '../../prisma/client';
 import { ImportsRepository } from './imports.repository';
 import { SheetPreviewData, UploadResponse, ValidationReport, ValidationErrorItem, ValidationWarningItem, SaveMappingDTO, ImportBatchSummary, RequestActor, ReconcileItem, ReconcileClassification, LogicalSheet, MonthAttendanceBlock } from './imports.types';
 import { AppError } from '../../middlewares/error.middleware';
 import { normalizeDateOnly, attendanceStatusLabel } from '../attendance/attendance.utils';
 import { runStudentCareGroupAutoSync } from '../zalo/student-care-group.contract';
+import { getStudentCsScope } from '../students/students.repository';
+import { classifyClassModel, deriveModelFallbackWarning } from './model-mapper';
 import { getIo } from '../../shared/realtime/socket-singleton';
 import {
   extractCellValue,
@@ -1054,6 +1056,22 @@ export class ImportsService {
       const enrollment = student?.enrollments[0];
       if (student && student.enrollments.length > 1) errors.push('Có nhiều ghi danh cùng ID + Gói học');
 
+      // Approved policy 2026-10-25: the 1-1 fallback for empty/unrecognized
+      // class_model is kept, but a NEW class about to be created via the
+      // fallback must be visible in preview (never silently turn a group into
+      // 1-1). Existing classes are untouched by this row (model_type is
+      // creation-only — see createClassIfNotExist / class.findFirst paths).
+      const previewClassName = String(three?.values.class_name || one?.values.class_name || '').trim();
+      if (previewClassName && !isOutOfScope) {
+        const existingCls = await this.repo.findClassByNameOrCode(previewClassName);
+        const modelWarn = deriveModelFallbackWarning(
+          previewClassName,
+          typeof one?.values?.class_model === 'string' ? one.values.class_model : null,
+          Boolean(existingCls),
+        );
+        if (modelWarn) warnings.push(modelWarn);
+      }
+
       const snapshot: Record<string, unknown> = {
         ...(one?.values || {}),
         class_name: three?.values.class_name || one?.values.class_name || '',
@@ -1592,7 +1610,10 @@ export class ImportsService {
                 data: {
                   class_name: className,
                   class_code: className,
-                  model_type: ClassModelType.ONE_TO_ONE,
+                  // E.1: one canonical mapper for all ingestion paths; the
+                  // workbook's class_model hint now decides the model instead
+                  // of always hard-coding 1-1.
+                  model_type: classifyClassModel(typeof snap.class_model === 'string' ? snap.class_model : null),
                   attendance_source: 'LEARNING_SYSTEM',
                 },
               });
@@ -1910,7 +1931,7 @@ export class ImportsService {
 
           // 5. Class & EnrollmentClass
           const className = getColVal('class_name') || getColVal('class_code') || `Lớp ${student.full_name}`;
-          const cls = await this.repo.createClassIfNotExist(className, getColVal('level') || undefined);
+          const cls = await this.repo.createClassIfNotExist(className, getColVal('level') || undefined, classifyClassModel(getColVal('class_model')));
 
           await this.repo.createEnrollmentClass({
             enrollment_id: enrollment.id,
@@ -2280,8 +2301,25 @@ export class ImportsService {
 
   // Export current students & enrollments
   async exportStudents(actor?: RequestActor): Promise<ExcelJS.Buffer> {
-    const isCS = actor?.roles.includes('CS') && !actor?.roles.includes('ADMIN') && !actor?.roles.includes('MANAGE');
-    const students = await this.repo.getAllStudentsWithEnrollments(isCS && actor ? { cs_id: actor.id } : undefined);
+    // Data scope mirrors the established student module scope:
+    // ADMIN unrestricted; MANAGE assigned CS group + self; CS own enrollments;
+    // TEACHER students in classes they are currently assigned to.
+    let filter: { cs_ids?: number[]; classIds?: number[] } | undefined;
+    if (actor) {
+      const roles = actor.roles;
+      if (roles.includes('ADMIN')) {
+        filter = undefined;
+      } else if (roles.includes('MANAGE')) {
+        filter = { cs_ids: (await getStudentCsScope(actor)) ?? undefined };
+      } else if (roles.includes('CS')) {
+        filter = { cs_ids: [actor.id] };
+      } else if (roles.includes('TEACHER')) {
+        filter = { classIds: await this.repo.getTeacherAssignedClassIds(actor.id) };
+      } else {
+        throw new AppError(403, 'Bạn không có quyền xuất dữ liệu học viên');
+      }
+    }
+    const students = await this.repo.getAllStudentsWithEnrollments(filter);
     const workbook = new ExcelJS.Workbook();
     const ws = workbook.addWorksheet('Danh sách học viên');
 
@@ -2412,7 +2450,15 @@ export class ImportsService {
     this.ensureReviewer(actor);
     const before = await this.getCreateRequest(id, actor);
     if (before.status !== ImportCreateRequestStatus.PENDING || before.version !== dto.version) throw new AppError(409, 'Yêu cầu đã thay đổi, vui lòng tải lại');
-    const after = await prisma.importCreateRequest.update({ where: { id }, data: { snapshot: dto.snapshot as Prisma.InputJsonValue | undefined, assigned_cs_id: dto.assignedCsId, version: { increment: 1 } } });
+    // CAS: the version+status guard is part of the write predicate, not just the
+    // pre-read above, so two concurrent reviewers on the same version cannot both
+    // apply. A stale claim updates 0 rows and is rejected without an audit write.
+    const claimed = await prisma.importCreateRequest.updateMany({
+      where: { id, status: ImportCreateRequestStatus.PENDING, version: dto.version },
+      data: { snapshot: dto.snapshot as Prisma.InputJsonValue | undefined, assigned_cs_id: dto.assignedCsId, version: { increment: 1 } },
+    });
+    if (claimed.count === 0) throw new AppError(409, 'Yêu cầu đã thay đổi, vui lòng tải lại');
+    const after = await prisma.importCreateRequest.findUnique({ where: { id } });
     await this.repo.createAuditLog({ user_id: actor.id, action: 'IMPORT_REQUEST_UPDATED', entity_type: 'ImportCreateRequest', entity_id: String(id), before_data: before, after_data: after });
     return after;
   }
@@ -2421,7 +2467,12 @@ export class ImportsService {
     this.ensureReviewer(actor);
     const before = await this.getCreateRequest(id, actor);
     if (before.status !== ImportCreateRequestStatus.PENDING || before.version !== dto.version) throw new AppError(409, 'Yêu cầu đã thay đổi, vui lòng tải lại');
-    const after = await prisma.importCreateRequest.update({ where: { id }, data: { status: ImportCreateRequestStatus.REJECTED, review_reason: dto.reason, reviewed_by_id: actor.id, reviewed_at: new Date(), version: { increment: 1 } } });
+    const claimed = await prisma.importCreateRequest.updateMany({
+      where: { id, status: ImportCreateRequestStatus.PENDING, version: dto.version },
+      data: { status: ImportCreateRequestStatus.REJECTED, review_reason: dto.reason, reviewed_by_id: actor.id, reviewed_at: new Date(), version: { increment: 1 } },
+    });
+    if (claimed.count === 0) throw new AppError(409, 'Yêu cầu đã thay đổi, vui lòng tải lại');
+    const after = await prisma.importCreateRequest.findUnique({ where: { id } });
     await this.repo.createAuditLog({ user_id: actor.id, action: 'IMPORT_REQUEST_REJECTED', entity_type: 'ImportCreateRequest', entity_id: String(id), before_data: before, after_data: after });
     return after;
   }
@@ -2458,6 +2509,23 @@ export class ImportsService {
       // Approved transfer of existing enrollment
       const enrollment = existing.enrollments[0];
       const transferResult = await prisma.$transaction(async (tx) => {
+        // CAS claim FIRST: the version+status guard is part of the write
+        // predicate, so only one concurrent reviewer at the same version can
+        // move PENDING -> APPROVED. Claiming before child writes ensures the
+        // loser rejects immediately without touching enrollment/audit rows.
+        const claim = await tx.importCreateRequest.updateMany({
+          where: { id, status: ImportCreateRequestStatus.PENDING, version: dto.version },
+          data: {
+            status: ImportCreateRequestStatus.APPROVED,
+            assigned_cs_id: csId,
+            reviewed_by_id: actor.id,
+            reviewed_at: new Date(),
+            version: { increment: 1 },
+          },
+        });
+        if (claim.count === 0) throw new AppError(409, 'Yêu cầu đã thay đổi, vui lòng tải lại');
+        const request = await tx.importCreateRequest.findUnique({ where: { id } });
+
         const updateData: any = {
           cs_id: csId,
           external_synced_at: new Date(),
@@ -2469,17 +2537,6 @@ export class ImportsService {
         const updatedEnrollment = await tx.enrollment.update({
           where: { id: enrollment.id },
           data: updateData,
-        });
-
-        const request = await tx.importCreateRequest.update({
-          where: { id },
-          data: {
-            status: ImportCreateRequestStatus.APPROVED,
-            assigned_cs_id: csId,
-            reviewed_by_id: actor.id,
-            reviewed_at: new Date(),
-            version: { increment: 1 },
-          },
         });
 
         await tx.auditLog.create({
@@ -2506,21 +2563,61 @@ export class ImportsService {
     }
 
     const createResult = await prisma.$transaction(async (tx) => {
+      // CAS claim FIRST inside the transaction — before materializing Student,
+      // Enrollment, Class, EnrollmentClass, Attendance, or AuditLog. Under
+      // MySQL InnoDB row locking on import_create_requests(id), a second
+      // concurrent reviewer on the same request blocks here until the winner
+      // commits, then sees count === 0 and throws 409 without ever reaching
+      // tx.student.create (which previously surfaced P2002 / 500).
+      const claim = await tx.importCreateRequest.updateMany({
+        where: { id, status: ImportCreateRequestStatus.PENDING, version: dto.version },
+        data: {
+          status: ImportCreateRequestStatus.APPROVED,
+          assigned_cs_id: csId,
+          reviewed_by_id: actor.id,
+          reviewed_at: new Date(),
+          version: { increment: 1 },
+        },
+      });
+      if (claim.count === 0) throw new AppError(409, 'Yêu cầu đã thay đổi, vui lòng tải lại');
+      const request = await tx.importCreateRequest.findUnique({ where: { id } });
+
       let studentId = existing?.id;
       let student = existing as any;
       if (!studentId) {
-        const created = await tx.student.create({
-          data: {
-            external_id: before.external_id,
-            full_name: snapshot.full_name || before.external_id,
-            phone: snapshot.phone || null,
-            email: snapshot.email || null,
-            gender: snapshot.gender || null,
-            occupation: snapshot.occupation || null,
-          },
-        });
-        studentId = created.id;
-        student = created;
+        try {
+          const created = await tx.student.create({
+            data: {
+              external_id: before.external_id,
+              full_name: snapshot.full_name || before.external_id,
+              phone: snapshot.phone || null,
+              email: snapshot.email || null,
+              gender: snapshot.gender || null,
+              occupation: snapshot.occupation || null,
+            },
+          });
+          studentId = created.id;
+          student = created;
+        } catch (err: any) {
+          // Cross-request race that cannot be front-ordered by single-row CAS:
+          // two DISTINCT import_create_requests for the same new external_id
+          // both pass the pre-read `existing` check and each wins its own row's
+          // CAS claim, then race on `students.students_external_id_key`
+          // (`Student.external_id @unique`). Map ONLY that specific constraint
+          // to 409 so the transaction rolls back cleanly (including the CAS
+          // claim above) and the operator reloads; all other P2002 violations
+          // rethrow as 500 so genuine data/schema bugs remain visible.
+          const target = err?.meta?.target;
+          const isStudentExternalIdUnique =
+            err?.code === 'P2002' &&
+            (typeof target === 'string'
+              ? target.includes('external_id')
+              : Array.isArray(target) && target.includes('external_id'));
+          if (isStudentExternalIdUnique) {
+            throw new AppError(409, 'Học viên với mã này vừa được tạo bởi yêu cầu khác, vui lòng tải lại');
+          }
+          throw err;
+        }
       }
 
       const enrollment = await tx.enrollment.create({
@@ -2545,12 +2642,11 @@ export class ImportsService {
       let enrollmentClass = null;
       if (snapshot.class_name) {
         let cls = await tx.class.findFirst({ where: { OR: [{ class_name: snapshot.class_name }, { class_code: snapshot.class_name }] } });
-        if (!cls) cls = await tx.class.create({ data: { class_name: snapshot.class_name, class_code: snapshot.class_name, level: snapshot.level || null, model_type: ClassModelType.ONE_TO_ONE, attendance_source: 'LEARNING_SYSTEM' } });
+        if (!cls) cls = await tx.class.create({ data: { class_name: snapshot.class_name, class_code: snapshot.class_name, level: snapshot.level || null, model_type: classifyClassModel(typeof snapshot.class_model === 'string' ? snapshot.class_model : null), attendance_source: 'LEARNING_SYSTEM' } });
         enrollmentClass = await tx.enrollmentClass.create({ data: { enrollment_id: enrollment.id, class_id: cls.id, sequence_no: 1, start_date: this.parseExcelDate(snapshot.start_date), end_date: this.parseExcelDate(snapshot.end_date), status: EnrollmentClassStatus.ACTIVE } });
         await this.applyAttendance(tx, enrollmentClass.id, cls.id, snapshot.attendance || [], actor.id);
       }
 
-      const request = await tx.importCreateRequest.update({ where: { id }, data: { status: ImportCreateRequestStatus.APPROVED, assigned_cs_id: csId, reviewed_by_id: actor.id, reviewed_at: new Date(), version: { increment: 1 } } });
       await tx.auditLog.create({ data: { user_id: actor.id, action: 'IMPORT_REQUEST_APPROVED', entity_type: 'ImportCreateRequest', entity_id: String(id), before_data: before as any, after_data: request as any } });
       return { student, enrollment, enrollmentClass, request };
     });

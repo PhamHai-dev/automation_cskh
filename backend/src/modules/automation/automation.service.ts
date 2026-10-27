@@ -96,6 +96,23 @@ export class AutomationService {
     if (!['ADMIN', 'MANAGE'].includes(role) && step.workflow.owner_cs_id !== ownerCsId) {
       throw Object.assign(new Error('Forbidden'), { status: 403 });
     }
+
+    const changesSessionNumber =
+      dto.session_number !== undefined && dto.session_number !== step.session_number;
+    const changesTriggerEvent =
+      dto.trigger_event !== undefined && dto.trigger_event !== step.trigger_event;
+    if (changesSessionNumber || changesTriggerEvent) {
+      const deliveryCount = await automationRepository.countDeliveriesForStep(stepId);
+      if (deliveryCount > 0) {
+        throw Object.assign(
+          new Error(
+            'Bước đã có lịch sử gửi — không thể thay đổi mốc (session_number) hoặc trigger_event. Hãy tạo bước mới nếu cần mốc khác.',
+          ),
+          { status: 409 },
+        );
+      }
+    }
+
     const effectiveChannel = dto.channel ?? step.channel;
     const effectiveTargetGroupId = dto.target_group_id !== undefined ? dto.target_group_id : step.target_group_id;
     if ((effectiveChannel === 'ZALO_GROUP' || effectiveChannel === 'LINE_GROUP') && !effectiveTargetGroupId) {
@@ -104,7 +121,20 @@ export class AutomationService {
         { status: 422 },
       );
     }
-    return automationRepository.updateStep(stepId, dto);
+
+    try {
+      return await automationRepository.updateStep(stepId, dto);
+    } catch (err: any) {
+      if (err?.code === 'P2002') {
+        throw Object.assign(
+          new Error(
+            `Step already exists for session ${dto.session_number ?? step.session_number} + event ${dto.trigger_event ?? step.trigger_event}`,
+          ),
+          { status: 409 },
+        );
+      }
+      throw err;
+    }
   }
 
   async deleteStep(stepId: number, ownerCsId: number, role: string) {
@@ -113,7 +143,26 @@ export class AutomationService {
     if (!['ADMIN', 'MANAGE'].includes(role) && step.workflow.owner_cs_id !== ownerCsId) {
       throw Object.assign(new Error('Forbidden'), { status: 403 });
     }
-    return automationRepository.deleteStep(stepId);
+
+    const deliveryCount = await automationRepository.countDeliveriesForStep(stepId);
+    if (deliveryCount > 0) {
+      throw Object.assign(
+        new Error('Bước đã có bản ghi gửi — không thể xóa. Hãy đặt active=false để ngừng áp dụng.'),
+        { status: 409 },
+      );
+    }
+
+    try {
+      return await automationRepository.deleteStep(stepId);
+    } catch (err: any) {
+      if (err?.code === 'P2003') {
+        throw Object.assign(
+          new Error('Bước đã có bản ghi gửi — không thể xóa. Hãy đặt active=false để ngừng áp dụng.'),
+          { status: 409 },
+        );
+      }
+      throw err;
+    }
   }
 
   // ─── Enrollments ────────────────────────────────────────────────────

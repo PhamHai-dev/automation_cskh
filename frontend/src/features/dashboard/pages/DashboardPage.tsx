@@ -64,7 +64,7 @@ function presetRange(preset: string): { date_from?: string; date_to?: string } {
     const from = new Date(today.getFullYear(), today.getMonth(), 1);
     return { date_from: fmt(from), date_to: fmt(today) };
   }
-  return {}; // all
+  return { date_from: undefined, date_to: undefined }; // all — explicit clear so stale dates don't survive preset merge
 }
 
 const PRESETS: Array<{ key: string; label: string }> = [
@@ -331,17 +331,13 @@ const DashboardPage: React.FC = () => {
             </div>
           </div>
 
-          {canSeeLeaderboard ? (
+          {canSeeLeaderboard && (
             <ChartCard
               title="Bảng xếp hạng CVHT"
               description="So sánh hiệu suất chăm sóc giữa các CS (chỉ ADMIN/MANAGE thấy)"
               onExport={() => downloadCSV('cs-leaderboard', performance.cs_leaderboard as unknown as Record<string, unknown>[])}
             >
               <CSLeaderboard data={performance.cs_leaderboard} />
-            </ChartCard>
-          ) : (
-            <ChartCard title="Bảng xếp hạng CVHT" description="Chức năng chỉ khả dụng cho quản trị viên">
-              <div className="py-8 text-center text-sm text-text-muted">Bạn không có quyền xem bảng xếp hạng so sánh CVHT.</div>
             </ChartCard>
           )}
         </div>

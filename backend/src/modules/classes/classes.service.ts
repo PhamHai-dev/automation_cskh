@@ -1,5 +1,5 @@
 import { ClassesRepository } from './classes.repository';
-import { CreateClassDTO, UpdateClassDTO, AssignTeacherDTO } from './classes.types';
+import { CreateClassDTO, UpdateClassDTO, AssignTeacherDTO, EndTeacherAssignmentDTO } from './classes.types';
 import { prisma } from '../../prisma/client';
 import { ClassModelType, AttendanceSourceType } from '@prisma/client';
 import { AuthUser } from '../../middlewares/auth.middleware';
@@ -157,7 +157,37 @@ export class ClassesService {
     return this.formatClass(updated);
   }
 
+  /**
+   * D8 (owner ruling 2026-10-26): an inactive teacher assignment (`active: false`)
+   * MUST carry an explicit `end_date` (no silent default to today). Also rejects
+   * inverted windows (`end_date < start_date`) whenever both bounds are supplied.
+   */
+  assertValidTeacherAssignmentWindow(data: Pick<AssignTeacherDTO, 'active' | 'start_date' | 'end_date'>) {
+    const rawEnd = typeof data.end_date === 'string' ? data.end_date.trim() : data.end_date;
+    const rawStart = typeof data.start_date === 'string' ? data.start_date.trim() : data.start_date;
+
+    if (data.active === false) {
+      if (!rawEnd) {
+        throw new CustomError('Vui lòng nhập ngày kết thúc phân công khi cho GV ngừng phụ trách lớp', 422);
+      }
+      const parsedEnd = new Date(rawEnd);
+      if (Number.isNaN(parsedEnd.getTime())) {
+        throw new CustomError('Vui lòng nhập ngày kết thúc phân công khi cho GV ngừng phụ trách lớp', 422);
+      }
+    }
+
+    if (rawStart && rawEnd) {
+      const parsedStart = new Date(rawStart);
+      const parsedEnd = new Date(rawEnd);
+      if (!Number.isNaN(parsedStart.getTime()) && !Number.isNaN(parsedEnd.getTime()) && parsedEnd < parsedStart) {
+        throw new CustomError('Ngày kết thúc phân công phải lớn hơn hoặc bằng ngày bắt đầu', 422);
+      }
+    }
+  }
+
   async assignTeacher(classId: number, data: AssignTeacherDTO) {
+    this.assertValidTeacherAssignmentWindow(data);
+
     const existing = await this.repository.findById(classId);
     if (!existing) throw new CustomError('Class not found', 404);
 
@@ -180,5 +210,69 @@ export class ClassesService {
       ...data,
       teacher_id: teacherRecord.id,
     });
+  }
+
+  /**
+   * D8 (owner ruling 2026-10-26): Admin "Kết thúc phân công" terminates an
+   * existing ClassTeacher assignment in place (`active: false, end_date`),
+   * preserving `start_date`/`role`/`teacher_id` history (never hard-deleting)
+   * and recording an AuditLog (`CLASS_TEACHER_ASSIGNMENT_ENDED`). Requires an
+   * explicit `end_date` >= `start_date`; never auto-fills today.
+   */
+  async endTeacherAssignment(
+    classId: number,
+    assignmentId: number,
+    data: EndTeacherAssignmentDTO,
+    actor?: Pick<AuthUser, 'id' | 'roles'>,
+  ) {
+    if (actor && !actor.roles.includes('ADMIN')) {
+      throw new CustomError('Chỉ Admin mới có quyền kết thúc phân công giáo viên', 403);
+    }
+
+    // Fail fast on missing/blank/invalid end_date (422, never defaulted to today).
+    this.assertValidTeacherAssignmentWindow({ active: false, end_date: data?.end_date });
+
+    const existingClass = await this.repository.findById(classId);
+    if (!existingClass) throw new CustomError('Class not found', 404);
+
+    const existingAssignment = await this.repository.findTeacherAssignment(classId, assignmentId);
+    if (!existingAssignment) throw new CustomError('Teacher assignment not found on this class', 404);
+
+    this.assertValidTeacherAssignmentWindow({
+      active: false,
+      start_date: existingAssignment.start_date,
+      end_date: data.end_date,
+    });
+
+    const rawEnd = typeof data.end_date === 'string' ? data.end_date.trim() : data.end_date!;
+    const parsedEndDate = rawEnd instanceof Date ? rawEnd : new Date(rawEnd);
+
+    const oldValues = {
+      active: existingAssignment.active,
+      start_date: existingAssignment.start_date,
+      end_date: existingAssignment.end_date,
+    };
+    const newValues = {
+      active: false,
+      start_date: existingAssignment.start_date,
+      end_date: parsedEndDate,
+    };
+
+    const updated = await this.repository.endTeacherAssignment(existingAssignment.id, parsedEndDate);
+
+    if (actor?.id) {
+      await prisma.auditLog.create({
+        data: {
+          user_id: actor.id,
+          action: 'CLASS_TEACHER_ASSIGNMENT_ENDED',
+          entity_type: 'class_teacher',
+          entity_id: String(existingAssignment.id),
+          before_data: oldValues as any,
+          after_data: newValues as any,
+        },
+      });
+    }
+
+    return updated;
   }
 }

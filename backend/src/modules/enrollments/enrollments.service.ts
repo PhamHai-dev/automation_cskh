@@ -50,8 +50,9 @@ export class EnrollmentsService {
 
       return this.repository.findAllByCSIds(allowedIds, filters?.programType);
     } else {
-      // CS
-      return this.repository.findAllByCS(userId, saleIdentifier, filters?.programType);
+      // CS — B.5/D9: cs_id only; the sale identifier is never a scope grant for CS.
+      // (ADMIN may still use ?sale= to narrow its own unrestricted view.)
+      return this.repository.findAllByCS(userId, filters?.programType);
     }
   }
 

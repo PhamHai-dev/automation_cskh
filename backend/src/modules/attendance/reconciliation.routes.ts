@@ -85,10 +85,12 @@ router.get(
   reconciliationController.getHistory
 );
 
-// Resolve a conflict
+// Resolve a conflict — ADMIN only (D2 owner-confirmed authority).
+// MANAGE keeps group-management scope but NOT resolution authority;
+// CS must not self-resolve its own opinion conflict.
 router.post(
   '/:id/resolve-conflict',
-  requireRoles(['ADMIN', 'MANAGE', 'CS']),
+  requireRoles(['ADMIN']),
   reconciliationController.resolveConflict
 );
 

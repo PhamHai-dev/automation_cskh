@@ -56,6 +56,7 @@ export const createStudentSchema = z.object({
 
 export const updateStudentSchema = z.object({
   body: z.object({
+    enrollment_id: z.number().int().positive(),
     // Student fields
     external_id: z.string().optional(),
     full_name: z.string().min(1).optional(),

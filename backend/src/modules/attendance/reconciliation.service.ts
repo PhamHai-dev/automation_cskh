@@ -1,6 +1,8 @@
 import { prisma } from '../../prisma/client';
 import { AttendanceStatus, ReconciliationState, AttendanceSource, Prisma } from '@prisma/client';
 import ExcelJS from 'exceljs';
+import { runAttendancePostCommit } from './attendance-lifecycle';
+import { findEffectiveAssignment, isTeacherAssignmentEffectiveInRange } from './teacher-assignment';
 import { handleAttendanceEvent, cancelPendingDeliveries } from '../automation/automation-trigger.service';
 import { createLogger } from '../../shared/logger/logger';
 import { AppError } from '../../middlewares/error.middleware';
@@ -56,24 +58,83 @@ export class ReconciliationService {
     return actor.roles.includes('ADMIN') || actor.roles.includes('MANAGE');
   }
 
+  /**
+   * OWNER RULING 2026-10-26: assist-mark ("điểm danh hộ giáo viên") is a
+   * dedicated authority SEPARATE from the general privileged/read scope —
+   * ADMIN only. MANAGE keeps group-scoped CVHT writes (cs-mark / bulk-approve)
+   * and must record its teacher-side opinion as CVHT notes in the group
+   * instead. isPrivileged() (ADMIN||MANAGE) stays for read-scope sites; the
+   * assist branch below must never widen back to it. This is distinct from the
+   * D2 resolve-conflict adjudication authority (assertAdminResolver).
+   */
+  private isAssistMarkPrivileged(actor: Actor) {
+    return actor.roles.includes('ADMIN');
+  }
+
+  private assertAssistMarkAuthority(actor: Actor) {
+    if (!this.isAssistMarkPrivileged(actor)) {
+      throw new AppError(
+        403,
+        'Chỉ Admin mới được điểm danh hộ giáo viên; MANAGE vui lòng ghi ý kiến CVHT trong nhóm phụ trách'
+      );
+    }
+  }
+
   private deriveState(teacherStatus: AttendanceStatus | null, csStatus: AttendanceStatus | null) {
     if (!teacherStatus) return ReconciliationState.PENDING_TEACHER;
     if (!csStatus) return ReconciliationState.PENDING_CS;
     return teacherStatus === csStatus ? ReconciliationState.MATCHED : ReconciliationState.CONFLICT;
   }
 
-  private async assertTeacherScope(actor: Actor, classId: number) {
+  private async assertTeacherScope(actor: Actor, classId: number, sessionDate: Date) {
     if (this.isPrivileged(actor)) return;
     if (!actor.roles.includes('TEACHER')) throw new AppError(403, 'Vai trò không được phép điểm danh phía giáo viên');
-    const assignment = await prisma.classTeacher.findFirst({
-      where: { class_id: classId, active: true, teacher: { user_id: actor.id, active: true } },
-      select: { id: true },
+    // D8 (owner verdict 2026-10-26): fetch ALL of this teacher's assignment
+    // rows for the class (any current active state) and let the helper decide.
+    // `active` records today's state, not history; a now-inactive row whose
+    // window contained the session date still authorizes the mark (acceptance
+    // case #14). Ambiguity rule (active=false with no window data) is pinned
+    // in teacher-assignment.ts.
+    const candidates = await prisma.classTeacher.findMany({
+      where: { class_id: classId, teacher: { user_id: actor.id } },
+      select: { active: true, start_date: true, end_date: true },
     });
-    if (!assignment) throw new AppError(403, 'Bạn không được phân công active cho lớp này');
+    const effective = findEffectiveAssignment(candidates, sessionDate);
+    if (!effective) throw new AppError(403, 'Bạn không được phân công cho lớp này tại ngày dạy của buổi học');
   }
 
-  private assertCSScope(actor: Actor, assignedCSId: number) {
-    if (this.isPrivileged(actor)) return;
+  /**
+   * MANAGE write scope: self + user_ids of every CS group assigned to the
+   * actor (prisma.manageAssignment -> cs_group.members). Same idiom as
+   * care.service.getAccessibleCSIds and students.repository.getStudentCsScope
+   * (POLICY owner 2026-10-25: "MANAGE vẫn là CVHT có phạm vi quản lý nhóm").
+   */
+  private async resolveManageScope(actor: Actor): Promise<number[]> {
+    const assignments = await prisma.manageAssignment.findMany({
+      where: { manage_user_id: actor.id },
+      include: { cs_group: { include: { members: true } } },
+    });
+    return Array.from(
+      new Set([
+        actor.id,
+        ...assignments.flatMap((a) => a.cs_group.members.map((m) => m.user_id)),
+      ])
+    );
+  }
+
+  private async assertCSScope(actor: Actor, assignedCSId: number) {
+    // ADMIN keeps the unrestricted bypass.
+    if (actor.roles.includes('ADMIN')) return;
+    // MANAGE acts on CS opinions only within its assigned CS groups + self;
+    // no longer an ADMIN-equivalent short-circuit via isPrivileged().
+    if (actor.roles.includes('MANAGE')) {
+      const scope = await this.resolveManageScope(actor);
+      if (!scope.includes(assignedCSId)) {
+        throw new AppError(403, 'Bạn không phụ trách học viên này');
+      }
+      return;
+    }
+    // Plain CS: own-enrollment-only, unchanged.
     if (!actor.roles.includes('CS') || assignedCSId !== actor.id) {
       throw new AppError(403, 'Bạn không phụ trách học viên này');
     }
@@ -190,43 +251,50 @@ export class ReconciliationService {
   }
 
   private async runDownstream(attendanceId: number, state: ReconciliationState) {
-    try {
-      if (state === ReconciliationState.MATCHED || state === ReconciliationState.RESOLVED) {
-        await handleAttendanceEvent(attendanceId);
-      } else if (state === ReconciliationState.CONFLICT) {
-        await cancelPendingDeliveries(attendanceId);
-      }
-    } catch (err: any) {
-      log.error('Attendance downstream action failed', { attendanceId, state, error: err.message });
-    }
+    await runAttendancePostCommit({ attendanceId, reconciliationState: state });
   }
 
   async markByTeacher(attendanceId: number, data: TeacherMarkDTO, actor: Actor) {
     const existing = await prisma.attendance.findUnique({
       where: { id: attendanceId },
       include: {
-        class_session: { select: { class_id: true } },
+        class_session: { select: { class_id: true, status: true, session_date: true } },
         enrollment_class: { include: { enrollment: true } },
       },
     });
     if (!existing) throw new AppError(404, 'Không tìm thấy bản ghi điểm danh');
+    if (existing.class_session?.status === 'CANCELLED') throw new AppError(409, 'Không thể điểm danh cho buổi học đã hủy');
 
-    if (this.isPrivileged(actor)) {
+    if (this.isAssistMarkPrivileged(actor)) {
+      // Assist-mark enforces TWO independent conditions (owner 2026-10-26):
+      //   1. Operator assist authority: ADMIN ONLY (`isAssistMarkPrivileged`).
+      //      MANAGE assist-mark was revoked by the owner ruling 2026-10-26 —
+      //      MANAGE ghi ý kiến CVHT trong nhóm phụ trách instead (see below).
+      //   2. Target teacher (`data.teacherId`, with a usable `teacher.active = true`
+      //      account) was validly assigned to the class AT THE SESSION DATE per D8
+      //      (`findEffectiveAssignment` over all classTeacher rows without filtering
+      //      on current `active`; inactive rows missing `end_date` are rejected).
       if (!data.teacherId) throw new AppError(400, 'Vui lòng chọn giáo viên được hỗ trợ');
-      const assignment = await prisma.classTeacher.findFirst({
+      const candidates = await prisma.classTeacher.findMany({
         where: {
           class_id: existing.class_session.class_id,
-          active: true,
           teacher: { active: true, user_id: data.teacherId },
         },
-        select: { id: true },
+        select: { active: true, start_date: true, end_date: true },
       });
-      if (!assignment) throw new AppError(403, 'Giáo viên được chọn không phụ trách lớp này');
+      const effective = findEffectiveAssignment(candidates, existing.class_session.session_date);
+      if (!effective) throw new AppError(403, 'Giáo viên được chọn không phụ trách lớp này tại ngày dạy của buổi học');
+    } else if (this.isPrivileged(actor)) {
+      // MANAGE reaches the teacher-side channel but has no assist authority
+      // (owner ruling 2026-10-26): reject as 403 — previously this path either
+      // performed the assist (teacherId set, D8-valid) or failed with a 400
+      // prompting MANAGE to pick a teacher, which it can no longer do.
+      this.assertAssistMarkAuthority(actor);
     } else {
       if (data.teacherId && data.teacherId !== actor.id) {
         throw new AppError(403, 'Bạn không được điểm danh thay giáo viên khác');
       }
-      await this.assertTeacherScope(actor, existing.class_session.class_id);
+      await this.assertTeacherScope(actor, existing.class_session.class_id, existing.class_session.session_date);
     }
 
     const state = this.deriveState(data.status, existing.cs_status);
@@ -267,10 +335,14 @@ export class ReconciliationService {
   async markByCS(attendanceId: number, data: CSMarkDTO, actor: Actor) {
     const existing = await prisma.attendance.findUnique({
       where: { id: attendanceId },
-      include: { enrollment_class: { include: { enrollment: true } } },
+      include: {
+        class_session: { select: { status: true } },
+        enrollment_class: { include: { enrollment: true } },
+      },
     });
     if (!existing) throw new AppError(404, 'Không tìm thấy bản ghi điểm danh');
-    this.assertCSScope(actor, existing.enrollment_class.enrollment.cs_id);
+    if (existing.class_session?.status === 'CANCELLED') throw new AppError(409, 'Không thể điểm danh cho buổi học đã hủy');
+    await this.assertCSScope(actor, existing.enrollment_class.enrollment.cs_id);
 
     const state = this.deriveState(existing.teacher_status, data.status);
     const updateData: Prisma.AttendanceUpdateInput = {
@@ -302,7 +374,20 @@ export class ReconciliationService {
     return updated;
   }
 
+  /**
+   * D2 (owner-confirmed): conflict resolution authority belongs to ADMIN only.
+   * MANAGE keeps group-management scope but NOT Admin-equivalent resolution
+   * authority, and CS must not self-resolve its own opinion conflict. This is
+   * enforced again here in addition to the route's requireRoles(['ADMIN']).
+   */
+  private assertAdminResolver(actor: Actor) {
+    if (!actor.roles.includes('ADMIN')) {
+      throw new AppError(403, 'Chỉ ADMIN được phân xử xung đột điểm danh');
+    }
+  }
+
   async resolveConflict(attendanceId: number, data: ResolveConflictDTO, actor: Actor) {
+    this.assertAdminResolver(actor);
     const existing = await prisma.attendance.findUnique({
       where: { id: attendanceId },
       include: { enrollment_class: { include: { enrollment: true } } },
@@ -311,7 +396,6 @@ export class ReconciliationService {
     if (existing.reconciliation_state !== ReconciliationState.CONFLICT) {
       throw new AppError(409, 'Chỉ có thể phân xử bản ghi đang xung đột');
     }
-    this.assertCSScope(actor, existing.enrollment_class.enrollment.cs_id);
 
     const updated = await prisma.$transaction(async (tx) => {
       const result = await tx.attendance.update({ where: { id: attendanceId }, data: {
@@ -331,8 +415,11 @@ export class ReconciliationService {
       } });
       return result;
     });
+    // Preserve the existing resolve-conflict semantics: invalidation of queued
+    // deliveries here is not swallowed (a cancellation failure must still fail
+    // the request), while the FINAL trigger is best-effort.
     await cancelPendingDeliveries(updated.id);
-    await this.runDownstream(updated.id, ReconciliationState.RESOLVED);
+    await runAttendancePostCommit({ attendanceId: updated.id, reconciliationState: ReconciliationState.RESOLVED });
     return updated;
   }
 
@@ -345,7 +432,7 @@ export class ReconciliationService {
       throw new AppError(404, 'Có bản ghi điểm danh không tồn tại');
     }
     for (const attendance of attendances) {
-      this.assertCSScope(actor, attendance.enrollment_class.enrollment.cs_id);
+      await this.assertCSScope(actor, attendance.enrollment_class.enrollment.cs_id);
       if (attendance.reconciliation_state !== ReconciliationState.PENDING_CS || !attendance.teacher_status) {
         throw new AppError(409, `Điểm danh ${attendance.id} không ở trạng thái chờ CSKH`);
       }
@@ -719,6 +806,7 @@ export class ReconciliationService {
       where: { id: { in: attendanceIds } },
       select: {
         id: true,
+        lesson_topic: true,
         enrollment_class: { select: { enrollment: { select: { student: { select: { id: true, full_name: true, external_id: true } } } } } },
         class_session: { select: {
           id: true, session_number: true, session_date: true, start_time: true, end_time: true,
@@ -736,6 +824,7 @@ export class ReconciliationService {
         attendance_id: Number(entry.entity_id),
         from_status: before.teacher_status as AttendanceStatus,
         to_status: after.teacher_status as AttendanceStatus,
+        lesson_topic: after.lesson_topic ?? attendance?.lesson_topic ?? null,
         note: after.teacher_note ?? null,
         performed_by: entry.user?.name || entry.user?.email || 'N/A',
         created_at: entry.created_at,
@@ -879,7 +968,7 @@ export class ReconciliationService {
             errors.push({ row: r, error: 'Không tìm thấy buổi học khớp lớp, ngày và giờ' });
             continue;
           }
-          await this.assertTeacherScope(actor, ec.class_id);
+          await this.assertTeacherScope(actor, ec.class_id, session.session_date);
 
           // Check existing attendance for reconciliation
           const existingAtt = await prisma.attendance.findUnique({
@@ -992,21 +1081,36 @@ export class ReconciliationService {
       throw new AppError(404, 'Không tìm thấy hồ sơ giáo viên đang hoạt động');
     }
 
+    // D8 (owner verdict 2026-10-26): do NOT pre-filter active:true at the DB
+    // query — fetch all of the teacher's assignment rows (selecting active,
+    // start_date, end_date) and let the helper decide which classes/sessions
+    // fall inside an effective window.
     const classTeachers = await prisma.classTeacher.findMany({
-      where: { teacher_id: teacherId, active: true },
-      select: { class_id: true },
+      where: { teacher_id: teacherId },
+      select: { class_id: true, active: true, start_date: true, end_date: true },
     });
-    const classIds = classTeachers.map((ct) => ct.class_id);
+
+    const rangeStart = query.startDate ? new Date(`${query.startDate}T00:00:00.000Z`) : null;
+    const rangeEnd = query.endDate ? new Date(`${query.endDate}T00:00:00.000Z`) : null;
+
+    const byClass = new Map<number, typeof classTeachers>();
+    for (const ct of classTeachers) {
+      if (!isTeacherAssignmentEffectiveInRange(ct, rangeStart, rangeEnd)) continue;
+      const list = byClass.get(ct.class_id) ?? [];
+      list.push(ct);
+      byClass.set(ct.class_id, list);
+    }
+    const classIds = Array.from(byClass.keys());
     if (classIds.length === 0) return [];
 
     const dateFilter: Prisma.DateTimeFilter = {};
-    if (query.startDate) dateFilter.gte = new Date(`${query.startDate}T00:00:00.000Z`);
-    if (query.endDate) dateFilter.lte = new Date(`${query.endDate}T00:00:00.000Z`);
+    if (rangeStart) dateFilter.gte = rangeStart;
+    if (rangeEnd) dateFilter.lte = rangeEnd;
 
-    return prisma.classSession.findMany({
+    const sessions = await prisma.classSession.findMany({
       where: {
         class_id: { in: classIds },
-        ...(query.startDate || query.endDate ? { session_date: dateFilter } : {}),
+        ...(rangeStart || rangeEnd ? { session_date: dateFilter } : {}),
       },
       orderBy: [{ session_date: 'desc' }, { start_time: 'asc' }],
       include: {
@@ -1028,6 +1132,10 @@ export class ReconciliationService {
         },
       },
     });
+
+    return sessions.filter((s) =>
+      findEffectiveAssignment(byClass.get(s.class_id) ?? [], s.session_date) !== null
+    );
   }
 }
 

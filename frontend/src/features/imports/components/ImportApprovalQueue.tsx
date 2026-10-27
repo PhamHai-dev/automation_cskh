@@ -16,8 +16,18 @@ export const ImportApprovalQueue: React.FC = () => {
   const [busy, setBusy] = useState(false);
   const load = async () => { try { setBusy(true); const data = await importsApi.listCreateRequests('PENDING'); setItems(data.items); } catch { toast.error('Không thể tải hàng đợi phê duyệt'); } finally { setBusy(false); } };
   useEffect(() => { void load(); }, []);
-  const approve = async () => { if (!selected) return; try { setBusy(true); await importsApi.approveCreateRequest(selected.id, selected.version, selected.assigned_cs?.id); toast.success('Đã duyệt và tạo dữ liệu học viên'); setSelected(null); await load(); } catch (e: any) { toast.error(e.response?.data?.message || 'Không thể phê duyệt'); } finally { setBusy(false); } };
-  const reject = async () => { if (!selected || !reason.trim()) return; try { setBusy(true); await importsApi.rejectCreateRequest(selected.id, selected.version, reason.trim()); toast.success('Đã từ chối yêu cầu'); setSelected(null); setReason(''); await load(); } catch (e: any) { toast.error(e.response?.data?.message || 'Không thể từ chối'); } finally { setBusy(false); } };
+  const handleConflict = async (e: any): Promise<boolean> => {
+    if (e?.response?.status === 409) {
+      toast.error('Yêu cầu đã thay đổi, vui lòng tải lại');
+      setSelected(null);
+      setReason('');
+      await load();
+      return true;
+    }
+    return false;
+  };
+  const approve = async () => { if (!selected) return; try { setBusy(true); await importsApi.approveCreateRequest(selected.id, selected.version, selected.assigned_cs?.id); toast.success('Đã duyệt và tạo dữ liệu học viên'); setSelected(null); await load(); } catch (e: any) { if (!(await handleConflict(e))) toast.error(e.response?.data?.message || 'Không thể phê duyệt'); } finally { setBusy(false); } };
+  const reject = async () => { if (!selected || !reason.trim()) return; try { setBusy(true); await importsApi.rejectCreateRequest(selected.id, selected.version, reason.trim()); toast.success('Đã từ chối yêu cầu'); setSelected(null); setReason(''); await load(); } catch (e: any) { if (!(await handleConflict(e))) toast.error(e.response?.data?.message || 'Không thể từ chối'); } finally { setBusy(false); } };
   return (
     <>
       <Card className="overflow-hidden">

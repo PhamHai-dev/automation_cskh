@@ -188,6 +188,31 @@ describe('Two-Party Attendance Reconciliation Integration Tests', () => {
   });
 
   afterAll(async () => {
+    // Teardown must delete CHILD rows before the fixture users: audit_logs,
+    // class_sessions (created_by), attendances (created_by/teacher/cs/resolved
+    // user edges) and enrollments (cs_id) reference users with RESTRICT, so a
+    // users-first delete fails FK (the legacy failure). All scopes here are
+    // strictly the rows this suite created (fixture user ids / ec / class /
+    // enrollment ids). cs_sheet_backup_configs is CASCADE but cleaned
+    // explicitly for determinism.
+    const fixtureUserIds = [
+      adminId,
+      csUser.id,
+      otherCsUser.id,
+      teacherUser.id,
+    ];
+    const attendanceIds = (
+      await prisma.attendance.findMany({
+        where: { enrollment_class_id: ec.id },
+        select: { id: true },
+      })
+    ).map((a) => a.id);
+    if (attendanceIds.length > 0) {
+      // MessageDelivery -> Attendance is RESTRICT; deliveries reference attendances.
+      await prisma.messageDelivery.deleteMany({
+        where: { attendance_id: { in: attendanceIds } },
+      });
+    }
     await prisma.attendance.deleteMany({
       where: { enrollment_class_id: ec.id },
     });
@@ -198,6 +223,12 @@ describe('Two-Party Attendance Reconciliation Integration Tests', () => {
       where: { class_id: testClass.id },
     });
     await prisma.enrollmentClass.deleteMany({
+      where: { enrollment_id: enrollment.id },
+    });
+    await prisma.careLog.deleteMany({
+      where: { enrollment_id: enrollment.id },
+    });
+    await prisma.careTask.deleteMany({
       where: { enrollment_id: enrollment.id },
     });
     await prisma.enrollment.deleteMany({
@@ -214,6 +245,17 @@ describe('Two-Party Attendance Reconciliation Integration Tests', () => {
     });
     await prisma.teacher.deleteMany({
       where: { user_id: teacherUser.id },
+    });
+    // Users' RESTRICT children last-before-users: audit rows are created by
+    // every teacher-mark / cs-mark / resolve / bulk-approve the API performed.
+    await prisma.authSession.deleteMany({
+      where: { user_id: { in: fixtureUserIds } },
+    });
+    await prisma.csSheetBackupConfig.deleteMany({
+      where: { cs_user_id: { in: fixtureUserIds } },
+    });
+    await prisma.auditLog.deleteMany({
+      where: { user_id: { in: fixtureUserIds } },
     });
     await prisma.user.deleteMany({
       where: {
@@ -309,10 +351,22 @@ describe('Two-Party Attendance Reconciliation Integration Tests', () => {
       });
     expect(unauthResolveRes.status).toBe(403);
 
-    // 5. Assigned CS resolves with mandatory note -> 200 OK, RESOLVED
-    const validResolveRes = await request(app)
+    // 5. Even the ASSIGNED CS cannot resolve: D2 (owner-confirmed, commit
+    // ad86eb2) makes resolve-conflict ADMIN-only — CS must not self-resolve its
+    // own opinion. 403 at requireRoles + assertAdminResolver in the service.
+    const csResolveRes = await request(app)
       .post(`/api/v1/attendance-reconciliation/${attendance2.id}/resolve-conflict`)
       .set('Authorization', `Bearer ${csToken}`)
+      .send({
+        finalStatus: AttendanceStatus.ABSENT_APPROVED_A,
+        resolutionNote: 'CS tự phân xử không còn được phép',
+      });
+    expect(csResolveRes.status).toBe(403);
+
+    // 6. ADMIN resolves with mandatory note -> 200 OK, RESOLVED
+    const validResolveRes = await request(app)
+      .post(`/api/v1/attendance-reconciliation/${attendance2.id}/resolve-conflict`)
+      .set('Authorization', `Bearer ${adminToken}`)
       .send({
         finalStatus: AttendanceStatus.ABSENT_APPROVED_A,
         resolutionNote: 'Học viên đã nhắn tin xin phép trước 2 tiếng qua Zalo nhưng GV chưa đọc',
@@ -368,7 +422,11 @@ describe('Two-Party Attendance Reconciliation Integration Tests', () => {
     await prisma.classSession.delete({ where: { id: session3.id } });
   });
 
-  it('Flow 4: Teacher uploads Excel schedule file (giao_vien.xlsx structure)', async () => {
+  it('Flow 4: legacy teacher Excel upload returns 410 Gone; preview→confirm lane replaces its coverage', async () => {
+    // Current contract (docs/api/attendance.md; deprecated since fd25616):
+    // POST /upload-teacher-excel must answer 410 — the legacy route is a
+    // deliberate tombstone pointing at import-excel/preview → /confirm.
+    // The old 200 expectation predated that contract change.
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet('2026 スケジュール');
 
@@ -409,15 +467,40 @@ describe('Two-Party Attendance Reconciliation Integration Tests', () => {
       'HV_RECON_001-K2 L6',
     ]);
 
-    const buffer = await wb.xlsx.writeBuffer();
+    const buffer = Buffer.from(await wb.xlsx.writeBuffer());
 
-    const uploadRes = await request(app)
+    const goneRes = await request(app)
       .post('/api/v1/attendance-reconciliation/upload-teacher-excel')
       .set('Authorization', `Bearer ${teacherToken}`)
-      .attach('file', Buffer.from(buffer), 'giao_vien_test.xlsx');
+      .attach('file', buffer, 'giao_vien_test.xlsx');
+    expect(goneRes.status).toBe(410);
 
-    expect(uploadRes.status).toBe(200);
-    expect(uploadRes.body.data.processedCount).toBeGreaterThanOrEqual(1);
+    // The replacement lane (preview → confirm) must deliver the coverage the
+    // legacy test asserted: teacher workbook creates the session (from the
+    // time slot) and the teacher-side attendance with the parsed lesson topic.
+    const previewRes = await request(app)
+      .post('/api/v1/attendance-reconciliation/import-excel/preview')
+      .set('Authorization', `Bearer ${teacherToken}`)
+      .field('source', 'TEACHER')
+      .field('targetYear', '2026')
+      .attach('file', buffer, 'giao_vien_test.xlsx');
+    expect(previewRes.status).toBe(200);
+    const previewItems = previewRes.body.data.items as any[];
+    const targetItem = previewItems.find((i) => i.externalId === 'HV_RECON_001');
+    expect(targetItem).toBeDefined();
+    expect(targetItem.status).toBe(AttendanceStatus.ATTENDED);
+    expect(targetItem.lessonTopic).toBe('K2 L6');
+
+    const confirmRes = await request(app)
+      .post('/api/v1/attendance-reconciliation/import-excel/confirm')
+      .set('Authorization', `Bearer ${teacherToken}`)
+      .field('source', 'TEACHER')
+      .field('targetYear', '2026')
+      .field('actions', JSON.stringify({ [targetItem.id]: 'APPLY' }))
+      .attach('file', buffer, 'giao_vien_test.xlsx');
+    expect(confirmRes.status).toBe(200);
+    expect(confirmRes.body.data.createdSessions).toBe(1);
+    expect(confirmRes.body.data.createdAttendances).toBe(1);
 
     // Verify session and attendance created
     const createdSession = await prisma.classSession.findFirst({
@@ -587,7 +670,7 @@ describe('Two-Party Attendance Reconciliation Integration Tests', () => {
 
     const resolveRes = await request(app)
       .post(`/api/v1/attendance-reconciliation/${attendance1.id}/resolve-conflict`)
-      .set('Authorization', `Bearer ${csToken}`)
+      .set('Authorization', `Bearer ${adminToken}`)
       .send({
         finalStatus: AttendanceStatus.ABSENT_APPROVED_A,
         resolutionNote: 'Học viên xin phép qua Zalo, GV chưa đọc',
@@ -608,11 +691,13 @@ describe('Two-Party Attendance Reconciliation Integration Tests', () => {
     }
 
     // The resolve just performed must appear as the most recent history entry.
+    // It is now performed by ADMIN (D2), while the history list itself remains
+    // scoped to the assigned CS — CS still sees changes on their own students.
     const resolved = historyRes.body.data.items.find(
       (h: any) => h.action === 'ATTENDANCE_CONFLICT_RESOLVED' && h.attendance_id === attendance1.id
     );
     expect(resolved).toBeDefined();
-    expect(resolved.performed_by).toBe(csUser.name);
+    expect(resolved.performed_by).toBe('Admin Recon');
 
     // A different CS (not assigned) must see an empty/foreign-free history.
     const otherHistoryRes = await request(app)

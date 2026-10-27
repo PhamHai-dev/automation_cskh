@@ -12,6 +12,19 @@ import {
 import { CareTaskPriority, CareTaskStatus, CareLogOutcome, CareTaskType } from '@prisma/client';
 import { AppError } from '../../middlewares/error.middleware';
 import { prisma } from '../../prisma/client';
+import { createHash } from 'crypto';
+
+/**
+ * Deterministic, bounded dedupe key for note-driven auto tasks (C.6 idempotency).
+ * Same enrollment + task type + note content => same key => a repeated save
+ * upserts a single CareTask instead of spawning a duplicate. A genuinely
+ * different note is a different event and gets a different key (new task).
+ * Hashed so the key stays short and free of arbitrary user-text/whitespace.
+ */
+function noteTaskIdempotencyKey(enrollmentId: number, type: CareTaskType, note: string): string {
+  const digest = createHash('sha1').update(note.trim()).digest('hex');
+  return `auto-note:${type}:${enrollmentId}:${digest}`;
+}
 
 export class CareService {
   private repo: CareRepository;
@@ -256,7 +269,9 @@ export class CareService {
     if (dto.hot_issue_note !== undefined) updateData.hot_issue_note = dto.hot_issue_note;
     if (dto.post_course_care !== undefined) updateData.post_course_care = dto.post_course_care;
 
-    // Auto-create/sync CareTask if callback_note has content
+    // Auto-create/sync CareTask if callback_note has content. Idempotent by
+    // (enrollment + CALLBACK + note content): re-saving the same note refreshes
+    // one task instead of creating a new one every time.
     if (dto.callback_note && dto.callback_note.trim().length > 0) {
       try {
         await this.repo.createCareTask({
@@ -266,13 +281,14 @@ export class CareService {
           title: 'Lịch hẹn gọi: ' + dto.callback_note.trim().substring(0, 50),
           note: dto.callback_note.trim(),
           priority: CareTaskPriority.NORMAL,
+          idempotency_key: noteTaskIdempotencyKey(enrollmentId, CareTaskType.CALLBACK, dto.callback_note),
         });
       } catch (err) {
         console.error('Failed to auto-create CALLBACK task:', err);
       }
     }
 
-    // Auto-create/sync CareTask if hot_issue_note has content
+    // Auto-create/sync CareTask if hot_issue_note has content (same idempotency).
     if (dto.hot_issue_note && dto.hot_issue_note.trim().length > 0) {
       try {
         await this.repo.createCareTask({
@@ -282,6 +298,7 @@ export class CareService {
           title: 'Điểm nóng: ' + dto.hot_issue_note.trim().substring(0, 50),
           note: dto.hot_issue_note.trim(),
           priority: CareTaskPriority.HIGH,
+          idempotency_key: noteTaskIdempotencyKey(enrollmentId, CareTaskType.HOT_ISSUE, dto.hot_issue_note),
         });
       } catch (err) {
         console.error('Failed to auto-create HOT_ISSUE task:', err);

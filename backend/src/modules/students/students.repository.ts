@@ -1,44 +1,99 @@
 import { prisma } from '../../prisma/client';
 import { CreateStudentDTO, UpdateStudentDTO } from './students.types';
+import { AuthUser } from '../../middlewares/auth.middleware';
+import { AppError } from '../../middlewares/error.middleware';
+
+/** Same assigned-group + self scope already used by the student list. */
+export async function getStudentCsScope(actor: AuthUser): Promise<number[] | undefined> {
+  if (actor.roles.includes('ADMIN')) return undefined;
+  if (actor.roles.includes('MANAGE')) {
+    const assignments = await prisma.manageAssignment.findMany({
+      where: { manage_user_id: actor.id },
+      include: { cs_group: { include: { members: true } } },
+    });
+    return Array.from(new Set([actor.id, ...assignments.flatMap(a => a.cs_group.members.map(m => m.user_id))]));
+  }
+  if (actor.roles.includes('CS')) return [actor.id];
+  throw new AppError(403, 'Bạn không có quyền truy cập học viên');
+}
+
+/**
+ * B.5/D9: True when the user row's stored roles JSON contains the CS role.
+ * enrollment.cs_id is the only scope grant, so every explicit cs_id
+ * assignment must land on a CS-role account (no name/email guessing).
+ */
+async function isCsRoleUser(userId: number, tx?: any): Promise<boolean> {
+  const client = tx ?? prisma;
+  const user = await client.user.findUnique({
+    where: { id: userId },
+    select: { roles: true },
+  });
+  return !!user && Array.isArray(user.roles) && (user.roles as string[]).includes('CS');
+}
+
+/**
+ * Resolve and authorize the enrollment owner (cs_id) for a create request.
+ * An explicit cs_id is validated against the actor's scope and the CS role;
+ * with no explicit assignment the creator keeps ownership of what they create.
+ * sale_name is plain handover data and never participates in this decision.
+ */
+async function resolveCreateCsId(
+  requestedCsId: number | undefined,
+  actor: AuthUser,
+  allowedCsIds: number[] | undefined
+): Promise<number> {
+  if (requestedCsId === undefined) return actor.id;
+  const csId = Number(requestedCsId);
+  if (allowedCsIds !== undefined && !allowedCsIds.includes(csId)) {
+    throw new AppError(403, 'Bạn không được gán học viên cho tài khoản CSKH ngoài phạm vi phụ trách');
+  }
+  if (!(await isCsRoleUser(csId))) {
+    throw new AppError(400, 'Tài khoản được gán làm CSKH phụ trách phải có vai trò CS');
+  }
+  return csId;
+}
+
+/**
+ * Authorize an explicit cs_id reassignment on update. Ownership transfer is
+ * only a deliberate act via data.cs_id; ADMIN may target any CS-role account,
+ * MANAGE is limited to its assigned CS group, CS may keep only its own id.
+ * The target must be an active CS-role user (B.5/D9).
+ */
+async function authorizeUpdatedCsId(csId: number, tx: any, allowedCsIds: number[] | undefined): Promise<void> {
+  if (allowedCsIds !== undefined && !allowedCsIds.includes(Number(csId))) {
+    throw new AppError(403, 'CSKH không được chuyển học viên sang tài khoản CSKH khác');
+  }
+  const user = await tx.user.findUnique({
+    where: { id: Number(csId) },
+    select: { roles: true, active: true },
+  });
+  const roles = user && Array.isArray(user.roles) ? (user.roles as string[]) : [];
+  if (!user || !user.active || !roles.includes('CS')) {
+    throw new AppError(400, 'CSKH được gán phải là tài khoản CS đang hoạt động');
+  }
+}
 
 export class StudentsRepository {
-  async findAll(options?: {
-    userId?: number;
-    roles?: string[];
+  async findAll(options: {
+    actor: AuthUser;
     programType?: string;
     csId?: number;
   }) {
-    const roles = options?.roles || [];
-    const userId = options?.userId;
-    const isAdmin = roles.includes('ADMIN');
-    const isManage = !isAdmin && roles.includes('MANAGE');
-    const isCS = !isAdmin && !isManage && roles.includes('CS');
-
-    let allowedCsIds: number[] | undefined = undefined;
-    if (isCS && userId) {
-      allowedCsIds = [userId];
-    } else if (isManage && userId) {
-      const assignments = await prisma.manageAssignment.findMany({
-        where: { manage_user_id: userId },
-        include: { cs_group: { include: { members: true } } },
-      });
-      const csSet = new Set<number>([userId]);
-      assignments.forEach((a) => {
-        a.cs_group.members.forEach((m) => csSet.add(m.user_id));
-      });
-      allowedCsIds = Array.from(csSet);
-      if (options?.csId) {
-        allowedCsIds = allowedCsIds.filter((id) => id === options.csId);
-      }
-    } else if (options?.csId) {
-      allowedCsIds = [options.csId];
-    }
+    // B.5/D9: list scope is enrollment.cs_id only, derived from the same
+    // getStudentCsScope used by detail/update. Name- and email-based matching
+    // (e.g. against sale_name) is never an access grant.
+    const allowedCsIds = await getStudentCsScope(options.actor);
 
     const enrollmentFilter: any = {};
     if (allowedCsIds !== undefined) {
-      enrollmentFilter.cs_id = allowedCsIds.length === 1 ? allowedCsIds[0] : { in: allowedCsIds };
+      enrollmentFilter.cs_id = { in: allowedCsIds };
+      if (options.csId) {
+        enrollmentFilter.cs_id = allowedCsIds.includes(options.csId) ? options.csId : { in: [] };
+      }
+    } else if (options.csId) {
+      enrollmentFilter.cs_id = options.csId;
     }
-    if (options?.programType) {
+    if (options.programType) {
       enrollmentFilter.program_type = options.programType;
     }
 
@@ -112,11 +167,16 @@ export class StudentsRepository {
     });
   }
 
-  async findById(id: number) {
-    return prisma.student.findUnique({
+  async findById(id: number, actor: AuthUser) {
+    // Only enrollment details inside the existing student-list scope are exposed.
+    const allowedCsIds = await getStudentCsScope(actor);
+    const student = await prisma.student.findUnique({
       where: { id },
       include: {
         enrollments: {
+          ...(allowedCsIds !== undefined
+            ? { where: { cs_id: allowedCsIds.length === 1 ? allowedCsIds[0] : { in: allowedCsIds } } }
+            : {}),
           include: {
             package: true,
             sale: true,
@@ -156,6 +216,10 @@ export class StudentsRepository {
         },
       },
     });
+    if (student && allowedCsIds !== undefined && student.enrollments.length === 0) {
+      throw new AppError(403, 'Bạn không phụ trách học viên này');
+    }
+    return student;
   }
 
   async findByPhone(phone: string) {
@@ -170,7 +234,14 @@ export class StudentsRepository {
     });
   }
 
-  async create(data: CreateStudentDTO, currentUserId?: number) {
+  async create(data: CreateStudentDTO, actor: AuthUser) {
+    // B.5/D9: resolve the owner BEFORE the transaction. An explicit cs_id must
+    // be a CS-role account inside the actor's scope; otherwise the creator owns
+    // the enrollment. sale_name below is stored as plain handover data and is
+    // never matched against users or used to grant access.
+    const allowedCsIds = await getStudentCsScope(actor);
+    const csId = await resolveCreateCsId(data.cs_id, actor, allowedCsIds);
+
     return prisma.$transaction(async (tx) => {
       const dob = data.date_of_birth ? new Date(data.date_of_birth) : undefined;
 
@@ -190,32 +261,7 @@ export class StudentsRepository {
         },
       });
 
-      // 2. Resolve CS/Sale user
-      let csId = currentUserId;
-      const allUsers = await tx.user.findMany({
-        select: { id: true, code: true, name: true, email: true, roles: true },
-      });
-
-      if (data.sale_name) {
-        const query = data.sale_name.trim().toLowerCase();
-        const matched = allUsers.find(
-          (u) =>
-            (u.code && query.includes(u.code.toLowerCase())) ||
-            (u.name && query.includes(u.name.toLowerCase())) ||
-            u.name?.toLowerCase().includes(query) ||
-            u.email.toLowerCase().includes(query)
-        );
-        if (matched) csId = matched.id;
-      }
-
-      if (!csId) {
-        const csUser = allUsers.find(
-          (u) => Array.isArray(u.roles) && (u.roles as string[]).includes('CS')
-        );
-        csId = csUser?.id || allUsers[0]?.id || 1;
-      }
-
-      // 3. Create Enrollment
+      // 2. Create Enrollment (cs_id already authorized above)
       const enrollment = await tx.enrollment.create({
         data: {
           student_id: student.id,
@@ -254,7 +300,7 @@ export class StudentsRepository {
         },
       });
 
-      // 4. Create or link Class & Schedules
+      // 3. Create or link Class & Schedules
       if (data.class_name || data.schedule_pattern) {
         const className =
           data.class_name?.trim() ||
@@ -350,8 +396,69 @@ export class StudentsRepository {
     });
   }
 
-  async update(id: number, data: UpdateStudentDTO) {
+  async update(id: number, data: UpdateStudentDTO, actor: AuthUser) {
+    const allowedCsIds = await getStudentCsScope(actor);
+    if (!Number.isInteger(data.enrollment_id) || data.enrollment_id <= 0) {
+      throw new AppError(400, 'Hãy chọn rõ ghi danh cần cập nhật');
+    }
+    // B.5/D9: reject an out-of-scope cs_id before opening the transaction; the
+    // CS-role check on the target runs inside the transaction below.
+    if (allowedCsIds !== undefined && data.cs_id !== undefined && !allowedCsIds.includes(Number(data.cs_id))) {
+      throw new AppError(403, 'CSKH không được chuyển học viên sang tài khoản CSKH khác');
+    }
+
     return prisma.$transaction(async (tx) => {
+      // Select the target enrollment before changing the Student row. This
+      // prevents a CS from using the globally newest enrollment as an escape
+      // hatch when a student has multiple enrollment records.
+      const enrollmentWhere: any = {
+        student_id: id,
+        ...(data.enrollment_id !== undefined ? { id: data.enrollment_id } : {}),
+        ...(allowedCsIds !== undefined
+          ? { cs_id: allowedCsIds.length === 1 ? allowedCsIds[0] : { in: allowedCsIds } }
+          : {}),
+      };
+      let enrollment = await tx.enrollment.findFirst({
+        where: enrollmentWhere,
+        orderBy: { id: 'desc' },
+        include: {
+          enrollment_classes: {
+            include: {
+              class: {
+                include: {
+                  class_schedules: true,
+                  class_teachers: {
+                    include: {
+                      teacher: {
+                        include: {
+                          user: true,
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      });
+      if (!enrollment) {
+        throw new AppError(403, 'Bạn không phụ trách học viên hoặc ghi danh này');
+      }
+
+      // A class/schedule/teacher edit affects every enrollment in that class.
+      // Reject it when any affected enrollment is outside the actor's scope.
+      const targetClass = enrollment.enrollment_classes?.[0]?.class;
+      const editsClass = ['class_name', 'start_time', 'schedule_pattern', 'duration_minutes', 'teacher_name', 'teacher_code']
+        .some(key => data[key as keyof UpdateStudentDTO] !== undefined);
+      if (allowedCsIds !== undefined && editsClass && targetClass) {
+        const outsideScope = await tx.enrollmentClass.findFirst({
+          where: { class_id: targetClass.id, enrollment: { cs_id: { notIn: allowedCsIds } } },
+          select: { id: true },
+        });
+        if (outsideScope) throw new AppError(403, 'Lớp học có ghi danh ngoài phạm vi phụ trách');
+      }
+
       const dob = data.date_of_birth ? new Date(data.date_of_birth) : undefined;
 
       // 1. Update Student
@@ -377,7 +484,12 @@ export class StudentsRepository {
       const enrollmentUpdate: any = {};
       if (data.program_type !== undefined) enrollmentUpdate.program_type = data.program_type;
       if (data.program_metadata !== undefined) enrollmentUpdate.program_metadata = data.program_metadata;
-      if (data.cs_id !== undefined) enrollmentUpdate.cs_id = Number(data.cs_id);
+      if (data.cs_id !== undefined) {
+        // B.5/D9: explicit ownership transfer must target an active CS-role
+        // account and stay inside the actor's scope (ADMIN: any CS account).
+        await authorizeUpdatedCsId(Number(data.cs_id), tx, allowedCsIds);
+        enrollmentUpdate.cs_id = Number(data.cs_id);
+      }
       if (data.package_code !== undefined) {
         const trimmedPkg = String(data.package_code).trim();
         if (trimmedPkg) {
@@ -441,31 +553,8 @@ export class StudentsRepository {
           ? new Date(data.account_created_at)
           : null;
 
-      // Find primary enrollment
-      let enrollment = await tx.enrollment.findFirst({
-        where: { student_id: id },
-        orderBy: { id: 'desc' },
-        include: {
-          enrollment_classes: {
-            include: {
-              class: {
-                include: {
-                  class_schedules: true,
-                  class_teachers: {
-                    include: {
-                      teacher: {
-                        include: {
-                          user: true,
-                        },
-                      },
-                    },
-                  },
-                },
-              },
-            },
-          },
-        },
-      });
+      // `enrollment` was selected above using the actor scope and optional
+      // explicit enrollment_id; never fall back to a global latest record.
 
       if (enrollment) {
         if (Object.keys(enrollmentUpdate).length > 0) {

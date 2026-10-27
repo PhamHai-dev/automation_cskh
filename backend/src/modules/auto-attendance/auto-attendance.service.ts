@@ -1,4 +1,5 @@
 import { AutoAttendanceRepository } from './auto-attendance.repository';
+import { ClassModelType } from '@prisma/client';
 import {
   AutoAttendanceCycleResult,
   AutoAttendanceSettings,
@@ -242,6 +243,24 @@ export class AutoAttendanceService {
           sessionDate,
           actor.id,
         );
+
+        // D3 (approved 2026-10-25): planned-only for flexible 1-1. A 1-1
+        // schedule is a calendar REFERENCE only — the planned ClassSession
+        // reminder above IS created, but the system must NOT auto-generate an
+        // Attendance for a 1-1. Real 1-1 attendance is entered by GV/CVHT via
+        // the actual-session flow. Group fixed-schedule classes fall through to
+        // the provisional fill below (rows default to PENDING_CS via the
+        // schema, so they are never FINAL and never auto-fire deliveries).
+        if (schedule.class?.model_type === ClassModelType.ONE_TO_ONE) {
+          await this.repository.updateExecution(execution.id, {
+            status: 'SKIPPED',
+            attendance_count: 0,
+            error_message: 'Lớp 1-1 linh hoạt: planned-only, đã tạo mục lịch nhưng không tự sinh điểm danh (D3)',
+            completed_at: new Date(),
+          });
+          skippedCount++;
+          continue;
+        }
 
         let classAttendedCount = 0;
         const createdAttendanceIds: number[] = [];

@@ -45,6 +45,9 @@ export const TeacherAttendanceTrackingPage: React.FC = () => {
   const { user } = useAuth();
   const toast = useToast();
   const isPrivileged = !!user?.roles.some((role) => role === 'ADMIN' || role === 'MANAGE');
+  // D8 assist-mark is ADMIN-only backend (isAssistMarkPrivileged); MANAGE views
+  // another teacher's pending list but cannot mark on the teacher's behalf.
+  const isAdmin = !!user?.roles.includes('ADMIN');
 
   const [tab, setTab] = useState<TrackingTab>('pending');
   const [teachers, setTeachers] = useState<Teacher[]>([]);
@@ -92,12 +95,18 @@ export const TeacherAttendanceTrackingPage: React.FC = () => {
   const loadCount = useCallback(async () => {
     if (!hasContext) return setPendingCount(0);
     try {
-      const result = await reconciliationApi.getTeacherTrackingCount({ teacherId, classId });
+      const result = await reconciliationApi.getTeacherTrackingCount({
+        teacherId,
+        classId,
+        startDate: startDate || undefined,
+        endDate: endDate || undefined,
+        search: appliedSearch || undefined,
+      });
       setPendingCount(result.count);
     } catch (error: any) {
       toast.error(error.response?.data?.message || 'Không thể tải số lượt chờ điểm danh');
     }
-  }, [hasContext, teacherId, classId, toast]);
+  }, [hasContext, teacherId, classId, startDate, endDate, appliedSearch, toast]);
 
   const loadData = useCallback(async () => {
     if (!hasContext) {
@@ -128,6 +137,7 @@ export const TeacherAttendanceTrackingPage: React.FC = () => {
   useEffect(() => { loadCount(); }, [loadCount]);
 
   const openMarkModal = (item: TeacherTrackingPendingItem) => {
+    if (isPrivileged && !isAdmin) return;
     setSelected(item);
     setStatus('');
     setLessonTopic('');
@@ -135,7 +145,7 @@ export const TeacherAttendanceTrackingPage: React.FC = () => {
   };
 
   const submitMark = async () => {
-    if (!selected || !status) return;
+    if (!selected || !status || (isPrivileged && !isAdmin)) return;
     setSubmitting(true);
     try {
       await reconciliationApi.markByTeacher(selected.id, {
@@ -169,7 +179,32 @@ export const TeacherAttendanceTrackingPage: React.FC = () => {
     { header: 'Học viên', cell: (item) => <div><div className="font-semibold">{item.student.full_name}</div><div className="text-xs text-text-muted">{item.student.external_id || 'Chưa có mã'} · {item.student.phone || 'Chưa có SĐT'}</div></div> },
     { header: 'Lớp / buổi', cell: (item) => <div><div className="font-medium">{item.class.class_name}</div><div className="text-xs text-text-muted">Buổi {item.session.session_number}</div></div> },
     { header: 'Trạng thái', cell: () => <Badge variant="warning" dot>Chưa điểm danh</Badge> },
-    { header: '', className: 'text-right', cell: (item) => <Button id={`mark-attendance-${item.id}`} size="sm" onClick={() => openMarkModal(item)}><ClipboardCheck className="h-4 w-4 mr-1.5" />Điểm danh</Button> },
+    {
+      header: '',
+      className: 'text-right',
+      cell: (item) =>
+        isPrivileged && !isAdmin ? (
+          <span
+            title="Chỉ Admin chấm hộ giáo viên; MANAGE ghi ý kiến CVHT trong nhóm phụ trách"
+            className="inline-block"
+          >
+            <Button
+              id={`mark-attendance-${item.id}`}
+              size="sm"
+              disabled
+              title="Chỉ Admin chấm hộ giáo viên; MANAGE ghi ý kiến CVHT trong nhóm phụ trách"
+            >
+              <ClipboardCheck className="h-4 w-4 mr-1.5" />
+              Điểm danh
+            </Button>
+          </span>
+        ) : (
+          <Button id={`mark-attendance-${item.id}`} size="sm" onClick={() => openMarkModal(item)}>
+            <ClipboardCheck className="h-4 w-4 mr-1.5" />
+            Điểm danh
+          </Button>
+        ),
+    },
   ];
 
   const historyColumns: Column<TeacherTrackingHistoryItem>[] = [
@@ -177,7 +212,17 @@ export const TeacherAttendanceTrackingPage: React.FC = () => {
     { header: 'Học viên', cell: (item) => <div><div className="font-semibold">{item.student?.full_name || '—'}</div><div className="text-xs text-text-muted">{item.student?.external_id || 'Chưa có mã'}</div></div> },
     { header: 'Lớp / buổi', cell: (item) => <div><div className="font-medium">{item.class?.class_name || '—'}</div><div className="text-xs text-text-muted">{item.session ? `${dateLabel(item.session.session_date)} · Buổi ${item.session.session_number}` : '—'}</div></div> },
     { header: 'Thay đổi', cell: (item) => <div className="flex items-center gap-2 whitespace-nowrap"><Badge variant="neutral">{statusLabel(item.from_status)}</Badge><span className="text-text-muted">→</span><Badge variant="accent">{statusLabel(item.to_status)}</Badge></div> },
-    { header: 'Ghi chú', cell: (item) => <span className="text-text-secondary">{item.note || '—'}</span> },
+    {
+      header: 'Bài học / Ghi chú',
+      cell: (item) => (
+        <div className="space-y-0.5">
+          {item.lesson_topic && (
+            <div className="text-xs font-semibold text-teal-700">Bài: {item.lesson_topic}</div>
+          )}
+          <div className="text-text-secondary">{item.note || (!item.lesson_topic ? '—' : '')}</div>
+        </div>
+      ),
+    },
     { header: 'Người thao tác', cell: (item) => <span className="font-medium">{item.performed_by}</span> },
   ];
 

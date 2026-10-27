@@ -35,6 +35,7 @@ import {
   MessageSquare,
   Copy,
   BookOpen,
+  AlertTriangle,
 } from 'lucide-react';
 
 type TabType = 'steps' | 'enrollments' | 'deliveries';
@@ -64,6 +65,13 @@ export const AutomationWorkflowDetailPage: React.FC = () => {
     message_content: '',
   });
   const [stepSubmitting, setStepSubmitting] = useState(false);
+  // Banner lỗi 409 (bước đã có lịch sử gửi) ngay trong modal, thay vì chỉ toast
+  const [stepGuardError, setStepGuardError] = useState<string | null>(null);
+  // Modal xác nhận xóa cụm trigger (thay window.confirm)
+  const [deletingStep, setDeletingStep] = useState<AutomationStep | null>(null);
+  const [deleteSubmitting, setDeleteSubmitting] = useState(false);
+  // Toggle active từng bước
+  const [stepTogglingId, setStepTogglingId] = useState<number | null>(null);
 
   // Groups for ZALO_GROUP and LINE_GROUP dropdowns
   const [zaloGroups, setZaloGroups] = useState<Array<{ id: number; name: string | null; zalo_group_id?: string; zalo_account_id?: number }>>([]);
@@ -174,6 +182,7 @@ export const AutomationWorkflowDetailPage: React.FC = () => {
 
   const handleAddStep = async (e: React.FormEvent) => {
     e.preventDefault();
+    setStepGuardError(null);
     try {
       setStepSubmitting(true);
       await automationApi.addStep(workflowId, {
@@ -184,12 +193,15 @@ export const AutomationWorkflowDetailPage: React.FC = () => {
             : undefined,
       } as any);
       toast.success('Đã thêm cụm trigger');
-      setIsStepModalOpen(false);
-      setEditingStepId(null);
-      resetStepForm();
+      closeStepModal();
       fetchAll();
     } catch (err: any) {
-      toast.error(err.response?.data?.message || 'Không thể thêm cụm trigger');
+      const msg = err.response?.data?.message || 'Không thể thêm cụm trigger';
+      if (err.response?.status === 409) {
+        setStepGuardError(msg);
+      } else {
+        toast.error(msg);
+      }
     } finally {
       setStepSubmitting(false);
     }
@@ -209,6 +221,7 @@ export const AutomationWorkflowDetailPage: React.FC = () => {
   // ─── Edit Step ────────────────────────────────────────────────────────
   const openEditStep = (step: AutomationStep) => {
     setEditingStepId(step.id);
+    setStepGuardError(null);
     setStepForm({
       session_number: step.session_number,
       trigger_event: step.trigger_event,
@@ -220,9 +233,35 @@ export const AutomationWorkflowDetailPage: React.FC = () => {
     setIsStepModalOpen(true);
   };
 
+  // Bước đang sửa đã có tin gửi → backend khóa session_number / trigger_event (409)
+  const editingStep = editingStepId ? steps.find((s) => s.id === editingStepId) ?? null : null;
+  const editingDeliveryCount = editingStep?._count?.deliveries ?? 0;
+  const editingStepLocked = editingDeliveryCount > 0;
+
+  const closeStepModal = () => {
+    setIsStepModalOpen(false);
+    setEditingStepId(null);
+    setStepGuardError(null);
+    resetStepForm();
+  };
+
+  const handleToggleStepActive = async (step: AutomationStep) => {
+    try {
+      setStepTogglingId(step.id);
+      await automationApi.updateStep(step.id, { active: !step.active });
+      toast.success(step.active ? 'Đã tắt cụm trigger' : 'Đã bật cụm trigger');
+      await fetchAll();
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Không thể đổi trạng thái cụm trigger');
+    } finally {
+      setStepTogglingId(null);
+    }
+  };
+
   const handleUpdateStep = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingStepId) return;
+    setStepGuardError(null);
     try {
       setStepSubmitting(true);
       await automationApi.updateStep(editingStepId, {
@@ -233,12 +272,15 @@ export const AutomationWorkflowDetailPage: React.FC = () => {
             : null,
       } as any);
       toast.success('Đã cập nhật cụm trigger');
-      setIsStepModalOpen(false);
-      setEditingStepId(null);
-      resetStepForm();
+      closeStepModal();
       fetchAll();
     } catch (err: any) {
-      toast.error(err.response?.data?.message || 'Không thể cập nhật cụm trigger');
+      const msg = err.response?.data?.message || 'Không thể cập nhật cụm trigger';
+      if (err.response?.status === 409) {
+        setStepGuardError(msg);
+      } else {
+        toast.error(msg);
+      }
     } finally {
       setStepSubmitting(false);
     }
@@ -252,14 +294,34 @@ export const AutomationWorkflowDetailPage: React.FC = () => {
     }
   };
 
-  const handleDeleteStep = async (stepId: number) => {
-    if (!confirm('Xóa cụm trigger này?')) return;
+  const openDeleteStepModal = (step: AutomationStep) => {
+    setStepGuardError(null);
+    setDeletingStep(step);
+  };
+
+  const closeDeleteStepModal = () => {
+    setDeletingStep(null);
+    setStepGuardError(null);
+  };
+
+  const handleDeleteStep = async () => {
+    if (!deletingStep) return;
+    setStepGuardError(null);
     try {
-      await automationApi.deleteStep(stepId);
+      setDeleteSubmitting(true);
+      await automationApi.deleteStep(deletingStep.id);
       toast.success('Đã xóa cụm trigger');
+      closeDeleteStepModal();
       fetchAll();
     } catch (err: any) {
-      toast.error(err.response?.data?.message || 'Không thể xóa');
+      const msg = err.response?.data?.message || 'Không thể xóa';
+      if (err.response?.status === 409) {
+        setStepGuardError(msg);
+      } else {
+        toast.error(msg);
+      }
+    } finally {
+      setDeleteSubmitting(false);
     }
   };
 
@@ -418,7 +480,12 @@ export const AutomationWorkflowDetailPage: React.FC = () => {
               variant="primary"
               size="sm"
               leftIcon={<Plus className="w-3.5 h-3.5" />}
-              onClick={() => setIsStepModalOpen(true)}
+              onClick={() => {
+                setEditingStepId(null);
+                setStepGuardError(null);
+                resetStepForm();
+                setIsStepModalOpen(true);
+              }}
             >
               Thêm cụm trigger
             </Button>
@@ -443,8 +510,14 @@ export const AutomationWorkflowDetailPage: React.FC = () => {
                   </span>
                 </div>
                 <div className="divide-y divide-border/60">
-                  {sessionSteps.map((step) => (
-                    <div key={step.id} className="px-4 py-3 flex items-start justify-between gap-4">
+                  {sessionSteps.map((step) => {
+                    const deliveryCount = step._count?.deliveries ?? 0;
+                    const isInactive = !step.active;
+                    return (
+                    <div
+                      key={step.id}
+                      className={`px-4 py-3 flex items-start justify-between gap-4 ${isInactive ? 'opacity-60 bg-surface-muted/40' : ''}`}
+                    >
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           <span
@@ -471,12 +544,39 @@ export const AutomationWorkflowDetailPage: React.FC = () => {
                           >
                             {CHANNEL_LABELS[step.channel] || step.channel}
                           </span>
+                          {deliveryCount > 0 && (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-violet-50 text-violet-700 border border-violet-200">
+                              Đã gửi {deliveryCount}
+                            </span>
+                          )}
+                          {isInactive && (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-500 border border-slate-200">
+                              Đang tắt
+                            </span>
+                          )}
                         </div>
                         <p className="mt-1.5 text-xs text-text-secondary line-clamp-2 whitespace-pre-wrap">
                           {step.message_content}
                         </p>
                       </div>
                       <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          role="switch"
+                          aria-checked={step.active}
+                          disabled={stepTogglingId === step.id}
+                          onClick={() => handleToggleStepActive(step)}
+                          title={step.active ? 'Tắt cụm trigger' : 'Bật cụm trigger'}
+                          className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full border transition-colors disabled:opacity-50 ${
+                            step.active ? 'bg-emerald-500 border-emerald-500' : 'bg-slate-200 border-slate-300'
+                          }`}
+                        >
+                          <span
+                            className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${
+                              step.active ? 'translate-x-[18px]' : 'translate-x-[3px]'
+                            }`}
+                          />
+                        </button>
                         <Button
                           variant="ghost"
                           size="sm"
@@ -488,14 +588,15 @@ export const AutomationWorkflowDetailPage: React.FC = () => {
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => handleDeleteStep(step.id)}
+                          onClick={() => openDeleteStepModal(step)}
                           title="Xóa cụm"
                         >
                           <Trash2 className="w-3.5 h-3.5 text-red-400" />
                         </Button>
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             ))
@@ -636,14 +737,16 @@ export const AutomationWorkflowDetailPage: React.FC = () => {
       {/* ─── Add Step Modal ─────────────────────────────────────────── */}
       <Modal
         isOpen={isStepModalOpen}
-        onClose={() => {
-          setIsStepModalOpen(false);
-          setEditingStepId(null);
-          resetStepForm();
-        }}
+        onClose={closeStepModal}
         title={editingStepId ? 'Chỉnh sửa cụm trigger' : 'Thêm cụm trigger'}
       >
         <form onSubmit={handleSubmitStep} className="space-y-4">
+          {stepGuardError && (
+            <div className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-700">
+              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+              <span>{stepGuardError}</span>
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-3">
             <Input
               label="Buổi học (session) *"
@@ -652,13 +755,22 @@ export const AutomationWorkflowDetailPage: React.FC = () => {
               value={stepForm.session_number}
               onChange={(e) => setStepForm({ ...stepForm, session_number: parseInt(e.target.value) || 1 })}
               required
+              disabled={editingStepLocked}
+              helperText={
+                editingStepLocked
+                  ? `Bước đã có ${editingDeliveryCount} tin gửi — không thể đổi mốc/event. Hãy tắt bước và tạo bước mới.`
+                  : undefined
+              }
             />
             <div>
               <label className="block text-xs font-semibold text-text-secondary mb-1.5">Event trigger *</label>
               <select
                 value={stepForm.trigger_event}
                 onChange={(e) => setStepForm({ ...stepForm, trigger_event: e.target.value as AutomationTriggerEvent })}
-                className="w-full px-3.5 py-2.5 text-sm bg-surface-muted border border-border/80 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20"
+                disabled={editingStepLocked}
+                className={`w-full px-3.5 py-2.5 text-sm bg-surface-muted border border-border/80 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 ${
+                  editingStepLocked ? 'opacity-60 cursor-not-allowed text-text-muted' : ''
+                }`}
               >
                 {TRIGGER_EVENT_OPTIONS.map((opt) => (
                   <option key={opt.value} value={opt.value}>
@@ -666,6 +778,11 @@ export const AutomationWorkflowDetailPage: React.FC = () => {
                   </option>
                 ))}
               </select>
+              {editingStepLocked && (
+                <p className="mt-1.5 text-xs text-text-muted">
+                  Bước đã có {editingDeliveryCount} tin gửi — không thể đổi mốc/event. Hãy tắt bước và tạo bước mới.
+                </p>
+              )}
             </div>
           </div>
 
@@ -791,7 +908,7 @@ export const AutomationWorkflowDetailPage: React.FC = () => {
           </div>
 
           <div className="flex justify-end gap-3 pt-4 border-t border-border/80">
-            <Button variant="outline" type="button" onClick={() => setIsStepModalOpen(false)}>
+            <Button variant="outline" type="button" onClick={closeStepModal}>
               Hủy
             </Button>
             <Button variant="primary" type="submit" isLoading={stepSubmitting}>
@@ -799,6 +916,53 @@ export const AutomationWorkflowDetailPage: React.FC = () => {
             </Button>
           </div>
         </form>
+      </Modal>
+
+      {/* ─── Delete Step Confirm Modal ──────────────────────────────── */}
+      <Modal
+        isOpen={Boolean(deletingStep)}
+        onClose={closeDeleteStepModal}
+        title="Xóa cụm trigger"
+        size="sm"
+      >
+        {deletingStep && (
+          <div className="space-y-4">
+            {stepGuardError && (
+              <div className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-700">
+                <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                <span>{stepGuardError}</span>
+              </div>
+            )}
+            <p className="text-sm text-text-secondary">
+              Bạn chắc chắn muốn xóa cụm trigger{' '}
+              <strong className="text-text-primary">
+                Buổi {deletingStep.session_number} · {TRIGGER_EVENT_LABELS[deletingStep.trigger_event] || deletingStep.trigger_event}
+              </strong>
+              ?
+            </p>
+            {(deletingStep._count?.deliveries ?? 0) > 0 && (
+              <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+                <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-amber-600" />
+                <span>
+                  Bước đã có <strong>{deletingStep._count?.deliveries}</strong> tin gửi — backend khuyến nghị TẮT thay vì XÓA.
+                </span>
+              </div>
+            )}
+            <div className="flex justify-end gap-3 pt-2 border-t border-border/80">
+              <Button variant="outline" type="button" onClick={closeDeleteStepModal}>
+                Hủy
+              </Button>
+              <Button
+                variant="danger"
+                type="button"
+                isLoading={deleteSubmitting}
+                onClick={handleDeleteStep}
+              >
+                Xóa
+              </Button>
+            </div>
+          </div>
+        )}
       </Modal>
 
       {/* ─── Add Enrollment Modal (popup chọn HV) ────────────────────── */}

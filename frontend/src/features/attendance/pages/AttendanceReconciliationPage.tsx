@@ -24,6 +24,7 @@ import { Select } from '../../../components/ui/Select';
 import { Textarea } from '../../../components/ui/Textarea';
 import { HorizontalTabs, HorizontalTabItem } from '../../../components/ui/HorizontalTabs';
 import { useToast } from '../../../components/ui/Toast';
+import { useAuth } from '../../../contexts/AuthContext';
 import { reconciliationApi } from '../api/reconciliation.api';
 import {
   AttendanceRecord,
@@ -59,6 +60,10 @@ const formatDateTime = (d: string | Date | null | undefined) =>
 
 export const AttendanceReconciliationPage: React.FC = () => {
   const toast = useToast();
+  const { user } = useAuth();
+  // D2 (owner-confirmed): resolution authority is ADMIN only. CS submits an
+  // opinion (cs-mark); MANAGE/CS must not see or trigger resolve-conflict.
+  const isAdmin = Boolean(user?.roles.includes('ADMIN'));
 
   const [activeTab, setActiveTab] = useState<ReconciliationTab>('conflicts');
   const [isLoading, setIsLoading] = useState(false);
@@ -265,8 +270,8 @@ export const AttendanceReconciliationPage: React.FC = () => {
 
   const handleOpenCSMark = (record: AttendanceRecord) => {
     setSelectedRecord(record);
-    setCsStatus('ATTENDED');
-    setCsNote('');
+    setCsStatus(record.cs_status || 'ATTENDED');
+    setCsNote(record.cs_note || '');
     setIsCSMarkModalOpen(true);
   };
 
@@ -402,20 +407,30 @@ export const AttendanceReconciliationPage: React.FC = () => {
       },
       {
         header: 'Hành động',
-        cell: (r) => (
-          <Button
-            size="sm"
-            variant="primary"
-            onClick={() => handleOpenResolve(r)}
-            className="whitespace-nowrap"
-          >
-            <AlertCircle className="w-4 h-4 mr-1.5" />
-            Phân xử
-          </Button>
-        ),
+        cell: (r) =>
+          isAdmin ? (
+            <Button
+              size="sm"
+              variant="primary"
+              onClick={() => handleOpenResolve(r)}
+              className="whitespace-nowrap"
+            >
+              <AlertCircle className="w-4 h-4 mr-1.5" />
+              Phân xử
+            </Button>
+          ) : (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => handleOpenCSMark(r)}
+              className="whitespace-nowrap"
+            >
+              Ghi ý kiến CS
+            </Button>
+          ),
       },
     ],
-    []
+    [isAdmin]
   );
 
   const teacherCell = (r: AttendanceRecord) => {
@@ -450,6 +465,7 @@ export const AttendanceReconciliationPage: React.FC = () => {
           <div className="flex flex-col gap-1">
             <Badge variant={cfg.variant} size="sm">{cfg.label}</Badge>
             {r.lesson_topic && <span className="text-xs text-teal-600 font-medium">Bài: {r.lesson_topic}</span>}
+            {r.teacher_note && <span className="text-xs text-text-secondary italic">"{r.teacher_note}"</span>}
             <span className="text-[11px] text-text-muted">{formatDateTime(r.teacher_submitted_at)}</span>
           </div>
         ) : <span className="text-xs text-text-muted italic">Chưa nhập</span>;
@@ -463,6 +479,7 @@ export const AttendanceReconciliationPage: React.FC = () => {
         return cfg ? (
           <div className="flex flex-col gap-1">
             <Badge variant={cfg.variant} size="sm">{cfg.label}</Badge>
+            {r.cs_note && <span className="text-xs text-text-secondary italic">"{r.cs_note}"</span>}
             <span className="text-[11px] text-text-muted">{formatDateTime(r.cs_submitted_at)}</span>
           </div>
         ) : <span className="text-xs text-text-muted italic">Chưa ghi nhận</span>;
@@ -1075,6 +1092,55 @@ export const AttendanceReconciliationPage: React.FC = () => {
         }
       >
         <div className="space-y-3">
+          {selectedRecord && (
+            <div className="rounded-xl border border-border/70 bg-surface-muted/60 p-3 text-xs space-y-2">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <p className="font-bold text-text-primary text-sm">
+                    {selectedRecord.enrollment_class?.enrollment?.student?.full_name}
+                  </p>
+                  <p className="text-text-muted mt-0.5">
+                    Mã HV: {selectedRecord.enrollment_class?.enrollment?.student?.external_id || 'N/A'} •{' '}
+                    Lớp: {selectedRecord.enrollment_class?.class?.class_name}
+                  </p>
+                </div>
+                <div className="text-right shrink-0">
+                  <span className="font-semibold text-text-primary">
+                    Buổi {selectedRecord.class_session?.session_number}
+                  </span>
+                  <p className="text-text-muted">
+                    {formatDate(selectedRecord.class_session?.session_date)}
+                  </p>
+                </div>
+              </div>
+              <div className="border-t border-border/60 pt-2">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="font-semibold text-amber-700">Ý kiến GV:</span>
+                  {selectedRecord.teacher_status ? (
+                    <Badge
+                      variant={statusLabels[selectedRecord.teacher_status]?.variant || 'neutral'}
+                      size="sm"
+                    >
+                      {statusLabels[selectedRecord.teacher_status]?.label}
+                    </Badge>
+                  ) : (
+                    <span className="text-text-muted italic">GV chưa điểm danh</span>
+                  )}
+                  {selectedRecord.lesson_topic && (
+                    <span className="text-teal-700 font-medium">
+                      • Bài: {selectedRecord.lesson_topic}
+                    </span>
+                  )}
+                </div>
+                {selectedRecord.teacher_note && (
+                  <p className="text-text-secondary italic mt-1">
+                    Ghi chú GV: "{selectedRecord.teacher_note}"
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+
           <div>
             <label className="block text-xs font-semibold text-text-primary mb-1">
               Trạng thái điểm danh CSKH
