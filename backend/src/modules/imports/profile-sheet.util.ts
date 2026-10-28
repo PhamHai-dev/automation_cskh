@@ -1,11 +1,12 @@
 /**
  * profile-sheet.util.ts
  * -----------------------------------------------------------------------------
- * Layout Catalog + Column Mapping Config cho backup Web -> Sheet (2 sheet/workbook):
- *   - KAIWA: `1.Chăm sóc` (60 cột A..BH, header row 3) + `3.Chấm buổi` (28 cột
- *            cố định A..AB, header row 2, block tháng từ AC)
- *   - JLPT : `Data JLPT_Inhouse` (52 cột A..AZ, header row 2) + `Chấm buổi`
- *            (12 cột cố định A..L, header row 2, block tháng từ M)
+ * Layout Catalog + Column Mapping Config cho backup Web -> Sheet:
+ *   - KAIWA  : `1.Chăm sóc` (60 cột A..BH, header row 3) + `3.Chấm buổi` (28 cột
+ *              cố định A..AB, header row 2, block tháng từ AC) + `Điểm danh chốt` (12 cột A..L)
+ *   - JLPT   : `Data JLPT_Inhouse` (52 cột A..AZ, header row 2) + `Chấm buổi`
+ *              (12 cột cố định A..L, header row 2, block tháng từ M) + `Điểm danh chốt` (12 cột A..L)
+ *   - TEACHER: `2026 スケジュール` (6 cột cố định A..F, header row 2, block tháng từ G)
  *
  * Bộ fieldKey ở đây là HỢP ĐỒNG giữa 3 phía:
  *   1. Bảng cấu hình cột Admin (AppSetting `SHEET_BACKUP_COLUMN_CONFIG`)
@@ -13,13 +14,6 @@
  *   3. UI "Cấu hình cột" (GET /imports/sheet-backup/column-config)
  * Chiều đọc Sheet -> Web đối xứng trong sheet-sync.parser.ts
  * (parseJlptSheetRows / parseKaiwaSheetRows).
- *
- * QUY TẮC AN TOÀN DỮ LIỆU:
- *   - `hasDbSource: false` (5 cột lịch phụ Giờ học (2)/Lịch học (2)/Thời lượng
- *     (2)/Vòng lặp/Ngày học): engine KHÔNG bao giờ ghi đè/xóa trắng — resolve
- *     trả hasValue=false khi program_metadata không có dữ liệu tương ứng.
- *   - `resolveBackupFieldValue` trả `hasValue: false` khi DB trống -> engine bỏ
- *     qua ô (giữ nguyên ô trên sheet), chỉ ghi khi hasValue: true.
  * -----------------------------------------------------------------------------
  */
 
@@ -294,6 +288,37 @@ const JLPT_ATTENDANCE_COLS = buildCols([
   [12, 'stats.attended_all_time', 'Số buổi đã học', G.attendance, { isFormulaPreserved: true }],
 ]);
 
+/* -------------------- TEACHER: 2026 スケジュール (6) ------------------ */
+
+const TEACHER_ATTENDANCE_COLS = buildCols([
+  [1, 'teacher_sheet.class_model', 'Mô hình lớp', G.class],
+  [2, 'student.external_id', 'Mã học viên/Mã lớp', G.profile, { isKey: true }],
+  [3, 'student.full_name', 'Họ tên học viên', G.profile],
+  [4, 'enr.total_sessions', 'Tổng số buổi', G.class],
+  [5, 'stats.remaining_sessions', 'Số buổi còn lại', G.attendance, { isFormulaPreserved: true }],
+  [6, 'schedule.time_range', 'Thời gian', G.class],
+]);
+
+export function getTeacherAttendanceColumnMapping(): SheetColumnMappingConfig {
+  return {
+    sheetKind: 'attendance',
+    defaultSheetName: '2026 スケジュール',
+    headerRow: 2,
+    firstDataRow: 3,
+    columns: TEACHER_ATTENDANCE_COLS.map((c) => ({ ...c })),
+  };
+}
+
+export function getFinalAttendanceColumnMapping(): SheetColumnMappingConfig {
+  return {
+    sheetKind: 'attendance',
+    defaultSheetName: 'Điểm danh chốt',
+    headerRow: 2,
+    firstDataRow: 3,
+    columns: JLPT_ATTENDANCE_COLS.map((c) => ({ ...c })),
+  };
+}
+
 /* ------------------------- Default config map ------------------------ */
 
 function programDefaults(programType: BackupProgramType): ProgramColumnMappingConfig {
@@ -370,7 +395,6 @@ function normalizeColumnSet(defaults: SheetColumnMappingConfig, stored?: Partial
     };
   });
 
-  // Cột lạ (đã xoá khỏi default nhưng còn trong DB) vẫn giữ để không mất dữ liệu cấu hình.
   for (const saved of byFieldKey.values()) {
     if (defaults.columns.some((d) => d.fieldKey === saved.fieldKey)) continue;
     const col = Math.max(1, Math.min(200, Math.round(Number(saved.col) || saved.defaultCol || 1)));
@@ -494,11 +518,6 @@ function toStoredShape(input: GlobalBackupColumnConfigMap): Prisma.InputJsonValu
   return payload as unknown as Prisma.InputJsonValue;
 }
 
-/**
- * Admin lưu cấu hình cột. Input có thể là một phần (chỉ KAIWA hoặc chỉ JLPT);
- * phần không gửi sẽ được nạp từ config hiện hành. Chấp nhận `colLetter` thay
- * cho `col` (chuẩn hoá 2 chiều ở normalizeColumnSet).
- */
 export async function saveGlobalBackupColumnConfig(
   input: Partial<GlobalBackupColumnConfigMap>,
   userId?: number
@@ -531,8 +550,8 @@ export async function resetGlobalBackupColumnConfig(
   const current = await getGlobalBackupColumnConfig();
   const program = String(programType || '').trim().toUpperCase();
   const next: GlobalBackupColumnConfigMap = {
-    KAIWA: program === 'KAIWA' ? programDefaults('KAIWA') : current.KAIWA,
-    JLPT: program === 'JLPT' ? programDefaults('JLPT') : current.JLPT,
+    KAIWA: program === 'KAIWA' || !program ? programDefaults('KAIWA') : current.KAIWA,
+    JLPT: program === 'JLPT' || !program ? programDefaults('JLPT') : current.JLPT,
   };
   await prisma.appSetting.upsert({
     where: { key: BACKUP_COLUMN_CONFIG_SETTING_KEY },
@@ -593,7 +612,6 @@ function pad2(n: number): string {
   return String(n).padStart(2, '0');
 }
 
-/** Date/@db.Date -> 'YYYY-MM-DD' (UTC components: MySQL DATE gửi lên UTC midnight). */
 function fmtDate(val: unknown): string {
   if (!val) return '';
   const d = val instanceof Date ? val : new Date(String(val));
@@ -662,11 +680,26 @@ function metaValue(enrollment: any, key: string): unknown {
   return null;
 }
 
-/**
- * Resolve giá trị cho 1 fieldKey. `hasValue: false` => engine GIỮ NGUYÊN ô trên
- * sheet (không ghi, không xóa trắng) — đây là cơ chế bảo vệ cột gõ tay và cột
- * DB chưa có dữ liệu.
- */
+function fmtTeacherClassModel(cls: any, enr: any): string {
+  const rawModel = String(cls?.model_type || enr?.class_model || '').toUpperCase();
+  if (rawModel.includes('1:2') || rawModel.includes('1-2') || rawModel === 'ONE_TO_TWO') return '1-2';
+  if (rawModel.includes('1:N') || rawModel.includes('1-N') || rawModel === 'ONE_TO_N') return '1-n';
+  return '1-1';
+}
+
+function fmtScheduleTimeRange(schedule: any): string {
+  const start = String(schedule?.start_time || '').trim();
+  if (!start) return '';
+  if (start.includes('-')) return start;
+  const match = start.match(/^(\d{1,2}):(\d{2})$/);
+  if (!match) return start;
+  const dur = Number(schedule?.duration_minutes) || 30;
+  const totalMin = parseInt(match[1], 10) * 60 + parseInt(match[2], 10) + dur;
+  const endH = Math.floor((totalMin % 1440) / 60);
+  const endM = totalMin % 60;
+  return `${pad2(parseInt(match[1], 10))}:${match[2]} - ${pad2(endH)}:${pad2(endM)}`;
+}
+
 export function resolveBackupFieldValue(
   fieldKey: string,
   ctx: BackupRowResolveContext
@@ -726,12 +759,14 @@ export function resolveBackupFieldValue(
     case 'class.class_code': return okText(cls?.class_code ?? cls?.class_name);
     case 'class.class_name': return okText(cls?.class_name ?? cls?.class_code);
     case 'schedule.start_time': return okText(schedule?.start_time);
+    case 'schedule.time_range': { const tr = fmtScheduleTimeRange(schedule); return tr ? ok(tr) : none; }
     case 'schedule.schedule_pattern': return okText(schedule?.schedule_pattern);
     case 'schedule.duration_minutes':
       return schedule?.duration_minutes === null || schedule?.duration_minutes === undefined ? none : ok(Number(schedule.duration_minutes));
     case 'teacher.name': return okText(teacher?.name);
     case 'teacher.code': return okText(teacher?.code ?? teacher?.name);
     case 'cvht.staff_code': return okText(csStaffCode);
+    case 'teacher_sheet.class_model': return ok(fmtTeacherClassModel(cls, enr));
 
     // --- stats ---
     case 'stats.attended_current_year': return ok(Number(stats?.attendedCurrentYear ?? 0));

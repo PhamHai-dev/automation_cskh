@@ -434,6 +434,7 @@ export class ImportsController {
 
   runAllSheetBackups = async (req: Request, res: Response, next: NextFunction) => {
     try {
+      const user = (req as any).user;
       const forceFullRewrite = Boolean(req.body?.forceFullRewrite);
       const year = req.body?.year === undefined || req.body?.year === null ? undefined : Number(req.body.year);
       const programType = req.body?.programType ? String(req.body.programType) : undefined;
@@ -441,7 +442,38 @@ export class ImportsController {
         forceFullRewrite,
         year,
         programType,
+        actorId: user?.id,
+        triggerType: 'MANUAL',
       });
+      res.status(200).json({ data, meta: null });
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  getSheetBackupHistory = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const user = (req as any).user;
+      const actor = {
+        id: user?.id || 1,
+        roles: (user?.roles as string[]) || ['ADMIN'],
+      };
+      const programType = req.query.programType ? String(req.query.programType) : undefined;
+      const status = req.query.status ? String(req.query.status) : undefined;
+      const limit = req.query.limit ? parseInt(String(req.query.limit), 10) : 50;
+      const data = await this.sheetBackupService.getBackupHistory(actor, { programType, status, limit });
+      res.status(200).json({ data, meta: null });
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  getSheetSyncHistory = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const code = req.query.code ? String(req.query.code) : undefined;
+      const status = req.query.status ? String(req.query.status) : undefined;
+      const limit = req.query.limit ? parseInt(String(req.query.limit), 10) : 50;
+      const data = await this.sheetSyncService.getSyncHistory({ code, status, limit });
       res.status(200).json({ data, meta: null });
     } catch (err) {
       next(err);

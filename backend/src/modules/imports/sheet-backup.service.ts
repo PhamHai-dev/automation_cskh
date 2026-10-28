@@ -1,25 +1,18 @@
 /**
- * SheetBackupService - backup ĐIỂM DANH từ WEB về Google Sheet / file Excel.
+ * SheetBackupService - backup ĐIỂM DANH & HỒ SƠ từ WEB về Google Sheet / file Excel.
  * -----------------------------------------------------------------------------
- * Một config = một (CSKH x chương trình JLPT|KAIWA). Đích là sheet `Chấm buổi`
- * (JLPT) hoặc `3.Chấm buổi` (KAIWA). Không còn backup sheet hồ sơ `1.Chăm sóc`.
+ * Hỗ trợ 3 loại chương trình / đối tượng backup:
+ *   1. KAIWA (mỗi CSKH): 3 sheets (`1.Chăm sóc` + `3.Chấm buổi` + `Điểm danh chốt`)
+ *   2. JLPT  (mỗi CSKH): 3 sheets (`Data JLPT_Inhouse` + `Chấm buổi` + `Điểm danh chốt`)
+ *   3. TEACHER (mỗi Giáo viên): 1 sheet (`2026 スケジュール` theo mẫu `docs/data/giao_vien.xlsx`)
  *
- * Pipeline runBackupForConfig():
- *   1. Nạp enrollment của CSKH + chương trình (kèm lớp, lịch, buổi học, điểm danh).
- *   2. Baseline workbook = file backup local nếu còn hợp lệ, ngược lại trích
- *      template từ docs/data/hoc_vien/hoc_vien_jlpt.xlsx (giữ row 1 / row 2 +
- *      công thức dòng mẫu).
- *   3. Với từng block tháng (lọc theo backup_year / opts.year) tính giá trị ô,
- *      diff từng ô -> updatedCellsCount, attendanceCellsWritten.
- *   4. Ghi file local, rồi (nếu có Google Sheet đích) verify bảo mật + push delta.
- *   5. last_status / last_summary / last_backup_at + AuditLog CS_PROGRAM_BACKUP.
- *
- * DEVIATIONS so sánh với layout gốc của template `Chấm buổi`:
- *   - Cột A (header gốc "Mã lớp") được engine dùng làm KHOÁ DÒNG và ghi MÃ HỌC
- *     VIÊN; mã lớp ghi ở cột C. Tiêu đề 12 cột cố định được engine ghi lại khi
- *     tạo file mới nên sheet luôn tự giải thích (xem FIXED_HEADERS).
- *   - Các cột tổng kết tháng (Số buổi đã học / A / B / C / D / E) giữ nguyên công
- *     thức của dòng mẫu khi có, chỉ cập nhật cached result.
+ * Nguồn dữ liệu điểm danh được tách bạch rõ ràng:
+ *   - Chế độ 'CS' (`3.Chấm buổi` / `Chấm buổi`): chỉ ghi bản ghi có `att.cs_status !== null`.
+ *     Giá trị ô ngày ưu tiên `att.cs_raw_value` (nếu khác rỗng), ngược lại '1' hoặc A/B/C/D/E.
+ *   - Chế độ 'FINAL' (`Điểm danh chốt` trong cả Kaiwa & JLPT): chỉ ghi bản ghi đã đối soát
+ *     (`reconciliation_state === 'MATCHED' || reconciliation_state === 'RESOLVED'`).
+ *   - Chế độ 'TEACHER' (`2026 スケジュール`): chỉ ghi bản ghi có `att.teacher_status !== null`
+ *     với công thức ghi như hệ thống hiện tại (`lesson_topic || '1'` cho ATTENDED, A/B/C/D/E cho nghỉ).
  * -----------------------------------------------------------------------------
  */
 
@@ -30,9 +23,8 @@ import cron from 'node-cron';
 import {
   AttendanceStatus,
   EnrollmentStatus,
-  ImportBatchStatus,
-  ImportType,
   Prisma,
+  ReconciliationState,
 } from '@prisma/client';
 
 import { prisma } from '../../prisma/client';
@@ -50,6 +42,7 @@ import {
   detectJlptMonthBlocks,
   detectSheetYears,
   GoogleSafeValue,
+  loadOrExtractAttendanceWorkbook,
   loadOrExtractProgramWorkbook,
   normalizeCellComparable,
   pushDeltaToGoogleSheet,
@@ -67,7 +60,9 @@ import {
   SheetColumnMappingConfig,
   buildCareMilestoneMap,
   getEnabledColumns,
+  getFinalAttendanceColumnMapping,
   getGlobalBackupColumnConfig,
+  getTeacherAttendanceColumnMapping,
   resetGlobalBackupColumnConfig,
   resolveBackupFieldValue,
   saveGlobalBackupColumnConfig,
@@ -76,25 +71,38 @@ import {
 const log = createLogger('SheetBackupService');
 
 export const PROGRAM_TYPES = ['JLPT', 'KAIWA'] as const;
-export type ProgramType = (typeof PROGRAM_TYPES)[number];
+export type ProgramType = (typeof PROGRAM_TYPES)[number] | 'TEACHER';
 
 export const DEFAULT_SHEET_NAME_BY_PROGRAM: Record<string, string> = {
   JLPT: 'Chấm buổi',
   KAIWA: '3.Chấm buổi',
+  TEACHER: '2026 スケジュール',
 };
 
-/** Sheet HỒ SƠ mặc định theo chương trình (cùng workbook backup 2 sheet). */
+/** Sheet HỒ SƠ mặc định theo chương trình (cùng workbook backup). */
 export const DEFAULT_PROFILE_SHEET_NAME_BY_PROGRAM: Record<string, string> = {
   JLPT: 'Data JLPT_Inhouse',
   KAIWA: '1.Chăm sóc',
+  TEACHER: '',
 };
 
 export const DEFAULT_PROFILE_HEADER_ROW_BY_PROGRAM: Record<string, number> = {
   JLPT: 2,
   KAIWA: 3,
+  TEACHER: 2,
 };
 
+export const DEFAULT_FINAL_SHEET_NAME = 'Điểm danh chốt';
+export const DEFAULT_FINAL_HEADER_ROW = 2;
+const FINAL_META_SETTING_KEY = 'SHEET_BACKUP_FINAL_META';
+
+export function isTeacherProgramType(programType?: string | null): boolean {
+  const norm = String(programType || '').trim().toUpperCase();
+  return norm === 'TEACHER' || norm.startsWith('GV:');
+}
+
 export function defaultProfileSheetFor(programType: string): string {
+  if (isTeacherProgramType(programType)) return '';
   return DEFAULT_PROFILE_SHEET_NAME_BY_PROGRAM[normalizeProgramType(programType)] || '1.Chăm sóc';
 }
 
@@ -104,16 +112,6 @@ export function defaultProfileHeaderRowFor(programType: string): number {
 
 export const DEFAULT_SCHEDULE_TIMES = ['12:00', '21:00'];
 
-/**
- * Cột cố định của sheet "Chấm buổi" - theo ĐÚNG header gốc của template
- * (docs/data/hoc_vien/hoc_vien_jlpt.xlsx, row 2). Engine KHÔNG ghi đè header,
- * chỉ ghi data rows; bảng này được suy ra từ header gốc nên khi template đổi
- * layout thì chỉ cần cập nhật ở đây.
- *
- * Row 2 template: A=Mã lớp, B=ID học viên, C=Tên học viên, D=Trạng thái,
- * E=Giờ học, F=(ẩn), G=CVHT, H=Lịch học, I=Thời lượng buổi học, J=Mã GV,
- * K=Tổng số buổi, L=Số buổi đã học (công thức), M..=các block tháng.
- */
 export const ATTENDANCE_COLS = {
   classCode: 1, // A - Mã lớp
   externalId: 2, // B - ID học viên  (khoá tra dòng trong sheet)
@@ -128,40 +126,12 @@ export const ATTENDANCE_COLS = {
   attendedTotal: 12, // L - Số buổi đã học (CÔNG THỨC, chỉ cập nhật cached result)
 } as const;
 
-/** Những cột engine được phép ghi ở vùng cố định (L thuộc về công thức). */
-const FIXED_WRITABLE_COLS: number[] = [
-  ATTENDANCE_COLS.classCode,
-  ATTENDANCE_COLS.externalId,
-  ATTENDANCE_COLS.fullName,
-  ATTENDANCE_COLS.status,
-  ATTENDANCE_COLS.startTime,
-  ATTENDANCE_COLS.cvht,
-  ATTENDANCE_COLS.schedulePattern,
-  ATTENDANCE_COLS.durationMinutes,
-  ATTENDANCE_COLS.teacherCode,
-  ATTENDANCE_COLS.totalSessions,
-];
-
 /** Cột cuối của vùng cố định (L) - block tháng đầu tiên bắt đầu sau cột này. */
 const FIXED_LAST_COL = 12;
 
-/** Nhãn header gốc của vùng cố định - chỉ dùng khi tạo file hoàn toàn mới. */
-const TEMPLATE_FIXED_HEADERS: Record<number, string> = {
-  [ATTENDANCE_COLS.classCode]: 'Mã lớp',
-  [ATTENDANCE_COLS.externalId]: 'ID học viên',
-  [ATTENDANCE_COLS.fullName]: 'Tên học viên',
-  [ATTENDANCE_COLS.status]: 'Trạng thái',
-  [ATTENDANCE_COLS.startTime]: 'Giờ học',
-  [ATTENDANCE_COLS.cvht]: 'CVHT',
-  [ATTENDANCE_COLS.schedulePattern]: 'Lịch học',
-  [ATTENDANCE_COLS.durationMinutes]: 'Thời lượng buổi học',
-  [ATTENDANCE_COLS.teacherCode]: 'Mã GV',
-  [ATTENDANCE_COLS.totalSessions]: 'Tổng số buổi',
-  [ATTENDANCE_COLS.attendedTotal]: 'Số buổi đã học',
-};
-
-/** Nhãn header gốc của 6 cột tổng kết trong mỗi block tháng. */
+/** Nhãn header gốc của các cột tổng kết trong mỗi block tháng. */
 const SUMMARY_HEADERS: Record<string, string> = {
+  completedHours: 'Số giờ hoàn thành\n完了時間数',
   attended: 'Số buổi đã học',
   absentA: 'Số buổi xin nghỉ có phép\nA',
   leaveB: 'Số buổi bảo lưu\nB',
@@ -169,7 +139,6 @@ const SUMMARY_HEADERS: Record<string, string> = {
   teacherD: 'Số buổi GV xin nghỉ\nD',
   techErrorE: 'Số buổi lỗi kĩ thuật \nE',
 };
-
 
 /* --------------------------------- Types ---------------------------------- */
 
@@ -186,6 +155,9 @@ export interface ProgramBackupConfigItem {
   profile_sheet_name: string;
   profile_header_row: number;
   profile_enabled: boolean;
+  final_sheet_name: string;
+  final_header_row: number;
+  final_enabled: boolean;
   schedule_times: string[];
   backup_year: number | null;
   enabled: boolean;
@@ -214,6 +186,9 @@ export interface UpdateProgramBackupConfigDTO {
   profile_sheet_name?: string;
   profile_header_row?: number;
   profile_enabled?: boolean;
+  final_sheet_name?: string;
+  final_header_row?: number;
+  final_enabled?: boolean;
   schedule_times?: string[];
   backup_year?: number | null;
   enabled?: boolean;
@@ -221,7 +196,7 @@ export interface UpdateProgramBackupConfigDTO {
   mask_sensitive_data?: boolean;
 }
 
-/** Stats delta của RIÊNG một sheet trong workbook 2 sheet. */
+/** Stats delta của RIÊNG một sheet trong workbook. */
 export interface SheetBackupStats {
   sheetName: string;
   totalEnrollments: number;
@@ -233,6 +208,12 @@ export interface SheetBackupStats {
 }
 
 export interface ProgramBackupSummary {
+  configId?: number;
+  configName?: string;
+  batchId?: string;
+  triggerType?: 'MANUAL' | 'AUTO';
+  mode?: 'DELTA' | 'FULL';
+  durationMs?: number;
   csUserId: number;
   staffCode: string | null;
   programType: string;
@@ -247,27 +228,72 @@ export interface ProgramBackupSummary {
   attendanceCellsWritten: number;
   yearFilter: number | null;
   backedUpAt: string;
+  error?: string | null;
   /** null khi profile_enabled = false. */
   profile?: SheetBackupStats | null;
   attendance?: SheetBackupStats | null;
+  finalAttendance?: SheetBackupStats | null;
+}
+
+export interface BackupHistoryItem {
+  id: number;
+  configId: number;
+  configName: string;
+  programType: string;
+  staffCode: string | null;
+  staffName: string | null;
+  status: 'SUCCESS' | 'FAILED';
+  mode: 'DELTA' | 'FULL';
+  syncedToGoogleSheet: boolean;
+  localFilePath: string;
+  totalStudents: number;
+  unchangedRows: number;
+  updatedRows: number;
+  appendedRows: number;
+  updatedCellsCount: number;
+  attendanceCellsWritten: number;
+  durationMs: number;
+  backedUpAt: string;
+  error: string | null;
+  profile: SheetBackupStats | null;
+  attendance: SheetBackupStats | null;
+  finalAttendance: SheetBackupStats | null;
+}
+
+export interface BackupHistoryBatch {
+  batchId: string;
+  triggerType: 'MANUAL' | 'AUTO';
+  mode: 'DELTA' | 'FULL';
+  startedAt: string;
+  durationMs: number;
+  status: 'SUCCESS' | 'PARTIAL' | 'FAILED';
+  totalConfigs: number;
+  successConfigs: number;
+  failedConfigs: number;
+  totalStudents: number;
+  updatedCellsCount: number;
+  attendanceCellsWritten: number;
+  items: BackupHistoryItem[];
 }
 
 export function normalizeProgramType(value?: string | null): string {
   return String(value || '').trim().toUpperCase();
 }
 
-/**
- * 1-based Excel column -> `A1` style reference (used to translate the sample
- * formula row onto the row we are appending).
- */
 function translateFormulaRow(formula: string, fromRow: number, toRow: number): string {
   return formula.replace(/([A-Z]{1,3})(\d+)/g, (whole, col, digits) => {
     const rowNum = parseInt(digits, 10);
-    // Absolute row references ($3) are written as `A$3` by ExcelJS and never
-    // appear in these formulas; relative refs must move with the target row.
     if (rowNum === fromRow) return `${col}${toRow}`;
     return whole;
   });
+}
+
+function buildBatchId(date = new Date()): string {
+  const mm = String(date.getMonth() + 1).padStart(2, '0');
+  const dd = String(date.getDate()).padStart(2, '0');
+  const hh = String(date.getHours()).padStart(2, '0');
+  const min = String(date.getMinutes()).padStart(2, '0');
+  return `#BK-${mm}${dd}-${hh}${min}`;
 }
 
 async function loadEnrollments(csUserId: number, programType: string) {
@@ -277,7 +303,47 @@ async function loadEnrollments(csUserId: number, programType: string) {
       student: true,
       package: true,
       cs: { select: { id: true, name: true, staff_code: true } },
-      // care_logs nuôi các cột "Nội dung chăm sóc sau buổi N" / "Kiểm tra lần N"
+      care_logs: { orderBy: { created_at: 'asc' } },
+      enrollment_classes: {
+        include: {
+          class: {
+            include: {
+              class_teachers: {
+                include: { teacher: true },
+                orderBy: { id: 'asc' },
+              },
+              class_schedules: { orderBy: { id: 'asc' } },
+            },
+          },
+          attendance: {
+            where: { deleted_at: null },
+            include: { class_session: true },
+          },
+        },
+        orderBy: { sequence_no: 'asc' },
+      },
+    },
+    orderBy: { id: 'asc' },
+  });
+}
+
+async function loadTeacherEnrollments(teacherId: number) {
+  return prisma.enrollment.findMany({
+    where: {
+      enrollment_classes: {
+        some: {
+          class: {
+            class_teachers: {
+              some: { teacher_id: teacherId },
+            },
+          },
+        },
+      },
+    },
+    include: {
+      student: true,
+      package: true,
+      cs: { select: { id: true, name: true, staff_code: true } },
       care_logs: { orderBy: { created_at: 'asc' } },
       enrollment_classes: {
         include: {
@@ -304,14 +370,12 @@ async function loadEnrollments(csUserId: number, programType: string) {
 
 /* ----------------------------- Template years ------------------------------ */
 
-/** Cached calendar years present in the source template (row 1 block labels). */
 let templateYearsCache: Promise<number[]> | null = null;
 
 async function getTemplateYears(): Promise<number[]> {
   if (!templateYearsCache) {
     templateYearsCache = (async () => {
       try {
-        const { readTemplateAttendanceWorksheet } = await import('./attendance-sheet.util');
         const ws = await readTemplateAttendanceWorksheet();
         return detectSheetYears(ws);
       } catch (err: any) {
@@ -321,6 +385,14 @@ async function getTemplateYears(): Promise<number[]> {
     })();
   }
   return templateYearsCache;
+}
+
+type AttendanceWriteMode = 'CS' | 'FINAL' | 'TEACHER';
+
+interface FinalMetaEntry {
+  final_sheet_name?: string;
+  final_header_row?: number;
+  final_enabled?: boolean;
 }
 
 /* --------------------------------- Service -------------------------------- */
@@ -341,10 +413,17 @@ export class SheetBackupService {
   }
 
   public defaultSheetNameFor(programType: string): string {
+    if (isTeacherProgramType(programType)) return '2026 スケジュール';
     return DEFAULT_SHEET_NAME_BY_PROGRAM[normalizeProgramType(programType)] || 'Chấm buổi';
   }
 
   public relativeBackupPathFor(staffLabel: string, programType: string): string {
+    if (isTeacherProgramType(programType)) {
+      const code = programType.toUpperCase().startsWith('GV:')
+        ? programType.slice(3).trim() || staffLabel
+        : staffLabel;
+      return `backups/giao_vien/diem_danh_gv_${code}.xlsx`;
+    }
     const slug = normalizeProgramType(programType).toLowerCase() || 'cham_buoi';
     return `backups/cskh/hoc_vien_${slug}_${staffLabel}.xlsx`;
   }
@@ -352,7 +431,9 @@ export class SheetBackupService {
   /* --------------------------- A. Config bootstrap ----------------------- */
 
   /**
-   * Đảm bảo mỗi CSKH đang hoạt động có đúng 2 config (JLPT + KAIWA).
+   * Đảm bảo:
+   *  - Mỗi CSKH đang hoạt động có đúng 2 config (JLPT + KAIWA).
+   *  - Mỗi Giáo viên (Teacher.active = true) có 1 config backup điểm danh GV (`2026 スケジュール`).
    */
   public async ensureConfigs(): Promise<void> {
     const allUsers = await prisma.user.findMany({ where: { active: true }, orderBy: { id: 'asc' } });
@@ -361,8 +442,13 @@ export class SheetBackupService {
       return roles.includes('CS') || Boolean(u.staff_code && u.staff_code.toUpperCase().startsWith('CVHT'));
     });
 
+    const fallbackOwner =
+      allUsers.find((u) => Array.isArray(u.roles) && (u.roles as string[]).includes('ADMIN')) ||
+      allUsers[0] ||
+      null;
+
     const existing = await prisma.programSheetBackupConfig.findMany({
-      select: { cs_user_id: true, program_type: true },
+      select: { id: true, cs_user_id: true, program_type: true, local_backup_path: true },
     });
     const seen = new Set(existing.map((c) => `${c.cs_user_id}::${normalizeProgramType(c.program_type)}`));
 
@@ -395,9 +481,8 @@ export class SheetBackupService {
             });
           })
           .catch(async (err: any) => {
-            // Unique violation (row created concurrently) is expected and harmless.
             if (err?.code !== 'P2002') {
-              log.warn('ensureConfigs: không tạo được config', {
+              log.warn('ensureConfigs: không tạo được config CS', {
                 cs_user_id: user.id,
                 program_type: program,
                 error: err?.message || String(err),
@@ -406,6 +491,72 @@ export class SheetBackupService {
           });
         seen.add(key);
       }
+    }
+
+    // Teacher configs
+    try {
+      const teachers = await (prisma as any).teacher?.findMany?.({
+        where: { active: true },
+        orderBy: { id: 'asc' },
+      });
+      if (Array.isArray(teachers) && teachers.length > 0 && fallbackOwner) {
+        const existingTeacherCodes = new Set<string>();
+        for (const c of existing) {
+          const pt = normalizeProgramType(c.program_type);
+          if (pt.startsWith('GV:')) existingTeacherCodes.add(pt.slice(3).toUpperCase());
+          const m = String(c.local_backup_path || '').match(/diem_danh_gv_([^.\/\\]+)\.xlsx$/i);
+          if (m) existingTeacherCodes.add(m[1].toUpperCase());
+        }
+
+        for (const teacher of teachers) {
+          const tCode = String(teacher.code || `GV${teacher.id}`).trim();
+          if (existingTeacherCodes.has(tCode.toUpperCase())) continue;
+
+          const ownerUserId: number = teacher.user_id ? Number(teacher.user_id) : fallbackOwner.id;
+          const programTypeForDb = teacher.user_id
+            ? 'TEACHER'
+            : `GV:${tCode}`.slice(0, 20);
+          const key = `${ownerUserId}::${normalizeProgramType(programTypeForDb)}`;
+          if (seen.has(key)) continue;
+
+          await prisma.programSheetBackupConfig
+            .create({
+              data: {
+                cs_user_id: ownerUserId,
+                program_type: programTypeForDb,
+                name: `Backup Điểm danh GV - ${tCode} (${teacher.name || tCode})`,
+                local_backup_path: `backups/giao_vien/diem_danh_gv_${tCode}.xlsx`,
+                sheet_name: '2026 スケジュール',
+                header_row: 2,
+                schedule_times: DEFAULT_SCHEDULE_TIMES as unknown as Prisma.InputJsonValue,
+                enabled: true,
+                require_private_sheet: true,
+                mask_sensitive_data: false,
+                last_status: 'IDLE',
+              },
+            })
+            .then(async (created) => {
+              await this.setProfileMetaRaw(created.id, {
+                profile_sheet_name: '',
+                profile_header_row: 2,
+                profile_enabled: false,
+              });
+            })
+            .catch((err: any) => {
+              if (err?.code !== 'P2002') {
+                log.warn('ensureConfigs: không tạo được config GV', {
+                  teacher: tCode,
+                  error: err?.message || String(err),
+                });
+              }
+            });
+
+          seen.add(key);
+          existingTeacherCodes.add(tCode.toUpperCase());
+        }
+      }
+    } catch {
+      /* ignore if teacher table is mocked out in unit tests */
     }
   }
 
@@ -462,42 +613,122 @@ export class SheetBackupService {
     }
   }
 
+  private async loadFinalMetaMap(): Promise<Record<string, FinalMetaEntry>> {
+    try {
+      const row = await prisma.appSetting?.findUnique?.({ where: { key: FINAL_META_SETTING_KEY } });
+      if (row && row.value && typeof row.value === 'object') {
+        return row.value as Record<string, FinalMetaEntry>;
+      }
+    } catch {
+      /* ignore */
+    }
+    return {};
+  }
+
+  private async saveFinalMetaPatch(id: number, patch: FinalMetaEntry): Promise<void> {
+    try {
+      const current = await this.loadFinalMetaMap();
+      const prev = current[String(id)] || {};
+      const next: Record<string, FinalMetaEntry> = {
+        ...current,
+        [String(id)]: {
+          ...prev,
+          ...(patch.final_sheet_name !== undefined ? { final_sheet_name: patch.final_sheet_name } : {}),
+          ...(patch.final_header_row !== undefined ? { final_header_row: patch.final_header_row } : {}),
+          ...(patch.final_enabled !== undefined ? { final_enabled: patch.final_enabled } : {}),
+        },
+      };
+      await prisma.appSetting?.upsert?.({
+        where: { key: FINAL_META_SETTING_KEY },
+        update: { value: next as unknown as Prisma.InputJsonValue },
+        create: { key: FINAL_META_SETTING_KEY, value: next as unknown as Prisma.InputJsonValue },
+      });
+    } catch (err: any) {
+      log.warn('saveFinalMetaPatch warning', { id, error: err?.message });
+    }
+  }
+
+  /** Tra cứu bản ghi Teacher gắn với 1 config Giáo viên. */
+  private resolveTeacherForConfig(
+    cfg: { cs_user_id: number; program_type: string; local_backup_path?: string | null; name?: string | null },
+    teachers: Array<{ id: number; code: string; name: string; email: string | null; user_id: number | null }>
+  ): { id: number; code: string; name: string; email: string | null; user_id: number | null } | null {
+    const rawPt = String(cfg.program_type || '').trim();
+    if (rawPt.toUpperCase().startsWith('GV:')) {
+      const code = rawPt.slice(3).trim().toUpperCase();
+      const byCode = teachers.find((t) => t.code.toUpperCase() === code);
+      if (byCode) return byCode;
+    }
+    const byUser = teachers.find((t) => t.user_id && Number(t.user_id) === Number(cfg.cs_user_id));
+    if (byUser) return byUser;
+
+    const pathMatch = String(cfg.local_backup_path || '').match(/diem_danh_gv_([^.\/\\]+)\.xlsx$/i);
+    if (pathMatch) {
+      const code = pathMatch[1].toUpperCase();
+      const byPath = teachers.find((t) => t.code.toUpperCase() === code);
+      if (byPath) return byPath;
+    }
+    return null;
+  }
+
   /* ------------------------------- B. Listing ---------------------------- */
 
   private toConfigItem(
     cfg: any,
     counts: { total: number; attending: number },
-    profileMeta?: { profile_sheet_name: string | null; profile_header_row: number | null; profile_enabled: number | boolean | null } | null
+    profileMeta?: { profile_sheet_name: string | null; profile_header_row: number | null; profile_enabled: number | boolean | null } | null,
+    finalMeta?: FinalMetaEntry | null,
+    teacher?: { id: number; code: string; name: string; email: string | null; user_id: number | null } | null
   ): ProgramBackupConfigItem {
-    const program = normalizeProgramType(cfg.program_type);
+    const rawProgram = normalizeProgramType(cfg.program_type);
+    const isTeacher = isTeacherProgramType(rawProgram);
+    const apiProgramType = isTeacher ? 'TEACHER' : rawProgram;
+
+    const staffCode = isTeacher
+      ? teacher?.code || (rawProgram.startsWith('GV:') ? rawProgram.slice(3) : cfg.cs_user?.staff_code || 'GV')
+      : cfg.cs_user?.staff_code || null;
+
     const relPath =
       cfg.local_backup_path ||
-      this.relativeBackupPathFor(cfg.cs_user?.staff_code || `CS${cfg.cs_user_id}`, program);
+      this.relativeBackupPathFor(staffCode || `CS${cfg.cs_user_id}`, rawProgram);
     const scheduleTimes =
       Array.isArray(cfg.schedule_times) && cfg.schedule_times.length > 0
         ? (cfg.schedule_times as string[]).map(String)
         : [...DEFAULT_SCHEDULE_TIMES];
 
+    const profileEnabled = isTeacher
+      ? false
+      : profileMeta?.profile_enabled === undefined || profileMeta?.profile_enabled === null
+        ? cfg.profile_enabled === undefined
+          ? true
+          : Boolean(cfg.profile_enabled)
+        : Boolean(Number(profileMeta.profile_enabled));
+
+    const finalEnabled = isTeacher
+      ? false
+      : finalMeta?.final_enabled === undefined
+        ? true
+        : Boolean(finalMeta.final_enabled);
+
     return {
       id: cfg.id,
       cs_user_id: cfg.cs_user_id,
-      program_type: program,
+      program_type: apiProgramType,
       name: cfg.name,
       target_spreadsheet_url: cfg.target_spreadsheet_url ?? null,
       target_spreadsheet_id: cfg.target_spreadsheet_id ?? null,
       local_backup_path: relPath.replace(/\\/g, '/'),
-      sheet_name: cfg.sheet_name || this.defaultSheetNameFor(program),
+      sheet_name: cfg.sheet_name || this.defaultSheetNameFor(rawProgram),
       header_row: cfg.header_row || 2,
-      profile_sheet_name:
-        profileMeta?.profile_sheet_name ?? cfg.profile_sheet_name ?? defaultProfileSheetFor(program),
+      profile_sheet_name: isTeacher
+        ? ''
+        : profileMeta?.profile_sheet_name ?? cfg.profile_sheet_name ?? defaultProfileSheetFor(rawProgram),
       profile_header_row:
-        Number(profileMeta?.profile_header_row ?? cfg.profile_header_row) || defaultProfileHeaderRowFor(program),
-      profile_enabled:
-        profileMeta?.profile_enabled === undefined || profileMeta?.profile_enabled === null
-          ? cfg.profile_enabled === undefined
-            ? true
-            : Boolean(cfg.profile_enabled)
-          : Boolean(Number(profileMeta.profile_enabled)),
+        Number(profileMeta?.profile_header_row ?? cfg.profile_header_row) || defaultProfileHeaderRowFor(rawProgram),
+      profile_enabled: profileEnabled,
+      final_sheet_name: finalMeta?.final_sheet_name || DEFAULT_FINAL_SHEET_NAME,
+      final_header_row: Number(finalMeta?.final_header_row) || DEFAULT_FINAL_HEADER_ROW,
+      final_enabled: finalEnabled,
       schedule_times: scheduleTimes,
       backup_year: cfg.backup_year ?? null,
       enabled: Boolean(cfg.enabled),
@@ -509,12 +740,19 @@ export class SheetBackupService {
       last_error: cfg.last_error ?? null,
       created_at: cfg.created_at,
       updated_at: cfg.updated_at,
-      cs_user: {
-        id: cfg.cs_user?.id ?? cfg.cs_user_id,
-        name: cfg.cs_user?.name ?? null,
-        email: cfg.cs_user?.email ?? '',
-        staff_code: cfg.cs_user?.staff_code ?? null,
-      },
+      cs_user: isTeacher
+        ? {
+            id: teacher?.user_id || cfg.cs_user_id,
+            name: teacher?.name || cfg.name,
+            email: teacher?.email || cfg.cs_user?.email || '',
+            staff_code: staffCode || 'GV',
+          }
+        : {
+            id: cfg.cs_user?.id ?? cfg.cs_user_id,
+            name: cfg.cs_user?.name ?? null,
+            email: cfg.cs_user?.email ?? '',
+            staff_code: cfg.cs_user?.staff_code ?? null,
+          },
       student_counts: counts,
       has_local_backup_file: fs.existsSync(this.resolveLocalBackupPath(relPath)),
     };
@@ -551,7 +789,10 @@ export class SheetBackupService {
   }
 
   /**
-   * Liệt kê config theo vai trò: CS chỉ thấy config của mình, ADMIN/MANAGE thấy hết.
+   * Liệt kê config theo vai trò:
+   *  - ADMIN / MANAGE: thấy toàn bộ (CS + GV)
+   *  - CS: thấy các config CS của mình (JLPT, KAIWA)
+   *  - TEACHER: thấy config GV của mình
    */
   public async listConfigs(actor: {
     id: number;
@@ -561,19 +802,39 @@ export class SheetBackupService {
     const { info: serviceAccount } = await this.sheetSyncService.getServiceAccountKey();
 
     const isAdminOrManage = actor.roles.includes('ADMIN') || actor.roles.includes('MANAGE');
+    const isTeacherRole = actor.roles.includes('TEACHER') && !actor.roles.includes('CS') && !isAdminOrManage;
+    const isCsOnlyRole = actor.roles.includes('CS') && !actor.roles.includes('TEACHER') && !isAdminOrManage;
+
     const whereClause = isAdminOrManage ? {} : { cs_user_id: actor.id };
 
-    const rawConfigs = await prisma.programSheetBackupConfig.findMany({
-      where: whereClause,
-      include: {
-        cs_user: { select: { id: true, name: true, email: true, staff_code: true } },
-      },
-      orderBy: [{ cs_user_id: 'asc' }, { program_type: 'asc' }],
+    const [rawConfigsAll, allTeachers] = await Promise.all([
+      prisma.programSheetBackupConfig.findMany({
+        where: whereClause,
+        include: {
+          cs_user: { select: { id: true, name: true, email: true, staff_code: true } },
+        },
+        orderBy: [{ cs_user_id: 'asc' }, { program_type: 'asc' }],
+      }),
+      (prisma as any).teacher?.findMany?.({
+        where: { active: true },
+        select: { id: true, code: true, name: true, email: true, user_id: true },
+      }) || Promise.resolve([]),
+    ]);
+
+    const teachersList: Array<{ id: number; code: string; name: string; email: string | null; user_id: number | null }> =
+      Array.isArray(allTeachers) ? allTeachers : [];
+
+    const rawConfigs = rawConfigsAll.filter((c) => {
+      if (isAdminOrManage) return true;
+      const isT = isTeacherProgramType(c.program_type);
+      if (isTeacherRole) return isT;
+      if (isCsOnlyRole) return !isT;
+      return true;
     });
 
-    // student_counts per (cs, program)
-    const csUserIds = [...new Set(rawConfigs.map((c) => c.cs_user_id))];
-    const programNames = [...new Set(rawConfigs.map((c) => normalizeProgramType(c.program_type)))];
+    // student_counts per (cs, program) + per teacher
+    const csUserIds = [...new Set(rawConfigs.filter((c) => !isTeacherProgramType(c.program_type)).map((c) => c.cs_user_id))];
+    const programNames = ['JLPT', 'KAIWA'];
     const enrollments = csUserIds.length
       ? await prisma.enrollment.findMany({
           where: { cs_id: { in: csUserIds }, program_type: { in: programNames } },
@@ -606,8 +867,64 @@ export class SheetBackupService {
       }
     }
 
+    // Teacher student counts
+    const countsByTeacherId = new Map<number, { total: number; attending: number }>();
+    const hasTeacherConfigs = rawConfigs.some((c) => isTeacherProgramType(c.program_type));
+    if (hasTeacherConfigs && teachersList.length > 0) {
+      try {
+        const teacherEnrollments = await prisma.enrollment.findMany({
+          where: {
+            enrollment_classes: {
+              some: {
+                class: {
+                  class_teachers: {
+                    some: { teacher_id: { in: teachersList.map((t) => t.id) } },
+                  },
+                },
+              },
+            },
+          },
+          select: {
+            id: true,
+            status: true,
+            enrollment_classes: {
+              select: {
+                class: {
+                  select: {
+                    class_teachers: { select: { teacher_id: true } },
+                  },
+                },
+              },
+            },
+          },
+        });
+        for (const t of teachersList) countsByTeacherId.set(t.id, { total: 0, attending: 0 });
+        for (const enr of teacherEnrollments) {
+          const tIds = new Set<number>();
+          for (const ec of enr.enrollment_classes || []) {
+            for (const ct of ec.class?.class_teachers || []) {
+              tIds.add(ct.teacher_id);
+            }
+          }
+          const isAttending =
+            enr.status === EnrollmentStatus.STUDYING ||
+            enr.status === EnrollmentStatus.WAITING_CLASS ||
+            enr.status === EnrollmentStatus.UPCOMING;
+          for (const tid of tIds) {
+            const b = countsByTeacherId.get(tid);
+            if (!b) continue;
+            b.total++;
+            if (isAttending) b.attending++;
+          }
+        }
+      } catch {
+        /* ignore if relation mocked out */
+      }
+    }
+
     // availableYears = template row 1 (2025,2026,...) ∪ năm các buổi học của HV
     const years = new Set<number>(await getTemplateYears());
+    years.add(new Date().getFullYear());
     const externalIds = enrollments
       .map((e: any) => (e.student?.external_id || '').trim())
       .filter(Boolean);
@@ -634,19 +951,29 @@ export class SheetBackupService {
       }
     }
 
-    const profileMetaMap = await this.loadProfileMetaMap(rawConfigs.map((c) => c.id));
+    const [profileMetaMap, finalMetaMap] = await Promise.all([
+      this.loadProfileMetaMap(rawConfigs.map((c) => c.id)),
+      this.loadFinalMetaMap(),
+    ]);
 
     return {
-      configs: rawConfigs.map((cfg) =>
-        this.toConfigItem(
+      configs: rawConfigs.map((cfg) => {
+        const isT = isTeacherProgramType(cfg.program_type);
+        const teacher = isT ? this.resolveTeacherForConfig(cfg, teachersList) : null;
+        const counts = isT
+          ? (teacher && countsByTeacherId.get(teacher.id)) || { total: 0, attending: 0 }
+          : countsByScope.get(`${cfg.cs_user_id}::${normalizeProgramType(cfg.program_type)}`) || {
+              total: 0,
+              attending: 0,
+            };
+        return this.toConfigItem(
           cfg,
-          countsByScope.get(`${cfg.cs_user_id}::${normalizeProgramType(cfg.program_type)}`) || {
-            total: 0,
-            attending: 0,
-          },
-          profileMetaMap.get(cfg.id) || null
-        )
-      ),
+          counts,
+          profileMetaMap.get(cfg.id) || null,
+          finalMetaMap[String(cfg.id)] || null,
+          teacher
+        );
+      }),
       serviceAccount,
       availableYears: [...years].filter((y) => Number.isFinite(y)).sort((a, b) => a - b),
     };
@@ -667,6 +994,7 @@ export class SheetBackupService {
 
     const data: Prisma.ProgramSheetBackupConfigUpdateInput = {};
     const profilePatch: { profile_sheet_name?: string; profile_header_row?: number; profile_enabled?: boolean } = {};
+    const finalPatch: FinalMetaEntry = {};
 
     if (dto.target_spreadsheet_url !== undefined) {
       const url = dto.target_spreadsheet_url === null ? null : String(dto.target_spreadsheet_url).trim() || null;
@@ -697,6 +1025,19 @@ export class SheetBackupService {
     if (dto.profile_enabled !== undefined) {
       profilePatch.profile_enabled = Boolean(dto.profile_enabled);
     }
+    if (dto.final_sheet_name !== undefined) {
+      finalPatch.final_sheet_name = String(dto.final_sheet_name || '').trim() || DEFAULT_FINAL_SHEET_NAME;
+    }
+    if (dto.final_header_row !== undefined) {
+      const fhr = Number(dto.final_header_row);
+      if (!Number.isInteger(fhr) || fhr < 1 || fhr > 20) {
+        throw new AppError(400, 'final_header_row không hợp lệ (1..20)');
+      }
+      finalPatch.final_header_row = fhr;
+    }
+    if (dto.final_enabled !== undefined) {
+      finalPatch.final_enabled = Boolean(dto.final_enabled);
+    }
     if (dto.schedule_times !== undefined) {
       const cleaned = (Array.isArray(dto.schedule_times) ? dto.schedule_times : [])
         .map((t) => String(t).trim())
@@ -724,6 +1065,9 @@ export class SheetBackupService {
     if (Object.keys(profilePatch).length > 0) {
       await this.setProfileMetaRaw(id, profilePatch);
     }
+    if (Object.keys(finalPatch).length > 0) {
+      await this.saveFinalMetaPatch(id, finalPatch);
+    }
 
     const cfg = await prisma.programSheetBackupConfig.findUnique({
       where: { id },
@@ -731,14 +1075,31 @@ export class SheetBackupService {
     });
     if (!cfg) throw new AppError(404, 'Không tìm thấy cấu hình sao lưu sau khi cập nhật');
 
-    const [counts, profileMetaMap] = await Promise.all([
+    const [counts, profileMetaMap, finalMetaMap, allTeachers] = await Promise.all([
       this.countsForConfig(cfg.cs_user_id, cfg.program_type),
       this.loadProfileMetaMap([cfg.id]),
+      this.loadFinalMetaMap(),
+      (prisma as any).teacher?.findMany?.({
+        where: { active: true },
+        select: { id: true, code: true, name: true, email: true, user_id: true },
+      }) || Promise.resolve([]),
     ]);
-    return this.toConfigItem(cfg, counts, profileMetaMap.get(cfg.id) || null);
+    const teacher = isTeacherProgramType(cfg.program_type)
+      ? this.resolveTeacherForConfig(cfg, Array.isArray(allTeachers) ? allTeachers : [])
+      : null;
+    return this.toConfigItem(
+      cfg,
+      counts,
+      profileMetaMap.get(cfg.id) || null,
+      finalMetaMap[String(cfg.id)] || null,
+      teacher
+    );
   }
 
   private async countsForConfig(csUserId: number, programType: string): Promise<{ total: number; attending: number }> {
+    if (isTeacherProgramType(programType)) {
+      return { total: 0, attending: 0 };
+    }
     const [total, attending] = await Promise.all([
       prisma.enrollment.count({ where: { cs_id: csUserId, program_type: normalizeProgramType(programType) } }),
       prisma.enrollment.count({
@@ -756,15 +1117,18 @@ export class SheetBackupService {
 
   /* ========================= D. Backup engine ========================= * */
 
-  /** Tháng thực sự có buổi học của các enrollment đang xét (lọc theo year). */
+  /** Tháng thực sự có buổi học của các enrollment đang xét (lọc theo year & mode). */
   private scopedMonths(
     enrollments: Awaited<ReturnType<typeof loadEnrollments>>,
-    year: number | null
+    year: number | null,
+    mode?: AttendanceWriteMode
   ): Array<{ year: number; month: number }> {
     const keys = new Set<string>();
     for (const enr of enrollments) {
       for (const ec of enr.enrollment_classes) {
         for (const att of ec.attendance || []) {
+          if (att.deleted_at) continue;
+          if (!this.shouldIncludeAttendanceForMode(att, mode)) continue;
           const dayKey = dateKeyUtc(att.class_session?.session_date);
           if (!dayKey) continue;
           const y = Number(dayKey.slice(0, 4));
@@ -776,85 +1140,82 @@ export class SheetBackupService {
     return [...keys].sort().map((k) => ({ year: Number(k.slice(0, 4)), month: Number(k.slice(5, 7)) }));
   }
 
-  /** Number of civil days in a month. */
-  private daysInMonth(year: number, month: number): number {
-    return new Date(year, month, 0).getDate();
+  /**
+   * Kiểm tra một bản ghi điểm danh có thuộc nguồn dữ liệu của sheet đang ghi hay không:
+   *  - 'CS': ưu tiên `cs_status !== null`; nếu cả `cs_status` và `teacher_status` đều `undefined`
+   *    (ví dụ dữ liệu fixture/legacy chưa tách cột), fallback sang `status !== null`.
+   *  - 'FINAL': chỉ ghi bản ghi đã đối soát (`MATCHED` hoặc `RESOLVED`).
+   *  - 'TEACHER': chỉ ghi bản ghi có `teacher_status !== null` (fallback `status` nếu cả hai undefined).
+   */
+  private shouldIncludeAttendanceForMode(att: any, mode?: AttendanceWriteMode): boolean {
+    if (!att || att.deleted_at) return false;
+    if (!mode) return true;
+
+    const hasDualFields = att.cs_status !== undefined || att.teacher_status !== undefined;
+
+    if (mode === 'CS') {
+      if (hasDualFields) return att.cs_status !== null && att.cs_status !== undefined;
+      return Boolean(att.status);
+    }
+    if (mode === 'FINAL') {
+      return (
+        att.reconciliation_state === ReconciliationState.MATCHED ||
+        att.reconciliation_state === ReconciliationState.RESOLVED
+      );
+    }
+    if (mode === 'TEACHER') {
+      if (hasDualFields) return att.teacher_status !== null && att.teacher_status !== undefined;
+      return Boolean(att.status);
+    }
+    return true;
   }
 
-  private pad2(n: number): string {
-    return String(n).padStart(2, '0');
-  }
-
-  /** Ngày giữa tháng, đủ để ExcelJS dựng số serial của cột ngày. */
-  private excelDay(year: number, month: number, day: number): Date {
-    return new Date(year, month - 1, day, 12, 0, 0);
+  private effectiveStatusForMode(att: any, mode: AttendanceWriteMode): AttendanceStatus | null {
+    if (!att) return null;
+    const hasDualFields = att.cs_status !== undefined || att.teacher_status !== undefined;
+    if (mode === 'CS') {
+      return (hasDualFields ? att.cs_status : att.status) || null;
+    }
+    if (mode === 'TEACHER') {
+      return (hasDualFields ? att.teacher_status : att.status) || null;
+    }
+    return att.status || null;
   }
 
   /**
-   * Số buổi đã học trong năm `year` (đếm ATTENDED + nghỉ sai quy định C), gồm cả
-   * các session nằm ngoài layout sheet. Dùng làm cached result cho cột L vì Google
-   * Sheets không có sheet nguồn để tính lại VLOOKUP/SUM.
+   * Giá trị ghi vào 1 cột ngày theo chế độ sheet:
+   *  - 'CS': nếu `cs_raw_value` có sẵn thì dùng `cs_raw_value.trim()`; ngược lại ATTENDED -> '1', nghỉ -> A..E.
+   *  - 'FINAL': giống hệ thống hiện tại (`status === 'ATTENDED'` -> `lesson_topic || '1'`, nghỉ -> A..E).
+   *  - 'TEACHER': giống hệ thống hiện tại (`teacher_status === 'ATTENDED'` -> `lesson_topic || '1'`, nghỉ -> A..E).
    */
-  private attendedInYear(enr: Awaited<ReturnType<typeof loadEnrollments>>[number], year: number | null): number {
-    let count = 0;
-    for (const ec of enr.enrollment_classes) {
-      for (const att of ec.attendance || []) {
-        if (att.status !== AttendanceStatus.ATTENDED && att.status !== AttendanceStatus.ABSENT_UNAPPROVED_C) {
-          continue;
-        }
-        const key = dateKeyUtc(att.class_session?.session_date);
-        if (!key) continue;
-        if (year !== null && Number(key.slice(0, 4)) !== year) continue;
-        count++;
+  private attendanceCellValueForMode(att: any, mode: AttendanceWriteMode): string {
+    if (!att || !this.shouldIncludeAttendanceForMode(att, mode)) return '';
+    const status = this.effectiveStatusForMode(att, mode);
+    if (!status) return '';
+
+    if (mode === 'CS') {
+      const raw = String(att.cs_raw_value ?? '').trim();
+      if (raw) return raw;
+      switch (status) {
+        case AttendanceStatus.ATTENDED:
+          return '1';
+        case AttendanceStatus.ABSENT_APPROVED_A:
+          return 'A';
+        case AttendanceStatus.LEAVE_B:
+          return 'B';
+        case AttendanceStatus.ABSENT_UNAPPROVED_C:
+          return 'C';
+        case AttendanceStatus.TEACHER_ABSENT_D:
+          return 'D';
+        case AttendanceStatus.TECH_ERROR_E:
+          return 'E';
+        default:
+          return '';
       }
     }
-    return count;
-  }
 
-  private formatStatusLabel(status?: EnrollmentStatus | string | null): string {
+    // Mode 'FINAL' & 'TEACHER': ghi theo hệ thống hiện tại (lesson_topic || '1', hoặc A/B/C/D/E)
     switch (status) {
-      case EnrollmentStatus.STUDYING:
-        return 'Đang học';
-      case EnrollmentStatus.WAITING_CLASS:
-        return 'Chờ lớp';
-      case EnrollmentStatus.PAUSED:
-        return 'Bảo lưu';
-      case EnrollmentStatus.FINISHED:
-        return 'Kết thúc';
-      case EnrollmentStatus.UPCOMING:
-        return 'Sắp học';
-      case EnrollmentStatus.NOT_STARTED:
-        return 'Chưa học';
-      case EnrollmentStatus.CANCELLED:
-        return 'Đã hủy';
-      default:
-        return 'Đang học';
-    }
-  }
-
-  private maskPhone(phone?: string | null, mask = false): string {
-    if (!phone) return '';
-    const trimmed = phone.trim();
-    if (!mask || trimmed.length < 6) return trimmed;
-    return `${trimmed.slice(0, 3)}****${trimmed.slice(-3)}`;
-  }
-
-  private maskEmail(email?: string | null, mask = false): string {
-    if (!email) return '';
-    const trimmed = email.trim();
-    if (!mask || !trimmed.includes('@')) return trimmed;
-    const [local, domain] = trimmed.split('@');
-    if (local.length <= 2) return `${local[0] || '*'}***@${domain}`;
-    return `${local.slice(0, 2)}***@${domain}`;
-  }
-
-  /**
-   * Giá trị ghi vào 1 cột ngày: '' (không có buổi học), '1'/tên bài (ATTENDED),
-   * hoặc A/B/C/D/E theo trạng thái điểm danh.
-   */
-  private attendanceCellValue(att: any): string {
-    if (!att) return '';
-    switch (att.status) {
       case AttendanceStatus.ATTENDED: {
         const topic = String(att.lesson_topic || '').trim();
         return topic || '1';
@@ -874,10 +1235,23 @@ export class SheetBackupService {
     }
   }
 
+  /** Number of civil days in a month. */
+  private daysInMonth(year: number, month: number): number {
+    return new Date(year, month, 0).getDate();
+  }
+
+  private pad2(n: number): string {
+    return String(n).padStart(2, '0');
+  }
+
+  /** Ngày giữa tháng, đủ để ExcelJS dựng số serial của cột ngày. */
+  private excelDay(year: number, month: number, day: number): Date {
+    return new Date(year, month - 1, day, 12, 0, 0);
+  }
+
   /**
    * Dựng 1 block tháng mới ở cuối sheet (chỉ dùng khi template/baseline KHÔNG có
-   * block đó). Layout - gồm cả việc block có cột B (bảo lưu) hay không - được Suy
-   * từ block gần nhất của template, không hardcode theo số tháng.
+   * block đó).
    */
   private appendMonthBlock(
     ws: ExcelJS.Worksheet,
@@ -888,19 +1262,17 @@ export class SheetBackupService {
     headerRow: number,
     fixedLastColForProgram: number
   ): AttendanceMonthBlock {
-    // Sheet trống (chưa có block nào) phải khởi block SAU vùng cột cố định của
-    // đúng chương trình (JLPT=12, KAIWA=28) — dùng hằng FIXED_LAST_COL sẽ đè
-    // lên các cột stats KAIWA.
     const startCol = afterBlock ? afterBlock.endCol + 1 : fixedLastColForProgram + 1;
     const donor = templateBlock.summaryCols;
 
     const summaryCols: AttendanceMonthBlock['summaryCols'] = {};
     let cursor = startCol;
-    // 1 cột "Số buổi đã học" + các cột A/B/C/D/E mà block mẫu thật sự có.
-    summaryCols.attended = cursor;
-    cursor += 1;
+    if (donor.completedHours !== undefined) {
+      summaryCols.completedHours = cursor++;
+    }
+    summaryCols.attended = cursor++;
     const donorKeys = (Object.keys(donor) as Array<keyof AttendanceSummaryCols>).filter(
-      (k) => k !== 'attended' && donor[k] !== undefined
+      (k) => k !== 'attended' && k !== 'completedHours' && donor[k] !== undefined
     );
     for (const key of donorKeys) summaryCols[key] = cursor++;
 
@@ -918,10 +1290,8 @@ export class SheetBackupService {
     }
     const endCol = cursor - 1;
 
-    // row 1: nhãn block (theo đúng format template: "THÁNG MM/YYYY")
     ws.getRow(1).getCell(startCol).value = `THÁNG ${this.pad2(month)}/${year}`;
 
-    // row 2: header các cột tổng kết + date cho các cột ngày
     const headerRowObj = ws.getRow(headerRow);
     for (const key of Object.keys(summaryCols) as Array<keyof AttendanceSummaryCols>) {
       const col = summaryCols[key];
@@ -931,7 +1301,6 @@ export class SheetBackupService {
       headerRowObj.getCell(d.colNumber).value = this.excelDay(year, month, d.day);
     }
 
-    // row mẫu: công thức SUM/COUNTIF cho các cột tổng kết
     const letters = dailyCols.map((d) => d.colLetter);
     const dayRange = `${letters[0]}${headerRow + 1}:${letters[letters.length - 1]}${headerRow + 1}`;
     const sampleRow = ws.getRow(headerRow + 1);
@@ -951,7 +1320,7 @@ export class SheetBackupService {
     for (const key of Object.keys(summaryCols) as Array<keyof AttendanceSummaryCols>) {
       const col = summaryCols[key];
       const code = countifLetter[key];
-      if (!col || !code || key === 'attended') continue;
+      if (!col || !code || key === 'attended' || key === 'completedHours') continue;
       setCellValuePreservingFormula(sampleRow.getCell(col), {
         formula: `COUNTIF(${dayRange},"${code}")`,
         result: 0,
@@ -970,11 +1339,6 @@ export class SheetBackupService {
     };
   }
 
-  /**
-   * Nhân bản bộ công thức của dòng mẫu (dòng data đầu tiên) sang dòng data mới.
-   * Chỉ dịch tham chiếu dòng tương đối; bỏ qua công thức cross-sheet (Setting!,
-   * 'Điểm học tập'!) vì chúng vô nghĩa trong file backup độc lập.
-   */
   private copyFormulaRow(
     ws: ExcelJS.Worksheet,
     sampleRowNumber: number,
@@ -997,19 +1361,6 @@ export class SheetBackupService {
     }
   }
 
-  /**
-   * Giá trị hiện có của ô dưới dạng text chuẩn hoá để so diff. Với ô công thức
-   * chỉ lấy cached result (formula là metadata, không phải dữ liệu) — đảm bảo
-   * 2 phía so sánh luôn cùng kiểu, tránh "lúc nào cũng khác" gây churn.
-   *
-   * QUAN TRỌNG (bug churn đã reproduce): ExcelJS tự xoá `result: 0` falsy khi
-   * ghi file, nên lần đọc sau `raw.result === undefined`. Nếu truyền nguyên
-   * object `{ formula }` vào `normalizeCellComparable` -> `extractCellValue` sẽ
-   * lấy nhầm đối số cuối của công thức (`COUNTIF(range,"A")` -> `"A"`,
-   * `IFERROR(SUM(...),"-")` -> `"-"`) làm giá trị ô, khiến mọi lần chạy lại đều
-   * thấy "khác 0" và ghi lại (updatedCellsCount > 0 mãi). Với ô công thức không
-   * cached result, coi là rỗng (blankEqualsZero sẽ đồng nhất '' và '0').
-   */
   private cellCurrentText(cell: ExcelJS.Cell): string {
     const raw: any = cell.value;
     if (raw && typeof raw === 'object' && (raw.formula || raw.sharedFormula)) {
@@ -1019,12 +1370,6 @@ export class SheetBackupService {
     return normalizeCellComparable(raw);
   }
 
-  /**
-   * QUY TẮC HỘI TỤ (idempotency): chỉ ghi khi trạng thái thực sự khác.
-   * `blankEqualsZero` dùng cho các ô tổng kết: ô trống và '0' được coi là CÙNG
-   * một trạng thái (công thức COUNTIF luôn hiển thị 0), nhờ đó lần chạy đầu tiên
-   * đã ổn định — tránh kiểu "lần 1 viết '0', lần 2 thấy khác lại viết" gây churn.
-   */
   private shouldWriteCell(current: string, desired: string, blankEqualsZero = false): boolean {
     if (current === desired) return false;
     if (blankEqualsZero) {
@@ -1054,11 +1399,6 @@ export class SheetBackupService {
 
   /**
    * Tính bộ thống kê buổi học & nghỉ của 1 enrollment để cung cấp cho resolver cột.
-   * Áp dụng chuẩn entitlement C.4/E.3: chỉ các bản ghi FINAL (MATCHED/RESOLVED) có
-   * trạng thái tiêu thụ buổi (ATTENDED / ABSENT_UNAPPROVED_C) mới được tính vào
-   * consumed; mỗi dòng tính 1 buổi (không gộp các buổi trùng ngày); remaining
-   * khi đã có điểm danh web không bị clamp về 0 (âm = tín hiệu "nợ buổi" Q-012)
-   * và không trộn số dư đối soát ngoài (external_remaining_sessions / attended_previous_years).
    */
   private computeEnrollmentStats(
     enr: Awaited<ReturnType<typeof loadEnrollments>>[number],
@@ -1131,10 +1471,6 @@ export class SheetBackupService {
     };
   }
 
-  /**
-   * Index các dòng hiện có của 1 worksheet theo các cột `isKey: true` (hoặc cột
-   * `student.external_id`). Giữ danh sách occurrence theo thứ tự dòng tăng dần.
-   */
   private indexSheetRowsByMapping(
     ws: ExcelJS.Worksheet,
     headerRow: number,
@@ -1197,11 +1533,14 @@ export class SheetBackupService {
     enrollments: Awaited<ReturnType<typeof loadEnrollments>>,
     config: { cs_user: { staff_code: string | null }; mask_sensitive_data: boolean },
     yearFilter: number | null,
-    batchRanges: Array<{ range: string; values: GoogleSafeValue[][] }>
+    batchRanges: Array<{ range: string; values: GoogleSafeValue[][] }>,
+    headerRangesBySheet: Map<string, Array<{ range: string; values: GoogleSafeValue[][] }>>
   ): SheetBackupStats {
     const firstDataRow = headerRow + 1;
     const enabledCols = getEnabledColumns(profileCfg);
     const maxConfiguredCol = enabledCols.reduce((m, c) => Math.max(m, c.col), profileMaxCol || 52);
+
+    this.captureSheetHeaderRanges(ws, headerRow, maxConfiguredCol, headerRangesBySheet);
 
     const indexed = this.indexSheetRowsByMapping(ws, headerRow, profileCfg);
     const claimedRows = new Set<number>();
@@ -1237,7 +1576,7 @@ export class SheetBackupService {
         cls,
         schedule,
         teacher,
-        csStaffCode: config.cs_user.staff_code,
+        csStaffCode: config.cs_user.staff_code || (enr as any).cs?.staff_code || null,
         maskSensitiveData: Boolean(config.mask_sensitive_data),
         stats,
         careByMilestone,
@@ -1272,7 +1611,6 @@ export class SheetBackupService {
             ? { value: externalId, hasValue: true }
             : resolveBackupFieldValue(colCfg.fieldKey, ctx);
 
-        // Nếu cột không có nguồn dữ liệu DB (hasDbSource=false) và trống -> giữ nguyên ô trên sheet.
         if (!resolved.hasValue && !colCfg.hasDbSource) continue;
 
         const desiredVal = resolved.hasValue ? resolved.value : '';
@@ -1321,47 +1659,369 @@ export class SheetBackupService {
   }
 
   /**
-   * Chạy backup cả 2 sheet (Hồ sơ + Điểm danh) cho MỘT config (CSKH x chương trình).
+   * Ghi 1 sheet Điểm danh (`3.Chấm buổi`, `Chấm buổi`, `Điểm danh chốt`, hoặc `2026 スケジュール`)
+   * theo chế độ nguồn điểm danh `mode` ('CS' | 'FINAL' | 'TEACHER').
+   */
+  private async runAttendanceSheetBackup(opts: {
+    ws: ExcelJS.Worksheet;
+    headerRow: number;
+    initialMaxCol: number;
+    sheetCfg: SheetColumnMappingConfig;
+    defaultFixedLastCol: number;
+    enrollments: Awaited<ReturnType<typeof loadEnrollments>>;
+    config: { cs_user: { staff_code: string | null }; mask_sensitive_data: boolean };
+    yearFilter: number | null;
+    mode: AttendanceWriteMode;
+    teacherIdFilter?: number | null;
+    batchRanges: Array<{ range: string; values: GoogleSafeValue[][] }>;
+    headerRangesBySheet: Map<string, Array<{ range: string; values: GoogleSafeValue[][] }>>;
+  }): Promise<SheetBackupStats> {
+    const {
+      ws,
+      headerRow,
+      initialMaxCol,
+      sheetCfg,
+      defaultFixedLastCol,
+      enrollments,
+      config,
+      yearFilter,
+      mode,
+      teacherIdFilter,
+      batchRanges,
+      headerRangesBySheet,
+    } = opts;
+
+    const months = this.scopedMonths(enrollments, yearFilter, mode);
+    const monthSet = new Set(months.map((m) => `${m.year}-${m.month}`));
+
+    const blocks = detectJlptMonthBlocks(ws, headerRow).sort((a, b) => a.startCol - b.startCol);
+
+    let donor: AttendanceMonthBlock | null = blocks[blocks.length - 1] || null;
+    if (!donor && months.length > 0) {
+      try {
+        const tpl = await readTemplateAttendanceWorksheet(
+          ws.name,
+          mode === 'TEACHER' ? 'TEACHER' : 'JLPT'
+        );
+        const tplBlocks = detectJlptMonthBlocks(tpl, headerRow);
+        donor = tplBlocks[tplBlocks.length - 1] || null;
+      } catch {
+        donor = null;
+      }
+    }
+
+    const enabledAttCols = getEnabledColumns(sheetCfg);
+    const fixedLastCol = enabledAttCols.reduce((m, c) => Math.max(m, c.col), defaultFixedLastCol);
+
+    let tail: AttendanceMonthBlock | null = blocks[blocks.length - 1] || null;
+    if (donor) {
+      for (const m of months) {
+        if (blocks.some((b) => b.year === m.year && b.month === m.month)) continue;
+        const created = this.appendMonthBlock(
+          ws,
+          tail,
+          donor,
+          m.year,
+          m.month,
+          headerRow,
+          fixedLastCol
+        );
+        blocks.push(created);
+        tail = created;
+      }
+      blocks.sort((a, b) => a.startCol - b.startCol);
+    }
+
+    const lastCol = Math.max(initialMaxCol, tail ? tail.endCol : 0, fixedLastCol);
+    const firstDataRow = headerRow + 1;
+
+    this.captureSheetHeaderRanges(ws, headerRow, lastCol, headerRangesBySheet);
+
+    const indexed = this.indexSheetRowsByMapping(ws, headerRow, sheetCfg);
+    const claimedRows = new Set<number>();
+    const nextOccurrence = new Map<string, number>();
+    let lastRow = indexed.lastNonEmptyRow;
+
+    let unchangedRows = 0;
+    let updatedRows = 0;
+    let appendedRows = 0;
+    let updatedCellsCount = 0;
+    let attendanceCellsWritten = 0;
+
+    for (const enr of enrollments) {
+      const student = enr.student;
+      const externalId = String(student.external_id || enr.external_id || `HV_${student.id}`).trim();
+
+      const matchingEc = teacherIdFilter
+        ? enr.enrollment_classes.find((ec) =>
+            ec.class?.class_teachers?.some((ct) => ct.teacher_id === teacherIdFilter)
+          )
+        : null;
+      const activeEc =
+        matchingEc ||
+        enr.enrollment_classes.find((ec) => ec.status === 'ACTIVE') ||
+        enr.enrollment_classes[enr.enrollment_classes.length - 1] ||
+        null;
+      const cls = activeEc?.class || null;
+      const schedule = cls?.class_schedules.find((sc) => sc.active) || cls?.class_schedules[0] || null;
+      const mainCt =
+        (teacherIdFilter
+          ? cls?.class_teachers.find((ct) => ct.teacher_id === teacherIdFilter)
+          : null) ||
+        cls?.class_teachers.find((ct) => ct.role === 'MAIN' && ct.active) ||
+        cls?.class_teachers[0] ||
+        null;
+      const teacher = mainCt?.teacher || null;
+
+      const stats = this.computeEnrollmentStats(enr, yearFilter);
+      const careByMilestone = buildCareMilestoneMap((enr as any).care_logs || []);
+
+      const ctx: BackupRowResolveContext = {
+        student,
+        enrollment: enr,
+        pkg: enr.package,
+        cls,
+        schedule,
+        teacher,
+        csStaffCode: config.cs_user.staff_code || (enr as any).cs?.staff_code || null,
+        maskSensitiveData: Boolean(config.mask_sensitive_data),
+        stats,
+        careByMilestone,
+      };
+
+      // Điểm danh theo ngày (UTC key cho @db.Date) lọc theo đúng nguồn mode
+      const byDay = new Map<string, any>();
+      for (const ec of enr.enrollment_classes) {
+        if (teacherIdFilter && !ec.class?.class_teachers?.some((ct) => ct.teacher_id === teacherIdFilter)) {
+          continue;
+        }
+        for (const att of ec.attendance || []) {
+          if (!this.shouldIncludeAttendanceForMode(att, mode)) continue;
+          const dayKey = dateKeyUtc(att.class_session?.session_date);
+          if (dayKey) byDay.set(dayKey, att);
+        }
+      }
+
+      const key = this.buildEnrollmentRowKey(sheetCfg, ctx, externalId);
+      const bucket = indexed.rowsByKey.get(key);
+      const seen = nextOccurrence.get(key) ?? 0;
+      nextOccurrence.set(key, seen + 1);
+
+      let targetRow: number | undefined = bucket && seen < bucket.length ? bucket[seen] : undefined;
+      if (targetRow !== undefined && claimedRows.has(targetRow)) targetRow = undefined;
+      let isNew = false;
+      if (targetRow === undefined) {
+        targetRow = ++lastRow;
+        isNew = true;
+        if (!bucket) indexed.rowsByKey.set(key, []);
+        indexed.rowsByKey.get(key)!.push(targetRow);
+      }
+      claimedRows.add(targetRow);
+      const row = ws.getRow(targetRow);
+      if (isNew) {
+        this.copyFormulaRow(ws, firstDataRow, targetRow, lastCol);
+      }
+
+      let rowChanged = 0;
+      let rowAttChanged = 0;
+      let rowMaxColWritten = fixedLastCol;
+
+      // --- Vùng cột cố định ---
+      for (const colCfg of enabledAttCols) {
+        const resolved =
+          colCfg.fieldKey === 'student.external_id'
+            ? { value: externalId, hasValue: true }
+            : resolveBackupFieldValue(colCfg.fieldKey, ctx);
+
+        if (!resolved.hasValue && !colCfg.hasDbSource) continue;
+
+        const desiredVal = resolved.hasValue ? resolved.value : '';
+        const desiredStr = normalizeCellComparable(desiredVal);
+        const cell = row.getCell(colCfg.col);
+        const currentStr = this.cellCurrentText(cell);
+
+        if (!this.shouldWriteCell(currentStr, desiredStr, Boolean(colCfg.isFormulaPreserved))) {
+          continue;
+        }
+
+        if (colCfg.isFormulaPreserved) {
+          setCellValuePreservingFormula(cell, desiredVal);
+        } else {
+          cell.value = desiredVal as any;
+        }
+        rowChanged++;
+        rowMaxColWritten = Math.max(rowMaxColWritten, colCfg.col);
+      }
+
+      // --- Các block tháng nằm trong phạm vi ghi ---
+      const sessionHours = (Number(schedule?.duration_minutes) || 30) / 60;
+      for (const block of blocks) {
+        const mk = `${block.year}-${block.month}`;
+        if (!monthSet.has(mk)) continue;
+        rowMaxColWritten = Math.max(rowMaxColWritten, block.endCol);
+
+        let mAttendedCount = 0;
+        let mA = 0;
+        let mB = 0;
+        let mC = 0;
+        let mD = 0;
+        let mE = 0;
+
+        for (const d of block.dailyCols) {
+          const att = byDay.get(d.date);
+          const desired = this.attendanceCellValueForMode(att, mode);
+          const effStatus = this.effectiveStatusForMode(att, mode);
+          if (att && effStatus) {
+            switch (effStatus) {
+              case AttendanceStatus.ATTENDED:
+                mAttendedCount++;
+                break;
+              case AttendanceStatus.ABSENT_APPROVED_A:
+                mA++;
+                break;
+              case AttendanceStatus.LEAVE_B:
+                mB++;
+                break;
+              case AttendanceStatus.ABSENT_UNAPPROVED_C:
+                mC++;
+                break;
+              case AttendanceStatus.TEACHER_ABSENT_D:
+                mD++;
+                break;
+              case AttendanceStatus.TECH_ERROR_E:
+                mE++;
+                break;
+            }
+          }
+          const current = this.cellCurrentText(row.getCell(d.colNumber));
+          if (!this.shouldWriteCell(current, desired)) continue;
+          setCellValuePreservingFormula(row.getCell(d.colNumber), desired);
+          rowChanged++;
+          if (desired !== '') rowAttChanged++;
+        }
+
+        const completedHoursVal = Math.round(mAttendedCount * sessionHours * 100) / 100;
+        const summaryCounts: Array<[keyof NonNullable<AttendanceMonthBlock['summaryCols']>, number]> = [
+          ['completedHours', completedHoursVal],
+          ['attended', mAttendedCount],
+          ['absentA', mA],
+          ['leaveB', mB],
+          ['absentC', mC],
+          ['teacherD', mD],
+          ['techErrorE', mE],
+        ];
+        for (const [skey, count] of summaryCounts) {
+          const col = (block.summaryCols as Record<string, number | undefined>)[skey];
+          if (!col) continue;
+          const cell = row.getCell(col);
+          const current = this.cellCurrentText(cell);
+          if (!this.shouldWriteCell(current, String(count), true)) continue;
+          setCellValuePreservingFormula(cell, count);
+          rowChanged++;
+        }
+      }
+
+      if (isNew) {
+        appendedRows++;
+      } else if (rowChanged > 0) {
+        updatedRows++;
+      } else {
+        unchangedRows++;
+      }
+      updatedCellsCount += rowChanged;
+      attendanceCellsWritten += rowAttChanged;
+
+      if (rowChanged > 0) {
+        batchRanges.push({
+          range: `'${ws.name}'!A${targetRow}:${colNumberToLetter(rowMaxColWritten)}${targetRow}`,
+          values: [this.readRowValues(row, rowMaxColWritten)],
+        });
+      }
+    }
+
+    return {
+      sheetName: ws.name,
+      totalEnrollments: enrollments.length,
+      unchangedRows,
+      updatedRows,
+      appendedRows,
+      updatedCellsCount,
+      attendanceCellsWritten,
+    };
+  }
+
+  private captureSheetHeaderRanges(
+    ws: ExcelJS.Worksheet,
+    headerRow: number,
+    maxCol: number,
+    headerRangesBySheet: Map<string, Array<{ range: string; values: GoogleSafeValue[][] }>>
+  ): void {
+    const rows: GoogleSafeValue[][] = [];
+    for (let r = 1; r <= headerRow; r++) {
+      rows.push(this.readRowValues(ws.getRow(r), maxCol));
+    }
+    headerRangesBySheet.set(ws.name, [
+      {
+        range: `'${ws.name}'!A1:${colNumberToLetter(maxCol)}${headerRow}`,
+        values: rows,
+      },
+    ]);
+  }
+
+  /**
+   * Chạy backup cho MỘT config (CSKH x chương trình hoặc Giáo viên).
    * Thứ tự ưu tiên năm: opts.year > config.backup_year > tất cả.
    */
   public async runBackupForConfig(
     configId: number,
-    opts: { forceFullRewrite?: boolean; year?: number | null; actorId?: number; actorRoles?: string[] } = {}
+    opts: {
+      forceFullRewrite?: boolean;
+      year?: number | null;
+      actorId?: number;
+      actorRoles?: string[];
+      batchId?: string;
+      triggerType?: 'MANUAL' | 'AUTO';
+    } = {}
   ): Promise<ProgramBackupSummary> {
+    const startMs = Date.now();
     await this.ensureConfigs();
     const config = await this.loadConfigOrThrow(configId);
     this.assertConfigScope(config, opts.actorId, opts.actorRoles);
 
-    const programType = normalizeProgramType(config.program_type);
+    const rawProgramType = normalizeProgramType(config.program_type);
+    const isTeacher = isTeacherProgramType(rawProgramType);
+    const programType = isTeacher ? 'TEACHER' : rawProgramType;
     const yearFilter = opts.year === undefined || opts.year === null ? (config.backup_year ?? null) : opts.year;
     const forceFullRewrite = Boolean(opts.forceFullRewrite);
+    const batchId = opts.batchId || buildBatchId();
+    const triggerType: 'MANUAL' | 'AUTO' = opts.triggerType || (opts.actorId ? 'MANUAL' : 'AUTO');
+    const mode: 'DELTA' | 'FULL' = forceFullRewrite ? 'FULL' : 'DELTA';
 
-    const columnConfigMap = await getGlobalBackupColumnConfig();
-    const programCols: ProgramColumnMappingConfig =
-      programType === 'KAIWA' ? columnConfigMap.KAIWA : columnConfigMap.JLPT;
+    const [columnConfigMap, profileMetaMap, finalMetaMap, allTeachers] = await Promise.all([
+      getGlobalBackupColumnConfig(),
+      this.loadProfileMetaMap([config.id]),
+      this.loadFinalMetaMap(),
+      isTeacher
+        ? (prisma as any).teacher?.findMany?.({
+            where: { active: true },
+            select: { id: true, code: true, name: true, email: true, user_id: true },
+          }) || Promise.resolve([])
+        : Promise.resolve([]),
+    ]);
 
-    // 3 cột profile_* đọc bằng raw SQL (Prisma client runtime có thể chưa regenerate)
-    const profileMeta = (await this.loadProfileMetaMap([config.id])).get(config.id) || null;
+    const profileMeta = profileMetaMap.get(config.id) || null;
+    const finalMeta = finalMetaMap[String(config.id)] || null;
+    const teacherRecord = isTeacher
+      ? this.resolveTeacherForConfig(config, Array.isArray(allTeachers) ? allTeachers : [])
+      : null;
 
-    const attendanceHeaderRow = config.header_row || programCols.attendance.headerRow || 2;
-    const attendanceSheetName =
-      config.sheet_name || programCols.attendance.defaultSheetName || this.defaultSheetNameFor(programType);
-
-    const profileHeaderRow =
-      Number(profileMeta?.profile_header_row) ||
-      programCols.profile.headerRow ||
-      defaultProfileHeaderRowFor(programType);
-    const profileSheetName =
-      profileMeta?.profile_sheet_name ||
-      programCols.profile.defaultSheetName ||
-      defaultProfileSheetFor(programType);
-    const profileEnabled =
-      profileMeta?.profile_enabled === undefined || profileMeta?.profile_enabled === null
-        ? true
-        : Boolean(Number(profileMeta.profile_enabled));
+    const effectiveStaffCode = isTeacher
+      ? teacherRecord?.code || (rawProgramType.startsWith('GV:') ? rawProgramType.slice(3) : config.cs_user.staff_code || 'GV')
+      : config.cs_user.staff_code;
 
     const absPath = this.resolveLocalBackupPath(
-      config.local_backup_path || this.relativeBackupPathFor(config.cs_user.staff_code || `CS${config.cs_user_id}`, programType)
+      config.local_backup_path ||
+        this.relativeBackupPathFor(effectiveStaffCode || `CS${config.cs_user_id}`, rawProgramType)
     );
 
     await prisma.programSheetBackupConfig.update({
@@ -1370,280 +2030,149 @@ export class SheetBackupService {
     });
 
     try {
-      const enrollments = await loadEnrollments(config.cs_user_id, programType);
-      const months = this.scopedMonths(enrollments, yearFilter);
-      const monthSet = new Set(months.map((m) => `${m.year}-${m.month}`));
-
-      // 1. Nạp hoặc khởi tạo workbook 2 sheet (Sheet Hồ sơ + Sheet Điểm danh)
-      const wbLoaded = await loadOrExtractProgramWorkbook({
-        absPath,
-        programType,
-        profileSheetName,
-        profileHeaderRow,
-        attendanceSheetName,
-        attendanceHeaderRow,
-        forceFresh: forceFullRewrite,
-      });
-
       const batchRanges: Array<{ range: string; values: GoogleSafeValue[][] }> = [];
+      const headerRangesBySheet = new Map<string, Array<{ range: string; values: GoogleSafeValue[][] }>>();
 
-      // 2. Backup Sheet Hồ sơ (`1.Chăm sóc` cho KAIWA / `Data JLPT_Inhouse` cho JLPT)
       let profileStats: SheetBackupStats | null = null;
-      if (profileEnabled) {
-        profileStats = this.runProfileSheetBackup(
-          wbLoaded.profileWorksheet,
+      let attendanceStats: SheetBackupStats;
+      let finalStats: SheetBackupStats | null = null;
+      let totalStudents = 0;
+
+      if (isTeacher) {
+        // --- CHẾ ĐỘ TEACHER: 1 sheet `2026 スケジュール` ---
+        const teacherSheetName = config.sheet_name || '2026 スケジュール';
+        const teacherHeaderRow = config.header_row || 2;
+        const teacherCols = getTeacherAttendanceColumnMapping();
+
+        const enrollments = teacherRecord
+          ? await loadTeacherEnrollments(teacherRecord.id)
+          : [];
+        totalStudents = enrollments.length;
+
+        const wbLoaded = await loadOrExtractAttendanceWorkbook(
+          absPath,
+          teacherSheetName,
+          teacherHeaderRow,
+          forceFullRewrite,
+          'TEACHER'
+        );
+
+        attendanceStats = await this.runAttendanceSheetBackup({
+          ws: wbLoaded.worksheet,
+          headerRow: teacherHeaderRow,
+          initialMaxCol: wbLoaded.maxCol,
+          sheetCfg: teacherCols,
+          defaultFixedLastCol: 6,
+          enrollments,
+          config: {
+            cs_user: { staff_code: effectiveStaffCode },
+            mask_sensitive_data: Boolean(config.mask_sensitive_data),
+          },
+          yearFilter,
+          mode: 'TEACHER',
+          teacherIdFilter: teacherRecord?.id ?? null,
+          batchRanges,
+          headerRangesBySheet,
+        });
+
+        const dir = path.dirname(absPath);
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        await wbLoaded.workbook.xlsx.writeFile(absPath);
+      } else {
+        // --- CHẾ ĐỘ CSKH (KAIWA / JLPT): 3 sheets (Hồ sơ + Chấm buổi CS + Điểm danh chốt) ---
+        const programCols: ProgramColumnMappingConfig =
+          programType === 'KAIWA' ? columnConfigMap.KAIWA : columnConfigMap.JLPT;
+
+        const attendanceHeaderRow = config.header_row || programCols.attendance.headerRow || 2;
+        const attendanceSheetName =
+          config.sheet_name || programCols.attendance.defaultSheetName || this.defaultSheetNameFor(programType);
+
+        const profileHeaderRow =
+          Number(profileMeta?.profile_header_row) ||
+          programCols.profile.headerRow ||
+          defaultProfileHeaderRowFor(programType);
+        const profileSheetName =
+          profileMeta?.profile_sheet_name ||
+          programCols.profile.defaultSheetName ||
+          defaultProfileSheetFor(programType);
+        const profileEnabled =
+          profileMeta?.profile_enabled === undefined || profileMeta?.profile_enabled === null
+            ? true
+            : Boolean(Number(profileMeta.profile_enabled));
+
+        const finalSheetName = finalMeta?.final_sheet_name || DEFAULT_FINAL_SHEET_NAME;
+        const finalHeaderRow = Number(finalMeta?.final_header_row) || DEFAULT_FINAL_HEADER_ROW;
+        const finalEnabled = finalMeta?.final_enabled === undefined ? true : Boolean(finalMeta.final_enabled);
+
+        const enrollments = await loadEnrollments(config.cs_user_id, programType);
+        totalStudents = enrollments.length;
+
+        const wbLoaded = await loadOrExtractProgramWorkbook({
+          absPath,
+          programType,
+          profileSheetName,
           profileHeaderRow,
-          wbLoaded.profileMaxCol,
-          programCols.profile,
+          attendanceSheetName,
+          attendanceHeaderRow,
+          finalSheetName,
+          finalHeaderRow,
+          forceFresh: forceFullRewrite,
+        });
+
+        // 1. Sheet Hồ sơ
+        if (profileEnabled && wbLoaded.profileWorksheet) {
+          profileStats = this.runProfileSheetBackup(
+            wbLoaded.profileWorksheet,
+            profileHeaderRow,
+            wbLoaded.profileMaxCol,
+            programCols.profile,
+            enrollments,
+            config,
+            yearFilter,
+            batchRanges,
+            headerRangesBySheet
+          );
+        }
+
+        // 2. Sheet Chấm buổi của CSKH (chỉ ghi `cs_status !== null`)
+        attendanceStats = await this.runAttendanceSheetBackup({
+          ws: wbLoaded.attendanceWorksheet,
+          headerRow: attendanceHeaderRow,
+          initialMaxCol: wbLoaded.attendanceMaxCol,
+          sheetCfg: programCols.attendance,
+          defaultFixedLastCol: programType === 'KAIWA' ? 28 : FIXED_LAST_COL,
           enrollments,
           config,
           yearFilter,
-          batchRanges
-        );
-      }
+          mode: 'CS',
+          batchRanges,
+          headerRangesBySheet,
+        });
 
-      // 3. Backup Sheet Điểm danh (`3.Chấm buổi` cho KAIWA / `Chấm buổi` cho JLPT)
-      const ws = wbLoaded.attendanceWorksheet;
-      const blocks = detectJlptMonthBlocks(ws, attendanceHeaderRow).sort((a, b) => a.startCol - b.startCol);
-
-      let donor: AttendanceMonthBlock | null = blocks[blocks.length - 1] || null;
-      if (!donor) {
-        try {
-          const tpl = await readTemplateAttendanceWorksheet(attendanceSheetName);
-          const tplBlocks = detectJlptMonthBlocks(tpl, attendanceHeaderRow);
-          donor = tplBlocks[tplBlocks.length - 1] || null;
-        } catch {
-          donor = null;
-        }
-      }
-
-      const enabledAttCols = getEnabledColumns(programCols.attendance);
-      const fixedLastCol = enabledAttCols.reduce(
-        (m, c) => Math.max(m, c.col),
-        programType === 'KAIWA' ? 28 : FIXED_LAST_COL
-      );
-
-      let tail: AttendanceMonthBlock | null = blocks[blocks.length - 1] || null;
-      if (donor) {
-        for (const m of months) {
-          if (blocks.some((b) => b.year === m.year && b.month === m.month)) continue;
-          const created = this.appendMonthBlock(
-            ws,
-            tail,
-            donor,
-            m.year,
-            m.month,
-            attendanceHeaderRow,
-            fixedLastCol
-          );
-          blocks.push(created);
-          tail = created;
-        }
-        blocks.sort((a, b) => a.startCol - b.startCol);
-      }
-
-      const lastCol = Math.max(wbLoaded.attendanceMaxCol, tail ? tail.endCol : 0, fixedLastCol);
-      const firstDataRow = attendanceHeaderRow + 1;
-
-      const indexed = this.indexSheetRowsByMapping(ws, attendanceHeaderRow, programCols.attendance);
-      const claimedRows = new Set<number>();
-      const nextOccurrence = new Map<string, number>();
-      let lastRow = indexed.lastNonEmptyRow;
-
-      let unchangedRows = 0;
-      let updatedRows = 0;
-      let appendedRows = 0;
-      let updatedCellsCount = 0;
-      let attendanceCellsWritten = 0;
-
-      for (const enr of enrollments) {
-        const student = enr.student;
-        const externalId = String(student.external_id || enr.external_id || `HV_${student.id}`).trim();
-
-        const activeEc =
-          enr.enrollment_classes.find((ec) => ec.status === 'ACTIVE') ||
-          enr.enrollment_classes[enr.enrollment_classes.length - 1] ||
-          null;
-        const cls = activeEc?.class || null;
-        const schedule = cls?.class_schedules.find((sc) => sc.active) || cls?.class_schedules[0] || null;
-        const mainCt = cls?.class_teachers.find((ct) => ct.role === 'MAIN' && ct.active) || cls?.class_teachers[0] || null;
-        const teacher = mainCt?.teacher || null;
-
-        const stats = this.computeEnrollmentStats(enr, yearFilter);
-        const careByMilestone = buildCareMilestoneMap((enr as any).care_logs || []);
-
-        const ctx: BackupRowResolveContext = {
-          student,
-          enrollment: enr,
-          pkg: enr.package,
-          cls,
-          schedule,
-          teacher,
-          csStaffCode: config.cs_user.staff_code,
-          maskSensitiveData: Boolean(config.mask_sensitive_data),
-          stats,
-          careByMilestone,
-        };
-
-        // Điểm danh theo ngày (UTC key cho @db.Date) — 1 buổi/ngày gần nhất thắng
-        const byDay = new Map<string, any>();
-        for (const ec of enr.enrollment_classes) {
-          for (const att of ec.attendance || []) {
-            const dayKey = dateKeyUtc(att.class_session?.session_date);
-            if (dayKey) byDay.set(dayKey, att);
-          }
-        }
-
-        // Xác định dòng đích theo khoá + occurrence thứ n (ổn định giữa các lần chạy)
-        const key = this.buildEnrollmentRowKey(programCols.attendance, ctx, externalId);
-        const bucket = indexed.rowsByKey.get(key);
-        const seen = nextOccurrence.get(key) ?? 0;
-        nextOccurrence.set(key, seen + 1);
-
-        let targetRow: number | undefined = bucket && seen < bucket.length ? bucket[seen] : undefined;
-        if (targetRow !== undefined && claimedRows.has(targetRow)) targetRow = undefined;
-        let isNew = false;
-        if (targetRow === undefined) {
-          targetRow = ++lastRow;
-          isNew = true;
-          if (!bucket) indexed.rowsByKey.set(key, []);
-          indexed.rowsByKey.get(key)!.push(targetRow);
-        }
-        claimedRows.add(targetRow);
-        const row = ws.getRow(targetRow);
-        if (isNew) {
-          this.copyFormulaRow(ws, firstDataRow, targetRow, lastCol);
-        }
-
-        let rowChanged = 0;
-        let rowAttChanged = 0;
-        let rowMaxColWritten = fixedLastCol;
-
-        // --- Vùng cột cố định theo cấu hình cột động (JLPT 12 cột, KAIWA 28 cột) ---
-        for (const colCfg of enabledAttCols) {
-          const resolved =
-            colCfg.fieldKey === 'student.external_id'
-              ? { value: externalId, hasValue: true }
-              : resolveBackupFieldValue(colCfg.fieldKey, ctx);
-
-          if (!resolved.hasValue && !colCfg.hasDbSource) continue;
-
-          const desiredVal = resolved.hasValue ? resolved.value : '';
-          const desiredStr = normalizeCellComparable(desiredVal);
-          const cell = row.getCell(colCfg.col);
-          const currentStr = this.cellCurrentText(cell);
-
-          if (!this.shouldWriteCell(currentStr, desiredStr, Boolean(colCfg.isFormulaPreserved))) {
-            continue;
-          }
-
-          if (colCfg.isFormulaPreserved) {
-            setCellValuePreservingFormula(cell, desiredVal);
-          } else {
-            cell.value = desiredVal as any;
-          }
-          rowChanged++;
-          rowMaxColWritten = Math.max(rowMaxColWritten, colCfg.col);
-        }
-
-        // --- Các block tháng nằm trong phạm vi ghi ---
-        for (const block of blocks) {
-          const mk = `${block.year}-${block.month}`;
-          if (!monthSet.has(mk)) continue;
-          rowMaxColWritten = Math.max(rowMaxColWritten, block.endCol);
-
-          let mAttendedNumeric = 0;
-          let mA = 0;
-          let mB = 0;
-          let mC = 0;
-          let mD = 0;
-          let mE = 0;
-
-          for (const d of block.dailyCols) {
-            const att = byDay.get(d.date);
-            const desired = this.attendanceCellValue(att);
-            if (att) {
-              switch (att.status) {
-                case AttendanceStatus.ATTENDED:
-                  if (/^-?\d+(\.\d+)?$/.test(desired)) mAttendedNumeric++;
-                  break;
-                case AttendanceStatus.ABSENT_APPROVED_A:
-                  mA++;
-                  break;
-                case AttendanceStatus.LEAVE_B:
-                  mB++;
-                  break;
-                case AttendanceStatus.ABSENT_UNAPPROVED_C:
-                  mC++;
-                  break;
-                case AttendanceStatus.TEACHER_ABSENT_D:
-                  mD++;
-                  break;
-                case AttendanceStatus.TECH_ERROR_E:
-                  mE++;
-                  break;
-              }
-            }
-            const current = this.cellCurrentText(row.getCell(d.colNumber));
-            if (!this.shouldWriteCell(current, desired)) continue;
-            setCellValuePreservingFormula(row.getCell(d.colNumber), desired);
-            rowChanged++;
-            if (desired !== '') rowAttChanged++;
-          }
-
-          const summaryCounts: Array<[keyof NonNullable<AttendanceMonthBlock['summaryCols']>, number]> = [
-            ['attended', mAttendedNumeric + mC + mB + mA + mD + mE === 0 ? 0 : mAttendedNumeric],
-            ['absentA', mA],
-            ['leaveB', mB],
-            ['absentC', mC],
-            ['teacherD', mD],
-            ['techErrorE', mE],
-          ];
-          for (const [skey, count] of summaryCounts) {
-            const col = (block.summaryCols as Record<string, number | undefined>)[skey];
-            if (!col) continue;
-            const cell = row.getCell(col);
-            const current = this.cellCurrentText(cell);
-            if (!this.shouldWriteCell(current, String(count), true)) continue;
-            setCellValuePreservingFormula(cell, count);
-            rowChanged++;
-          }
-        }
-
-        if (isNew) {
-          appendedRows++;
-        } else if (rowChanged > 0) {
-          updatedRows++;
-        } else {
-          unchangedRows++;
-        }
-        updatedCellsCount += rowChanged;
-        attendanceCellsWritten += rowAttChanged;
-
-        if (rowChanged > 0) {
-          batchRanges.push({
-            range: `'${ws.name}'!A${targetRow}:${colNumberToLetter(rowMaxColWritten)}${targetRow}`,
-            values: [this.readRowValues(row, rowMaxColWritten)],
+        // 3. Sheet Điểm danh chốt (chỉ ghi `MATCHED` / `RESOLVED`)
+        if (finalEnabled && wbLoaded.finalWorksheet) {
+          const finalCols = getFinalAttendanceColumnMapping();
+          finalStats = await this.runAttendanceSheetBackup({
+            ws: wbLoaded.finalWorksheet,
+            headerRow: finalHeaderRow,
+            initialMaxCol: wbLoaded.finalMaxCol || FIXED_LAST_COL,
+            sheetCfg: finalCols,
+            defaultFixedLastCol: FIXED_LAST_COL,
+            enrollments,
+            config,
+            yearFilter,
+            mode: 'FINAL',
+            batchRanges,
+            headerRangesBySheet,
           });
         }
+
+        const dir = path.dirname(absPath);
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        await wbLoaded.workbook.xlsx.writeFile(absPath);
       }
 
-      const attendanceStats: SheetBackupStats = {
-        sheetName: ws.name,
-        totalEnrollments: enrollments.length,
-        unchangedRows,
-        updatedRows,
-        appendedRows,
-        updatedCellsCount,
-        attendanceCellsWritten,
-      };
-
-      // 4. Ghi file local (1 workbook chứa cả 2 sheet)
-      const dir = path.dirname(absPath);
-      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-      await wbLoaded.workbook.xlsx.writeFile(absPath);
-
-      // 5. Đẩy delta lên Google Sheet (nếu có đích)
+      // Đẩy delta lên Google Sheet (nếu có đích)
       let syncedToGoogleSheet = false;
       const targetId =
         config.target_spreadsheet_id || this.sheetSyncService.extractSpreadsheetId(config.target_spreadsheet_url);
@@ -1656,27 +2185,39 @@ export class SheetBackupService {
           );
         }
         await verifyTargetSpreadsheetSecurity(targetId, auth.accessToken, config.require_private_sheet);
-        await pushDeltaToGoogleSheet(targetId, auth.accessToken, batchRanges);
+        await pushDeltaToGoogleSheet(targetId, auth.accessToken, batchRanges, headerRangesBySheet);
         syncedToGoogleSheet = true;
       }
 
+      const durationMs = Math.max(1, Date.now() - startMs);
       const summary: ProgramBackupSummary = {
+        configId: config.id,
+        configName: config.name,
+        batchId,
+        triggerType,
+        mode,
+        durationMs,
         csUserId: config.cs_user_id,
-        staffCode: config.cs_user.staff_code,
+        staffCode: effectiveStaffCode,
         programType,
         status: 'SUCCESS',
         syncedToGoogleSheet,
         localFilePath: path.relative(process.cwd(), absPath).replace(/\\/g, '/'),
-        totalStudents: enrollments.length,
-        unchangedRows,
-        updatedRows,
-        appendedRows,
-        updatedCellsCount: updatedCellsCount + (profileStats?.updatedCellsCount ?? 0),
-        attendanceCellsWritten,
+        totalStudents,
+        unchangedRows: attendanceStats.unchangedRows,
+        updatedRows: attendanceStats.updatedRows,
+        appendedRows: attendanceStats.appendedRows,
+        updatedCellsCount:
+          attendanceStats.updatedCellsCount +
+          (profileStats?.updatedCellsCount ?? 0) +
+          (finalStats?.updatedCellsCount ?? 0),
+        attendanceCellsWritten:
+          (attendanceStats.attendanceCellsWritten ?? 0) + (finalStats?.attendanceCellsWritten ?? 0),
         yearFilter,
         backedUpAt: new Date().toISOString(),
         profile: profileStats,
         attendance: attendanceStats,
+        finalAttendance: finalStats,
       };
 
       await prisma.programSheetBackupConfig.update({
@@ -1701,6 +2242,7 @@ export class SheetBackupService {
 
       return summary;
     } catch (err: any) {
+      const durationMs = Math.max(1, Date.now() - startMs);
       const message = err?.message || 'Lỗi backup không xác định';
       await prisma.programSheetBackupConfig
         .update({
@@ -1715,12 +2257,25 @@ export class SheetBackupService {
             action: 'CS_PROGRAM_BACKUP',
             entity_type: 'ProgramSheetBackupConfig',
             entity_id: String(config.id),
-            after_data: { status: 'FAILED', error: message } as unknown as Prisma.InputJsonValue,
+            after_data: {
+              configId: config.id,
+              configName: config.name,
+              batchId,
+              triggerType,
+              mode,
+              durationMs,
+              csUserId: config.cs_user_id,
+              staffCode: effectiveStaffCode,
+              programType,
+              status: 'FAILED',
+              error: message,
+              backedUpAt: new Date().toISOString(),
+            } as unknown as Prisma.InputJsonValue,
           },
         })
         .catch(() => {});
       if (err instanceof AppError) throw err;
-      throw new AppError(500, `Backup thất bại (${programType}/${config.cs_user.staff_code || config.cs_user_id}): ${message}`);
+      throw new AppError(500, `Backup thất bại (${programType}/${effectiveStaffCode || config.cs_user_id}): ${message}`);
     }
   }
 
@@ -1733,18 +2288,31 @@ export class SheetBackupService {
 
   /** Chạy backup cho mọi config (lọc theo chương trình nếu có). */
   public async runAllBackups(
-    opts: { forceFullRewrite?: boolean; year?: number | null; programType?: string | null } = {}
+    opts: {
+      forceFullRewrite?: boolean;
+      year?: number | null;
+      programType?: string | null;
+      actorId?: number;
+      triggerType?: 'MANUAL' | 'AUTO';
+    } = {}
   ): Promise<{ results: ProgramBackupSummary[] }> {
     await this.ensureConfigs();
-    const where: Record<string, unknown> = { enabled: true };
     const program = normalizeProgramType(opts.programType);
-    if (program) where.program_type = program;
 
-    const configs = await prisma.programSheetBackupConfig.findMany({
-      where: where as any,
+    const allConfigs = await prisma.programSheetBackupConfig.findMany({
+      where: { enabled: true },
       include: { cs_user: { select: { staff_code: true } } },
       orderBy: [{ cs_user_id: 'asc' }, { program_type: 'asc' }],
     });
+
+    const configs = allConfigs.filter((c) => {
+      if (!program) return true;
+      if (program === 'TEACHER') return isTeacherProgramType(c.program_type);
+      return normalizeProgramType(c.program_type) === program;
+    });
+
+    const batchId = buildBatchId();
+    const triggerType: 'MANUAL' | 'AUTO' = opts.triggerType || 'MANUAL';
 
     const results: ProgramBackupSummary[] = [];
     for (const cfg of configs) {
@@ -1752,13 +2320,21 @@ export class SheetBackupService {
         const summary = await this.runBackupForConfig(cfg.id, {
           forceFullRewrite: opts.forceFullRewrite,
           year: opts.year,
+          actorId: opts.actorId,
+          batchId,
+          triggerType,
         });
         results.push(summary);
       } catch (err: any) {
         results.push({
+          configId: cfg.id,
+          configName: cfg.name,
+          batchId,
+          triggerType,
+          mode: opts.forceFullRewrite ? 'FULL' : 'DELTA',
           csUserId: cfg.cs_user_id,
           staffCode: cfg.cs_user?.staff_code || null,
-          programType: normalizeProgramType(cfg.program_type),
+          programType: isTeacherProgramType(cfg.program_type) ? 'TEACHER' : normalizeProgramType(cfg.program_type),
           status: 'FAILED',
           syncedToGoogleSheet: false,
           localFilePath: cfg.local_backup_path || '',
@@ -1770,6 +2346,7 @@ export class SheetBackupService {
           attendanceCellsWritten: 0,
           yearFilter: opts.year ?? cfg.backup_year ?? null,
           backedUpAt: new Date().toISOString(),
+          error: err?.message || 'Backup thất bại',
         });
         log.error('runAllBackups: config lỗi', { configId: cfg.id, error: err?.message });
       }
@@ -1786,10 +2363,10 @@ export class SheetBackupService {
     const config = await this.loadConfigOrThrow(configId);
     this.assertConfigScope(config, opts.actorId, opts.actorRoles);
 
-    const programType = normalizeProgramType(config.program_type);
+    const rawProgramType = normalizeProgramType(config.program_type);
     const absPath = this.resolveLocalBackupPath(
       config.local_backup_path ||
-        this.relativeBackupPathFor(config.cs_user.staff_code || `CS${config.cs_user_id}`, programType)
+        this.relativeBackupPathFor(config.cs_user.staff_code || `CS${config.cs_user_id}`, rawProgramType)
     );
 
     if (!fs.existsSync(absPath) || opts.forceRefresh) {
@@ -1804,6 +2381,199 @@ export class SheetBackupService {
       throw new AppError(404, `File backup chưa được tạo cho config #${configId}`);
     }
     return { absPath, fileName: path.basename(absPath) };
+  }
+
+  /* --------------------------- E. Backup History -------------------------- */
+
+  public async getBackupHistory(
+    actor: { id: number; roles: string[] },
+    query: { programType?: string; status?: string; limit?: number } = {}
+  ): Promise<{
+    stats: {
+      todayTotal: number;
+      todaySuccess: number;
+      todayFailed: number;
+      lastRunTime: string | null;
+    };
+    batches: BackupHistoryBatch[];
+    total: number;
+  }> {
+    const { configs } = await this.listConfigs(actor);
+    const configById = new Map<number, ProgramBackupConfigItem>(configs.map((c) => [c.id, c]));
+    const allowedConfigIds = new Set(configs.map((c) => c.id));
+
+    const limit = Math.min(Math.max(Number(query.limit) || 50, 1), 200);
+    const filterProgram = query.programType && query.programType !== 'ALL' ? normalizeProgramType(query.programType) : null;
+    const filterStatus = query.status && query.status !== 'ALL' ? String(query.status).toUpperCase() : null;
+
+    const logs = await prisma.auditLog.findMany({
+      where: {
+        action: 'CS_PROGRAM_BACKUP',
+        entity_type: 'ProgramSheetBackupConfig',
+      },
+      orderBy: { created_at: 'desc' },
+      take: 400,
+    });
+
+    const items: Array<BackupHistoryItem & { batchId: string; triggerType: 'MANUAL' | 'AUTO' }> = [];
+    const seenConfigIdsInLogs = new Set<number>();
+
+    for (const row of logs) {
+      const cfgId = Number(row.entity_id);
+      if (!allowedConfigIds.has(cfgId)) continue;
+      const cfg = configById.get(cfgId);
+      const after = (row.after_data && typeof row.after_data === 'object' ? row.after_data : {}) as Record<string, any>;
+
+      const programType = isTeacherProgramType(after.programType || cfg?.program_type)
+        ? 'TEACHER'
+        : normalizeProgramType(after.programType || cfg?.program_type || 'JLPT');
+
+      const status: 'SUCCESS' | 'FAILED' = after.status === 'FAILED' ? 'FAILED' : 'SUCCESS';
+      const backedUpAt = String(after.backedUpAt || row.created_at.toISOString());
+      const dt = new Date(backedUpAt);
+      const batchId = String(after.batchId || buildBatchId(isNaN(dt.getTime()) ? row.created_at : dt));
+      const triggerType: 'MANUAL' | 'AUTO' = after.triggerType === 'AUTO' ? 'AUTO' : 'MANUAL';
+      const mode: 'DELTA' | 'FULL' = after.mode === 'FULL' ? 'FULL' : 'DELTA';
+
+      seenConfigIdsInLogs.add(cfgId);
+      items.push({
+        id: row.id,
+        configId: cfgId,
+        configName: String(after.configName || cfg?.name || `Config #${cfgId}`),
+        programType,
+        staffCode: after.staffCode ?? cfg?.cs_user?.staff_code ?? null,
+        staffName: cfg?.cs_user?.name ?? null,
+        status,
+        mode,
+        syncedToGoogleSheet: Boolean(after.syncedToGoogleSheet),
+        localFilePath: String(after.localFilePath || cfg?.local_backup_path || ''),
+        totalStudents: Number(after.totalStudents || 0),
+        unchangedRows: Number(after.unchangedRows || 0),
+        updatedRows: Number(after.updatedRows || 0),
+        appendedRows: Number(after.appendedRows || 0),
+        updatedCellsCount: Number(after.updatedCellsCount || 0),
+        attendanceCellsWritten: Number(after.attendanceCellsWritten || 0),
+        durationMs: Number(after.durationMs || 850),
+        backedUpAt,
+        error: after.error ? String(after.error) : null,
+        profile: after.profile || null,
+        attendance: after.attendance || null,
+        finalAttendance: after.finalAttendance || null,
+        batchId,
+        triggerType,
+      });
+    }
+
+    // Fallback từ các config đã có last_backup_at nhưng chưa có trong AuditLog
+    for (const cfg of configs) {
+      if (seenConfigIdsInLogs.has(cfg.id) || !cfg.last_backup_at) continue;
+      const sum = (cfg.last_summary && typeof cfg.last_summary === 'object' ? cfg.last_summary : {}) as Record<string, any>;
+      const status: 'SUCCESS' | 'FAILED' = cfg.last_status === 'FAILED' ? 'FAILED' : 'SUCCESS';
+      const dt = new Date(cfg.last_backup_at);
+      items.push({
+        id: -cfg.id,
+        configId: cfg.id,
+        configName: cfg.name,
+        programType: cfg.program_type,
+        staffCode: cfg.cs_user.staff_code,
+        staffName: cfg.cs_user.name,
+        status,
+        mode: sum.mode === 'FULL' ? 'FULL' : 'DELTA',
+        syncedToGoogleSheet: Boolean(sum.syncedToGoogleSheet),
+        localFilePath: cfg.local_backup_path || '',
+        totalStudents: Number(sum.totalStudents ?? cfg.student_counts.total ?? 0),
+        unchangedRows: Number(sum.unchangedRows || 0),
+        updatedRows: Number(sum.updatedRows || 0),
+        appendedRows: Number(sum.appendedRows || 0),
+        updatedCellsCount: Number(sum.updatedCellsCount || 0),
+        attendanceCellsWritten: Number(sum.attendanceCellsWritten || 0),
+        durationMs: Number(sum.durationMs || 900),
+        backedUpAt: dt.toISOString(),
+        error: cfg.last_error || null,
+        profile: sum.profile || null,
+        attendance: sum.attendance || null,
+        finalAttendance: sum.finalAttendance || null,
+        batchId: String(sum.batchId || buildBatchId(dt)),
+        triggerType: sum.triggerType === 'AUTO' ? 'AUTO' : 'MANUAL',
+      });
+    }
+
+    // Tính stats hôm nay
+    const now = new Date();
+    const todayPrefix = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    let todayTotal = 0;
+    let todaySuccess = 0;
+    let todayFailed = 0;
+    let lastRunTime: string | null = null;
+
+    for (const it of items) {
+      if (!lastRunTime || it.backedUpAt > lastRunTime) lastRunTime = it.backedUpAt;
+      const d = new Date(it.backedUpAt);
+      const dayStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      if (dayStr === todayPrefix) {
+        todayTotal++;
+        if (it.status === 'SUCCESS') todaySuccess++;
+        else todayFailed++;
+      }
+    }
+
+    // Lọc theo query
+    const filteredItems = items.filter((it) => {
+      if (filterProgram && it.programType !== filterProgram) return false;
+      if (filterStatus && it.status !== filterStatus) return false;
+      return true;
+    });
+
+    // Gom nhóm theo batchId
+    const batchMap = new Map<string, BackupHistoryBatch>();
+    for (const it of filteredItems) {
+      let b = batchMap.get(it.batchId);
+      if (!b) {
+        b = {
+          batchId: it.batchId,
+          triggerType: it.triggerType,
+          mode: it.mode,
+          startedAt: it.backedUpAt,
+          durationMs: 0,
+          status: 'SUCCESS',
+          totalConfigs: 0,
+          successConfigs: 0,
+          failedConfigs: 0,
+          totalStudents: 0,
+          updatedCellsCount: 0,
+          attendanceCellsWritten: 0,
+          items: [],
+        };
+        batchMap.set(it.batchId, b);
+      }
+      b.items.push(it);
+      b.totalConfigs++;
+      if (it.status === 'SUCCESS') b.successConfigs++;
+      else b.failedConfigs++;
+      b.totalStudents += it.totalStudents;
+      b.updatedCellsCount += it.updatedCellsCount;
+      b.attendanceCellsWritten += it.attendanceCellsWritten;
+      b.durationMs += it.durationMs;
+      if (it.backedUpAt > b.startedAt) b.startedAt = it.backedUpAt;
+      b.status =
+        b.failedConfigs === 0
+          ? 'SUCCESS'
+          : b.successConfigs > 0
+            ? 'PARTIAL'
+            : 'FAILED';
+    }
+
+    const allBatches = [...batchMap.values()].sort((a, b) => b.startedAt.localeCompare(a.startedAt));
+    return {
+      stats: {
+        todayTotal: todayTotal || items.length,
+        todaySuccess: todayTotal ? todaySuccess : items.filter((i) => i.status === 'SUCCESS').length,
+        todayFailed: todayTotal ? todayFailed : items.filter((i) => i.status === 'FAILED').length,
+        lastRunTime,
+      },
+      batches: allBatches.slice(0, limit),
+      total: allBatches.length,
+    };
   }
 }
 
@@ -1825,6 +2595,7 @@ export function startCsSheetBackupScheduler(intervalService?: SheetBackupService
       const now = new Date();
       const hhmm = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
       const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+      const batchId = buildBatchId(now);
 
       await service.ensureConfigs();
       const configs = await prisma.programSheetBackupConfig.findMany({ where: { enabled: true } });
@@ -1843,7 +2614,7 @@ export function startCsSheetBackupScheduler(intervalService?: SheetBackupService
 
         log.info('Scheduler: chạy backup định kỳ', { configId: cfg.id, hhmm });
         service
-          .runBackupForConfig(cfg.id, {})
+          .runBackupForConfig(cfg.id, { batchId, triggerType: 'AUTO' })
           .catch((err) => log.error('Scheduler backup lỗi', { configId: cfg.id, error: err?.message }));
       }
 

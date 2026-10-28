@@ -23,21 +23,23 @@ router.get('/batches', requireRoles(['ADMIN', 'MANAGE', 'CS', 'TEACHER']), contr
 
 // 2b. Google Sheet Sync Configs & Execution (ADMIN, MANAGE)
 router.get('/sheet-sync/configs', requireRoles(['ADMIN', 'MANAGE', 'CS']), controller.getSheetSyncConfigs);
+router.get('/sheet-sync/history', requireRoles(['ADMIN', 'MANAGE', 'CS']), controller.getSheetSyncHistory);
 // Service Account JSON configuration is restricted to ADMIN only (configured in Admin Settings page)
 router.put('/sheet-sync/service-account', requireRoles(['ADMIN']), controller.saveServiceAccount);
 router.put('/sheet-sync/configs/:code', requireRoles(['ADMIN', 'MANAGE']), controller.updateSheetSyncConfig);
 router.post('/sheet-sync/configs/:code/sync', requireRoles(['ADMIN', 'MANAGE']), controller.syncSheetByCode);
 router.post('/sheet-sync/sync-all', requireRoles(['ADMIN', 'MANAGE']), controller.syncAllSheets);
 
-// 2c. Program Sheet Backup Configs (JLPT / KAIWA per CS), Column Config, Execution & Download
+// 2c. Program Sheet Backup Configs (JLPT / KAIWA per CS, TEACHER per Teacher), Column Config, Execution & Download
 router.get('/sheet-backup/column-config', requireRoles(['ADMIN', 'MANAGE', 'CS']), controller.getSheetBackupColumnConfig);
 router.put('/sheet-backup/column-config', requireRoles(['ADMIN']), controller.updateSheetBackupColumnConfig);
 router.post('/sheet-backup/column-config/reset', requireRoles(['ADMIN']), controller.resetSheetBackupColumnConfig);
-router.get('/sheet-backup/configs', requireRoles(['ADMIN', 'MANAGE', 'CS']), controller.getSheetBackupConfigs);
+router.get('/sheet-backup/configs', requireRoles(['ADMIN', 'MANAGE', 'CS', 'TEACHER']), controller.getSheetBackupConfigs);
+router.get('/sheet-backup/history', requireRoles(['ADMIN', 'MANAGE', 'CS', 'TEACHER']), controller.getSheetBackupHistory);
 router.put('/sheet-backup/configs/:id', requireRoles(['ADMIN', 'MANAGE']), controller.updateSheetBackupConfig);
-router.post('/sheet-backup/configs/:id/run', requireRoles(['ADMIN', 'MANAGE', 'CS']), controller.runSheetBackupForConfig);
+router.post('/sheet-backup/configs/:id/run', requireRoles(['ADMIN', 'MANAGE', 'CS', 'TEACHER']), controller.runSheetBackupForConfig);
 router.post('/sheet-backup/run-all', requireRoles(['ADMIN', 'MANAGE']), controller.runAllSheetBackups);
-router.get('/sheet-backup/configs/:id/download', requireRoles(['ADMIN', 'MANAGE', 'CS']), controller.downloadSheetBackup);
+router.get('/sheet-backup/configs/:id/download', requireRoles(['ADMIN', 'MANAGE', 'CS', 'TEACHER']), controller.downloadSheetBackup);
 
 // 3. Create / Transfer Requests approval queue
 router.get('/create-requests', requireRoles(['ADMIN', 'MANAGE', 'CS']), controller.listCreateRequests);
