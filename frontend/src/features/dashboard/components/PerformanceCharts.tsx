@@ -49,9 +49,9 @@ export const CSLeaderboard: React.FC<{ data: PerformancePayload['cs_leaderboard'
         <thead>
           <tr className="bg-surface-muted/80 border-b border-border">
             <th className="py-2.5 px-3 font-semibold text-text-secondary">#</th>
-            <th className="py-2.5 px-3 font-semibold text-text-secondary">CVHT</th>
+            <th className="py-2.5 px-3 font-semibold text-text-secondary">CSKH</th>
             <th className="py-2.5 px-3 font-semibold text-text-secondary text-right">Ghi danh</th>
-            <th className="py-2.5 px-3 font-semibold text-text-secondary text-right">Log CS</th>
+            <th className="py-2.5 px-3 font-semibold text-text-secondary text-right">Log CSKH</th>
             <th className="py-2.5 px-3 font-semibold text-text-secondary text-right">% Tích cực</th>
             <th className="py-2.5 px-3 font-semibold text-text-secondary text-right">NV hoàn thành</th>
           </tr>

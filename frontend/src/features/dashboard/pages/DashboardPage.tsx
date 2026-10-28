@@ -233,8 +233,8 @@ const DashboardPage: React.FC = () => {
           </div>
 
           <ChartCard
-            title="Ghi danh theo CVHT"
-            description="Số lượng học viên phụ trách của từng CS"
+            title="Ghi danh theo CSKH"
+            description="Số lượng học viên phụ trách của từng CSKH"
             onExport={() => downloadCSV('enrollment-by-cs', overview.enrollment_by_cs as unknown as Record<string, unknown>[])}
           >
             <EnrollmentByCSBar data={overview.enrollment_by_cs} />
@@ -333,8 +333,8 @@ const DashboardPage: React.FC = () => {
 
           {canSeeLeaderboard && (
             <ChartCard
-              title="Bảng xếp hạng CVHT"
-              description="So sánh hiệu suất chăm sóc giữa các CS (chỉ ADMIN/MANAGE thấy)"
+              title="Bảng xếp hạng CSKH"
+              description="So sánh hiệu suất chăm sóc giữa các CSKH (chỉ ADMIN/MANAGE thấy)"
               onExport={() => downloadCSV('cs-leaderboard', performance.cs_leaderboard as unknown as Record<string, unknown>[])}
             >
               <CSLeaderboard data={performance.cs_leaderboard} />

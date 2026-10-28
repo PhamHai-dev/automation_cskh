@@ -7,22 +7,24 @@ import { useToast } from '../../../components/ui/Toast';
 import { HorizontalTabs } from '../../../components/ui/HorizontalTabs';
 import { ImportWizard } from '../components/ImportWizard';
 import { ImportHistoryTable } from '../components/ImportHistoryTable';
+import { ImportApprovalQueue } from '../components/ImportApprovalQueue';
 import { GoogleSheetSyncPanel } from '../components/GoogleSheetSyncPanel';
 import { CsSheetBackupPanel } from '../components/CsSheetBackupPanel';
 import { AttendanceExcelImportPanel } from '../../attendance/components/AttendanceExcelImportPanel';
 import { importsApi } from '../api/imports.api';
 import { useAuth } from '../../../contexts/AuthContext';
-import { CalendarCheck, DatabaseBackup, Download, History, RefreshCw, UploadCloud } from 'lucide-react';
+import { CalendarCheck, DatabaseBackup, Download, History, RefreshCw, ShieldCheck, UploadCloud } from 'lucide-react';
 
-type ImportTabValue = 'sheet-sync' | 'sheet-backup' | 'wizard' | 'attendance' | 'history';
+type ImportTabValue = 'sheet-sync' | 'sheet-backup' | 'wizard' | 'attendance' | 'approval' | 'history';
 
-const TAB_ORDER: ImportTabValue[] = ['sheet-sync', 'sheet-backup', 'wizard', 'attendance', 'history'];
+const TAB_ORDER: ImportTabValue[] = ['sheet-sync', 'sheet-backup', 'wizard', 'attendance', 'approval', 'history'];
 
 const TAB_LABELS: Record<ImportTabValue, { label: string; icon: React.ReactNode }> = {
   'sheet-sync': { label: 'Đồng bộ Google Sheet (JLPT & Kaiwa)', icon: <RefreshCw /> },
   'sheet-backup': { label: 'Backup Sổ CSKH (Sheet 1 & 3)', icon: <DatabaseBackup /> },
   wizard: { label: 'Upload Hồ sơ (Sheet 1)', icon: <UploadCloud /> },
   attendance: { label: 'Điểm danh CSKH / GV', icon: <CalendarCheck /> },
+  approval: { label: 'Phê duyệt nhập liệu', icon: <ShieldCheck /> },
   history: { label: 'Lịch sử nhập', icon: <History /> },
 };
 
@@ -38,12 +40,12 @@ export const ImportsPage: React.FC = () => {
   const isCS = roles.includes('CS');
 
   // Tab khả dụng theo vai trò (khớp guard backend trong imports.routes.ts):
-  // - ADMIN/MANAGE: toàn bộ 5 tab (sheet-sync guard ADMIN+MANAGE)
+  // - ADMIN/MANAGE: toàn bộ 6 tab (sheet-sync + approval guard ADMIN+MANAGE)
   // - CS: sheet-backup (GET configs cho phép CS) + wizard/attendance/history
   // - TEACHER (và vai trò khác): chỉ attendance + history
   const allowedTabs = useMemo<ImportTabValue[]>(() => {
     if (isAdminOrManage) return TAB_ORDER;
-    if (isCS) return TAB_ORDER.filter((t) => t !== 'sheet-sync');
+    if (isCS) return TAB_ORDER.filter((t) => t !== 'sheet-sync' && t !== 'approval');
     return ['attendance', 'history'];
   }, [isAdminOrManage, isCS]);
 
@@ -149,6 +151,7 @@ export const ImportsPage: React.FC = () => {
       {effectiveTab === 'sheet-backup' && <CsSheetBackupPanel />}
       {effectiveTab === 'wizard' && <ImportWizard onImportComplete={() => selectTab('history')} />}
       {effectiveTab === 'attendance' && <AttendanceExcelImportPanel />}
+      {effectiveTab === 'approval' && <ImportApprovalQueue />}
       {effectiveTab === 'history' && <ImportHistoryTable />}
     </PageContainer>
   );

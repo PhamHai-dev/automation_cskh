@@ -1000,7 +1000,7 @@ export const AutomationWorkflowDetailPage: React.FC = () => {
                     <th className="px-3 py-2 w-8"></th>
                     <th className="px-3 py-2 font-semibold">Học viên</th>
                     <th className="px-3 py-2 font-semibold">Gói / Lớp / GV</th>
-                    <th className="px-3 py-2 font-semibold">CS phụ trách</th>
+                    <th className="px-3 py-2 font-semibold">CSKH phụ trách</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/60">

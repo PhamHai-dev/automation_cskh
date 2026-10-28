@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Badge } from '../../../components/ui/Badge';
 import { Button } from '../../../components/ui/Button';
 import { importsApi } from '../api/imports.api';
@@ -8,14 +8,16 @@ import { Download, RefreshCw, AlertCircle } from 'lucide-react';
 export const ImportHistoryTable: React.FC = () => {
   const [batches, setBatches] = useState<ImportBatchSummary[]>([]);
   const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  const fetchBatches = async () => {
+  const fetchBatches = useCallback(async () => {
     try {
       setLoading(true);
       setError('');
-      const res = await importsApi.listBatches(50, 0);
+      const res = await importsApi.listBatches(pageSize, (page - 1) * pageSize);
       setBatches(res.items);
       setTotal(res.total);
     } catch (err: any) {
@@ -23,11 +25,15 @@ export const ImportHistoryTable: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [page, pageSize]);
 
   useEffect(() => {
-    fetchBatches();
-  }, []);
+    void fetchBatches();
+  }, [fetchBatches]);
+
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const startRow = total === 0 ? 0 : (page - 1) * pageSize + 1;
+  const endRow = Math.min(page * pageSize, total);
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -149,6 +155,56 @@ export const ImportHistoryTable: React.FC = () => {
               )}
             </tbody>
           </table>
+        </div>
+
+        {/* Thanh phân trang chuẩn */}
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 border-t border-gray-200 bg-gray-50/70 text-xs text-gray-600">
+          <div className="flex flex-wrap items-center gap-2">
+            <span>
+              Hiển thị <strong className="text-gray-900">{startRow}</strong> -{' '}
+              <strong className="text-gray-900">{endRow}</strong> /{' '}
+              <strong className="text-gray-900">{total}</strong> dòng
+            </span>
+            <span className="text-gray-400">•</span>
+            <label className="flex items-center gap-1.5">
+              <span>Mỗi trang:</span>
+              <select
+                value={pageSize}
+                onChange={(e) => {
+                  setPageSize(Number(e.target.value));
+                  setPage(1);
+                }}
+                className="bg-white border border-gray-300 rounded-lg px-2 py-1 text-xs text-gray-800 focus:outline-none focus:ring-1 focus:ring-primary"
+              >
+                <option value={25}>25</option>
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+                <option value={200}>200</option>
+              </select>
+            </label>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={page <= 1 || loading}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+            >
+              Trước
+            </Button>
+            <span className="px-2 font-medium text-gray-800">
+              Trang {page} / {totalPages}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={page >= totalPages || loading}
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+            >
+              Sau
+            </Button>
+          </div>
         </div>
       </div>
     </div>

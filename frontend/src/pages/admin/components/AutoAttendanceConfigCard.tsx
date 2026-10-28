@@ -146,7 +146,7 @@ export const AutoAttendanceConfigCard: React.FC = () => {
                 <CardTitle className="text-base sm:text-lg flex items-center gap-2">
                   Tự động Điểm danh theo Lịch học
                   <Badge variant={loading ? 'neutral' : enabled ? 'success' : 'neutral'} size="sm" className="hidden sm:inline-flex">
-                    {loading ? 'Đang tải...' : enabled ? 'Cron ngầm: Đang bật' : 'Cron ngầm: Đã tắt'}
+                    {loading ? 'Đang tải...' : enabled ? 'Tự động quét: Đang bật' : 'Tự động quét: Đang tắt'}
                   </Badge>
                 </CardTitle>
                 <CardDescription className="text-xs sm:text-sm mt-0.5">
@@ -358,13 +358,13 @@ export const AutoAttendanceConfigCard: React.FC = () => {
             Quy tắc hoạt động của Tự động Điểm danh
           </CardTitle>
         </CardHeader>
-        <CardContent className="p-5 space-y-3 text-xs text-text-secondary leading-relaxed">
+        <CardContent className="p-5 space-y-2.5 text-xs text-text-secondary leading-relaxed">
           <div className="flex items-start gap-2">
             <div className="w-5 h-5 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-[11px] shrink-0 mt-0.5">
               1
             </div>
             <div>
-              <strong className="text-text-primary font-semibold">Tần suất quét ngầm:</strong> Hệ thống sử dụng Background Cron Worker chạy tự động <strong>mỗi 1 phút</strong> để kiểm tra các lớp học đã qua mốc <code>start_time + delay_minutes</code>.
+              <strong className="text-text-primary font-semibold">Tần suất quét tự động:</strong> Hệ thống kiểm tra định kỳ <strong>mỗi 1 phút</strong> đối với các lớp đã qua giờ bắt đầu cộng thêm thời gian chờ đã cài đặt.
             </div>
           </div>
 
@@ -373,7 +373,7 @@ export const AutoAttendanceConfigCard: React.FC = () => {
               2
             </div>
             <div>
-              <strong className="text-text-primary font-semibold">Kiểm tra lịch học trong tuần:</strong> Chỉ điểm danh nếu ngày hiện tại khớp với cấu hình <code>schedule_pattern</code> của lớp (ví dụ: <code>246</code> điểm danh Thứ 2, 4, 6; <code>24CN</code> điểm danh Thứ 2, 4, Chủ Nhật). Lịch <code>LKCD</code> (Lịch không cố định) được bỏ qua để điểm danh thủ công.
+              <strong className="text-text-primary font-semibold">Khớp ngày học trong tuần:</strong> Chỉ điểm danh khi thứ hiện tại trùng với lịch cố định của lớp (ví dụ: Thứ 2, 4, 6 hoặc Thứ 2, 4, Chủ Nhật). Các lớp có lịch không cố định sẽ được bỏ qua để điểm danh thủ công.
             </div>
           </div>
 
@@ -382,7 +382,7 @@ export const AutoAttendanceConfigCard: React.FC = () => {
               3
             </div>
             <div>
-              <strong className="text-text-primary font-semibold">Học viên hợp lệ:</strong> Chỉ tự động điểm danh cho học viên có trạng thái ghi danh là <code>Đang học</code> (STUDYING) và phân lớp đang hoạt động (ACTIVE).
+              <strong className="text-text-primary font-semibold">Đối tượng áp dụng:</strong> Chỉ tự động đánh dấu có mặt cho học viên đang trong trạng thái theo học và còn hoạt động tại lớp.
             </div>
           </div>
 
@@ -391,7 +391,7 @@ export const AutoAttendanceConfigCard: React.FC = () => {
               4
             </div>
             <div>
-              <strong className="text-text-primary font-semibold">Chỉ điền ô trống (Không ghi đè):</strong> Nếu buổi học đó đã được Giáo viên hoặc CSKH điểm danh tay trước đó (Có mặt, Xin nghỉ phép A, Bảo lưu B...), hệ thống giữ nguyên dữ liệu gốc, tuyệt đối không ghi đè.
+              <strong className="text-text-primary font-semibold">Không ghi đè kết quả có sẵn:</strong> Nếu buổi học đã được Giáo viên hoặc CSKH điểm danh trước đó (Có mặt, Nghỉ phép, Bảo lưu...), hệ thống giữ nguyên kết quả đã chấm.
             </div>
           </div>
 
@@ -400,7 +400,7 @@ export const AutoAttendanceConfigCard: React.FC = () => {
               5
             </div>
             <div>
-              <strong className="text-text-primary font-semibold">Tự động cảnh báo thiếu giờ học:</strong> Nếu lớp học có lịch học nhưng bị để trống giờ bắt đầu (<code>start_time</code>), hệ thống sẽ không điểm danh mà tự động tạo nhiệm vụ <code>SCHEDULE_DATA_ISSUE</code> cho nhân viên CS phụ trách để bổ sung giờ.
+              <strong className="text-text-primary font-semibold">Cảnh báo thiếu giờ học:</strong> Nếu lớp có lịch học trong ngày nhưng chưa khai báo giờ bắt đầu, hệ thống sẽ tạo nhắc việc cho nhân viên CSKH phụ trách để bổ sung giờ học.
             </div>
           </div>
         </CardContent>

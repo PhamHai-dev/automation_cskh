@@ -18,7 +18,6 @@ import {
   XCircle,
   Clock,
   Save,
-  Zap,
   ShieldCheck,
   FileSpreadsheet,
   Users,
@@ -242,8 +241,8 @@ export const CsSheetBackupPanel: React.FC = () => {
       const count = res?.results?.length || configs.length;
       toast.success(
         forceFullRewrite
-          ? `Đã ghi đè toàn bộ (Force Full Backup) cho ${count} tài khoản CSKH!`
-          : `Đã thực hiện Delta Backup cho ${count} tài khoản CSKH!`
+          ? `Đã sao lưu đè toàn bộ cho ${count} tài khoản CSKH!`
+          : `Đã sao lưu nhanh (thay đổi mới) cho ${count} tài khoản CSKH!`
       );
       await fetchBackupConfigs();
     } catch (err: any) {
@@ -281,14 +280,24 @@ export const CsSheetBackupPanel: React.FC = () => {
 
   const renderStatusBadge = (status?: string | null) => {
     if (!status || status === 'IDLE') {
-      return <Badge variant="neutral">IDLE</Badge>;
+      return <Badge variant="neutral">Chưa chạy</Badge>;
+    }
+    if (status === 'RUNNING' || status === 'SYNCING') {
+      return (
+        <Badge variant="info">
+          <span className="inline-flex items-center gap-1">
+            <RefreshCw className="w-3 h-3 animate-spin" />
+            Đang chạy
+          </span>
+        </Badge>
+      );
     }
     if (status === 'SUCCESS' || status === 'COMPLETED') {
       return (
         <Badge variant="success">
           <span className="inline-flex items-center gap-1">
             <CheckCircle2 className="w-3 h-3" />
-            SUCCESS
+            Thành công
           </span>
         </Badge>
       );
@@ -298,7 +307,7 @@ export const CsSheetBackupPanel: React.FC = () => {
         <Badge variant="warning">
           <span className="inline-flex items-center gap-1">
             <AlertTriangle className="w-3 h-3" />
-            PARTIAL_FAILED
+            Có dòng lỗi
           </span>
         </Badge>
       );
@@ -307,7 +316,7 @@ export const CsSheetBackupPanel: React.FC = () => {
       <Badge variant="danger">
         <span className="inline-flex items-center gap-1">
           <XCircle className="w-3 h-3" />
-          {status}
+          Thất bại
         </span>
       </Badge>
     );
@@ -335,36 +344,10 @@ export const CsSheetBackupPanel: React.FC = () => {
       <div className="bg-gradient-to-r from-indigo-50 via-blue-50/80 to-emerald-50/70 rounded-2xl border border-indigo-200/80 p-4 sm:p-5 shadow-soft">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           <div className="space-y-2">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-extrabold bg-indigo-600 text-white shadow-2xs">
-                <Zap className="w-3.5 h-3.5" />
-                Delta Cell Diffing (Chỉ ghi ô thay đổi)
-              </span>
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-blue-100 text-blue-800 border border-blue-200">
-                <FileSpreadsheet className="w-3.5 h-3.5" />
-                Google Sheets API v4 + File Excel (.xlsx)
-              </span>
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                <ShieldCheck className="w-3.5 h-3.5" />
-                Bảo mật 5 lớp: AES-256-GCM + Cô lập theo CVHT + Chặn Sheet công khai
-              </span>
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
-                <CalendarClock className="w-3.5 h-3.5" />
-                Lịch tự động 1–2 lần/ngày
-              </span>
-            </div>
-
             <h3 className="text-sm sm:text-base font-extrabold text-slate-900">
               Backup 2 Chiều từ Web về Sổ CSKH (<code className="font-mono text-indigo-700">1.Chăm sóc</code> &amp;{' '}
               <code className="font-mono text-teal-700">3.Chấm buổi</code>)
             </h3>
-            <p className="text-xs text-slate-600 max-w-4xl leading-relaxed">
-              Đồng bộ ngược hồ sơ học viên, nhật ký chăm sóc (60 cột Sheet <strong className="text-slate-800">1.Chăm sóc</strong>) và bảng điểm danh 12 tháng (466 cột Sheet <strong className="text-slate-800">3.Chấm buổi</strong>) từ Web về đúng file{' '}
-              <code className="font-mono text-[11px] bg-white px-1.5 py-0.5 rounded border border-slate-200 text-slate-800">
-                cham_soc_hoc_vien_&lt;CVHT&gt;.xlsx
-              </code>{' '}
-              và Google Sheet riêng của từng tài khoản CSKH.
-            </p>
           </div>
 
           {isAdminOrManage && (
@@ -378,7 +361,7 @@ export const CsSheetBackupPanel: React.FC = () => {
                 leftIcon={<RotateCcw className="w-4 h-4 text-amber-600" />}
                 className="bg-white border-amber-300 text-amber-900 hover:bg-amber-50 font-bold"
               >
-                Ghi đè toàn bộ (Force Full Backup)
+                Sao lưu đè toàn bộ
               </Button>
               <Button
                 variant="primary"
@@ -389,7 +372,7 @@ export const CsSheetBackupPanel: React.FC = () => {
                 leftIcon={<RefreshCw className="w-4 h-4" />}
                 className="font-bold shadow-sm"
               >
-                Backup Tất cả CSKH ngay
+                Sao lưu nhanh (thay đổi mới)
               </Button>
             </div>
           )}
@@ -423,7 +406,7 @@ export const CsSheetBackupPanel: React.FC = () => {
                 <span className="text-slate-600">
                   Chưa gắn Service Account JSON (Hệ thống vẫn luôn xuất &amp; cập nhật đầy đủ ra file Excel chuẩn{' '}
                   <code className="font-mono text-[11px] bg-white px-1 rounded">
-                    cham_soc_hoc_vien_&lt;CVHT&gt;.xlsx
+                    cham_soc_hoc_vien_&lt;CSKH&gt;.xlsx
                   </code>{' '}
                   trên server để tải về bất cứ lúc nào).
                 </span>
@@ -894,7 +877,7 @@ export const CsSheetBackupPanel: React.FC = () => {
                           <span className="text-[11px] text-slate-700 leading-snug">
                             <strong className="text-slate-900 inline-flex items-center gap-1">
                               <Lock className="w-3 h-3 text-emerald-600" />
-                              Chặn đẩy dữ liệu nếu Google Sheet mở quyền sửa công khai (Require Private Sheet)
+                              Bắt buộc Sheet riêng tư
                             </strong>{' '}
                             — Tự động kiểm tra quyền Google Drive và từ chối ghi nếu phát hiện bất kỳ ai có link đều xem/sửa được.
                           </span>
@@ -915,7 +898,7 @@ export const CsSheetBackupPanel: React.FC = () => {
                           <span className="text-[11px] text-slate-700 leading-snug">
                             <strong className="text-slate-900 inline-flex items-center gap-1">
                               <EyeOff className="w-3 h-3 text-amber-600" />
-                              Che bớt SĐT &amp; Email học viên khi xuất ra Sheet (PII Masking)
+                              Che bớt SĐT/Email nhạy cảm
                             </strong>{' '}
                             — Bảo vệ thông tin liên hệ nhạy cảm (VD: <code className="font-mono">098***456</code>).
                           </span>
@@ -935,9 +918,9 @@ export const CsSheetBackupPanel: React.FC = () => {
                           />
                           <span className="text-[11px] text-slate-700 leading-snug">
                             <strong className="text-slate-900">
-                              Bật tự động chạy theo lịch hàng ngày
+                              Chỉ ghi dòng mới thay đổi theo lịch tự động
                             </strong>{' '}
-                            — Hệ thống tự động chạy Delta Backup vào các khung giờ{' '}
+                            — Hệ thống tự động sao lưu các dòng mới thay đổi vào khung giờ{' '}
                             <code className="font-mono font-bold text-indigo-700">
                               {(draft.schedule_times || ['12:00', '21:00']).join(', ')}
                             </code>
@@ -977,6 +960,19 @@ export const CsSheetBackupPanel: React.FC = () => {
                       Tải file {excelFileName}
                     </Button>
 
+                    {isAdminOrManage && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleRunBackup(csUserId, staffCode, true)}
+                        isLoading={runningUserId === `${csUserId}_full`}
+                        leftIcon={<RotateCcw className="w-3.5 h-3.5 text-amber-600" />}
+                        className="bg-white border-amber-300 text-amber-900 hover:bg-amber-50 font-bold"
+                      >
+                        Sao lưu toàn bộ
+                      </Button>
+                    )}
+
                     <Button
                       variant="primary"
                       size="sm"
@@ -985,7 +981,7 @@ export const CsSheetBackupPanel: React.FC = () => {
                       leftIcon={<RefreshCw className="w-3.5 h-3.5" />}
                       className="font-bold"
                     >
-                      Cập nhật thay đổi (Delta Backup)
+                      Sao lưu nhanh (thay đổi mới)
                     </Button>
                   </div>
                 </div>

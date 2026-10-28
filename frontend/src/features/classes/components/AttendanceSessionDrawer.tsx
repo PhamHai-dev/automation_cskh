@@ -16,7 +16,6 @@ import {
   Edit3,
   FileText,
   Plus,
-  RotateCcw,
   Trash2,
   UserCheck,
   Users,
@@ -147,44 +146,91 @@ export const AttendanceSessionDrawer: React.FC<AttendanceSessionDrawerProps> = (
   onClearStatus,
   onDeleteSession,
 }) => {
-  const activeSession = daySessions[selectedSessionNumber - 1];
-  const att = getAttendanceForSession(activeSession);
   const canEditAnything = canEditTeacherFields || canEditCsFields || canMarkStatus;
 
-  const activeSideStatus: AttendanceStatus | undefined =
-    side === 'TEACHER'
-      ? (att?.teacher_status as AttendanceStatus | undefined)
-      : side === 'CS'
-      ? (att?.cs_status as AttendanceStatus | undefined)
-      : ((att?.status || att?.cs_status || att?.teacher_status) as AttendanceStatus | undefined);
+  const getAdminFinalizedStatus = (record: Attendance | undefined): AttendanceStatus | undefined => {
+    if (!record) return undefined;
+    if (record.reconciliation_state === 'RESOLVED') {
+      return record.status as AttendanceStatus | undefined;
+    }
+    if (
+      record.reconciliation_state === 'MATCHED' ||
+      (!record.reconciliation_state &&
+        Boolean(record.teacher_status && record.cs_status && record.teacher_status === record.cs_status))
+    ) {
+      return (record.status || record.cs_status || record.teacher_status) as AttendanceStatus | undefined;
+    }
+    return undefined;
+  };
+
+  const getSideStatusForRecord = (record: Attendance | undefined): AttendanceStatus | undefined => {
+    if (side === 'TEACHER') return (record?.teacher_status as AttendanceStatus | undefined) || undefined;
+    if (side === 'CS') return (record?.cs_status as AttendanceStatus | undefined) || undefined;
+    return getAdminFinalizedStatus(record);
+  };
+
+  interface CaDraft {
+    status: AttendanceStatus | undefined;
+    lessonTopic: string;
+    teacherNote: string;
+    csNote: string;
+    dirty: boolean;
+  }
+
+  const buildInitialDrafts = (): Record<number, CaDraft> => {
+    const count = Math.max(1, daySessions.length, selectedSessionNumber);
+    const map: Record<number, CaDraft> = {};
+    for (let caNo = 1; caNo <= count; caNo++) {
+      const sess = daySessions[caNo - 1];
+      const rec = getAttendanceForSession(sess);
+      map[caNo] = {
+        status: getSideStatusForRecord(rec),
+        lessonTopic: rec?.lesson_topic || '',
+        teacherNote: rec?.teacher_note || '',
+        csNote: rec?.cs_note || '',
+        dirty: false,
+      };
+    }
+    return map;
+  };
 
   const [isEditing, setIsEditing] = useState<boolean>(defaultEditing);
-  const [selectedStatus, setSelectedStatus] = useState<AttendanceStatus | undefined>(activeSideStatus);
-  const [lessonTopic, setLessonTopic] = useState<string>(att?.lesson_topic || '');
-  const [teacherNote, setTeacherNote] = useState<string>(att?.teacher_note || '');
-  const [csNote, setCsNote] = useState<string>(att?.cs_note || '');
+  const [maxCaCount, setMaxCaCount] = useState<number>(Math.max(1, daySessions.length, selectedSessionNumber));
+  const [draftsByCa, setDraftsByCa] = useState<Record<number, CaDraft>>(buildInitialDrafts);
 
+  // Chỉ khởi tạo lại chế độ sửa khi đóng/mở Drawer hoặc đổi ngày/học viên (KHÔNG thoát sửa khi chuyển qua lại giữa các Ca)
   useEffect(() => {
-    setIsEditing(defaultEditing || !activeSession);
-    setSelectedStatus(activeSideStatus);
-    setLessonTopic(att?.lesson_topic || '');
-    setTeacherNote(att?.teacher_note || '');
-    setCsNote(att?.cs_note || '');
-  }, [
-    isOpen,
-    dateStr,
-    selectedSessionNumber,
-    activeSession?.id,
-    att?.id,
-    att?.teacher_status,
-    att?.cs_status,
-    att?.status,
-    att?.lesson_topic,
-    att?.teacher_note,
-    att?.cs_note,
-    activeSideStatus,
-    defaultEditing,
-  ]);
+    if (!isOpen) return;
+    const initialHasSession = Boolean(daySessions[selectedSessionNumber - 1]);
+    setIsEditing(Boolean(defaultEditing || !initialHasSession));
+    setMaxCaCount(Math.max(1, daySessions.length, selectedSessionNumber));
+    setDraftsByCa(buildInitialDrafts());
+  }, [isOpen, dateStr, studentName]);
+
+  // Đồng bộ dữ liệu mới từ server cho những Ca chưa bị người dùng chỉnh sửa (dirty = false)
+  useEffect(() => {
+    if (!isOpen) return;
+    setMaxCaCount((prev) => Math.max(prev, daySessions.length, selectedSessionNumber));
+    setDraftsByCa((prev) => {
+      const next: Record<number, CaDraft> = { ...prev };
+      const count = Math.max(1, daySessions.length, selectedSessionNumber, Object.keys(prev).length);
+      for (let caNo = 1; caNo <= count; caNo++) {
+        const sess = daySessions[caNo - 1];
+        const rec = getAttendanceForSession(sess);
+        const existing = prev[caNo];
+        if (!existing || !existing.dirty) {
+          next[caNo] = {
+            status: getSideStatusForRecord(rec),
+            lessonTopic: rec?.lesson_topic || '',
+            teacherNote: rec?.teacher_note || '',
+            csNote: rec?.cs_note || '',
+            dirty: false,
+          };
+        }
+      }
+      return next;
+    });
+  }, [daySessions, selectedSessionNumber, isOpen]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -196,6 +242,28 @@ export const AttendanceSessionDrawer: React.FC<AttendanceSessionDrawerProps> = (
   }, [isOpen, onClose]);
 
   if (!isOpen) return null;
+
+  const activeSession = daySessions[selectedSessionNumber - 1];
+  const att = getAttendanceForSession(activeSession);
+  const activeSideStatus = getSideStatusForRecord(att);
+  const currentDraft: CaDraft = draftsByCa[selectedSessionNumber] || {
+    status: activeSideStatus,
+    lessonTopic: att?.lesson_topic || '',
+    teacherNote: att?.teacher_note || '',
+    csNote: att?.cs_note || '',
+    dirty: false,
+  };
+
+  const updateCurrentDraft = (patch: Partial<Omit<CaDraft, 'dirty'>>) => {
+    setDraftsByCa((prev) => ({
+      ...prev,
+      [selectedSessionNumber]: {
+        ...currentDraft,
+        ...patch,
+        dirty: true,
+      },
+    }));
+  };
 
   const formattedDate = (() => {
     if (!dateStr) return '—';
@@ -210,63 +278,81 @@ export const AttendanceSessionDrawer: React.FC<AttendanceSessionDrawerProps> = (
   })();
 
   const isCreatingNewCa = !activeSession;
-  const totalCaTabs = Math.max(daySessions.length, selectedSessionNumber);
+  const totalCaTabs = Math.max(daySessions.length, selectedSessionNumber, maxCaCount);
 
   const teacherCfg = att?.teacher_status ? DRAWER_STATUS_CONFIG[att.teacher_status] : null;
   const csCfg = att?.cs_status ? DRAWER_STATUS_CONFIG[att.cs_status] : null;
+  const adminFinalStatus = getAdminFinalizedStatus(att);
+  const adminFinalCfg = adminFinalStatus ? DRAWER_STATUS_CONFIG[adminFinalStatus] : null;
   const isConflict =
     att?.reconciliation_state === 'CONFLICT' ||
     Boolean(att?.teacher_status && att?.cs_status && att.teacher_status !== att.cs_status);
 
-  const handleQuickStatusClick = async (st: AttendanceStatus) => {
-    setSelectedStatus(st);
-    await onSaveStatusAndNotes({
-      session: activeSession,
-      sessionNumber: selectedSessionNumber,
-      status: st,
-      ...(canEditTeacherFields
-        ? {
-            lesson_topic: lessonTopic.trim() || null,
-            teacher_note: teacherNote.trim() || null,
-          }
-        : {}),
-      ...(canEditCsFields
-        ? {
-            cs_note: csNote.trim() || null,
-          }
-        : {}),
-    });
+  // Chọn trạng thái trong chế độ Sửa: chỉ cập nhật nháp của Ca hiện tại để người dùng có thể
+  // chuyển qua các Ca khác sửa tiếp rồi bấm "Lưu thông tin" 1 lần.
+  const handleSelectDraftStatus = (st: AttendanceStatus) => {
+    updateCurrentDraft({ status: st });
   };
 
-  const handleSaveAll = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const effectiveStatus = selectedStatus || activeSideStatus || 'ATTENDED';
-    if (canMarkStatus && (selectedStatus || !activeSession || !att)) {
-      await onSaveStatusAndNotes({
-        session: activeSession,
-        sessionNumber: selectedSessionNumber,
-        status: effectiveStatus,
-        ...(canEditTeacherFields
-          ? {
-              lesson_topic: lessonTopic.trim() || null,
-              teacher_note: teacherNote.trim() || null,
-            }
-          : {}),
-        ...(canEditCsFields
-          ? {
-              cs_note: csNote.trim() || null,
-            }
-          : {}),
-      });
-    } else if (onSaveNotesOnly) {
-      await onSaveNotesOnly({
-        session: activeSession,
-        sessionNumber: selectedSessionNumber,
-        lesson_topic: lessonTopic.trim() || null,
-        teacher_note: teacherNote.trim() || null,
-        cs_note: csNote.trim() || null,
-      });
+  const handleCancelEdit = () => {
+    setDraftsByCa(buildInitialDrafts());
+    setMaxCaCount(Math.max(1, daySessions.length));
+    if (selectedSessionNumber > Math.max(1, daySessions.length)) {
+      onSelectSessionNumber(Math.max(1, daySessions.length));
     }
+    setIsEditing(false);
+  };
+
+  const handleSaveAll = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+
+    // Lưu lần lượt tất cả các Ca có thay đổi (dirty) hoặc Ca hiện tại nếu đang tạo mới
+    const caNumbers = Array.from({ length: totalCaTabs }, (_, idx) => idx + 1);
+    const dirtyCaNumbers = caNumbers.filter((caNo) => draftsByCa[caNo]?.dirty);
+    const targets = dirtyCaNumbers.length > 0 ? dirtyCaNumbers : [selectedSessionNumber];
+
+    for (const caNo of targets) {
+      const sess = daySessions[caNo - 1];
+      const rec = getAttendanceForSession(sess);
+      const recSideStatus = getSideStatusForRecord(rec);
+      const d = draftsByCa[caNo] || {
+        status: recSideStatus,
+        lessonTopic: rec?.lesson_topic || '',
+        teacherNote: rec?.teacher_note || '',
+        csNote: rec?.cs_note || '',
+        dirty: false,
+      };
+
+      const effectiveStatus = d.status ?? recSideStatus;
+      if (canMarkStatus && (effectiveStatus || !sess || !rec)) {
+        await onSaveStatusAndNotes({
+          session: sess,
+          sessionNumber: caNo,
+          status: effectiveStatus || 'ATTENDED',
+          ...(canEditTeacherFields
+            ? {
+                lesson_topic: d.lessonTopic.trim() || null,
+                teacher_note: d.teacherNote.trim() || null,
+              }
+            : {}),
+          ...(canEditCsFields
+            ? {
+                cs_note: d.csNote.trim() || null,
+              }
+            : {}),
+        });
+      } else if (onSaveNotesOnly && sess) {
+        await onSaveNotesOnly({
+          session: sess,
+          sessionNumber: caNo,
+          lesson_topic: d.lessonTopic.trim() || null,
+          teacher_note: d.teacherNote.trim() || null,
+          cs_note: d.csNote.trim() || null,
+        });
+      }
+    }
+
+    setIsEditing(false);
   };
 
   return createPortal(
@@ -313,17 +399,6 @@ export const AttendanceSessionDrawer: React.FC<AttendanceSessionDrawerProps> = (
           </div>
 
           <div className="flex items-center gap-1.5">
-            {canEditAnything && !isEditing && (
-              <button
-                type="button"
-                onClick={() => setIsEditing(true)}
-                className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-primary/40 bg-primary-soft/60 px-2.5 text-xs font-bold text-primary transition hover:bg-primary-soft"
-                title="Chuyển sang chế độ chỉnh sửa buổi học này"
-              >
-                <Edit3 className="h-3.5 w-3.5" />
-                <span>Sửa</span>
-              </button>
-            )}
             <button
               type="button"
               onClick={onClose}
@@ -339,7 +414,12 @@ export const AttendanceSessionDrawer: React.FC<AttendanceSessionDrawerProps> = (
         <div className="border-b border-border/80 bg-white px-5 py-3">
           <div className="mb-1.5 flex items-center justify-between">
             <span className="text-[11px] font-bold uppercase tracking-wider text-text-secondary">
-              Chọn ca học trong ngày
+              Chọn ca học trong ngày{' '}
+              {isEditing && (
+                <span className="normal-case font-semibold text-primary">
+                  (chuyển ca không mất nội dung đang sửa)
+                </span>
+              )}
             </span>
             {activeSession && (
               <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-600">
@@ -357,12 +437,11 @@ export const AttendanceSessionDrawer: React.FC<AttendanceSessionDrawerProps> = (
               const caNo = idx + 1;
               const sess = daySessions[idx];
               const sessAtt = getAttendanceForSession(sess);
+              const draftForCa = draftsByCa[caNo];
               const st =
-                side === 'TEACHER'
-                  ? sessAtt?.teacher_status
-                  : side === 'CS'
-                  ? sessAtt?.cs_status
-                  : sessAtt?.status || sessAtt?.cs_status || sessAtt?.teacher_status;
+                isEditing && draftForCa?.dirty
+                  ? draftForCa.status
+                  : getSideStatusForRecord(sessAtt);
               const cfg = st ? DRAWER_STATUS_CONFIG[st as AttendanceStatus] : null;
               const isSelected = selectedSessionNumber === caNo;
 
@@ -389,109 +468,117 @@ export const AttendanceSessionDrawer: React.FC<AttendanceSessionDrawerProps> = (
                   ) : !sess ? (
                     <span className="text-[10px] opacity-80">(Mới)</span>
                   ) : null}
+                  {isEditing && draftForCa?.dirty && (
+                    <span
+                      className={`h-1.5 w-1.5 rounded-full ${isSelected ? 'bg-amber-200' : 'bg-amber-500'}`}
+                      title="Ca này có thay đổi chưa lưu"
+                    />
+                  )}
                 </button>
               );
             })}
 
-            {canMarkStatus && isEditing && daySessions.length > 0 && selectedSessionNumber <= daySessions.length && (
+            {canMarkStatus && isEditing && totalCaTabs >= 1 && (
               <button
                 type="button"
-                onClick={() => onSelectSessionNumber(daySessions.length + 1)}
+                onClick={() => {
+                  const nextCa = totalCaTabs + 1;
+                  setMaxCaCount(nextCa);
+                  onSelectSessionNumber(nextCa);
+                }}
                 className="inline-flex h-8 items-center gap-1 rounded-lg border border-dashed border-primary/60 bg-primary-soft/40 px-2.5 text-xs font-bold text-primary transition hover:bg-primary-soft"
                 title="Thêm ca học mới trong ngày này"
               >
                 <Plus className="h-3.5 w-3.5" />
-                <span>Thêm ca {daySessions.length + 1}</span>
+                <span>Thêm ca {totalCaTabs + 1}</span>
               </button>
             )}
           </div>
         </div>
 
         {/* Body */}
-        <form onSubmit={handleSaveAll} className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
+        <form onSubmit={handleSaveAll} className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
           {isCreatingNewCa && (
             <div className="rounded-xl border border-amber-200 bg-amber-50/80 px-3.5 py-2.5 text-xs text-amber-900">
-              <span className="font-bold">Đang tạo Ca {selectedSessionNumber} mới:</span> Chọn trạng thái điểm danh bên dưới để lưu ca học này.
+              <span className="font-bold">Đang tạo Ca {selectedSessionNumber} mới:</span> Chọn trạng thái điểm danh rồi bấm <strong>Lưu thông tin</strong> ở cuối khung.
             </div>
           )}
 
-          {/* 1. Chọn trạng thái điểm danh (chỉ hiện khi đang ở chế độ Sửa) */}
-          {canMarkStatus && isEditing && (
-            <div>
-              <div className="mb-2 flex items-center justify-between">
-                <label className="text-xs font-bold uppercase tracking-wider text-text-secondary">
-                  {side === 'TEACHER'
-                    ? '1. Điểm danh của Giáo viên'
-                    : side === 'CS'
-                    ? '1. Điểm danh của CSKH'
-                    : '1. Trạng thái điểm danh chốt'}
-                </label>
-                {activeSideStatus && (
-                  <span className="text-[11px] font-semibold text-emerald-700">
-                    Đang chọn: {DRAWER_STATUS_CONFIG[activeSideStatus].label}
+          {/* ================================================================= */}
+          {/* BOX 1: THÔNG TIN GIÁO VIÊN (Điểm danh GV + Bài học + Ghi chú GV)   */}
+          {/* ================================================================= */}
+          <div className="rounded-xl border border-teal-200/80 bg-teal-50/25 p-3.5 space-y-3">
+            <div className="flex items-center justify-between gap-2 border-b border-teal-200/60 pb-2.5">
+              <div className="flex items-center gap-1.5 text-xs font-extrabold text-teal-950">
+                <BookOpen className="h-4 w-4 text-teal-600 shrink-0" />
+                <span>1. Giáo viên (Ca {selectedSessionNumber})</span>
+              </div>
+              {(() => {
+                const displaySt =
+                  side === 'TEACHER' && isEditing
+                    ? currentDraft.status ?? (att?.teacher_status as AttendanceStatus | undefined)
+                    : (att?.teacher_status as AttendanceStatus | undefined);
+                const cfg = displaySt ? DRAWER_STATUS_CONFIG[displaySt] : null;
+                return cfg ? (
+                  <span
+                    className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-extrabold ${cfg.bg.replace(/\s*hover:\S+/g, '')} ${cfg.text} ${cfg.border}`}
+                  >
+                    GV: {cfg.short} · {cfg.label}
                   </span>
-                )}
-              </div>
+                ) : (
+                  <Badge variant="neutral" size="sm">
+                    GV: — · Chưa chấm
+                  </Badge>
+                );
+              })()}
+            </div>
 
-              <div className="grid grid-cols-2 gap-2">
-                {DRAWER_STATUS_LIST.map(({ status, code, label }) => {
-                  const cfg = DRAWER_STATUS_CONFIG[status];
-                  const isActive = (selectedStatus ?? activeSideStatus) === status;
-                  return (
-                    <button
-                      key={status}
-                      id={`attendance-${activeSession?.id ?? 'draft'}-${status}`}
-                      type="button"
-                      disabled={saving}
-                      onClick={() => handleQuickStatusClick(status)}
-                      className={`flex h-10 items-center justify-between rounded-xl border px-3 text-left text-xs font-bold transition ${
-                        isActive
-                          ? 'ring-2 ring-primary ring-offset-1 shadow-xs'
-                          : 'opacity-90 hover:opacity-100'
-                      } ${cfg.bg} ${cfg.text} ${cfg.border} disabled:opacity-50`}
-                    >
-                      <span className="flex items-center gap-2">
-                        <span className="inline-flex h-5 w-5 items-center justify-center rounded bg-white/70 text-[11px] font-black">
-                          {code}
+            {side === 'TEACHER' && canMarkStatus && isEditing && (
+              <div>
+                <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-wider text-slate-600">
+                  Chọn trạng thái điểm danh Giáo viên
+                </label>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {DRAWER_STATUS_LIST.map(({ status, code, label }) => {
+                    const cfg = DRAWER_STATUS_CONFIG[status];
+                    const isActive = (currentDraft.status ?? activeSideStatus) === status;
+                    return (
+                      <button
+                        key={status}
+                        id={`attendance-${activeSession?.id ?? 'draft'}-${status}`}
+                        type="button"
+                        disabled={saving}
+                        onClick={() => handleSelectDraftStatus(status)}
+                        className={`flex h-9 items-center justify-between rounded-lg border px-2.5 text-left text-xs font-bold transition ${
+                          isActive
+                            ? 'ring-2 ring-primary ring-offset-1 shadow-xs'
+                            : 'opacity-90 hover:opacity-100'
+                        } ${cfg.bg} ${cfg.text} ${cfg.border} disabled:opacity-50`}
+                      >
+                        <span className="flex items-center gap-2">
+                          <span className="inline-flex h-5 w-5 items-center justify-center rounded bg-white/70 text-[11px] font-black">
+                            {code}
+                          </span>
+                          <span>{label}</span>
                         </span>
-                        <span>{label}</span>
-                      </span>
-                      {isActive && <Check className="h-4 w-4 shrink-0" />}
-                    </button>
-                  );
-                })}
+                        {isActive && <Check className="h-4 w-4 shrink-0" />}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-          )}
-
-          {/* 2. Nội dung Bài học & Ghi chú Giáo viên */}
-          <div className="rounded-xl border border-border/80 bg-slate-50/60 p-3.5 space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-1.5 text-xs font-extrabold text-slate-800">
-                <BookOpen className="h-4 w-4 text-teal-600" />
-                <span>Nội dung bài học & Nhận xét GV</span>
-              </div>
-              {teacherCfg ? (
-                <Badge variant="success" size="sm">
-                  GV: {teacherCfg.short} · {teacherCfg.label}
-                </Badge>
-              ) : (
-                <Badge variant="neutral" size="sm">
-                  GV chưa chấm
-                </Badge>
-              )}
-            </div>
+            )}
 
             {canEditTeacherFields && isEditing ? (
-              <>
+              <div className="space-y-2.5">
                 <div>
                   <label className="mb-1 block text-xs font-semibold text-slate-700">
-                    Tên bài học riêng học viên (Ca {selectedSessionNumber})
+                    Nội dung bài học (Ca {selectedSessionNumber})
                   </label>
                   <input
                     type="text"
-                    value={lessonTopic}
-                    onChange={(e) => setLessonTopic(e.target.value)}
+                    value={currentDraft.lessonTopic}
+                    onChange={(e) => updateCurrentDraft({ lessonTopic: e.target.value })}
                     placeholder="VD: Bài 5 - Ngữ pháp N4, Kaiwa chủ đề Gia đình..."
                     className="h-9 w-full rounded-lg border border-border bg-white px-3 text-xs text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/40"
                   />
@@ -501,24 +588,34 @@ export const AttendanceSessionDrawer: React.FC<AttendanceSessionDrawerProps> = (
                     Ghi chú của Giáo viên (Ca {selectedSessionNumber})
                   </label>
                   <textarea
-                    rows={3}
-                    value={teacherNote}
-                    onChange={(e) => setTeacherNote(e.target.value)}
+                    rows={2}
+                    value={currentDraft.teacherNote}
+                    onChange={(e) => updateCurrentDraft({ teacherNote: e.target.value })}
                     placeholder="Nhận xét buổi học, bài tập về nhà, thái độ học tập..."
                     className="w-full rounded-lg border border-border bg-white p-2.5 text-xs text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/40 resize-none"
                   />
                 </div>
-              </>
+              </div>
             ) : (
               <div className="space-y-2 text-xs">
                 <div className="rounded-lg border border-border/60 bg-white px-3 py-2">
-                  <div className="text-[10px] font-bold uppercase text-text-muted">Bài học</div>
+                  <div className="text-[10px] font-bold uppercase text-text-muted">Trạng thái điểm danh GV</div>
+                  <div className="mt-0.5 font-bold text-slate-800">
+                    {teacherCfg ? (
+                      <span>{teacherCfg.short} · {teacherCfg.label}</span>
+                    ) : (
+                      <span className="font-normal italic text-text-muted">— · Chưa điểm danh</span>
+                    )}
+                  </div>
+                </div>
+                <div className="rounded-lg border border-border/60 bg-white px-3 py-2">
+                  <div className="text-[10px] font-bold uppercase text-text-muted">Nội dung bài học</div>
                   <div className="mt-0.5 font-semibold text-teal-800">
                     {att?.lesson_topic || <span className="font-normal italic text-text-muted">Chưa ghi bài học</span>}
                   </div>
                 </div>
                 <div className="rounded-lg border border-border/60 bg-white px-3 py-2">
-                  <div className="text-[10px] font-bold uppercase text-text-muted">Ghi chú Giáo viên</div>
+                  <div className="text-[10px] font-bold uppercase text-text-muted">Ghi chú buổi học (GV)</div>
                   <div className="mt-0.5 text-text-secondary">
                     {att?.teacher_note ? (
                       <span className="italic">"{att.teacher_note}"</span>
@@ -531,24 +628,82 @@ export const AttendanceSessionDrawer: React.FC<AttendanceSessionDrawerProps> = (
             )}
           </div>
 
-          {/* 3. Kết quả & Ghi chú bên CSKH */}
-          {(canEditCsFields || side !== 'TEACHER' || att?.cs_status || att?.cs_note) && (
-            <div className="rounded-xl border border-blue-200/70 bg-blue-50/35 p-3.5 space-y-3">
-              <div className="flex items-center justify-between">
+          {/* ================================================================= */}
+          {/* BOX 2: THÔNG TIN CSKH (Điểm danh CSKH + Ghi chú CSKH)              */}
+          {/* ================================================================= */}
+          {(side !== 'TEACHER' || att?.cs_status || att?.cs_note) && (
+            <div className="rounded-xl border border-blue-200/80 bg-blue-50/30 p-3.5 space-y-3">
+              <div className="flex items-center justify-between gap-2 border-b border-blue-200/60 pb-2.5">
                 <div className="flex items-center gap-1.5 text-xs font-extrabold text-blue-950">
-                  <UserCheck className="h-4 w-4 text-blue-600" />
-                  <span>Ghi nhận của CSKH</span>
+                  <UserCheck className="h-4 w-4 text-blue-600 shrink-0" />
+                  <span>2. CSKH (Ca {selectedSessionNumber})</span>
                 </div>
-                {csCfg ? (
-                  <Badge variant="info" size="sm">
-                    CSKH: {csCfg.short} · {csCfg.label}
-                  </Badge>
-                ) : (
-                  <Badge variant="neutral" size="sm">
-                    CSKH chưa chấm
-                  </Badge>
-                )}
+                {(() => {
+                  const displaySt =
+                    side === 'CS' && isEditing
+                      ? currentDraft.status ?? (att?.cs_status as AttendanceStatus | undefined)
+                      : (att?.cs_status as AttendanceStatus | undefined);
+                  const cfg = displaySt ? DRAWER_STATUS_CONFIG[displaySt] : null;
+                  return cfg ? (
+                    <span
+                      className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-extrabold ${cfg.bg.replace(/\s*hover:\S+/g, '')} ${cfg.text} ${cfg.border}`}
+                    >
+                      CSKH: {cfg.short} · {cfg.label}
+                    </span>
+                  ) : (
+                    <Badge variant="neutral" size="sm">
+                      CSKH: — · Chưa chấm
+                    </Badge>
+                  );
+                })()}
               </div>
+
+              {side === 'CS' && canMarkStatus && isEditing ? (
+                <div>
+                  <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-wider text-slate-600">
+                    Chọn trạng thái điểm danh CSKH
+                  </label>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {DRAWER_STATUS_LIST.map(({ status, code, label }) => {
+                      const cfg = DRAWER_STATUS_CONFIG[status];
+                      const isActive = (currentDraft.status ?? activeSideStatus) === status;
+                      return (
+                        <button
+                          key={status}
+                          id={`attendance-${activeSession?.id ?? 'draft'}-${status}`}
+                          type="button"
+                          disabled={saving}
+                          onClick={() => handleSelectDraftStatus(status)}
+                          className={`flex h-9 items-center justify-between rounded-lg border px-2.5 text-left text-xs font-bold transition ${
+                            isActive
+                              ? 'ring-2 ring-primary ring-offset-1 shadow-xs'
+                              : 'opacity-90 hover:opacity-100'
+                          } ${cfg.bg} ${cfg.text} ${cfg.border} disabled:opacity-50`}
+                        >
+                          <span className="flex items-center gap-2">
+                            <span className="inline-flex h-5 w-5 items-center justify-center rounded bg-white/70 text-[11px] font-black">
+                              {code}
+                            </span>
+                            <span>{label}</span>
+                          </span>
+                          {isActive && <Check className="h-4 w-4 shrink-0" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-lg border border-border/60 bg-white px-3 py-2 text-xs">
+                  <div className="text-[10px] font-bold uppercase text-text-muted">Trạng thái điểm danh CSKH</div>
+                  <div className="mt-0.5 font-bold text-slate-800">
+                    {csCfg ? (
+                      <span>{csCfg.short} · {csCfg.label}</span>
+                    ) : (
+                      <span className="font-normal italic text-text-muted">— · Chưa điểm danh</span>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {canEditCsFields && isEditing ? (
                 <div>
@@ -556,9 +711,9 @@ export const AttendanceSessionDrawer: React.FC<AttendanceSessionDrawerProps> = (
                     Ghi chú của CSKH (Ca {selectedSessionNumber})
                   </label>
                   <textarea
-                    rows={3}
-                    value={csNote}
-                    onChange={(e) => setCsNote(e.target.value)}
+                    rows={2}
+                    value={currentDraft.csNote}
+                    onChange={(e) => updateCurrentDraft({ csNote: e.target.value })}
                     placeholder="Ghi chú xác nhận từ phụ huynh/học viên, lý do nghỉ..."
                     className="w-full rounded-lg border border-border bg-white p-2.5 text-xs text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/40 resize-none"
                   />
@@ -578,83 +733,149 @@ export const AttendanceSessionDrawer: React.FC<AttendanceSessionDrawerProps> = (
             </div>
           )}
 
-          {/* 4. Trạng thái đối soát 2 bên */}
-          {att && (
-            <div
-              className={`rounded-xl border p-3 text-xs ${
-                isConflict
-                  ? 'border-rose-200 bg-rose-50/70 text-rose-900'
-                  : att.reconciliation_state === 'MATCHED' || att.reconciliation_state === 'RESOLVED'
-                  ? 'border-emerald-200 bg-emerald-50/60 text-emerald-900'
-                  : 'border-amber-200 bg-amber-50/60 text-amber-900'
-              }`}
-            >
-              <div className="flex items-center justify-between font-bold">
-                <span className="flex items-center gap-1.5">
-                  <FileText className="h-3.5 w-3.5" />
-                  <span>Trạng thái đối soát:</span>
-                </span>
-                <span>
-                  {isConflict
-                    ? 'Đang lệch (GV ≠ CSKH)'
-                    : att.reconciliation_state === 'RESOLVED'
-                    ? 'Đã phân xử'
-                    : att.reconciliation_state === 'MATCHED'
-                    ? 'Đã khớp'
-                    : att.teacher_status && !att.cs_status
-                    ? 'Chờ CSKH đối soát'
-                    : 'Chờ Giáo viên điểm danh'}
-                </span>
+          {/* ================================================================= */}
+          {/* BOX 3: THÔNG TIN ADMIN / ĐIỂM DANH CHỐT & ĐỐI SOÁT                 */}
+          {/* ================================================================= */}
+          {side !== 'TEACHER' && (
+            <div className="rounded-xl border border-emerald-200/90 bg-emerald-50/30 p-3.5 space-y-3">
+              <div className="flex items-center justify-between gap-2 border-b border-emerald-200/60 pb-2.5">
+                <div className="flex items-center gap-1.5 text-xs font-extrabold text-emerald-950">
+                  <FileText className="h-4 w-4 text-emerald-600 shrink-0" />
+                  <span>3. Admin — Điểm danh chốt (Ca {selectedSessionNumber})</span>
+                </div>
+                {(() => {
+                  const displaySt =
+                    side === 'ADMIN' && isEditing
+                      ? currentDraft.status ?? adminFinalStatus
+                      : adminFinalStatus;
+                  const cfg = displaySt ? DRAWER_STATUS_CONFIG[displaySt] : null;
+                  return cfg ? (
+                    <span
+                      className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-extrabold ${cfg.bg.replace(/\s*hover:\S+/g, '')} ${cfg.text} ${cfg.border}`}
+                    >
+                      Chốt: {cfg.short} · {cfg.label}
+                    </span>
+                  ) : (
+                    <Badge variant="neutral" size="sm">
+                      Chốt: —
+                    </Badge>
+                  );
+                })()}
               </div>
-              {att.resolution_note && (
-                <div className="mt-1.5 border-t border-current/15 pt-1.5 text-[11px]">
-                  <span className="font-semibold">Ghi chú phân xử: </span>
-                  <span>{att.resolution_note}</span>
+
+              {side === 'ADMIN' && canMarkStatus && isEditing ? (
+                <div>
+                  <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-wider text-slate-600">
+                    Chọn trạng thái điểm danh chốt (Admin)
+                  </label>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {DRAWER_STATUS_LIST.map(({ status, code, label }) => {
+                      const cfg = DRAWER_STATUS_CONFIG[status];
+                      const isActive = (currentDraft.status ?? adminFinalStatus) === status;
+                      return (
+                        <button
+                          key={status}
+                          id={`attendance-${activeSession?.id ?? 'draft'}-${status}`}
+                          type="button"
+                          disabled={saving}
+                          onClick={() => handleSelectDraftStatus(status)}
+                          className={`flex h-9 items-center justify-between rounded-lg border px-2.5 text-left text-xs font-bold transition ${
+                            isActive
+                              ? 'ring-2 ring-primary ring-offset-1 shadow-xs'
+                              : 'opacity-90 hover:opacity-100'
+                          } ${cfg.bg} ${cfg.text} ${cfg.border} disabled:opacity-50`}
+                        >
+                          <span className="flex items-center gap-2">
+                            <span className="inline-flex h-5 w-5 items-center justify-center rounded bg-white/70 text-[11px] font-black">
+                              {code}
+                            </span>
+                            <span>{label}</span>
+                          </span>
+                          {isActive && <Check className="h-4 w-4 shrink-0" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-lg border border-border/60 bg-white px-3 py-2 text-xs">
+                  <div className="text-[10px] font-bold uppercase text-text-muted">Kết quả điểm danh chốt</div>
+                  <div className="mt-0.5 font-bold text-slate-800">
+                    {adminFinalCfg ? (
+                      <span>{adminFinalCfg.short} · {adminFinalCfg.label}</span>
+                    ) : (
+                      <span className="font-normal italic text-text-muted">— · Chưa có kết quả chốt</span>
+                    )}
+                  </div>
                 </div>
               )}
+
+              {/* Dòng trạng thái đối chiếu 2 bên */}
+              <div className="rounded-lg border border-border/60 bg-white px-3 py-2 text-xs">
+                <div className="text-[10px] font-bold uppercase text-text-muted">Trạng thái đối soát</div>
+                <div className="mt-0.5 font-semibold">
+                  {!att || (!att.teacher_status && !att.cs_status && !adminFinalCfg) ? (
+                    <span className="italic font-normal text-text-muted">Chưa bên nào chấm điểm</span>
+                  ) : att.reconciliation_state === 'RESOLVED' ? (
+                    <span className="text-violet-700">Đã phân xử bởi Admin</span>
+                  ) : adminFinalCfg ? (
+                    <span className="text-emerald-700">Đã khớp giữa Giáo viên & CSKH</span>
+                  ) : isConflict ? (
+                    <span className="text-rose-600">
+                      Lệch (GV: {teacherCfg?.short || '?'} · CSKH: {csCfg?.short || '?'}) — chờ Admin chốt
+                    </span>
+                  ) : att.teacher_status && !att.cs_status ? (
+                    <span className="text-amber-700">
+                      Chờ CSKH chấm (GV: {teacherCfg?.short || '?'})
+                    </span>
+                  ) : (
+                    <span className="text-amber-700">
+                      Chờ GV chấm (CSKH: {csCfg?.short || '?'})
+                    </span>
+                  )}
+                </div>
+                {att?.resolution_note && (
+                  <div className="mt-1.5 border-t border-border/50 pt-1.5 text-[11px] text-text-secondary">
+                    <span className="font-semibold text-slate-700">Ghi chú phân xử: </span>
+                    <span>{att.resolution_note}</span>
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
-          {/* Các thao tác phụ: Bỏ điểm danh / Xóa buổi học (chỉ hiện khi đang Sửa) */}
-          {isEditing && activeSession && (onClearStatus || (canDeleteSession && onDeleteSession)) && (
-            <div className="border-t border-border/70 pt-3 flex flex-wrap items-center justify-between gap-2">
-              {onClearStatus && activeSideStatus && (
-                <button
-                  id={`clear-attendance-${activeSession.id}`}
-                  type="button"
-                  disabled={saving}
-                  onClick={() => onClearStatus(activeSession)}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-700 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700 disabled:opacity-50"
-                >
-                  <RotateCcw className="h-3.5 w-3.5" />
-                  <span>Bỏ điểm danh ca này</span>
-                </button>
-              )}
-
-              {canDeleteSession && onDeleteSession && (
-                <button
-                  id={`delete-session-${activeSession.id}`}
-                  type="button"
-                  disabled={saving}
-                  onClick={() => onDeleteSession(activeSession)}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50/70 px-3 py-1.5 text-xs font-bold text-rose-700 transition hover:bg-rose-100 disabled:opacity-50"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                  <span>Xóa Ca {selectedSessionNumber} (toàn lớp)</span>
-                </button>
-              )}
+          {/* Thao tác xóa duy nhất theo phạm vi của vai trò đang đăng nhập (chỉ hiện khi đang Sửa) */}
+          {isEditing && activeSession && ((canDeleteSession && onDeleteSession) || onClearStatus) && (
+            <div className="border-t border-border/70 pt-3 flex items-center justify-end">
+              <button
+                id={`delete-session-${activeSession.id}`}
+                type="button"
+                disabled={saving}
+                onClick={() => {
+                  if (canDeleteSession && onDeleteSession) {
+                    onDeleteSession(activeSession);
+                  } else if (onClearStatus) {
+                    onClearStatus(activeSession);
+                  }
+                }}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50/70 px-3 py-1.5 text-xs font-bold text-rose-700 transition hover:bg-rose-100 disabled:opacity-50"
+                title="Xóa dữ liệu điểm danh của bạn ở ca này (nếu ca chưa có bên nào khác chấm sẽ tự gỡ bỏ ca)"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                <span>Xóa ca / điểm danh Ca {selectedSessionNumber}</span>
+              </button>
             </div>
           )}
         </form>
 
-        {/* Footer */}
+        {/* Footer (chuẩn hóa duy nhất 1 nút Sửa ở đây; khi đang sửa thì hiện Hủy sửa + Lưu thông tin) */}
         <div className="flex items-center justify-between gap-2 border-t border-border bg-slate-50 px-5 py-3.5">
-          {isEditing && activeSession && !defaultEditing ? (
+          {isEditing && daySessions.length > 0 && !defaultEditing ? (
             <Button
               variant="outline"
               size="sm"
               type="button"
-              onClick={() => setIsEditing(false)}
+              onClick={handleCancelEdit}
               disabled={saving}
             >
               Hủy sửa
@@ -672,23 +893,20 @@ export const AttendanceSessionDrawer: React.FC<AttendanceSessionDrawerProps> = (
                 size="sm"
                 type="button"
                 disabled={saving}
-                onClick={async (e) => {
-                  await handleSaveAll(e);
-                  setIsEditing(false);
-                }}
+                onClick={() => void handleSaveAll()}
                 leftIcon={<Check className="h-4 w-4" />}
               >
                 {saving ? 'Đang lưu...' : 'Lưu thông tin'}
               </Button>
             ) : (
               <Button
-                variant="outline"
+                variant="primary"
                 size="sm"
                 type="button"
                 onClick={() => setIsEditing(true)}
                 leftIcon={<Edit3 className="h-3.5 w-3.5" />}
               >
-                Sửa buổi học này
+                Sửa thông tin
               </Button>
             ))}
         </div>

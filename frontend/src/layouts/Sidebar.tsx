@@ -1,12 +1,11 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { NavLink } from 'react-router-dom';
+import { NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { reconciliationApi } from '../features/attendance/api/reconciliation.api';
 import {
   Home,
   LayoutDashboard,
   HeartHandshake,
-  FileCheck2,
   Users,
   GraduationCap,
   Package,
@@ -31,6 +30,7 @@ interface SidebarProps {
 interface NavItem {
   name: string;
   path: string;
+  activePaths?: string[];
   icon: React.ReactNode;
   allowedRoles?: string[];
   end?: boolean;
@@ -47,8 +47,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onMobileClose,
 }) => {
   const { user } = useAuth();
+  const location = useLocation();
   const userRoles = user?.roles || [];
-  const isTeacherOnly = userRoles.includes('TEACHER') && !userRoles.includes('ADMIN') && !userRoles.includes('MANAGE');
+  const isTeacherOnly =
+    userRoles.includes('TEACHER') &&
+    !userRoles.includes('ADMIN') &&
+    !userRoles.includes('MANAGE') &&
+    !userRoles.includes('CS');
   const [attendancePendingCount, setAttendancePendingCount] = useState(0);
 
   const loadAttendanceCount = useCallback(async () => {
@@ -90,19 +95,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
       title: 'CHĂM SÓC KHÁCH HÀNG',
       items: [
         {
-          name: 'Quản lý Ghi danh',
-          path: '/enrollments',
-          icon: <FileCheck2 className="w-5 h-5 shrink-0" />,
-          allowedRoles: ['ADMIN', 'MANAGE', 'CS'],
-        },
-        {
           name: 'Danh sách Học viên',
           path: '/students',
           icon: <Users className="w-5 h-5 shrink-0" />,
           allowedRoles: ['ADMIN', 'MANAGE', 'CS'],
         },
         {
-          name: 'Nhiệm vụ & Chăm sóc',
+          name: isTeacherOnly ? 'Thông báo Điểm danh' : 'Nhiệm vụ & Chăm sóc',
           path: '/care',
           icon: <HeartHandshake className="w-5 h-5 shrink-0" />,
           allowedRoles: ['ADMIN', 'MANAGE', 'CS', 'TEACHER'],
@@ -114,7 +113,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
       items: [
         {
           name: 'Lớp học & Điểm danh',
-          path: '/classes',
+          path: isTeacherOnly ? '/classes' : '/enrollments',
+          activePaths: ['/enrollments', '/classes'],
           icon: <GraduationCap className="w-5 h-5 shrink-0" />,
           allowedRoles: ['ADMIN', 'MANAGE', 'CS', 'TEACHER'],
         },
@@ -142,15 +142,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
       title: 'LỊCH DẠY GIÁO VIÊN',
       items: [
         {
-          name: 'Lịch dạy của tôi',
+          name: 'Lịch dạy & Theo dõi GV',
           path: '/teacher/my-sessions',
+          activePaths: ['/teacher/my-sessions', '/teacher/attendance-tracking'],
           icon: <CalendarCheck className="w-5 h-5 shrink-0" />,
-          allowedRoles: ['ADMIN', 'MANAGE', 'TEACHER'],
-        },
-        {
-          name: 'Theo dõi điểm danh',
-          path: '/teacher/attendance-tracking',
-          icon: <ClipboardCheck className="w-5 h-5 shrink-0" />,
           allowedRoles: ['ADMIN', 'MANAGE', 'TEACHER'],
           badge: isTeacherOnly ? attendancePendingCount : undefined,
         },
@@ -209,14 +204,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {
           name: 'Nhập & Xuất Excel',
           path: '/imports',
+          activePaths: ['/imports', '/imports/approval-queue'],
           icon: <FileSpreadsheet className="w-5 h-5 shrink-0" />,
           allowedRoles: ['ADMIN', 'MANAGE', 'CS', 'TEACHER'],
-        },
-        {
-          name: 'Hàng đợi Phê duyệt Nhập liệu',
-          path: '/imports/approval-queue',
-          icon: <ShieldCheck className="w-5 h-5 shrink-0" />,
-          allowedRoles: ['ADMIN', 'MANAGE'],
         },
         {
           name: 'Quản trị & Cấu hình',
@@ -285,12 +275,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   to={item.path}
                   end={item.end}
                   onClick={onMobileClose}
-                  className={({ isActive }) =>
-                    `flex items-center gap-3 px-3 py-2.5 rounded-xl font-medium text-xs sm:text-sm transition-all duration-150 ${isActive
+                  className={({ isActive }) => {
+                    const matchedActive =
+                      isActive ||
+                      Boolean(
+                        item.activePaths?.some(
+                          (p) => location.pathname === p || location.pathname.startsWith(`${p}/`)
+                        )
+                      );
+                    return `flex items-center gap-3 px-3 py-2.5 rounded-xl font-medium text-xs sm:text-sm transition-all duration-150 ${matchedActive
                       ? 'bg-primary-soft text-primary font-semibold shadow-xs'
                       : 'text-text-secondary hover:bg-surface-muted hover:text-text-primary'
-                    }`
-                  }
+                    }`;
+                  }}
                 >
                   <span className="shrink-0">{item.icon}</span>
                   <span className="truncate flex-1">{item.name}</span>
@@ -308,7 +305,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* Footer Info */}
       <div className="p-3 border-t border-border/80 bg-surface-subtle/50 text-[11px] text-text-muted flex justify-between items-center">
-        <span>v1.0.0 Modular Monolith</span>
+        <span>Phiên bản 1.0</span>
         <span className="inline-block w-2 h-2 rounded-full bg-emerald-500" title="Hệ thống hoạt động" />
       </div>
     </aside>

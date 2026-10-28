@@ -408,6 +408,7 @@ export class AttendanceRepository {
             teacher_user_id: null,
             teacher_submitted_at: null,
             teacher_raw_value: null,
+            lesson_topic: null,
             teacher_note: null,
           } : {
             cs_status: null,

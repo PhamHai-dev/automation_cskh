@@ -32,6 +32,8 @@ import {
   Check,
   ArrowRight,
   RefreshCw,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 
 type CareTab = 'tasks' | 'logs' | 'notifications';
@@ -140,6 +142,8 @@ export const CarePage: React.FC = () => {
   const [unreadCount, setUnreadCount] = useState<number>(0);
   const [markingId, setMarkingId] = useState<number | null>(null);
   const [markingAll, setMarkingAll] = useState<boolean>(false);
+  const [notifPage, setNotifPage] = useState<number>(1);
+  const [notifPageSize, setNotifPageSize] = useState<number>(25);
 
   // Fetch notifications
   const loadNotifications = useCallback(
@@ -514,7 +518,9 @@ export const CarePage: React.FC = () => {
                 <span>Không có thông báo nào trong mục này.</span>
               </div>
             ) : (
-              notifications.map((item) => {
+              notifications
+                .slice((notifPage - 1) * notifPageSize, notifPage * notifPageSize)
+                .map((item) => {
                 const sessionDateFormatted = item.session_date
                   ? new Date(
                       item.session_date.length === 10
@@ -619,6 +625,63 @@ export const CarePage: React.FC = () => {
               })
             )}
           </div>
+
+          {!notificationsLoading && notifications.length > 0 && (() => {
+            const totalPages = Math.max(1, Math.ceil(notifications.length / notifPageSize));
+            const safePage = Math.min(notifPage, totalPages);
+            const startIdx = (safePage - 1) * notifPageSize + 1;
+            const endIdx = Math.min(safePage * notifPageSize, notifications.length);
+            return (
+              <div className="px-5 py-3 border-t border-border/80 bg-surface-muted/30 flex flex-wrap items-center justify-between gap-3 text-xs text-text-secondary">
+                <span>
+                  Hiển thị <strong className="text-text-primary">{startIdx}</strong>–
+                  <strong className="text-text-primary">{endIdx}</strong> /{' '}
+                  <strong className="text-text-primary">{notifications.length}</strong> thông báo
+                </span>
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-1.5">
+                    <span>Mỗi trang:</span>
+                    <select
+                      value={notifPageSize}
+                      onChange={(e) => {
+                        setNotifPageSize(Number(e.target.value));
+                        setNotifPage(1);
+                      }}
+                      className="bg-surface border border-border rounded-lg px-2 py-1 text-xs font-semibold text-text-primary"
+                    >
+                      <option value={25}>25</option>
+                      <option value={50}>50</option>
+                      <option value={100}>100</option>
+                      <option value={200}>200</option>
+                    </select>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setNotifPage((p) => Math.max(1, p - 1))}
+                      disabled={safePage <= 1}
+                      className="h-7 px-2"
+                    >
+                      <ChevronLeft className="w-3.5 h-3.5" />
+                    </Button>
+                    <span className="px-2 font-semibold text-text-primary">
+                      {safePage} / {totalPages}
+                    </span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setNotifPage((p) => Math.min(totalPages, p + 1))}
+                      disabled={safePage >= totalPages}
+                      className="h-7 px-2"
+                    >
+                      <ChevronRight className="w-3.5 h-3.5" />
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
         </div>
       )}
 

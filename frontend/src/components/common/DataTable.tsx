@@ -1,4 +1,4 @@
-import { useState, useMemo, ReactNode } from 'react';
+import { useState, useEffect, useMemo, ReactNode } from 'react';
 import { ChevronLeft, ChevronRight, Inbox } from 'lucide-react';
 import { Button } from '../ui/Button';
 
@@ -34,7 +34,7 @@ export function DataTable<T>({
   emptyMessage = 'Không có dữ liệu hiển thị',
   onRowClick,
   pagination = true,
-  pageSize: initialPageSize = 10,
+  pageSize: initialPageSize = 25,
   serverPagination = false,
   total,
   page: externalPage = 1,
@@ -49,6 +49,12 @@ export function DataTable<T>({
   const effectivePageSize = serverPagination ? (pageSize || initialPageSize) : pageSize;
   const totalCount = serverPagination ? (total ?? data.length) : data.length;
   const totalPages = Math.ceil(totalCount / effectivePageSize) || 1;
+
+  useEffect(() => {
+    if (!serverPagination && currentPage > totalPages) {
+      setCurrentPage(1);
+    }
+  }, [serverPagination, currentPage, totalPages]);
 
   const paginatedData = useMemo(() => {
     if (!pagination || serverPagination) return data;
@@ -155,7 +161,7 @@ export function DataTable<T>({
               <strong className="text-text-primary">{totalCount}</strong> bản ghi
             </span>
             <span className="hidden sm:inline text-text-muted">•</span>
-            <div className="hidden sm:flex items-center gap-1.5">
+            <div className="flex items-center gap-1.5">
               <span>Mỗi trang:</span>
               <select
                 value={effectivePageSize}
@@ -164,10 +170,13 @@ export function DataTable<T>({
                 }}
                 className="bg-surface border border-border rounded-lg px-2 py-1 text-xs text-text-primary focus:outline-none focus:ring-1 focus:ring-primary"
               >
-                <option value={10}>10</option>
-                <option value={20}>20</option>
+                {![25, 50, 100, 200].includes(effectivePageSize) && (
+                  <option value={effectivePageSize}>{effectivePageSize}</option>
+                )}
+                <option value={25}>25</option>
                 <option value={50}>50</option>
                 <option value={100}>100</option>
+                <option value={200}>200</option>
               </select>
             </div>
           </div>

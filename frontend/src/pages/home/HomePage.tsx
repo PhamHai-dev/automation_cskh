@@ -6,7 +6,6 @@ import { Badge } from '../../components/ui/Badge';
 import {
   LayoutDashboard,
   HeartHandshake,
-  FileCheck2,
   Users,
   GraduationCap,
   Package,
@@ -26,11 +25,12 @@ export const HomePage: React.FC = () => {
   const userRoles = user?.roles || [];
 
   const hasRole = (roles: string[]) => userRoles.some((r) => roles.includes(r));
+  const isStaffWithEnrollmentView = hasRole(['ADMIN', 'MANAGE', 'CS']);
 
   const quickLinks = [
     {
       title: 'Báo cáo & Thống kê',
-      desc: 'Tỷ lệ chuyên cần, ma trận mốc buổi học và tiến độ CS',
+      desc: 'Tỷ lệ chuyên cần, ma trận mốc buổi học và tiến độ CSKH',
       path: '/dashboard',
       icon: <LayoutDashboard className="w-6 h-6 text-emerald-600" />,
       bg: 'bg-emerald-500/10 border-emerald-200/80 hover:border-emerald-500',
@@ -39,8 +39,8 @@ export const HomePage: React.FC = () => {
       allowed: hasRole(['ADMIN', 'MANAGE', 'CS']),
     },
     {
-      title: 'Lịch dạy của tôi',
-      desc: 'Ghi nhận ca thực học 1-1, chấm điểm danh nhanh và bài học trong ngày',
+      title: 'Lịch dạy & Theo dõi điểm danh',
+      desc: 'Ghi nhận ca thực học, chấm điểm danh nhanh và theo dõi các buổi chờ chấm / lịch sử',
       path: '/teacher/my-sessions',
       icon: <CalendarCheck className="w-6 h-6 text-emerald-600" />,
       bg: 'bg-emerald-500/10 border-emerald-200/80 hover:border-emerald-500',
@@ -49,42 +49,22 @@ export const HomePage: React.FC = () => {
       allowed: hasRole(['TEACHER']),
     },
     {
-      title: 'Theo dõi điểm danh GV',
-      desc: 'Các buổi học chờ giáo viên chấm điểm danh và lịch sử đã chấm',
-      path: '/teacher/attendance-tracking',
-      icon: <ClipboardCheck className="w-6 h-6 text-amber-600" />,
-      bg: 'bg-amber-500/10 border-amber-200/80 hover:border-amber-500',
-      badge: 'Cần chấm',
-      badgeVariant: 'warning' as const,
-      allowed: hasRole(['TEACHER']),
-    },
-    {
-      title: 'Quản lý Lớp học & Điểm danh',
-      desc: 'Lịch học, ma trận chuỗi ngày học và chấm điểm danh',
-      path: '/classes',
+      title: 'Lớp học & Điểm danh',
+      desc: 'Điểm danh chuyên cần theo học viên, quản lý lớp học, lịch học và phân công giáo viên',
+      path: isStaffWithEnrollmentView ? '/enrollments' : '/classes',
       icon: <GraduationCap className="w-6 h-6 text-teal-600" />,
       bg: 'bg-teal-500/10 border-teal-200/80 hover:border-teal-500',
-      badge: 'Lớp học',
+      badge: 'Lớp học & Điểm danh',
       badgeVariant: 'accent' as const,
       allowed: hasRole(['ADMIN', 'MANAGE', 'CS', 'TEACHER']),
     },
     {
       title: 'Đối soát Điểm danh 2 chiều',
-      desc: 'Đối chiếu kết quả chấm giữa Giáo viên và CVHT, xử lý lệch điểm danh',
+      desc: 'Đối chiếu kết quả chấm giữa Giáo viên và CSKH, xử lý lệch điểm danh',
       path: '/attendance/reconciliation',
       icon: <ClipboardCheck className="w-6 h-6 text-cyan-600" />,
       bg: 'bg-cyan-500/10 border-cyan-200/80 hover:border-cyan-500',
       badge: 'Đối soát',
-      badgeVariant: 'info' as const,
-      allowed: hasRole(['ADMIN', 'MANAGE', 'CS']),
-    },
-    {
-      title: 'Quản lý Ghi danh',
-      desc: 'Hợp đồng, số buổi còn lại (cảnh báo nợ buổi) và phân công CS',
-      path: '/enrollments',
-      icon: <FileCheck2 className="w-6 h-6 text-blue-600" />,
-      bg: 'bg-blue-500/10 border-blue-200/80 hover:border-blue-500',
-      badge: 'Hợp đồng',
       badgeVariant: 'info' as const,
       allowed: hasRole(['ADMIN', 'MANAGE', 'CS']),
     },
@@ -172,29 +152,20 @@ export const HomePage: React.FC = () => {
 
   return (
     <PageContainer>
-      {/* Hero Welcome Banner */}
-      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-blue-700 via-primary to-teal-600 text-white p-6 sm:p-10 mb-8 shadow-soft-lg">
-        <div className="relative z-10 max-w-3xl">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/15 backdrop-blur-md text-xs font-semibold text-white mb-4 border border-white/20">
-            <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-            <span>Trung tâm Điều phối & Tự động hóa Vận hành CSKH</span>
+      {/* Compact Welcome Header */}
+      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-blue-700 via-primary to-teal-600 text-white px-6 py-5 mb-6 shadow-soft">
+        <div className="relative z-10 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-white/15 text-[11px] font-semibold text-white mb-1.5 border border-white/20">
+              <Sparkles className="w-3 h-3 text-amber-300" />
+              <span>Hệ thống Vận hành & CSKH</span>
+            </div>
+            <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight">
+              Xin chào, {user?.name || 'Bạn'}!
+            </h1>
           </div>
-          <h1 className="text-2xl sm:text-4xl font-extrabold tracking-tight mb-3">
-            Xin chào, {user?.name || 'Bạn'}!
-          </h1>
-          <p className="text-blue-100 text-xs sm:text-base leading-relaxed max-w-2xl">
-            Chào mừng bạn đến với hệ thống quản trị học viên, điều phối lớp học và tự động hóa quy trình chăm sóc khách hàng.
-          </p>
         </div>
-
-        {/* Decorative background circle */}
-        <div className="absolute right-0 top-0 -mt-10 -mr-10 w-80 h-80 bg-white/10 rounded-full blur-2xl pointer-events-none" />
-      </div>
-
-      {/* Quick Launch Grid */}
-      <div className="mb-4">
-        <h2 className="text-lg font-bold text-text-primary mb-1">Truy cập Nhanh Các Phân Hệ</h2>
-        <p className="text-xs text-text-muted">Chọn phân hệ bạn muốn làm việc hôm nay</p>
+        <div className="absolute right-0 top-0 -mt-10 -mr-10 w-64 h-64 bg-white/10 rounded-full blur-2xl pointer-events-none" />
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">

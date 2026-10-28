@@ -23,7 +23,7 @@ export const AtRiskTable: React.FC<{ data: CarePayload['at_risk'] }> = ({ data }
           <tr className="bg-red-50/60 border-b border-red-200">
             <th className="py-2.5 px-3 font-semibold text-red-700">Học viên</th>
             <th className="py-2.5 px-3 font-semibold text-red-700">Mốc buổi</th>
-            <th className="py-2.5 px-3 font-semibold text-red-700">CVHT</th>
+            <th className="py-2.5 px-3 font-semibold text-red-700">CSKH</th>
             <th className="py-2.5 px-3 font-semibold text-red-700">Ngày log</th>
           </tr>
         </thead>

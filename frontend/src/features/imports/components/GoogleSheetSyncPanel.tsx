@@ -17,7 +17,6 @@ import {
   XCircle,
   Clock,
   Save,
-  Zap,
   ShieldCheck,
   FileSpreadsheet,
   Users,
@@ -324,13 +323,23 @@ export const GoogleSheetSyncPanel: React.FC = () => {
   };
 
   const renderStatusBadge = (status?: string | null) => {
-    if (!status) return <Badge variant="neutral">Chưa chạy</Badge>;
+    if (!status || status === 'IDLE') return <Badge variant="neutral">Chưa chạy</Badge>;
+    if (status === 'RUNNING' || status === 'SYNCING') {
+      return (
+        <Badge variant="info">
+          <span className="inline-flex items-center gap-1">
+            <RefreshCw className="w-3 h-3 animate-spin" />
+            Đang chạy
+          </span>
+        </Badge>
+      );
+    }
     if (status === 'SUCCESS' || status === 'COMPLETED') {
       return (
         <Badge variant="success">
           <span className="inline-flex items-center gap-1">
             <CheckCircle2 className="w-3 h-3" />
-            SUCCESS
+            Thành công
           </span>
         </Badge>
       );
@@ -340,7 +349,7 @@ export const GoogleSheetSyncPanel: React.FC = () => {
         <Badge variant="warning">
           <span className="inline-flex items-center gap-1">
             <AlertTriangle className="w-3 h-3" />
-            PARTIAL_FAILED
+            Có dòng lỗi
           </span>
         </Badge>
       );
@@ -349,7 +358,7 @@ export const GoogleSheetSyncPanel: React.FC = () => {
       <Badge variant="danger">
         <span className="inline-flex items-center gap-1">
           <XCircle className="w-3 h-3" />
-          {status}
+          Thất bại
         </span>
       </Badge>
     );
@@ -372,27 +381,9 @@ export const GoogleSheetSyncPanel: React.FC = () => {
       <div className="bg-gradient-to-r from-blue-50 via-indigo-50/70 to-teal-50/70 rounded-2xl border border-blue-200/80 p-4 sm:p-5 shadow-soft">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           <div className="space-y-1.5">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-extrabold bg-blue-600 text-white shadow-2xs">
-                <Zap className="w-3.5 h-3.5" />
-                ĐỒNG BỘ THÔNG MINH 2 NGUỒN
-              </span>
-              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-indigo-100 text-indigo-800 border border-indigo-200">
-                SHA-256 Row Hash Diffing
-              </span>
-              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-teal-100 text-teal-800 border border-teal-200">
-                <ShieldCheck className="w-3.5 h-3.5" />
-                Phân quyền tự động theo Mã CVHT
-              </span>
-            </div>
             <h3 className="text-sm sm:text-base font-extrabold text-slate-900">
               Đồng bộ Google Sheet Tự động: Khóa Luyện thi (JLPT) & Khóa Giao tiếp (Kaiwa)
             </h3>
-            <p className="text-xs text-slate-600 max-w-3xl leading-relaxed">
-              Hệ thống tự động kiểm tra định kỳ, băm SHA-256 từng dòng để chỉ cập nhật các dòng có thay đổi, tự động quy chiếu số buổi (từ sheet{' '}
-              <strong className="text-slate-800">Setting</strong> đối với JLPT) và tự động phân bổ học viên về đúng tài khoản CSKH theo cột{' '}
-              <strong className="text-slate-800">Mã CVHT (CVHT01, CVHT02, CVHT03)</strong>.
-            </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2 shrink-0">
@@ -404,7 +395,7 @@ export const GoogleSheetSyncPanel: React.FC = () => {
               leftIcon={<RotateCcw className="w-4 h-4 text-amber-600" />}
               className="bg-white border-amber-300 text-amber-900 hover:bg-amber-50 font-bold"
             >
-              Làm mới toàn bộ (Force Full Sync)
+              Đồng bộ lại toàn bộ
             </Button>
             <Button
               variant="primary"
@@ -414,7 +405,7 @@ export const GoogleSheetSyncPanel: React.FC = () => {
               leftIcon={<RefreshCw className="w-4 h-4" />}
               className="font-bold shadow-sm"
             >
-              Đồng bộ cả 2 khóa (Sync All)
+              Đồng bộ cả 2 khóa
             </Button>
           </div>
         </div>
@@ -664,11 +655,11 @@ export const GoogleSheetSyncPanel: React.FC = () => {
                       </div>
                     </div>
 
-                    {/* CVHT Breakdown */}
+                    {/* CSKH Breakdown */}
                     <div className="pt-2 border-t border-slate-200/80 flex flex-wrap items-center justify-between gap-2">
                       <span className="text-[11px] font-bold text-slate-600 flex items-center gap-1">
                         <Users className="w-3.5 h-3.5 text-blue-600" />
-                        <span>Phân bổ học viên theo mã CVHT:</span>
+                        <span>Phân bổ học viên theo mã CSKH:</span>
                       </span>
                       <div className="flex flex-wrap items-center gap-1.5">
                         {Object.keys(byCvht).length > 0 ? (
@@ -683,7 +674,7 @@ export const GoogleSheetSyncPanel: React.FC = () => {
                           ))
                         ) : (
                           <span className="text-[11px] text-slate-400 italic">
-                            Chưa có thống kê CVHT (Hãy bấm Đồng bộ)
+                            Chưa có thống kê CSKH (Hãy bấm Đồng bộ)
                           </span>
                         )}
                       </div>
@@ -788,13 +779,13 @@ export const GoogleSheetSyncPanel: React.FC = () => {
                       </div>
                     </div>
 
-                    {/* CVHT Role Mapping Table */}
+                    {/* CSKH Role Mapping Table */}
                     <div className="rounded-xl border border-slate-200 p-3.5 bg-slate-50/60 space-y-2.5">
                       <div className="flex items-center justify-between">
                         <span className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
                           <ShieldCheck className="w-4 h-4 text-blue-600" />
                           <span>
-                            Ánh xạ Phân quyền Mã CVHT (Cột CVHT trong Sheet ➔ Tài khoản CSKH)
+                            Ánh xạ Phân quyền Mã CSKH (Cột trong Sheet ➔ Tài khoản CSKH)
                           </span>
                         </span>
                       </div>

@@ -834,7 +834,7 @@ export async function syncAndMatchCareGroups(
       if (!extId) {
         reason = 'Học viên chưa có mã học viên (external_id) trên hệ thống';
       } else if (!csId) {
-        reason = `Học viên (${extId}) chưa được phân công CVHT phụ trách`;
+        reason = `Học viên (${extId}) chưa được phân công CSKH phụ trách`;
       } else {
         reason = `Chưa tìm thấy nhóm Zalo/LINE bắt đầu bằng "${expectedGroupPrefix}" trên tài khoản của ${csName || csCode || `CS #${csId}`}`;
       }

@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { CalendarClock, ClipboardCheck, History, Search, UserRoundCheck } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Calendar, CalendarClock, ClipboardCheck, History, Search, UserRoundCheck } from 'lucide-react';
 import { PageContainer } from '../../../components/common/PageContainer';
 import { PageHeader } from '../../../components/common/PageHeader';
 import { DataTable, type Column } from '../../../components/common/DataTable';
@@ -42,6 +43,7 @@ const dateLabel = (value: string) => new Date(value).toLocaleDateString('vi-VN')
 const dateTimeLabel = (value: string) => new Date(value).toLocaleString('vi-VN');
 
 export const TeacherAttendanceTrackingPage: React.FC = () => {
+  const navigate = useNavigate();
   const { user } = useAuth();
   const toast = useToast();
   const isPrivileged = !!user?.roles.some((role) => role === 'ADMIN' || role === 'MANAGE');
@@ -63,7 +65,7 @@ export const TeacherAttendanceTrackingPage: React.FC = () => {
   const [pendingCount, setPendingCount] = useState(0);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(20);
+  const [pageSize, setPageSize] = useState(25);
   const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState<TeacherTrackingPendingItem | null>(null);
   const [status, setStatus] = useState<AttendanceStatus | ''>('');
@@ -185,14 +187,14 @@ export const TeacherAttendanceTrackingPage: React.FC = () => {
       cell: (item) =>
         isPrivileged && !isAdmin ? (
           <span
-            title="Chỉ Admin chấm hộ giáo viên; MANAGE ghi ý kiến CVHT trong nhóm phụ trách"
+            title="Chỉ Admin chấm hộ giáo viên; MANAGE ghi ý kiến CSKH trong nhóm phụ trách"
             className="inline-block"
           >
             <Button
               id={`mark-attendance-${item.id}`}
               size="sm"
               disabled
-              title="Chỉ Admin chấm hộ giáo viên; MANAGE ghi ý kiến CVHT trong nhóm phụ trách"
+              title="Chỉ Admin chấm hộ giáo viên; MANAGE ghi ý kiến CSKH trong nhóm phụ trách"
             >
               <ClipboardCheck className="h-4 w-4 mr-1.5" />
               Điểm danh
@@ -230,23 +232,31 @@ export const TeacherAttendanceTrackingPage: React.FC = () => {
     <PageContainer>
       <PageHeader
         title="Theo dõi điểm danh"
-        description="Hoàn tất các lượt CSKH đã ghi nhận và xem lịch sử thay đổi trạng thái của giáo viên."
-      />
-
-      {isPrivileged && (
-        <Card className="mb-5 p-4 sm:p-5 bg-gradient-to-r from-primary-soft/80 to-surface">
-          <div className="max-w-md">
-            <Select
-              id="tracking-teacher-select"
-              label="Giáo viên cần theo dõi"
-              value={teacherId || ''}
-              onChange={(event) => { setTeacherId(event.target.value ? Number(event.target.value) : undefined); setPage(1); }}
-              options={[{ value: '', label: 'Chọn giáo viên...' }, ...teachers.map((teacher) => ({ value: teacher.user_id!, label: `${teacher.name} · ${teacher.code}` }))]}
-              helperText="Dữ liệu và thao tác điểm danh sẽ được giới hạn theo giáo viên đã chọn."
-            />
+        actions={
+          <div
+            className="inline-flex items-center p-1 bg-slate-100 rounded-xl border border-slate-200/80 gap-1"
+            role="tablist"
+            aria-label="Chuyển đổi chế độ Lịch dạy và Theo dõi điểm danh"
+          >
+            <button
+              type="button"
+              onClick={() => navigate('/teacher/my-sessions')}
+              className="px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 text-slate-600 hover:text-slate-900 hover:bg-white/70"
+            >
+              <Calendar className="w-3.5 h-3.5" />
+              <span>Lịch dạy trong kỳ</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => navigate('/teacher/attendance-tracking')}
+              className="px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 bg-primary text-white shadow-xs"
+            >
+              <ClipboardCheck className="w-3.5 h-3.5" />
+              <span>Chờ điểm danh & Lịch sử</span>
+            </button>
           </div>
-        </Card>
-      )}
+        }
+      />
 
       <HorizontalTabs
         ariaLabel="Theo dõi điểm danh giáo viên"
@@ -259,30 +269,51 @@ export const TeacherAttendanceTrackingPage: React.FC = () => {
         ]}
       />
 
+      <Card className="mb-5 p-4">
+        <form
+          className={`grid grid-cols-1 gap-3 sm:grid-cols-2 ${isPrivileged ? 'lg:grid-cols-6' : 'lg:grid-cols-5'}`}
+          onSubmit={(event) => {
+            event.preventDefault();
+            setAppliedSearch(search.trim());
+            setPage(1);
+          }}
+        >
+          {isPrivileged && (
+            <Select
+              id="tracking-teacher-select"
+              label="Giáo viên cần theo dõi"
+              value={teacherId || ''}
+              onChange={(event) => {
+                setTeacherId(event.target.value ? Number(event.target.value) : undefined);
+                setPage(1);
+              }}
+              options={[
+                { value: '', label: 'Chọn giáo viên...' },
+                ...teachers.map((teacher) => ({
+                  value: teacher.user_id!,
+                  label: `${teacher.name} · ${teacher.code}`,
+                })),
+              ]}
+            />
+          )}
+          <Input id="tracking-search" label="Tìm học viên" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Tên, mã hoặc SĐT" leftIcon={<Search className="h-4 w-4" />} />
+          <Select id="tracking-class" label="Lớp học" value={classId || ''} onChange={(event) => { setClassId(event.target.value ? Number(event.target.value) : undefined); setPage(1); }} options={[{ value: '', label: 'Tất cả lớp' }, ...classes.map((item) => ({ value: item.id, label: item.class_name }))]} />
+          <Input id="tracking-start-date" label="Từ ngày" type="date" value={startDate} onChange={(event) => { setStartDate(event.target.value); setPage(1); }} />
+          <Input id="tracking-end-date" label="Đến ngày" type="date" value={endDate} min={startDate || undefined} onChange={(event) => { setEndDate(event.target.value); setPage(1); }} />
+          <div className="flex items-end gap-2"><Button id="tracking-apply-filter" type="submit" className="flex-1">Lọc</Button><Button id="tracking-reset-filter" type="button" variant="outline" onClick={resetFilters}>Xóa</Button></div>
+        </form>
+      </Card>
+
       {!hasContext ? (
         <Card className="p-10 text-center">
           <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary-soft text-primary"><UserRoundCheck className="h-7 w-7" /></div>
           <h2 className="font-bold text-text-primary">Chọn giáo viên để bắt đầu</h2>
           <p className="mt-1 text-sm text-text-muted">Hệ thống không trộn dữ liệu của nhiều giáo viên trong cùng một danh sách.</p>
         </Card>
+      ) : tab === 'pending' ? (
+        <DataTable columns={pendingColumns} data={pending} isLoading={loading} emptyMessage="Không còn lượt nào chờ giáo viên điểm danh" serverPagination total={total} page={page} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
       ) : (
-        <>
-          <Card className="mb-5 p-4">
-            <form className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5" onSubmit={(event) => { event.preventDefault(); setAppliedSearch(search.trim()); setPage(1); }}>
-              <Input id="tracking-search" label="Tìm học viên" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Tên, mã hoặc SĐT" leftIcon={<Search className="h-4 w-4" />} />
-              <Select id="tracking-class" label="Lớp học" value={classId || ''} onChange={(event) => { setClassId(event.target.value ? Number(event.target.value) : undefined); setPage(1); }} options={[{ value: '', label: 'Tất cả lớp' }, ...classes.map((item) => ({ value: item.id, label: item.class_name }))]} />
-              <Input id="tracking-start-date" label="Từ ngày" type="date" value={startDate} onChange={(event) => { setStartDate(event.target.value); setPage(1); }} />
-              <Input id="tracking-end-date" label="Đến ngày" type="date" value={endDate} min={startDate || undefined} onChange={(event) => { setEndDate(event.target.value); setPage(1); }} />
-              <div className="flex items-end gap-2"><Button id="tracking-apply-filter" type="submit" className="flex-1">Lọc</Button><Button id="tracking-reset-filter" type="button" variant="outline" onClick={resetFilters}>Xóa</Button></div>
-            </form>
-          </Card>
-
-          {tab === 'pending' ? (
-            <DataTable columns={pendingColumns} data={pending} isLoading={loading} emptyMessage="Không còn lượt nào chờ giáo viên điểm danh" serverPagination total={total} page={page} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
-          ) : (
-            <DataTable columns={historyColumns} data={history} isLoading={loading} emptyMessage="Chưa có lần thay đổi trạng thái nào" serverPagination total={total} page={page} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
-          )}
-        </>
+        <DataTable columns={historyColumns} data={history} isLoading={loading} emptyMessage="Chưa có lần thay đổi trạng thái nào" serverPagination total={total} page={page} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
       )}
 
       <Modal

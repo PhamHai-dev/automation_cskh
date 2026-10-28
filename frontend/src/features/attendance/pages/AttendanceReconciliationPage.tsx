@@ -88,17 +88,17 @@ export const AttendanceReconciliationPage: React.FC = () => {
   const [conflicts, setConflicts] = useState<AttendanceRecord[]>([]);
   const [conflictTotal, setConflictTotal] = useState(0);
   const [conflictPage, setConflictPage] = useState(1);
-  const [conflictPageSize, setConflictPageSize] = useState(20);
+  const [conflictPageSize, setConflictPageSize] = useState(25);
 
   const [pendingItems, setPendingItems] = useState<AttendanceRecord[]>([]);
   const [pendingTotal, setPendingTotal] = useState(0);
   const [pendingPage, setPendingPage] = useState(1);
-  const [pendingPageSize, setPendingPageSize] = useState(20);
+  const [pendingPageSize, setPendingPageSize] = useState(25);
 
   const [historyItems, setHistoryItems] = useState<ReconciliationHistoryItem[]>([]);
   const [historyTotal, setHistoryTotal] = useState(0);
   const [historyPage, setHistoryPage] = useState(1);
-  const [historyPageSize, setHistoryPageSize] = useState(20);
+  const [historyPageSize, setHistoryPageSize] = useState(25);
 
   // Bulk selection (pending tab)
   const [selectedPendingIds, setSelectedPendingIds] = useState<number[]>([]);
@@ -386,7 +386,7 @@ export const AttendanceReconciliationPage: React.FC = () => {
           return (
             <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-2.5">
               <div className="flex items-center gap-1.5 mb-1">
-                <span className="text-[11px] font-semibold text-blue-700">Ý kiến CS:</span>
+                <span className="text-[11px] font-semibold text-blue-700">Ý kiến CSKH:</span>
                 {cfg ? (
                   <Badge variant={cfg.variant} size="sm">
                     {cfg.label}
@@ -425,7 +425,7 @@ export const AttendanceReconciliationPage: React.FC = () => {
               onClick={() => handleOpenCSMark(r)}
               className="whitespace-nowrap"
             >
-              Ghi ý kiến CS
+              Ghi ý kiến CSKH
             </Button>
           ),
       },
@@ -700,7 +700,6 @@ export const AttendanceReconciliationPage: React.FC = () => {
     <PageContainer>
       <PageHeader
         title="Đối Soát Điểm Danh"
-        description="So khớp dữ liệu hai chiều (Giáo viên vs CSKH), phân xử ca lệch và duyệt buổi học."
       />
 
       {/* Tab Navigation (ngay dưới title theo convention các trang khác) */}

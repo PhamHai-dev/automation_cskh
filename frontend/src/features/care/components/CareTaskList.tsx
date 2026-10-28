@@ -1,8 +1,8 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { CareTask, TaskFilterParams, TaskPriority, TaskType, TaskStatus } from '../types/care.types';
 import { Badge } from '../../../components/ui/Badge';
 import { Button } from '../../../components/ui/Button';
-import { XCircle, Edit, Calendar, AlertCircle, Clock, Check } from 'lucide-react';
+import { XCircle, Edit, Calendar, AlertCircle, Clock, Check, ChevronLeft, ChevronRight } from 'lucide-react';
 
 interface CareTaskListProps {
   tasks: CareTask[];
@@ -44,6 +44,19 @@ export const CareTaskList: React.FC<CareTaskListProps> = ({
   onEdit,
   onRefresh: _onRefresh,
 }) => {
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+
+  useEffect(() => {
+    setPage(1);
+  }, [filter.status, filter.due_filter, filter.priority, filter.type, tasks.length]);
+
+  const totalPages = Math.max(1, Math.ceil(tasks.length / pageSize));
+  const safePage = Math.min(page, totalPages);
+  const startIdx = tasks.length === 0 ? 0 : (safePage - 1) * pageSize + 1;
+  const endIdx = Math.min(safePage * pageSize, tasks.length);
+  const paginatedTasks = tasks.slice((safePage - 1) * pageSize, safePage * pageSize);
+
   return (
     <div className="space-y-4">
       {/* Filter Toolbar */}
@@ -95,7 +108,7 @@ export const CareTaskList: React.FC<CareTaskListProps> = ({
             className="px-3 py-1.5 border border-gray-300 rounded-lg text-xs bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
           >
             <option value="">Tất cả thời hạn</option>
-            <option value="overdue">Quá hạn (Overdue)</option>
+            <option value="overdue">Quá hạn</option>
             <option value="today">Hạn hôm nay</option>
             <option value="this_week">Hạn trong tuần</option>
           </select>
@@ -154,7 +167,7 @@ export const CareTaskList: React.FC<CareTaskListProps> = ({
         </div>
       ) : (
         <div className="space-y-3">
-          {tasks.map((task) => {
+          {paginatedTasks.map((task) => {
             const isOverdue =
               task.status === 'PENDING' && task.due_at && new Date(task.due_at) < new Date();
             const typeConfig = TYPE_BADGES[task.type] || { label: task.type, variant: 'neutral' };
@@ -261,6 +274,57 @@ export const CareTaskList: React.FC<CareTaskListProps> = ({
               </div>
             );
           })}
+
+          {tasks.length > 0 && (
+            <div className="bg-white rounded-xl border border-gray-200 px-4 py-3 flex flex-wrap items-center justify-between gap-3 text-xs text-gray-600">
+              <span>
+                Hiển thị <strong className="text-gray-900">{startIdx}</strong>–
+                <strong className="text-gray-900">{endIdx}</strong> /{' '}
+                <strong className="text-gray-900">{tasks.length}</strong> nhiệm vụ
+              </span>
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-1.5">
+                  <span>Mỗi trang:</span>
+                  <select
+                    value={pageSize}
+                    onChange={(e) => {
+                      setPageSize(Number(e.target.value));
+                      setPage(1);
+                    }}
+                    className="bg-white border border-gray-300 rounded-lg px-2 py-1 text-xs font-semibold text-gray-800"
+                  >
+                    <option value={25}>25</option>
+                    <option value={50}>50</option>
+                    <option value={100}>100</option>
+                    <option value={200}>200</option>
+                  </select>
+                </div>
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    disabled={safePage <= 1}
+                    className="h-7 px-2"
+                  >
+                    <ChevronLeft className="w-3.5 h-3.5" />
+                  </Button>
+                  <span className="px-2 font-semibold text-gray-800">
+                    {safePage} / {totalPages}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                    disabled={safePage >= totalPages}
+                    className="h-7 px-2"
+                  >
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

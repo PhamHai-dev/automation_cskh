@@ -124,11 +124,6 @@ export const PreferencesPage: React.FC = () => {
         }
       />
 
-      <div className="mb-4 text-sm text-text-secondary">
-        Chọn các cột bạn muốn hiển thị trên từng trang. Cấu hình được lưu theo tài khoản
-        và áp dụng trên mọi thiết bị khi đăng nhập cùng tài khoản.
-      </div>
-
       <div className="space-y-6">
         <PreferenceSection
           title="Quản lí Ghi danh"

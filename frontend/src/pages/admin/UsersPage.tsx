@@ -92,14 +92,15 @@ export const UsersPage: React.FC = () => {
 
   const openModal = (user?: User) => {
     if (user) {
+      const unifiedCode = user.code || user.staff_code || '';
       setEditingUser(user);
       setFormData({
-        code: user.code || '',
+        code: unifiedCode,
         name: user.name,
         email: user.email,
         phone: user.phone || '',
         password: '',
-        staff_code: user.staff_code || '',
+        staff_code: unifiedCode.toUpperCase(),
         roles: user.roles,
       });
     } else {
@@ -126,21 +127,23 @@ export const UsersPage: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      const normalizedCode = formData.code.trim().toUpperCase();
+      const syncedStaffCode = normalizedCode || formData.staff_code.trim().toUpperCase() || null;
       if (editingUser) {
         await apiClient.patch(`/settings/users/${editingUser.id}`, {
-          code: formData.code || undefined,
+          code: normalizedCode || undefined,
           name: formData.name,
           phone: formData.phone || undefined,
-          staff_code: formData.staff_code.trim() || null,
+          staff_code: syncedStaffCode,
           roles: formData.roles,
         });
         toast.success('Cập nhật tài khoản người dùng thành công!');
       } else {
         await apiClient.post('/settings/users', {
           ...formData,
-          code: formData.code || undefined,
+          code: normalizedCode || undefined,
           phone: formData.phone || undefined,
-          staff_code: formData.staff_code.trim() || null,
+          staff_code: syncedStaffCode,
         });
         toast.success('Tạo tài khoản người dùng mới thành công!');
       }
@@ -196,15 +199,13 @@ export const UsersPage: React.FC = () => {
 
   const columns: Column<User>[] = [
     {
-      header: 'Mã định danh (ID)',
+      header: 'Mã NV / ID',
       cell: (item) => {
-        const isCS = item.roles.includes('CS');
-        return item.code ? (
+        const displayCode = item.code || item.staff_code;
+        return displayCode ? (
           <span className="font-mono font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-md text-xs">
-            {item.code}
+            {displayCode}
           </span>
-        ) : isCS ? (
-          <span className="font-mono text-amber-600 text-xs">CVHT--</span>
         ) : (
           <span className="font-mono text-slate-400 text-xs">#{item.id}</span>
         );
@@ -212,38 +213,23 @@ export const UsersPage: React.FC = () => {
     },
     {
       header: 'Họ tên & Email',
-      cell: (item) => {
-        const isCS = item.roles.includes('CS');
-        const fullDisplay = isCS && item.code ? `${item.name} - ${item.code}` : item.name;
-        return (
-          <div className="flex items-center space-x-3">
-            <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-xs">
-              {item.name.charAt(0).toUpperCase()}
-            </div>
-            <div>
-              <div className="font-bold text-slate-900 text-xs">{fullDisplay}</div>
-              <div className="text-slate-500 text-[11px]">
-                {item.email}
-                {item.phone ? ` · ${item.phone}` : ''}
-              </div>
+      cell: (item) => (
+        <div className="flex items-center space-x-3">
+          <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-xs">
+            {item.name.charAt(0).toUpperCase()}
+          </div>
+          <div>
+            <div className="font-bold text-slate-900 text-xs">{item.name}</div>
+            <div className="text-slate-500 text-[11px]">
+              {item.email}
+              {item.phone ? ` · ${item.phone}` : ''}
             </div>
           </div>
-        );
-      },
+        </div>
+      ),
     },
     {
-      header: 'Mã nhân viên / CVHT',
-      cell: (item) =>
-        item.staff_code ? (
-          <Badge variant="accent" className="font-mono font-bold">
-            {item.staff_code}
-          </Badge>
-        ) : (
-          <span className="text-xs text-slate-400 italic">—</span>
-        ),
-    },
-    {
-      header: 'Vai trò (Roles)',
+      header: 'Vai trò',
       cell: (item) => (
         <div className="flex flex-wrap gap-1">
           {item.roles.map((role) => (
@@ -428,10 +414,13 @@ export const UsersPage: React.FC = () => {
             </div>
             <div>
               <Input
-                label={formData.roles.includes('CS') ? 'Mã CSKH (CVHTxx)' : 'Mã nhân viên'}
+                label="Mã nhân viên / Mã CSKH"
                 value={formData.code}
-                onChange={(e) => setFormData({ ...formData, code: e.target.value })}
-                placeholder={formData.roles.includes('CS') ? 'Tự động: CVHT01...' : 'Tùy chọn'}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setFormData({ ...formData, code: val, staff_code: val.toUpperCase() });
+                }}
+                placeholder={formData.roles.includes('CS') ? 'Tự động: CSKH01...' : 'Tùy chọn'}
               />
             </div>
           </div>
@@ -440,7 +429,7 @@ export const UsersPage: React.FC = () => {
               Định dạng hiển thị chuẩn CSKH:{' '}
               <strong>
                 {formData.name.trim() || 'Họ và tên'} -{' '}
-                {formData.code.trim().toUpperCase() || formData.staff_code.trim().toUpperCase() || 'CVHTxx (tự động cấp từ 01)'}
+                {formData.code.trim().toUpperCase() || 'CSKHxx (tự động cấp từ 01)'}
               </strong>
             </div>
           )}
@@ -461,12 +450,6 @@ export const UsersPage: React.FC = () => {
               placeholder="0912345678"
             />
           </div>
-          <Input
-            label="Mã nhân viên dùng cho Google Sheet (staff_code)"
-            value={formData.staff_code}
-            onChange={(e) => setFormData({ ...formData, staff_code: e.target.value.toUpperCase() })}
-            placeholder="Tự đồng bộ theo mã CVHTxx nếu để trống"
-          />
           {!editingUser && (
             <Input
               label="Mật khẩu khởi tạo *"

@@ -8,6 +8,7 @@ import { Teacher } from '../../teachers/types/teachers.types';
 import { CareSelectCell } from '../components/CareSelectCell';
 import { PageContainer } from '../../../components/common/PageContainer';
 import { PageHeader } from '../../../components/common/PageHeader';
+import { FilterBar } from '../../../components/common/FilterBar';
 import { DataTable, Column } from '../../../components/common/DataTable';
 import { Button } from '../../../components/ui/Button';
 import { Input } from '../../../components/ui/Input';
@@ -17,6 +18,7 @@ import { useToast } from '../../../components/ui/Toast';
 import { HorizontalTabs } from '../../../components/ui/HorizontalTabs';
 import { useAuth } from '../../../contexts/AuthContext';
 import { useColumnVisibility } from '../../preferences/hooks/useColumnVisibility';
+import { ColumnVisibilityDropdown } from '../../preferences/components/ColumnVisibilityDropdown';
 import {
   Edit,
   Plus,
@@ -56,6 +58,16 @@ const ENROLLMENT_STATUS_LABELS: Record<
   UPCOMING: { label: 'Sắp học', variant: 'info' },
   NOT_STARTED: { label: 'Chưa học', variant: 'neutral' },
   CANCELLED: { label: 'Đã hủy', variant: 'danger' },
+};
+
+const isAttendedCountable = (a: any): boolean => {
+  if (!a || a.deleted_at) return false;
+  return (
+    (a.reconciliation_state === 'RESOLVED' && a.status === 'ATTENDED') ||
+    (a.reconciliation_state === 'MATCHED' &&
+      (a.status === 'ATTENDED' || a.cs_status === 'ATTENDED' || a.teacher_status === 'ATTENDED')) ||
+    (!a.reconciliation_state && a.status === 'ATTENDED')
+  );
 };
 
 // Component chỉnh sửa văn bản trực tiếp trong ô (Inline Edit)
@@ -183,7 +195,10 @@ export const StudentsPage: React.FC = () => {
   const toast = useToast();
   const navigate = useNavigate();
   const { user } = useAuth();
-  const isCS = user?.roles.includes('CS') && !user?.roles.includes('ADMIN');
+  const isAdminOrManage = Boolean(
+    user?.roles?.some((r) => r === 'ADMIN' || r === 'MANAGE'),
+  );
+  const isCSOnly = Boolean(user?.roles?.includes('CS') && !isAdminOrManage);
 
   // Active tab state: 'students' (Tab 1) | 'care_reports' (Tab 2)
   const [activeTab, setActiveTab] = useState<'students' | 'care_reports'>('students');
@@ -207,12 +222,12 @@ export const StudentsPage: React.FC = () => {
   const [addingMilestone, setAddingMilestone] = useState(false);
 
   // Filter states
-  const [programFilter, setProgramFilter] = useState<'ALL' | 'KAIWA' | 'JLPT'>('ALL');
-  const [cvhtFilter, setCvhtFilter] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
-  const [genderFilter, setGenderFilter] = useState('');
+  const [programFilter, setProgramFilter] = useState<'ALL' | 'KAIWA' | 'JLPT'>('ALL');
   const [statusFilter, setStatusFilter] = useState('');
-  const [saleFilter, setSaleFilter] = useState('');
+  const [modelFilter, setModelFilter] = useState('');
+  const [paymentFilter, setPaymentFilter] = useState('');
+  const [csFilter, setCsFilter] = useState('');
 
   // Modal states
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -317,11 +332,94 @@ export const StudentsPage: React.FC = () => {
     fetchTeachers();
   }, []);
 
-  // Counts by program_type for the top Program Switcher
+  // Chuẩn hóa mô hình lớp về 1:1 | 1:2 | 1:n
+  const normalizeModel = (model?: string | null): '1:1' | '1:2' | '1:n' => {
+    const raw = (model || '').trim();
+    const upper = raw.toUpperCase();
+    if (upper === 'ONE_TO_TWO' || raw === '1:2' || raw === '1-2') return '1:2';
+    if (
+      upper === 'ONE_TO_N' ||
+      upper === 'GROUP' ||
+      raw === '1:n' ||
+      upper === '1-N' ||
+      upper.includes('NHÓM') ||
+      upper.includes('NHOM')
+    ) {
+      return '1:n';
+    }
+    return '1:1';
+  };
+
+  // Chuẩn hóa tình trạng học phí về PAID | DEBT | UNSET
+  const classifyPaymentStatus = (raw?: string | null): 'PAID' | 'DEBT' | 'UNSET' => {
+    const val = (raw || '').trim();
+    if (!val || val === '—') return 'UNSET';
+    const lower = val.toLowerCase();
+    if (lower.includes('đủ') || lower.includes('hoàn tất') || lower === 'paid') {
+      return 'PAID';
+    }
+    if (
+      lower.includes('nợ') ||
+      lower.includes('chưa') ||
+      lower.includes('phần') ||
+      lower.includes('thiếu') ||
+      lower === 'debt' ||
+      lower === 'partial' ||
+      lower === 'unpaid'
+    ) {
+      return 'DEBT';
+    }
+    return 'PAID';
+  };
+
+  // Tập học viên thuộc phạm vi quyền của user đang đăng nhập (tầng dữ liệu cơ sở allRows)
+  const allRows = useMemo(() => {
+    if (!isCSOnly) return students;
+    const userId = user?.id;
+    const userStaffCode = ((user as any)?.staff_code || (user as any)?.code || '')
+      .trim()
+      .toUpperCase();
+
+    const matchedByExplicitOwner = students.filter((s) => {
+      const enr = s.enrollments?.[0];
+      if (!enr) return false;
+      const enrCsId = (enr as any)?.cs_user_id ?? enr?.cs_id ?? enr?.cs?.id;
+      const enrCsCode = (
+        (enr as any)?.cs_staff_code ||
+        enr?.cs?.staff_code ||
+        (enr?.cs as any)?.code ||
+        ''
+      )
+        .trim()
+        .toUpperCase();
+
+      if (userId && enrCsId === userId) return true;
+      if (userStaffCode && enrCsCode && enrCsCode === userStaffCode) return true;
+      return false;
+    });
+
+    // Nếu dữ liệu có thông tin khớp trực tiếp cs_id / staff_code thì giữ đúng tập của CS đó;
+    // nếu backend đã lọc theo token của CS (mà bản ghi thiếu trường cs chi tiết) thì giữ nguyên tập trả về
+    const anyRowHasCsIdentity = students.some((s) => {
+      const enr = s.enrollments?.[0];
+      return Boolean(
+        (enr as any)?.cs_user_id ||
+          enr?.cs_id ||
+          enr?.cs?.id ||
+          (enr as any)?.cs_staff_code ||
+          enr?.cs?.staff_code ||
+          (enr?.cs as any)?.code,
+      );
+    });
+
+    return anyRowHasCsIdentity ? matchedByExplicitOwner : students;
+  }, [students, isCSOnly, user]);
+
+  // Counts by program_type
   const programCounts = useMemo(() => {
     let kaiwa = 0;
     let jlpt = 0;
-    students.forEach((s) => {
+    allRows.forEach((s) => {
       const enr = s.enrollments?.[0];
       const pType = (enr?.program_type || 'KAIWA').toUpperCase();
       if (pType === 'JLPT') {
@@ -330,86 +428,143 @@ export const StudentsPage: React.FC = () => {
         kaiwa++;
       }
     });
-    return { all: students.length, kaiwa, jlpt };
-  }, [students]);
+    return { all: allRows.length, kaiwa, jlpt };
+  }, [allRows]);
 
-  // Extract unique CVHT codes list for Filter
-  const cvhtList = useMemo(() => {
-    const set = new Set<string>(['CVHT01', 'CVHT02', 'CVHT03']);
-    students.forEach((s) => {
-      s.enrollments?.forEach((e) => {
-        if (e.cs?.staff_code) set.add(e.cs.staff_code.toUpperCase());
+  // Danh sách CSKH thực tế trích xuất từ dữ liệu thuộc phạm vi xem của ADMIN / MANAGE
+  const csOptions = useMemo(() => {
+    const map = new Map<string, { value: string; label: string }>();
+    allRows.forEach((s) => {
+      s.enrollments?.forEach((enr) => {
+        const csId = (enr as any)?.cs_user_id ?? enr?.cs_id ?? enr?.cs?.id;
+        const code = (
+          (enr as any)?.cs_staff_code ||
+          enr?.cs?.staff_code ||
+          (enr?.cs as any)?.code ||
+          ''
+        ).trim();
+        const name = (enr?.cs?.name || '').trim();
+        if (!csId && !code && !name) return;
+
+        const key = code ? `CODE:${code.toUpperCase()}` : `ID:${csId}`;
+        if (!map.has(key)) {
+          const label =
+            code && name
+              ? `${code} - ${name}`
+              : code || name || `CSKH #${csId}`;
+          map.set(key, { value: key, label });
+        }
       });
     });
-    return Array.from(set).filter(Boolean).sort();
-  }, [students]);
+    return Array.from(map.values()).sort((a, b) => a.label.localeCompare(b.label, 'vi-VN'));
+  }, [allRows]);
 
   // Filtered students list matching Sheet 1 & Sheet JLPT
   const filteredStudents = useMemo(() => {
-    return students.filter((s) => {
+    const query = searchTerm.toLowerCase().trim();
+
+    return allRows.filter((s) => {
       // Primary enrollment for Sheet 1 attributes
       const enr = s.enrollments?.[0];
+      const ec = enr?.enrollment_classes?.[0];
 
-      // Program filter (ALL | KAIWA | JLPT)
+      // 1. Search term: Mã HV, Họ tên, SĐT, Email, Lớp học...
+      if (query) {
+        const classCode =
+          ec?.class?.class_code ||
+          enr?.program_metadata?.latest_class_code ||
+          '';
+        const className = ec?.class?.class_name || '';
+        const teacherName = ec?.class?.class_teachers?.[0]?.teacher?.name || '';
+        const matchSearch =
+          s.full_name.toLowerCase().includes(query) ||
+          (s.phone && s.phone.toLowerCase().includes(query)) ||
+          (s.external_id && s.external_id.toLowerCase().includes(query)) ||
+          `hv_${s.id}`.includes(query) ||
+          (s.email && s.email.toLowerCase().includes(query)) ||
+          classCode.toLowerCase().includes(query) ||
+          className.toLowerCase().includes(query) ||
+          teacherName.toLowerCase().includes(query);
+        if (!matchSearch) return false;
+      }
+
+      // 2. Chương trình (ALL | KAIWA | JLPT)
       if (programFilter !== 'ALL') {
         const pType = (enr?.program_type || 'KAIWA').toUpperCase();
         if (pType !== programFilter) return false;
       }
 
-      // CVHT filter
-      if (cvhtFilter) {
-        const code = (enr?.cs?.staff_code || enr?.cs?.name || '').toUpperCase();
-        if (!code.includes(cvhtFilter.toUpperCase())) return false;
+      // 3. Trạng thái học
+      if (statusFilter) {
+        const stStatus = enr?.status || 'STUDYING';
+        if (stStatus !== statusFilter) return false;
       }
 
-      // Search term
-      const query = searchTerm.toLowerCase().trim();
-      const matchSearch =
-        !query ||
-        s.full_name.toLowerCase().includes(query) ||
-        (s.phone && s.phone.includes(query)) ||
-        (s.external_id && s.external_id.toLowerCase().includes(query)) ||
-        (s.email && s.email.toLowerCase().includes(query));
-
-      // Gender filter
-      const matchGender = !genderFilter || s.gender === genderFilter;
-
-      // Status filter
-      const matchStatus = !statusFilter || (enr && enr.status === statusFilter);
-
-      // Sale filter
-      let matchSale = true;
-      if (isCS) {
-        const userIdentifier = (user?.name || user?.email || '').toLowerCase();
-        const userStaffCode = (user?.staff_code || '').toLowerCase();
-        const saleName = (enr?.sale_name || enr?.cs?.name || enr?.cs?.email || '').toLowerCase();
-        const csCode = (enr?.cs?.staff_code || '').toLowerCase();
-        matchSale =
-          enr?.cs_id === user?.id ||
-          (userStaffCode !== '' && csCode === userStaffCode) ||
-          (userIdentifier !== '' && saleName.includes(userIdentifier));
-      } else if (saleFilter) {
-        const saleName = (enr?.sale_name || enr?.cs?.name || enr?.cs?.email || '').toLowerCase();
-        matchSale = saleName === saleFilter.toLowerCase();
+      // 4. Mô hình lớp (1:1 | 1:2 | 1:n)
+      if (modelFilter) {
+        const rawModel = enr?.class_model || ec?.class?.model_type || '';
+        if (normalizeModel(rawModel) !== modelFilter) return false;
       }
 
-      return matchSearch && matchGender && matchStatus && matchSale;
-    });
-  }, [students, programFilter, cvhtFilter, searchTerm, genderFilter, statusFilter, saleFilter, isCS, user]);
+      // 5. Tình trạng học phí (PAID | DEBT | UNSET)
+      if (paymentFilter) {
+        if (classifyPaymentStatus(enr?.payment_status) !== paymentFilter) return false;
+      }
 
-  // Extract unique Sales list for Filter
-  const salesList = useMemo(() => {
-    const set = new Set<string>();
-    students.forEach((s) => {
-      s.enrollments?.forEach((e) => {
-        if (e.sale_name) set.add(e.sale_name);
-        if (e.sale?.name) set.add(e.sale.name);
-        if (e.cs?.name) set.add(e.cs.name);
-        if (e.cs?.email) set.add(e.cs.email);
-      });
+      // 6. CSKH phụ trách (chỉ áp dụng khi ADMIN / MANAGE chọn lọc)
+      if (isAdminOrManage && csFilter) {
+        const csId = (enr as any)?.cs_user_id ?? enr?.cs_id ?? enr?.cs?.id;
+        const code = (
+          (enr as any)?.cs_staff_code ||
+          enr?.cs?.staff_code ||
+          (enr?.cs as any)?.code ||
+          ''
+        )
+          .trim()
+          .toUpperCase();
+        const name = (enr?.cs?.name || '').trim();
+        const hasCs = Boolean(csId || code || name);
+
+        if (csFilter === 'UNASSIGNED') {
+          if (hasCs) return false;
+        } else if (csFilter.startsWith('CODE:')) {
+          const targetCode = csFilter.slice(5);
+          if (code !== targetCode) return false;
+        } else if (csFilter.startsWith('ID:')) {
+          const targetId = Number(csFilter.slice(3));
+          if (csId !== targetId) return false;
+        }
+      }
+
+      return true;
     });
-    return Array.from(set).filter(Boolean);
-  }, [students]);
+  }, [
+    allRows,
+    searchTerm,
+    programFilter,
+    statusFilter,
+    modelFilter,
+    paymentFilter,
+    csFilter,
+    isAdminOrManage,
+  ]);
+
+  const activeFiltersCount =
+    (searchTerm.trim() ? 1 : 0) +
+    (programFilter !== 'ALL' ? 1 : 0) +
+    (statusFilter ? 1 : 0) +
+    (modelFilter ? 1 : 0) +
+    (paymentFilter ? 1 : 0) +
+    (isAdminOrManage && csFilter ? 1 : 0);
+
+  const handleResetFilters = () => {
+    setSearchTerm('');
+    setProgramFilter('ALL');
+    setStatusFilter('');
+    setModelFilter('');
+    setPaymentFilter('');
+    setCsFilter('');
+  };
 
   // All active session milestones depending on programFilter (KAIWA vs JLPT vs ALL)
   const activeMilestones = useMemo(() => {
@@ -757,7 +912,7 @@ export const StudentsPage: React.FC = () => {
     },
     {
       key: 'cs_staff_code',
-      header: 'CVHT',
+      header: 'CSKH',
       cell: (item) => {
         const enr = item.enrollments?.[0];
         const code = enr?.cs?.staff_code || enr?.cs?.name || '—';
@@ -783,15 +938,10 @@ export const StudentsPage: React.FC = () => {
     },
     {
       key: 'sale_name',
-      header: 'Sale / CSKH phụ trách',
+      header: 'Sale phụ trách',
       cell: (item) => {
         const enr = item.enrollments?.[0];
-        const csObj = enr?.cs as any;
-        const csFormatted =
-          csObj?.name && csObj?.code
-            ? `${csObj.name} - ${csObj.code}`
-            : csObj?.name || csObj?.email;
-        const sale = enr?.sale_name || enr?.sale?.name || csFormatted || '—';
+        const sale = enr?.sale_name || (enr as any)?.sale?.name || '—';
         return (
           <div className="flex items-center gap-1.5 font-semibold text-slate-800 text-xs whitespace-nowrap">
             <UserCheck className="w-3.5 h-3.5 text-blue-600 shrink-0" />
@@ -805,7 +955,7 @@ export const StudentsPage: React.FC = () => {
       header: 'Trạng thái học viên',
       cell: (item) => {
         const enr = item.enrollments?.[0];
-        const status = enr?.student_source_status || 'Học viên chuẩn';
+        const status = enr?.student_source_status || '—';
         return (
           <span className="text-[11px] font-medium text-slate-700 bg-slate-100 px-2 py-0.5 rounded-full whitespace-nowrap">
             {status}
@@ -847,7 +997,7 @@ export const StudentsPage: React.FC = () => {
         const enr = item.enrollments?.[0];
         const val = isJlptMode
           ? enr?.program_metadata?.tuition_fee || enr?.course_content || '—'
-          : enr?.course_content || enr?.package?.name || 'Tiếng Nhật Kaiwa';
+          : enr?.course_content || enr?.package?.name || '—';
         return (
           <span className="text-slate-700 text-xs whitespace-nowrap max-w-[180px] truncate block">
             {String(val)}
@@ -898,10 +1048,12 @@ export const StudentsPage: React.FC = () => {
       header: 'Trạng thái thanh toán',
       cell: (item) => {
         const enr = item.enrollments?.[0];
-        const status = enr?.payment_status || 'Đã đóng đủ';
+        if (!enr?.payment_status) {
+          return <span className="text-slate-400 text-xs">—</span>;
+        }
         return (
           <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded whitespace-nowrap">
-            {status}
+            {enr.payment_status}
           </span>
         );
       },
@@ -913,19 +1065,7 @@ export const StudentsPage: React.FC = () => {
         const enr = item.enrollments?.[0];
         return (
           <span className="font-semibold text-slate-800 text-xs whitespace-nowrap">
-            {enr?.package?.code || enr?.package?.name || 'Gói chuẩn 30 buổi'}
-          </span>
-        );
-      },
-    },
-    {
-      key: 'khoa_hoc',
-      header: isJlptMode ? 'Học phí thực nộp' : 'Khóa học (GV Nhật/Việt)',
-      cell: (item) => {
-        const enr = item.enrollments?.[0];
-        return (
-          <span className="text-slate-700 text-xs whitespace-nowrap">
-            {enr?.course_content || 'Tiếng Nhật Kaiwa'}
+            {enr?.package?.code || enr?.package?.name || '—'}
           </span>
         );
       },
@@ -937,7 +1077,7 @@ export const StudentsPage: React.FC = () => {
         const enr = item.enrollments?.[0];
         return (
           <span className="font-mono font-semibold text-slate-700 text-xs whitespace-nowrap">
-            {enr?.level || 'N5'}
+            {enr?.level || '—'}
           </span>
         );
       },
@@ -949,7 +1089,7 @@ export const StudentsPage: React.FC = () => {
         const enr = item.enrollments?.[0];
         return (
           <span className="font-bold text-slate-800 text-xs text-center block whitespace-nowrap">
-            {enr?.total_sessions || 30}
+            {enr?.total_sessions ?? '—'}
           </span>
         );
       },
@@ -961,7 +1101,7 @@ export const StudentsPage: React.FC = () => {
         const enr = item.enrollments?.[0];
         return (
           <span className="text-slate-600 text-xs whitespace-nowrap">
-            {enr?.class_model || 'Nhóm'}
+            {enr?.class_model || '—'}
           </span>
         );
       },
@@ -1018,18 +1158,6 @@ export const StudentsPage: React.FC = () => {
       ),
     },
     {
-      key: 'model_type',
-      header: 'Mô hình',
-      cell: (item) => {
-        const enr = item.enrollments?.[0];
-        return (
-          <span className="text-slate-600 text-xs whitespace-nowrap">
-            {enr?.class_model || '1:1'}
-          </span>
-        );
-      },
-    },
-    {
       key: 'remaining_sessions',
       header: 'Số buổi còn lại',
       cell: (item) => {
@@ -1041,7 +1169,7 @@ export const StudentsPage: React.FC = () => {
         const currentYear = new Date().getFullYear();
         const attendedThisYear =
           ec?.attendance?.filter((a: any) => {
-            if (a.status !== 'ATTENDED') return false;
+            if (!isAttendedCountable(a)) return false;
             const sessionDate = a.class_session?.session_date
               ? new Date(a.class_session.session_date)
               : null;
@@ -1055,7 +1183,7 @@ export const StudentsPage: React.FC = () => {
         } else {
           const attendedInPastYears =
             ec?.attendance?.filter((a: any) => {
-              if (a.status !== 'ATTENDED') return false;
+              if (!isAttendedCountable(a)) return false;
               const sessionDate = a.class_session?.session_date
                 ? new Date(a.class_session.session_date)
                 : null;
@@ -1160,7 +1288,7 @@ export const StudentsPage: React.FC = () => {
         const ec = item.enrollments?.[0]?.enrollment_classes?.[0];
         const schedules = ec?.class?.class_schedules || [];
         const times = schedules.map((s) => s.start_time).filter(Boolean);
-        const displayTime = times.length > 0 ? times.join(', ') : (schedules[0]?.start_time || '20h00');
+        const displayTime = times.length > 0 ? times.join(', ') : (schedules[0]?.start_time || '—');
         return (
           <span className="font-mono text-slate-700 text-xs whitespace-nowrap">
             {displayTime}
@@ -1175,7 +1303,7 @@ export const StudentsPage: React.FC = () => {
         const ec = item.enrollments?.[0]?.enrollment_classes?.[0];
         const schedules = ec?.class?.class_schedules || [];
         const patterns = schedules.map((s) => s.schedule_pattern).filter(Boolean);
-        const displayPattern = patterns.length > 0 ? patterns.join(', ') : '246';
+        const displayPattern = patterns.length > 0 ? patterns.join(', ') : '—';
         return (
           <span className="font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded text-xs whitespace-nowrap">
             {displayPattern}
@@ -1193,28 +1321,10 @@ export const StudentsPage: React.FC = () => {
           .map((s) => (s.duration_minutes ? `${s.duration_minutes}p` : null))
           .filter(Boolean);
         const displayDuration =
-          durations.length > 0 ? Array.from(new Set(durations)).join(', ') : '30p';
+          durations.length > 0 ? Array.from(new Set(durations)).join(', ') : '—';
         return (
           <span className="text-slate-600 text-xs whitespace-nowrap">
             {displayDuration}
-          </span>
-        );
-      },
-    },
-    {
-      key: 'recurring',
-      header: 'Vòng lặp',
-      cell: () => <span className="text-slate-500 text-xs whitespace-nowrap">Hàng tuần</span>,
-    },
-    {
-      key: 'ngay_hoc',
-      header: 'Ngày học',
-      cell: (item) => {
-        const ec = item.enrollments?.[0]?.enrollment_classes?.[0];
-        const sched = ec?.class?.class_schedules?.[0];
-        return (
-          <span className="text-slate-600 text-xs whitespace-nowrap">
-            {sched?.schedule_pattern ? `Thứ ${sched.schedule_pattern}` : '—'}
           </span>
         );
       },
@@ -1281,7 +1391,7 @@ export const StudentsPage: React.FC = () => {
         const currentYear = new Date().getFullYear();
         const attendedInPastYears =
           ec?.attendance?.filter((a: any) => {
-            if (a.status !== 'ATTENDED') return false;
+            if (!isAttendedCountable(a)) return false;
             const sessionDate = a.class_session?.session_date
               ? new Date(a.class_session.session_date)
               : null;
@@ -1300,7 +1410,7 @@ export const StudentsPage: React.FC = () => {
         // Đã học năm trước = max(0, Tổng buổi - Còn lại ban đầu - Đã học năm nay)
         const attendedThisYear =
           ec?.attendance?.filter((a: any) => {
-            if (a.status !== 'ATTENDED') return false;
+            if (!isAttendedCountable(a)) return false;
             const sessionDate = a.class_session?.session_date
               ? new Date(a.class_session.session_date)
               : null;
@@ -1339,7 +1449,7 @@ export const StudentsPage: React.FC = () => {
         const currentYear = new Date().getFullYear();
         const attendedCount =
           ec?.attendance?.filter((a: any) => {
-            if (a.status !== 'ATTENDED') return false;
+            if (!isAttendedCountable(a)) return false;
             const sessionDate = a.class_session?.session_date
               ? new Date(a.class_session.session_date)
               : null;
@@ -1727,118 +1837,11 @@ export const StudentsPage: React.FC = () => {
         }
       />
 
-      {/* Program Switcher & CVHT Quick Filter Bar */}
-      <div className="mb-4 p-3 bg-surface rounded-2xl border border-border/80 shadow-soft flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs font-extrabold text-text-secondary uppercase tracking-wider mr-1">
-            Chế độ Khóa học:
-          </span>
-          <div className="inline-flex flex-wrap items-center p-1 bg-surface-muted/80 rounded-xl border border-border/80 gap-1 shadow-xs">
-            <button
-              type="button"
-              onClick={() => setProgramFilter('ALL')}
-              className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer flex items-center gap-1.5 ${
-                programFilter === 'ALL'
-                  ? 'border-border/70 bg-surface text-primary shadow-sm'
-                  : 'border-transparent text-text-secondary hover:bg-surface/70 hover:text-text-primary'
-              }`}
-            >
-              <span>Tất cả khóa học</span>
-              <span
-                className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold leading-none ${
-                  programFilter === 'ALL'
-                    ? 'bg-primary-soft text-primary'
-                    : 'bg-surface text-text-muted'
-                }`}
-              >
-                {programCounts.all}
-              </span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setProgramFilter('KAIWA')}
-              className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer flex items-center gap-1.5 ${
-                programFilter === 'KAIWA'
-                  ? 'border-border/70 bg-surface text-primary shadow-sm'
-                  : 'border-transparent text-text-secondary hover:bg-surface/70 hover:text-text-primary'
-              }`}
-            >
-              <span>Giao tiếp (Kaiwa)</span>
-              <span
-                className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold leading-none ${
-                  programFilter === 'KAIWA'
-                    ? 'bg-primary-soft text-primary'
-                    : 'bg-surface text-text-muted'
-                }`}
-              >
-                {programCounts.kaiwa}
-              </span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setProgramFilter('JLPT')}
-              className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer flex items-center gap-1.5 ${
-                programFilter === 'JLPT'
-                  ? 'border-border/70 bg-surface text-primary shadow-sm'
-                  : 'border-transparent text-text-secondary hover:bg-surface/70 hover:text-text-primary'
-              }`}
-            >
-              <span>Luyện thi (JLPT)</span>
-              <span
-                className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold leading-none ${
-                  programFilter === 'JLPT'
-                    ? 'bg-primary-soft text-primary'
-                    : 'bg-surface text-text-muted'
-                }`}
-              >
-                {programCounts.jlpt}
-              </span>
-            </button>
-          </div>
-        </div>
-
-        {/* CVHT Quick Filter */}
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs font-bold text-slate-600 whitespace-nowrap">
-            CVHT phụ trách:
-          </span>
-          <div className="inline-flex flex-wrap items-center gap-1">
-            <button
-              type="button"
-              onClick={() => setCvhtFilter('')}
-              className={`px-2.5 py-1 rounded-lg text-xs font-bold border transition cursor-pointer ${
-                cvhtFilter === ''
-                  ? 'bg-blue-600 text-white border-blue-600 shadow-2xs'
-                  : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
-              }`}
-            >
-              Tất cả CVHT
-            </button>
-            {cvhtList.map((code) => (
-              <button
-                key={code}
-                type="button"
-                onClick={() => setCvhtFilter(code === cvhtFilter ? '' : code)}
-                className={`px-2.5 py-1 rounded-lg text-xs font-mono font-bold border transition cursor-pointer ${
-                  cvhtFilter === code
-                    ? 'bg-blue-600 text-white border-blue-600 shadow-2xs'
-                    : 'bg-blue-50/60 text-blue-800 border-blue-200 hover:bg-blue-100'
-                }`}
-              >
-                {code}
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
-
       <HorizontalTabs
         ariaLabel="Nội dung danh sách học viên"
         value={activeTab}
         onChange={setActiveTab}
-        className="mb-5"
+        className="mb-4"
         items={[
           {
             value: 'students',
@@ -1854,78 +1857,133 @@ export const StudentsPage: React.FC = () => {
         ]}
       />
 
-      {/* Filter and Tool Bar (Synced across both Tabs) */}
-      <div className="mb-5 p-4 bg-surface rounded-2xl border border-border/80 shadow-soft flex flex-wrap items-center justify-between gap-4">
-        {/* Left: Filters */}
-        <div className="flex flex-wrap items-center gap-3">
-          {/* Role Status or Sale Filter */}
-          {isCS ? (
-            <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-50 text-blue-900 border border-blue-200/80 rounded-xl text-xs font-bold">
-              <UserCheck className="w-4 h-4 text-blue-600" />
-              <span>Học viên của Sale: {user?.name || user?.email}</span>
-            </div>
-          ) : (
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-text-secondary whitespace-nowrap">
-                Lọc theo Sale:
-              </span>
-              <select
-                value={saleFilter}
-                onChange={(e) => setSaleFilter(e.target.value)}
-                className="text-xs font-medium px-3 py-1.5 bg-surface-muted border border-border/80 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 text-text-primary min-w-[170px]"
-              >
-                <option value="">-- Tất cả nhân viên Sale --</option>
-                {salesList.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-
-          {/* Status Filter */}
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="text-xs font-medium px-3 py-1.5 bg-surface-muted border border-border/80 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 text-text-primary min-w-[150px]"
-          >
-            <option value="">-- Tất cả trạng thái --</option>
-            <option value="WAITING_CLASS">Chờ lớp</option>
-            <option value="STUDYING">Đang học</option>
-            <option value="PAUSED">Bảo lưu</option>
-            <option value="FINISHED">Kết thúc</option>
-            <option value="UPCOMING">Sắp học</option>
-            <option value="NOT_STARTED">Chưa học</option>
-          </select>
-
-          {/* Gender Filter */}
-          <select
-            value={genderFilter}
-            onChange={(e) => setGenderFilter(e.target.value)}
-            className="text-xs font-medium px-3 py-1.5 bg-surface-muted border border-border/80 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 text-text-primary min-w-[130px]"
-          >
-            <option value="">-- Giới tính --</option>
-            <option value="MALE">Nam</option>
-            <option value="FEMALE">Nữ</option>
-          </select>
-
-          <div className="text-xs text-text-muted flex items-center gap-1">
-            <span>Hiển thị:</span>
-            <strong className="text-text-primary font-bold">{filteredStudents.length}</strong>
-            <span>/ {students.length} học viên</span>
+      {/* Unified FilterBar */}
+      <FilterBar
+        title="Tìm kiếm & Lọc học viên"
+        activeCount={activeFiltersCount}
+        onClear={handleResetFilters}
+        gridClassName={`grid grid-cols-1 sm:grid-cols-2 ${
+          isAdminOrManage ? 'lg:grid-cols-3 xl:grid-cols-6' : 'lg:grid-cols-3 xl:grid-cols-5'
+        } gap-3.5 items-end`}
+      >
+        {/* 1. Tìm kiếm */}
+        <div>
+          <label className="block text-[11px] font-semibold text-text-secondary uppercase tracking-wider mb-1.5">
+            Tìm kiếm
+          </label>
+          <div className="relative">
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Mã HV, Họ tên, SĐT, Email, Lớp học..."
+              className="w-full h-9 pl-9 pr-3 border border-border rounded-xl text-sm bg-white text-text-primary focus:outline-none focus:ring-2 focus:ring-primary shadow-xs transition"
+            />
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
           </div>
         </div>
 
-        {/* Right: Search */}
-        <div className="w-full sm:w-72">
-          <Input
-            placeholder="Tìm theo tên HV, SĐT, mã ID..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            leftIcon={<Search className="w-4 h-4 text-text-muted" />}
-          />
+        {/* 2. Chương trình */}
+        <div>
+          <label className="block text-[11px] font-semibold text-text-secondary uppercase tracking-wider mb-1.5">
+            Chương trình
+          </label>
+          <select
+            value={programFilter}
+            onChange={(e) => setProgramFilter(e.target.value as 'ALL' | 'KAIWA' | 'JLPT')}
+            className="w-full h-9 px-3 border border-border rounded-xl text-sm bg-white text-text-primary focus:outline-none focus:ring-2 focus:ring-primary shadow-xs transition cursor-pointer"
+          >
+            <option value="ALL">Tất cả chương trình ({programCounts.all})</option>
+            <option value="KAIWA">Giao tiếp (Kaiwa) ({programCounts.kaiwa})</option>
+            <option value="JLPT">Luyện thi (JLPT) ({programCounts.jlpt})</option>
+          </select>
         </div>
+
+        {/* 3. Trạng thái học */}
+        <div>
+          <label className="block text-[11px] font-semibold text-text-secondary uppercase tracking-wider mb-1.5">
+            Trạng thái học
+          </label>
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="w-full h-9 px-3 border border-border rounded-xl text-sm bg-white text-text-primary focus:outline-none focus:ring-2 focus:ring-primary shadow-xs transition cursor-pointer"
+          >
+            <option value="">Tất cả trạng thái</option>
+            <option value="STUDYING">Đang học</option>
+            <option value="PAUSED">Bảo lưu</option>
+            <option value="WAITING_CLASS">Chờ lớp</option>
+            <option value="FINISHED">Kết thúc</option>
+          </select>
+        </div>
+
+        {/* 4. Mô hình lớp */}
+        <div>
+          <label className="block text-[11px] font-semibold text-text-secondary uppercase tracking-wider mb-1.5">
+            Mô hình lớp
+          </label>
+          <select
+            value={modelFilter}
+            onChange={(e) => setModelFilter(e.target.value)}
+            className="w-full h-9 px-3 border border-border rounded-xl text-sm bg-white text-text-primary focus:outline-none focus:ring-2 focus:ring-primary shadow-xs transition cursor-pointer"
+          >
+            <option value="">Tất cả mô hình</option>
+            <option value="1:1">1:1</option>
+            <option value="1:2">1:2</option>
+            <option value="1:n">1:n</option>
+          </select>
+        </div>
+
+        {/* 5. Tình trạng học phí */}
+        <div>
+          <label className="block text-[11px] font-semibold text-text-secondary uppercase tracking-wider mb-1.5">
+            Tình trạng học phí
+          </label>
+          <select
+            value={paymentFilter}
+            onChange={(e) => setPaymentFilter(e.target.value)}
+            className="w-full h-9 px-3 border border-border rounded-xl text-sm bg-white text-text-primary focus:outline-none focus:ring-2 focus:ring-primary shadow-xs transition cursor-pointer"
+          >
+            <option value="">Tất cả học phí</option>
+            <option value="PAID">Đã đóng đủ</option>
+            <option value="DEBT">Còn nợ phí</option>
+            <option value="UNSET">Chưa cập nhật</option>
+          </select>
+        </div>
+
+        {/* 6. CSKH phụ trách (CHỈ hiển thị khi ADMIN / MANAGE, ẩn hoàn toàn khi CS) */}
+        {isAdminOrManage && (
+          <div>
+            <label className="block text-[11px] font-semibold text-text-secondary uppercase tracking-wider mb-1.5">
+              CSKH phụ trách
+            </label>
+            <select
+              value={csFilter}
+              onChange={(e) => setCsFilter(e.target.value)}
+              className="w-full h-9 px-3 border border-border rounded-xl text-sm bg-white text-text-primary focus:outline-none focus:ring-2 focus:ring-primary shadow-xs transition cursor-pointer"
+            >
+              <option value="">Tất cả CSKH phụ trách</option>
+              <option value="UNASSIGNED">Chưa phân công CSKH</option>
+              {csOptions.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+      </FilterBar>
+
+      {/* Thanh trạng thái hiển thị & tùy chọn cột */}
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div className="text-xs font-semibold text-text-secondary inline-flex items-center gap-1.5 rounded-lg border border-border/80 bg-surface px-2.5 py-1.5 shadow-2xs">
+          <span>Hiển thị:</span>
+          <strong className="text-primary font-extrabold">{filteredStudents.length}</strong>
+          <span className="text-text-muted">/ {allRows.length} học viên</span>
+        </div>
+        <ColumnVisibilityDropdown
+          scope={activeTab === 'students' ? 'students.tab1' : 'students.tab2'}
+        />
       </div>
 
       {/* Main Table View */}
