@@ -23,7 +23,16 @@ import { ClassModelType } from '@prisma/client';
 export function classifyClassModel(rawModel: string | null | undefined): ClassModelType {
   const m = (rawModel || '').toLowerCase();
   if (m.includes('1-2') || m.includes('1:2')) return ClassModelType.ONE_TO_TWO;
-  if (m.includes('1-n') || m.includes('1:n') || m.includes('nhóm') || m.includes('nhom')) return ClassModelType.ONE_TO_N;
+  if (
+    m.includes('1-n') ||
+    m.includes('1:n') ||
+    m.includes('1-10') ||
+    m.includes('1:10') ||
+    m.includes('nhóm') ||
+    m.includes('nhom')
+  ) {
+    return ClassModelType.ONE_TO_N;
+  }
   return ClassModelType.ONE_TO_ONE;
 }
 
@@ -38,7 +47,16 @@ export function classModelFallbackUsed(rawModel: string | null | undefined): boo
   const m = (rawModel || '').toLowerCase().trim();
   if (!m) return true;
   if (m.includes('1-2') || m.includes('1:2')) return false;
-  if (m.includes('1-n') || m.includes('1:n') || m.includes('nhóm') || m.includes('nhom')) return false;
+  if (
+    m.includes('1-n') ||
+    m.includes('1:n') ||
+    m.includes('1-10') ||
+    m.includes('1:10') ||
+    m.includes('nhóm') ||
+    m.includes('nhom')
+  ) {
+    return false;
+  }
   // An explicit 1-1 spelling is a supported answer, not a fallback.
   if (m.includes('1-1') || m.includes('1:1')) return false;
   return true;

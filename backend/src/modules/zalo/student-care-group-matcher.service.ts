@@ -142,12 +142,47 @@ export async function refreshLiveZaloGroupsForAccount(accountId: number): Promis
               : undefined;
       const ownerUid: string | undefined = info?.adminId || info?.creatorId || undefined;
 
-      await zaloRepository.upsertGroup(groupId, accountId, {
+      const upsertedGroup = await zaloRepository.upsertGroup(groupId, accountId, {
         name,
         avatar_url: avatarUrl,
         member_count: memberCount,
         owner_zalo_uid: ownerUid,
       });
+
+      if (info && upsertedGroup?.id) {
+        try {
+          const memberMap = new Map<string, { display_name?: string; avatar_url?: string }>();
+          if (Array.isArray(info.currentMems)) {
+            for (const m of info.currentMems) {
+              const uid = String(m?.id ?? m?.uid ?? '').split('_')[0].trim();
+              if (!uid) continue;
+              memberMap.set(uid, {
+                display_name: m?.dName || m?.zaloName || m?.displayName || undefined,
+                avatar_url: m?.avatar || m?.avt || undefined,
+              });
+            }
+          }
+          const rawIds = [
+            ...(Array.isArray(info.memVerList) ? info.memVerList : []),
+            ...(Array.isArray(info.memberIds) ? info.memberIds : []),
+          ];
+          for (const rawUid of rawIds) {
+            const uid = String(rawUid ?? '').split('_')[0].trim();
+            if (!uid || memberMap.has(uid)) continue;
+            memberMap.set(uid, {});
+          }
+          const entries = Array.from(memberMap.entries()).slice(0, 200);
+          for (const [uid, meta] of entries) {
+            try {
+              await zaloRepository.upsertGroupMember(upsertedGroup.id, uid, meta);
+            } catch {
+              // ignore individual member upsert failure
+            }
+          }
+        } catch {
+          // ignore member extraction errors
+        }
+      }
       synced++;
     } catch (err) {
       log.warn('Failed to upsert Zalo group during live refresh', {
@@ -432,7 +467,6 @@ export async function syncAndMatchCareGroups(
         enrollments: {
           ...(options?.csId ? { where: { cs_id: options.csId } } : {}),
           orderBy: { created_at: 'desc' },
-          take: 1,
           include: {
             cs: {
               select: { id: true, code: true, name: true, email: true },
@@ -585,12 +619,25 @@ export async function syncAndMatchCareGroups(
   const unlinkedItems: UnlinkedStudentCareGroupItem[] = [];
 
   for (const student of students) {
-    const latestEnrollment = student.enrollments?.[0] ?? null;
+    const allEnrollments = student.enrollments ?? [];
+    const latestEnrollment = allEnrollments[0] ?? null;
     const cs = latestEnrollment?.cs ?? null;
-    const csId = cs?.id ?? null;
-    const csName = cs?.name ?? null;
-    const csCode = normalizeCsCodeToStandard(cs?.code, csId);
+    let csId = cs?.id ?? null;
+    let csName = cs?.name ?? null;
+    let csCode = normalizeCsCodeToStandard(cs?.code, csId);
     const extId = student.external_id?.trim() || null;
+
+    const candidateEnrollments =
+      allEnrollments.length > 0
+        ? allEnrollments.map((enr) => {
+            const enrCsId = enr.cs?.id ?? null;
+            return {
+              csId: enrCsId,
+              csName: enr.cs?.name ?? null,
+              csCode: normalizeCsCodeToStandard(enr.cs?.code, enrCsId),
+            };
+          })
+        : [{ csId, csName, csCode }];
 
     let zaloLinked = false;
     let zaloGroupName: string | null = null;
@@ -665,24 +712,34 @@ export async function syncAndMatchCareGroups(
     if (extId) {
       const extUpper = extId.toUpperCase();
 
-      // ── Match ZaloGroup ──
+      // ── Match ZaloGroup across all enrollments ──
       let matchedZaloGroup: IndexedZaloGroup | null = null;
-      if (csCode) {
-        const exactKey = `${csCode.toUpperCase()}::${extUpper}`;
-        matchedZaloGroup = pickBestGroup(zaloByCodeAndExt.get(exactKey) ?? [], csId);
-      }
-      if (!matchedZaloGroup && csId != null) {
-        // Fallback: ZaloGroup on an account owned by csId whose parsed studentExternalId or group name token matches
-        const parsedCandidates = (zaloByExtOnly.get(extUpper) ?? []).filter(
-          (g) => g.zalo_account?.cs_id === csId,
-        );
-        if (parsedCandidates.length > 0) {
-          matchedZaloGroup = pickBestGroup(parsedCandidates, csId);
-        } else {
-          const tokenCandidates = allIndexedZaloGroups.filter(
-            (g) => g.zalo_account?.cs_id === csId && groupNameContainsExternalIdToken(g.name, extId),
+      for (const cand of candidateEnrollments) {
+        if (cand.csCode) {
+          const exactKey = `${cand.csCode.toUpperCase()}::${extUpper}`;
+          matchedZaloGroup = pickBestGroup(zaloByCodeAndExt.get(exactKey) ?? [], cand.csId);
+        }
+        if (!matchedZaloGroup && cand.csId != null) {
+          // Fallback: ZaloGroup on an account owned by csId whose parsed studentExternalId or group name token matches
+          const parsedCandidates = (zaloByExtOnly.get(extUpper) ?? []).filter(
+            (g) => g.zalo_account?.cs_id === cand.csId,
           );
-          matchedZaloGroup = pickBestGroup(tokenCandidates, csId);
+          if (parsedCandidates.length > 0) {
+            matchedZaloGroup = pickBestGroup(parsedCandidates, cand.csId);
+          } else {
+            const tokenCandidates = allIndexedZaloGroups.filter(
+              (g) => g.zalo_account?.cs_id === cand.csId && groupNameContainsExternalIdToken(g.name, extId),
+            );
+            matchedZaloGroup = pickBestGroup(tokenCandidates, cand.csId);
+          }
+        }
+        if (matchedZaloGroup) {
+          if (cand.csId != null) {
+            csId = cand.csId;
+            csName = cand.csName;
+            csCode = cand.csCode;
+          }
+          break;
         }
       }
 
@@ -736,23 +793,33 @@ export async function syncAndMatchCareGroups(
         zaloAccountId = matchedZaloGroup.zalo_account_id;
       }
 
-      // ── Match LineGroup ──
+      // ── Match LineGroup across all enrollments ──
       let matchedLineGroup: IndexedLineGroup | null = null;
-      if (csCode) {
-        const exactKey = `${csCode.toUpperCase()}::${extUpper}`;
-        matchedLineGroup = pickBestGroup(lineByCodeAndExt.get(exactKey) ?? [], csId);
-      }
-      if (!matchedLineGroup && csId != null) {
-        const parsedCandidates = (lineByExtOnly.get(extUpper) ?? []).filter(
-          (g) => g.line_account?.cs_id === csId,
-        );
-        if (parsedCandidates.length > 0) {
-          matchedLineGroup = pickBestGroup(parsedCandidates, csId);
-        } else {
-          const tokenCandidates = allIndexedLineGroups.filter(
-            (g) => g.line_account?.cs_id === csId && groupNameContainsExternalIdToken(g.name, extId),
+      for (const cand of candidateEnrollments) {
+        if (cand.csCode) {
+          const exactKey = `${cand.csCode.toUpperCase()}::${extUpper}`;
+          matchedLineGroup = pickBestGroup(lineByCodeAndExt.get(exactKey) ?? [], cand.csId);
+        }
+        if (!matchedLineGroup && cand.csId != null) {
+          const parsedCandidates = (lineByExtOnly.get(extUpper) ?? []).filter(
+            (g) => g.line_account?.cs_id === cand.csId,
           );
-          matchedLineGroup = pickBestGroup(tokenCandidates, csId);
+          if (parsedCandidates.length > 0) {
+            matchedLineGroup = pickBestGroup(parsedCandidates, cand.csId);
+          } else {
+            const tokenCandidates = allIndexedLineGroups.filter(
+              (g) => g.line_account?.cs_id === cand.csId && groupNameContainsExternalIdToken(g.name, extId),
+            );
+            matchedLineGroup = pickBestGroup(tokenCandidates, cand.csId);
+          }
+        }
+        if (matchedLineGroup) {
+          if (!matchedZaloGroup && cand.csId != null) {
+            csId = cand.csId;
+            csName = cand.csName;
+            csCode = cand.csCode;
+          }
+          break;
         }
       }
 
@@ -828,7 +895,7 @@ export async function syncAndMatchCareGroups(
       });
     } else {
       const expectedGroupPrefix = formatExpectedCareGroupPrefix(csCode ?? csId, extId);
-      const suggestedGroupName = `${expectedGroupPrefix} - ${student.full_name}`;
+      const suggestedGroupName = `${expectedGroupPrefix} ${student.full_name}`.trim();
 
       let reason: string;
       if (!extId) {

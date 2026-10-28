@@ -35,15 +35,186 @@ export interface Class {
   updated_at: string;
 }
 
+export const cleanClassIdentifier = (raw?: string | null): string => {
+  if (!raw) return '';
+  const lines = String(raw)
+    .split(/\r?\n/)
+    .map((l) => l.replace(/\t+/g, ' ').trim())
+    .filter(Boolean);
+  if (lines.length === 0) return '';
+  if (lines.length === 1) return lines[0];
+  const classLike = lines.filter(
+    (l) => !/^[+(]/.test(l) && !l.toLowerCase().includes('tặng khóa')
+  );
+  return (classLike.length > 0 ? classLike[classLike.length - 1] : lines[0]).trim();
+};
+
 export const formatClassCode = (code?: string | null, id?: number): string => {
-  const trimmed = code ? code.trim() : '';
-  if (trimmed && !/^(CLS_|id\d+$)/i.test(trimmed)) {
-    return trimmed;
+  const cleaned = cleanClassIdentifier(code);
+  if (cleaned && !/^(CLS_|id\d+$)/i.test(cleaned)) {
+    return cleaned;
   }
   if (id && id > 0) {
     return `class_${String(id).padStart(4, '0')}`;
   }
-  return trimmed || '—';
+  return cleaned || '—';
+};
+
+export const normalizeClassModel = (
+  model?: string | null,
+  studentCount?: number
+): '1:1' | '1:2' | '1:n' => {
+  const raw = (model || '').trim();
+  const lower = raw.toLowerCase();
+  if (
+    lower === 'one_to_two' ||
+    lower.includes('1:2') ||
+    lower.includes('1-2')
+  ) {
+    return '1:2';
+  }
+  if (
+    lower === 'one_to_n' ||
+    lower === 'group' ||
+    lower.includes('1:n') ||
+    lower.includes('1-n') ||
+    lower.includes('1-10') ||
+    lower.includes('1:10') ||
+    lower.includes('nhóm') ||
+    lower.includes('nhom')
+  ) {
+    return '1:n';
+  }
+  if (typeof studentCount === 'number') {
+    if (studentCount > 2) return '1:n';
+    if (studentCount === 2) return '1:2';
+  }
+  return '1:1';
+};
+
+export const CLASS_MODEL_BADGE_STYLES: Record<
+  '1:1' | '1:2' | '1:n',
+  { label: string; className: string }
+> = {
+  '1:1': {
+    label: '1:1',
+    className: 'bg-blue-50 text-blue-700 border-blue-200 font-bold',
+  },
+  '1:2': {
+    label: '1:2',
+    className: 'bg-teal-50 text-teal-700 border-teal-200 font-bold',
+  },
+  '1:n': {
+    label: '1:n',
+    className: 'bg-purple-50 text-purple-700 border-purple-200 font-bold',
+  },
+};
+
+export const ENROLLMENT_STATUS_BADGE_MAP: Record<
+  string,
+  { label: string; variant: 'success' | 'warning' | 'danger' | 'info' | 'neutral' }
+> = {
+  STUDYING: { label: 'Đang học', variant: 'success' },
+  PAUSED: { label: 'Bảo lưu', variant: 'warning' },
+  WAITING_CLASS: { label: 'Chờ lớp', variant: 'warning' },
+  FINISHED: { label: 'Kết thúc', variant: 'neutral' },
+  UPCOMING: { label: 'Sắp học', variant: 'info' },
+  NOT_STARTED: { label: 'Chưa học', variant: 'neutral' },
+  CANCELLED: { label: 'Đã hủy', variant: 'danger' },
+};
+
+/**
+ * Chuẩn hóa trạng thái học viên dựa trên việc đã xếp vào lớp thực tế hay chưa:
+ * - Nếu học viên ĐÃ có lớp (hasAssignedClass = true) mà trạng thái gốc đang là WAITING_CLASS / NOT_STARTED -> Đang học (STUDYING)
+ * - Nếu học viên CHƯA có lớp (hasAssignedClass = false) mà trạng thái gốc là STUDYING (và không phải khóa Video) -> Chờ lớp (WAITING_CLASS)
+ */
+export const resolveEffectiveEnrollmentStatus = (
+  rawStatus?: string | null,
+  hasAssignedClass?: boolean,
+  classModelOrLevel?: string | null
+): string => {
+  const st = (rawStatus || '').trim().toUpperCase();
+  if (st === 'FINISHED' || st === 'PAUSED' || st === 'CANCELLED' || st === 'UPCOMING') {
+    return st;
+  }
+  const isVideo = (classModelOrLevel || '').toLowerCase().includes('video');
+  if (hasAssignedClass) {
+    return 'STUDYING';
+  }
+  if (hasAssignedClass === false && !isVideo) {
+    return 'WAITING_CLASS';
+  }
+  return st || 'STUDYING';
+};
+
+/**
+ * Chuẩn hóa trạng thái hiển thị của Lớp học đồng bộ với bộ từ vựng Trạng thái học viên
+ * (Đang học | Bảo lưu | Chờ lớp | Kết thúc)
+ */
+export const resolveClassDisplayStatus = (
+  cls: { active?: boolean },
+  students: Array<{ status?: string | null }>
+): { statusKey: string; label: string; variant: 'success' | 'warning' | 'danger' | 'info' | 'neutral' } => {
+  if (cls.active === false) {
+    return { statusKey: 'FINISHED', ...ENROLLMENT_STATUS_BADGE_MAP.FINISHED };
+  }
+  if (!students || students.length === 0) {
+    return { statusKey: 'WAITING_CLASS', ...ENROLLMENT_STATUS_BADGE_MAP.WAITING_CLASS };
+  }
+  const statuses = students.map((s) => (s.status || '').toUpperCase());
+  if (statuses.some((s) => s === 'STUDYING' || s === 'UPCOMING')) {
+    return { statusKey: 'STUDYING', ...ENROLLMENT_STATUS_BADGE_MAP.STUDYING };
+  }
+  if (statuses.some((s) => s === 'PAUSED')) {
+    return { statusKey: 'PAUSED', ...ENROLLMENT_STATUS_BADGE_MAP.PAUSED };
+  }
+  if (statuses.every((s) => s === 'FINISHED' || s === 'CANCELLED')) {
+    return { statusKey: 'FINISHED', ...ENROLLMENT_STATUS_BADGE_MAP.FINISHED };
+  }
+  return { statusKey: 'STUDYING', ...ENROLLMENT_STATUS_BADGE_MAP.STUDYING };
+};
+
+export const cleanNoteText = (raw?: string | null): string => {
+  if (!raw) return '';
+  return String(raw).replace(/^"+|"+$/g, '').trim();
+};
+
+export const formatCourseContentDisplay = (
+  courseContent?: string | null,
+  programType?: string | null,
+  packageName?: string | null,
+  level?: string | null
+): string => {
+  const raw = cleanNoteText(courseContent);
+  if (!raw || raw === '-' || raw === '—') {
+    return packageName && packageName !== '—' ? packageName : level && level !== '—' ? level : '—';
+  }
+  // Nếu course_content là con số học phí thuần túy (VD: "6500000" ở sheet JLPT)
+  if (/^\d+(?:\.\d+)?$/.test(raw)) {
+    const num = Number(raw);
+    if (!Number.isNaN(num) && num >= 10000) {
+      const formattedFee = `${num.toLocaleString('vi-VN')}đ`;
+      const prefix =
+        level && level !== '—'
+          ? level
+          : packageName && packageName !== '—'
+          ? packageName
+          : programType || '';
+      return prefix ? `${prefix} · ${formattedFee}` : formattedFee;
+    }
+  }
+  return raw;
+};
+
+export const formatScheduleTimeDisplay = (rawTime?: string | null): string => {
+  if (!rawTime) return '';
+  const str = String(rawTime).trim();
+  if (!str || str === '-' || str === '—') return '';
+  const m = str.match(/^(\d{1,2})\s*[hH:]\s*(\d{2})?$/);
+  if (m) {
+    return `${m[1].padStart(2, '0')}:${(m[2] || '00').padStart(2, '0')}`;
+  }
+  return str;
 };
 
 export interface CreateClassDTO {

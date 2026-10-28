@@ -5,6 +5,16 @@ import { careApi } from '../../care/api/care.api';
 import { Student, CreateStudentDTO } from '../types/students.types';
 import { teachersApi } from '../../teachers/api/teachers.api';
 import { Teacher } from '../../teachers/types/teachers.types';
+import {
+  cleanClassIdentifier,
+  cleanNoteText,
+  formatClassCode,
+  normalizeClassModel,
+  CLASS_MODEL_BADGE_STYLES,
+  resolveEffectiveEnrollmentStatus,
+  formatCourseContentDisplay,
+  formatScheduleTimeDisplay,
+} from '../../classes/types/classes.types';
 import { CareSelectCell } from '../components/CareSelectCell';
 import { PageContainer } from '../../../components/common/PageContainer';
 import { PageHeader } from '../../../components/common/PageHeader';
@@ -333,22 +343,8 @@ export const StudentsPage: React.FC = () => {
   }, []);
 
   // Chuẩn hóa mô hình lớp về 1:1 | 1:2 | 1:n
-  const normalizeModel = (model?: string | null): '1:1' | '1:2' | '1:n' => {
-    const raw = (model || '').trim();
-    const upper = raw.toUpperCase();
-    if (upper === 'ONE_TO_TWO' || raw === '1:2' || raw === '1-2') return '1:2';
-    if (
-      upper === 'ONE_TO_N' ||
-      upper === 'GROUP' ||
-      raw === '1:n' ||
-      upper === '1-N' ||
-      upper.includes('NHÓM') ||
-      upper.includes('NHOM')
-    ) {
-      return '1:n';
-    }
-    return '1:1';
-  };
+  const normalizeModel = (model?: string | null): '1:1' | '1:2' | '1:n' =>
+    normalizeClassModel(model);
 
   // Chuẩn hóa tình trạng học phí về PAID | DEBT | UNSET
   const classifyPaymentStatus = (raw?: string | null): 'PAID' | 'DEBT' | 'UNSET' => {
@@ -494,9 +490,19 @@ export const StudentsPage: React.FC = () => {
         if (pType !== programFilter) return false;
       }
 
-      // 3. Trạng thái học
+      // 3. Trạng thái học (chuẩn hóa theo việc đã được xếp lớp hay chưa)
       if (statusFilter) {
-        const stStatus = enr?.status || 'STUDYING';
+        const hasAssignedClass = Boolean(
+          ec?.class?.id ||
+            ec?.class?.class_code ||
+            ec?.class?.class_name ||
+            enr?.program_metadata?.latest_class_code
+        );
+        const stStatus = resolveEffectiveEnrollmentStatus(
+          enr?.status,
+          hasAssignedClass,
+          `${enr?.class_model || ''} ${enr?.level || ''}`
+        );
         if (stStatus !== statusFilter) return false;
       }
 
@@ -997,10 +1003,19 @@ export const StudentsPage: React.FC = () => {
         const enr = item.enrollments?.[0];
         const val = isJlptMode
           ? enr?.program_metadata?.tuition_fee || enr?.course_content || '—'
-          : enr?.course_content || enr?.package?.name || '—';
+          : formatCourseContentDisplay(
+              enr?.course_content,
+              enr?.program_type,
+              enr?.package?.name || enr?.package?.code,
+              enr?.level
+            );
+        const displayVal =
+          isJlptMode && /^\d+(?:\.\d+)?$/.test(String(val).trim())
+            ? `${Number(val).toLocaleString('vi-VN')}đ`
+            : String(val);
         return (
           <span className="text-slate-700 text-xs whitespace-nowrap max-w-[180px] truncate block">
-            {String(val)}
+            {displayVal}
           </span>
         );
       },
@@ -1096,12 +1111,17 @@ export const StudentsPage: React.FC = () => {
     },
     {
       key: 'class_model',
-      header: isJlptMode ? 'Mã gói (1-n / 1-1)' : 'Mô hình lớp',
+      header: 'Mô hình',
       cell: (item) => {
         const enr = item.enrollments?.[0];
+        const ec = enr?.enrollment_classes?.[0];
+        const mNorm = normalizeClassModel(enr?.class_model || ec?.class?.model_type);
+        const mStyle = CLASS_MODEL_BADGE_STYLES[mNorm];
         return (
-          <span className="text-slate-600 text-xs whitespace-nowrap">
-            {enr?.class_model || '—'}
+          <span
+            className={`inline-flex items-center px-2 py-0.5 rounded-md text-xs border whitespace-nowrap ${mStyle.className}`}
+          >
+            {mStyle.label}
           </span>
         );
       },
@@ -1112,15 +1132,18 @@ export const StudentsPage: React.FC = () => {
       cell: (item) => {
         const enr = item.enrollments?.[0];
         const ec = enr?.enrollment_classes?.[0];
-        const code =
+        const rawCode =
           ec?.class?.class_code ||
           enr?.program_metadata?.latest_class_code ||
           ec?.class?.class_name ||
-          '—';
-        return (
+          '';
+        const code = rawCode ? formatClassCode(rawCode, ec?.class?.id) : '—';
+        return code !== '—' ? (
           <span className="font-mono font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded text-xs whitespace-nowrap">
             {code}
           </span>
+        ) : (
+          <span className="text-slate-400 text-xs">—</span>
         );
       },
     },
@@ -1129,12 +1152,13 @@ export const StudentsPage: React.FC = () => {
       header: 'Ghi chú sale',
       cell: (item) => {
         const enr = item.enrollments?.[0];
+        const cleaned = cleanNoteText(enr?.sales_note);
         return (
           <span
             className="text-slate-500 text-xs italic max-w-[150px] truncate block"
-            title={enr?.sales_note || ''}
+            title={cleaned}
           >
-            {enr?.sales_note || '—'}
+            {cleaned || '—'}
           </span>
         );
       },
@@ -1257,7 +1281,18 @@ export const StudentsPage: React.FC = () => {
       header: 'Trạng thái',
       cell: (item) => {
         const enr = item.enrollments?.[0];
-        const status = enr?.status || 'STUDYING';
+        const ec = enr?.enrollment_classes?.[0];
+        const hasAssignedClass = Boolean(
+          ec?.class?.id ||
+            ec?.class?.class_code ||
+            ec?.class?.class_name ||
+            enr?.program_metadata?.latest_class_code
+        );
+        const status = resolveEffectiveEnrollmentStatus(
+          enr?.status,
+          hasAssignedClass,
+          `${enr?.class_model || ''} ${enr?.level || ''}`
+        );
         const conf = ENROLLMENT_STATUS_LABELS[status] || ENROLLMENT_STATUS_LABELS.STUDYING;
         return <Badge variant={conf.variant}>{conf.label}</Badge>;
       },
@@ -1287,8 +1322,10 @@ export const StudentsPage: React.FC = () => {
       cell: (item) => {
         const ec = item.enrollments?.[0]?.enrollment_classes?.[0];
         const schedules = ec?.class?.class_schedules || [];
-        const times = schedules.map((s) => s.start_time).filter(Boolean);
-        const displayTime = times.length > 0 ? times.join(', ') : (schedules[0]?.start_time || '—');
+        const times = schedules
+          .map((s) => formatScheduleTimeDisplay(s.start_time))
+          .filter(Boolean);
+        const displayTime = times.length > 0 ? times.join(', ') : '—';
         return (
           <span className="font-mono text-slate-700 text-xs whitespace-nowrap">
             {displayTime}
@@ -1361,12 +1398,13 @@ export const StudentsPage: React.FC = () => {
       header: 'Tên lớp',
       cell: (item) => {
         const ec = item.enrollments?.[0]?.enrollment_classes?.[0];
+        const cleaned = cleanClassIdentifier(ec?.class?.class_name) || ec?.class?.class_name || '—';
         return (
           <span
             className="font-semibold text-slate-800 text-xs whitespace-nowrap max-w-[150px] truncate block"
-            title={ec?.class?.class_name || ''}
+            title={cleaned}
           >
-            {ec?.class?.class_name || '—'}
+            {cleaned}
           </span>
         );
       },

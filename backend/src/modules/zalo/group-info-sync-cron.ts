@@ -77,7 +77,7 @@ export function stopGroupInfoSyncCron(): void {
 /** Single cycle: iterate connected accounts sequential voi stagger. */
 async function runCronCycle(): Promise<void> {
   const accounts = await prisma.zaloAccount.findMany({
-    where: { status: 'connected' as any },
+    where: { status: 'ACTIVE', archived_at: null },
     select: { id: true, display_name: true },
   });
 

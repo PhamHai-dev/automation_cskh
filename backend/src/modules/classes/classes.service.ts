@@ -45,15 +45,33 @@ export class ClassesService {
     return `class_${String(id).padStart(4, '0')}`;
   }
 
-  formatClass<T extends { id?: number; class_code?: string | null; model_type: any }>(cls: T): T {
+  formatClass<T extends { id?: number; class_code?: string | null; model_type: any; enrollment_classes?: any[] }>(cls: T): T {
     if (!cls) return cls;
     const rawCode = cls.class_code ? String(cls.class_code).trim() : '';
     const shouldCompact = !rawCode || /^(CLS_|id\d+$)/i.test(rawCode);
     const normalizedCode = shouldCompact && cls.id ? this.formatCompactClassCode(cls.id) : (rawCode || cls.class_code);
+    const normalizedEcs = Array.isArray(cls.enrollment_classes)
+      ? cls.enrollment_classes.map((ec: any) => {
+          if (
+            ec?.enrollment &&
+            (ec.enrollment.status === 'WAITING_CLASS' || ec.enrollment.status === 'NOT_STARTED')
+          ) {
+            return {
+              ...ec,
+              enrollment: {
+                ...ec.enrollment,
+                status: 'STUDYING',
+              },
+            };
+          }
+          return ec;
+        })
+      : cls.enrollment_classes;
     return {
       ...cls,
       class_code: normalizedCode,
       model_type: this.formatModelType(cls.model_type),
+      ...(normalizedEcs !== undefined ? { enrollment_classes: normalizedEcs } : {}),
     };
   }
 

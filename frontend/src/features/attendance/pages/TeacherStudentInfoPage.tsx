@@ -6,7 +6,6 @@ import {
   ExternalLink,
   Loader2,
   Lock,
-  Plus,
   Search,
   UserRoundCheck,
   RefreshCw,
@@ -20,28 +19,25 @@ import { Button } from '../../../components/ui/Button';
 import { Badge } from '../../../components/ui/Badge';
 import { Input } from '../../../components/ui/Input';
 import { Select } from '../../../components/ui/Select';
-import { Textarea } from '../../../components/ui/Textarea';
-import { Modal } from '../../../components/ui/Modal';
 import { useToast } from '../../../components/ui/Toast';
 import { useAuth } from '../../../contexts/AuthContext';
 import { useDebouncedValue } from '../../../hooks/useDebouncedValue';
 import { teachersApi } from '../../teachers/api/teachers.api';
 import type { Teacher } from '../../teachers/types/teachers.types';
 import { classesApi } from '../../classes/api/classes.api';
-import type { Class } from '../../classes/types/classes.types';
+import {
+  Class,
+  cleanClassIdentifier,
+  cleanNoteText,
+  formatClassCode,
+  formatScheduleTimeDisplay,
+} from '../../classes/types/classes.types';
 import { reconciliationApi } from '../api/reconciliation.api';
 import type {
   AttendanceStatus,
   TeacherStudentInfoRow,
   TeacherStudentSessionCell,
 } from '../types/reconciliation.types';
-
-const toLocalDateString = (d: Date): string => {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
-};
 
 const formatDateDMY = (dateStr?: string | null): string => {
   if (!dateStr) return '—';
@@ -127,27 +123,14 @@ export const TeacherStudentInfoPage: React.FC = () => {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
 
-  // Column display controls
-  const [showFullPackage, setShowFullPackage] = useState(false);
+  // Column display controls — mặc định hiển thị đầy đủ số buổi của toàn khóa (Buổi 1 .. Buổi N)
+  const [showFullPackage, setShowFullPackage] = useState(true);
   const [extraColumns, setExtraColumns] = useState(0);
 
   // Inline lesson input drafts & saving states keyed by attendanceId
   const [lessonDrafts, setLessonDrafts] = useState<Record<number, string>>({});
   const [savingAttendanceIds, setSavingAttendanceIds] = useState<Record<number, boolean>>({});
   const [savedAttendanceIds, setSavedAttendanceIds] = useState<Record<number, boolean>>({});
-
-  // Quick 1-click session creation loading state keyed by enrollmentClassId
-  const [creatingForEcId, setCreatingForEcId] = useState<Record<number, boolean>>({});
-
-  // Modal: + Điểm danh buổi mới
-  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [modalEnrollmentClassId, setModalEnrollmentClassId] = useState<number | ''>('');
-  const [modalSessionDate, setModalSessionDate] = useState(() => toLocalDateString(new Date()));
-  const [modalStartTime, setModalStartTime] = useState('');
-  const [modalEndTime, setModalEndTime] = useState('');
-  const [modalLessonTopic, setModalLessonTopic] = useState('');
-  const [modalNote, setModalNote] = useState('');
-  const [isSubmittingModal, setIsSubmittingModal] = useState(false);
 
   useEffect(() => {
     Promise.all([
@@ -291,77 +274,6 @@ export const TeacherStudentInfoPage: React.FC = () => {
     }
   };
 
-  // Quick 1-click add attended session for the next session slot of a student
-  const handleQuickAddSessionForRow = async (row: TeacherStudentInfoRow) => {
-    if (!canEdit) return;
-    const ecId = row.enrollmentClassId;
-    if (creatingForEcId[ecId]) return;
-
-    setCreatingForEcId((prev) => ({ ...prev, [ecId]: true }));
-    try {
-      await reconciliationApi.addTeacherStudentSession({
-        enrollmentClassId: ecId,
-        sessionDate: toLocalDateString(new Date()),
-        ...(isPrivileged && selectedTeacherId ? { teacherId: selectedTeacherId } : {}),
-      });
-      toast.success(
-        `Đã điểm danh Có mặt và mở khóa Buổi ${row.sessions.length + 1} cho ${row.studentName}`
-      );
-      await loadData(true);
-      window.dispatchEvent(new Event('teacher-attendance-updated'));
-    } catch (err: any) {
-      toast.error(
-        err.response?.data?.message || 'Không thể tạo buổi học mới'
-      );
-    } finally {
-      setCreatingForEcId((prev) => ({ ...prev, [ecId]: false }));
-    }
-  };
-
-  const openAddSessionModal = (defaultEcId?: number) => {
-    if (!canEdit) return;
-    setModalEnrollmentClassId(
-      defaultEcId ?? (rows.length === 1 ? rows[0].enrollmentClassId : '')
-    );
-    setModalSessionDate(toLocalDateString(new Date()));
-    setModalStartTime('');
-    setModalEndTime('');
-    setModalLessonTopic('');
-    setModalNote('');
-    setIsAddModalOpen(true);
-  };
-
-  const handleConfirmAddSessionModal = async () => {
-    if (!modalEnrollmentClassId) {
-      toast.warning('Vui lòng chọn học viên');
-      return;
-    }
-    setIsSubmittingModal(true);
-    try {
-      await reconciliationApi.addTeacherStudentSession({
-        enrollmentClassId: Number(modalEnrollmentClassId),
-        sessionDate: modalSessionDate || toLocalDateString(new Date()),
-        startTime: modalStartTime || undefined,
-        endTime: modalEndTime || undefined,
-        lessonTopic: modalLessonTopic.trim() || undefined,
-        note: modalNote.trim() || undefined,
-        ...(isPrivileged && selectedTeacherId ? { teacherId: selectedTeacherId } : {}),
-      });
-      toast.success(
-        'Đã tạo buổi học mới (Có mặt), mở khóa ô buổi học và cập nhật bài học!'
-      );
-      setIsAddModalOpen(false);
-      await loadData(true);
-      window.dispatchEvent(new Event('teacher-attendance-updated'));
-    } catch (err: any) {
-      toast.error(
-        err.response?.data?.message || 'Không thể thêm buổi học mới'
-      );
-    } finally {
-      setIsSubmittingModal(false);
-    }
-  };
-
   const resetFilters = () => {
     setClassId(undefined);
     setSearch('');
@@ -371,19 +283,9 @@ export const TeacherStudentInfoPage: React.FC = () => {
   return (
     <PageContainer>
       <PageHeader
-        title="Thông tin Học viên & Theo dõi Buổi học"
+        title="Thông tin Học viên & Lộ trình Bài học"
         actions={
-          canEdit ? (
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={() => openAddSessionModal()}
-              disabled={!hasContext || rows.length === 0}
-              leftIcon={<Plus className="w-4 h-4" />}
-            >
-              + Điểm danh buổi mới
-            </Button>
-          ) : !isAdmin && isPrivileged ? (
+          !isAdmin && isPrivileged ? (
             <Badge variant="neutral" size="sm">
               Chế độ MANAGE: Chỉ xem (Read-only)
             </Badge>
@@ -487,48 +389,45 @@ export const TeacherStudentInfoPage: React.FC = () => {
               </span>
             </div>
 
-            {/* Bên phải: Bộ gạt phạm vi cột buổi, + Thêm cột Buổi, Làm mới */}
+            {/* Bên phải: Bộ gạt phạm vi cột buổi & Làm mới */}
             <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-2">
-              <div className="inline-flex rounded-xl border border-border bg-surface-muted p-1">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowFullPackage(false);
-                    setExtraColumns(0);
-                  }}
-                  className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                    !showFullPackage
-                      ? 'bg-surface text-primary shadow-2xs'
-                      : 'text-text-secondary hover:text-text-primary'
-                  }`}
-                >
-                  Theo buổi đã học ({Math.max(maxRecordedSessions, 1)})
-                </button>
+              <div
+                className="inline-flex h-9 items-center gap-1 rounded-xl border border-slate-200/90 bg-slate-100 p-1"
+                role="tablist"
+                aria-label="Chọn phạm vi hiển thị cột buổi học"
+              >
+                <span className="px-2 text-[11px] font-semibold text-text-muted select-none">
+                  Hiển thị cột:
+                </span>
                 <button
                   type="button"
                   onClick={() => {
                     setShowFullPackage(true);
                     setExtraColumns(0);
                   }}
-                  className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                  className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                     showFullPackage
-                      ? 'bg-surface text-primary shadow-2xs'
-                      : 'text-text-secondary hover:text-text-primary'
+                      ? 'bg-primary text-white shadow-xs'
+                      : 'bg-white/60 text-slate-600 hover:bg-white hover:text-slate-900'
                   }`}
                 >
-                  Toàn khóa ({maxTotalSessions})
+                  Toàn khóa
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowFullPackage(false);
+                    setExtraColumns(0);
+                  }}
+                  className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    !showFullPackage
+                      ? 'bg-primary text-white shadow-xs'
+                      : 'bg-white/60 text-slate-600 hover:bg-white hover:text-slate-900'
+                  }`}
+                >
+                  Thu gọn theo buổi đã học
                 </button>
               </div>
-
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => setExtraColumns((c) => c + 1)}
-              >
-                <Plus className="w-3.5 h-3.5 mr-1" />
-                + Thêm cột Buổi ({totalDisplayedColumns})
-              </Button>
 
               <Button
                 type="button"
@@ -667,20 +566,27 @@ export const TeacherStudentInfoPage: React.FC = () => {
 
                         {/* Lớp học */}
                         <td className="px-3 py-2.5 border-r border-border/60 text-text-primary whitespace-nowrap">
-                          <div className="font-semibold text-text-primary">
-                            {row.classCode || row.className || '—'}
-                          </div>
-                          {row.classCode &&
-                            row.className &&
-                            row.classCode !== row.className && (
-                              <div className="text-[10px] text-text-muted truncate max-w-[130px]">
-                                {row.className}
-                              </div>
-                            )}
+                          {(() => {
+                            const cCode = formatClassCode(row.classCode, row.classId);
+                            const cName =
+                              cleanClassIdentifier(row.className) ||
+                              cleanClassIdentifier(row.classCode) ||
+                              cCode;
+                            return (
+                              <>
+                                <div className="font-semibold text-text-primary">{cName}</div>
+                                {cCode && cCode !== '—' && cCode !== cName && (
+                                  <div className="font-mono text-[10px] text-text-muted truncate max-w-[130px]">
+                                    {cCode}
+                                  </div>
+                                )}
+                              </>
+                            );
+                          })()}
                         </td>
 
                         {/* Khóa học */}
-                        <td className="px-3 py-2.5 border-r border-border/60 text-center text-text-secondary whitespace-nowrap">
+                        <td className="px-3 py-2.5 border-r border-border/60 text-center font-semibold text-text-secondary whitespace-nowrap">
                           {row.courseType || '—'}
                         </td>
 
@@ -691,14 +597,19 @@ export const TeacherStudentInfoPage: React.FC = () => {
 
                         {/* Tổng buổi */}
                         <td className="px-3 py-2.5 border-r border-border/60 text-center font-bold text-text-primary whitespace-nowrap">
-                          {row.totalSessions || '—'}
+                          {row.totalSessions || 0}
                         </td>
 
                         {/* Ghi chú */}
                         <td className="px-3 py-2.5 border-r border-border/60 text-text-secondary max-w-[180px]">
-                          <div className="truncate" title={row.note || ''}>
-                            {row.note || '—'}
-                          </div>
+                          {(() => {
+                            const cleaned = cleanNoteText(row.note);
+                            return (
+                              <div className="truncate" title={cleaned}>
+                                {cleaned || '—'}
+                              </div>
+                            );
+                          })()}
                         </td>
 
                         {/* Ngày bắt đầu */}
@@ -710,7 +621,7 @@ export const TeacherStudentInfoPage: React.FC = () => {
                         <td className="px-3 py-2.5 border-r border-border/60 text-center whitespace-nowrap">
                           {row.csCode || row.csName ? (
                             <span
-                              className="inline-block font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded px-2 py-0.5 text-[11px]"
+                              className="inline-block font-mono font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded px-2 py-0.5 text-[11px]"
                               title={row.csName || row.csCode}
                             >
                               {row.csCode || row.csName}
@@ -721,13 +632,13 @@ export const TeacherStudentInfoPage: React.FC = () => {
                         </td>
 
                         {/* Ngày học */}
-                        <td className="px-3 py-2.5 border-r border-border/60 text-center text-text-primary whitespace-nowrap font-medium">
+                        <td className="px-3 py-2.5 border-r border-border/60 text-center text-text-primary whitespace-nowrap font-semibold">
                           {row.scheduleDays || '—'}
                         </td>
 
                         {/* Giờ học */}
-                        <td className="px-3 py-2.5 border-r border-border/60 text-center text-text-secondary whitespace-nowrap">
-                          {row.scheduleTime || '—'}
+                        <td className="px-3 py-2.5 border-r border-border/60 text-center font-mono text-text-secondary whitespace-nowrap">
+                          {formatScheduleTimeDisplay(row.scheduleTime) || row.scheduleTime || '—'}
                         </td>
 
                         {/* Báo cáo học tập */}
@@ -742,7 +653,7 @@ export const TeacherStudentInfoPage: React.FC = () => {
                                 }
                               )
                             }
-                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-900 font-semibold text-xs border border-amber-200/80 transition-colors max-w-[140px]"
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-900 font-semibold text-xs border border-amber-200/80 transition-colors max-w-[150px]"
                             title={`Mở Báo cáo học tập của ${row.studentName}`}
                           >
                             <span className="truncate">{row.studentName}</span>
@@ -755,7 +666,6 @@ export const TeacherStudentInfoPage: React.FC = () => {
                           const cell =
                             row.sessions.find((s) => s.sessionIndex === k) ||
                             row.sessions[k - 1];
-                          const isNextSlot = k === row.sessions.length + 1;
 
                           // Trường hợp 1: Đã học (cell && cell.isUnlocked)
                           if (cell && cell.isUnlocked) {
@@ -863,9 +773,6 @@ export const TeacherStudentInfoPage: React.FC = () => {
                           }
 
                           // Trường hợp 3: Chưa có buổi học thứ k (!cell)
-                          const isCreatingThis =
-                            !!creatingForEcId[row.enrollmentClassId];
-
                           return (
                             <td
                               key={k}
@@ -875,24 +782,6 @@ export const TeacherStudentInfoPage: React.FC = () => {
                                 <span className="text-[10px] text-text-muted">
                                   Chưa học
                                 </span>
-                                {isNextSlot && canEdit && (
-                                  <button
-                                    type="button"
-                                    disabled={isCreatingThis}
-                                    onClick={() =>
-                                      handleQuickAddSessionForRow(row)
-                                    }
-                                    className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-teal-600 hover:bg-teal-700 text-white text-[10px] font-semibold shadow-2xs transition-colors disabled:opacity-50 cursor-pointer"
-                                    title="Điểm danh Có mặt (1 chạm) và mở khóa ngay ô Buổi học này"
-                                  >
-                                    {isCreatingThis ? (
-                                      <Loader2 className="w-2.5 h-2.5 animate-spin" />
-                                    ) : (
-                                      <Plus className="w-2.5 h-2.5" />
-                                    )}
-                                    <span>Điểm danh Đã học</span>
-                                  </button>
-                                )}
                               </div>
                               <div className="relative">
                                 <input
@@ -935,89 +824,6 @@ export const TeacherStudentInfoPage: React.FC = () => {
           )}
         </div>
       )}
-
-      {/* Modal: + Điểm danh buổi mới */}
-      <Modal
-        isOpen={isAddModalOpen}
-        onClose={() => !isSubmittingModal && setIsAddModalOpen(false)}
-        closeOnOutsideClick={!isSubmittingModal}
-        title="Điểm danh buổi mới (Đã học)"
-        description="Tạo nhanh buổi học với trạng thái Có mặt (ATTENDED), tự động mở khóa cột Buổi tiếp theo và điền tên bài học."
-        footer={
-          <div className="flex items-center justify-end gap-2 w-full">
-            <Button
-              variant="outline"
-              onClick={() => setIsAddModalOpen(false)}
-              disabled={isSubmittingModal}
-            >
-              Hủy
-            </Button>
-            <Button
-              variant="primary"
-              onClick={handleConfirmAddSessionModal}
-              disabled={!modalEnrollmentClassId || isSubmittingModal}
-            >
-              {isSubmittingModal ? 'Đang tạo...' : 'Xác nhận & Mở khóa buổi'}
-            </Button>
-          </div>
-        }
-      >
-        <div className="space-y-4">
-          <Select
-            id="modal-student-ec"
-            label="Học viên"
-            value={modalEnrollmentClassId === '' ? '' : String(modalEnrollmentClassId)}
-            onChange={(e) =>
-              setModalEnrollmentClassId(
-                e.target.value ? Number(e.target.value) : ''
-              )
-            }
-            options={[
-              { value: '', label: 'Chọn học viên...' },
-              ...rows.map((r) => ({
-                value: String(r.enrollmentClassId),
-                label: `${r.studentName} (${r.studentCode}) · Lớp ${r.classCode || r.className} · Sắp học Buổi ${r.sessions.length + 1}`,
-              })),
-            ]}
-          />
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <Input
-              type="date"
-              label="Ngày học"
-              value={modalSessionDate}
-              onChange={(e) => setModalSessionDate(e.target.value)}
-            />
-            <Input
-              type="time"
-              label="Giờ bắt đầu (tùy chọn)"
-              value={modalStartTime}
-              onChange={(e) => setModalStartTime(e.target.value)}
-            />
-            <Input
-              type="time"
-              label="Giờ kết thúc (tùy chọn)"
-              value={modalEndTime}
-              onChange={(e) => setModalEndTime(e.target.value)}
-            />
-          </div>
-
-          <Input
-            label="Tên bài học (tùy chọn - có thể nhập sau trên bảng)"
-            placeholder="Ví dụ: K1-L16, K2 L4..."
-            value={modalLessonTopic}
-            onChange={(e) => setModalLessonTopic(e.target.value)}
-          />
-
-          <Textarea
-            label="Ghi chú giáo viên (tùy chọn)"
-            placeholder="Ghi chú thêm về buổi học..."
-            rows={2}
-            value={modalNote}
-            onChange={(e) => setModalNote(e.target.value)}
-          />
-        </div>
-      </Modal>
     </PageContainer>
   );
 };

@@ -1333,11 +1333,20 @@ export class ReconciliationService {
         enrollment.package?.name ||
         enrollment.program_type ||
         'Thường';
+      const rawContent = (enrollment.course_content || '').trim();
+      const isNumericTuition = /^\d+(?:[.,]\d+)?$/.test(rawContent);
       const level =
-        enrollment.level || cls.level || enrollment.course_content || '—';
+        enrollment.level ||
+        cls.level ||
+        (!isNumericTuition && rawContent ? rawContent : '') ||
+        '—';
       const totalSessions = enrollment.total_sessions || 0;
-      const note =
-        enrollment.sales_note || student.note || enrollment.course_content || '';
+      const rawNote =
+        enrollment.sales_note ||
+        student.note ||
+        (!isNumericTuition ? rawContent : '') ||
+        '';
+      const note = rawNote.replace(/^"+|"+$/g, '').trim();
       const startDate = this.toIsoDateString(ec.start_date || enrollment.start_date);
       const csCode =
         enrollment.cs?.code ||

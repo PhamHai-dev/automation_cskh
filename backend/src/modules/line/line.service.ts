@@ -166,14 +166,40 @@ export class LineService {
     },
   ) {
     const account = await this.getAccount(accountId);
-    const channelId = (input.channel_id ?? input.channelId ?? '').trim();
-    const channelSecret = (input.channel_secret ?? input.channelSecret ?? '').trim();
-    const channelAccessToken = (
-      input.channel_access_token ??
-      input.channelAccessToken ??
+
+    let existingSession: Partial<LineOaSessionData> = {};
+    if (account.encrypted_session_data) {
+      try {
+        const decrypted = decryptJson<LineSessionData>(account.encrypted_session_data);
+        if (decrypted && typeof decrypted === 'object') {
+          existingSession = decrypted as Partial<LineOaSessionData>;
+        }
+      } catch {
+        // ignore decryption error on stale/missing session
+      }
+    }
+
+    const channelId = (
+      input.channel_id ??
+      input.channelId ??
+      existingSession.channelId ??
       ''
     ).trim();
-    const basicId = input.basic_id ?? input.basicId ?? account.basic_id ?? undefined;
+    const channelSecret = (
+      (input.channel_secret ?? input.channelSecret ?? '').trim() ||
+      (existingSession.channelSecret ?? '').trim() ||
+      (account.webhook_secret ?? '').trim()
+    );
+    const channelAccessToken = (
+      (input.channel_access_token ?? input.channelAccessToken ?? '').trim() ||
+      (existingSession.channelAccessToken ?? '').trim()
+    );
+    const basicId =
+      input.basic_id ??
+      input.basicId ??
+      account.basic_id ??
+      existingSession.basicId ??
+      undefined;
     const displayName = input.display_name ?? input.displayName ?? account.display_name ?? undefined;
 
     if (!channelId || !channelSecret || !channelAccessToken) {

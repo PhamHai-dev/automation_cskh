@@ -14,6 +14,14 @@ import {
   CreateClassDTO,
   UpdateClassDTO,
   formatClassCode,
+  cleanClassIdentifier,
+  normalizeClassModel,
+  CLASS_MODEL_BADGE_STYLES,
+  ENROLLMENT_STATUS_BADGE_MAP,
+  resolveEffectiveEnrollmentStatus,
+  resolveClassDisplayStatus,
+  formatCourseContentDisplay,
+  formatScheduleTimeDisplay,
 } from '../types/classes.types';
 import { teachersApi } from '../../teachers/api/teachers.api';
 import { Teacher } from '../../teachers/types/teachers.types';
@@ -59,16 +67,6 @@ import {
   Trash2,
   BarChart3,
 } from 'lucide-react';
-
-const MODEL_CONFIG: Record<string, { label: string; className: string }> = {
-  '1:1': { label: '1:1', className: 'bg-blue-50 text-blue-700 border-blue-200 font-bold' },
-  '1:2': { label: '1:2', className: 'bg-purple-50 text-purple-700 border-purple-200 font-bold' },
-  '1:n': { label: '1:n', className: 'bg-emerald-50 text-emerald-700 border-emerald-200 font-bold' },
-  ONE_TO_ONE: { label: '1:1', className: 'bg-blue-50 text-blue-700 border-blue-200 font-bold' },
-  ONE_TO_TWO: { label: '1:2', className: 'bg-purple-50 text-purple-700 border-purple-200 font-bold' },
-  ONE_TO_N: { label: '1:n', className: 'bg-emerald-50 text-emerald-700 border-emerald-200 font-bold' },
-  GROUP: { label: '1:n', className: 'bg-emerald-50 text-emerald-700 border-emerald-200 font-bold' },
-};
 
 const STATUS_CONFIG: Record<
   AttendanceStatus,
@@ -359,12 +357,8 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
     fetchClasses();
   }, [isTeacher]);
 
-  const normalizeModel = (model?: string | null): '1:1' | '1:2' | '1:n' => {
-    const upper = (model || '').toUpperCase();
-    if (upper === 'ONE_TO_TWO' || model === '1:2' || model === '1-2') return '1:2';
-    if (upper === 'ONE_TO_N' || upper === 'GROUP' || model === '1:n' || model === '1-N') return '1:n';
-    return '1:1';
-  };
+  const normalizeModel = (model?: string | null, studentCount?: number): '1:1' | '1:2' | '1:n' =>
+    normalizeClassModel(model, studentCount);
 
   const getStudentsOfClass = (cls: Class): EnrolledStudentItem[] => {
     const list: EnrolledStudentItem[] = [];
@@ -372,6 +366,13 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
       const enr = ec.enrollment;
       const st = enr?.student;
       const pkg = enr?.package;
+      const pkgLabel = pkg?.name || pkg?.code || '';
+      const levelLabel = enr?.level || cls.level || '';
+      const effectiveStatus = resolveEffectiveEnrollmentStatus(
+        enr?.status,
+        true,
+        `${enr?.class_model || ''} ${levelLabel}`
+      );
       list.push({
         enrollment_class_id: ec.id,
         class_id: cls.id,
@@ -380,15 +381,20 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
         external_id: st?.external_id || enr?.external_id || `HV_${st?.id || ec.id}`,
         phone: st?.phone || '',
         email: st?.email || '',
-        package_name: pkg?.name || pkg?.code || '',
-        course_content: enr?.course_content || '',
-        level: enr?.level || cls.level || '',
+        package_name: pkgLabel,
+        course_content: formatCourseContentDisplay(
+          enr?.course_content,
+          enr?.program_type,
+          pkgLabel,
+          levelLabel
+        ),
+        level: levelLabel,
         total_sessions: enr?.total_sessions || 0,
         remaining_sessions: enr?.external_remaining_sessions ?? null,
         attended_previous_years: enr?.attended_previous_years || 0,
         start_date: enr?.start_date || null,
         end_date: enr?.end_date || null,
-        status: enr?.status || (cls.active ? 'STUDYING' : 'FINISHED'),
+        status: effectiveStatus,
         program_type: enr?.program_type || 'KAIWA',
         sale_name: enr?.sale_name || enr?.sale?.name || null,
         cs_staff_code: enr?.cs?.staff_code || null,
@@ -583,6 +589,23 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
               fullClass?.class_teachers?.find((t) => t.active !== false)?.teacher ||
               (cls as any)?.class_teachers?.[0]?.teacher;
             const schedule = fullClass?.class_schedules?.[0] || (cls as any)?.class_schedules?.[0];
+            const pkgLabel = pkg?.name || pkg?.code || '—';
+            const levelLabel = enr.level || (cls as any)?.level || '—';
+            const classStudentCount = fullClass?.enrollment_classes?.length;
+            const resolvedModel = normalizeClassModel(
+              enr.class_model || (cls as any)?.model_type,
+              classStudentCount
+            );
+            const resolvedStatus = resolveEffectiveEnrollmentStatus(
+              enr.status,
+              true,
+              `${enr.class_model || ''} ${levelLabel}`
+            );
+            const cleanedClassName =
+              cleanClassIdentifier(cls?.class_name) ||
+              cleanClassIdentifier(cls?.class_code) ||
+              cls?.class_name ||
+              '—';
 
             rows.push({
               enrollment_class_id: ec.id,
@@ -595,19 +618,24 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
               student_id: student.id,
               external_id: student.external_id || enr.external_id || `HV_${student.id}`,
               full_name: student.full_name,
-              package_name: pkg?.name || pkg?.code || '—',
-              course_content: enr.course_content || '—',
+              package_name: pkgLabel,
+              course_content: formatCourseContentDisplay(
+                enr.course_content,
+                enr.program_type,
+                pkgLabel,
+                levelLabel
+              ),
               total_sessions: enr.total_sessions || 0,
-              level: enr.level || (cls as any)?.level || '—',
+              level: levelLabel,
               email: student.email || '',
               phone: student.phone || '',
-              model_type: (cls as any)?.model_type || enr.class_model || '1:1',
+              model_type: resolvedModel,
               remaining_sessions: enr.external_remaining_sessions,
               attended_previous_years: enr.attended_previous_years ?? 0,
               start_date: enr.start_date,
-              status: enr.status,
+              status: resolvedStatus,
               end_date: enr.end_date,
-              start_time: schedule?.start_time || '',
+              start_time: formatScheduleTimeDisplay(schedule?.start_time),
               schedule_pattern: schedule?.schedule_pattern || '',
               duration_minutes: schedule?.duration_minutes || 0,
               teacher_name: mainTeacher?.name || '—',
@@ -616,13 +644,20 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                 (mainTeacher as any)?.teacher_profile?.teacher_code ||
                 (mainTeacher as any)?.teacher_code ||
                 '—',
-              class_name: cls?.class_name || '—',
+              class_name: cleanedClassName,
               sale_name: enr.sale_name || (enr as any).sale?.name || '—',
               program_type: enr.program_type || 'KAIWA',
               cs_staff_code: enr.cs?.staff_code || null,
             });
           });
         } else {
+          const pkgLabel = pkg?.name || pkg?.code || '—';
+          const levelLabel = enr.level || '—';
+          const resolvedStatus = resolveEffectiveEnrollmentStatus(
+            enr.status,
+            false,
+            `${enr.class_model || ''} ${levelLabel}`
+          );
           rows.push({
             enrollment_class_id: -enr.id,
             class_id: 0,
@@ -630,17 +665,22 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
             student_id: student.id,
             external_id: student.external_id || enr.external_id || `HV_${student.id}`,
             full_name: student.full_name,
-            package_name: pkg?.name || pkg?.code || '—',
-            course_content: enr.course_content || '—',
+            package_name: pkgLabel,
+            course_content: formatCourseContentDisplay(
+              enr.course_content,
+              enr.program_type,
+              pkgLabel,
+              levelLabel
+            ),
             total_sessions: enr.total_sessions || 0,
-            level: enr.level || '—',
+            level: levelLabel,
             email: student.email || '',
             phone: student.phone || '',
-            model_type: enr.class_model || '1:1',
+            model_type: normalizeClassModel(enr.class_model),
             remaining_sessions: enr.external_remaining_sessions,
             attended_previous_years: enr.attended_previous_years ?? 0,
             start_date: enr.start_date,
-            status: enr.status,
+            status: resolvedStatus,
             end_date: enr.end_date,
             start_time: '',
             schedule_pattern: '',
@@ -663,8 +703,13 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
         cls.class_teachers?.find((t) => t.active !== false)?.teacher ||
         cls.class_teachers?.[0]?.teacher;
       const schedule = cls.class_schedules?.[0];
+      const studentsOfCls = getStudentsOfClass(cls);
+      const cleanedClassName =
+        cleanClassIdentifier(cls.class_name) ||
+        cleanClassIdentifier(cls.class_code) ||
+        cls.class_name;
 
-      getStudentsOfClass(cls).forEach((st) => {
+      studentsOfCls.forEach((st) => {
         if (seenEcIds.has(st.enrollment_class_id)) return;
         seenEcIds.add(st.enrollment_class_id);
         rows.push({
@@ -680,18 +725,18 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
           level: st.level || cls.level || '—',
           email: st.email || '',
           phone: st.phone || '',
-          model_type: cls.model_type || '1:1',
+          model_type: normalizeClassModel(cls.model_type, studentsOfCls.length),
           remaining_sessions: st.remaining_sessions ?? null,
           attended_previous_years: st.attended_previous_years ?? 0,
           start_date: st.start_date || null,
           status: st.status || (cls.active ? 'STUDYING' : 'FINISHED'),
           end_date: st.end_date || null,
-          start_time: schedule?.start_time || '',
+          start_time: formatScheduleTimeDisplay(schedule?.start_time),
           schedule_pattern: schedule?.schedule_pattern || '',
           duration_minutes: schedule?.duration_minutes || 0,
           teacher_name: mainTeacher?.name || '—',
           teacher_code: (mainTeacher as any)?.code || '—',
-          class_name: cls.class_name,
+          class_name: cleanedClassName,
           sale_name: st.sale_name || '—',
           program_type: st.program_type || (cls.level?.toUpperCase().includes('N') ? 'JLPT' : 'KAIWA'),
           cs_staff_code: st.cs_staff_code || null,
@@ -849,7 +894,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
             (st.email && st.email.toLowerCase().includes(q))
         );
 
-      const modelNormalized = normalizeModel(c.model_type);
+      const modelNormalized = normalizeModel(c.model_type, students.length);
       const matchModel = !modelFilter || modelNormalized === modelFilter || c.model_type === modelFilter;
 
       if (!matchSearch || !matchModel) return false;
@@ -869,14 +914,11 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
       }
 
       if (statusFilter) {
-        if (statusFilter === 'WAITING_CLASS') {
-          return students.length === 0;
+        const classDisplayStatus = resolveClassDisplayStatus(c, students).statusKey;
+        if (classDisplayStatus === statusFilter) return true;
+        if (students.length > 0 && students.some((st) => st.status === statusFilter)) {
+          return true;
         }
-        if (students.length > 0) {
-          return students.some((st) => st.status === statusFilter);
-        }
-        if (statusFilter === 'STUDYING') return c.active;
-        if (statusFilter === 'FINISHED') return !c.active;
         return false;
       }
 
@@ -2057,6 +2099,48 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
         err.response?.data?.message ||
           err.response?.data?.error?.message ||
           'Không thể điểm danh cả lớp'
+      );
+    } finally {
+      setSavingKey(null);
+    }
+  };
+
+  // Bỏ chấm cả lớp 1:2 / 1:n theo ca đang chọn (gỡ điểm danh của vai trò hiện tại)
+  const handleBulkUnmarkWholeClass = async (
+    cls: Class,
+    dateStr: string,
+    caNumber = 1
+  ) => {
+    const students = getStudentsOfClass(cls);
+    const existing = sessionsByClassAndDate.get(`${cls.id}_${dateStr}`) || [];
+    const targetSession = existing[caNumber - 1];
+    if (!targetSession || students.length === 0) return;
+
+    const toRemove = students
+      .map((s) =>
+        attendanceByEcAndSession.get(`${s.enrollment_class_id}_session_${targetSession.id}`)
+      )
+      .filter((att): att is Attendance => Boolean(att && att.id && hasCurrentSideDataOnRecord(att)));
+
+    if (toRemove.length === 0) return;
+
+    const key = `class_${cls.id}_${dateStr}_s${caNumber}`;
+    setSavingKey(key);
+    try {
+      await Promise.all(
+        toRemove.map((att) =>
+          attendanceApi.remove(cls.id, targetSession.id, att.id, activeSide)
+        )
+      );
+      toast.info(
+        `Đã bỏ chấm cả lớp (Ca ${caNumber}) cho lớp ${formatClassCode(cls.class_code, cls.id)}`
+      );
+      await fetchClasses(true);
+    } catch (err: any) {
+      toast.error(
+        err.response?.data?.message ||
+          err.response?.data?.error?.message ||
+          'Không thể bỏ chấm cả lớp'
       );
     } finally {
       setSavingKey(null);
@@ -3577,14 +3661,18 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
             ) : (
               <div className="flex flex-wrap items-center gap-2">
                 {/* Bộ chọn kiểu xem Tab 2: Bảng tháng | Nhật ký bài học */}
-                <div className="flex p-0.5 bg-surface-muted rounded-xl border border-border/60 text-xs font-semibold">
+                <div
+                  className="inline-flex h-9 items-center p-1 bg-slate-100 rounded-xl border border-slate-200/90 gap-1 text-xs font-semibold"
+                  role="tablist"
+                  aria-label="Chọn kiểu hiển thị Lịch sử & Bảng tháng"
+                >
                   <button
                     type="button"
                     onClick={() => setDetailedViewMode('matrix')}
-                    className={`px-3 py-1 rounded-lg transition-all ${
+                    className={`px-3 py-1 rounded-lg transition-all cursor-pointer ${
                       detailedViewMode === 'matrix'
-                        ? 'bg-surface text-primary shadow-xs font-bold'
-                        : 'text-text-muted hover:text-text-primary'
+                        ? 'bg-primary text-white shadow-xs font-bold'
+                        : 'bg-white/60 text-slate-600 hover:bg-white hover:text-slate-900'
                     }`}
                   >
                     Bảng tháng
@@ -3592,25 +3680,29 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                   <button
                     type="button"
                     onClick={() => setDetailedViewMode('log')}
-                    className={`px-3 py-1 rounded-lg transition-all ${
+                    className={`px-3 py-1 rounded-lg transition-all cursor-pointer ${
                       detailedViewMode === 'log'
-                        ? 'bg-surface text-primary shadow-xs font-bold'
-                        : 'text-text-muted hover:text-text-primary'
+                        ? 'bg-primary text-white shadow-xs font-bold'
+                        : 'bg-white/60 text-slate-600 hover:bg-white hover:text-slate-900'
                     }`}
                   >
-                    Nhật ký bài học ({periodSessionLogs.length})
+                    Nhật ký bài học
                   </button>
                 </div>
 
                 {/* Bộ chọn chế độ kỳ: Theo tuần | Theo tháng */}
-                <div className="flex p-0.5 bg-surface-muted rounded-xl border border-border/60 text-xs font-semibold">
+                <div
+                  className="inline-flex h-9 items-center p-1 bg-slate-100 rounded-xl border border-slate-200/90 gap-1 text-xs font-semibold"
+                  role="tablist"
+                  aria-label="Chọn phạm vi kỳ hiển thị"
+                >
                   <button
                     type="button"
                     onClick={() => setDetailedFilterMode('week')}
-                    className={`px-3 py-1 rounded-lg transition-all ${
+                    className={`px-3 py-1 rounded-lg transition-all cursor-pointer ${
                       detailedFilterMode === 'week'
-                        ? 'bg-surface text-primary shadow-xs font-bold'
-                        : 'text-text-muted hover:text-text-primary'
+                        ? 'bg-primary text-white shadow-xs font-bold'
+                        : 'bg-white/60 text-slate-600 hover:bg-white hover:text-slate-900'
                     }`}
                   >
                     Theo tuần
@@ -3618,10 +3710,10 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                   <button
                     type="button"
                     onClick={() => setDetailedFilterMode('month')}
-                    className={`px-3 py-1 rounded-lg transition-all ${
+                    className={`px-3 py-1 rounded-lg transition-all cursor-pointer ${
                       detailedFilterMode === 'month'
-                        ? 'bg-surface text-primary shadow-xs font-bold'
-                        : 'text-text-muted hover:text-text-primary'
+                        ? 'bg-primary text-white shadow-xs font-bold'
+                        : 'bg-white/60 text-slate-600 hover:bg-white hover:text-slate-900'
                     }`}
                   >
                     Theo tháng
@@ -3897,84 +3989,194 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
 
         {/* Bảng Lớp học & Điểm danh (hoặc Nhật ký bài học khi chọn ở Tab 2) */}
         {activeTab === 'detailed' && detailedViewMode === 'log' ? (
-          <div className="w-full overflow-x-auto">
+          <div className="w-full overflow-x-auto select-none">
             <table className="w-full text-xs text-left border-collapse">
               <thead>
                 <tr className="bg-surface-muted/90 text-text-secondary border-b border-border/80 text-[11px] font-bold">
                   <th className="px-3 py-3 border-r border-border/60 whitespace-nowrap w-28">Ngày học</th>
                   <th className="px-2.5 py-3 border-r border-border/60 text-center whitespace-nowrap w-16">Ca</th>
-                  <th className="px-3 py-3 border-r border-border/60 whitespace-nowrap min-w-[160px]">Lớp học</th>
-                  <th className="px-3 py-3 border-r border-border/60 whitespace-nowrap min-w-[170px]">Học viên</th>
-                  <th className="px-3 py-3 border-r border-border/60 text-center whitespace-nowrap w-32">Điểm danh GV</th>
-                  <th className="px-3 py-3 border-r border-border/60 min-w-[220px] bg-indigo-50/50 text-indigo-950">Bài học</th>
-                  <th className="px-3 py-3 border-r border-border/60 min-w-[260px] bg-indigo-50/50 text-indigo-950">Ghi chú GV</th>
-                  <th className="px-3 py-3 text-right whitespace-nowrap w-24">Thao tác</th>
+                  <th className="px-3 py-3 border-r border-border/60 whitespace-nowrap min-w-[160px]">Học viên</th>
+                  <th className="px-3 py-3 border-r border-border/60 whitespace-nowrap min-w-[140px]">Lớp học</th>
+                  <th className="px-3 py-3 border-r border-border/60 whitespace-nowrap min-w-[120px]">Giáo viên</th>
+                  <th className="px-3 py-3 border-r border-border/60 text-center whitespace-nowrap min-w-[115px]">Điểm danh GV</th>
+                  <th className="px-3 py-3 border-r border-border/60 text-center whitespace-nowrap min-w-[115px]">Điểm danh CSKH</th>
+                  <th className="px-3 py-3 border-r border-border/60 text-center whitespace-nowrap min-w-[120px]">Trạng thái chốt</th>
+                  <th className="px-3 py-3 border-r border-border/60 min-w-[200px]">Bài học &amp; Ghi chú GV</th>
+                  <th className="px-3 py-3 border-r border-border/60 min-w-[180px]">Ghi chú CSKH</th>
+                  <th className="px-3 py-3 text-center whitespace-nowrap w-24">Thao tác</th>
                 </tr>
               </thead>
               <tbody>
                 {periodSessionLogs.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="py-12 text-center text-text-muted">
-                      Chưa có buổi điểm danh nào trong kỳ đang chọn ({detailedPeriodTitle}).
+                    <td colSpan={11} className="py-10 text-center text-text-muted">
+                      Chưa có buổi học nào phát sinh trong kỳ {detailedPeriodTitle}.
                     </td>
                   </tr>
                 ) : (
                   periodSessionLogs
                     .slice((page - 1) * pageSize, page * pageSize)
-                    .map(({ key, cls, student, dateStr, caNumber, att }) => {
-                    const tStatus = (att?.teacher_status || undefined) as AttendanceStatus | undefined;
-                    const cfg = tStatus ? STATUS_CONFIG[tStatus] : null;
-                    const [y, m, d] = dateStr.split('-');
-                    const dateVN = y && m && d ? `${d}/${m}/${y}` : dateStr;
-                    return (
-                      <tr key={key} className="border-b border-border/60 hover:bg-slate-50/80 transition-colors">
-                        <td className="px-3 py-2.5 border-r border-border/60 font-bold text-text-primary whitespace-nowrap">
-                          {dateVN}
-                        </td>
-                        <td className="px-2.5 py-2.5 border-r border-border/60 text-center font-bold text-primary whitespace-nowrap">
-                          Ca {caNumber}
-                        </td>
-                        <td className="px-3 py-2.5 border-r border-border/60">
-                          <div className="font-bold text-text-primary">{cls.class_name}</div>
-                          <div className="font-mono text-[10px] text-text-muted">
-                            {formatClassCode(cls.class_code, cls.id)}
-                          </div>
-                        </td>
-                        <td className="px-3 py-2.5 border-r border-border/60">
-                          <div className="font-bold text-text-primary">{student.full_name}</div>
-                          <div className="font-mono text-[10px] text-text-muted">{student.external_id}</div>
-                        </td>
-                        <td className="px-3 py-2.5 border-r border-border/60 text-center whitespace-nowrap">
-                          {cfg ? (
-                            <span
-                              className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-extrabold ${cfg.bg} ${cfg.text} ${cfg.border}`}
+                    .map(({ key, cls, student, dateStr, caNumber, att }, idx) => {
+                      const tCfg = att?.teacher_status
+                        ? STATUS_CONFIG[att.teacher_status as AttendanceStatus]
+                        : null;
+                      const csCfg = att?.cs_status
+                        ? STATUS_CONFIG[att.cs_status as AttendanceStatus]
+                        : null;
+                      const finalSt = (att?.status || att?.cs_status || att?.teacher_status) as
+                        | AttendanceStatus
+                        | undefined;
+                      const finalCfg = finalSt ? STATUS_CONFIG[finalSt] : null;
+                      const isConflict =
+                        att?.reconciliation_state === 'CONFLICT' ||
+                        Boolean(
+                          att?.teacher_status &&
+                            att?.cs_status &&
+                            att.teacher_status !== att.cs_status
+                        );
+                      const isMatched =
+                        att?.reconciliation_state === 'MATCHED' ||
+                        Boolean(
+                          att?.teacher_status &&
+                            att?.cs_status &&
+                            att.teacher_status === att.cs_status
+                        );
+                      const dObj = new Date(`${dateStr}T00:00:00`);
+                      const mainTeacher =
+                        cls.class_teachers?.find((t) => t.role === 'MAIN' && t.active !== false)
+                          ?.teacher ||
+                        cls.class_teachers?.find((t) => t.active !== false)?.teacher ||
+                        cls.class_teachers?.[0]?.teacher;
+                      const cleanedClsName =
+                        cleanClassIdentifier(cls.class_name) ||
+                        cleanClassIdentifier(cls.class_code) ||
+                        cls.class_name;
+
+                      return (
+                        <tr
+                          key={key}
+                          className={`border-b border-border/60 hover:bg-slate-50/80 transition-colors ${
+                            idx % 2 === 1 ? 'bg-slate-50/30' : 'bg-surface'
+                          }`}
+                        >
+                          <td className="px-3 py-2.5 border-r border-border/60 font-bold text-text-primary whitespace-nowrap">
+                            <span>{DAY_OF_WEEK_NAMES[dObj.getDay()]}</span>{' '}
+                            <span>{dObj.toLocaleDateString('vi-VN')}</span>
+                          </td>
+                          <td className="px-2.5 py-2.5 border-r border-border/60 text-center font-bold text-slate-700 whitespace-nowrap">
+                            Ca {caNumber}
+                          </td>
+                          <td className="px-3 py-2.5 border-r border-border/60 whitespace-nowrap">
+                            <div className="font-bold text-text-primary">{student.full_name}</div>
+                            <div className="font-mono text-[10px] text-text-muted">
+                              {student.external_id}
+                            </div>
+                          </td>
+                          <td className="px-3 py-2.5 border-r border-border/60 whitespace-nowrap">
+                            <div className="font-bold text-text-primary">{cleanedClsName}</div>
+                            <div className="font-mono text-[10px] text-text-muted">
+                              {formatClassCode(cls.class_code, cls.id)}
+                            </div>
+                          </td>
+                          <td className="px-3 py-2.5 border-r border-border/60 whitespace-nowrap text-text-secondary">
+                            {mainTeacher?.name || '—'}
+                          </td>
+                          <td className="px-3 py-2.5 border-r border-border/60 text-center whitespace-nowrap">
+                            {tCfg ? (
+                              <span
+                                className={`inline-flex h-6 items-center gap-1 rounded-md border px-2 text-[10px] font-extrabold ${tCfg.bg.replace(
+                                  /\s*hover:\S+/g,
+                                  ''
+                                )} ${tCfg.text} ${tCfg.border}`}
+                              >
+                                {tCfg.short} · {tCfg.label}
+                              </span>
+                            ) : (
+                              <span className="text-text-muted">—</span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2.5 border-r border-border/60 text-center whitespace-nowrap">
+                            {csCfg ? (
+                              <span
+                                className={`inline-flex h-6 items-center gap-1 rounded-md border px-2 text-[10px] font-extrabold ${csCfg.bg.replace(
+                                  /\s*hover:\S+/g,
+                                  ''
+                                )} ${csCfg.text} ${csCfg.border}`}
+                              >
+                                {csCfg.short} · {csCfg.label}
+                              </span>
+                            ) : (
+                              <span className="text-text-muted">—</span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2.5 border-r border-border/60 text-center whitespace-nowrap">
+                            {isConflict ? (
+                              <span className="inline-flex h-6 items-center rounded-md border border-rose-300 bg-rose-100 px-2 text-[10px] font-extrabold text-rose-800">
+                                Lệch (GV: {tCfg?.short || '?'} | CSKH: {csCfg?.short || '?'})
+                              </span>
+                            ) : isMatched && finalCfg ? (
+                              <span
+                                className={`inline-flex h-6 items-center gap-1 rounded-md border px-2 text-[10px] font-extrabold ${finalCfg.bg.replace(
+                                  /\s*hover:\S+/g,
+                                  ''
+                                )} ${finalCfg.text} ${finalCfg.border}`}
+                              >
+                                {finalCfg.short} · Đã khớp
+                              </span>
+                            ) : att?.reconciliation_state === 'RESOLVED' && finalCfg ? (
+                              <span
+                                className={`inline-flex h-6 items-center gap-1 rounded-md border px-2 text-[10px] font-extrabold ${finalCfg.bg.replace(
+                                  /\s*hover:\S+/g,
+                                  ''
+                                )} ${finalCfg.text} ${finalCfg.border}`}
+                              >
+                                {finalCfg.short} · Đã phân xử
+                              </span>
+                            ) : att && (att.teacher_status || att.cs_status) ? (
+                              <span className="inline-flex h-6 items-center rounded-md border border-amber-200 bg-amber-50 px-2 text-[10px] font-bold text-amber-700">
+                                {att.teacher_status ? 'Chờ CSKH' : 'Chờ GV'}
+                              </span>
+                            ) : (
+                              <span className="text-text-muted">—</span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2.5 border-r border-border/60">
+                            {att?.lesson_topic || att?.teacher_note ? (
+                              <div className="space-y-0.5">
+                                {att.lesson_topic && (
+                                  <div className="font-semibold text-teal-800">
+                                    {att.lesson_topic}
+                                  </div>
+                                )}
+                                {att.teacher_note && (
+                                  <div className="italic text-text-secondary">
+                                    "{att.teacher_note}"
+                                  </div>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="text-text-muted">—</span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2.5 border-r border-border/60">
+                            {att?.cs_note ? (
+                              <span className="italic text-text-secondary">"{att.cs_note}"</span>
+                            ) : (
+                              <span className="text-text-muted">—</span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2.5 text-center whitespace-nowrap">
+                            <button
+                              type="button"
+                              onClick={() => openDrawer(cls, student, dateStr, caNumber, false)}
+                              className="inline-flex h-7 items-center rounded-lg border border-border bg-white px-2.5 text-xs font-bold text-primary transition hover:border-primary hover:bg-primary-soft"
                             >
-                              <span>{cfg.short}</span>
-                              <span>·</span>
-                              <span>{cfg.label}</span>
-                            </span>
-                          ) : (
-                            <span className="text-text-muted">Chưa chấm</span>
-                          )}
-                        </td>
-                        <td className="px-3 py-2.5 border-r border-border/60 text-xs font-medium text-teal-900">
-                          {att?.lesson_topic || <span className="text-text-muted">—</span>}
-                        </td>
-                        <td className="px-3 py-2.5 border-r border-border/60 text-xs text-text-secondary">
-                          {att?.teacher_note || <span className="text-text-muted">—</span>}
-                        </td>
-                        <td className="px-3 py-2.5 text-right whitespace-nowrap">
-                          <button
-                            type="button"
-                            onClick={() => openDrawer(cls, student, dateStr, caNumber)}
-                            className="inline-flex h-7 items-center rounded-lg border border-border/80 bg-white px-2.5 text-[11px] font-bold text-primary hover:bg-primary-soft transition"
-                          >
-                            Chi tiết
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })
+                              Chi tiết
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })
                 )}
               </tbody>
             </table>
@@ -4229,9 +4431,14 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                   .slice((page - 1) * pageSize, page * pageSize)
                   .map((cls) => {
                   const formattedCode = formatClassCode(cls.class_code, cls.id);
-                  const modelNorm = normalizeModel(cls.model_type);
-                  const conf = MODEL_CONFIG[modelNorm] || MODEL_CONFIG['1:1'];
                   const students = getStudentsOfClass(cls);
+                  const modelNorm = normalizeModel(cls.model_type, students.length);
+                  const conf = CLASS_MODEL_BADGE_STYLES[modelNorm] || CLASS_MODEL_BADGE_STYLES['1:1'];
+                  const classStatusInfo = resolveClassDisplayStatus(cls, students);
+                  const cleanedClassName =
+                    cleanClassIdentifier(cls.class_name) ||
+                    cleanClassIdentifier(cls.class_code) ||
+                    cls.class_name;
                   const isOneToOne = modelNorm === '1:1' && students.length <= 1;
                   const singleStudent = isOneToOne ? students[0] : undefined;
                   const isExpanded = !collapsedClassIds.has(cls.id);
@@ -4241,6 +4448,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                     cls.class_teachers?.find((t) => t.role === 'MAIN')?.teacher ||
                     cls.class_teachers?.[0]?.teacher;
                   const schedule = cls.class_schedules?.[0];
+                  const formattedStartTime = formatScheduleTimeDisplay(schedule?.start_time);
 
                   const singleStudentStat = singleStudent
                     ? studentAttendanceStats.get(singleStudent.enrollment_class_id)
@@ -4338,16 +4546,17 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                                 }`
                               : ''
                           }`}
+                          title={cleanedClassName}
                         >
-                          {cls.class_name}
+                          <div className="truncate max-w-[150px]">{cleanedClassName}</div>
                         </td>
 
                         {/* Trình độ */}
                         {isColVisible('level') && (
                           <td className="px-2.5 py-2.5 border-r border-border/60 text-center whitespace-nowrap">
-                            {cls.level ? (
+                            {cls.level || singleStudent?.level ? (
                               <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">
-                                {cls.level}
+                                {cls.level || singleStudent?.level}
                               </span>
                             ) : (
                               <span className="text-text-muted">—</span>
@@ -4383,7 +4592,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                             {schedule ? (
                               <span>
                                 {schedule.schedule_pattern || 'Linh hoạt'}
-                                {schedule.start_time ? ` · ${schedule.start_time}` : ''}
+                                {formattedStartTime ? ` · ${formattedStartTime}` : ''}
                               </span>
                             ) : (
                               <span className="text-text-muted">—</span>
@@ -4391,11 +4600,11 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                           </td>
                         )}
 
-                        {/* Trạng thái */}
+                        {/* Trạng thái (đồng bộ 4 trạng thái chuẩn: Đang học | Bảo lưu | Chờ lớp | Kết thúc) */}
                         {isColVisible('status') && (
                           <td className="px-2.5 py-2.5 border-r border-border/60 text-center whitespace-nowrap">
-                            <Badge variant={cls.active ? 'success' : 'danger'} size="sm">
-                              {cls.active ? 'Đang mở' : 'Đã đóng'}
+                            <Badge variant={classStatusInfo.variant} size="sm">
+                              {classStatusInfo.label}
                             </Badge>
                           </td>
                         )}
@@ -4506,18 +4715,44 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                                               }
                                               onClick={() => {
                                                 setSelectedCa(cls.id, selectedDate, caNo);
-                                                handleBulkMarkWholeClass(
-                                                  cls,
-                                                  selectedDate,
-                                                  'ATTENDED',
-                                                  caNo
-                                                );
+                                                if (marked >= students.length && students.length > 0) {
+                                                  void handleBulkUnmarkWholeClass(
+                                                    cls,
+                                                    selectedDate,
+                                                    caNo
+                                                  );
+                                                } else {
+                                                  void handleBulkMarkWholeClass(
+                                                    cls,
+                                                    selectedDate,
+                                                    'ATTENDED',
+                                                    caNo
+                                                  );
+                                                }
                                               }}
-                                              title={`Chấm Có mặt cả lớp (${students.length} học viên) cho Ca ${caNo}`}
-                                              className="inline-flex h-7 shrink-0 items-center gap-1 whitespace-nowrap rounded-lg border border-dashed border-indigo-300 bg-white px-2.5 text-[11px] font-bold text-indigo-700 transition hover:border-indigo-400 hover:bg-indigo-50 disabled:opacity-50"
+                                              title={
+                                                marked >= students.length && students.length > 0
+                                                  ? `Bỏ chấm điểm danh cả lớp (${students.length} học viên) ở Ca ${caNo}`
+                                                  : `Chấm Có mặt cả lớp (${students.length} học viên) cho Ca ${caNo}`
+                                              }
+                                              className={`inline-flex h-7 shrink-0 items-center gap-1 whitespace-nowrap rounded-lg border border-dashed px-2.5 text-[11px] font-bold transition disabled:opacity-50 ${
+                                                marked >= students.length && students.length > 0
+                                                  ? 'border-rose-300 bg-white text-rose-700 hover:border-rose-400 hover:bg-rose-50'
+                                                  : 'border-indigo-300 bg-white text-indigo-700 hover:border-indigo-400 hover:bg-indigo-50'
+                                              }`}
                                             >
-                                              <ListChecks className="h-3.5 w-3.5 text-indigo-600" />
-                                              <span>Chấm cả lớp</span>
+                                              <ListChecks
+                                                className={`h-3.5 w-3.5 ${
+                                                  marked >= students.length && students.length > 0
+                                                    ? 'text-rose-600'
+                                                    : 'text-indigo-600'
+                                                }`}
+                                              />
+                                              <span>
+                                                {marked >= students.length && students.length > 0
+                                                  ? 'Bỏ chấm cả lớp'
+                                                  : 'Chấm cả lớp'}
+                                              </span>
                                             </button>
 
                                             {isLastCa && (
@@ -4687,18 +4922,37 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                                   {isOneToOne && singleStudent ? (
                                     renderMatrixDateCell(cls, singleStudent, dStr)
                                   ) : isTeacher && students.length > 0 ? (
-                                    <button
-                                      type="button"
-                                      onClick={() =>
-                                        handleBulkMarkWholeClass(cls, dStr, 'ATTENDED')
-                                      }
-                                      disabled={savingKey === `class_${cls.id}_${dStr}_s1`}
-                                      title={`Chấm Có mặt cả lớp (${students.length} học viên) ngày ${dStr}`}
-                                      className="inline-flex h-6 items-center justify-center gap-1 whitespace-nowrap rounded-md border border-dashed border-indigo-300 bg-white px-1.5 text-[10px] font-bold text-indigo-700 transition hover:border-indigo-400 hover:bg-indigo-50 disabled:opacity-50"
-                                    >
-                                      <ListChecks className="h-3 w-3 shrink-0" />
-                                      <span>Chấm cả lớp</span>
-                                    </button>
+                                    (() => {
+                                      const markedInDay = countMarkedInCa(cls, dStr, 1);
+                                      const isAllMarkedInDay =
+                                        markedInDay >= students.length && students.length > 0;
+                                      return (
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            if (isAllMarkedInDay) {
+                                              void handleBulkUnmarkWholeClass(cls, dStr, 1);
+                                            } else {
+                                              void handleBulkMarkWholeClass(cls, dStr, 'ATTENDED', 1);
+                                            }
+                                          }}
+                                          disabled={savingKey === `class_${cls.id}_${dStr}_s1`}
+                                          title={
+                                            isAllMarkedInDay
+                                              ? `Bỏ chấm cả lớp (${students.length} học viên) ngày ${dStr}`
+                                              : `Chấm Có mặt cả lớp (${students.length} học viên) ngày ${dStr}`
+                                          }
+                                          className={`inline-flex h-6 items-center justify-center gap-1 whitespace-nowrap rounded-md border border-dashed bg-white px-1.5 text-[10px] font-bold transition disabled:opacity-50 ${
+                                            isAllMarkedInDay
+                                              ? 'border-rose-300 text-rose-700 hover:border-rose-400 hover:bg-rose-50'
+                                              : 'border-indigo-300 text-indigo-700 hover:border-indigo-400 hover:bg-indigo-50'
+                                          }`}
+                                        >
+                                          <ListChecks className="h-3 w-3 shrink-0" />
+                                          <span>{isAllMarkedInDay ? 'Bỏ chấm cả lớp' : 'Chấm cả lớp'}</span>
+                                        </button>
+                                      );
+                                    })()
                                   ) : (
                                     <span className="text-[10px] text-slate-400">↓</span>
                                   )}
@@ -4804,32 +5058,49 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                                       ? 'sticky left-[152px] z-10 bg-white'
                                       : ''
                                   }`}
+                                  title={cleanedClassName}
                                 >
-                                  {cls.class_name}
+                                  <div className="truncate max-w-[150px]">{cleanedClassName}</div>
                                 </td>
                                 {isColVisible('level') && (
-                                  <td className="px-2.5 py-2 border-r border-border/50 text-center text-[11px] text-slate-400">
-                                    {cls.level || '—'}
+                                  <td className="px-2.5 py-2 border-r border-border/50 text-center text-[11px] text-slate-500">
+                                    {st.level || cls.level || '—'}
                                   </td>
                                 )}
                                 {isColVisible('model_type') && (
-                                  <td className="px-2.5 py-2 border-r border-border/50 text-center text-[11px] text-slate-400">
+                                  <td className="px-2.5 py-2 border-r border-border/50 text-center text-[11px] text-slate-500">
                                     {conf.label}
                                   </td>
                                 )}
                                 {isColVisible('teacher_name') && (
-                                  <td className="px-3 py-2 border-r border-border/50 text-[11px] text-slate-400 whitespace-nowrap">
+                                  <td className="px-3 py-2 border-r border-border/50 text-[11px] text-slate-500 whitespace-nowrap">
                                     {mainTeacher?.name || '—'}
                                   </td>
                                 )}
                                 {isColVisible('schedule_pattern') && (
-                                  <td className="px-3 py-2 border-r border-border/50 text-[11px] text-slate-400 whitespace-nowrap">
-                                    {schedule?.schedule_pattern || '—'}
+                                  <td className="px-3 py-2 border-r border-border/50 text-[11px] text-slate-500 whitespace-nowrap">
+                                    {schedule ? (
+                                      <span>
+                                        {schedule.schedule_pattern || 'Linh hoạt'}
+                                        {formattedStartTime ? ` · ${formattedStartTime}` : ''}
+                                      </span>
+                                    ) : (
+                                      '—'
+                                    )}
                                   </td>
                                 )}
                                 {isColVisible('status') && (
-                                  <td className="px-2.5 py-2 border-r border-border/50 text-center text-[11px] text-slate-400">
-                                    —
+                                  <td className="px-2.5 py-2 border-r border-border/50 text-center whitespace-nowrap">
+                                    {(() => {
+                                      const stBadge =
+                                        ENROLLMENT_STATUS_BADGE_MAP[st.status || 'STUDYING'] ||
+                                        ENROLLMENT_STATUS_BADGE_MAP.STUDYING;
+                                      return (
+                                        <Badge variant={stBadge.variant} size="sm">
+                                          {stBadge.label}
+                                        </Badge>
+                                      );
+                                    })()}
                                   </td>
                                 )}
                                 <td

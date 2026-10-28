@@ -465,9 +465,10 @@ export class ZaloService {
         let avatar: string | null = null;
         let memberCount: number | null = null;
         let ownerUid: string | null = null;
+        let info: any = null;
         try {
           const infoRes: any = await client.getGroupInfo?.(groupId);
-          const info = infoRes?.gridInfoMap?.[groupId] ?? Object.values(infoRes?.gridInfoMap ?? {})[0];
+          info = infoRes?.gridInfoMap?.[groupId] ?? Object.values(infoRes?.gridInfoMap ?? {})[0];
           if (info) {
             name = info.name || info.groupName || null;
             avatar = info.fullAvt || info.avt || null;
@@ -476,12 +477,43 @@ export class ZaloService {
           }
         } catch { /* fall back to grid-only row */ }
 
-        await zaloRepository.upsertGroup(groupId, accountId, {
+        const upsertedGroup = await zaloRepository.upsertGroup(groupId, accountId, {
           name: name ?? undefined,
           avatar_url: avatar ?? undefined,
           member_count: memberCount ?? undefined,
           owner_zalo_uid: ownerUid ?? undefined,
         });
+
+        if (info && upsertedGroup?.id) {
+          try {
+            const memberMap = new Map<string, { display_name?: string; avatar_url?: string }>();
+            if (Array.isArray(info.currentMems)) {
+              for (const m of info.currentMems) {
+                const uid = String(m?.id ?? m?.uid ?? '').split('_')[0].trim();
+                if (!uid) continue;
+                memberMap.set(uid, {
+                  display_name: m?.dName || m?.zaloName || m?.displayName || undefined,
+                  avatar_url: m?.avatar || m?.avt || undefined,
+                });
+              }
+            }
+            const rawIds = [
+              ...(Array.isArray(info.memVerList) ? info.memVerList : []),
+              ...(Array.isArray(info.memberIds) ? info.memberIds : []),
+            ];
+            for (const rawUid of rawIds) {
+              const uid = String(rawUid ?? '').split('_')[0].trim();
+              if (!uid || memberMap.has(uid)) continue;
+              memberMap.set(uid, {});
+            }
+            const entries = Array.from(memberMap.entries()).slice(0, 200);
+            for (const [uid, meta] of entries) {
+              try {
+                await zaloRepository.upsertGroupMember(upsertedGroup.id, uid, meta);
+              } catch { /* ignore individual member upsert failure */ }
+            }
+          } catch { /* ignore member extraction errors */ }
+        }
         synced++;
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);

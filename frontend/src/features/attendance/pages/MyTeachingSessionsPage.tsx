@@ -42,7 +42,11 @@ import type {
 } from '../types/reconciliation.types';
 import { attendanceApi } from '../../classes/api/sessions.api';
 import { classesApi } from '../../classes/api/classes.api';
-import { formatClassCode } from '../../classes/types/classes.types';
+import {
+  formatClassCode,
+  cleanClassIdentifier,
+  CLASS_MODEL_BADGE_STYLES,
+} from '../../classes/types/classes.types';
 
 const toLocalDateString = (d: Date): string => {
   const y = d.getFullYear();
@@ -887,6 +891,40 @@ export const MyTeachingSessionsPage: React.FC<MyTeachingSessionsPageProps> = ({
     }
   };
 
+  // Bỏ chấm cả lớp ("Bỏ chấm cả lớp")
+  const handleUnmarkEntireClass = async (item: EnrichedSession) => {
+    if (!canMark) return;
+    const classId = item.session.class_id || item.session.class?.id;
+    if (!classId) return;
+
+    const toRemove = item.enrollmentClasses
+      .map((ec: any) =>
+        ec.attendance?.find(
+          (a: any) => a.class_session_id === item.session.id && !a.deleted_at && a.teacher_status
+        )
+      )
+      .filter((a: any) => Boolean(a && a.id));
+
+    if (toRemove.length === 0) return;
+
+    const bulkKey = `bulk_${item.session.id}`;
+    setSavingKey(bulkKey);
+    try {
+      await Promise.all(
+        toRemove.map((att: any) =>
+          attendanceApi.remove(classId, item.session.id, att.id, 'TEACHER')
+        )
+      );
+      toast.info(`Đã bỏ chấm cả lớp ${item.session.class?.class_name || ''}`);
+      await Promise.all([loadSessions(), loadPendingCount()]);
+      window.dispatchEvent(new Event('teacher-attendance-updated'));
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || err.message || 'Không thể bỏ chấm cả lớp');
+    } finally {
+      setSavingKey(null);
+    }
+  };
+
   // Save inline lesson topic & teacher note for a session
   const handleSaveSessionLessonAndNote = async (
     item: EnrichedSession,
@@ -1175,9 +1213,9 @@ export const MyTeachingSessionsPage: React.FC<MyTeachingSessionsPageProps> = ({
       header: 'Học viên',
       cell: (item) => (
         <div>
-          <div className="font-semibold text-text-primary">{item.student.full_name}</div>
-          <div className="text-xs text-text-muted">
-            {item.student.external_id || 'Chưa có mã'}
+          <div className="font-bold text-text-primary">{item.student.full_name}</div>
+          <div className="font-mono text-[11px] text-text-muted">
+            {item.student.external_id || `HV_${item.student.id}`}
             {item.student.phone ? ` · ${item.student.phone}` : ''}
           </div>
         </div>
@@ -1187,7 +1225,9 @@ export const MyTeachingSessionsPage: React.FC<MyTeachingSessionsPageProps> = ({
       header: 'Lớp / buổi',
       cell: (item) => (
         <div>
-          <div className="font-medium text-text-primary">{item.class.class_name}</div>
+          <div className="font-semibold text-text-primary">
+            {cleanClassIdentifier(item.class.class_name) || item.class.class_name}
+          </div>
           <div className="text-xs text-text-muted">Buổi {item.session.session_number}</div>
         </div>
       ),
@@ -1246,9 +1286,9 @@ export const MyTeachingSessionsPage: React.FC<MyTeachingSessionsPageProps> = ({
       header: 'Học viên',
       cell: (item) => (
         <div>
-          <div className="font-semibold text-text-primary">{item.student?.full_name || '—'}</div>
-          <div className="text-xs text-text-muted">
-            {item.student?.external_id || 'Chưa có mã'}
+          <div className="font-bold text-text-primary">{item.student?.full_name || '—'}</div>
+          <div className="font-mono text-[11px] text-text-muted">
+            {item.student?.external_id || (item.student?.id ? `HV_${item.student.id}` : '—')}
           </div>
         </div>
       ),
@@ -1257,7 +1297,9 @@ export const MyTeachingSessionsPage: React.FC<MyTeachingSessionsPageProps> = ({
       header: 'Lớp / buổi',
       cell: (item) => (
         <div>
-          <div className="font-medium text-text-primary">{item.class?.class_name || '—'}</div>
+          <div className="font-semibold text-text-primary">
+            {cleanClassIdentifier(item.class?.class_name) || item.class?.class_name || '—'}
+          </div>
           <div className="text-xs text-text-muted">
             {item.session
               ? `${dateLabel(item.session.session_date)} · Buổi ${item.session.session_number}`
@@ -1451,12 +1493,36 @@ export const MyTeachingSessionsPage: React.FC<MyTeachingSessionsPageProps> = ({
             type="button"
             data-testid={`bulk-mark-class-${item.session.id}`}
             disabled={isBulkSaving}
-            onClick={() => void handleMarkEntireClass(item, 'ATTENDED')}
-            title="Thao tác chấm nhanh 1 · Có mặt cho toàn bộ học viên trong lớp nhóm này"
-            className="inline-flex h-7 items-center gap-1.5 rounded-lg border border-dashed border-indigo-300 bg-white px-2.5 text-xs font-bold text-indigo-700 hover:bg-indigo-50 hover:border-indigo-400 transition whitespace-nowrap cursor-pointer disabled:opacity-50"
+            onClick={() => {
+              if (item.isFullyMarked) {
+                void handleUnmarkEntireClass(item);
+              } else {
+                void handleMarkEntireClass(item, 'ATTENDED');
+              }
+            }}
+            title={
+              item.isFullyMarked
+                ? 'Bỏ chấm điểm danh của toàn bộ học viên trong lớp nhóm này'
+                : 'Thao tác chấm nhanh 1 · Có mặt cho toàn bộ học viên trong lớp nhóm này'
+            }
+            className={`inline-flex h-7 items-center gap-1.5 rounded-lg border border-dashed bg-white px-2.5 text-xs font-bold transition whitespace-nowrap cursor-pointer disabled:opacity-50 ${
+              item.isFullyMarked
+                ? 'border-rose-300 text-rose-700 hover:bg-rose-50 hover:border-rose-400'
+                : 'border-indigo-300 text-indigo-700 hover:bg-indigo-50 hover:border-indigo-400'
+            }`}
           >
-            <Users className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
-            <span>{isBulkSaving ? 'Đang chấm...' : 'Chấm cả lớp'}</span>
+            <Users
+              className={`w-3.5 h-3.5 shrink-0 ${
+                item.isFullyMarked ? 'text-rose-600' : 'text-indigo-600'
+              }`}
+            />
+            <span>
+              {isBulkSaving
+                ? 'Đang xử lý...'
+                : item.isFullyMarked
+                ? 'Bỏ chấm cả lớp'
+                : 'Chấm cả lớp'}
+            </span>
           </button>
         )}
       </div>
@@ -1482,7 +1548,6 @@ export const MyTeachingSessionsPage: React.FC<MyTeachingSessionsPageProps> = ({
             value: 'schedule',
             label: 'Lịch dạy & Điểm danh',
             icon: <Calendar />,
-            badge: kpiMetrics.totalSessions,
           },
           {
             value: 'pending',
@@ -1809,24 +1874,27 @@ export const MyTeachingSessionsPage: React.FC<MyTeachingSessionsPageProps> = ({
 
             {/* Bên phải: Bộ chuyển kiểu xem + Bộ chọn phạm vi kỳ + Cụm lịch */}
             <div className="flex flex-wrap items-center gap-2 ml-auto">
-              {/* Bộ chuyển kiểu xem (2 chế độ tinh gọn: Bảng lịch dạy ⇄ Thời khóa biểu tuần) */}
+              {/* Bộ chuyển kiểu xem (2 chế độ hiển thị: Xem danh sách ⇄ Xem lịch tuần) */}
               <div
-                className="inline-flex h-9 items-center p-0.5 bg-surface-muted rounded-xl border border-border/70 gap-0.5"
+                className="inline-flex h-9 items-center p-1 bg-slate-100 rounded-xl border border-slate-200/90 gap-1"
                 role="tablist"
                 aria-label="Chuyển đổi chế độ hiển thị lịch dạy"
               >
+                <span className="px-2 text-[11px] font-semibold text-text-muted select-none">
+                  Chế độ xem:
+                </span>
                 <button
                   type="button"
                   data-testid="view-mode-table"
                   onClick={() => setViewMode('table')}
                   className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
                     viewMode === 'table'
-                      ? 'bg-surface text-primary shadow-xs'
-                      : 'text-text-muted hover:text-text-primary'
+                      ? 'bg-primary text-white shadow-xs'
+                      : 'bg-white/60 text-slate-600 hover:bg-white hover:text-slate-900'
                   }`}
                 >
                   <Table2 className="w-3.5 h-3.5" />
-                  <span>Bảng lịch dạy</span>
+                  <span>Xem danh sách</span>
                 </button>
                 <button
                   type="button"
@@ -1839,18 +1907,18 @@ export const MyTeachingSessionsPage: React.FC<MyTeachingSessionsPageProps> = ({
                   }}
                   className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
                     viewMode === 'timetable'
-                      ? 'bg-surface text-primary shadow-xs'
-                      : 'text-text-muted hover:text-text-primary'
+                      ? 'bg-primary text-white shadow-xs'
+                      : 'bg-white/60 text-slate-600 hover:bg-white hover:text-slate-900'
                   }`}
                 >
                   <CalendarDays className="w-3.5 h-3.5" />
-                  <span>Thời khóa biểu tuần</span>
+                  <span>Xem lịch tuần</span>
                 </button>
               </div>
 
               {/* Bộ chọn phạm vi kỳ: Theo ngày | Theo tuần | Theo tháng */}
               <div
-                className="inline-flex h-9 items-center p-0.5 bg-surface-muted rounded-xl border border-border/70 gap-0.5"
+                className="inline-flex h-9 items-center p-1 bg-slate-100 rounded-xl border border-slate-200/90 gap-1"
                 role="group"
                 aria-label="Chế độ xem kỳ lịch dạy"
               >
@@ -1863,7 +1931,7 @@ export const MyTeachingSessionsPage: React.FC<MyTeachingSessionsPageProps> = ({
                   className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                     dateRangeFilter === 'today'
                       ? 'bg-primary text-white shadow-xs'
-                      : 'text-text-muted hover:text-text-primary'
+                      : 'bg-white/60 text-slate-600 hover:bg-white hover:text-slate-900'
                   }`}
                 >
                   Theo ngày
@@ -1877,7 +1945,7 @@ export const MyTeachingSessionsPage: React.FC<MyTeachingSessionsPageProps> = ({
                   className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                     dateRangeFilter === 'week'
                       ? 'bg-primary text-white shadow-xs'
-                      : 'text-text-muted hover:text-text-primary'
+                      : 'bg-white/60 text-slate-600 hover:bg-white hover:text-slate-900'
                   }`}
                 >
                   Theo tuần
@@ -1891,7 +1959,7 @@ export const MyTeachingSessionsPage: React.FC<MyTeachingSessionsPageProps> = ({
                   className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                     dateRangeFilter === 'month'
                       ? 'bg-primary text-white shadow-xs'
-                      : 'text-text-muted hover:text-text-primary'
+                      : 'bg-white/60 text-slate-600 hover:bg-white hover:text-slate-900'
                   }`}
                 >
                   Theo tháng
@@ -2028,13 +2096,14 @@ export const MyTeachingSessionsPage: React.FC<MyTeachingSessionsPageProps> = ({
                                   {classCode}
                                 </span>
                                 <span className="font-bold text-text-primary">
-                                  {session.class?.class_name || '—'}
+                                  {cleanClassIdentifier(session.class?.class_name) ||
+                                    session.class?.class_name ||
+                                    '—'}
                                 </span>
                                 <span
-                                  className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-extrabold border ${
-                                    item.modelType === '1:1'
-                                      ? 'bg-sky-50 text-sky-700 border-sky-200'
-                                      : 'bg-indigo-50 text-indigo-700 border-indigo-200'
+                                  className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] border ${
+                                    CLASS_MODEL_BADGE_STYLES[item.modelType]?.className ||
+                                    CLASS_MODEL_BADGE_STYLES['1:1'].className
                                   }`}
                                 >
                                   {item.modelType}
@@ -2501,20 +2570,41 @@ export const MyTeachingSessionsPage: React.FC<MyTeachingSessionsPageProps> = ({
               </div>
 
               {canMark && quickModalItem.totalStudents > 0 && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    const next: Record<number, AttendanceStatus> = {};
-                    for (const ec of quickModalItem.enrollmentClasses) {
-                      next[ec.id] = 'ATTENDED';
-                    }
-                    setQuickModalStatuses(next);
-                  }}
-                  className="inline-flex h-7 items-center gap-1.5 rounded-lg border border-dashed border-indigo-300 bg-white px-2.5 text-xs font-bold text-indigo-700 hover:bg-indigo-50 transition cursor-pointer"
-                >
-                  <Users className="w-3.5 h-3.5 text-indigo-600" />
-                  <span>Chấm cả lớp (1 · Có mặt)</span>
-                </button>
+                (() => {
+                  const allModalMarked =
+                    quickModalItem.enrollmentClasses.length > 0 &&
+                    quickModalItem.enrollmentClasses.every((ec: any) =>
+                      Boolean(quickModalStatuses[ec.id])
+                    );
+                  return (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (allModalMarked) {
+                          setQuickModalStatuses({});
+                        } else {
+                          const next: Record<number, AttendanceStatus> = {};
+                          for (const ec of quickModalItem.enrollmentClasses) {
+                            next[ec.id] = 'ATTENDED';
+                          }
+                          setQuickModalStatuses(next);
+                        }
+                      }}
+                      className={`inline-flex h-7 items-center gap-1.5 rounded-lg border border-dashed bg-white px-2.5 text-xs font-bold transition cursor-pointer ${
+                        allModalMarked
+                          ? 'border-rose-300 text-rose-700 hover:bg-rose-50'
+                          : 'border-indigo-300 text-indigo-700 hover:bg-indigo-50'
+                      }`}
+                    >
+                      <Users
+                        className={`w-3.5 h-3.5 ${
+                          allModalMarked ? 'text-rose-600' : 'text-indigo-600'
+                        }`}
+                      />
+                      <span>{allModalMarked ? 'Bỏ chấm cả lớp' : 'Chấm cả lớp'}</span>
+                    </button>
+                  );
+                })()
               )}
             </div>
 

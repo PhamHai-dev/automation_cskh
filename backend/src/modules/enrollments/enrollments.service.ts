@@ -56,25 +56,36 @@ export class EnrollmentsService {
     return userId;
   }
 
+  private normalizeEnrollmentStatus<T extends Record<string, any>>(enr: T): T {
+    if (!enr || !Array.isArray(enr.enrollment_classes)) return enr;
+    const hasAssignedClass = enr.enrollment_classes.length > 0;
+    if (hasAssignedClass && (enr.status === 'WAITING_CLASS' || enr.status === 'NOT_STARTED')) {
+      return { ...enr, status: 'STUDYING' };
+    }
+    return enr;
+  }
+
   async getEnrollmentsForUser(
     userId: number,
     roles: string[],
     saleIdentifier?: string,
     filters?: EnrollmentListFilters,
   ) {
+    let rows: any[];
     if (roles.includes('ADMIN')) {
-      return this.repository.findAll(saleIdentifier, filters);
+      rows = await this.repository.findAll(saleIdentifier, filters);
     } else if (roles.includes('MANAGE')) {
       const allowedIds = (await this.resolveScopeCsIds(userId, roles, filters?.csId)) as number[];
-      return this.repository.findAllByCSIds(allowedIds, {
+      rows = await this.repository.findAllByCSIds(allowedIds, {
         ...filters,
         sale: saleIdentifier || filters?.sale,
       });
     } else {
       // CS — B.5/D9: cs_id only; the sale identifier is never a scope grant for CS.
       // (ADMIN may still use ?sale= to narrow its own unrestricted view.)
-      return this.repository.findAllByCS(userId, filters);
+      rows = await this.repository.findAllByCS(userId, filters);
     }
+    return Array.isArray(rows) ? rows.map((r) => this.normalizeEnrollmentStatus(r)) : rows;
   }
 
   async getEnrollmentsWithMeta(

@@ -392,19 +392,56 @@ export function extractCvhtCode(primaryVal: any, fallbackNote?: string | null): 
 }
 
 /**
- * Map Vietnamese status text to EnrollmentStatus enum
+ * Map Vietnamese status text to EnrollmentStatus enum, reconciling with whether a class is already assigned
  */
-export function mapEnrollmentStatus(rawStatus: string | null | undefined): EnrollmentStatus {
+export function mapEnrollmentStatus(
+  rawStatus: string | null | undefined,
+  hasAssignedClass?: boolean
+): EnrollmentStatus {
   const s = (rawStatus || '').trim().toLowerCase();
-  if (!s) return EnrollmentStatus.STUDYING;
   if (s.includes('kết thúc') || s.includes('hoàn thành')) return EnrollmentStatus.FINISHED;
-  if (s.includes('đang học') || s.includes('video')) return EnrollmentStatus.STUDYING;
-  if (s.includes('chờ lớp') || s.includes('đợi lớp')) return EnrollmentStatus.WAITING_CLASS;
   if (s.includes('bảo lưu') || s.includes('tạm nghỉ')) return EnrollmentStatus.PAUSED;
-  if (s.includes('sắp học')) return EnrollmentStatus.UPCOMING;
-  if (s.includes('chưa học')) return EnrollmentStatus.NOT_STARTED;
   if (s.includes('hủy') || s.includes('nghỉ học')) return EnrollmentStatus.CANCELLED;
+  if (s.includes('sắp học')) return EnrollmentStatus.UPCOMING;
+  if (s.includes('chưa học')) {
+    return hasAssignedClass ? EnrollmentStatus.STUDYING : EnrollmentStatus.NOT_STARTED;
+  }
+  if (s.includes('chờ lớp') || s.includes('đợi lớp') || s.includes('chưa xếp') || s.includes('chưa có lớp')) {
+    return hasAssignedClass ? EnrollmentStatus.STUDYING : EnrollmentStatus.WAITING_CLASS;
+  }
+  if (s.includes('đang học') || s.includes('video')) {
+    return hasAssignedClass === false && !s.includes('video')
+      ? EnrollmentStatus.WAITING_CLASS
+      : EnrollmentStatus.STUDYING;
+  }
+  if (hasAssignedClass === false) return EnrollmentStatus.WAITING_CLASS;
   return EnrollmentStatus.STUDYING;
+}
+
+/**
+ * Clean single-line class code / class name when Excel cells contain historical multiline entries
+ */
+export function cleanClassIdentifier(rawVal: string | null | undefined): string | null {
+  if (!rawVal) return null;
+  const lines = rawVal
+    .split(/\r?\n/)
+    .map((l) => l.replace(/\t+/g, ' ').trim())
+    .filter(Boolean);
+  if (lines.length === 0) return null;
+  if (lines.length === 1) return lines[0];
+  // Filter out note-like lines starting with '+' or '('
+  const classLikeLines = lines.filter((l) => !/^[+(]/.test(l) && !l.toLowerCase().includes('tặng khóa'));
+  const target = classLikeLines.length > 0 ? classLikeLines[classLikeLines.length - 1] : lines[0];
+  return target.trim() || null;
+}
+
+/**
+ * Clean leading escaped quote artifacts from Google Sheet formula fallbacks (e.g. '"""""""- Zalo...')
+ */
+export function cleanSheetNote(rawVal: string | null | undefined): string | null {
+  if (!rawVal) return null;
+  const cleaned = rawVal.replace(/^"+|"+$/g, '').trim();
+  return cleaned || null;
 }
 
 /**
@@ -636,7 +673,7 @@ export function parseJlptSheetRows(
       : null;
 
     const paymentStatus = cellText(row.getCell(12)) || null;
-    const salesNote = cellText(row.getCell(13)) || null;
+    const salesNote = cleanSheetNote(cellText(row.getCell(13)));
     const expectedStartDateObj = parseSheetDate(row.getCell(14).value);
     const expectedStartDate = formatIsoDateOnly(expectedStartDateObj);
     const activeState = cellText(row.getCell(15)) || null;
@@ -657,14 +694,15 @@ export function parseJlptSheetRows(
 
     const startDate = formatIsoDateOnly(parseSheetDate(row.getCell(18).value));
     const rawStatus = cellText(row.getCell(19));
-    const status = mapEnrollmentStatus(rawStatus);
 
     const startTime = extractStartTime(row.getCell(20).value);
     const schedulePattern = extractSchedulePattern(row.getCell(21).value);
     const teacherName = cellText(row.getCell(22)) || null;
-    const classCode = cellText(row.getCell(23)) || null;
-    const rawClassName = cellText(row.getCell(24));
+    const classCode = cleanClassIdentifier(cellText(row.getCell(23)));
+    const rawClassName = cleanClassIdentifier(cellText(row.getCell(24)));
     const className = rawClassName || classCode || null;
+    const hasAssignedClass = Boolean(classCode || className);
+    const status = mapEnrollmentStatus(rawStatus, hasAssignedClass);
 
     const exchangeInfo = cellText(row.getCell(25)) || null;
     const callbackNote = cellText(row.getCell(26)) || null;
@@ -850,7 +888,7 @@ export function parseKaiwaSheetRows(
       : 30;
 
     const classModel = cellText(row.getCell(15)) || null;
-    const salesNote = cellText(row.getCell(16)) || null;
+    const salesNote = cleanSheetNote(cellText(row.getCell(16)));
     const dateOfBirth = formatIsoDateOnly(parseSheetDate(row.getCell(17).value));
     const occupation = cellText(row.getCell(18)) || null;
     const cvhtCode = extractCvhtCode(row.getCell(19).value, salesNote);
@@ -862,7 +900,6 @@ export function parseKaiwaSheetRows(
 
     const startDate = formatIsoDateOnly(parseSheetDate(row.getCell(21).value));
     const rawStatus = cellText(row.getCell(22));
-    const status = mapEnrollmentStatus(rawStatus);
     const endDate = formatIsoDateOnly(parseSheetDate(row.getCell(23).value));
 
     const startTime = extractStartTime(row.getCell(24).value);
@@ -879,7 +916,8 @@ export function parseKaiwaSheetRows(
 
     const teacherName = cellText(row.getCell(32)) || null;
     const teacherCode = cellText(row.getCell(33)) || teacherName || null;
-    const className = cellText(row.getCell(34)) || null;
+    const className = cleanClassIdentifier(cellText(row.getCell(34)));
+    const status = mapEnrollmentStatus(rawStatus, Boolean(className));
 
     const rawAttPrev = extractCellValue(row.getCell(35).value);
     const attendedPreviousYears = rawAttPrev !== null && rawAttPrev !== undefined && rawAttPrev !== '' && !Number.isNaN(Number(rawAttPrev))

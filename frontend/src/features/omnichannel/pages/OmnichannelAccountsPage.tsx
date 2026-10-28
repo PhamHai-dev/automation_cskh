@@ -56,6 +56,7 @@ interface UnifiedAccountRow {
   phone: string | null;
   avatarUrl: string | null;
   csName: string;
+  csCode: string | null;
   status: string;
   statusLabel: string;
   statusColor: string;
@@ -88,6 +89,7 @@ export const OmnichannelAccountsPage: React.FC<{ initialChannel?: ChannelFilterT
   const [lineAccounts, setLineAccounts] = useState<LineAccount[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncingRowKey, setSyncingRowKey] = useState<string | null>(null);
+  const [reconnectingRowKey, setReconnectingRowKey] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
 
   // Dialogs
@@ -179,6 +181,7 @@ export const OmnichannelAccountsPage: React.FC<{ initialChannel?: ChannelFilterT
   const unifiedRows = useMemo<UnifiedAccountRow[]>(() => {
     const zRows: UnifiedAccountRow[] = zaloAccounts.map((z) => {
       const st = z.liveStatus || z.status;
+      const csCode = z.cs?.staff_code || z.cs?.code || null;
       return {
         uidKey: `ZALO-${z.id}`,
         platform: 'ZALO',
@@ -188,7 +191,8 @@ export const OmnichannelAccountsPage: React.FC<{ initialChannel?: ChannelFilterT
         uidOrMid: z.zalo_uid,
         phone: z.zalo_phone,
         avatarUrl: z.avatar_url,
-        csName: z.cs?.full_name || `CSKH #${z.cs_id}`,
+        csName: z.cs?.full_name || z.cs?.name || (z.cs_id ? `CSKH #${z.cs_id}` : 'Chưa gán'),
+        csCode,
         status: st,
         statusLabel: ZALO_STATUS_LABELS[st] || st,
         statusColor: ZALO_STATUS_COLORS[st] || 'bg-gray-100 text-gray-600',
@@ -202,6 +206,7 @@ export const OmnichannelAccountsPage: React.FC<{ initialChannel?: ChannelFilterT
 
     const lRows: UnifiedAccountRow[] = lineAccounts.map((l) => {
       const st = l.liveStatus || l.status;
+      const csCode = l.cs?.staff_code || l.cs?.code || null;
       return {
         uidKey: `LINE-${l.id}`,
         platform: 'LINE',
@@ -212,7 +217,8 @@ export const OmnichannelAccountsPage: React.FC<{ initialChannel?: ChannelFilterT
         uidOrMid: l.basic_id || l.line_mid,
         phone: l.line_phone,
         avatarUrl: l.avatar_url,
-        csName: l.cs?.full_name || l.cs?.name || `CSKH #${l.cs_id}`,
+        csName: l.cs?.full_name || l.cs?.name || (l.cs_id ? `CSKH #${l.cs_id}` : 'Chưa gán'),
+        csCode,
         status: st,
         statusLabel: LINE_STATUS_LABELS[st] || st,
         statusColor: LINE_STATUS_COLORS[st] || 'bg-gray-100 text-gray-600',
@@ -317,6 +323,44 @@ export const OmnichannelAccountsPage: React.FC<{ initialChannel?: ChannelFilterT
       fetchAllAccounts();
     } catch (err: any) {
       toast.error(err.response?.data?.message || 'Không thể ngắt kết nối');
+    }
+  };
+
+  const handleReconnectRow = async (row: UnifiedAccountRow) => {
+    setReconnectingRowKey(row.uidKey);
+    try {
+      if (row.platform === 'ZALO') {
+        await zaloApi.reconnect(row.id);
+        toast.success(`Đã kích hoạt kết nối lại cho ${row.displayName}`);
+        await fetchAllAccounts();
+      } else {
+        const res = await lineApi.reconnectAccount(row.id);
+        if (res && res.reconnected === false) {
+          toast.warning(
+            'Phiên đăng nhập LINE đã hết hạn hoàn toàn. Vui lòng quét mã QR mới để kết nối lại.',
+          );
+          if (row.rawLine && row.accountType === 'PERSONAL') {
+            setLineQrTarget(row.rawLine);
+          }
+        } else {
+          toast.success(`Đã kết nối lại ${row.displayName}`);
+        }
+        await fetchAllAccounts();
+      }
+    } catch (err: any) {
+      const msg =
+        err?.response?.data?.error?.message ||
+        err?.response?.data?.message ||
+        err?.response?.data?.error ||
+        'Phiên đã hết hạn hoàn toàn — vui lòng quét mã QR mới để kết nối lại.';
+      toast.warning(String(msg));
+      if (row.platform === 'ZALO' && row.rawZalo) {
+        setZaloQrTarget(row.rawZalo);
+      } else if (row.platform === 'LINE' && row.accountType === 'PERSONAL' && row.rawLine) {
+        setLineQrTarget(row.rawLine);
+      }
+    } finally {
+      setReconnectingRowKey(null);
     }
   };
 
@@ -585,6 +629,10 @@ export const OmnichannelAccountsPage: React.FC<{ initialChannel?: ChannelFilterT
                         )
                       : null;
                   const isRowSyncing = syncingRowKey === row.uidKey;
+                  const isRowReconnecting = reconnectingRowKey === row.uidKey;
+                  const canReconnect =
+                    (row.accountType === 'ZALO_PERSONAL' || row.accountType === 'PERSONAL') &&
+                    ['EXPIRED', 'NOT_LOGGED_IN', 'DISCONNECTED', 'ERROR'].includes(row.status);
 
                   return (
                     <tr key={row.uidKey} className="hover:bg-gray-50/70 transition-colors">
@@ -638,7 +686,14 @@ export const OmnichannelAccountsPage: React.FC<{ initialChannel?: ChannelFilterT
 
                       {/* Owner CS */}
                       <td className="py-3.5 px-4 text-xs font-medium text-gray-700">
-                        {row.csName}
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span>{row.csName}</span>
+                          {row.csCode && (
+                            <span className="px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 font-mono text-[10px] font-bold">
+                              {row.csCode}
+                            </span>
+                          )}
+                        </div>
                       </td>
 
                       {/* Status */}
@@ -699,6 +754,20 @@ export const OmnichannelAccountsPage: React.FC<{ initialChannel?: ChannelFilterT
                       {/* Actions */}
                       <td className="py-3.5 px-4 text-right">
                         <div className="flex items-center justify-end gap-1.5 flex-wrap">
+                          {/* Reconnect using saved session */}
+                          {canReconnect && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              isLoading={isRowReconnecting}
+                              onClick={() => handleReconnectRow(row)}
+                              title="Kết nối lại từ phiên đã lưu mà không cần quét QR"
+                              leftIcon={<RefreshCw className="w-3.5 h-3.5 text-emerald-600" />}
+                            >
+                              Kết nối lại
+                            </Button>
+                          )}
+
                           {/* QR Login for Zalo or LINE Personal when not active */}
                           {row.accountType === 'ZALO_PERSONAL' &&
                             row.status !== 'ACTIVE' &&

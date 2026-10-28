@@ -7,6 +7,7 @@ import type { ZaloAccount } from '../../zalo/types/zalo.types';
 import type { LineAccount, LineGroupInfo } from '../../line/types/line.types';
 import { PageContainer } from '../../../components/common/PageContainer';
 import { PageHeader } from '../../../components/common/PageHeader';
+import { PaginationFooter } from '../../../components/common/Pagination';
 import { Button } from '../../../components/ui/Button';
 import { Input } from '../../../components/ui/Input';
 import { Modal } from '../../../components/ui/Modal';
@@ -62,6 +63,8 @@ export const OmnichannelGroupsPage: React.FC<{ initialTab?: GroupsViewTab }> = (
   const [loading, setLoading] = useState(false);
   const [syncingAll, setSyncingAll] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
 
   // Quick Send Group Message Modal
   const [sendTarget, setSendTarget] = useState<UnifiedGroupItem | null>(null);
@@ -184,6 +187,19 @@ export const OmnichannelGroupsPage: React.FC<{ initialTab?: GroupsViewTab }> = (
       return true;
     });
   }, [groups, tab, selectedAccountFilter, searchQuery]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [tab, selectedAccountFilter, searchQuery]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredGroups.length / pageSize));
+  const safePage = Math.min(page, totalPages);
+  const paginatedGroups = useMemo(
+    () => filteredGroups.slice((safePage - 1) * pageSize, safePage * pageSize),
+    [filteredGroups, safePage, pageSize],
+  );
+  const startRecord = filteredGroups.length === 0 ? 0 : (safePage - 1) * pageSize + 1;
+  const endRecord = Math.min(safePage * pageSize, filteredGroups.length);
 
   const handleQuickSend = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -374,8 +390,9 @@ export const OmnichannelGroupsPage: React.FC<{ initialTab?: GroupsViewTab }> = (
             </p>
           </div>
         ) : (
+          <div className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filteredGroups.map((g) => (
+            {paginatedGroups.map((g) => (
               <div
                 key={g.uidKey}
                 className="p-4 rounded-2xl bg-surface border border-border hover:border-primary/40 transition-all flex flex-col justify-between gap-3 shadow-2xs"
@@ -415,6 +432,11 @@ export const OmnichannelGroupsPage: React.FC<{ initialTab?: GroupsViewTab }> = (
                     <p className="text-[11px] text-text-secondary mt-0.5">
                       Thành viên: <strong>{g.memberCount}</strong> · Mã nhóm: {g.externalGroupId}
                     </p>
+                    {g.lastSyncedAt && (
+                      <p className="text-[10px] text-text-muted mt-0.5">
+                        Đồng bộ: {new Date(g.lastSyncedAt).toLocaleString('vi-VN')}
+                      </p>
+                    )}
                   </div>
                 </div>
 
@@ -433,7 +455,20 @@ export const OmnichannelGroupsPage: React.FC<{ initialTab?: GroupsViewTab }> = (
                   )}
                   <button
                     type="button"
-                    onClick={() => navigate('/omnichannel/chat')}
+                    onClick={async () => {
+                      if (g.platform === 'ZALO') {
+                        await zaloApi
+                          .ensureGroupConversation(g.accountId, g.externalGroupId, {
+                            groupName: g.name,
+                            groupAvatarUrl: g.avatarUrl,
+                            memberCount: g.memberCount,
+                          })
+                          .catch(() => null);
+                      }
+                      navigate(
+                        `/omnichannel/chat?channel=${g.platform}&accountId=${g.accountId}&threadId=${encodeURIComponent(g.externalGroupId)}`,
+                      );
+                    }}
                     className="px-2.5 py-1 rounded-lg border border-border text-xs font-medium text-text-secondary hover:bg-surface-muted flex items-center gap-1"
                   >
                     <MessageSquare className="w-3 h-3" />
@@ -457,6 +492,23 @@ export const OmnichannelGroupsPage: React.FC<{ initialTab?: GroupsViewTab }> = (
                 </div>
               </div>
             ))}
+          </div>
+          <div className="rounded-2xl border border-border bg-surface overflow-hidden">
+            <PaginationFooter
+              startRecord={startRecord}
+              endRecord={endRecord}
+              totalCount={filteredGroups.length}
+              pageSize={pageSize}
+              currentPage={safePage}
+              totalPages={totalPages}
+              onPageChange={setPage}
+              onPageSizeChange={(newSize) => {
+                setPageSize(newSize);
+                setPage(1);
+              }}
+              recordLabel="nhóm"
+            />
+          </div>
           </div>
         )}
       </div>

@@ -103,7 +103,7 @@ router.get('/:accountId/friends-db', async (req: Request, res: Response) => {
     ]);
     const counts = Object.fromEntries(countsRaw.map((g) => [g.relationship_kind, g._count]));
 
-    return res.json({ friends, total, counts, page: pageNum, limit: limitNum });
+    return res.json({ friends, total, totalPages: Math.max(1, Math.ceil(total / limitNum)), counts, page: pageNum, limit: limitNum });
   } catch (err) {
     return handleError(res, err, 'friend-db-list');
   }

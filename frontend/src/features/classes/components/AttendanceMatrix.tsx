@@ -6,6 +6,10 @@ import {
   AttendanceStatus,
   AttendanceSide,
   formatClassCode,
+  normalizeClassModel,
+  CLASS_MODEL_BADGE_STYLES,
+  ENROLLMENT_STATUS_BADGE_MAP,
+  formatScheduleTimeDisplay,
 } from '../types/classes.types';
 import { Button } from '../../../components/ui/Button';
 import { Badge } from '../../../components/ui/Badge';
@@ -97,19 +101,8 @@ export interface AttendanceMatrixProps {
 
 export type AttendanceTab = 'quick' | 'detailed' | 'stats';
 
-const formatClassModel = (model?: string | null): string => {
-  const labels: Record<string, string> = {
-    ONE_TO_ONE: '1-1',
-    ONE_TO_TWO: '1-2',
-    ONE_TO_N: '1-N',
-    GROUP: '1-N',
-    '1:1': '1-1',
-    '1:2': '1-2',
-    '1:n': '1-N',
-  };
-
-  return labels[model || ''] || model || '1-1';
-};
+const formatClassModel = (model?: string | null): '1:1' | '1:2' | '1:n' =>
+  normalizeClassModel(model);
 
 const STATUS_CONFIG: Record<
   AttendanceStatus,
@@ -746,8 +739,10 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
 
     students.forEach((s) => {
       const stat = studentStats.get(s.enrollment_class_id);
+      const prevAtt = s.attended_previous_years || 0;
+      const curAtt = stat?.totalAttended || 0;
+      grandTotalAttended += prevAtt + curAtt;
       if (stat) {
-        grandTotalAttended += stat.totalAttended;
         grandTotalMonthAttended += stat.monthAttended;
         grandTotalAbsentA += stat.totalAbsentA;
         grandTotalAbsentC += stat.totalAbsentC;
@@ -757,8 +752,9 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
         grandTotalLeaveB += stat.monthLeaveB;
         grandTotalTechE += stat.monthTechE;
       }
-      const rem =
-        s.total_sessions ? s.total_sessions - (stat?.totalAttended || 0) : 0;
+      const rem = s.total_sessions
+        ? s.total_sessions - prevAtt - curAtt
+        : (s.remaining_sessions ?? 0) - curAtt;
       if (rem < 0) negativeDebtStudents++;
     });
 
@@ -2479,14 +2475,18 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
           {activeTab === 'detailed' && (
             <div className="flex flex-wrap items-center gap-2">
               {/* Bộ chọn kiểu xem Tab 2: Bảng tháng | Nhật ký bài học */}
-              <div className="flex p-0.5 bg-surface-muted rounded-xl border border-border/60 text-xs font-semibold">
+              <div
+                className="inline-flex h-9 items-center p-1 bg-slate-100 rounded-xl border border-slate-200/90 gap-1 text-xs font-semibold"
+                role="tablist"
+                aria-label="Chọn kiểu hiển thị Lịch sử & Bảng tháng"
+              >
                 <button
                   type="button"
                   onClick={() => setDetailedViewMode('matrix')}
-                  className={`px-3 py-1 rounded-lg transition-all ${
+                  className={`px-3 py-1 rounded-lg transition-all cursor-pointer ${
                     detailedViewMode === 'matrix'
-                      ? 'bg-surface text-primary shadow-xs font-bold'
-                      : 'text-text-muted hover:text-text-primary'
+                      ? 'bg-primary text-white shadow-xs font-bold'
+                      : 'bg-white/60 text-slate-600 hover:bg-white hover:text-slate-900'
                   }`}
                 >
                   Bảng tháng
@@ -2494,25 +2494,29 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
                 <button
                   type="button"
                   onClick={() => setDetailedViewMode('log')}
-                  className={`px-3 py-1 rounded-lg transition-all ${
+                  className={`px-3 py-1 rounded-lg transition-all cursor-pointer ${
                     detailedViewMode === 'log'
-                      ? 'bg-surface text-primary shadow-xs font-bold'
-                      : 'text-text-muted hover:text-text-primary'
+                      ? 'bg-primary text-white shadow-xs font-bold'
+                      : 'bg-white/60 text-slate-600 hover:bg-white hover:text-slate-900'
                   }`}
                 >
-                  Nhật ký bài học ({periodSessionLogs.length})
+                  Nhật ký bài học
                 </button>
               </div>
 
               {/* Filter Mode: Theo tuần | Theo tháng */}
-              <div className="flex p-0.5 bg-surface-muted rounded-xl border border-border/60 text-xs font-semibold">
+              <div
+                className="inline-flex h-9 items-center p-1 bg-slate-100 rounded-xl border border-slate-200/90 gap-1 text-xs font-semibold"
+                role="tablist"
+                aria-label="Chọn phạm vi kỳ hiển thị"
+              >
                 <button
                   type="button"
                   onClick={() => setFilterMode('week')}
-                  className={`px-3 py-1 rounded-lg transition-all ${
+                  className={`px-3 py-1 rounded-lg transition-all cursor-pointer ${
                     filterMode === 'week'
-                      ? 'bg-surface text-primary shadow-xs font-bold'
-                      : 'text-text-muted hover:text-text-primary'
+                      ? 'bg-primary text-white shadow-xs font-bold'
+                      : 'bg-white/60 text-slate-600 hover:bg-white hover:text-slate-900'
                   }`}
                 >
                   Theo tuần
@@ -2520,10 +2524,10 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
                 <button
                   type="button"
                   onClick={() => setFilterMode('month')}
-                  className={`px-3 py-1 rounded-lg transition-all ${
+                  className={`px-3 py-1 rounded-lg transition-all cursor-pointer ${
                     filterMode === 'month'
-                      ? 'bg-surface text-primary shadow-xs font-bold'
-                      : 'text-text-muted hover:text-text-primary'
+                      ? 'bg-primary text-white shadow-xs font-bold'
+                      : 'bg-white/60 text-slate-600 hover:bg-white hover:text-slate-900'
                   }`}
                 >
                   Theo tháng
@@ -3043,15 +3047,15 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
 
                       {/* Cột C: Gói học */}
                       {isColVisible('package_name') && (
-                      <td className="px-3 py-2.5 border-r border-border/60 text-text-secondary whitespace-nowrap">
-                        <span className="font-semibold">{st.package_name || '-'}</span>
+                      <td className="px-3 py-2.5 border-r border-border/60 font-semibold text-text-secondary whitespace-nowrap">
+                        {st.package_name || '—'}
                       </td>
                       )}
 
                       {/* Cột D: Nội dung khoá */}
                       {isColVisible('course_content') && (
-                      <td className="px-3 py-2.5 border-r border-border/60 text-text-muted whitespace-nowrap">
-                        {st.course_content || '-'}
+                      <td className="px-3 py-2.5 border-r border-border/60 text-text-secondary whitespace-nowrap">
+                        {st.course_content || '—'}
                       </td>
                       )}
 
@@ -3064,56 +3068,48 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
 
                       {/* Cột F: Khoá học / Trình độ */}
                       {isColVisible('level') && (
-                      <td className="px-3 py-2.5 border-r border-border/60 text-text-secondary whitespace-nowrap">
-                        {st.level || '-'}
+                      <td className="px-3 py-2.5 border-r border-border/60 font-semibold text-teal-800 whitespace-nowrap">
+                        {st.level || '—'}
                       </td>
                       )}
 
                       {/* Cột G: Email */}
                       {isColVisible('email') && (
                       <td className="px-3 py-2.5 border-r border-border/60 text-text-muted whitespace-nowrap">
-                        {st.email || '-'}
+                        {st.email || '—'}
                       </td>
                       )}
 
                       {/* Cột H: Mô hình */}
                       {isColVisible('model_type') && (
-                      <td className="px-3 py-2.5 border-r border-border/60 text-text-secondary whitespace-nowrap">
-                        <Badge variant="neutral" size="sm">
-                          {formatClassModel(st.model_type)}
-                        </Badge>
+                      <td className="px-3 py-2.5 border-r border-border/60 text-center whitespace-nowrap">
+                        {(() => {
+                          const mNorm = formatClassModel(st.model_type);
+                          const mStyle = CLASS_MODEL_BADGE_STYLES[mNorm];
+                          return (
+                            <span
+                              className={`inline-flex items-center px-2 py-0.5 rounded-md text-xs border ${mStyle.className}`}
+                            >
+                              {mStyle.label}
+                            </span>
+                          );
+                        })()}
                       </td>
                       )}
 
                       {/* Cột K: Trạng thái */}
                       {isColVisible('status') && (
                       <td className="px-3 py-2.5 border-r-2 border-border/80 whitespace-nowrap">
-                        <Badge
-                          variant={
-                            st.status === 'STUDYING'
-                              ? 'success'
-                              : st.status === 'PAUSED' || st.status === 'WAITING_CLASS'
-                              ? 'warning'
-                              : st.status === 'UPCOMING'
-                              ? 'info'
-                              : 'neutral'
-                          }
-                          size="sm"
-                        >
-                          {st.status === 'STUDYING'
-                            ? 'Đang học'
-                            : st.status === 'PAUSED'
-                            ? 'Bảo lưu'
-                            : st.status === 'FINISHED'
-                            ? 'Kết thúc'
-                            : st.status === 'WAITING_CLASS'
-                            ? 'Chờ lớp'
-                            : st.status === 'UPCOMING'
-                            ? 'Sắp học'
-                            : st.status === 'NOT_STARTED'
-                            ? 'Chưa học'
-                            : st.status}
-                        </Badge>
+                        {(() => {
+                          const sCfg =
+                            ENROLLMENT_STATUS_BADGE_MAP[st.status] ||
+                            ENROLLMENT_STATUS_BADGE_MAP.STUDYING;
+                          return (
+                            <Badge variant={sCfg.variant} size="sm">
+                              {sCfg.label}
+                            </Badge>
+                          );
+                        })()}
                       </td>
                       )}
 
@@ -3452,17 +3448,17 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
                 )}
                 {isColVisible('start_time') && (
                 <th className="px-3 py-3 border-r border-border/60 whitespace-nowrap min-w-[75px]">
-                  Giờ học (1)
+                  Giờ học
                 </th>
                 )}
                 {isColVisible('schedule_pattern') && (
                 <th className="px-3 py-3 border-r border-border/60 whitespace-nowrap min-w-[75px]">
-                  Lịch học (1)
+                  Lịch học
                 </th>
                 )}
                 {isColVisible('duration_minutes') && (
                 <th className="px-3 py-3 border-r-2 border-border/80 text-center whitespace-nowrap min-w-[80px]">
-                  Thời lượng buổi học (1)
+                  Thời lượng
                 </th>
                 )}
 
@@ -3585,13 +3581,13 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
 
                       {/* Cột C -> O */}
                       {isColVisible('package_name') && (
-                      <td className="px-3 py-2.5 border-r border-border/60 text-text-secondary whitespace-nowrap">
-                        {st.package_name || '-'}
+                      <td className="px-3 py-2.5 border-r border-border/60 font-semibold text-text-secondary whitespace-nowrap">
+                        {st.package_name || '—'}
                       </td>
                       )}
                       {isColVisible('course_content') && (
-                      <td className="px-3 py-2.5 border-r border-border/60 text-text-muted whitespace-nowrap">
-                        {st.course_content || '-'}
+                      <td className="px-3 py-2.5 border-r border-border/60 text-text-secondary whitespace-nowrap">
+                        {st.course_content || '—'}
                       </td>
                       )}
                       {isColVisible('total_sessions') && (
@@ -3600,20 +3596,28 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
                       </td>
                       )}
                       {isColVisible('level') && (
-                      <td className="px-3 py-2.5 border-r border-border/60 text-text-secondary whitespace-nowrap">
-                        {st.level || '-'}
+                      <td className="px-3 py-2.5 border-r border-border/60 font-semibold text-teal-800 whitespace-nowrap">
+                        {st.level || '—'}
                       </td>
                       )}
                       {isColVisible('email') && (
                       <td className="px-3 py-2.5 border-r border-border/60 text-text-muted whitespace-nowrap">
-                        {st.email || '-'}
+                        {st.email || '—'}
                       </td>
                       )}
                       {isColVisible('model_type') && (
-                      <td className="px-3 py-2.5 border-r border-border/60 text-text-secondary whitespace-nowrap">
-                        <Badge variant="neutral" size="sm">
-                          {formatClassModel(st.model_type)}
-                        </Badge>
+                      <td className="px-3 py-2.5 border-r border-border/60 text-center whitespace-nowrap">
+                        {(() => {
+                          const mNorm = formatClassModel(st.model_type);
+                          const mStyle = CLASS_MODEL_BADGE_STYLES[mNorm];
+                          return (
+                            <span
+                              className={`inline-flex items-center px-2 py-0.5 rounded-md text-xs border ${mStyle.className}`}
+                            >
+                              {mStyle.label}
+                            </span>
+                          );
+                        })()}
                       </td>
                       )}
 
@@ -3632,78 +3636,62 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
 
                       {isColVisible('start_date') && (
                       <td className="px-3 py-2.5 border-r border-border/60 text-text-muted whitespace-nowrap">
-                        {st.start_date ? new Date(st.start_date).toLocaleDateString('vi-VN') : '-'}
+                        {st.start_date ? new Date(st.start_date).toLocaleDateString('vi-VN') : '—'}
                       </td>
                       )}
                       {isColVisible('status') && (
                       <td className="px-3 py-2.5 border-r border-border/60 whitespace-nowrap">
-                        <Badge
-                          variant={
-                            st.status === 'STUDYING'
-                              ? 'success'
-                              : st.status === 'PAUSED' || st.status === 'WAITING_CLASS'
-                              ? 'warning'
-                              : st.status === 'UPCOMING'
-                              ? 'info'
-                              : 'neutral'
-                          }
-                          size="sm"
-                        >
-                          {st.status === 'STUDYING'
-                            ? 'Đang học'
-                            : st.status === 'PAUSED'
-                            ? 'Bảo lưu'
-                            : st.status === 'FINISHED'
-                            ? 'Kết thúc'
-                            : st.status === 'WAITING_CLASS'
-                            ? 'Chờ lớp'
-                            : st.status === 'UPCOMING'
-                            ? 'Sắp học'
-                            : st.status === 'NOT_STARTED'
-                            ? 'Chưa học'
-                            : st.status}
-                        </Badge>
+                        {(() => {
+                          const sCfg =
+                            ENROLLMENT_STATUS_BADGE_MAP[st.status] ||
+                            ENROLLMENT_STATUS_BADGE_MAP.STUDYING;
+                          return (
+                            <Badge variant={sCfg.variant} size="sm">
+                              {sCfg.label}
+                            </Badge>
+                          );
+                        })()}
                       </td>
                       )}
                       {isColVisible('end_date') && (
                       <td className="px-3 py-2.5 border-r border-border/60 text-text-muted whitespace-nowrap">
-                        {st.end_date ? new Date(st.end_date).toLocaleDateString('vi-VN') : '-'}
+                        {st.end_date ? new Date(st.end_date).toLocaleDateString('vi-VN') : '—'}
                       </td>
                       )}
                       {isColVisible('start_time') && (
-                      <td className="px-3 py-2.5 border-r border-border/60 text-text-muted whitespace-nowrap">
-                        {st.start_time || '-'}
+                      <td className="px-3 py-2.5 border-r border-border/60 font-mono text-text-secondary whitespace-nowrap">
+                        {formatScheduleTimeDisplay(st.start_time) || '—'}
                       </td>
                       )}
                       {isColVisible('schedule_pattern') && (
-                      <td className="px-3 py-2.5 border-r border-border/60 text-text-muted whitespace-nowrap">
-                        {st.schedule_pattern || '-'}
+                      <td className="px-3 py-2.5 border-r border-border/60 font-semibold text-blue-700 whitespace-nowrap">
+                        {st.schedule_pattern || '—'}
                       </td>
                       )}
                       {isColVisible('duration_minutes') && (
                       <td className="px-3 py-2.5 border-r-2 border-border/80 text-center text-text-muted whitespace-nowrap">
-                        {st.duration_minutes ? `${st.duration_minutes}p` : '-'}
+                        {st.duration_minutes ? `${st.duration_minutes}p` : '—'}
                       </td>
                       )}
 
                       {/* Cột U -> X: GV, Lớp & Đã học */}
                       {isColVisible('teacher_name') && (
                       <td className="px-3 py-2.5 border-r border-border/60 text-text-primary font-semibold whitespace-nowrap">
-                        {st.teacher_name || '-'}
+                        {st.teacher_name || '—'}
                       </td>
                       )}
                       {isColVisible('teacher_code') && (
                       <td className="px-3 py-2.5 border-r border-border/60 font-mono text-text-muted whitespace-nowrap">
-                        {st.teacher_code || '-'}
+                        {st.teacher_code || '—'}
                       </td>
                       )}
                       {isColVisible('class_name') && (
                       <td className="px-3 py-2.5 border-r border-border/60 font-semibold text-text-primary whitespace-nowrap">
-                        {st.class_name}
+                        {st.class_name || '—'}
                       </td>
                       )}
                       <td className="px-3 py-2.5 border-r border-border/60 text-center font-extrabold text-emerald-800 bg-emerald-50/40">
-                        {stat?.totalAttended || 0}
+                        {prevAttended + currentAttended}
                       </td>
                       <td className="px-2 py-2.5 border-r-2 border-border/80 text-center font-extrabold text-emerald-800 bg-emerald-100/30">
                         {stat?.monthAttended || 0}
@@ -3975,13 +3963,13 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
                         </td>
                         )}
                         {isColVisible('package_name') && (
-                        <td className="px-3 py-2.5 border-r border-border/60 text-text-secondary whitespace-nowrap">
-                          {st.package_name || '-'}
+                        <td className="px-3 py-2.5 border-r border-border/60 font-semibold text-text-secondary whitespace-nowrap">
+                          {st.package_name || '—'}
                         </td>
                         )}
                         {isColVisible('course_content') && (
-                        <td className="px-3 py-2.5 border-r border-border/60 text-text-muted whitespace-nowrap">
-                          {st.course_content || '-'}
+                        <td className="px-3 py-2.5 border-r border-border/60 text-text-secondary whitespace-nowrap">
+                          {st.course_content || '—'}
                         </td>
                         )}
                         {isColVisible('total_sessions') && (
@@ -3990,26 +3978,34 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
                         </td>
                         )}
                         {isColVisible('level') && (
-                        <td className="px-3 py-2.5 border-r border-border/60 text-text-secondary whitespace-nowrap">
-                          {st.level || '-'}
+                        <td className="px-3 py-2.5 border-r border-border/60 font-semibold text-teal-800 whitespace-nowrap">
+                          {st.level || '—'}
                         </td>
                         )}
                         {isColVisible('email') && (
                         <td className="px-3 py-2.5 border-r border-border/60 text-text-muted whitespace-nowrap">
-                          {st.email || '-'}
+                          {st.email || '—'}
                         </td>
                         )}
                         {isColVisible('model_type') && (
-                        <td className="px-3 py-2.5 border-r-2 border-border/80 text-text-secondary whitespace-nowrap">
-                          <Badge variant="neutral" size="sm">
-                            {formatClassModel(st.model_type)}
-                          </Badge>
+                        <td className="px-3 py-2.5 border-r-2 border-border/80 text-center whitespace-nowrap">
+                          {(() => {
+                            const mNorm = formatClassModel(st.model_type);
+                            const mStyle = CLASS_MODEL_BADGE_STYLES[mNorm];
+                            return (
+                              <span
+                                className={`inline-flex items-center px-2 py-0.5 rounded-md text-xs border ${mStyle.className}`}
+                              >
+                                {mStyle.label}
+                              </span>
+                            );
+                          })()}
                         </td>
                         )}
 
                         {/* Cột Y -> AB */}
                         <td className="px-3 py-2.5 border-r border-border/60 text-center font-black text-emerald-800 bg-emerald-50/40">
-                          {stat?.totalAttended || 0}
+                          {(st.attended_previous_years || 0) + (stat?.totalAttended || 0)}
                         </td>
                         <td className="px-2.5 py-2.5 border-r border-border/60 text-center font-bold text-amber-800 bg-amber-50/20">
                           {stat?.totalAbsentA || 0}

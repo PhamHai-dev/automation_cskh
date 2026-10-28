@@ -80,14 +80,19 @@ async function upsertMessage(params: {
   isSelf: boolean;
   threadId: string;
   threadType: 'user' | 'group';
+  displayName?: string;
+  avatarUrl?: string;
   isBackfill?: boolean;
 }): Promise<boolean> {
   const {
     accountId, senderUid, senderName, content, contentType,
-    zaloMsgId, timestamp, isSelf, threadId, threadType, isBackfill,
+    zaloMsgId, timestamp, isSelf, threadId, threadType, displayName, avatarUrl, isBackfill,
   } = params;
 
   if (!zaloMsgId || !threadId) return false;
+
+  const isGroup = threadType === 'group';
+  const resolvedName = displayName || (!isGroup && !isSelf && senderName ? senderName : undefined);
 
   // Upsert Conversation
   const conversation = await prisma.conversation.upsert({
@@ -101,10 +106,16 @@ async function upsertMessage(params: {
       zalo_account_id: accountId,
       external_thread_id: threadId,
       thread_type: threadType,
+      display_name: resolvedName ?? threadId,
+      avatar_url: avatarUrl ?? null,
+      group_name: isGroup ? (resolvedName ?? null) : null,
+      group_avatar_url: isGroup ? (avatarUrl ?? null) : null,
       last_message_at: new Date(timestamp),
     },
     update: {
       last_message_at: new Date(timestamp),
+      ...(resolvedName ? { display_name: resolvedName, ...(isGroup ? { group_name: resolvedName } : {}) } : {}),
+      ...(avatarUrl ? { avatar_url: avatarUrl, ...(isGroup ? { group_avatar_url: avatarUrl } : {}) } : {}),
     },
   });
 
@@ -115,6 +126,8 @@ async function upsertMessage(params: {
         conversation_id: conversation.id,
         zalo_msg_id: zaloMsgId,
         sender_uid: senderUid,
+        sender_name: senderName || (isSelf ? 'Me' : senderUid),
+        sender_type: isSelf ? 'self' : 'other',
         content,
         content_type: contentType,
         is_self: isSelf,
@@ -280,54 +293,103 @@ export async function backfillAccountHistory(api: any, accountId: number): Promi
   }
 
   // ── 2. Sync groups → conversations + history ─────────────────────────
-  let groups: any[] = [];
+  let groupsRaw: any = null;
   try {
-    const groupsRaw = await api.getAllGroups();
-    const gridInfoMap = groupsRaw?.gridInfoMap || groupsRaw || {};
-    groups = Object.values(gridInfoMap) as any[];
+    groupsRaw = await api.getAllGroups();
   } catch (err) {
     result.errors++;
     log.warn(`[backfill:${accountId}] getAllGroups failed:`, { error: String(err) });
-    return result;
   }
 
-  const groupSubset = groups.slice(0, MAX_GROUPS);
-  for (const group of groupSubset) {
-    const groupId = String(group?.groupId || group?.id || '');
+  const dbGroups = await prisma.zaloGroup.findMany({
+    where: { zalo_account_id: accountId },
+    select: { zalo_group_id: true, name: true, avatar_url: true, member_count: true },
+  }).catch(() => []);
+  const dbGroupMap = new Map(dbGroups.map((g) => [g.zalo_group_id, g]));
+
+  const verIds = Object.keys(groupsRaw?.gridVerMap ?? {});
+  const infoMap: Record<string, any> = groupsRaw?.gridInfoMap ?? {};
+  const infoIds = Object.keys(infoMap);
+  const dbIds = dbGroups.map((g) => g.zalo_group_id);
+  const allGroupIds = Array.from(new Set([...verIds, ...infoIds, ...dbIds])).filter(Boolean);
+
+  const groupSubset = allGroupIds.slice(0, MAX_GROUPS);
+  for (const groupId of groupSubset) {
     if (!groupId) continue;
 
     try {
-      const groupName = group?.name || group?.groupName || 'Nhóm';
+      const rawGroup = infoMap[groupId];
+      const dbGroup = dbGroupMap.get(groupId);
+      const groupName: string =
+        rawGroup?.name || rawGroup?.groupName || dbGroup?.name || groupId;
+      const groupAvatar: string | undefined =
+        rawGroup?.fullAvt || rawGroup?.avt || rawGroup?.avatar || dbGroup?.avatar_url || undefined;
+      const groupMembersCount: number | undefined =
+        typeof rawGroup?.totalMember === 'number'
+          ? rawGroup.totalMember
+          : (dbGroup?.member_count ?? undefined);
 
-      const history = await api.getGroupChatHistory(groupId, MESSAGES_PER_GROUP);
-      const messages = history?.groupMsgs || history?.data?.groupMsgs || [];
+      // Ensure Conversation row exists for this group even if chat history is empty
+      await prisma.conversation.upsert({
+        where: {
+          zalo_account_id_external_thread_id: {
+            zalo_account_id: accountId,
+            external_thread_id: groupId,
+          },
+        },
+        create: {
+          zalo_account_id: accountId,
+          external_thread_id: groupId,
+          thread_type: 'group',
+          display_name: groupName,
+          group_name: groupName,
+          avatar_url: groupAvatar ?? null,
+          group_avatar_url: groupAvatar ?? null,
+          group_members_count: groupMembersCount ?? null,
+        },
+        update: {
+          thread_type: 'group',
+          ...(groupName && groupName !== groupId
+            ? { display_name: groupName, group_name: groupName }
+            : {}),
+          ...(groupAvatar ? { avatar_url: groupAvatar, group_avatar_url: groupAvatar } : {}),
+          ...(groupMembersCount != null ? { group_members_count: groupMembersCount } : {}),
+        },
+      });
 
-      for (const msg of messages as any[]) {
-        try {
-          const zaloMsgId = String(msg?.data?.msgId || msg?.data?.cliMsgId || '');
-          if (!zaloMsgId) continue;
+      if (typeof api.getGroupChatHistory === 'function') {
+        const history = await api.getGroupChatHistory(groupId, MESSAGES_PER_GROUP);
+        const messages = history?.groupMsgs || history?.data?.groupMsgs || [];
 
-          const rawContent = msg?.data?.content;
-          const content = typeof rawContent === 'string' ? rawContent : JSON.stringify(rawContent || '');
-          const contentType = typeof msg?.data?.msgType === 'string' ? msg.data.msgType : 'text';
+        for (const msg of messages as any[]) {
+          try {
+            const zaloMsgId = String(msg?.data?.msgId || msg?.data?.cliMsgId || '');
+            if (!zaloMsgId) continue;
 
-          const inserted = await upsertMessage({
-            accountId,
-            senderUid: String(msg?.data?.uidFrom || ''),
-            senderName: msg?.data?.dName || '',
-            content,
-            contentType,
-            zaloMsgId,
-            timestamp: parseInt(msg?.data?.ts || String(Date.now())),
-            isSelf: Boolean(msg?.isSelf),
-            threadId: groupId,
-            threadType: 'group',
-            isBackfill: true,
-          });
-          if (inserted) result.messagesBackfilled++;
-        } catch (err) {
-          result.errors++;
-          log.warn(`[backfill:${accountId}] Group ${groupId} msg insert failed:`, { error: String(err) });
+            const rawContent = msg?.data?.content;
+            const content = typeof rawContent === 'string' ? rawContent : JSON.stringify(rawContent || '');
+            const contentType = detectContentType(msg?.data?.msgType, rawContent);
+
+            const inserted = await upsertMessage({
+              accountId,
+              senderUid: String(msg?.data?.uidFrom || ''),
+              senderName: msg?.data?.dName || '',
+              content,
+              contentType,
+              zaloMsgId,
+              timestamp: parseInt(msg?.data?.ts || String(Date.now())),
+              isSelf: Boolean(msg?.isSelf),
+              threadId: groupId,
+              threadType: 'group',
+              displayName: groupName !== groupId ? groupName : undefined,
+              avatarUrl: groupAvatar,
+              isBackfill: true,
+            });
+            if (inserted) result.messagesBackfilled++;
+          } catch (err) {
+            result.errors++;
+            log.warn(`[backfill:${accountId}] Group ${groupId} msg insert failed:`, { error: String(err) });
+          }
         }
       }
       result.groupsSynced++;
@@ -337,18 +399,22 @@ export async function backfillAccountHistory(api: any, accountId: number): Promi
     }
   }
 
-  // ── 3. DM history via requestOldMessages pagination ──────────────────
+  // ── 3. DM & Group history via requestOldMessages pagination ──────────
   try {
     if (api?.listener?.requestOldMessages) {
-      const stats = await pumpOldMessages(api, THREAD_TYPE_USER, accountId);
-      result.dmPagesRequested = stats.pagesRequested;
-      result.messagesBackfilled += stats.messagesReceived;
+      const dmStats = await pumpOldMessages(api, THREAD_TYPE_USER, accountId);
+      result.dmPagesRequested = dmStats.pagesRequested;
+      result.messagesBackfilled += dmStats.messagesReceived;
+
+      const groupStats = await pumpOldMessages(api, 1, accountId);
+      result.dmPagesRequested += groupStats.pagesRequested;
+      result.messagesBackfilled += groupStats.messagesReceived;
     } else {
-      log.warn(`[backfill:${accountId}] requestOldMessages unavailable — skipping DM backfill`);
+      log.warn(`[backfill:${accountId}] requestOldMessages unavailable — skipping history pump`);
     }
   } catch (err) {
     result.errors++;
-    log.warn(`[backfill:${accountId}] DM pump failed:`, { error: String(err) });
+    log.warn(`[backfill:${accountId}] History pump failed:`, { error: String(err) });
   }
 
   // Sanity check
@@ -366,13 +432,15 @@ export async function backfillAccountHistory(api: any, accountId: number): Promi
 }
 
 /**
- * Backfill only if account has no conversations yet (first-time login).
+ * Backfill only if account has no messages yet in DB (first-time login or empty message history).
  */
 export async function backfillIfEmpty(api: any, accountId: number): Promise<boolean> {
-  const existing = await prisma.conversation.count({ where: { zalo_account_id: accountId } });
-  if (existing > 0) return false;
+  const existingMessages = await prisma.message.count({
+    where: { conversation: { zalo_account_id: accountId } },
+  });
+  if (existingMessages > 0) return false;
 
-  log.info(`[backfill:${accountId}] Empty conversation set — starting initial backfill`);
+  log.info(`[backfill:${accountId}] Empty message set — starting initial backfill`);
   await backfillAccountHistory(api, accountId);
   return true;
 }

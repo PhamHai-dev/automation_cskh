@@ -121,11 +121,45 @@ export class ZaloRepository {
     member_count?: number;
     owner_zalo_uid?: string;
   }) {
-    return prisma.zaloGroup.upsert({
+    const group = await prisma.zaloGroup.upsert({
       where: { zalo_group_id: zaloGroupId },
       create: { zalo_group_id: zaloGroupId, zalo_account_id: accountId, ...data },
-      update: { ...data, last_synced_at: new Date() },
+      update: { zalo_account_id: accountId, ...data, last_synced_at: new Date() },
     });
+
+    if (group.name) {
+      try {
+        await prisma.conversation.upsert({
+          where: {
+            zalo_account_id_external_thread_id: {
+              zalo_account_id: accountId,
+              external_thread_id: zaloGroupId,
+            },
+          },
+          create: {
+            zalo_account_id: accountId,
+            external_thread_id: zaloGroupId,
+            thread_type: 'group',
+            display_name: group.name,
+            group_name: group.name,
+            avatar_url: group.avatar_url,
+            group_avatar_url: group.avatar_url,
+            group_members_count: group.member_count,
+          },
+          update: {
+            thread_type: 'group',
+            display_name: group.name,
+            group_name: group.name,
+            ...(group.avatar_url ? { avatar_url: group.avatar_url, group_avatar_url: group.avatar_url } : {}),
+            ...(group.member_count != null ? { group_members_count: group.member_count } : {}),
+          },
+        });
+      } catch {
+        // non-critical: do not let Conversation upsert failure affect upsertGroup
+      }
+    }
+
+    return group;
   }
 
   async findGroupsForAccount(accountId: number) {

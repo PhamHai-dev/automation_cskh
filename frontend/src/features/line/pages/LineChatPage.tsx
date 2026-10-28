@@ -332,9 +332,9 @@ export const LineChatPage: React.FC = () => {
                         </span>
                       )}
                     </div>
-                    {conv.lastMessage && (
+                    {(conv.lastMessage?.content || (conv as any).messages?.[0]?.content) && (
                       <p className="text-[11px] text-text-muted truncate mt-0.5">
-                        {conv.lastMessage.content}
+                        {conv.lastMessage?.content || (conv as any).messages?.[0]?.content}
                       </p>
                     )}
                     {freeReply && (

@@ -25,6 +25,8 @@ export interface DataTableProps<T> {
   page?: number;
   onPageChange?: (page: number) => void;
   onPageSizeChange?: (pageSize: number) => void;
+  /** Omit outer card border/rounding when already wrapped in a parent table card */
+  bare?: boolean;
 }
 
 export function DataTable<T>({
@@ -40,6 +42,7 @@ export function DataTable<T>({
   page: externalPage = 1,
   onPageChange,
   onPageSizeChange,
+  bare = false,
 }: DataTableProps<T>) {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(initialPageSize);
@@ -86,7 +89,13 @@ export function DataTable<T>({
   const endRecord = Math.min(currentPageSafe * effectivePageSize, totalCount);
 
   return (
-    <div className="w-full bg-surface rounded-2xl border border-border/80 shadow-soft overflow-hidden">
+    <div
+      className={
+        bare
+          ? 'w-full overflow-hidden'
+          : 'w-full bg-surface rounded-2xl border border-border/80 shadow-soft overflow-hidden'
+      }
+    >
       {/* Table Scrollable Container */}
       <div className="w-full overflow-x-auto">
         <table className="w-full text-sm text-left border-collapse">

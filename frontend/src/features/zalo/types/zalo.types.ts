@@ -18,9 +18,13 @@ export interface ZaloAccount {
   cs_id: number;
   cs?: {
     id: number;
-    username: string;
-    full_name: string;
-    role: string;
+    username?: string;
+    full_name?: string;
+    name?: string;
+    code?: string;
+    staff_code?: string;
+    email?: string;
+    role?: string;
   };
   zalo_uid: string | null;
   display_name: string | null;

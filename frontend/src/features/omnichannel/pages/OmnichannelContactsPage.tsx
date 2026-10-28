@@ -6,6 +6,7 @@ import type { ZaloAccount } from '../../zalo/types/zalo.types';
 import type { LineAccount, LineFriend } from '../../line/types/line.types';
 import { PageContainer } from '../../../components/common/PageContainer';
 import { PageHeader } from '../../../components/common/PageHeader';
+import { PaginationFooter } from '../../../components/common/Pagination';
 import { Button } from '../../../components/ui/Button';
 import { Input } from '../../../components/ui/Input';
 import { Modal } from '../../../components/ui/Modal';
@@ -21,8 +22,6 @@ import {
   Send,
   Inbox,
   Loader2,
-  ChevronLeft,
-  ChevronRight,
 } from 'lucide-react';
 
 type ContactsChannelTab = 'ZALO' | 'LINE';
@@ -73,6 +72,7 @@ export const OmnichannelContactsPage: React.FC<{ initialChannel?: ContactsChanne
   const [zaloSearch, setZaloSearch] = useState('');
   const [zaloKindFilter, setZaloKindFilter] = useState('all');
   const [zaloPage, setZaloPage] = useState(1);
+  const [zaloLimit, setZaloLimit] = useState(25);
   const [zaloPages, setZaloPages] = useState(1);
 
   // ── LINE Contacts State ──────────────────────────────────────────────────
@@ -80,6 +80,9 @@ export const OmnichannelContactsPage: React.FC<{ initialChannel?: ContactsChanne
   const [selectedLineId, setSelectedLineId] = useState<number>(0);
   const [lineFriends, setLineFriends] = useState<LineFriend[]>([]);
   const [lineTotal, setLineTotal] = useState(0);
+  const [linePage, setLinePage] = useState(1);
+  const [lineLimit, setLineLimit] = useState(25);
+  const [linePages, setLinePages] = useState(1);
   const [lineLoading, setLineLoading] = useState(false);
   const [lineSyncing, setLineSyncing] = useState(false);
   const [lineSearchInput, setLineSearchInput] = useState('');
@@ -143,7 +146,10 @@ export const OmnichannelContactsPage: React.FC<{ initialChannel?: ContactsChanne
   }, [zaloSearchInput]);
 
   useEffect(() => {
-    const t = setTimeout(() => setLineSearch(lineSearchInput), 300);
+    const t = setTimeout(() => {
+      setLineSearch(lineSearchInput);
+      setLinePage(1);
+    }, 300);
     return () => clearTimeout(t);
   }, [lineSearchInput]);
 
@@ -155,20 +161,26 @@ export const OmnichannelContactsPage: React.FC<{ initialChannel?: ContactsChanne
       const res = await zaloApi.getFriendsDb(selectedZaloId, {
         kind: zaloKindFilter,
         page: zaloPage,
-        limit: 50,
+        limit: zaloLimit,
         search: zaloSearch || undefined,
         sortBy: 'recent',
       });
-      setZaloFriends(res.friends || res.data?.friends || []);
+      const list = res.friends || res.data?.friends || [];
+      const total = res.total ?? res.data?.total ?? list.length;
+      const computedZaloPages = Math.max(
+        1,
+        res.totalPages || res.data?.totalPages || Math.ceil((res.total ?? list.length) / zaloLimit),
+      );
+      setZaloFriends(list);
       setZaloCounts(res.counts || res.data?.counts || {});
-      setZaloTotal(res.total || res.data?.total || 0);
-      setZaloPages(res.totalPages || res.data?.totalPages || 1);
+      setZaloTotal(total);
+      setZaloPages(computedZaloPages);
     } catch {
       setZaloFriends([]);
     } finally {
       setZaloLoading(false);
     }
-  }, [selectedZaloId, zaloKindFilter, zaloPage, zaloSearch]);
+  }, [selectedZaloId, zaloKindFilter, zaloPage, zaloLimit, zaloSearch]);
 
   useEffect(() => {
     if (channel === 'ZALO') {
@@ -182,17 +194,25 @@ export const OmnichannelContactsPage: React.FC<{ initialChannel?: ContactsChanne
     setLineLoading(true);
     try {
       const res = await lineApi.listFriends(selectedLineId, {
+        page: linePage,
+        limit: lineLimit,
         search: lineSearch || undefined,
-        limit: 200,
       });
-      setLineFriends(res.items);
-      setLineTotal(res.total);
+      const list = res.items ?? [];
+      const total = res.total ?? list.length;
+      const computedLinePages = Math.max(
+        1,
+        res.pages || Math.ceil(total / lineLimit),
+      );
+      setLineFriends(list);
+      setLineTotal(total);
+      setLinePages(computedLinePages);
     } catch (err: any) {
       toast.error(err.response?.data?.message || 'Không thể tải danh bạ LINE');
     } finally {
       setLineLoading(false);
     }
-  }, [selectedLineId, lineSearch, toast]);
+  }, [selectedLineId, linePage, lineLimit, lineSearch, toast]);
 
   useEffect(() => {
     if (channel === 'LINE') {
@@ -427,7 +447,7 @@ export const OmnichannelContactsPage: React.FC<{ initialChannel?: ContactsChanne
               </select>
 
               <div className="flex flex-wrap items-center gap-1.5">
-                {(['all', 'friend', 'stranger'] as const).map((k) => (
+                {(['all', 'friend', 'stranger', 'sent', 'received'] as const).map((k) => (
                   <button
                     key={k}
                     type="button"
@@ -556,31 +576,25 @@ export const OmnichannelContactsPage: React.FC<{ initialChannel?: ContactsChanne
                   })}
                 </div>
 
-                {zaloPages > 1 && (
-                  <div className="px-4 py-3 bg-surface-muted/40 border-t border-border flex items-center justify-between text-xs text-text-secondary">
-                    <span>
-                      Trang <strong>{zaloPage}</strong> / {zaloPages}
-                    </span>
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        type="button"
-                        disabled={zaloPage <= 1}
-                        onClick={() => setZaloPage((p) => Math.max(1, p - 1))}
-                        className="p-1.5 rounded-lg border border-border bg-surface hover:bg-surface-muted disabled:opacity-40"
-                      >
-                        <ChevronLeft className="w-4 h-4" />
-                      </button>
-                      <button
-                        type="button"
-                        disabled={zaloPage >= zaloPages}
-                        onClick={() => setZaloPage((p) => Math.min(zaloPages, p + 1))}
-                        className="p-1.5 rounded-lg border border-border bg-surface hover:bg-surface-muted disabled:opacity-40"
-                      >
-                        <ChevronRight className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-                )}
+                <PaginationFooter
+                  startRecord={
+                    (zaloTotal || zaloFriends.length) > 0 ? (zaloPage - 1) * zaloLimit + 1 : 0
+                  }
+                  endRecord={Math.min(
+                    zaloPage * zaloLimit,
+                    Math.max(zaloTotal, (zaloPage - 1) * zaloLimit + zaloFriends.length),
+                  )}
+                  totalCount={Math.max(zaloTotal, zaloFriends.length)}
+                  pageSize={zaloLimit}
+                  currentPage={zaloPage}
+                  totalPages={zaloPages}
+                  onPageChange={(page) => setZaloPage(page)}
+                  onPageSizeChange={(size) => {
+                    setZaloLimit(size);
+                    setZaloPage(1);
+                  }}
+                  recordLabel="liên hệ"
+                />
               </>
             )}
           </div>
@@ -598,7 +612,10 @@ export const OmnichannelContactsPage: React.FC<{ initialChannel?: ContactsChanne
               </label>
               <select
                 value={selectedLineId}
-                onChange={(e) => setSelectedLineId(Number(e.target.value))}
+                onChange={(e) => {
+                  setSelectedLineId(Number(e.target.value));
+                  setLinePage(1);
+                }}
                 className="px-3 py-2 text-xs font-semibold bg-surface-muted border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 min-w-[240px]"
               >
                 {lineAccounts.length === 0 && (
@@ -739,6 +756,25 @@ export const OmnichannelContactsPage: React.FC<{ initialChannel?: ContactsChanne
                     </div>
                   );
                 })}
+                <PaginationFooter
+                  startRecord={
+                    (lineTotal || lineFriends.length) > 0 ? (linePage - 1) * lineLimit + 1 : 0
+                  }
+                  endRecord={Math.min(
+                    linePage * lineLimit,
+                    Math.max(lineTotal, (linePage - 1) * lineLimit + lineFriends.length),
+                  )}
+                  totalCount={Math.max(lineTotal, lineFriends.length)}
+                  pageSize={lineLimit}
+                  currentPage={linePage}
+                  totalPages={linePages}
+                  onPageChange={(page) => setLinePage(page)}
+                  onPageSizeChange={(size) => {
+                    setLineLimit(size);
+                    setLinePage(1);
+                  }}
+                  recordLabel="liên hệ"
+                />
               </div>
             )}
           </div>

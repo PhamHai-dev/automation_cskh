@@ -23,6 +23,8 @@ export interface LineAccount {
     username?: string;
     full_name?: string;
     name?: string;
+    code?: string;
+    staff_code?: string;
     email?: string;
     role?: string;
   };

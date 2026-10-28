@@ -12,6 +12,7 @@ import {
 } from '../api/omnichannel.api';
 import { PageContainer } from '../../../components/common/PageContainer';
 import { PageHeader } from '../../../components/common/PageHeader';
+import { PaginationFooter } from '../../../components/common/Pagination';
 import { Button } from '../../../components/ui/Button';
 import { Input } from '../../../components/ui/Input';
 import { Modal } from '../../../components/ui/Modal';
@@ -126,6 +127,8 @@ export const OmnichannelStudentLinksPage: React.FC<{ initialTab?: string }> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCsFilter, setSelectedCsFilter] = useState<string>('ALL');
   const [showGuide, setShowGuide] = useState(true);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
 
   // Sync & Report state
   const [careReport, setCareReport] = useState<CareGroupSyncReport | null>(null);
@@ -811,6 +814,19 @@ export const OmnichannelStudentLinksPage: React.FC<{ initialTab?: string }> = ({
     });
   }, [students, filterTab, selectedCsFilter, searchQuery]);
 
+  useEffect(() => {
+    setPage(1);
+  }, [filterTab, selectedCsFilter, searchQuery]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredStudents.length / pageSize));
+  const safePage = Math.min(page, totalPages);
+  const paginatedStudents = useMemo(
+    () => filteredStudents.slice((safePage - 1) * pageSize, safePage * pageSize),
+    [filteredStudents, safePage, pageSize],
+  );
+  const startRecord = filteredStudents.length === 0 ? 0 : (safePage - 1) * pageSize + 1;
+  const endRecord = Math.min(safePage * pageSize, filteredStudents.length);
+
   // Filtered items inside Inline Link Modal
   const filteredModalGroups = useMemo(() => {
     const q = linkModalSearch.trim().toLowerCase();
@@ -1137,7 +1153,7 @@ export const OmnichannelStudentLinksPage: React.FC<{ initialTab?: string }> = ({
                     </td>
                   </tr>
                 ) : (
-                  filteredStudents.map((st) => (
+                  paginatedStudents.map((st) => (
                     <tr key={st.id} className="hover:bg-surface-muted/40 transition-colors">
                       {/* 1. Mã HV */}
                       <td className="py-3.5 px-4 whitespace-nowrap">
@@ -1350,6 +1366,20 @@ export const OmnichannelStudentLinksPage: React.FC<{ initialTab?: string }> = ({
               </tbody>
             </table>
           </div>
+          <PaginationFooter
+            startRecord={startRecord}
+            endRecord={endRecord}
+            totalCount={filteredStudents.length}
+            pageSize={pageSize}
+            currentPage={safePage}
+            totalPages={totalPages}
+            onPageChange={setPage}
+            onPageSizeChange={(newSize) => {
+              setPageSize(newSize);
+              setPage(1);
+            }}
+            recordLabel="học viên"
+          />
         </div>
       </div>
 

@@ -95,8 +95,8 @@ export const OmnichannelInboxPage: React.FC<{ initialMode?: WorkspaceMode }> = (
       setZaloAccounts(zAccs);
       setLineAccounts(lAccs);
 
-      const activeZalo = zAccs.filter((a) => a.status === 'ACTIVE');
-      const activeLine = lAccs.filter((a) => a.status === 'ACTIVE');
+      const activeZalo = zAccs.filter((a) => (a.liveStatus || a.status) === 'ACTIVE' || a.status === 'ACTIVE');
+      const activeLine = lAccs.filter((a) => ((a as any).liveStatus || a.status) === 'ACTIVE' || a.status === 'ACTIVE');
 
       const zaloPromises = activeZalo.map(async (acc) => {
         try {
@@ -159,6 +159,21 @@ export const OmnichannelInboxPage: React.FC<{ initialMode?: WorkspaceMode }> = (
         });
 
       setConversations(merged);
+      const qAccountId = Number(searchParams.get('accountId') || 0);
+      const qThreadId = searchParams.get('threadId') || '';
+      const qChannel = (searchParams.get('channel') || '').toUpperCase();
+      if (qThreadId && merged.length > 0) {
+        const matched = merged.find(
+          (c) =>
+            c.externalThreadId === qThreadId &&
+            (!qAccountId || c.accountId === qAccountId) &&
+            (!qChannel || c.platform === qChannel),
+        );
+        if (matched) {
+          setSelectedConv(matched);
+          return;
+        }
+      }
       if (!selectedConv && merged.length > 0) {
         setSelectedConv(merged[0]);
       }

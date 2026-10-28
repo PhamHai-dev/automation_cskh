@@ -194,6 +194,148 @@ function extractTextContent(data: any): string {
   return '';
 }
 
+// ─── Persist Zalo Message to DB (Conversation + Message) ────────────────────
+interface PersistZaloMessageParams {
+  accountId: number;
+  threadId: string;
+  isGroup: boolean;
+  isSelf: boolean;
+  isBackfill?: boolean;
+  zaloMsgId: string;
+  zaloCliMsgId?: string | null;
+  senderUid: string;
+  senderName?: string | null;
+  displayName?: string | null;
+  avatarUrl?: string | null;
+  groupName?: string | null;
+  groupAvatarUrl?: string | null;
+  groupMembersCount?: number | null;
+  content: string;
+  contentType: string;
+  attachments?: any;
+  mentions?: any;
+  rawContent?: any;
+  albumKey?: string | null;
+  albumIndex?: number | null;
+  albumTotal?: number | null;
+  timestamp: Date;
+}
+
+async function persistZaloMessageToDb(params: PersistZaloMessageParams): Promise<void> {
+  const {
+    accountId,
+    threadId,
+    isGroup,
+    isSelf,
+    isBackfill = false,
+    zaloMsgId,
+    zaloCliMsgId,
+    senderUid,
+    senderName,
+    displayName,
+    avatarUrl,
+    groupName,
+    groupAvatarUrl,
+    groupMembersCount,
+    content,
+    contentType,
+    attachments,
+    mentions,
+    rawContent,
+    albumKey,
+    albumIndex,
+    albumTotal,
+    timestamp,
+  } = params;
+
+  if (!threadId || !zaloMsgId) return;
+
+  const threadType = isGroup ? 'group' : 'user';
+  const resolvedDisplayName = isGroup
+    ? (groupName || displayName || undefined)
+    : (displayName || (!isSelf ? senderName : undefined) || undefined);
+  const resolvedAvatarUrl = isGroup
+    ? (groupAvatarUrl || avatarUrl || undefined)
+    : (avatarUrl || undefined);
+
+  const convUpdateData: Record<string, any> = {
+    thread_type: threadType,
+    last_message_at: timestamp,
+    ...(resolvedDisplayName ? { display_name: resolvedDisplayName } : {}),
+    ...(resolvedAvatarUrl ? { avatar_url: resolvedAvatarUrl } : {}),
+    ...(groupName ? { group_name: groupName } : {}),
+    ...(groupAvatarUrl ? { group_avatar_url: groupAvatarUrl } : {}),
+    ...(typeof groupMembersCount === 'number' ? { group_members_count: groupMembersCount } : {}),
+  };
+
+  if (!isSelf && !isBackfill) {
+    convUpdateData.unread_count = { increment: 1 };
+    convUpdateData.is_replied = false;
+  } else if (isSelf) {
+    convUpdateData.is_replied = true;
+  }
+
+  const conv = await prisma.conversation.upsert({
+    where: {
+      zalo_account_id_external_thread_id: {
+        zalo_account_id: accountId,
+        external_thread_id: threadId,
+      },
+    },
+    create: {
+      zalo_account_id: accountId,
+      external_thread_id: threadId,
+      thread_type: threadType,
+      display_name: resolvedDisplayName ?? threadId,
+      avatar_url: resolvedAvatarUrl ?? null,
+      group_name: groupName ?? (isGroup ? resolvedDisplayName ?? null : null),
+      group_avatar_url: groupAvatarUrl ?? (isGroup ? resolvedAvatarUrl ?? null : null),
+      group_members_count: typeof groupMembersCount === 'number' ? groupMembersCount : null,
+      last_message_at: timestamp,
+      unread_count: !isSelf && !isBackfill ? 1 : 0,
+      is_replied: isSelf ? true : (!isBackfill ? false : true),
+    },
+    update: convUpdateData,
+  });
+
+  await prisma.message.upsert({
+    where: {
+      conversation_id_zalo_msg_id: {
+        conversation_id: conv.id,
+        zalo_msg_id: zaloMsgId,
+      },
+    },
+    create: {
+      conversation_id: conv.id,
+      zalo_msg_id: zaloMsgId,
+      zalo_cli_msg_id: zaloCliMsgId ? String(zaloCliMsgId) : null,
+      sender_uid: senderUid,
+      sender_name: senderName || (isSelf ? 'Me' : senderUid),
+      sender_type: isSelf ? 'self' : 'other',
+      content,
+      content_type: contentType,
+      attachments: attachments ?? [],
+      mentions: mentions ?? undefined,
+      raw_content: rawContent ?? undefined,
+      album_key: albumKey ?? null,
+      album_index: albumIndex ?? null,
+      album_total: albumTotal ?? null,
+      is_self: isSelf,
+      is_backfill: Boolean(isBackfill),
+      timestamp,
+    },
+    update: {
+      ...(zaloCliMsgId ? { zalo_cli_msg_id: String(zaloCliMsgId) } : {}),
+      ...(senderName ? { sender_name: senderName } : {}),
+      content,
+      content_type: contentType,
+      ...(attachments !== undefined ? { attachments } : {}),
+      ...(mentions !== undefined ? { mentions } : {}),
+      ...(rawContent !== undefined ? { raw_content: rawContent } : {}),
+    },
+  });
+}
+
 // ─── Handle reactions (ported from ZaloCRM handleZaloReaction) ──────────────
 async function handleZaloReaction(accountId: number, reaction: any): Promise<void> {
   try {
@@ -276,17 +418,48 @@ export function attachListenersForAccount(accountId: number): void {
       if (!messages?.length) return;
       const now = new Date();
       for (const m of messages) {
-        const anchorMsgId = String(m?.data?.msgId || '');
-        if (!anchorMsgId) continue;
-        const anchor = await prisma.message.findFirst({
-          where: { zalo_msg_id: anchorMsgId },
-          select: { id: true, conversation_id: true, created_at: true },
-        });
-        if (!anchor) continue;
-        // No seen_at field in our Message model yet — log for observability
-        log.debug('SEEN anchor', {
-          accountId, anchorMsgId, conversationId: anchor.conversation_id,
-        });
+        const anchorMsgId = String(m?.data?.msgId || m?.msgId || '');
+        const threadId = String(m?.threadId || m?.data?.idTo || m?.data?.uidFrom || '');
+        if (anchorMsgId) {
+          const anchor = await prisma.message.findFirst({
+            where: {
+              zalo_msg_id: anchorMsgId,
+              conversation: { zalo_account_id: accountId },
+            },
+            select: { id: true, conversation_id: true, timestamp: true },
+          });
+          if (anchor) {
+            await prisma.message.updateMany({
+              where: {
+                conversation_id: anchor.conversation_id,
+                is_self: true,
+                seen_at: null,
+                timestamp: { lte: anchor.timestamp },
+              },
+              data: { seen_at: now, delivered_at: now },
+            });
+            log.debug('SEEN anchor updated', {
+              accountId, anchorMsgId, conversationId: anchor.conversation_id,
+            });
+            continue;
+          }
+        }
+        if (threadId) {
+          const conv = await prisma.conversation.findFirst({
+            where: { zalo_account_id: accountId, external_thread_id: threadId },
+            select: { id: true },
+          });
+          if (conv) {
+            await prisma.message.updateMany({
+              where: {
+                conversation_id: conv.id,
+                is_self: true,
+                seen_at: null,
+              },
+              data: { seen_at: now },
+            });
+          }
+        }
       }
     } catch (err) {
       log.warn('seen_messages error', { accountId, error: String(err) });
@@ -297,18 +470,69 @@ export function attachListenersForAccount(accountId: number): void {
   // v2 (2026-05-29): handle merged delivered+seen events (seen=1 flag)
   listener.on('delivered_messages', async (messages: any[]) => {
     try {
+      const now = new Date();
       const deliveredIds: string[] = [];
       const seenIds: string[] = [];
+      const fallbackThreadIds = new Set<string>();
+      const fallbackSeenThreadIds = new Set<string>();
+
       for (const m of messages || []) {
-        const msgId = String(m?.data?.msgId || '');
-        if (!msgId) continue;
-        deliveredIds.push(msgId);
+        const msgId = String(m?.data?.msgId || m?.msgId || '');
+        const threadId = String(m?.threadId || m?.data?.idTo || m?.data?.uidFrom || '');
         const hasSeenFlag = m?.data?.seen === 1
           || m?.data?.seen === true
           || (Array.isArray(m?.data?.seenUids) && m.data.seenUids.length > 0);
-        if (hasSeenFlag) seenIds.push(msgId);
+        if (msgId) {
+          deliveredIds.push(msgId);
+          if (hasSeenFlag) seenIds.push(msgId);
+        } else if (threadId) {
+          fallbackThreadIds.add(threadId);
+          if (hasSeenFlag) fallbackSeenThreadIds.add(threadId);
+        }
       }
-      if (!deliveredIds.length) return;
+
+      if (deliveredIds.length > 0) {
+        await prisma.message.updateMany({
+          where: {
+            zalo_msg_id: { in: deliveredIds },
+            is_self: true,
+            delivered_at: null,
+            conversation: { zalo_account_id: accountId },
+          },
+          data: { delivered_at: now },
+        });
+      }
+      if (seenIds.length > 0) {
+        await prisma.message.updateMany({
+          where: {
+            zalo_msg_id: { in: seenIds },
+            is_self: true,
+            seen_at: null,
+            conversation: { zalo_account_id: accountId },
+          },
+          data: { seen_at: now },
+        });
+      }
+      for (const tId of fallbackThreadIds) {
+        const conv = await prisma.conversation.findFirst({
+          where: { zalo_account_id: accountId, external_thread_id: tId },
+          select: { id: true },
+        });
+        if (conv) {
+          await prisma.message.updateMany({
+            where: { conversation_id: conv.id, is_self: true, delivered_at: null },
+            data: { delivered_at: now },
+          });
+          if (fallbackSeenThreadIds.has(tId)) {
+            await prisma.message.updateMany({
+              where: { conversation_id: conv.id, is_self: true, seen_at: null },
+              data: { seen_at: now },
+            });
+          }
+        }
+      }
+
+      if (!deliveredIds.length && !fallbackThreadIds.size) return;
       log.debug('Delivered messages', {
         accountId, deliveredCount: deliveredIds.length, seenCount: seenIds.length,
       });
@@ -327,18 +551,23 @@ export function attachListenersForAccount(accountId: number): void {
   listener.on('message', async (message: any) => {
     try {
       const isGroup = message.type === 1;
+      const isSelf = Boolean(message.isSelf);
       const senderUid = String(message.data?.uidFrom || '');
+      const peerFallback = isSelf ? String(message.data?.idTo || '') : senderUid;
+      const resolvedThreadId = String(message.threadId || peerFallback || '');
 
       // Resolve display name — prefer zaloName from API over dName
       let senderName: string = message.data?.dName || '';
       let recipientName = '';
+      let resolvedUserAvatar: string | undefined;
       if (senderUid && api.getUserInfo) {
-        const resolveUid = message.isSelf ? (message.threadId || '') : senderUid;
+        const resolveUid = isSelf ? resolvedThreadId : senderUid;
         if (resolveUid) {
           const userInfo = await resolveZaloName(api, resolveUid, userInfoCache);
-          if (message.isSelf) {
+          resolvedUserAvatar = userInfo.avatar || undefined;
+          if (isSelf) {
             if (userInfo.zaloName) recipientName = userInfo.zaloName;
-            if (userInfo.avatar && message.threadId) updateContactAvatar(message.threadId, userInfo.avatar);
+            if (userInfo.avatar && resolvedThreadId) updateContactAvatar(resolvedThreadId, userInfo.avatar);
           } else {
             if (userInfo.zaloName) senderName = userInfo.zaloName;
             if (userInfo.avatar) updateContactAvatar(senderUid, userInfo.avatar);
@@ -350,8 +579,8 @@ export function attachListenersForAccount(accountId: number): void {
       let groupName: string | undefined;
       let groupAvatarUrl: string | undefined;
       let groupMembersCount: number | undefined;
-      if (isGroup && message.threadId) {
-        const groupInfo = await resolveGroupInfo(api, message.threadId);
+      if (isGroup && resolvedThreadId) {
+        const groupInfo = await resolveGroupInfo(api, resolvedThreadId);
         groupName = groupInfo.name || undefined;
         groupAvatarUrl = groupInfo.avatar || undefined;
         groupMembersCount = groupInfo.membersCount ?? undefined;
@@ -362,19 +591,52 @@ export function attachListenersForAccount(accountId: number): void {
       const contentType = detectContentType(message.data?.msgType, rawContent);
       const album = extractAlbumInfo(contentType, rawContent);
       const mentions = extractZaloMentions(message.data);
+      const timestamp = message.data?.ts ? new Date(parseInt(String(message.data.ts), 10)) : new Date();
+      const zaloMsgId = String(
+        message.data?.msgId || message.data?.cliMsgId || `rt_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      );
+      const zaloCliMsgId = message.data?.cliMsgId ? String(message.data.cliMsgId) : null;
+
+      await persistZaloMessageToDb({
+        accountId,
+        threadId: resolvedThreadId,
+        isGroup,
+        isSelf,
+        isBackfill: false,
+        zaloMsgId,
+        zaloCliMsgId,
+        senderUid: senderUid || (isSelf ? 'self' : resolvedThreadId),
+        senderName: senderName || (isSelf ? 'Me' : senderUid),
+        displayName: isGroup
+          ? (groupName || undefined)
+          : (isSelf ? (recipientName || undefined) : (senderName || undefined)),
+        avatarUrl: isGroup ? groupAvatarUrl : resolvedUserAvatar,
+        groupName,
+        groupAvatarUrl,
+        groupMembersCount,
+        content,
+        contentType,
+        attachments: Array.isArray(message.data?.attachments) ? message.data.attachments : [],
+        mentions,
+        rawContent: message.data ?? undefined,
+        albumKey: album.albumKey,
+        albumIndex: album.albumIndex,
+        albumTotal: album.albumTotal,
+        timestamp,
+      });
 
       // Delegate to registered messageHandler (message-sync or automation engine)
       const incomingMsg: IncomingMessage = {
-        accountId, threadId: message.threadId || '', uidFrom: senderUid,
+        accountId, threadId: resolvedThreadId, uidFrom: senderUid,
         displayName: senderName, content,
-        timestamp: message.data?.ts ? new Date(parseInt(message.data.ts)) : new Date(),
+        timestamp,
         isGroup,
       };
       if (messageHandler) {
         await messageHandler(incomingMsg);
       } else {
-        log.debug('Message received (no handler)', {
-          accountId, threadId: message.threadId, sender: senderName,
+        log.debug('Message received and persisted', {
+          accountId, threadId: resolvedThreadId, sender: senderName,
           isGroup, contentType, hasMentions: !!mentions,
         });
       }
@@ -382,7 +644,7 @@ export function attachListenersForAccount(accountId: number): void {
       // Real-time: emit inbound message to subscribed clients
       emitToAccount(accountId, 'zalo:message', {
         accountId,
-        threadId: message.threadId || '',
+        threadId: resolvedThreadId,
         senderUid: senderUid,
         displayName: senderName,
         content: content.slice(0, 2500),
@@ -452,25 +714,64 @@ export function attachListenersForAccount(accountId: number): void {
   // Ported from ZaloCRM: iterate each message, resolve names, delegate to handler
   listener.on('old_messages', async (messages: any[], type: number) => {
     const threadType = type === 1 ? 'group' : 'user';
+    const isGroup = threadType === 'group';
     log.info('Received old messages', { accountId, count: messages?.length, threadType });
 
-    for (const message of messages) {
+    for (const message of messages || []) {
       try {
+        const isSelf = Boolean(message?.isSelf);
         const senderUid = String(message.data?.uidFrom || '');
-        const peerFallback = message.isSelf ? String(message.data?.idTo || '') : senderUid;
+        const peerFallback = isSelf ? String(message.data?.idTo || '') : senderUid;
         const resolvedThreadId = String(message.threadId || peerFallback || '');
+        if (!resolvedThreadId) continue;
 
         let senderName = message.data?.dName || '';
-        if (!message.isSelf && senderUid && api.getUserInfo) {
+        let resolvedUserAvatar: string | undefined;
+        if (!isSelf && senderUid && api.getUserInfo) {
           const userInfo = await resolveZaloName(api, senderUid, userInfoCache);
           if (userInfo.zaloName) senderName = userInfo.zaloName;
+          resolvedUserAvatar = userInfo.avatar || undefined;
+        }
+
+        const rawContent = message.data?.content;
+        const content = typeof rawContent === 'string' ? rawContent : JSON.stringify(rawContent || '');
+        const contentType = detectContentType(message.data?.msgType, rawContent);
+        const album = extractAlbumInfo(contentType, rawContent);
+        const mentions = extractZaloMentions(message.data);
+        const timestamp = message.data?.ts ? new Date(Number(message.data.ts)) : new Date();
+        const zaloMsgId = String(message.data?.msgId || message.data?.cliMsgId || '');
+        const zaloCliMsgId = message.data?.cliMsgId ? String(message.data.cliMsgId) : null;
+
+        if (zaloMsgId) {
+          await persistZaloMessageToDb({
+            accountId,
+            threadId: resolvedThreadId,
+            isGroup,
+            isSelf,
+            isBackfill: true,
+            zaloMsgId,
+            zaloCliMsgId,
+            senderUid: senderUid || (isSelf ? 'self' : resolvedThreadId),
+            senderName: senderName || (isSelf ? 'Me' : senderUid),
+            displayName: !isGroup && !isSelf ? (senderName || undefined) : undefined,
+            avatarUrl: !isGroup ? resolvedUserAvatar : undefined,
+            content,
+            contentType,
+            attachments: Array.isArray(message.data?.attachments) ? message.data.attachments : [],
+            mentions,
+            rawContent: message.data ?? undefined,
+            albumKey: album.albumKey,
+            albumIndex: album.albumIndex,
+            albumTotal: album.albumTotal,
+            timestamp,
+          });
         }
 
         const incomingMsg: IncomingMessage = {
           accountId, threadId: resolvedThreadId, uidFrom: senderUid,
-          displayName: senderName, content: extractTextContent(message.data),
-          timestamp: message.data?.ts ? new Date(Number(message.data.ts)) : new Date(),
-          isGroup: threadType === 'group',
+          displayName: senderName, content: extractTextContent(message.data) || content,
+          timestamp,
+          isGroup,
         };
         if (messageHandler) {
           await messageHandler(incomingMsg);
@@ -552,6 +853,37 @@ export function detachListenersForAccount(accountId: number): void {
 export function wirePoolEvents(): void {
   zaloPool.on('session:connected', ({ accountId }: any) => {
     attachListenersForAccount(accountId);
+
+    void (async () => {
+      try {
+        const { syncFriendsForAccount } = await import('./friend-sync-service');
+        await syncFriendsForAccount(accountId, { trigger: 'connect' });
+      } catch (err) {
+        log.warn('wirePoolEvents syncFriendsForAccount failed', { accountId, error: String(err) });
+      }
+
+      try {
+        const { syncAndMatchCareGroups } = await import('./student-care-group-matcher.service');
+        await syncAndMatchCareGroups({
+          zaloAccountId: accountId,
+          refreshLiveGroups: true,
+          silent: true,
+          triggeredBy: 'login',
+        });
+      } catch (err) {
+        log.warn('wirePoolEvents syncAndMatchCareGroups failed', { accountId, error: String(err) });
+      }
+
+      try {
+        const client = zaloPool.getAccountClient(accountId);
+        if (client) {
+          const { backfillIfEmpty } = await import('./zalo-backfill-service');
+          await backfillIfEmpty(client.api ?? client, accountId);
+        }
+      } catch (err) {
+        log.warn('wirePoolEvents backfillIfEmpty failed', { accountId, error: String(err) });
+      }
+    })();
   });
   zaloPool.on('session:expired', ({ accountId }: any) => {
     detachListenersForAccount(accountId);

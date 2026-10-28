@@ -53,6 +53,10 @@ export const zaloApi = {
     const res = await apiClient.post(`/zalo/accounts/${accountId}/disconnect`);
     return res.data.data;
   },
+  reconnect: async (accountId: number): Promise<any> => {
+    const res = await apiClient.post(`/zalo/accounts/${accountId}/reconnect`);
+    return res.data?.data ?? res.data;
+  },
 
   // ─── Friends DB (paged, kind, search) ──────────────────────────────────────
   getFriendsDb: async (
@@ -199,8 +203,15 @@ export const zaloApi = {
   },
 
   // ─── Ensure conversation from group ────────────────────────────────────────
-  ensureGroupConversation: async (accountId: number, groupId: string): Promise<{ conversationId: string }> => {
-    const res = await apiClient.post(`/zalo/accounts/${accountId}/groups/${groupId}/ensure-conversation`);
+  ensureGroupConversation: async (
+    accountId: number,
+    groupId: string,
+    meta?: { groupName?: string; groupAvatarUrl?: string | null; memberCount?: number },
+  ): Promise<{ conversationId: string }> => {
+    const res = await apiClient.post(
+      `/zalo/accounts/${accountId}/groups/${groupId}/ensure-conversation`,
+      meta,
+    );
     return res.data.data ?? res.data;
   },
 
