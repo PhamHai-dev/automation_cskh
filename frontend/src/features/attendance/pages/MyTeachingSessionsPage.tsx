@@ -1,16 +1,14 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
 import {
   Calendar,
   Clock,
-  Upload,
-  CheckCircle2,
   BookOpen,
   User,
   Users,
   Check,
   UserRoundCheck,
   ClipboardCheck,
+  History,
   ChevronLeft,
   ChevronRight,
   ChevronDown,
@@ -18,11 +16,13 @@ import {
   Search,
   Table2,
   CalendarDays,
-  LayoutGrid,
   X,
 } from 'lucide-react';
 import { PageContainer } from '../../../components/common/PageContainer';
 import { PageHeader } from '../../../components/common/PageHeader';
+import { FilterBar } from '../../../components/common/FilterBar';
+import { DataTable, type Column } from '../../../components/common/DataTable';
+import { HorizontalTabs } from '../../../components/ui/HorizontalTabs';
 import { Card } from '../../../components/ui/Card';
 import { Button } from '../../../components/ui/Button';
 import { Badge } from '../../../components/ui/Badge';
@@ -35,16 +35,14 @@ import { useAuth } from '../../../contexts/AuthContext';
 import { teachersApi } from '../../teachers/api/teachers.api';
 import type { Teacher } from '../../teachers/types/teachers.types';
 import { reconciliationApi } from '../api/reconciliation.api';
-import { AttendanceStatus } from '../types/reconciliation.types';
-import { classSessionsApi, attendanceApi } from '../../classes/api/sessions.api';
+import type {
+  AttendanceStatus,
+  TeacherTrackingHistoryItem,
+  TeacherTrackingPendingItem,
+} from '../types/reconciliation.types';
+import { attendanceApi } from '../../classes/api/sessions.api';
 import { classesApi } from '../../classes/api/classes.api';
 import { formatClassCode } from '../../classes/types/classes.types';
-
-// Mint a fresh, opaque intent key (backend regex allows letters/digits/_/-).
-const mintIdempotencyKey = (): string => {
-  if (typeof globalThis.crypto?.randomUUID === 'function') return globalThis.crypto.randomUUID();
-  return `actual-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
-};
 
 const toLocalDateString = (d: Date): string => {
   const y = d.getFullYear();
@@ -159,9 +157,29 @@ const STATUS_PICKER_LIST: AttendanceStatus[] = [
   'TECH_ERROR_E',
 ];
 
-type ViewMode = 'table' | 'timetable' | 'cards';
+const TRACKING_STATUS_OPTIONS: Array<{ value: AttendanceStatus; label: string }> = [
+  { value: 'ATTENDED', label: '1 · Có mặt' },
+  { value: 'ABSENT_APPROVED_A', label: 'A · Nghỉ phép (A)' },
+  { value: 'LEAVE_B', label: 'B · Bảo lưu (B)' },
+  { value: 'ABSENT_UNAPPROVED_C', label: 'C · Nghỉ không phép (C)' },
+  { value: 'TEACHER_ABSENT_D', label: 'D · GV nghỉ (D)' },
+  { value: 'TECH_ERROR_E', label: 'E · Lỗi kỹ thuật (E)' },
+];
+
+const statusLabel = (status: AttendanceStatus) =>
+  STATUS_CONFIG[status]?.chipLabel || status;
+
+const dateLabel = (value: string) => new Date(value).toLocaleDateString('vi-VN');
+const dateTimeLabel = (value: string) => new Date(value).toLocaleString('vi-VN');
+
+export type MainTeacherTab = 'schedule' | 'pending' | 'history';
+type ViewMode = 'table' | 'timetable';
 type ModelFilter = 'ALL' | '1:1' | '1:2' | '1:n';
 type CompletionFilter = 'ALL' | 'PENDING' | 'COMPLETED';
+
+export interface MyTeachingSessionsPageProps {
+  initialMainTab?: MainTeacherTab;
+}
 
 interface EnrichedSession {
   session: any;
@@ -180,8 +198,9 @@ interface EnrichedSession {
   effectiveTeacherNote: string;
 }
 
-export const MyTeachingSessionsPage: React.FC = () => {
-  const navigate = useNavigate();
+export const MyTeachingSessionsPage: React.FC<MyTeachingSessionsPageProps> = ({
+  initialMainTab = 'schedule',
+}) => {
   const toast = useToast();
 
   const { user } = useAuth();
@@ -191,43 +210,98 @@ export const MyTeachingSessionsPage: React.FC = () => {
   // viewing of another teacher's schedule via teacher-sessions (ADMIN/MANAGE).
   const isAdmin = !!user?.roles.includes('ADMIN');
   const canMark = !isPrivileged || isAdmin;
-  const canRecordActual = !!user?.roles.includes('TEACHER') && !isPrivileged;
 
-  const [sessions, setSessions] = useState<any[]>([]);
+  // Main horizontal tab: schedule | pending | history
+  const [mainTab, setMainTab] = useState<MainTeacherTab>(initialMainTab);
+
+  // Sync if initialMainTab prop changes (e.g. route navigation between /teacher/my-sessions and /teacher/attendance-tracking)
+  useEffect(() => {
+    setMainTab(initialMainTab);
+  }, [initialMainTab]);
+
+  // Shared Teacher & Class lists
+  const [teachers, setTeachers] = useState<Teacher[]>([]);
+  const [selectedTeacherId, setSelectedTeacherId] = useState<number | undefined>();
   const [availableClasses, setAvailableClasses] = useState<any[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const hasContext = !isPrivileged || !!selectedTeacherId;
 
-  // View mode & Filters
-  const [viewMode, setViewMode] = useState<ViewMode>('table');
+  // Shared FilterBar states across all 3 tabs
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [debouncedSearch, setDebouncedSearch] = useState<string>('');
+  const [selectedClassId, setSelectedClassId] = useState<number | undefined>();
   const [modelFilter, setModelFilter] = useState<ModelFilter>('ALL');
-  const [completionFilter, setCompletionFilter] = useState<CompletionFilter>('ALL');
 
-  // Pagination state
+  // Tab 1 (`schedule`) specific filter & view states
+  const [viewMode, setViewMode] = useState<ViewMode>('table');
+  const [completionFilter, setCompletionFilter] = useState<CompletionFilter>('ALL');
+  const [dateRangeFilter, setDateRangeFilter] = useState<'today' | 'week' | 'month'>('today');
+  const [anchorDate, setAnchorDate] = useState<string>(() => toLocalDateString(new Date()));
+  const [sessions, setSessions] = useState<any[]>([]);
+  const [isLoadingSessions, setIsLoadingSessions] = useState(false);
+
+  // Tab 1 pagination
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [pageSize, setPageSize] = useState<number>(25);
 
-  // Teacher scope (only for ADMIN/MANAGE — backend requires an explicit teacherId)
-  const [teachers, setTeachers] = useState<Teacher[]>([]);
-  const [selectedTeacherId, setSelectedTeacherId] = useState<number | undefined>();
-  const hasContext = !isPrivileged || !!selectedTeacherId;
+  // Tab 2 (`pending`) & Tab 3 (`history`) specific states
+  const [trackingStartDate, setTrackingStartDate] = useState<string>('');
+  const [trackingEndDate, setTrackingEndDate] = useState<string>('');
+  const [pendingItems, setPendingItems] = useState<TeacherTrackingPendingItem[]>([]);
+  const [historyItems, setHistoryItems] = useState<TeacherTrackingHistoryItem[]>([]);
+  const [pendingCount, setPendingCount] = useState<number>(0);
+  const [trackingTotal, setTrackingTotal] = useState<number>(0);
+  const [trackingPage, setTrackingPage] = useState<number>(1);
+  const [trackingPageSize, setTrackingPageSize] = useState<number>(25);
+  const [isLoadingTracking, setIsLoadingTracking] = useState<boolean>(false);
 
-  // Date filters
-  const [dateRangeFilter, setDateRangeFilter] = useState<'today' | 'week' | 'month'>('today');
-  const [anchorDate, setAnchorDate] = useState<string>(() => toLocalDateString(new Date()));
+  // Modal for marking pending item in Tab 2 (`pending`)
+  const [selectedPendingItem, setSelectedPendingItem] = useState<TeacherTrackingPendingItem | null>(
+    null
+  );
+  const [pendingMarkStatus, setPendingMarkStatus] = useState<AttendanceStatus | ''>('');
+  const [pendingMarkLesson, setPendingMarkLesson] = useState<string>('');
+  const [pendingMarkNote, setPendingMarkNote] = useState<string>('');
+  const [isSubmittingPendingMark, setIsSubmittingPendingMark] = useState<boolean>(false);
 
   // Progressive disclosure inline status picker key: `${sessionId}_${ecId}`
   const [activeInlinePickerKey, setActiveInlinePickerKey] = useState<string | null>(null);
-  // Expanded group class rows in table & cards view: Set of session.id
+  // Expanded group class rows in table view
   const [expandedGroupSessions, setExpandedGroupSessions] = useState<Record<number, boolean>>({});
   // Saving indicator per session or student
   const [savingKey, setSavingKey] = useState<string | null>(null);
 
-  // Local drafts for inline lesson topic & teacher note per session (`s_${sessionId}`) or per student (`ec_${sessionId}_${ecId}`)
+  // Local drafts for inline lesson topic & teacher note per session (`s_${sessionId}`)
   const [lessonDrafts, setLessonDrafts] = useState<Record<string, string>>({});
   const [noteDrafts, setNoteDrafts] = useState<Record<string, string>>({});
   const lastSavedLessonRef = useRef<Record<string, string>>({});
   const lastSavedNoteRef = useRef<Record<string, string>>({});
+
+  // Single-student Mark Attendance Modal (detailed override in Tab 1)
+  const [selectedSession, setSelectedSession] = useState<any | null>(null);
+  const [selectedEnrollmentClass, setSelectedEnrollmentClass] = useState<any | null>(null);
+  const [isMarkModalOpen, setIsMarkModalOpen] = useState(false);
+  const [selectedStatus, setSelectedStatus] = useState<AttendanceStatus>('ATTENDED');
+  const [lessonTopic, setLessonTopic] = useState('');
+  const [teacherNote, setTeacherNote] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Session Quick Attendance Modal (for Timetable click in Tab 1)
+  const [quickModalSessionId, setQuickModalSessionId] = useState<number | null>(null);
+  const [quickModalLesson, setQuickModalLesson] = useState<string>('');
+  const [quickModalNote, setQuickModalNote] = useState<string>('');
+  const [quickModalStatuses, setQuickModalStatuses] = useState<Record<number, AttendanceStatus>>(
+    {}
+  );
+  const [quickModalStudentNotes, setQuickModalStudentNotes] = useState<Record<number, string>>({});
+  const [isQuickModalSaving, setIsQuickModalSaving] = useState(false);
+
+  // Debounce search query for server queries (Tab 2 & Tab 3)
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchQuery.trim());
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
   const parseAnchorDate = (ymd: string): Date => {
     const parts = ymd.split('-').map(Number);
@@ -250,35 +324,6 @@ export const MyTeachingSessionsPage: React.FC = () => {
     setCurrentPage(1);
   };
 
-  // Single-student Mark Attendance Modal (legacy / detailed override)
-  const [selectedSession, setSelectedSession] = useState<any | null>(null);
-  const [selectedEnrollmentClass, setSelectedEnrollmentClass] = useState<any | null>(null);
-  const [isMarkModalOpen, setIsMarkModalOpen] = useState(false);
-  const [selectedStatus, setSelectedStatus] = useState<AttendanceStatus>('ATTENDED');
-  const [lessonTopic, setLessonTopic] = useState('');
-  const [teacherNote, setTeacherNote] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
-  // Session Quick Attendance Modal (for Timetable click & Group class quick modal)
-  const [quickModalSessionId, setQuickModalSessionId] = useState<number | null>(null);
-  const [quickModalLesson, setQuickModalLesson] = useState<string>('');
-  const [quickModalNote, setQuickModalNote] = useState<string>('');
-  const [quickModalStatuses, setQuickModalStatuses] = useState<Record<number, AttendanceStatus>>({});
-  const [quickModalStudentNotes, setQuickModalStudentNotes] = useState<Record<number, string>>({});
-  const [isQuickModalSaving, setIsQuickModalSaving] = useState(false);
-
-  // Actual-session modal
-  const [isActualSessionModalOpen, setIsActualSessionModalOpen] = useState(false);
-  const [actualClassId, setActualClassId] = useState<number | ''>('');
-  const [actualEnrollmentClassId, setActualEnrollmentClassId] = useState<number | ''>('');
-  const [actualDate, setActualDate] = useState(() => toLocalDateString(new Date()));
-  const [actualStartTime, setActualStartTime] = useState('');
-  const [actualEndTime, setActualEndTime] = useState('');
-  const [actualStatus, setActualStatus] = useState<AttendanceStatus>('ATTENDED');
-  const [actualLessonTopic, setActualLessonTopic] = useState('');
-  const [actualTeacherNote, setActualTeacherNote] = useState('');
-  const [actualSessionKey, setActualSessionKey] = useState<string | null>(null);
-
   const getWeekBounds = useCallback((baseDate: Date) => {
     const curr = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate());
     const day = curr.getDay();
@@ -287,7 +332,13 @@ export const MyTeachingSessionsPage: React.FC = () => {
     monday.setDate(curr.getDate() + diffToMonday);
     const sunday = new Date(monday);
     sunday.setDate(monday.getDate() + 6);
-    const days: Array<{ ymd: string; date: Date; dowShort: string; dowLong: string; dmyShort: string }> = [];
+    const days: Array<{
+      ymd: string;
+      date: Date;
+      dowShort: string;
+      dowLong: string;
+      dmyShort: string;
+    }> = [];
     for (let i = 0; i < 7; i++) {
       const d = new Date(monday);
       d.setDate(monday.getDate() + i);
@@ -328,7 +379,7 @@ export const MyTeachingSessionsPage: React.FC = () => {
     };
   }, [anchorDate, dateRangeFilter, viewMode, getWeekBounds]);
 
-  // Load teacher list once for ADMIN/MANAGE so they can pick whose schedule to view.
+  // Load teacher list once for ADMIN/MANAGE
   useEffect(() => {
     if (!isPrivileged) return;
     teachersApi
@@ -337,12 +388,38 @@ export const MyTeachingSessionsPage: React.FC = () => {
       .catch(() => toast.error('Không thể tải danh sách giáo viên'));
   }, [isPrivileged, toast]);
 
+  // Load classes list
+  useEffect(() => {
+    classesApi
+      .list()
+      .then((items) => setAvailableClasses(items.filter((item) => item.active)))
+      .catch(() => toast.error('Không thể tải danh sách lớp phụ trách'));
+  }, [toast]);
+
+  // Map classId -> modelType from availableClasses + sessions so we can also client-filter pending/history by model
+  const classModelById = useMemo(() => {
+    const map = new Map<number, '1:1' | '1:2' | '1:n'>();
+    for (const cls of availableClasses) {
+      if (cls?.id) {
+        map.set(Number(cls.id), normalizeModelType(cls.model_type));
+      }
+    }
+    for (const s of sessions) {
+      const cid = s.class?.id || s.class_id;
+      if (cid && s.class?.model_type) {
+        map.set(Number(cid), normalizeModelType(s.class.model_type));
+      }
+    }
+    return map;
+  }, [availableClasses, sessions]);
+
+  // Load Tab 1 (`schedule`) sessions
   const loadSessions = useCallback(async () => {
     if (!hasContext) {
       setSessions([]);
       return;
     }
-    setIsLoading(true);
+    setIsLoadingSessions(true);
     try {
       const { start, end } = calculateDates();
       const data = await reconciliationApi.getTeacherSessions({
@@ -354,7 +431,7 @@ export const MyTeachingSessionsPage: React.FC = () => {
     } catch (err: any) {
       toast.error(err.response?.data?.message || 'Không thể tải lịch dạy của bạn');
     } finally {
-      setIsLoading(false);
+      setIsLoadingSessions(false);
     }
   }, [calculateDates, hasContext, isPrivileged, selectedTeacherId, toast]);
 
@@ -362,20 +439,95 @@ export const MyTeachingSessionsPage: React.FC = () => {
     loadSessions();
   }, [loadSessions]);
 
-  useEffect(() => {
+  // Load pending count badge for Tab 2 (`pending`)
+  const loadPendingCount = useCallback(async () => {
     if (!hasContext) {
-      setAvailableClasses([]);
+      setPendingCount(0);
       return;
     }
-    classesApi
-      .list()
-      .then((items) => setAvailableClasses(items.filter((item) => item.active)))
-      .catch(() => toast.error('Không thể tải danh sách lớp phụ trách'));
-  }, [hasContext, toast]);
+    try {
+      const result = await reconciliationApi.getTeacherTrackingCount({
+        teacherId: isPrivileged ? selectedTeacherId : undefined,
+        classId: selectedClassId,
+        startDate: trackingStartDate || undefined,
+        endDate: trackingEndDate || undefined,
+        search: debouncedSearch || undefined,
+      });
+      setPendingCount(result.count);
+    } catch {
+      setPendingCount(0);
+    }
+  }, [
+    hasContext,
+    isPrivileged,
+    selectedTeacherId,
+    selectedClassId,
+    trackingStartDate,
+    trackingEndDate,
+    debouncedSearch,
+  ]);
+
+  useEffect(() => {
+    loadPendingCount();
+  }, [loadPendingCount]);
+
+  // Load Tab 2 (`pending`) or Tab 3 (`history`) data when active or filters change
+  const loadTrackingData = useCallback(async () => {
+    if (!hasContext) {
+      setPendingItems([]);
+      setHistoryItems([]);
+      setTrackingTotal(0);
+      return;
+    }
+    if (mainTab === 'schedule') return;
+
+    setIsLoadingTracking(true);
+    try {
+      const query = {
+        teacherId: isPrivileged ? selectedTeacherId : undefined,
+        classId: selectedClassId,
+        startDate: trackingStartDate || undefined,
+        endDate: trackingEndDate || undefined,
+        search: debouncedSearch || undefined,
+        page: trackingPage,
+        pageSize: trackingPageSize,
+      };
+      if (mainTab === 'pending') {
+        const result = await reconciliationApi.getTeacherTrackingPending(query);
+        setPendingItems(result.items || []);
+        setTrackingTotal(result.total || 0);
+      } else if (mainTab === 'history') {
+        const result = await reconciliationApi.getTeacherTrackingHistory(query);
+        setHistoryItems(result.items || []);
+        setTrackingTotal(result.total || 0);
+      }
+    } catch (error: any) {
+      toast.error(
+        error.response?.data?.message || 'Không thể tải dữ liệu theo dõi điểm danh giáo viên'
+      );
+    } finally {
+      setIsLoadingTracking(false);
+    }
+  }, [
+    hasContext,
+    mainTab,
+    isPrivileged,
+    selectedTeacherId,
+    selectedClassId,
+    trackingStartDate,
+    trackingEndDate,
+    debouncedSearch,
+    trackingPage,
+    trackingPageSize,
+    toast,
+  ]);
+
+  useEffect(() => {
+    loadTrackingData();
+  }, [loadTrackingData]);
 
   // Enrich sessions with Ca 1/Ca 2 per class+date, modelType, attendance progress, etc.
   const enrichedSessions = useMemo<EnrichedSession[]>(() => {
-    // Group by class_id + dateYmd to compute Ca 1, Ca 2 in chronological order
     const byClassAndDate = new Map<string, any[]>();
     for (const s of sessions) {
       const ymd = extractSessionDateStr(s.session_date);
@@ -448,7 +600,7 @@ export const MyTeachingSessionsPage: React.FC = () => {
     });
   }, [sessions]);
 
-  // KPI metrics (computed across all sessions in the current date period before status/search filters)
+  // KPI metrics (computed across sessions in the current date period)
   const kpiMetrics = useMemo(() => {
     const totalSessions = enrichedSessions.length;
     let completedSessions = 0;
@@ -481,10 +633,14 @@ export const MyTeachingSessionsPage: React.FC = () => {
     };
   }, [enrichedSessions]);
 
-  // Apply search, model, and completion filters
+  // Apply search, class, model, and completion filters for Tab 1 (`schedule`)
   const filteredSessions = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     return enrichedSessions.filter((item) => {
+      const clsId = item.session.class?.id || item.session.class_id;
+      if (selectedClassId && Number(clsId) !== Number(selectedClassId)) {
+        return false;
+      }
       if (modelFilter !== 'ALL' && item.modelType !== modelFilter) {
         return false;
       }
@@ -534,7 +690,60 @@ export const MyTeachingSessionsPage: React.FC = () => {
       }
       return true;
     });
-  }, [enrichedSessions, modelFilter, completionFilter, searchQuery]);
+  }, [enrichedSessions, selectedClassId, modelFilter, completionFilter, searchQuery]);
+
+  // Apply client-side model filter on pendingItems & historyItems when modelFilter !== 'ALL'
+  const displayedPendingItems = useMemo(() => {
+    if (modelFilter === 'ALL') return pendingItems;
+    return pendingItems.filter((item) => {
+      const m = classModelById.get(Number(item.class?.id));
+      return !m || m === modelFilter;
+    });
+  }, [pendingItems, modelFilter, classModelById]);
+
+  const displayedHistoryItems = useMemo(() => {
+    if (modelFilter === 'ALL') return historyItems;
+    return historyItems.filter((item) => {
+      if (!item.class?.id) return true;
+      const m = classModelById.get(Number(item.class.id));
+      return !m || m === modelFilter;
+    });
+  }, [historyItems, modelFilter, classModelById]);
+
+  // Active filter count & clear handler for `<FilterBar>`
+  const activeFilterCount = useMemo(() => {
+    let count = 0;
+    if (searchQuery.trim()) count += 1;
+    if (selectedClassId) count += 1;
+    if (modelFilter !== 'ALL') count += 1;
+    if (mainTab === 'schedule') {
+      if (completionFilter !== 'ALL') count += 1;
+    } else {
+      if (trackingStartDate) count += 1;
+      if (trackingEndDate) count += 1;
+    }
+    return count;
+  }, [
+    searchQuery,
+    selectedClassId,
+    modelFilter,
+    mainTab,
+    completionFilter,
+    trackingStartDate,
+    trackingEndDate,
+  ]);
+
+  const handleClearFilters = () => {
+    setSearchQuery('');
+    setDebouncedSearch('');
+    setSelectedClassId(undefined);
+    setModelFilter('ALL');
+    setCompletionFilter('ALL');
+    setTrackingStartDate('');
+    setTrackingEndDate('');
+    setCurrentPage(1);
+    setTrackingPage(1);
+  };
 
   // Helper to mark a single student in a session
   const persistSingleStudentAttendance = useCallback(
@@ -569,7 +778,7 @@ export const MyTeachingSessionsPage: React.FC = () => {
       } else {
         if (isPrivileged) {
           throw new Error(
-            'Chưa có hồ sơ điểm danh gốc cho học viên này. Chỉ giáo viên phụ trách lớp mới khởi tạo trực tiếp hoặc qua ca thực học.'
+            'Chưa có hồ sơ điểm danh gốc cho học viên này. Chỉ giáo viên phụ trách lớp mới khởi tạo trực tiếp.'
           );
         }
         await attendanceApi.mark(session.class.id, session.id, {
@@ -584,7 +793,7 @@ export const MyTeachingSessionsPage: React.FC = () => {
     [isPrivileged, selectedTeacherId]
   );
 
-  // Quick inline status select for 1 student
+  // Quick inline status select for 1 student in Tab 1
   const handleInlineSelectStatus = async (
     item: EnrichedSession,
     ec: any,
@@ -617,7 +826,8 @@ export const MyTeachingSessionsPage: React.FC = () => {
       toast.success(
         `Đã chấm ${STATUS_CONFIG[status].chipLabel} cho ${ec.enrollment?.student?.full_name || 'học viên'}`
       );
-      await loadSessions();
+      await Promise.all([loadSessions(), loadPendingCount()]);
+      window.dispatchEvent(new Event('teacher-attendance-updated'));
     } catch (err: any) {
       toast.error(err.response?.data?.message || err.message || 'Không thể ghi nhận điểm danh');
     } finally {
@@ -668,7 +878,8 @@ export const MyTeachingSessionsPage: React.FC = () => {
       toast.success(
         `Đã chấm ${STATUS_CONFIG[status].chipLabel} cho toàn bộ ${item.enrollmentClasses.length} học viên lớp ${item.session.class?.class_name}`
       );
-      await loadSessions();
+      await Promise.all([loadSessions(), loadPendingCount()]);
+      window.dispatchEvent(new Event('teacher-attendance-updated'));
     } catch (err: any) {
       toast.error(err.response?.data?.message || err.message || 'Không thể chấm điểm danh cả lớp');
     } finally {
@@ -676,7 +887,7 @@ export const MyTeachingSessionsPage: React.FC = () => {
     }
   };
 
-  // Save inline lesson topic & teacher note for a session (applies to marked students, or auto-marks 1:1 if needed/saves onto existing attendance)
+  // Save inline lesson topic & teacher note for a session
   const handleSaveSessionLessonAndNote = async (
     item: EnrichedSession,
     explicitTopic?: string,
@@ -704,7 +915,6 @@ export const MyTeachingSessionsPage: React.FC = () => {
       return;
     }
 
-    // Target students that already have teacher_status, or for 1:1 with a single student if they haven't marked yet, default to ATTENDED when typing a lesson
     const targets = item.enrollmentClasses.filter((ec: any) => {
       const att = ec.attendance?.find(
         (a: any) => a.class_session_id === item.session.id && !a.deleted_at
@@ -714,7 +924,6 @@ export const MyTeachingSessionsPage: React.FC = () => {
 
     if (targets.length === 0) {
       if (item.enrollmentClasses.length === 1 && (topicVal || noteVal)) {
-        // For 1:1 class, entering a lesson topic or note automatically records ATTENDED if not marked yet
         const singleEc = item.enrollmentClasses[0];
         setSavingKey(`note_${item.session.id}`);
         try {
@@ -728,7 +937,8 @@ export const MyTeachingSessionsPage: React.FC = () => {
           lastSavedLessonRef.current[sessionDraftKey] = topicVal;
           lastSavedNoteRef.current[sessionDraftKey] = noteVal;
           toast.success('Đã lưu bài học & ghi nhận 1 · Có mặt');
-          await loadSessions();
+          await Promise.all([loadSessions(), loadPendingCount()]);
+          window.dispatchEvent(new Event('teacher-attendance-updated'));
         } catch (err: any) {
           toast.error(err.response?.data?.message || err.message || 'Không thể lưu bài học');
         } finally {
@@ -758,7 +968,7 @@ export const MyTeachingSessionsPage: React.FC = () => {
     }
   };
 
-  // Open Quick Session Attendance Modal (used by Timetable chip click or "Chi tiết ca" button)
+  // Open Quick Session Attendance Modal (used by Timetable chip click)
   const openQuickSessionModal = (item: EnrichedSession) => {
     setQuickModalSessionId(item.session.id);
     setQuickModalLesson(item.effectiveLessonTopic || '');
@@ -812,7 +1022,8 @@ export const MyTeachingSessionsPage: React.FC = () => {
       }
       toast.success('Đã lưu điểm danh ca học thành công!');
       setQuickModalSessionId(null);
-      await loadSessions();
+      await Promise.all([loadSessions(), loadPendingCount()]);
+      window.dispatchEvent(new Event('teacher-attendance-updated'));
     } catch (err: any) {
       toast.error(err.response?.data?.message || err.message || 'Không thể lưu điểm danh ca học');
     } finally {
@@ -852,7 +1063,7 @@ export const MyTeachingSessionsPage: React.FC = () => {
       );
       toast.success('Điểm danh thành công! Dữ liệu đã được gửi đối soát với CSKH.');
       setIsMarkModalOpen(false);
-      loadSessions();
+      await Promise.all([loadSessions(), loadPendingCount()]);
       window.dispatchEvent(new Event('teacher-attendance-updated'));
     } catch (err: any) {
       toast.error(err.response?.data?.message || err.message || 'Không thể ghi nhận điểm danh');
@@ -861,60 +1072,35 @@ export const MyTeachingSessionsPage: React.FC = () => {
     }
   };
 
-  const handleCreateActualSession = async () => {
-    if (!actualClassId || !actualEnrollmentClassId || !actualDate) {
-      toast.warning('Hãy chọn lớp, học viên và ngày dạy');
-      return;
-    }
-    setIsSubmitting(true);
-    try {
-      const key = actualSessionKey || mintIdempotencyKey();
-      setActualSessionKey(key);
-      const session = await classSessionsApi.createActual(Number(actualClassId), {
-        idempotency_key: key,
-        enrollment_class_id: Number(actualEnrollmentClassId),
-        session_date: actualDate,
-        start_time: actualStartTime || undefined,
-        end_time: actualEndTime || undefined,
-      });
-      const attendance = session.attendance?.find(
-        (item: any) => item.enrollment_class_id === Number(actualEnrollmentClassId)
-      );
-      if (!attendance?.id) throw new Error('Không nhận được hồ sơ điểm danh của ca thực học');
-      await reconciliationApi.markByTeacher(attendance.id, {
-        status: actualStatus,
-        ...(isPrivileged && selectedTeacherId ? { teacherId: selectedTeacherId } : {}),
-        lessonTopic: actualStatus === 'ATTENDED' ? actualLessonTopic.trim() || undefined : undefined,
-        note: actualTeacherNote.trim() || undefined,
-        rawValue:
-          actualStatus === 'ATTENDED'
-            ? `${actualEnrollmentClassId}-${actualLessonTopic.trim()}`
-            : undefined,
-      });
-      toast.success('Đã ghi nhận ca thực học và điểm danh giáo viên.');
-      setActualSessionKey(null);
-      setIsActualSessionModalOpen(false);
-      loadSessions();
-      window.dispatchEvent(new Event('teacher-attendance-updated'));
-    } catch (err: any) {
-      // Keep actualSessionKey while the modal stays open so a retry replays one session.
-      toast.error(err.response?.data?.message || err.message || 'Không thể ghi nhận ca thực học');
-    } finally {
-      setIsSubmitting(false);
-    }
+  // Tab 2 (`pending`): open mark modal & confirm
+  const openPendingMarkModal = (item: TeacherTrackingPendingItem) => {
+    if (isPrivileged && !isAdmin) return;
+    setSelectedPendingItem(item);
+    setPendingMarkStatus('');
+    setPendingMarkLesson('');
+    setPendingMarkNote('');
   };
 
-  const openActualSessionModal = () => {
-    setActualSessionKey(null);
-    setActualClassId('');
-    setActualEnrollmentClassId('');
-    setActualStartTime('');
-    setActualEndTime('');
-    setActualStatus('ATTENDED');
-    setActualLessonTopic('');
-    setActualTeacherNote('');
-    setActualDate(new Date().toISOString().slice(0, 10));
-    setIsActualSessionModalOpen(true);
+  const handleConfirmPendingMark = async () => {
+    if (!selectedPendingItem || !pendingMarkStatus || (isPrivileged && !isAdmin)) return;
+    setIsSubmittingPendingMark(true);
+    try {
+      await reconciliationApi.markByTeacher(selectedPendingItem.id, {
+        status: pendingMarkStatus,
+        teacherId: isPrivileged ? selectedTeacherId : undefined,
+        lessonTopic:
+          pendingMarkStatus === 'ATTENDED' ? pendingMarkLesson.trim() || undefined : undefined,
+        note: pendingMarkNote.trim() || undefined,
+      });
+      toast.success('Đã ghi nhận điểm danh và gửi đối soát');
+      setSelectedPendingItem(null);
+      await Promise.all([loadTrackingData(), loadPendingCount(), loadSessions()]);
+      window.dispatchEvent(new Event('teacher-attendance-updated'));
+    } catch (error: any) {
+      toast.error(error.response?.data?.message || 'Không thể ghi nhận điểm danh');
+    } finally {
+      setIsSubmittingPendingMark(false);
+    }
   };
 
   const toggleGroupExpand = (sessionId: number) => {
@@ -924,7 +1110,7 @@ export const MyTeachingSessionsPage: React.FC = () => {
     }));
   };
 
-  // Pagination calculation over filteredSessions
+  // Pagination calculation over filteredSessions (Tab 1)
   const totalCount = filteredSessions.length;
   const totalPages = Math.ceil(totalCount / pageSize) || 1;
   const currentPageSafe = Math.min(currentPage, totalPages);
@@ -943,7 +1129,7 @@ export const MyTeachingSessionsPage: React.FC = () => {
   const startRecord = totalCount === 0 ? 0 : (currentPageSafe - 1) * pageSize + 1;
   const endRecord = Math.min(currentPageSafe * pageSize, totalCount);
 
-  // Weekly calendar days for Timetable mode
+  // Weekly calendar days for Timetable mode (Tab 1)
   const weekCalendar = useMemo(() => {
     const base = parseAnchorDate(anchorDate);
     const { days } = getWeekBounds(base);
@@ -970,7 +1156,146 @@ export const MyTeachingSessionsPage: React.FC = () => {
 
   const todayYmd = useMemo(() => toLocalDateString(new Date()), []);
 
-  // Render Progressive Disclosure Status Control for a single student
+  // Columns for Tab 2 (`pending`)
+  const pendingColumns: Column<TeacherTrackingPendingItem>[] = [
+    {
+      header: 'Ngày / giờ',
+      cell: (item) => (
+        <div>
+          <div className="font-semibold text-text-primary">
+            {dateLabel(item.session.session_date)}
+          </div>
+          <div className="text-xs text-text-muted">
+            {item.session.start_time || '—'} – {item.session.end_time || '—'}
+          </div>
+        </div>
+      ),
+    },
+    {
+      header: 'Học viên',
+      cell: (item) => (
+        <div>
+          <div className="font-semibold text-text-primary">{item.student.full_name}</div>
+          <div className="text-xs text-text-muted">
+            {item.student.external_id || 'Chưa có mã'}
+            {item.student.phone ? ` · ${item.student.phone}` : ''}
+          </div>
+        </div>
+      ),
+    },
+    {
+      header: 'Lớp / buổi',
+      cell: (item) => (
+        <div>
+          <div className="font-medium text-text-primary">{item.class.class_name}</div>
+          <div className="text-xs text-text-muted">Buổi {item.session.session_number}</div>
+        </div>
+      ),
+    },
+    {
+      header: 'Trạng thái',
+      cell: () => (
+        <Badge variant="warning" dot>
+          Chưa điểm danh
+        </Badge>
+      ),
+    },
+    {
+      header: 'Thao tác',
+      className: 'text-right',
+      cell: (item) =>
+        isPrivileged && !isAdmin ? (
+          <span
+            title="Chỉ Admin chấm hộ giáo viên; MANAGE ghi ý kiến CSKH trong nhóm phụ trách"
+            className="inline-block"
+          >
+            <Button
+              id={`mark-attendance-${item.id}`}
+              size="sm"
+              disabled
+              title="Chỉ Admin chấm hộ giáo viên; MANAGE ghi ý kiến CSKH trong nhóm phụ trách"
+            >
+              <ClipboardCheck className="h-4 w-4 mr-1.5" />
+              Điểm danh
+            </Button>
+          </span>
+        ) : (
+          <Button
+            id={`mark-attendance-${item.id}`}
+            size="sm"
+            onClick={() => openPendingMarkModal(item)}
+          >
+            <ClipboardCheck className="h-4 w-4 mr-1.5" />
+            Điểm danh
+          </Button>
+        ),
+    },
+  ];
+
+  // Columns for Tab 3 (`history`)
+  const historyColumns: Column<TeacherTrackingHistoryItem>[] = [
+    {
+      header: 'Thời gian đổi',
+      cell: (item) => (
+        <span className="whitespace-nowrap font-medium text-text-primary">
+          {dateTimeLabel(item.created_at)}
+        </span>
+      ),
+    },
+    {
+      header: 'Học viên',
+      cell: (item) => (
+        <div>
+          <div className="font-semibold text-text-primary">{item.student?.full_name || '—'}</div>
+          <div className="text-xs text-text-muted">
+            {item.student?.external_id || 'Chưa có mã'}
+          </div>
+        </div>
+      ),
+    },
+    {
+      header: 'Lớp / buổi',
+      cell: (item) => (
+        <div>
+          <div className="font-medium text-text-primary">{item.class?.class_name || '—'}</div>
+          <div className="text-xs text-text-muted">
+            {item.session
+              ? `${dateLabel(item.session.session_date)} · Buổi ${item.session.session_number}`
+              : '—'}
+          </div>
+        </div>
+      ),
+    },
+    {
+      header: 'Thay đổi',
+      cell: (item) => (
+        <div className="flex items-center justify-center gap-2 whitespace-nowrap">
+          <Badge variant="neutral">{statusLabel(item.from_status)}</Badge>
+          <span className="text-text-muted">→</span>
+          <Badge variant="accent">{statusLabel(item.to_status)}</Badge>
+        </div>
+      ),
+    },
+    {
+      header: 'Bài học / Ghi chú',
+      cell: (item) => (
+        <div className="space-y-0.5">
+          {item.lesson_topic && (
+            <div className="text-xs font-semibold text-teal-700">Bài: {item.lesson_topic}</div>
+          )}
+          <div className="text-text-secondary">
+            {item.note || (!item.lesson_topic ? '—' : '')}
+          </div>
+        </div>
+      ),
+    },
+    {
+      header: 'Người thao tác',
+      cell: (item) => <span className="font-medium text-text-primary">{item.performed_by}</span>,
+    },
+  ];
+
+  // Render Progressive Disclosure Status Control for a single student in Tab 1
   const renderProgressiveStudentStatus = (item: EnrichedSession, ec: any, compact = false) => {
     const att = ec.attendance?.find(
       (a: any) => a.class_session_id === item.session.id && !a.deleted_at
@@ -1140,366 +1465,353 @@ export const MyTeachingSessionsPage: React.FC = () => {
 
   return (
     <PageContainer>
-      <PageHeader
-        title="Lịch Dạy & Điểm Danh Của Tôi"
-        actions={
-          <div className="flex flex-wrap items-center gap-2.5">
-            <div
-              className="inline-flex items-center p-1 bg-slate-100 rounded-xl border border-slate-200/80 gap-1"
-              role="tablist"
-              aria-label="Chuyển đổi chế độ Lịch dạy và Theo dõi điểm danh"
-            >
-              <button
-                type="button"
-                onClick={() => navigate('/teacher/my-sessions')}
-                className="px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 bg-primary text-white shadow-xs"
-              >
-                <Calendar className="w-3.5 h-3.5" />
-                <span>Lịch dạy trong kỳ</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => navigate('/teacher/attendance-tracking')}
-                className="px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 text-slate-600 hover:text-slate-900 hover:bg-white/70"
-              >
-                <ClipboardCheck className="w-3.5 h-3.5" />
-                <span>Chờ điểm danh & Lịch sử</span>
-              </button>
-            </div>
+      <PageHeader title="Lịch dạy & Theo dõi Điểm danh" />
 
-            {canRecordActual && (
-              <Button
-                variant="primary"
-                onClick={openActualSessionModal}
-                title="Ghi ca thực học sau khi dạy"
-              >
-                <CheckCircle2 className="w-4 h-4 mr-1.5" />
-                Ghi ca thực học
-              </Button>
-            )}
-            <Button
-              variant="outline"
-              onClick={() => {
-                window.location.assign('/imports?tab=attendance');
-              }}
-            >
-              <Upload className="w-4 h-4 mr-1.5" />
-              Nhập workbook điểm danh
-            </Button>
-          </div>
-        }
+      {/* 3 Tab nghiệp vụ lớn ngay dưới PageHeader */}
+      <HorizontalTabs
+        ariaLabel="Chế độ lịch dạy và theo dõi điểm danh giáo viên"
+        value={mainTab}
+        onChange={(nextTab) => {
+          setMainTab(nextTab);
+          setCurrentPage(1);
+          setTrackingPage(1);
+        }}
+        className="mb-4"
+        items={[
+          {
+            value: 'schedule',
+            label: 'Lịch dạy & Điểm danh',
+            icon: <Calendar />,
+            badge: kpiMetrics.totalSessions,
+          },
+          {
+            value: 'pending',
+            label: 'Chờ GV xác nhận',
+            icon: <ClipboardCheck />,
+            badge: pendingCount,
+          },
+          {
+            value: 'history',
+            label: 'Lịch sử thay đổi',
+            icon: <History />,
+          },
+        ]}
       />
 
-      {/* 1. COMPACT 1-LINE KPI BAR (Clickable chips to quick-filter) */}
-      <div
-        data-testid="sessions-kpi-bar"
-        className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-border/80 bg-surface px-3.5 py-2.5 shadow-2xs"
+      {/* Cụm FilterBar chuẩn Design System dùng chung cho cả 3 Tab */}
+      <FilterBar
+        title="Bộ lọc & Tìm kiếm"
+        activeCount={activeFilterCount}
+        onClear={handleClearFilters}
+        gridClassName="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5 items-end"
       >
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            data-testid="kpi-chip-all"
-            onClick={() => {
-              setCompletionFilter('ALL');
-              setCurrentPage(1);
-            }}
-            className={`inline-flex items-center gap-2 rounded-xl border px-3 py-1.5 text-xs font-semibold transition cursor-pointer ${
-              completionFilter === 'ALL'
-                ? 'border-primary bg-primary-soft/60 text-primary shadow-2xs'
-                : 'border-border/70 bg-slate-50/70 text-text-secondary hover:bg-slate-100'
-            }`}
-          >
-            <Calendar className="w-3.5 h-3.5 text-primary" />
-            <span>Tất cả ca (Tổng ca dạy):</span>
-            <strong className="text-sm font-extrabold text-text-primary">
-              {kpiMetrics.totalSessions}
-            </strong>
-          </button>
-
-          <button
-            type="button"
-            data-testid="kpi-chip-pending"
-            onClick={() => {
-              setCompletionFilter(completionFilter === 'PENDING' ? 'ALL' : 'PENDING');
-              setCurrentPage(1);
-            }}
-            className={`inline-flex items-center gap-2 rounded-xl border px-3 py-1.5 text-xs font-semibold transition cursor-pointer ${
-              completionFilter === 'PENDING'
-                ? 'border-amber-400 bg-amber-50 text-amber-800 shadow-2xs ring-1 ring-amber-300'
-                : 'border-amber-200/80 bg-amber-50/40 text-amber-700 hover:bg-amber-50'
-            }`}
-          >
-            <span className="h-2 w-2 rounded-full bg-amber-500" />
-            <span>Đang chấm / Chờ chấm:</span>
-            <strong className="text-sm font-extrabold text-amber-900">
-              {kpiMetrics.pendingSessions}
-            </strong>
-          </button>
-
-          <button
-            type="button"
-            data-testid="kpi-chip-completed"
-            onClick={() => {
-              setCompletionFilter(completionFilter === 'COMPLETED' ? 'ALL' : 'COMPLETED');
-              setCurrentPage(1);
-            }}
-            className={`inline-flex items-center gap-2 rounded-xl border px-3 py-1.5 text-xs font-semibold transition cursor-pointer ${
-              completionFilter === 'COMPLETED'
-                ? 'border-emerald-400 bg-emerald-50 text-emerald-800 shadow-2xs ring-1 ring-emerald-300'
-                : 'border-emerald-200/80 bg-emerald-50/40 text-emerald-700 hover:bg-emerald-50'
-            }`}
-          >
-            <span className="h-2 w-2 rounded-full bg-emerald-500" />
-            <span>Đã chấm đủ:</span>
-            <strong className="text-sm font-extrabold text-emerald-900">
-              {kpiMetrics.completedSessions}
-            </strong>
-          </button>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-3 text-xs text-text-secondary">
-          <div className="inline-flex items-center gap-1.5 rounded-xl border border-border/60 bg-slate-50 px-2.5 py-1">
-            <BookOpen className="w-3.5 h-3.5 text-indigo-600" />
-            <span>Số lớp phụ trách:</span>
-            <strong className="font-extrabold text-text-primary">
-              {kpiMetrics.distinctClasses}
-            </strong>
+        {isPrivileged && (
+          <div>
+            <label
+              htmlFor="sessions-teacher-select"
+              className="block text-[11px] font-semibold text-text-secondary uppercase tracking-wider mb-1.5"
+            >
+              Giáo viên phụ trách
+            </label>
+            <select
+              id="sessions-teacher-select"
+              value={selectedTeacherId || ''}
+              onChange={(event) => {
+                setSelectedTeacherId(
+                  event.target.value ? Number(event.target.value) : undefined
+                );
+                setCurrentPage(1);
+                setTrackingPage(1);
+              }}
+              className="w-full h-9 px-3 border border-border rounded-xl text-xs font-semibold bg-white text-text-primary focus:outline-none focus:ring-2 focus:ring-primary shadow-xs transition cursor-pointer"
+            >
+              <option value="">Chọn giáo viên...</option>
+              {teachers.map((teacher) => (
+                <option key={teacher.id} value={teacher.user_id!}>
+                  {teacher.name} · {teacher.code}
+                </option>
+              ))}
+            </select>
           </div>
-          <div className="inline-flex items-center gap-1.5 rounded-xl border border-border/60 bg-slate-50 px-2.5 py-1">
-            <Users className="w-3.5 h-3.5 text-teal-600" />
-            <span>Tổng lượt học viên:</span>
-            <strong className="font-extrabold text-text-primary">
-              {kpiMetrics.markedStudentTurns}/{kpiMetrics.totalStudentTurns}
-            </strong>
+        )}
+
+        <div>
+          <label
+            htmlFor="sessions-quick-search"
+            className="block text-[11px] font-semibold text-text-secondary uppercase tracking-wider mb-1.5"
+          >
+            Tìm kiếm nhanh
+          </label>
+          <div className="relative flex items-center">
+            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 pointer-events-none" />
+            <input
+              id="sessions-quick-search"
+              type="text"
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setCurrentPage(1);
+                setTrackingPage(1);
+              }}
+              placeholder="Mã lớp, tên lớp, tên/mã/SĐT HV, bài học..."
+              className="w-full h-9 pl-8 pr-7 border border-border rounded-xl text-xs bg-white text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-primary shadow-xs transition"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchQuery('');
+                  setDebouncedSearch('');
+                  setCurrentPage(1);
+                  setTrackingPage(1);
+                }}
+                className="absolute right-2 text-text-muted hover:text-text-primary cursor-pointer"
+                title="Xóa tìm kiếm"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
         </div>
-      </div>
 
-      {/* 2. CONSOLIDATED FILTER BAR + 3-VIEW SWITCHER */}
-      <Card className="p-3.5 mb-4">
-        <div className="flex flex-col gap-3">
-          <div className="flex flex-wrap items-end justify-between gap-3">
-            <div className="flex flex-wrap items-end gap-2.5 flex-1">
-              {isPrivileged && (
-                <div className="w-full sm:w-56">
-                  <Select
-                    id="sessions-teacher-select"
-                    label="Giáo viên phụ trách"
-                    value={selectedTeacherId || ''}
-                    onChange={(event) => {
-                      setSelectedTeacherId(
-                        event.target.value ? Number(event.target.value) : undefined
-                      );
-                      setCurrentPage(1);
-                    }}
-                    options={[
-                      { value: '', label: 'Chọn giáo viên...' },
-                      ...teachers.map((teacher) => ({
-                        value: teacher.user_id!,
-                        label: `${teacher.name} · ${teacher.code}`,
-                      })),
-                    ]}
-                  />
-                </div>
-              )}
+        <div>
+          <label
+            htmlFor="sessions-class-filter"
+            className="block text-[11px] font-semibold text-text-secondary uppercase tracking-wider mb-1.5"
+          >
+            Lớp học
+          </label>
+          <select
+            id="sessions-class-filter"
+            value={selectedClassId || ''}
+            onChange={(e) => {
+              setSelectedClassId(e.target.value ? Number(e.target.value) : undefined);
+              setCurrentPage(1);
+              setTrackingPage(1);
+            }}
+            className="w-full h-9 px-3 border border-border rounded-xl text-xs font-semibold bg-white text-text-primary focus:outline-none focus:ring-2 focus:ring-primary shadow-xs transition cursor-pointer"
+          >
+            <option value="">Tất cả lớp học</option>
+            {availableClasses.map((cls: any) => (
+              <option key={cls.id} value={cls.id}>
+                {cls.class_name}
+              </option>
+            ))}
+          </select>
+        </div>
 
-              {/* Quick search */}
-              <div className="w-full sm:w-60">
-                <label
-                  htmlFor="sessions-quick-search"
-                  className="block text-[11px] font-semibold text-text-secondary uppercase tracking-wider mb-1"
-                >
-                  Tìm kiếm nhanh
-                </label>
-                <div className="relative flex items-center">
-                  <Search className="w-3.5 h-3.5 text-text-muted absolute left-3 pointer-events-none" />
-                  <input
-                    id="sessions-quick-search"
-                    type="text"
-                    value={searchQuery}
-                    onChange={(e) => {
-                      setSearchQuery(e.target.value);
-                      setCurrentPage(1);
-                    }}
-                    placeholder="Mã lớp, tên lớp, tên HV, bài học..."
-                    className="h-9 w-full rounded-xl border border-border bg-surface pl-8 pr-7 text-xs text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                  />
-                  {searchQuery && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSearchQuery('');
-                        setCurrentPage(1);
-                      }}
-                      className="absolute right-2 text-text-muted hover:text-text-primary cursor-pointer"
-                      title="Xóa tìm kiếm"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  )}
-                </div>
-              </div>
+        <div>
+          <label
+            htmlFor="sessions-model-filter"
+            className="block text-[11px] font-semibold text-text-secondary uppercase tracking-wider mb-1.5"
+          >
+            Mô hình lớp
+          </label>
+          <select
+            id="sessions-model-filter"
+            value={modelFilter}
+            onChange={(e) => {
+              setModelFilter(e.target.value as ModelFilter);
+              setCurrentPage(1);
+              setTrackingPage(1);
+            }}
+            aria-label="Lọc theo mô hình lớp"
+            className="w-full h-9 px-3 border border-border rounded-xl text-xs font-semibold bg-white text-text-primary focus:outline-none focus:ring-2 focus:ring-primary shadow-xs transition cursor-pointer"
+          >
+            <option value="ALL">Tất cả mô hình</option>
+            <option value="1:1">1:1</option>
+            <option value="1:2">1:2</option>
+            <option value="1:n">1:n</option>
+          </select>
+        </div>
 
-              {/* Class Model Filter */}
-              <div>
-                <span className="block text-[11px] font-semibold text-text-secondary uppercase tracking-wider mb-1">
-                  Mô hình lớp
-                </span>
-                <div
-                  className="inline-flex h-9 items-center p-1 bg-slate-100 rounded-xl border border-slate-200/80 gap-0.5"
-                  role="group"
-                  aria-label="Lọc theo mô hình lớp"
-                >
-                  {(
-                    [
-                      { value: 'ALL', label: 'Tất cả mô hình' },
-                      { value: '1:1', label: '1:1' },
-                      { value: '1:2', label: '1:2' },
-                      { value: '1:n', label: '1:n' },
-                    ] as Array<{ value: ModelFilter; label: string }>
-                  ).map((opt) => (
-                    <button
-                      key={opt.value}
-                      type="button"
-                      onClick={() => {
-                        setModelFilter(opt.value);
-                        setCurrentPage(1);
-                      }}
-                      className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                        modelFilter === opt.value
-                          ? 'bg-white text-primary shadow-2xs border border-border/60'
-                          : 'text-slate-600 hover:text-slate-900'
-                      }`}
-                    >
-                      {opt.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
+        {mainTab === 'schedule' ? (
+          <div>
+            <label
+              htmlFor="sessions-status-filter"
+              className="block text-[11px] font-semibold text-text-secondary uppercase tracking-wider mb-1.5"
+            >
+              Trạng thái chấm
+            </label>
+            <select
+              id="sessions-status-filter"
+              value={completionFilter}
+              onChange={(e) => {
+                setCompletionFilter(e.target.value as CompletionFilter);
+                setCurrentPage(1);
+              }}
+              aria-label="Trạng thái chấm"
+              className="w-full h-9 px-3 border border-border rounded-xl text-xs font-semibold bg-white text-text-primary focus:outline-none focus:ring-2 focus:ring-primary shadow-xs transition cursor-pointer"
+            >
+              <option value="ALL">Tất cả trạng thái</option>
+              <option value="PENDING">Chờ chấm / Chấm thiếu</option>
+              <option value="COMPLETED">Đã chấm đủ</option>
+            </select>
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label
+                htmlFor="tracking-start-date"
+                className="block text-[11px] font-semibold text-text-secondary uppercase tracking-wider mb-1.5"
+              >
+                Từ ngày
+              </label>
+              <input
+                id="tracking-start-date"
+                type="date"
+                value={trackingStartDate}
+                onChange={(e) => {
+                  setTrackingStartDate(e.target.value);
+                  setTrackingPage(1);
+                }}
+                className="w-full h-9 px-2.5 border border-border rounded-xl text-xs font-semibold bg-white text-text-primary focus:outline-none focus:ring-2 focus:ring-primary shadow-xs transition"
+              />
+            </div>
+            <div>
+              <label
+                htmlFor="tracking-end-date"
+                className="block text-[11px] font-semibold text-text-secondary uppercase tracking-wider mb-1.5"
+              >
+                Đến ngày
+              </label>
+              <input
+                id="tracking-end-date"
+                type="date"
+                value={trackingEndDate}
+                min={trackingStartDate || undefined}
+                onChange={(e) => {
+                  setTrackingEndDate(e.target.value);
+                  setTrackingPage(1);
+                }}
+                className="w-full h-9 px-2.5 border border-border rounded-xl text-xs font-semibold bg-white text-text-primary focus:outline-none focus:ring-2 focus:ring-primary shadow-xs transition"
+              />
+            </div>
+          </div>
+        )}
+      </FilterBar>
 
-              {/* Completion Status Filter */}
-              <div>
-                <span className="block text-[11px] font-semibold text-text-secondary uppercase tracking-wider mb-1">
-                  Trạng thái chấm
-                </span>
-                <select
-                  id="sessions-status-filter"
-                  value={completionFilter}
-                  onChange={(e) => {
-                    setCompletionFilter(e.target.value as CompletionFilter);
-                    setCurrentPage(1);
-                  }}
-                  aria-label="Trạng thái chấm"
-                  className="h-9 rounded-xl border border-border bg-surface px-3 text-xs font-semibold text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-                >
-                  <option value="ALL">Tất cả trạng thái</option>
-                  <option value="PENDING">Chờ chấm / Chấm thiếu</option>
-                  <option value="COMPLETED">Đã chấm đủ</option>
-                </select>
-              </div>
+      {/* MAIN CONTENT AREA */}
+      {!hasContext ? (
+        <Card className="p-10 text-center">
+          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary-soft text-primary">
+            <UserRoundCheck className="h-7 w-7" />
+          </div>
+          <h2 className="font-bold text-text-primary">Chọn giáo viên để bắt đầu</h2>
+          <p className="mt-1 text-sm text-text-muted">
+            Hệ thống không trộn dữ liệu của nhiều giáo viên trong cùng một danh sách.
+          </p>
+        </Card>
+      ) : mainTab === 'pending' ? (
+        <DataTable
+          columns={pendingColumns}
+          data={displayedPendingItems}
+          isLoading={isLoadingTracking}
+          emptyMessage="Không còn lượt nào chờ giáo viên điểm danh"
+          serverPagination
+          total={trackingTotal}
+          page={trackingPage}
+          pageSize={trackingPageSize}
+          onPageChange={setTrackingPage}
+          onPageSizeChange={setTrackingPageSize}
+        />
+      ) : mainTab === 'history' ? (
+        <DataTable
+          columns={historyColumns}
+          data={displayedHistoryItems}
+          isLoading={isLoadingTracking}
+          emptyMessage="Chưa có lần thay đổi trạng thái nào"
+          serverPagination
+          total={trackingTotal}
+          page={trackingPage}
+          pageSize={trackingPageSize}
+          onPageChange={setTrackingPage}
+          onPageSizeChange={setTrackingPageSize}
+        />
+      ) : (
+        /* TAB 1 (`schedule`): Lịch dạy & Điểm danh với Table Toolbar chuẩn mực */
+        <div className="overflow-hidden rounded-2xl border border-border/80 bg-surface shadow-soft">
+          {/* Thanh công cụ đầu bảng (Table Toolbar) */}
+          <div
+            data-testid="sessions-kpi-bar"
+            className="border-b border-border/80 bg-slate-50/60 p-3 sm:px-4 flex flex-wrap items-center justify-between gap-2.5 text-xs"
+          >
+            {/* Bên trái: Các chip KPI lọc nhanh gọn gàng */}
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                data-testid="kpi-chip-all"
+                onClick={() => {
+                  setCompletionFilter('ALL');
+                  setCurrentPage(1);
+                }}
+                className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition cursor-pointer ${
+                  completionFilter === 'ALL'
+                    ? 'border-primary bg-primary-soft/60 text-primary shadow-2xs'
+                    : 'border-border/80 bg-surface text-text-secondary hover:bg-slate-100'
+                }`}
+              >
+                <Calendar className="w-3.5 h-3.5 text-primary" />
+                <span>Tất cả:</span>
+                <strong className="font-extrabold text-text-primary">
+                  {kpiMetrics.totalSessions} ca
+                </strong>
+              </button>
 
-              {/* Date Scope & Picker */}
-              <div>
-                <span className="block text-[11px] font-semibold text-text-secondary uppercase tracking-wider mb-1">
-                  Phạm vi kỳ lịch
-                </span>
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <div
-                    className="inline-flex h-9 items-center p-1 bg-slate-100 rounded-xl border border-slate-200/80 gap-0.5"
-                    role="group"
-                    aria-label="Chế độ xem kỳ lịch dạy"
-                  >
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setDateRangeFilter('today');
-                        setCurrentPage(1);
-                      }}
-                      className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                        dateRangeFilter === 'today'
-                          ? 'bg-primary text-white shadow-xs'
-                          : 'text-slate-600 hover:text-slate-900 hover:bg-white/70'
-                      }`}
-                    >
-                      Theo ngày
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setDateRangeFilter('week');
-                        setCurrentPage(1);
-                      }}
-                      className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                        dateRangeFilter === 'week'
-                          ? 'bg-primary text-white shadow-xs'
-                          : 'text-slate-600 hover:text-slate-900 hover:bg-white/70'
-                      }`}
-                    >
-                      Theo tuần
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setDateRangeFilter('month');
-                        setCurrentPage(1);
-                      }}
-                      className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                        dateRangeFilter === 'month'
-                          ? 'bg-primary text-white shadow-xs'
-                          : 'text-slate-600 hover:text-slate-900 hover:bg-white/70'
-                      }`}
-                    >
-                      Theo tháng
-                    </button>
-                  </div>
+              <button
+                type="button"
+                data-testid="kpi-chip-pending"
+                onClick={() => {
+                  setCompletionFilter(completionFilter === 'PENDING' ? 'ALL' : 'PENDING');
+                  setCurrentPage(1);
+                }}
+                className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition cursor-pointer ${
+                  completionFilter === 'PENDING'
+                    ? 'border-amber-400 bg-amber-50 text-amber-800 shadow-2xs ring-1 ring-amber-300'
+                    : 'border-amber-200/80 bg-amber-50/40 text-amber-700 hover:bg-amber-50'
+                }`}
+              >
+                <span className="h-2 w-2 rounded-full bg-amber-500" />
+                <span>Chờ chấm:</span>
+                <strong className="font-extrabold text-amber-900">
+                  {kpiMetrics.pendingSessions}
+                </strong>
+              </button>
 
-                  <div className="flex items-center gap-1">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => shiftPeriod(-1)}
-                      className="h-9 w-9 p-0"
-                      aria-label="Kỳ trước"
-                      title="Kỳ trước"
-                    >
-                      <ChevronLeft className="w-4 h-4" />
-                    </Button>
-                    <input
-                      type="date"
-                      value={anchorDate}
-                      onChange={(e) => {
-                        if (e.target.value) {
-                          setAnchorDate(e.target.value);
-                          setCurrentPage(1);
-                        }
-                      }}
-                      className="h-9 px-2.5 border border-border rounded-xl text-xs font-semibold bg-surface text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-                      aria-label="Chọn ngày xem lịch"
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => shiftPeriod(1)}
-                      className="h-9 w-9 p-0"
-                      aria-label="Kỳ sau"
-                      title="Kỳ sau"
-                    >
-                      <ChevronRight className="w-4 h-4" />
-                    </Button>
-                  </div>
-                </div>
-              </div>
+              <button
+                type="button"
+                data-testid="kpi-chip-completed"
+                onClick={() => {
+                  setCompletionFilter(completionFilter === 'COMPLETED' ? 'ALL' : 'COMPLETED');
+                  setCurrentPage(1);
+                }}
+                className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition cursor-pointer ${
+                  completionFilter === 'COMPLETED'
+                    ? 'border-emerald-400 bg-emerald-50 text-emerald-800 shadow-2xs ring-1 ring-emerald-300'
+                    : 'border-emerald-200/80 bg-emerald-50/40 text-emerald-700 hover:bg-emerald-50'
+                }`}
+              >
+                <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                <span>Đã chấm đủ:</span>
+                <strong className="font-extrabold text-emerald-900">
+                  {kpiMetrics.completedSessions}
+                </strong>
+              </button>
+
+              <span className="inline-flex items-center gap-1.5 rounded-lg border border-border/80 bg-surface px-2.5 py-1.5 text-xs font-semibold text-text-secondary">
+                <BookOpen className="w-3.5 h-3.5 text-indigo-600" />
+                <span>Số lớp:</span>
+                <strong className="font-extrabold text-text-primary">
+                  {kpiMetrics.distinctClasses}
+                </strong>
+              </span>
             </div>
 
-            {/* 3-Mode View Switcher */}
-            <div>
-              <span className="block text-[11px] font-semibold text-text-secondary uppercase tracking-wider mb-1">
-                Chế độ hiển thị
-              </span>
+            {/* Bên phải: Bộ chuyển kiểu xem + Bộ chọn phạm vi kỳ + Cụm lịch */}
+            <div className="flex flex-wrap items-center gap-2 ml-auto">
+              {/* Bộ chuyển kiểu xem (2 chế độ tinh gọn: Bảng lịch dạy ⇄ Thời khóa biểu tuần) */}
               <div
-                className="inline-flex h-9 items-center p-1 bg-slate-100 rounded-xl border border-slate-200/80 gap-1"
+                className="inline-flex h-9 items-center p-0.5 bg-surface-muted rounded-xl border border-border/70 gap-0.5"
                 role="tablist"
                 aria-label="Chuyển đổi chế độ hiển thị lịch dạy"
               >
@@ -1509,8 +1821,8 @@ export const MyTeachingSessionsPage: React.FC = () => {
                   onClick={() => setViewMode('table')}
                   className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
                     viewMode === 'table'
-                      ? 'bg-primary text-white shadow-xs'
-                      : 'text-slate-600 hover:text-slate-900 hover:bg-white/70'
+                      ? 'bg-surface text-primary shadow-xs'
+                      : 'text-text-muted hover:text-text-primary'
                   }`}
                 >
                   <Table2 className="w-3.5 h-3.5" />
@@ -1527,66 +1839,118 @@ export const MyTeachingSessionsPage: React.FC = () => {
                   }}
                   className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
                     viewMode === 'timetable'
-                      ? 'bg-primary text-white shadow-xs'
-                      : 'text-slate-600 hover:text-slate-900 hover:bg-white/70'
+                      ? 'bg-surface text-primary shadow-xs'
+                      : 'text-text-muted hover:text-text-primary'
                   }`}
                 >
                   <CalendarDays className="w-3.5 h-3.5" />
                   <span>Thời khóa biểu tuần</span>
                 </button>
+              </div>
+
+              {/* Bộ chọn phạm vi kỳ: Theo ngày | Theo tuần | Theo tháng */}
+              <div
+                className="inline-flex h-9 items-center p-0.5 bg-surface-muted rounded-xl border border-border/70 gap-0.5"
+                role="group"
+                aria-label="Chế độ xem kỳ lịch dạy"
+              >
                 <button
                   type="button"
-                  data-testid="view-mode-cards"
-                  onClick={() => setViewMode('cards')}
-                  className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                    viewMode === 'cards'
+                  onClick={() => {
+                    setDateRangeFilter('today');
+                    setCurrentPage(1);
+                  }}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    dateRangeFilter === 'today'
                       ? 'bg-primary text-white shadow-xs'
-                      : 'text-slate-600 hover:text-slate-900 hover:bg-white/70'
+                      : 'text-text-muted hover:text-text-primary'
                   }`}
                 >
-                  <LayoutGrid className="w-3.5 h-3.5" />
-                  <span>Thẻ chi tiết</span>
+                  Theo ngày
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDateRangeFilter('week');
+                    setCurrentPage(1);
+                  }}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    dateRangeFilter === 'week'
+                      ? 'bg-primary text-white shadow-xs'
+                      : 'text-text-muted hover:text-text-primary'
+                  }`}
+                >
+                  Theo tuần
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDateRangeFilter('month');
+                    setCurrentPage(1);
+                  }}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    dateRangeFilter === 'month'
+                      ? 'bg-primary text-white shadow-xs'
+                      : 'text-text-muted hover:text-text-primary'
+                  }`}
+                >
+                  Theo tháng
+                </button>
+              </div>
+
+              {/* Cụm lịch < [input type="date"] > */}
+              <div className="flex h-9 items-center gap-1 rounded-xl border border-border/70 bg-surface p-1">
+                <button
+                  type="button"
+                  onClick={() => shiftPeriod(-1)}
+                  className="rounded-lg p-1 text-text-muted transition-colors hover:bg-surface-muted hover:text-text-primary cursor-pointer"
+                  aria-label="Kỳ trước"
+                  title="Kỳ trước"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                <input
+                  type="date"
+                  value={anchorDate}
+                  onChange={(e) => {
+                    if (e.target.value) {
+                      setAnchorDate(e.target.value);
+                      setCurrentPage(1);
+                    }
+                  }}
+                  className="w-[128px] rounded-lg border-0 bg-transparent px-1 py-0.5 text-xs font-bold text-text-primary outline-none focus:ring-1 focus:ring-primary"
+                  aria-label="Chọn ngày xem lịch"
+                />
+                <button
+                  type="button"
+                  onClick={() => shiftPeriod(1)}
+                  className="rounded-lg p-1 text-text-muted transition-colors hover:bg-surface-muted hover:text-text-primary cursor-pointer"
+                  aria-label="Kỳ sau"
+                  title="Kỳ sau"
+                >
+                  <ChevronRight className="w-4 h-4" />
                 </button>
               </div>
             </div>
           </div>
-        </div>
-      </Card>
 
-      {/* MAIN CONTENT AREA */}
-      {!hasContext ? (
-        <Card className="p-10 text-center">
-          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary-soft text-primary">
-            <UserRoundCheck className="h-7 w-7" />
-          </div>
-          <h2 className="font-bold text-text-primary">Chọn giáo viên để bắt đầu</h2>
-          <p className="mt-1 text-sm text-text-muted">
-            Hệ thống không trộn lịch dạy của nhiều giáo viên trong cùng một danh sách.
-          </p>
-        </Card>
-      ) : isLoading ? (
-        <div className="py-12 text-center text-text-muted">Đang tải lịch dạy...</div>
-      ) : filteredSessions.length === 0 && viewMode !== 'timetable' ? (
-        <Card className="py-12 text-center">
-          <Calendar className="w-12 h-12 text-text-muted mx-auto mb-3 opacity-60" />
-          <h3 className="text-base font-semibold text-text-primary">
-            Không có ca dạy nào khớp bộ lọc trong khoảng thời gian này
-          </h3>
-          <p className="text-xs text-text-secondary mt-1">
-            Chuyển ngày, đổi bộ lọc trạng thái/mô hình hoặc chọn chế độ xem Theo tuần / Theo tháng để xem các buổi học khác.
-          </p>
-        </Card>
-      ) : (
-        <div className="space-y-4">
-          {/* =================================================================
-              VIEW MODE 1: COMPACT SINGLE-ROW TABLE (`table`)
-             ================================================================= */}
-          {viewMode === 'table' && (
-            <div
-              data-testid="sessions-table-view"
-              className="overflow-hidden rounded-2xl border border-border/80 bg-surface shadow-soft"
-            >
-              <div className="overflow-x-auto">
+          {/* Nội dung bảng lịch dạy hoặc thời khóa biểu tuần */}
+          {isLoadingSessions ? (
+            <div className="py-12 text-center text-text-muted">Đang tải lịch dạy...</div>
+          ) : filteredSessions.length === 0 && viewMode !== 'timetable' ? (
+            <div className="py-12 text-center">
+              <Calendar className="w-12 h-12 text-text-muted mx-auto mb-3 opacity-60" />
+              <h3 className="text-base font-semibold text-text-primary">
+                Không có ca dạy nào khớp bộ lọc trong khoảng thời gian này
+              </h3>
+              <p className="text-xs text-text-secondary mt-1">
+                Chuyển ngày, đổi bộ lọc trạng thái/mô hình hoặc chọn chế độ xem Theo tuần / Theo
+                tháng để xem các buổi học khác.
+              </p>
+            </div>
+          ) : viewMode === 'table' ? (
+            <>
+              <div data-testid="sessions-table-view" className="overflow-x-auto">
                 <table className="w-full border-collapse text-left text-xs">
                   <thead>
                     <tr className="border-b border-border/80 bg-slate-50/90 text-[11px] font-bold uppercase tracking-wider text-text-secondary">
@@ -1814,7 +2178,8 @@ export const MyTeachingSessionsPage: React.FC = () => {
                                       {item.caInDay} · {dayFmt.dmy})
                                     </span>
                                     <span className="text-text-muted font-medium">
-                                      Bấm vào từng học viên để chấm lẻ hoặc điều chỉnh trạng thái riêng
+                                      Bấm vào từng học viên để chấm lẻ hoặc điều chỉnh trạng thái
+                                      riêng
                                     </span>
                                   </div>
                                   <div className="divide-y divide-border/50">
@@ -1887,17 +2252,64 @@ export const MyTeachingSessionsPage: React.FC = () => {
                   </tbody>
                 </table>
               </div>
-            </div>
-          )}
 
-          {/* =================================================================
-              VIEW MODE 2: WEEKLY CALENDAR TIMETABLE (`timetable` — 7 Days Matrix)
-             ================================================================= */}
-          {viewMode === 'timetable' && (
-            <div
-              data-testid="sessions-timetable-view"
-              className="rounded-2xl border border-border/80 bg-surface p-3.5 shadow-soft"
-            >
+              {/* PAGINATION FOOTER (25 · 50 · 100 · 200) */}
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 sm:px-6 py-3 border-t border-border/80 bg-surface text-xs text-text-secondary">
+                <div className="flex items-center gap-2">
+                  <span>
+                    Hiển thị <strong className="text-text-primary">{startRecord}</strong> -{' '}
+                    <strong className="text-text-primary">{endRecord}</strong> trên tổng số{' '}
+                    <strong className="text-text-primary">{totalCount}</strong> ca dạy
+                  </span>
+                  <span className="hidden sm:inline text-text-muted">•</span>
+                  <div className="flex items-center gap-1.5">
+                    <span>Mỗi trang:</span>
+                    <select
+                      value={pageSize}
+                      onChange={(e) => {
+                        setPageSize(Number(e.target.value));
+                        setCurrentPage(1);
+                      }}
+                      className="bg-surface border border-border rounded-lg px-2 py-1 text-xs text-text-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                    >
+                      <option value={25}>25</option>
+                      <option value={50}>50</option>
+                      <option value={100}>100</option>
+                      <option value={200}>200</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1.5">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setCurrentPage(Math.max(1, currentPageSafe - 1))}
+                    disabled={currentPageSafe <= 1}
+                    className="h-8 w-8 p-0"
+                    aria-label="Trang trước"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </Button>
+                  <span className="px-2 font-medium">
+                    Trang {currentPageSafe} / {totalPages}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setCurrentPage(Math.min(totalPages, currentPageSafe + 1))}
+                    disabled={currentPageSafe >= totalPages}
+                    className="h-8 w-8 p-0"
+                    aria-label="Trang sau"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </Button>
+                </div>
+              </div>
+            </>
+          ) : (
+            /* VIEW MODE 2: WEEKLY CALENDAR TIMETABLE (`timetable` — 7 Days Matrix) */
+            <div data-testid="sessions-timetable-view" className="p-3.5">
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2 border-b border-border/60 pb-2.5">
                 <div className="flex items-center gap-2 text-xs font-bold text-text-primary">
                   <CalendarDays className="w-4 h-4 text-primary" />
@@ -2028,401 +2440,8 @@ export const MyTeachingSessionsPage: React.FC = () => {
               </div>
             </div>
           )}
-
-          {/* =================================================================
-              VIEW MODE 3: COMPACT 2-COLUMN GRID CARDS (`cards`)
-             ================================================================= */}
-          {viewMode === 'cards' && (
-            <div
-              data-testid="sessions-cards-view"
-              className="grid grid-cols-1 lg:grid-cols-2 gap-3"
-            >
-              {paginatedSessions.map((item) => {
-                const { session } = item;
-                const dayFmt = formatSessionDayBadge(item.dateYmd);
-                const classCode = formatClassCode(
-                  session.class?.class_code,
-                  session.class?.id
-                );
-                const isGroupCollapsible = item.enrollmentClasses.length > 3;
-                const isGroupExpanded =
-                  !isGroupCollapsible || !!expandedGroupSessions[session.id];
-                const visibleEnrollmentClasses = isGroupExpanded
-                  ? item.enrollmentClasses
-                  : item.enrollmentClasses.slice(0, 2);
-
-                return (
-                  <Card
-                    key={session.id}
-                    data-testid={`session-card-${session.id}`}
-                    className="p-3.5 flex flex-col justify-between border-border/80 hover:border-teal-500/50 transition-all"
-                  >
-                    <div>
-                      {/* Card Top Header */}
-                      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/60 pb-2 mb-2.5">
-                        <div className="flex items-center gap-2">
-                          <span className="inline-flex items-center rounded-md bg-teal-50 border border-teal-200 px-1.5 py-0.5 text-[11px] font-extrabold text-teal-700">
-                            Ca {item.caInDay}
-                          </span>
-                          <Clock className="w-3.5 h-3.5 text-teal-600" />
-                          <span className="font-bold text-xs text-text-primary">
-                            {session.start_time || 'Chưa xếp giờ'}
-                            {session.end_time ? ` - ${session.end_time}` : ''}
-                          </span>
-                          <span className="text-xs text-text-muted font-semibold">
-                            • {dayFmt.full}
-                          </span>
-                        </div>
-
-                        <div className="flex items-center gap-1.5">
-                          <span
-                            className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-extrabold border ${
-                              item.modelType === '1:1'
-                                ? 'bg-sky-50 text-sky-700 border-sky-200'
-                                : 'bg-indigo-50 text-indigo-700 border-indigo-200'
-                            }`}
-                          >
-                            {item.modelType}
-                          </span>
-                          {session.class?.level && (
-                            <span className="inline-flex items-center rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600">
-                              {session.class.level}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Class Header + Group Progress & Bulk Action */}
-                      <div className="flex flex-wrap items-center justify-between gap-2 mb-2.5">
-                        <div className="text-xs">
-                          <span className="font-mono text-[11px] font-bold text-slate-500 mr-1.5">
-                            {classCode}
-                          </span>
-                          <span className="font-bold text-sm text-text-primary">
-                            {session.class?.class_name}
-                          </span>
-                        </div>
-
-                        {item.isGroupClass && renderGroupProgressAndBulkAction(item)}
-                      </div>
-
-                      {/* Student List */}
-                      <div className="space-y-2">
-                        {visibleEnrollmentClasses.map((ec: any) => {
-                          const student = ec.enrollment?.student;
-                          const att = ec.attendance?.find(
-                            (a: any) => a.class_session_id === session.id && !a.deleted_at
-                          );
-
-                          return (
-                            <div
-                              key={ec.id}
-                              className="bg-surface-muted/60 p-2.5 rounded-xl border border-border/60"
-                            >
-                              <div className="flex flex-wrap items-start justify-between gap-2">
-                                <div>
-                                  <div className="font-bold text-xs text-text-primary flex items-center gap-1.5">
-                                    <User className="w-3.5 h-3.5 text-text-muted" />
-                                    {student?.full_name}
-                                    <span className="text-[11px] font-normal text-text-muted">
-                                      • Mã HV: {student?.external_id || '—'}
-                                      {isPrivileged
-                                        ? ` • ${student?.phone || 'Chưa có SĐT'}`
-                                        : ''}
-                                    </span>
-                                  </div>
-                                </div>
-
-                                <div>{renderProgressiveStudentStatus(item, ec, true)}</div>
-                              </div>
-
-                              {/* Attendance Info if marked */}
-                              {att?.teacher_status && (
-                                <div className="mt-1.5 text-[11px] text-text-secondary bg-surface px-2 py-1 rounded-lg border border-border/40 flex flex-wrap items-center justify-between gap-2">
-                                  <div>
-                                    <span className="font-semibold text-teal-700">Đã báo: </span>
-                                    <span>
-                                      {
-                                        STATUS_CONFIG[att.teacher_status as AttendanceStatus]
-                                          ?.chipLabel || att.teacher_status
-                                      }
-                                      {att.lesson_topic ? ` (Bài: ${att.lesson_topic})` : ''}
-                                    </span>
-                                    {att.teacher_note && (
-                                      <span className="italic ml-2">"{att.teacher_note}"</span>
-                                    )}
-                                  </div>
-                                </div>
-                              )}
-
-                              {/* Quick Mark Buttons for this student */}
-                              <div className="mt-2 pt-2 border-t border-border/40 flex flex-wrap items-center justify-between gap-1.5">
-                                {isPrivileged && !isAdmin ? (
-                                  <Badge variant="neutral" size="sm">
-                                    MANAGE chỉ xem lịch dạy — chỉ Admin mới chấm hộ giáo viên
-                                  </Badge>
-                                ) : (
-                                  <div className="flex flex-wrap items-center gap-1.5">
-                                    <Button
-                                      size="sm"
-                                      variant="primary"
-                                      className="h-6 text-[11px] px-2 bg-emerald-600 hover:bg-emerald-700"
-                                      onClick={() => handleOpenMarkModal(session, ec, 'ATTENDED')}
-                                    >
-                                      <Check className="w-3 h-3 mr-1" />
-                                      1 · Có mặt
-                                    </Button>
-                                    <Button
-                                      size="sm"
-                                      variant="outline"
-                                      className="h-6 text-[11px] px-2"
-                                      onClick={() =>
-                                        handleOpenMarkModal(session, ec, 'ABSENT_APPROVED_A')
-                                      }
-                                    >
-                                      A · Nghỉ phép (A)
-                                    </Button>
-                                    <Button
-                                      size="sm"
-                                      variant="outline"
-                                      className="h-6 text-[11px] px-2 text-rose-600 border-rose-300 hover:bg-rose-50"
-                                      onClick={() =>
-                                        handleOpenMarkModal(session, ec, 'ABSENT_UNAPPROVED_C')
-                                      }
-                                    >
-                                      C · Vắng (C)
-                                    </Button>
-                                    <Button
-                                      size="sm"
-                                      variant="ghost"
-                                      className="h-6 text-[11px] px-2 text-text-muted"
-                                      onClick={() => handleOpenMarkModal(session, ec, 'LEAVE_B')}
-                                    >
-                                      B · Bảo lưu (B)
-                                    </Button>
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          );
-                        })}
-
-                        {isGroupCollapsible && (
-                          <button
-                            type="button"
-                            onClick={() => toggleGroupExpand(session.id)}
-                            className="w-full py-1.5 text-center text-xs font-bold text-indigo-600 hover:bg-indigo-50/60 rounded-lg border border-dashed border-indigo-200 transition cursor-pointer"
-                          >
-                            {isGroupExpanded
-                              ? 'Thu gọn danh sách học viên'
-                              : `Xem thêm ${item.enrollmentClasses.length - 2} học viên trong lớp...`}
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  </Card>
-                );
-              })}
-            </div>
-          )}
-
-          {/* 4. PAGINATION FOOTER (25 · 50 · 100 · 200) for `table` and `cards` */}
-          {viewMode !== 'timetable' && (
-            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 sm:px-6 py-3 bg-surface rounded-2xl border border-border/80 shadow-soft text-xs text-text-secondary">
-              <div className="flex items-center gap-2">
-                <span>
-                  Hiển thị <strong className="text-text-primary">{startRecord}</strong> -{' '}
-                  <strong className="text-text-primary">{endRecord}</strong> trên tổng số{' '}
-                  <strong className="text-text-primary">{totalCount}</strong> ca dạy
-                </span>
-                <span className="hidden sm:inline text-text-muted">•</span>
-                <div className="flex items-center gap-1.5">
-                  <span>Mỗi trang:</span>
-                  <select
-                    value={pageSize}
-                    onChange={(e) => {
-                      setPageSize(Number(e.target.value));
-                      setCurrentPage(1);
-                    }}
-                    className="bg-surface border border-border rounded-lg px-2 py-1 text-xs text-text-primary focus:outline-none focus:ring-1 focus:ring-primary"
-                  >
-                    <option value={25}>25</option>
-                    <option value={50}>50</option>
-                    <option value={100}>100</option>
-                    <option value={200}>200</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-1.5">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setCurrentPage(Math.max(1, currentPageSafe - 1))}
-                  disabled={currentPageSafe <= 1}
-                  className="h-8 w-8 p-0"
-                  aria-label="Trang trước"
-                >
-                  <ChevronLeft className="w-4 h-4" />
-                </Button>
-                <span className="px-2 font-medium">
-                  Trang {currentPageSafe} / {totalPages}
-                </span>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setCurrentPage(Math.min(totalPages, currentPageSafe + 1))}
-                  disabled={currentPageSafe >= totalPages}
-                  className="h-8 w-8 p-0"
-                  aria-label="Trang sau"
-                >
-                  <ChevronRight className="w-4 h-4" />
-                </Button>
-              </div>
-            </div>
-          )}
         </div>
       )}
-
-      {/* MODAL: Ghi ca thực học — create session + attendance skeleton, then chain the teacher mark */}
-      <Modal
-        isOpen={isActualSessionModalOpen}
-        closeOnOutsideClick={!isSubmitting}
-        onClose={() => {
-          if (isSubmitting) return;
-          setActualSessionKey(null);
-          setIsActualSessionModalOpen(false);
-        }}
-        title={
-          <div className="flex items-center gap-2 text-text-primary font-bold">
-            <CheckCircle2 className="w-5 h-5 text-teal-600" />
-            <span>Ghi nhận ca thực học</span>
-          </div>
-        }
-        footer={
-          <div className="flex items-center justify-end gap-3 w-full">
-            <Button
-              variant="outline"
-              onClick={() => {
-                if (isSubmitting) return;
-                setActualSessionKey(null);
-                setIsActualSessionModalOpen(false);
-              }}
-              disabled={isSubmitting}
-            >
-              Hủy
-            </Button>
-            <Button variant="primary" onClick={handleCreateActualSession} disabled={isSubmitting}>
-              {isSubmitting ? 'Đang lưu...' : 'Ghi nhận & điểm danh'}
-            </Button>
-          </div>
-        }
-      >
-        <div className="space-y-4">
-          <fieldset disabled={isSubmitting || !!actualSessionKey} className="space-y-4">
-            <Select
-              id="actual-class-select"
-              label="Lớp học"
-              value={actualClassId === '' ? '' : String(actualClassId)}
-              onChange={(event) => {
-                setActualClassId(event.target.value ? Number(event.target.value) : '');
-                setActualEnrollmentClassId('');
-              }}
-              options={[
-                { value: '', label: 'Chọn lớp...' },
-                ...availableClasses.map((cls: any) => ({
-                  value: String(cls.id),
-                  label: cls.class_name,
-                })),
-              ]}
-            />
-            <Select
-              id="actual-enrollment-class-select"
-              label="Học viên (enrollment trong lớp)"
-              value={actualEnrollmentClassId === '' ? '' : String(actualEnrollmentClassId)}
-              onChange={(event) =>
-                setActualEnrollmentClassId(event.target.value ? Number(event.target.value) : '')
-              }
-              options={[
-                { value: '', label: actualClassId ? 'Chọn học viên...' : 'Chọn lớp trước' },
-                ...(
-                  availableClasses.find((cls: any) => String(cls.id) === String(actualClassId))
-                    ?.enrollment_classes || []
-                )
-                  .filter((ec: any) => ec.status === 'ACTIVE')
-                  .map((ec: any) => ({
-                    value: String(ec.id),
-                    label: `${ec.enrollment?.student?.full_name || ec.id} • ${
-                      ec.enrollment?.student?.external_id || 'N/A'
-                    }`,
-                  })),
-              ]}
-            />
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <Input
-                type="date"
-                label="Ngày dạy"
-                value={actualDate}
-                onChange={(event) => setActualDate(event.target.value)}
-              />
-              <Input
-                type="time"
-                label="Bắt đầu (tùy chọn)"
-                value={actualStartTime}
-                onChange={(event) => setActualStartTime(event.target.value)}
-              />
-              <Input
-                type="time"
-                label="Kết thúc (tùy chọn)"
-                value={actualEndTime}
-                onChange={(event) => setActualEndTime(event.target.value)}
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-text-primary mb-1">
-                Trạng thái buổi học
-              </label>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                {STATUS_PICKER_LIST.map((stKey) => (
-                  <Button
-                    key={stKey}
-                    type="button"
-                    variant={actualStatus === stKey ? 'primary' : 'outline'}
-                    className="justify-start text-xs h-8 px-2.5"
-                    onClick={() => setActualStatus(stKey)}
-                  >
-                    {STATUS_CONFIG[stKey].chipLabel}
-                  </Button>
-                ))}
-              </div>
-            </div>
-            {actualStatus === 'ATTENDED' && (
-              <div>
-                <label className="block text-xs font-semibold text-text-primary mb-1">
-                  Tên bài học / Chủ đề bài giảng{' '}
-                  <span className="text-teal-600 font-normal">(VD: K2 L4, K1-L1...)</span>
-                </label>
-                <Input
-                  placeholder="Ví dụ: K2 L4 hoặc Kaiwa 2 Bài 4"
-                  value={actualLessonTopic}
-                  onChange={(e) => setActualLessonTopic(e.target.value)}
-                />
-              </div>
-            )}
-            <div>
-              <label className="block text-xs font-semibold text-text-primary mb-1">
-                Ghi chú của giáo viên (tùy chọn)
-              </label>
-              <Textarea
-                placeholder="Ghi nhận thái độ học viên, lỗi phát âm, nhắc nhở làm BTVN..."
-                rows={2}
-                value={actualTeacherNote}
-                onChange={(e) => setActualTeacherNote(e.target.value)}
-              />
-            </div>
-          </fieldset>
-        </div>
-      </Modal>
 
       {/* MODAL: Điểm danh nhanh cả ca học (từ Thời khóa biểu tuần) */}
       <Modal
@@ -2571,7 +2590,7 @@ export const MyTeachingSessionsPage: React.FC = () => {
         )}
       </Modal>
 
-      {/* MODAL: Điểm danh buổi học (1 học viên chi tiết) */}
+      {/* MODAL: Điểm danh buổi học (1 học viên chi tiết ở Tab 1) */}
       <Modal
         isOpen={isMarkModalOpen}
         onClose={() => setIsMarkModalOpen(false)}
@@ -2660,6 +2679,70 @@ export const MyTeachingSessionsPage: React.FC = () => {
           </div>
         </div>
       </Modal>
+
+      {/* MODAL: Điểm danh xác nhận ở Tab 2 (`pending` — Chờ GV xác nhận) */}
+      <Modal
+        isOpen={!!selectedPendingItem}
+        onClose={() => !isSubmittingPendingMark && setSelectedPendingItem(null)}
+        title="Điểm danh học viên"
+        description={
+          selectedPendingItem
+            ? `${selectedPendingItem.student.full_name} · ${selectedPendingItem.class.class_name} · Buổi ${selectedPendingItem.session.session_number}`
+            : undefined
+        }
+        closeOnOutsideClick={!isSubmittingPendingMark}
+        footer={
+          <>
+            <Button
+              id="cancel-teacher-mark"
+              variant="outline"
+              onClick={() => setSelectedPendingItem(null)}
+              disabled={isSubmittingPendingMark}
+            >
+              Hủy
+            </Button>
+            <Button
+              id="submit-teacher-mark"
+              onClick={handleConfirmPendingMark}
+              disabled={!pendingMarkStatus || isSubmittingPendingMark}
+            >
+              {isSubmittingPendingMark ? 'Đang lưu...' : 'Xác nhận điểm danh'}
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <div className="rounded-xl border border-info/20 bg-blue-50/70 p-3 text-sm text-text-secondary">
+            Hãy tự chọn kết quả theo thực tế buổi học. Kết quả do CSKH ghi nhận không được hiển thị
+            tại đây.
+          </div>
+          <Select
+            id="teacher-mark-status"
+            label="Trạng thái điểm danh"
+            value={pendingMarkStatus}
+            onChange={(event) => setPendingMarkStatus(event.target.value as AttendanceStatus)}
+            options={[{ value: '', label: 'Chọn trạng thái...' }, ...TRACKING_STATUS_OPTIONS]}
+          />
+          {pendingMarkStatus === 'ATTENDED' && (
+            <Input
+              id="teacher-mark-lesson"
+              label="Nội dung bài học"
+              value={pendingMarkLesson}
+              onChange={(event) => setPendingMarkLesson(event.target.value)}
+              placeholder="Nội dung đã học trong buổi (VD: K2 L4)"
+            />
+          )}
+          <Textarea
+            id="teacher-mark-note"
+            label="Ghi chú giáo viên"
+            value={pendingMarkNote}
+            onChange={(event) => setPendingMarkNote(event.target.value)}
+            placeholder="Ghi chú thêm (không bắt buộc)"
+          />
+        </div>
+      </Modal>
     </PageContainer>
   );
 };
+
+export default MyTeachingSessionsPage;
