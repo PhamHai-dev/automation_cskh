@@ -1,10 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { PageContainer } from '../../../components/common/PageContainer';
-import { PageHeader } from '../../../components/common/PageHeader';
 import { Button } from '../../../components/ui/Button';
 import { useToast } from '../../../components/ui/Toast';
-import { HorizontalTabs } from '../../../components/ui/HorizontalTabs';
 import { ImportWizard } from '../components/ImportWizard';
 import { ImportHistoryTable } from '../components/ImportHistoryTable';
 import { GoogleSheetSyncPanel } from '../components/GoogleSheetSyncPanel';
@@ -12,18 +10,33 @@ import { CsSheetBackupPanel } from '../components/CsSheetBackupPanel';
 import { AttendanceExcelImportPanel } from '../../attendance/components/AttendanceExcelImportPanel';
 import { importsApi } from '../api/imports.api';
 import { useAuth } from '../../../contexts/AuthContext';
-import { CalendarCheck, DatabaseBackup, Download, History, RefreshCw, UploadCloud } from 'lucide-react';
+import { ChevronRight, Download } from 'lucide-react';
 
 type ImportTabValue = 'sheet-sync' | 'sheet-backup' | 'wizard' | 'attendance' | 'history';
 
 const TAB_ORDER: ImportTabValue[] = ['sheet-sync', 'sheet-backup', 'wizard', 'attendance', 'history'];
 
-const TAB_LABELS: Record<ImportTabValue, { label: string; icon: React.ReactNode }> = {
-  'sheet-sync': { label: 'Đồng bộ Google Sheet (JLPT & Kaiwa)', icon: <RefreshCw /> },
-  'sheet-backup': { label: 'Backup Sổ CSKH (Kaiwa & JLPT)', icon: <DatabaseBackup /> },
-  wizard: { label: 'Upload Hồ sơ (Sheet 1)', icon: <UploadCloud /> },
-  attendance: { label: 'Điểm danh CSKH / GV', icon: <CalendarCheck /> },
-  history: { label: 'Lịch sử nhập', icon: <History /> },
+const TAB_META: Record<ImportTabValue, { label: string; subtitle: string }> = {
+  'sheet-sync': {
+    label: 'Đồng bộ dữ liệu học viên',
+    subtitle: 'Quản lý đồng bộ danh sách học viên từ Google Sheet về hệ thống theo mã CVHT',
+  },
+  'sheet-backup': {
+    label: 'Backup sổ CSKH',
+    subtitle: 'Quản lý sao lưu dữ liệu học viên và điểm danh',
+  },
+  wizard: {
+    label: 'Upload Hồ sơ',
+    subtitle: 'Tải lên file Excel hồ sơ học viên và ghi danh để đối chiếu nhập liệu',
+  },
+  attendance: {
+    label: 'Điểm danh CSHV/GV',
+    subtitle: 'Nhập bảng điểm danh từ file Excel của CSKH hoặc Giáo viên',
+  },
+  history: {
+    label: 'Lịch sử nhập',
+    subtitle: 'Theo dõi các đợt tải lên, trạng thái xử lý và tải danh sách dòng lỗi',
+  },
 };
 
 export const ImportsPage: React.FC = () => {
@@ -37,17 +50,12 @@ export const ImportsPage: React.FC = () => {
   const isAdminOrManage = roles.includes('ADMIN') || roles.includes('MANAGE');
   const isCS = roles.includes('CS');
 
-  // Tab khả dụng theo vai trò (khớp guard backend trong imports.routes.ts):
-  // - ADMIN/MANAGE: toàn bộ 5 tab (sheet-sync guard ADMIN+MANAGE)
-  // - CS: sheet-backup (GET configs cho phép CS) + wizard/attendance/history
-  // - TEACHER (và vai trò khác): chỉ attendance + history
   const allowedTabs = useMemo<ImportTabValue[]>(() => {
     if (isAdminOrManage) return TAB_ORDER;
-    if (isCS) return TAB_ORDER.filter((t) => t !== 'sheet-sync');
-    return ['attendance', 'history'];
+    if (isCS) return ['sheet-backup', 'wizard', 'attendance', 'history'];
+    return ['sheet-backup', 'attendance', 'history'];
   }, [isAdminOrManage, isCS]);
 
-  // Tab mặc định = tab đầu tiên được phép (ADMIN/MANAGE→sheet-sync, CS→sheet-backup, TEACHER→attendance)
   const defaultTab = allowedTabs[0];
 
   const resolveAllowedTab = useCallback(
@@ -87,7 +95,7 @@ export const ImportsPage: React.FC = () => {
       setIsExportingStudents(true);
       await importsApi.exportStudents();
       toast.success('Xuất file danh sách học viên thành công!');
-    } catch (err) {
+    } catch {
       toast.error('Không thể xuất file dữ liệu học viên. Vui lòng thử lại.');
     } finally {
       setIsExportingStudents(false);
@@ -99,18 +107,48 @@ export const ImportsPage: React.FC = () => {
       setIsExportingAttendance(true);
       await importsApi.exportAttendance();
       toast.success('Xuất bảng điểm danh thành công!');
-    } catch (err) {
+    } catch {
       toast.error('Không thể xuất file điểm danh. Vui lòng thử lại.');
     } finally {
       setIsExportingAttendance(false);
     }
   };
 
+  if (effectiveTab === 'sheet-sync') {
+    return (
+      <PageContainer>
+        <GoogleSheetSyncPanel />
+      </PageContainer>
+    );
+  }
+
+  if (effectiveTab === 'sheet-backup') {
+    return (
+      <PageContainer>
+        <CsSheetBackupPanel />
+      </PageContainer>
+    );
+  }
+
+  const currentMeta = TAB_META[effectiveTab];
+
   return (
     <PageContainer>
-      <PageHeader
-        title="Nhập & Xuất Dữ Liệu Excel"
-        actions={
+      <div className="space-y-5">
+        {/* Breadcrumb & Header */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div>
+            <nav className="flex items-center gap-1.5 text-xs text-slate-500 font-medium mb-1">
+              <span>Nhập xuất dữ liệu</span>
+              <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
+              <span className="text-slate-700 font-semibold">{currentMeta.label}</span>
+            </nav>
+            <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
+              {currentMeta.label}
+            </h1>
+            <p className="text-sm text-slate-500 mt-0.5">{currentMeta.subtitle}</p>
+          </div>
+
           <div className="flex flex-wrap items-center gap-2">
             <Button
               variant="outline"
@@ -131,25 +169,14 @@ export const ImportsPage: React.FC = () => {
               Xuất Bảng Điểm danh
             </Button>
           </div>
-        }
-      />
+        </div>
 
-      <HorizontalTabs
-        ariaLabel="Nhập và xuất dữ liệu"
-        value={effectiveTab}
-        onChange={selectTab}
-        className="mb-6"
-        items={allowedTabs.map((tab) => ({
-          value: tab,
-          ...TAB_LABELS[tab],
-        }))}
-      />
-
-      {effectiveTab === 'sheet-sync' && <GoogleSheetSyncPanel />}
-      {effectiveTab === 'sheet-backup' && <CsSheetBackupPanel />}
-      {effectiveTab === 'wizard' && <ImportWizard onImportComplete={() => selectTab('history')} />}
-      {effectiveTab === 'attendance' && <AttendanceExcelImportPanel />}
-      {effectiveTab === 'history' && <ImportHistoryTable />}
+        {effectiveTab === 'wizard' && (
+          <ImportWizard onImportComplete={() => selectTab('history')} />
+        )}
+        {effectiveTab === 'attendance' && <AttendanceExcelImportPanel />}
+        {effectiveTab === 'history' && <ImportHistoryTable />}
+      </div>
     </PageContainer>
   );
 };

@@ -13,6 +13,8 @@ import {
   CsSheetBackupConfigItem,
   UpdateCsSheetBackupConfigDTO,
   CsSheetBackupSummary,
+  BackupHistoryResponse,
+  SyncHistoryResponse,
 } from '../types/imports.types';
 
 export const importsApi = {
@@ -198,7 +200,18 @@ export const importsApi = {
     return res.data?.data || res.data;
   },
 
-  // CS Sheet Backup (Web -> Sheet Kaiwa & JLPT)
+  getSheetSyncHistory: async (params?: {
+    programType?: string;
+    status?: string;
+    fromDate?: string;
+    toDate?: string;
+    limit?: number;
+  }): Promise<SyncHistoryResponse> => {
+    const res = await apiClient.get('/imports/sheet-sync/history', { params });
+    return res.data?.data || res.data;
+  },
+
+  // CS Sheet Backup (Web -> Sheet Kaiwa, JLPT & Teacher)
   getSheetBackupConfigs: async (): Promise<{
     configs: CsSheetBackupConfigItem[];
     serviceAccount?: ServiceAccountInfo;
@@ -230,6 +243,19 @@ export const importsApi = {
     programType?: string | null;
   }): Promise<{ results: CsSheetBackupSummary[] }> => {
     const res = await apiClient.post('/imports/sheet-backup/run-all', options || {});
+    return res.data?.data || res.data;
+  },
+
+  getSheetBackupHistory: async (params?: {
+    configId?: number;
+    csUserId?: number;
+    programType?: string;
+    status?: string;
+    fromDate?: string;
+    toDate?: string;
+    limit?: number;
+  }): Promise<BackupHistoryResponse> => {
+    const res = await apiClient.get('/imports/sheet-backup/history', { params });
     return res.data?.data || res.data;
   },
 
