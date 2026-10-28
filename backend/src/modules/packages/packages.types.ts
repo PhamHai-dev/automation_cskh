@@ -13,3 +13,8 @@ export interface UpdatePackageDTO {
   description?: string;
   active?: boolean;
 }
+
+export interface PackageListFilters {
+  search?: string;
+  active?: boolean;
+}

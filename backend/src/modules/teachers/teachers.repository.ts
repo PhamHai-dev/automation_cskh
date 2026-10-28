@@ -1,20 +1,50 @@
 import { prisma } from '../../prisma/client';
-import { CreateTeacherDTO, UpdateTeacherDTO } from './teachers.types';
+import { CreateTeacherDTO, UpdateTeacherDTO, TeacherListFilters } from './teachers.types';
+
+export const SAFE_USER_SELECT = {
+  id: true,
+  name: true,
+  email: true,
+  active: true,
+  last_login_at: true,
+} as const;
 
 export class TeachersRepository {
-  async findAll() {
+  async findAll(filters?: TeacherListFilters) {
+    const andClauses: any[] = [];
+    if (filters?.active !== undefined) {
+      andClauses.push({ active: filters.active });
+    }
+    if (filters?.teacherType && filters.teacherType.trim()) {
+      andClauses.push({ teacher_type: filters.teacherType.trim().toUpperCase() as any });
+    }
+    if (filters?.search && filters.search.trim()) {
+      const q = filters.search.trim();
+      andClauses.push({
+        OR: [
+          { name: { contains: q } },
+          { code: { contains: q } },
+          { phone: { contains: q } },
+          { email: { contains: q } },
+        ],
+      });
+    }
+
+    const where =
+      andClauses.length === 0
+        ? undefined
+        : andClauses.length === 1
+        ? andClauses[0]
+        : { AND: andClauses };
+
     return prisma.teacher.findMany({
+      where,
       include: {
         user: {
-          select: {
-            id: true,
-            email: true,
-            active: true,
-            last_login_at: true,
-          },
+          select: SAFE_USER_SELECT,
         },
       },
-      orderBy: { created_at: 'desc' },
+      orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
     });
   }
 
@@ -23,12 +53,7 @@ export class TeachersRepository {
       where: { id },
       include: {
         user: {
-          select: {
-            id: true,
-            email: true,
-            active: true,
-            last_login_at: true,
-          },
+          select: SAFE_USER_SELECT,
         },
       },
     });
@@ -37,14 +62,22 @@ export class TeachersRepository {
   async findByCode(code: string) {
     return prisma.teacher.findUnique({
       where: { code },
-      include: { user: true },
+      include: {
+        user: {
+          select: SAFE_USER_SELECT,
+        },
+      },
     });
   }
 
   async findByName(name: string) {
     return prisma.teacher.findFirst({
       where: { name: { contains: name } },
-      include: { user: true },
+      include: {
+        user: {
+          select: SAFE_USER_SELECT,
+        },
+      },
     });
   }
 
@@ -64,12 +97,7 @@ export class TeachersRepository {
       },
       include: {
         user: {
-          select: {
-            id: true,
-            email: true,
-            active: true,
-            last_login_at: true,
-          },
+          select: SAFE_USER_SELECT,
         },
       },
     });
@@ -88,12 +116,7 @@ export class TeachersRepository {
       },
       include: {
         user: {
-          select: {
-            id: true,
-            email: true,
-            active: true,
-            last_login_at: true,
-          },
+          select: SAFE_USER_SELECT,
         },
       },
     });
@@ -125,12 +148,7 @@ export class TeachersRepository {
         data: { user_id: user.id },
         include: {
           user: {
-            select: {
-              id: true,
-              email: true,
-              active: true,
-              last_login_at: true,
-            },
+            select: SAFE_USER_SELECT,
           },
         },
       });

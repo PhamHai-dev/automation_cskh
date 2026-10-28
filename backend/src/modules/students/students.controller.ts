@@ -1,6 +1,11 @@
 import { Request, Response, NextFunction } from 'express';
 import { StudentsService } from './students.service';
 import { createStudentSchema, updateStudentSchema } from './students.schema';
+import {
+  parsePaginationQuery,
+  parseSearchQuery,
+  parseOptionalIntParam,
+} from '../../shared/utils/query-validation';
 
 const studentsService = new StudentsService();
 
@@ -8,21 +13,46 @@ export class StudentsController {
   async list(req: Request, res: Response, next: NextFunction) {
     try {
       const user = (req as any).user;
-      const programType = typeof req.query.program_type === 'string' && req.query.program_type.trim()
-        ? req.query.program_type.trim().toUpperCase()
-        : undefined;
-      const csId = req.query.cs_id !== undefined && req.query.cs_id !== ''
-        ? parseInt(String(req.query.cs_id), 10)
-        : undefined;
+      const pagination = parsePaginationQuery(req.query as Record<string, any>, 50);
+      const search = parseSearchQuery(req.query.search, 100);
+      const programType =
+        typeof req.query.program_type === 'string' && req.query.program_type.trim()
+          ? req.query.program_type.trim().toUpperCase()
+          : undefined;
+      const csId = parseOptionalIntParam(req.query.cs_id, 'cs_id');
+      const cvht =
+        typeof req.query.cvht === 'string' && req.query.cvht.trim()
+          ? req.query.cvht.trim()
+          : undefined;
+      const gender =
+        typeof req.query.gender === 'string' && req.query.gender.trim()
+          ? req.query.gender.trim().toUpperCase()
+          : undefined;
+      const status =
+        typeof req.query.status === 'string' && req.query.status.trim()
+          ? req.query.status.trim().toUpperCase()
+          : undefined;
+      const sale =
+        typeof req.query.sale === 'string' && req.query.sale.trim()
+          ? req.query.sale.trim()
+          : undefined;
 
       // B.5/D9: the full actor is passed so the repository derives scope from
       // enrollment.cs_id only; sale/handover fields are not access predicates.
-      const students = await studentsService.getAllStudents({
+      const result = await studentsService.getStudentsWithMeta({
         actor: user,
-        programType,
-        csId: csId && !Number.isNaN(csId) ? csId : undefined,
+        page: pagination.page,
+        pageSize: pagination.pageSize,
+        isPaginated: pagination.isPaginated,
+        search,
+        programType: programType && programType !== 'ALL' ? programType : undefined,
+        csId: csId && csId > 0 ? csId : undefined,
+        cvht,
+        gender,
+        status,
+        sale,
       });
-      res.json({ data: students, meta: null });
+      res.json(result);
     } catch (error) {
       next(error);
     }

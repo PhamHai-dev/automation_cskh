@@ -1,5 +1,10 @@
 import { StudentsRepository } from './students.repository';
-import { CreateStudentDTO, UpdateStudentDTO } from './students.types';
+import {
+  CreateStudentDTO,
+  UpdateStudentDTO,
+  StudentListQueryOptions,
+  StudentListResult,
+} from './students.types';
 import { AuthUser } from '../../middlewares/auth.middleware';
 import { Prisma } from '@prisma/client';
 import { prisma } from '../../prisma/client';
@@ -62,14 +67,16 @@ export class StudentsService {
     this.repository = new StudentsRepository();
   }
 
-  async getAllStudents(options: {
-    actor: AuthUser;
-    programType?: string;
-    csId?: number;
-  }) {
+  async getAllStudents(options: StudentListQueryOptions) {
     // B.5/D9: scope is derived ONLY from the actor via enrollment.cs_id
     // (getStudentCsScope in the repository); sale/handover data never grants access.
     return this.repository.findAll(options);
+  }
+
+  async getStudentsWithMeta(options: StudentListQueryOptions): Promise<StudentListResult> {
+    const data = await this.repository.findAll(options);
+    const meta = await this.repository.computeMeta(options, data);
+    return { data, meta };
   }
 
   async getStudentById(id: number, actor: AuthUser) {

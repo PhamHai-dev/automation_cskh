@@ -1,14 +1,65 @@
 import { Request, Response, NextFunction } from 'express';
 import { ClassesService } from './classes.service';
-import { createClassSchema, updateClassSchema, assignTeacherSchema, endTeacherAssignmentSchema } from './classes.schema';
+import {
+  createClassSchema,
+  updateClassSchema,
+  assignTeacherSchema,
+  endTeacherAssignmentSchema,
+} from './classes.schema';
+import {
+  parsePaginationQuery,
+  parseSearchQuery,
+  parseIsoDateParam,
+} from '../../shared/utils/query-validation';
+import { AppError } from '../../middlewares/error.middleware';
 
 const classesService = new ClassesService();
 
 export class ClassesController {
   async list(req: Request, res: Response, next: NextFunction) {
     try {
-      const classes = await classesService.getAllClasses(req.user);
-      res.json({ data: classes, meta: null });
+      const q = req.query as Record<string, any>;
+      const pagination = parsePaginationQuery(q, 50);
+      const search = parseSearchQuery(q.search, 100);
+      const modelType =
+        typeof q.model_type === 'string' && q.model_type.trim()
+          ? q.model_type.trim()
+          : undefined;
+
+      let active: boolean | undefined;
+      if (q.active !== undefined && q.active !== '') {
+        const rawActive = String(q.active).trim().toLowerCase();
+        if (rawActive === 'true' || rawActive === '1') active = true;
+        else if (rawActive === 'false' || rawActive === '0') active = false;
+        else throw new AppError(400, 'Tham số active không hợp lệ (true/false)');
+      }
+
+      const relevantDate = parseIsoDateParam(q.relevant_date, 'relevant_date')?.dateStr;
+      const sessionFrom = parseIsoDateParam(q.session_from, 'session_from')?.dateStr;
+      const sessionTo = parseIsoDateParam(q.session_to, 'session_to')?.dateStr;
+
+      let summaryMonth: string | undefined;
+      if (typeof q.summary_month === 'string' && q.summary_month.trim()) {
+        const sm = q.summary_month.trim();
+        if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(sm)) {
+          throw new AppError(400, 'Tham số summary_month không hợp lệ (định dạng chuẩn YYYY-MM)');
+        }
+        summaryMonth = sm;
+      }
+
+      const result = await classesService.getClassesWithMeta(req.user, {
+        page: pagination.page,
+        pageSize: pagination.pageSize,
+        isPaginated: pagination.isPaginated,
+        search,
+        modelType,
+        active,
+        relevantDate,
+        sessionFrom,
+        sessionTo,
+        summaryMonth,
+      });
+      res.json(result);
     } catch (error) {
       next(error);
     }

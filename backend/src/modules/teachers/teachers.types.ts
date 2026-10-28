@@ -20,3 +20,9 @@ export interface ProvisionAccountDTO {
   email: string;
   password?: string;
 }
+
+export interface TeacherListFilters {
+  search?: string;
+  active?: boolean;
+  teacherType?: 'VIETNAMESE' | 'JAPANESE' | 'OTHER' | string;
+}

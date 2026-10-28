@@ -1,13 +1,33 @@
 import { Request, Response, NextFunction } from 'express';
 import { TeachersService } from './teachers.service';
 import { createTeacherSchema, updateTeacherSchema, provisionAccountSchema } from './teachers.schema';
+import { parseSearchQuery } from '../../shared/utils/query-validation';
+import { AppError } from '../../middlewares/error.middleware';
 
 const teachersService = new TeachersService();
 
 export class TeachersController {
   async list(req: Request, res: Response, next: NextFunction) {
     try {
-      const teachers = await teachersService.getAllTeachers();
+      const search = parseSearchQuery(req.query.search, 100);
+      let active: boolean | undefined;
+      if (req.query.active !== undefined && req.query.active !== '') {
+        const rawActive = String(req.query.active).trim().toLowerCase();
+        if (rawActive === 'true' || rawActive === '1') active = true;
+        else if (rawActive === 'false' || rawActive === '0') active = false;
+        else throw new AppError(400, 'Tham số active không hợp lệ (true/false)');
+      }
+
+      const teacherType =
+        typeof req.query.teacher_type === 'string' && req.query.teacher_type.trim()
+          ? req.query.teacher_type.trim().toUpperCase()
+          : undefined;
+
+      const teachers = await teachersService.getAllTeachers({
+        search,
+        active,
+        teacherType,
+      });
       res.json({ data: teachers, meta: null });
     } catch (error) {
       next(error);

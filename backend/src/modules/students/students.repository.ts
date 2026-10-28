@@ -1,7 +1,15 @@
 import { prisma } from '../../prisma/client';
-import { CreateStudentDTO, UpdateStudentDTO } from './students.types';
+import { CreateStudentDTO, UpdateStudentDTO, StudentListQueryOptions, StudentListMeta } from './students.types';
 import { AuthUser } from '../../middlewares/auth.middleware';
 import { AppError } from '../../middlewares/error.middleware';
+
+export const SAFE_USER_SELECT = {
+  id: true,
+  name: true,
+  email: true,
+  active: true,
+  last_login_at: true,
+} as const;
 
 /** Same assigned-group + self scope already used by the student list. */
 export async function getStudentCsScope(actor: AuthUser): Promise<number[] | undefined> {
@@ -74,42 +82,152 @@ async function authorizeUpdatedCsId(csId: number, tx: any, allowedCsIds: number[
 }
 
 export class StudentsRepository {
-  async findAll(options: {
-    actor: AuthUser;
-    programType?: string;
-    csId?: number;
-  }) {
+  /**
+   * Builds the enrollment filter combining mandatory actor scope (`allowedCsIds`)
+   * with optional query filters using `AND` so query filters can NEVER widen scope.
+   */
+  private buildEnrollmentFilter(
+    allowedCsIds: number[] | undefined,
+    options: StudentListQueryOptions,
+    opts?: { includeProgramType?: boolean; includeStatus?: boolean },
+  ): any {
+    const includeProgram = opts?.includeProgramType ?? true;
+    const includeStatus = opts?.includeStatus ?? true;
+
+    const normalizedProgram =
+      includeProgram && options.programType && options.programType.toUpperCase() !== 'ALL'
+        ? options.programType.toUpperCase()
+        : undefined;
+
+    const hasAdvanced =
+      Boolean(options.cvht && options.cvht.trim()) ||
+      Boolean(includeStatus && options.status && options.status.trim()) ||
+      Boolean(options.sale && options.sale.trim());
+
+    // Keep exact legacy structure when only scope/csId/programType are used
+    if (!hasAdvanced) {
+      const enrollmentFilter: any = {};
+      if (allowedCsIds !== undefined) {
+        enrollmentFilter.cs_id = { in: allowedCsIds };
+        if (options.csId) {
+          enrollmentFilter.cs_id = allowedCsIds.includes(options.csId) ? options.csId : { in: [] };
+        }
+      } else if (options.csId) {
+        enrollmentFilter.cs_id = options.csId;
+      }
+      if (normalizedProgram) {
+        enrollmentFilter.program_type = normalizedProgram;
+      }
+      return enrollmentFilter;
+    }
+
+    const andClauses: any[] = [];
+    if (allowedCsIds !== undefined) {
+      if (options.csId) {
+        andClauses.push({
+          cs_id: allowedCsIds.includes(options.csId) ? options.csId : { in: [] },
+        });
+      } else {
+        andClauses.push({ cs_id: { in: allowedCsIds } });
+      }
+    } else if (options.csId) {
+      andClauses.push({ cs_id: options.csId });
+    }
+
+    if (normalizedProgram) {
+      andClauses.push({ program_type: normalizedProgram });
+    }
+
+    if (includeStatus && options.status && options.status.trim()) {
+      andClauses.push({ status: options.status.trim() as any });
+    }
+
+    if (options.cvht && options.cvht.trim()) {
+      const cvht = options.cvht.trim();
+      andClauses.push({
+        cs: {
+          OR: [
+            { staff_code: { contains: cvht } },
+            { code: { contains: cvht } },
+            { name: { contains: cvht } },
+          ],
+        },
+      });
+    }
+
+    if (options.sale && options.sale.trim()) {
+      const sale = options.sale.trim();
+      andClauses.push({
+        OR: [
+          { sale_name: { contains: sale } },
+          { sale: { name: { contains: sale } } },
+          { cs: { name: { contains: sale } } },
+          { cs: { email: { contains: sale } } },
+        ],
+      });
+    }
+
+    return andClauses.length === 1 ? andClauses[0] : { AND: andClauses };
+  }
+
+  private buildStudentWhere(
+    allowedCsIds: number[] | undefined,
+    options: StudentListQueryOptions,
+    opts?: { includeProgramType?: boolean; includeStatus?: boolean },
+  ): any {
+    const enrollmentFilter = this.buildEnrollmentFilter(allowedCsIds, options, opts);
+    const hasEnrollmentFilter = Object.keys(enrollmentFilter).length > 0;
+    const hasSearch = Boolean(options.search && options.search.trim());
+    const hasGender = Boolean(options.gender && options.gender.trim());
+
+    if (!hasSearch && !hasGender) {
+      return {
+        where: hasEnrollmentFilter ? { enrollments: { some: enrollmentFilter } } : undefined,
+        enrollmentFilter: hasEnrollmentFilter ? enrollmentFilter : undefined,
+      };
+    }
+
+    const andClauses: any[] = [];
+    if (hasEnrollmentFilter) {
+      andClauses.push({ enrollments: { some: enrollmentFilter } });
+    }
+    if (hasGender) {
+      andClauses.push({ gender: options.gender!.trim() });
+    }
+    if (hasSearch) {
+      const q = options.search!.trim();
+      andClauses.push({
+        OR: [
+          { full_name: { contains: q } },
+          { phone: { contains: q } },
+          { external_id: { contains: q } },
+          { email: { contains: q } },
+        ],
+      });
+    }
+
+    return {
+      where: andClauses.length === 1 ? andClauses[0] : { AND: andClauses },
+      enrollmentFilter: hasEnrollmentFilter ? enrollmentFilter : undefined,
+    };
+  }
+
+  async findAll(options: StudentListQueryOptions) {
     // B.5/D9: list scope is enrollment.cs_id only, derived from the same
     // getStudentCsScope used by detail/update. Name- and email-based matching
     // (e.g. against sale_name) is never an access grant.
-    const allowedCsIds = await getStudentCsScope(options.actor);
+    const allowedCsIds = await getStudentCsScope(options.actor as AuthUser);
+    const { where, enrollmentFilter } = this.buildStudentWhere(allowedCsIds, options);
 
-    const enrollmentFilter: any = {};
-    if (allowedCsIds !== undefined) {
-      enrollmentFilter.cs_id = { in: allowedCsIds };
-      if (options.csId) {
-        enrollmentFilter.cs_id = allowedCsIds.includes(options.csId) ? options.csId : { in: [] };
-      }
-    } else if (options.csId) {
-      enrollmentFilter.cs_id = options.csId;
-    }
-    if (options.programType) {
-      enrollmentFilter.program_type = options.programType;
-    }
-
-    const hasEnrollmentFilter = Object.keys(enrollmentFilter).length > 0;
+    const page = options.page && options.page >= 1 ? options.page : 1;
+    const pageSize = options.pageSize && options.pageSize >= 1 ? Math.min(options.pageSize, 100) : 50;
 
     return prisma.student.findMany({
-      where: hasEnrollmentFilter
-        ? {
-            enrollments: {
-              some: enrollmentFilter,
-            },
-          }
-        : undefined,
+      where,
+      ...(options.isPaginated ? { skip: (page - 1) * pageSize, take: pageSize } : {}),
       include: {
         enrollments: {
-          where: hasEnrollmentFilter ? enrollmentFilter : undefined,
+          where: enrollmentFilter,
           include: {
             package: true,
             sale: true,
@@ -130,7 +248,9 @@ export class StudentsRepository {
                       include: {
                         teacher: {
                           include: {
-                            user: true,
+                            user: {
+                              select: SAFE_USER_SELECT,
+                            },
                           },
                         },
                       },
@@ -138,33 +258,133 @@ export class StudentsRepository {
                     class_schedules: true,
                   },
                 },
-                attendance: { where: { deleted_at: null } },
+                attendance: {
+                  where: { deleted_at: null },
+                  select: {
+                    id: true,
+                    status: true,
+                    reconciliation_state: true,
+                    class_session: {
+                      select: {
+                        id: true,
+                        session_date: true,
+                      },
+                    },
+                  },
+                },
               },
             },
             care_logs: {
               orderBy: { after_session_number: 'asc' },
             },
-            care_tasks: true,
           },
           orderBy: { created_at: 'desc' },
         },
-        zalo_contact_relations: {
-          where: { zalo_account: { archived_at: null } },
-          include: {
-            zalo_account: { select: { id: true, display_name: true, status: true } },
-            zalo_group: { select: { id: true, zalo_group_id: true, name: true, avatar_url: true, member_count: true } },
-          },
-        },
-        line_contact_relations: {
-          where: { line_account: { archived_at: null } },
-          include: {
-            line_account: { select: { id: true, display_name: true, account_type: true, status: true } },
-            line_group: { select: { id: true, line_group_id: true, name: true, avatar_url: true, member_count: true } },
-          },
-        },
       },
-      orderBy: { id: 'asc' },
+      orderBy: [{ id: 'asc' }],
     });
+  }
+
+  async computeMeta(options: StudentListQueryOptions, currentData: any[]): Promise<StudentListMeta> {
+    const allowedCsIds = await getStudentCsScope(options.actor as AuthUser);
+    const page = options.page && options.page >= 1 ? options.page : 1;
+    const isPaginated = Boolean(options.isPaginated);
+
+    // Base scope + filters WITHOUT program_type for programCounts
+    const { where: whereNoProgram, enrollmentFilter: enrFilterNoProgram } = this.buildStudentWhere(
+      allowedCsIds,
+      options,
+      { includeProgramType: false },
+    );
+
+    let rowsForFacets: any[] = currentData;
+    if ((isPaginated || (options.programType && options.programType.toUpperCase() !== 'ALL')) && typeof (prisma.student as any).findMany === 'function') {
+      try {
+        const fetched = await prisma.student.findMany({
+          where: whereNoProgram,
+          select: {
+            id: true,
+            enrollments: {
+              where: enrFilterNoProgram,
+              select: {
+                program_type: true,
+                status: true,
+                sale_name: true,
+                sale: { select: { name: true } },
+                cs: { select: { name: true, email: true, staff_code: true, code: true } },
+              },
+              orderBy: { created_at: 'desc' },
+            },
+          },
+        });
+        if (Array.isArray(fetched)) {
+          rowsForFacets = fetched;
+        }
+      } catch {
+        rowsForFacets = currentData;
+      }
+    }
+
+    let kaiwa = 0;
+    let jlpt = 0;
+    const statusCounts: Record<string, number> = {};
+    const cvhtSet = new Set<string>(['CVHT01', 'CVHT02', 'CVHT03']);
+    const salesSet = new Set<string>();
+    const normalizedProgramFilter =
+      options.programType && options.programType.toUpperCase() !== 'ALL'
+        ? options.programType.toUpperCase()
+        : undefined;
+
+    let matchingTotal = 0;
+    for (const s of rowsForFacets) {
+      const enr = s.enrollments?.[0];
+      const pType = (enr?.program_type || 'KAIWA').toUpperCase();
+      if (pType === 'JLPT') {
+        jlpt++;
+      } else {
+        kaiwa++;
+      }
+
+      if (!normalizedProgramFilter || pType === normalizedProgramFilter) {
+        matchingTotal++;
+        const st = enr?.status || 'NOT_STARTED';
+        statusCounts[st] = (statusCounts[st] || 0) + 1;
+      }
+
+      for (const e of s.enrollments || []) {
+        if (e.cs?.staff_code) cvhtSet.add(String(e.cs.staff_code).toUpperCase());
+        if (e.cs?.code) cvhtSet.add(String(e.cs.code).toUpperCase());
+        if (e.sale_name) salesSet.add(e.sale_name);
+        if (e.sale?.name) salesSet.add(e.sale.name);
+        if (e.cs?.name) salesSet.add(e.cs.name);
+        if (e.cs?.email) salesSet.add(e.cs.email);
+      }
+    }
+
+    const total = isPaginated ? matchingTotal : currentData.length;
+    const effectivePageSize = isPaginated
+      ? (options.pageSize && options.pageSize >= 1 ? Math.min(options.pageSize, 100) : 50)
+      : Math.max(1, currentData.length);
+    const totalPages = Math.max(1, Math.ceil(total / effectivePageSize));
+
+    return {
+      page: isPaginated ? page : 1,
+      pageSize: effectivePageSize,
+      total,
+      totalPages,
+      facets: {
+        programCounts: {
+          all: kaiwa + jlpt,
+          kaiwa,
+          jlpt,
+        },
+        statusCounts,
+      },
+      filterOptions: {
+        cvhtList: Array.from(cvhtSet).filter(Boolean).sort(),
+        salesList: Array.from(salesSet).filter(Boolean).sort(),
+      },
+    };
   }
 
   async findById(id: number, actor: AuthUser) {
@@ -196,7 +416,9 @@ export class StudentsRepository {
                       include: {
                         teacher: {
                           include: {
-                            user: true,
+                            user: {
+                              select: SAFE_USER_SELECT,
+                            },
                           },
                         },
                       },
@@ -431,7 +653,9 @@ export class StudentsRepository {
                     include: {
                       teacher: {
                         include: {
-                          user: true,
+                          user: {
+                            select: SAFE_USER_SELECT,
+                          },
                         },
                       },
                     },

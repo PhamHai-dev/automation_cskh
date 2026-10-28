@@ -1,5 +1,10 @@
 import { TeachersRepository } from './teachers.repository';
-import { CreateTeacherDTO, UpdateTeacherDTO, ProvisionAccountDTO } from './teachers.types';
+import {
+  CreateTeacherDTO,
+  UpdateTeacherDTO,
+  ProvisionAccountDTO,
+  TeacherListFilters,
+} from './teachers.types';
 import bcrypt from 'bcrypt';
 import { AppError } from '../../middlewares/error.middleware';
 
@@ -10,8 +15,8 @@ export class TeachersService {
     this.repository = new TeachersRepository();
   }
 
-  async getAllTeachers() {
-    return this.repository.findAll();
+  async getAllTeachers(filters?: TeacherListFilters) {
+    return this.repository.findAll(filters);
   }
 
   async getTeacherById(id: number) {

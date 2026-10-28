@@ -1,10 +1,32 @@
 import { prisma } from '../../prisma/client';
-import { CreatePackageDTO, UpdatePackageDTO } from './packages.types';
+import { CreatePackageDTO, UpdatePackageDTO, PackageListFilters } from './packages.types';
 
 export class PackagesRepository {
-  async findAll() {
+  async findAll(filters?: PackageListFilters) {
+    const andClauses: any[] = [];
+    if (filters?.active !== undefined) {
+      andClauses.push({ active: filters.active });
+    }
+    if (filters?.search && filters.search.trim()) {
+      const q = filters.search.trim();
+      andClauses.push({
+        OR: [
+          { code: { contains: q } },
+          { name: { contains: q } },
+        ],
+      });
+    }
+
+    const where =
+      andClauses.length === 0
+        ? undefined
+        : andClauses.length === 1
+        ? andClauses[0]
+        : { AND: andClauses };
+
     return prisma.package.findMany({
-      orderBy: { created_at: 'desc' }
+      where,
+      orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
     });
   }
 

@@ -1,13 +1,24 @@
 import { Request, Response, NextFunction } from 'express';
 import { PackagesService } from './packages.service';
 import { createPackageSchema, updatePackageSchema } from './packages.schema';
+import { parseSearchQuery } from '../../shared/utils/query-validation';
+import { AppError } from '../../middlewares/error.middleware';
 
 const packagesService = new PackagesService();
 
 export class PackagesController {
   async list(req: Request, res: Response, next: NextFunction) {
     try {
-      const packages = await packagesService.getAllPackages();
+      const search = parseSearchQuery(req.query.search, 100);
+      let active: boolean | undefined;
+      if (req.query.active !== undefined && req.query.active !== '') {
+        const rawActive = String(req.query.active).trim().toLowerCase();
+        if (rawActive === 'true' || rawActive === '1') active = true;
+        else if (rawActive === 'false' || rawActive === '0') active = false;
+        else throw new AppError(400, 'Tham số active không hợp lệ (true/false)');
+      }
+
+      const packages = await packagesService.getAllPackages({ search, active });
       res.json({ data: packages, meta: null });
     } catch (error) {
       next(error);
