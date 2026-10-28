@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { PackagesService } from './packages.service';
 import { createPackageSchema, updatePackageSchema } from './packages.schema';
-import { parseSearchQuery } from '../../shared/utils/query-validation';
+import { parsePaginationQuery, parseSearchQuery } from '../../shared/utils/query-validation';
 import { AppError } from '../../middlewares/error.middleware';
 
 const packagesService = new PackagesService();
@@ -9,6 +9,7 @@ const packagesService = new PackagesService();
 export class PackagesController {
   async list(req: Request, res: Response, next: NextFunction) {
     try {
+      const pagination = parsePaginationQuery(req.query as Record<string, any>, 20);
       const search = parseSearchQuery(req.query.search, 100);
       let active: boolean | undefined;
       if (req.query.active !== undefined && req.query.active !== '') {
@@ -18,8 +19,14 @@ export class PackagesController {
         else throw new AppError(400, 'Tham số active không hợp lệ (true/false)');
       }
 
-      const packages = await packagesService.getAllPackages({ search, active });
-      res.json({ data: packages, meta: null });
+      const result = await packagesService.getPackagesWithMeta({
+        page: pagination.page,
+        pageSize: pagination.pageSize,
+        isPaginated: pagination.isPaginated,
+        search,
+        active,
+      });
+      res.json(result);
     } catch (error) {
       next(error);
     }

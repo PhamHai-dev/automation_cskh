@@ -3,9 +3,10 @@ jest.mock('../../../prisma/client', () => ({
     manageAssignment: { findMany: jest.fn() },
     student: { findMany: jest.fn(), findUnique: jest.fn() },
     enrollment: { findMany: jest.fn(), findUnique: jest.fn() },
+    enrollmentClass: { count: jest.fn() },
     class: { findMany: jest.fn(), findUnique: jest.fn(), count: jest.fn(), findFirst: jest.fn(), update: jest.fn() },
-    teacher: { findMany: jest.fn(), findUnique: jest.fn(), findFirst: jest.fn() },
-    package: { findMany: jest.fn() },
+    teacher: { findMany: jest.fn(), findUnique: jest.fn(), findFirst: jest.fn(), count: jest.fn() },
+    package: { findMany: jest.fn(), count: jest.fn() },
     attendance: { findMany: jest.fn() },
     classTeacher: { findMany: jest.fn() },
     classSession: { findMany: jest.fn() },
@@ -16,15 +17,14 @@ jest.mock('../../../prisma/client', () => ({
 import { prisma } from '../../../prisma/client';
 import { StudentsRepository, SAFE_USER_SELECT as STUDENT_SAFE_USER_SELECT } from '../students.repository';
 import { StudentsService } from '../students.service';
-import { StudentsController } from '../students.controller';
 import { EnrollmentsRepository, SAFE_USER_SELECT as ENROLLMENT_SAFE_USER_SELECT } from '../../enrollments/enrollments.repository';
 import { EnrollmentsService } from '../../enrollments/enrollments.service';
-import { EnrollmentsController } from '../../enrollments/enrollments.controller';
 import { ClassesRepository, SAFE_USER_SELECT as CLASS_SAFE_USER_SELECT } from '../../classes/classes.repository';
 import { ClassesService } from '../../classes/classes.service';
-import { ClassesController } from '../../classes/classes.controller';
 import { TeachersRepository, SAFE_USER_SELECT as TEACHER_SAFE_USER_SELECT } from '../../teachers/teachers.repository';
+import { TeachersService } from '../../teachers/teachers.service';
 import { PackagesRepository } from '../../packages/packages.repository';
+import { PackagesService } from '../../packages/packages.service';
 import {
   parsePaginationQuery,
   parseSearchQuery,
@@ -213,7 +213,6 @@ describe('Query Validation & Security/Pagination across 5 modules', () => {
       expect(callArgs.take).toBe(20);
       expect(callArgs.orderBy).toEqual([{ id: 'asc' }]);
 
-      // Ensure enrollment filter has AND containing cs_id: 10 (or { in: [10] }) alongside sale/status/cvht
       const enrSome = callArgs.where.AND[0].enrollments.some;
       expect(enrSome.AND).toEqual(
         expect.arrayContaining([
@@ -264,7 +263,6 @@ describe('Query Validation & Security/Pagination across 5 modules', () => {
         },
       ]);
 
-      // Full-course attendance rows across multiple months (outside the 1-day session window)
       mockPrisma.attendance.findMany.mockResolvedValue([
         {
           enrollment_class_id: 700,
@@ -305,9 +303,7 @@ describe('Query Validation & Security/Pagination across 5 modules', () => {
       });
 
       const findManyCall = mockPrisma.enrollment.findMany.mock.calls[0][0];
-      // Verify CS scope is strictly cs_id: 10 and ignores sale override
       expect(findManyCall.where).toEqual({ cs_id: 10 });
-      // Verify class_sessions in ENROLLMENT_INCLUDES does NOT include duplicate attendance
       const classSessionsInclude =
         findManyCall.include.enrollment_classes.include.class.include.class_sessions;
       expect(classSessionsInclude.include).toBeUndefined();
@@ -318,7 +314,6 @@ describe('Query Validation & Security/Pagination across 5 modules', () => {
         },
       });
 
-      // Verify full-course attendance_stats attached on enrollment_class
       const ec = result.data[0].enrollment_classes[0];
       expect(ec.attendance_stats).toEqual({
         ADMIN: { totalAttended: 2, totalAbsentA: 1, totalAbsentC: 1, totalTeacherD: 1 },
@@ -334,8 +329,8 @@ describe('Query Validation & Security/Pagination across 5 modules', () => {
     });
   });
 
-  describe('5. Classes N+1 elimination, session windowing, and full-course attendance_stats', () => {
-    it('skips findByCode/update when class_code is already valid and attaches full-course + monthly attendance_stats', async () => {
+  describe('5. Classes N+1 elimination, session windowing, full-course attendance_stats & facets', () => {
+    it('skips findByCode/update when class_code is already valid and attaches full-course + monthly attendance_stats and facets', async () => {
       mockPrisma.class.findMany.mockResolvedValue([
         {
           id: 12,
@@ -355,6 +350,9 @@ describe('Query Validation & Security/Pagination across 5 modules', () => {
           ],
         },
       ]);
+
+      mockPrisma.class.count.mockResolvedValueOnce(15).mockResolvedValueOnce(7);
+      mockPrisma.enrollmentClass.count.mockResolvedValue(42);
 
       mockPrisma.attendance.findMany.mockResolvedValue([
         {
@@ -377,27 +375,41 @@ describe('Query Validation & Security/Pagination across 5 modules', () => {
       const result = await service.getClassesWithMeta(
         { id: 1, roles: ['ADMIN'] },
         {
-          sessionFrom: '2026-10-25',
-          sessionTo: '2026-10-25',
+          isPaginated: true,
+          page: 1,
+          pageSize: 10,
+          sessionFrom: '2026-10-26',
+          sessionTo: '2026-10-26',
           summaryMonth: '2026-10',
         },
       );
 
-      // Verify N+1 findByCode / update was NOT called for valid class_0012
       expect(mockPrisma.class.findFirst).not.toHaveBeenCalled();
       expect(mockPrisma.class.update).not.toHaveBeenCalled();
 
-      // Verify class_sessions in findAll does NOT include duplicate attendance
       const findManyCall = mockPrisma.class.findMany.mock.calls[0][0];
       expect(findManyCall.include.class_sessions.include).toBeUndefined();
+      expect(findManyCall.skip).toBe(0);
+      expect(findManyCall.take).toBe(10);
 
-      // Verify full-course + month stats attached to enrollment_class
       const ec = result.data[0].enrollment_classes[0];
       expect(ec.attendance_stats).toEqual({
         totalAttendedAdmin: 2,
         totalAttendedTeacher: 2,
         monthAttendedAdmin: 1,
         monthAttendedTeacher: 1,
+      });
+
+      expect(result.meta).toEqual({
+        page: 1,
+        pageSize: 10,
+        total: 15,
+        totalPages: 2,
+        facets: {
+          totalStudentsCount: 42,
+          relevantOnDateCount: 7,
+        },
+        filterOptions: {},
       });
     });
 
@@ -407,6 +419,7 @@ describe('Query Validation & Security/Pagination across 5 modules', () => {
       mockPrisma.classSession.findMany.mockResolvedValue([]);
       mockPrisma.class.findMany.mockResolvedValue([]);
       mockPrisma.class.count.mockResolvedValue(0);
+      mockPrisma.enrollmentClass.count.mockResolvedValue(0);
 
       const service = new ClassesService();
       await service.getClassesWithMeta(
@@ -430,13 +443,22 @@ describe('Query Validation & Security/Pagination across 5 modules', () => {
     });
   });
 
-  describe('6. Packages & Teachers stable ordering and filtering', () => {
-    it('orders packages and teachers by [{ created_at: desc }, { id: desc }] and applies search/active/teacher_type filters', async () => {
-      mockPrisma.package.findMany.mockResolvedValue([]);
-      mockPrisma.teacher.findMany.mockResolvedValue([]);
+  describe('6. Packages & Teachers server-side pagination, ordering, and account_status filtering', () => {
+    it('supports pagination, count meta, and stable ordering for packages and teachers', async () => {
+      mockPrisma.package.findMany.mockResolvedValue([{ id: 1, code: 'PKG_1' }]);
+      mockPrisma.package.count.mockResolvedValue(45);
+      mockPrisma.teacher.findMany.mockResolvedValue([{ id: 2, code: 'GV_2', name: 'Sato' }]);
+      mockPrisma.teacher.count.mockResolvedValue(32);
 
-      const pkgRepo = new PackagesRepository();
-      await pkgRepo.findAll({ search: 'VIP', active: true });
+      const pkgService = new PackagesService();
+      const pkgRes = await pkgService.getPackagesWithMeta({
+        isPaginated: true,
+        page: 2,
+        pageSize: 20,
+        search: 'VIP',
+        active: true,
+      });
+
       expect(mockPrisma.package.findMany).toHaveBeenCalledWith({
         where: {
           AND: [
@@ -444,28 +466,55 @@ describe('Query Validation & Security/Pagination across 5 modules', () => {
             { OR: [{ code: { contains: 'VIP' } }, { name: { contains: 'VIP' } }] },
           ],
         },
+        skip: 20,
+        take: 20,
         orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
       });
+      expect(pkgRes.meta).toEqual({
+        page: 2,
+        pageSize: 20,
+        total: 45,
+        totalPages: 3,
+      });
 
-      const teacherRepo = new TeachersRepository();
-      await teacherRepo.findAll({ search: 'Sato', active: true, teacherType: 'JAPANESE' });
+      const teacherService = new TeachersService();
+      const teacherRes = await teacherService.getTeachersWithMeta({
+        isPaginated: true,
+        page: 1,
+        pageSize: 15,
+        search: 'Sato',
+        active: true,
+        teacherType: 'JAPANESE',
+        accountStatus: 'PROVISIONED',
+      });
+
       expect(mockPrisma.teacher.findMany).toHaveBeenCalledWith({
         where: {
           AND: [
             { active: true },
             { teacher_type: 'JAPANESE' },
+            { user_id: { not: null } },
             {
               OR: [
                 { name: { contains: 'Sato' } },
                 { code: { contains: 'Sato' } },
                 { phone: { contains: 'Sato' } },
                 { email: { contains: 'Sato' } },
+                { user: { is: { email: { contains: 'Sato' } } } },
               ],
             },
           ],
         },
+        skip: 0,
+        take: 15,
         include: { user: { select: EXPECTED_SAFE_USER_SELECT } },
         orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
+      });
+      expect(teacherRes.meta).toEqual({
+        page: 1,
+        pageSize: 15,
+        total: 32,
+        totalPages: 3,
       });
     });
   });

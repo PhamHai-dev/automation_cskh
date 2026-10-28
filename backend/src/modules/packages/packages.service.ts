@@ -1,5 +1,10 @@
 import { PackagesRepository } from './packages.repository';
-import { CreatePackageDTO, UpdatePackageDTO, PackageListFilters } from './packages.types';
+import {
+  CreatePackageDTO,
+  UpdatePackageDTO,
+  PackageListFilters,
+  PackageListResult,
+} from './packages.types';
 
 class CustomError extends Error {
   status: number;
@@ -18,6 +23,12 @@ export class PackagesService {
 
   async getAllPackages(filters?: PackageListFilters) {
     return this.repository.findAll(filters);
+  }
+
+  async getPackagesWithMeta(filters?: PackageListFilters): Promise<PackageListResult> {
+    const data = await this.repository.findAll(filters);
+    const meta = await this.repository.computeMeta(filters, data);
+    return { data, meta };
   }
 
   async getPackageById(id: number) {

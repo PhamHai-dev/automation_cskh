@@ -36,11 +36,61 @@ function formatDateYmd(raw?: Date | string | null): string {
   return `${y}-${m}-${d}`;
 }
 
+function buildRelevantDateClause(dateStr: string): any {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const targetDate = new Date(Date.UTC(y, m - 1, d));
+  const jsDay = new Date(y, m - 1, d).getDay();
+  const dayToken = jsDay === 0 ? 'CN' : String(jsDay + 1);
+
+  return {
+    OR: [
+      {
+        class_sessions: {
+          some: {
+            session_date: targetDate,
+          },
+        },
+      },
+      {
+        class_schedules: {
+          some: {
+            AND: [
+              { schedule_pattern: { contains: dayToken } },
+              { NOT: { schedule_pattern: { contains: 'LKCD' } } },
+            ],
+          },
+        },
+      },
+    ],
+  };
+}
+
+function isClassRelevantOnDateInMemory(cls: any, dateStr: string): boolean {
+  const hasSessionOnDate = (cls.class_sessions || []).some(
+    (s: any) => formatDateYmd(s.session_date) === dateStr,
+  );
+  if (hasSessionOnDate) return true;
+
+  const raw = (cls.class_schedules || [])
+    .map((s: any) => s.schedule_pattern || '')
+    .filter(Boolean)
+    .join('');
+  if (!raw || raw.toUpperCase().includes('LKCD')) return false;
+
+  const normalized = raw.toUpperCase().replace(/[^0-9CN]/g, '');
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const jsDay = new Date(y, m - 1, d).getDay();
+  const code = jsDay === 0 ? 'CN' : String(jsDay + 1);
+  return code === 'CN' ? normalized.includes('CN') : normalized.includes(code);
+}
+
 export class ClassesRepository {
   buildWhereClause(
     accessibleClassIds?: number[] | null,
     options?: ClassListQueryOptions,
+    opts?: { includeRelevantDate?: boolean },
   ): any {
+    const includeRelevant = opts?.includeRelevantDate ?? true;
     const andClauses: any[] = [];
 
     if (accessibleClassIds !== null && accessibleClassIds !== undefined) {
@@ -90,33 +140,8 @@ export class ClassesRepository {
       });
     }
 
-    if (options?.relevantDate) {
-      const [y, m, d] = options.relevantDate.split('-').map(Number);
-      const targetDate = new Date(Date.UTC(y, m - 1, d));
-      const jsDay = new Date(y, m - 1, d).getDay();
-      const dayToken = jsDay === 0 ? 'CN' : String(jsDay + 1);
-
-      andClauses.push({
-        OR: [
-          {
-            class_sessions: {
-              some: {
-                session_date: targetDate,
-              },
-            },
-          },
-          {
-            class_schedules: {
-              some: {
-                AND: [
-                  { schedule_pattern: { contains: dayToken } },
-                  { NOT: { schedule_pattern: { contains: 'LKCD' } } },
-                ],
-              },
-            },
-          },
-        ],
-      });
+    if (includeRelevant && options?.relevantDate) {
+      andClauses.push(buildRelevantDateClause(options.relevantDate));
     }
 
     if (andClauses.length === 0) return undefined;
@@ -269,15 +294,53 @@ export class ClassesRepository {
     currentData: any[],
   ): Promise<ClassListMeta> {
     const isPaginated = Boolean(options?.isPaginated);
-    const page = options?.page && options.page >= 1 ? options.page : 1;
-    let total = currentData.length;
+    const page = options?.page && options.page >= 1 ? filtersPageSafe(options?.page) : 1;
+    const where = this.buildWhereClause(accessibleClassIds, options);
 
+    let total = currentData.length;
     if (isPaginated && typeof (prisma.class as any)?.count === 'function') {
       try {
-        const where = this.buildWhereClause(accessibleClassIds, options);
-        total = await prisma.class.count({ where });
+        const counted = await prisma.class.count({ where });
+        if (typeof counted === 'number') total = counted;
       } catch {
         total = currentData.length;
+      }
+    }
+
+    let totalStudentsCount = currentData.reduce(
+      (acc, c) => acc + (Array.isArray(c.enrollment_classes) ? c.enrollment_classes.length : 0),
+      0,
+    );
+    if (isPaginated && typeof (prisma.enrollmentClass as any)?.count === 'function') {
+      try {
+        const countedStudents = await prisma.enrollmentClass.count({
+          where: where ? { class: where } : undefined,
+        });
+        if (typeof countedStudents === 'number') totalStudentsCount = countedStudents;
+      } catch {
+        // Fallback to currentData sum
+      }
+    }
+
+    const referenceDate = options?.relevantDate || options?.sessionFrom;
+    let relevantOnDateCount: number | undefined;
+    if (referenceDate) {
+      relevantOnDateCount = currentData.filter((c) =>
+        isClassRelevantOnDateInMemory(c, referenceDate),
+      ).length;
+
+      if (isPaginated && typeof (prisma.class as any)?.count === 'function') {
+        try {
+          const whereWithRelevant = this.buildWhereClause(
+            accessibleClassIds,
+            { ...options, relevantDate: referenceDate },
+            { includeRelevantDate: true },
+          );
+          const countedRelevant = await prisma.class.count({ where: whereWithRelevant });
+          if (typeof countedRelevant === 'number') relevantOnDateCount = countedRelevant;
+        } catch {
+          // Fallback to in-memory count
+        }
       }
     }
 
@@ -291,7 +354,10 @@ export class ClassesRepository {
       pageSize: effectivePageSize,
       total,
       totalPages,
-      facets: {},
+      facets: {
+        totalStudentsCount,
+        ...(relevantOnDateCount !== undefined ? { relevantOnDateCount } : {}),
+      },
       filterOptions: {},
     };
   }
@@ -410,4 +476,8 @@ export class ClassesRepository {
       },
     });
   }
+}
+
+function filtersPageSafe(page?: number): number {
+  return page && page >= 1 ? page : 1;
 }

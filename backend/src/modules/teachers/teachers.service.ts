@@ -4,6 +4,7 @@ import {
   UpdateTeacherDTO,
   ProvisionAccountDTO,
   TeacherListFilters,
+  TeacherListResult,
 } from './teachers.types';
 import bcrypt from 'bcrypt';
 import { AppError } from '../../middlewares/error.middleware';
@@ -17,6 +18,12 @@ export class TeachersService {
 
   async getAllTeachers(filters?: TeacherListFilters) {
     return this.repository.findAll(filters);
+  }
+
+  async getTeachersWithMeta(filters?: TeacherListFilters): Promise<TeacherListResult> {
+    const data = await this.repository.findAll(filters);
+    const meta = await this.repository.computeMeta(filters, data);
+    return { data, meta };
   }
 
   async getTeacherById(id: number) {

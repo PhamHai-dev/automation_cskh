@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { TeachersService } from './teachers.service';
 import { createTeacherSchema, updateTeacherSchema, provisionAccountSchema } from './teachers.schema';
-import { parseSearchQuery } from '../../shared/utils/query-validation';
+import { parsePaginationQuery, parseSearchQuery } from '../../shared/utils/query-validation';
 import { AppError } from '../../middlewares/error.middleware';
 
 const teachersService = new TeachersService();
@@ -9,6 +9,7 @@ const teachersService = new TeachersService();
 export class TeachersController {
   async list(req: Request, res: Response, next: NextFunction) {
     try {
+      const pagination = parsePaginationQuery(req.query as Record<string, any>, 20);
       const search = parseSearchQuery(req.query.search, 100);
       let active: boolean | undefined;
       if (req.query.active !== undefined && req.query.active !== '') {
@@ -23,12 +24,21 @@ export class TeachersController {
           ? req.query.teacher_type.trim().toUpperCase()
           : undefined;
 
-      const teachers = await teachersService.getAllTeachers({
+      const accountStatus =
+        typeof req.query.account_status === 'string' && req.query.account_status.trim()
+          ? req.query.account_status.trim().toUpperCase()
+          : undefined;
+
+      const result = await teachersService.getTeachersWithMeta({
+        page: pagination.page,
+        pageSize: pagination.pageSize,
+        isPaginated: pagination.isPaginated,
         search,
         active,
         teacherType,
+        accountStatus,
       });
-      res.json({ data: teachers, meta: null });
+      res.json(result);
     } catch (error) {
       next(error);
     }

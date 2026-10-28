@@ -586,6 +586,17 @@ export class EnrollmentsRepository {
       includeProgramType: false,
     });
 
+    const needsInMemoryFilter = Boolean(
+      filters?.courseCategory ||
+        filters?.courseLevel ||
+        filters?.attendedSessionsExact !== undefined ||
+        filters?.attendedSessionsMin !== undefined ||
+        filters?.attendedSessionsMax !== undefined ||
+        filters?.remainingSessionsExact !== undefined ||
+        filters?.remainingSessionsMin !== undefined ||
+        filters?.remainingSessionsMax !== undefined,
+    );
+
     let rowsForFacets: any[] = currentData;
     if (
       (isPaginated || (filters?.programType && filters.programType.toUpperCase() !== 'ALL')) &&
@@ -625,7 +636,14 @@ export class EnrollmentsRepository {
           },
         });
         if (Array.isArray(fetched)) {
-          rowsForFacets = fetched;
+          if (needsInMemoryFilter) {
+            const facetStats = await this.attachFullCourseAttendanceStats(fetched);
+            rowsForFacets = fetched.filter((enr) =>
+              this.matchesInMemoryCourseAndSessionFilters(enr, filters, facetStats),
+            );
+          } else {
+            rowsForFacets = fetched;
+          }
         }
       } catch {
         rowsForFacets = currentData;

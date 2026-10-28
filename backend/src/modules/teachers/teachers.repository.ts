@@ -1,5 +1,10 @@
 import { prisma } from '../../prisma/client';
-import { CreateTeacherDTO, UpdateTeacherDTO, TeacherListFilters } from './teachers.types';
+import {
+  CreateTeacherDTO,
+  UpdateTeacherDTO,
+  TeacherListFilters,
+  TeacherListMeta,
+} from './teachers.types';
 
 export const SAFE_USER_SELECT = {
   id: true,
@@ -10,13 +15,25 @@ export const SAFE_USER_SELECT = {
 } as const;
 
 export class TeachersRepository {
-  async findAll(filters?: TeacherListFilters) {
+  buildWhereClause(filters?: TeacherListFilters): any {
     const andClauses: any[] = [];
     if (filters?.active !== undefined) {
       andClauses.push({ active: filters.active });
     }
     if (filters?.teacherType && filters.teacherType.trim()) {
       andClauses.push({ teacher_type: filters.teacherType.trim().toUpperCase() as any });
+    }
+    if (filters?.accountStatus && filters.accountStatus.trim()) {
+      const acc = filters.accountStatus.trim().toUpperCase();
+      if (acc === 'HAS_ACCOUNT' || acc === 'PROVISIONED') {
+        andClauses.push({ user_id: { not: null } });
+      } else if (acc === 'NO_ACCOUNT' || acc === 'UNPROVISIONED') {
+        andClauses.push({ user_id: null });
+      } else if (acc === 'ACTIVE_ACCOUNT') {
+        andClauses.push({ user: { is: { active: true } } });
+      } else if (acc === 'LOCKED_ACCOUNT') {
+        andClauses.push({ user: { is: { active: false } } });
+      }
     }
     if (filters?.search && filters.search.trim()) {
       const q = filters.search.trim();
@@ -26,19 +43,26 @@ export class TeachersRepository {
           { code: { contains: q } },
           { phone: { contains: q } },
           { email: { contains: q } },
+          { user: { is: { email: { contains: q } } } },
         ],
       });
     }
 
-    const where =
-      andClauses.length === 0
-        ? undefined
-        : andClauses.length === 1
-        ? andClauses[0]
-        : { AND: andClauses };
+    if (andClauses.length === 0) return undefined;
+    if (andClauses.length === 1) return andClauses[0];
+    return { AND: andClauses };
+  }
+
+  async findAll(filters?: TeacherListFilters) {
+    const where = this.buildWhereClause(filters);
+    const isPaginated = Boolean(filters?.isPaginated);
+    const page = filters?.page && filters.page >= 1 ? filters.page : 1;
+    const pageSize =
+      filters?.pageSize && filters.pageSize >= 1 ? Math.min(filters.pageSize, 100) : 20;
 
     return prisma.teacher.findMany({
       where,
+      ...(isPaginated ? { skip: (page - 1) * pageSize, take: pageSize } : {}),
       include: {
         user: {
           select: SAFE_USER_SELECT,
@@ -46,6 +70,33 @@ export class TeachersRepository {
       },
       orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
     });
+  }
+
+  async computeMeta(filters: TeacherListFilters | undefined, currentData: any[]): Promise<TeacherListMeta> {
+    const isPaginated = Boolean(filters?.isPaginated);
+    const page = filters?.page && filters.page >= 1 ? filters.page : 1;
+    let total = currentData.length;
+
+    if (isPaginated && typeof (prisma.teacher as any)?.count === 'function') {
+      try {
+        const where = this.buildWhereClause(filters);
+        total = await prisma.teacher.count({ where });
+      } catch {
+        total = currentData.length;
+      }
+    }
+
+    const effectivePageSize = isPaginated
+      ? (filters?.pageSize && filters.pageSize >= 1 ? Math.min(filters.pageSize, 100) : 20)
+      : Math.max(1, currentData.length);
+    const totalPages = Math.max(1, Math.ceil(total / effectivePageSize));
+
+    return {
+      page: isPaginated ? page : 1,
+      pageSize: effectivePageSize,
+      total,
+      totalPages,
+    };
   }
 
   async findById(id: number) {
