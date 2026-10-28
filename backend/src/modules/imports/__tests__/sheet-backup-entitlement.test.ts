@@ -32,17 +32,27 @@ import {
 jest.mock('../../../prisma/client', () => ({
   prisma: {
     user: { findMany: jest.fn() },
-    csSheetBackupConfig: {
+    appSetting: { findUnique: jest.fn() },
+    programSheetBackupConfig: {
       findUnique: jest.fn(),
       findMany: jest.fn(),
       update: jest.fn(),
       create: jest.fn(),
     },
+    $queryRawUnsafe: jest.fn(),
     enrollment: { findMany: jest.fn() },
     auditLog: { create: jest.fn() },
     importBatch: { create: jest.fn() },
   },
 }));
+
+jest.mock('../attendance-sheet.util', () => {
+  const actual = jest.requireActual('../attendance-sheet.util');
+  return {
+    ...actual,
+    loadOrExtractProgramWorkbook: jest.fn(),
+  };
+});
 
 jest.mock('../imports.service', () => ({
   ImportsService: jest.fn().mockImplementation(() => ({
@@ -60,6 +70,7 @@ jest.mock('../sheet-sync.service', () => ({
 }));
 
 import { prisma } from '../../../prisma/client';
+import { loadOrExtractProgramWorkbook } from '../attendance-sheet.util';
 import { SheetBackupService } from '../sheet-backup.service';
 
 // ---------------------------------------------------------------------------
@@ -114,27 +125,46 @@ const makeService = (
   const service = new SheetBackupService(undefined as never, undefined as never);
 
   // Keep the run entirely offline:
-  // - ensureBackupConfigs stubbed (would touch prisma.user + config creates)
+  // - ensureConfigs stubbed (would touch prisma.user + config creates)
   // - workbook injected in-memory; file write goes to a tmp dir
-  (service as any).ensureBackupConfigs = jest.fn().mockResolvedValue(undefined);
-  (service as any).loadOrInitializeWorkbook = jest.fn().mockResolvedValue({
+  (service as any).ensureConfigs = jest.fn().mockResolvedValue(undefined);
+  (loadOrExtractProgramWorkbook as jest.Mock).mockResolvedValue({
     workbook: workbooks.ws1.workbook,
-    isFreshFromTemplate: true,
+    profileWorksheet: workbooks.ws1,
+    attendanceWorksheet: workbooks.ws3,
+    profileMaxCol: 60,
+    attendanceMaxCol: 28,
+    isFresh: true,
   });
 
-  (prisma.csSheetBackupConfig.findUnique as jest.Mock).mockResolvedValue({
+  (prisma.appSetting.findUnique as jest.Mock).mockResolvedValue(null);
+  (prisma.$queryRawUnsafe as jest.Mock).mockResolvedValue([
+    {
+      id: 1,
+      profile_sheet_name: '1.Chăm sóc',
+      profile_header_row: 3,
+      profile_enabled: 1,
+    },
+  ]);
+  (prisma.programSheetBackupConfig.findUnique as jest.Mock).mockResolvedValue({
     id: 1,
     cs_user_id: 42,
+    program_type: 'KAIWA',
+    name: 'Backup KAIWA - CVHT99',
     cs_user: { id: 42, name: 'CS Tester', email: 'cs@test.local', staff_code: 'CVHT99' },
     local_backup_path: path.join(tmpDir, 'backup.xlsx').replace(/\\/g, '/'),
-    sheet1_name: '1.Chăm sóc',
-    sheet3_name: '3.Chấm buổi',
+    sheet_name: '3.Chấm buổi',
+    header_row: 2,
+    profile_sheet_name: '1.Chăm sóc',
+    profile_header_row: 3,
+    profile_enabled: true,
+    backup_year: null,
     target_spreadsheet_id: null,
     target_spreadsheet_url: null,
     require_private_sheet: false,
     mask_sensitive_data: false,
   });
-  (prisma.csSheetBackupConfig.update as jest.Mock).mockResolvedValue({});
+  (prisma.programSheetBackupConfig.update as jest.Mock).mockResolvedValue({});
   (prisma.enrollment.findMany as jest.Mock).mockResolvedValue(enrollments);
   (prisma.auditLog.create as jest.Mock).mockResolvedValue({});
   (prisma.importBatch.create as jest.Mock).mockResolvedValue({});
@@ -172,7 +202,7 @@ describe('E.3 sheet-backup consumed/remaining via entitlement calculator', () =>
 
   const run = async (enrollments: any[]) => {
     const service = makeService(tmpDir, { ws1, ws3 }, enrollments);
-    const result = await service.runBackupForCs(42);
+    const result = await service.runBackupForConfig(1);
     expect(result.status).toBe('SUCCESS');
     return { service };
   };

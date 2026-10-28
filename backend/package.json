@@ -5,15 +5,15 @@
   "main": "dist/server.js",
   "scripts": {
     "start": "node dist/server.js",
-    "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
-    "build": "tsc",
+    "dev": "node ./node_modules/ts-node-dev/lib/bin.js --respawn --transpile-only src/server.ts",
+    "build": "node ./node_modules/typescript/bin/tsc",
     "lint": "eslint . --ext .ts",
-    "typecheck": "tsc --noEmit",
-    "test": "jest",
-    "test:coverage": "jest --coverage",
-    "test:zalo": "jest tests/__tests__/zalo-pool-fixes.test.ts tests/__tests__/zalo-service-fixes.test.ts --no-coverage",
-    "verify:zalo": "ts-node --transpile-only scripts/verify-zalo-sync.ts",
-    "postinstall": "prisma generate"
+    "typecheck": "node ./node_modules/typescript/bin/tsc --noEmit",
+    "test": "node ./node_modules/jest/bin/jest.js",
+    "test:coverage": "node ./node_modules/jest/bin/jest.js --coverage",
+    "test:zalo": "node ./node_modules/jest/bin/jest.js tests/__tests__/zalo-pool-fixes.test.ts tests/__tests__/zalo-service-fixes.test.ts --no-coverage",
+    "verify:zalo": "node ./node_modules/ts-node/dist/bin.js --transpile-only scripts/verify-zalo-sync.ts",
+    "postinstall": "node ./node_modules/prisma/build/index.js generate"
   },
   "dependencies": {
     "@evex/linejs": "npm:@jsr/evex__linejs@^3.5.0",
@@ -56,6 +56,6 @@
     "typescript": "^5.2.2"
   },
   "prisma": {
-    "seed": "ts-node-dev --transpile-only prisma/seed.ts"
+    "seed": "node ./node_modules/ts-node-dev/lib/bin.js --transpile-only prisma/seed.ts"
   }
 }

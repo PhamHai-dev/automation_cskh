@@ -196,4 +196,52 @@ export interface CSMarkRequest {
   status: AttendanceStatus;
   rawValue?: string;
   note?: string;
-  }
+}
+
+export interface TeacherStudentSessionCell {
+  sessionIndex: number; // 1, 2, 3...
+  classSessionId: number;
+  sessionNumber: number;
+  sessionDate: string; // YYYY-MM-DD
+  startTime: string | null;
+  endTime: string | null;
+  attendanceId: number | null;
+  teacherStatus: AttendanceStatus | null;
+  finalStatus: AttendanceStatus | null;
+  reconciliationState: ReconciliationState | null;
+  effectiveStatus: AttendanceStatus | null;
+  isAttended: boolean;
+  isUnlocked: boolean;
+  lessonTopic: string;
+  teacherNote: string;
+  rawValue: string;
+}
+
+export interface TeacherStudentInfoRow {
+  enrollmentClassId: number;
+  enrollmentId: number;
+  studentId: number;
+  studentCode: string;
+  studentName: string;
+  classId: number;
+  classCode: string;
+  className: string;
+  courseType: string;
+  level: string;
+  totalSessions: number;
+  note: string;
+  startDate: string | null;
+  csCode: string;
+  csName: string;
+  scheduleDays: string;
+  scheduleTime: string;
+  studyReportUrl: string;
+  sessions: TeacherStudentSessionCell[];
+}
+
+export interface TeacherStudentInfoResponse {
+  items: TeacherStudentInfoRow[];
+  maxRecordedSessions: number;
+  maxTotalSessions: number;
+}
+

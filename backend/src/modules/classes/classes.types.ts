@@ -37,3 +37,37 @@ export interface EndTeacherAssignmentDTO {
   end_date?: string | Date | null;
 }
 
+export interface ClassEnrollmentAttendanceStats {
+  totalAttendedAdmin: number;
+  totalAttendedTeacher: number;
+  monthAttendedAdmin: number;
+  monthAttendedTeacher: number;
+}
+
+export interface ClassListQueryOptions {
+  accessibleClassIds?: number[] | null;
+  page?: number;
+  pageSize?: number;
+  isPaginated?: boolean;
+  search?: string;
+  modelType?: string;
+  active?: boolean;
+  relevantDate?: string;
+  sessionFrom?: string;
+  sessionTo?: string;
+  summaryMonth?: string;
+}
+
+export interface ClassListMeta {
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+  facets?: Record<string, any>;
+  filterOptions?: Record<string, any>;
+}
+
+export interface ClassListResult<T = any> {
+  data: T[];
+  meta: ClassListMeta;
+}

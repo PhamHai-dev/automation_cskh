@@ -18,6 +18,23 @@ router.get(
   reconciliationController.getTeacherSessions
 );
 
+// Teacher student info & dynamic session columns (sheet Infoー情報)
+router.get(
+  '/teacher-student-info',
+  requireRoles(['ADMIN', 'MANAGE', 'TEACHER']),
+  reconciliationController.getTeacherStudentInfo
+);
+router.patch(
+  '/teacher-student-info/:id/lesson',
+  requireRoles(['ADMIN', 'MANAGE', 'TEACHER']),
+  reconciliationController.updateTeacherStudentLesson
+);
+router.post(
+  '/teacher-student-info/add-session',
+  requireRoles(['ADMIN', 'MANAGE', 'TEACHER']),
+  reconciliationController.addTeacherStudentSessionColumn
+);
+
 // Attendance workbook preview → explicit confirmation (CSKH Sheet 3 or teacher schedule)
 router.post(
   '/import-excel/preview',

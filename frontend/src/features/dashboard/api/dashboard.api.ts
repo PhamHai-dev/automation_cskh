@@ -10,6 +10,7 @@ import {
   AttendancePayload,
   PerformancePayload,
 } from '../types/dashboard.types';
+import { GlobalSearchPayload, HomeDashboardPayload } from '../types/home.types';
 
 export const dashboardApi = {
   getSummary: async (params?: DashboardFilterParams): Promise<DashboardSummary> => {
@@ -50,6 +51,19 @@ export const dashboardApi = {
 
   getPerformance: async (params?: DashboardFilterParams): Promise<PerformancePayload> => {
     const res = await apiClient.get('/dashboard/performance', { params });
+    return res.data.data;
+  },
+
+  // ---- Command Center / Home & Global Search ----
+  getHome: async (): Promise<HomeDashboardPayload> => {
+    const res = await apiClient.get('/dashboard/home');
+    return res.data.data;
+  },
+
+  searchGlobal: async (q: string, limit = 5): Promise<GlobalSearchPayload> => {
+    const res = await apiClient.get('/dashboard/search', {
+      params: { q, limit },
+    });
     return res.data.data;
   },
 };

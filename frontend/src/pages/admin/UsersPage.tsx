@@ -9,11 +9,7 @@ import { Badge } from '../../components/ui/Badge';
 import { Input } from '../../components/ui/Input';
 import { Modal } from '../../components/ui/Modal';
 import { useToast } from '../../components/ui/Toast';
-import { Edit, UserX, UserCheck, KeyRound, Plus, Search, AlertTriangle, Shield, Sliders, Users as UsersIcon } from 'lucide-react';
-import { HorizontalTabs, HorizontalTabItem } from '../../components/ui/HorizontalTabs';
-import { AutoAttendanceConfigCard } from './components/AutoAttendanceConfigCard';
-
-type AdminTab = 'users' | 'settings';
+import { Edit, UserX, UserCheck, KeyRound, Plus, Search, AlertTriangle, Shield } from 'lucide-react';
 
 interface User {
   id: number;
@@ -38,24 +34,10 @@ const ROLE_LABELS: Record<string, string> = {
 
 export const UsersPage: React.FC = () => {
   const toast = useToast();
-  const [activeTab, setActiveTab] = useState<AdminTab>('users');
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState('');
-
-  const adminTabs: HorizontalTabItem<AdminTab>[] = [
-    {
-      value: 'users',
-      label: 'Người dùng & Phân quyền',
-      icon: <UsersIcon className="w-4 h-4" />,
-    },
-    {
-      value: 'settings',
-      label: 'Cấu hình',
-      icon: <Sliders className="w-4 h-4" />,
-    },
-  ];
 
   // Modal states
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -304,41 +286,27 @@ export const UsersPage: React.FC = () => {
   return (
     <PageContainer>
       <PageHeader
-        title={activeTab === 'users' ? 'Quản lý Người dùng & Phân quyền' : 'Cấu hình Hệ thống'}
+        title="Quản lý Người dùng & Phân quyền"
         actions={
-          activeTab === 'users' ? (
-            <Button
-              onClick={() => openModal()}
-              variant="primary"
-              size="sm"
-              leftIcon={<Plus className="w-4 h-4" />}
-            >
-              Thêm người dùng mới
-            </Button>
-          ) : null
+          <Button
+            onClick={() => openModal()}
+            variant="primary"
+            size="sm"
+            leftIcon={<Plus className="w-4 h-4" />}
+          >
+            Thêm người dùng mới
+          </Button>
         }
       />
 
-      <div className="mb-6">
-        <HorizontalTabs
-          items={adminTabs}
-          value={activeTab}
-          onChange={setActiveTab}
-          ariaLabel="Phân hệ Quản trị"
-        />
-      </div>
-
-      {activeTab === 'settings' ? (
-        <AutoAttendanceConfigCard />
-      ) : (
-        <>
-          <FilterBar
-            title="Tìm kiếm & Lọc người dùng"
-            activeCount={activeFiltersCount}
-            onClear={() => {
-              setSearchTerm('');
-              setRoleFilter('');
-            }}
+      <>
+        <FilterBar
+          title="Tìm kiếm & Lọc người dùng"
+          activeCount={activeFiltersCount}
+          onClear={() => {
+            setSearchTerm('');
+            setRoleFilter('');
+          }}
             gridClassName="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 items-end"
           >
             <div>
@@ -381,8 +349,7 @@ export const UsersPage: React.FC = () => {
             isLoading={loading}
             emptyMessage="Không tìm thấy người dùng nào phù hợp."
           />
-        </>
-      )}
+      </>
 
       {/* Modal Thêm/Sửa */}
       <Modal

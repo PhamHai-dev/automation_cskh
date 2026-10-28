@@ -1,5 +1,10 @@
 import { PackagesRepository } from './packages.repository';
-import { CreatePackageDTO, UpdatePackageDTO } from './packages.types';
+import {
+  CreatePackageDTO,
+  UpdatePackageDTO,
+  PackageListFilters,
+  PackageListResult,
+} from './packages.types';
 
 class CustomError extends Error {
   status: number;
@@ -16,8 +21,14 @@ export class PackagesService {
     this.repository = new PackagesRepository();
   }
 
-  async getAllPackages() {
-    return this.repository.findAll();
+  async getAllPackages(filters?: PackageListFilters) {
+    return this.repository.findAll(filters);
+  }
+
+  async getPackagesWithMeta(filters?: PackageListFilters): Promise<PackageListResult> {
+    const data = await this.repository.findAll(filters);
+    const meta = await this.repository.computeMeta(filters, data);
+    return { data, meta };
   }
 
   async getPackageById(id: number) {
@@ -35,7 +46,7 @@ export class PackagesService {
   async updatePackage(id: number, data: UpdatePackageDTO) {
     const existing = await this.repository.findById(id);
     if (!existing) throw new CustomError('Package not found', 404);
-    
+
     if (data.code && data.code !== existing.code) {
       const existingCode = await this.repository.findByCode(data.code);
       if (existingCode) throw new CustomError('Package code already exists', 409);

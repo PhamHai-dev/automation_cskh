@@ -331,4 +331,54 @@ describe('Dashboard Module Integration Tests', () => {
       expect(res.body.data.cs_leaderboard).toEqual([]);
     });
   });
+
+  describe('GET /api/v1/dashboard/home', () => {
+    it('CS should receive Command Center Home payload with kpis, today_tasks, and upcoming_sessions', async () => {
+      const res = await request(app)
+        .get('/api/v1/dashboard/home')
+        .set('Authorization', `Bearer ${csToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.meta).toEqual({});
+      expect(res.body.data).toHaveProperty('kpis');
+      expect(res.body.data.kpis.total_students.value).toBe(1);
+      expect(res.body.data.kpis.total_students.sparkline).toHaveLength(7);
+      expect(res.body.data.kpis.pending_tasks.value).toBe(2);
+      expect(Array.isArray(res.body.data.today_tasks)).toBe(true);
+      expect(res.body.data.today_tasks.length).toBe(2);
+      expect(res.body.data.today_tasks[0].badge_label).toBe('Ưu tiên');
+      expect(res.body.data.today_tasks[0].badge_variant).toBe('danger');
+      expect(Array.isArray(res.body.data.upcoming_sessions)).toBe(true);
+    });
+  });
+
+  describe('GET /api/v1/dashboard/search', () => {
+    it('returns empty arrays when q is empty', async () => {
+      const res = await request(app)
+        .get('/api/v1/dashboard/search?q=')
+        .set('Authorization', `Bearer ${csToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.data).toEqual({ students: [], classes: [], teachers: [] });
+    });
+
+    it('CS only finds students within their CS scope', async () => {
+      const res = await request(app)
+        .get('/api/v1/dashboard/search?q=Dash%20Student&limit=5')
+        .set('Authorization', `Bearer ${csToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.students).toHaveLength(1);
+      expect(res.body.data.students[0].full_name).toBe('Dash Student 1');
+    });
+
+    it('ADMIN finds students across all CS scopes', async () => {
+      const res = await request(app)
+        .get('/api/v1/dashboard/search?q=Dash%20Student&limit=5')
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.students.length).toBeGreaterThanOrEqual(2);
+    });
+  });
 });

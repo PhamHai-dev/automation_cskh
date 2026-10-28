@@ -9,6 +9,7 @@ import {
   ReconciliationHistoryResponse,
   TeacherTrackingPendingResponse,
   TeacherTrackingHistoryResponse,
+  TeacherStudentInfoResponse,
 } from '../types/reconciliation.types';
 
 export interface ReconciliationQueryParams {
@@ -104,6 +105,42 @@ export const reconciliationApi = {
 
   getTeacherSessions: async (params?: { startDate?: string; endDate?: string; teacherId?: number }): Promise<any[]> => {
     const res = await apiClient.get('/attendance-reconciliation/teacher-sessions', { params });
+    return res.data.data;
+  },
+
+  getTeacherStudentInfo: async (params?: {
+    teacherId?: number;
+    classId?: number;
+    search?: string;
+  }): Promise<TeacherStudentInfoResponse> => {
+    const res = await apiClient.get('/attendance-reconciliation/teacher-student-info', { params });
+    return res.data.data;
+  },
+
+  updateTeacherStudentLesson: async (
+    attendanceId: number,
+    data: { lessonTopic?: string | null; note?: string | null; teacherId?: number }
+  ): Promise<any> => {
+    const res = await apiClient.patch(
+      `/attendance-reconciliation/teacher-student-info/${attendanceId}/lesson`,
+      data
+    );
+    return res.data.data;
+  },
+
+  addTeacherStudentSession: async (data: {
+    enrollmentClassId: number;
+    sessionDate?: string;
+    startTime?: string;
+    endTime?: string;
+    lessonTopic?: string;
+    note?: string;
+    teacherId?: number;
+  }): Promise<any> => {
+    const res = await apiClient.post(
+      '/attendance-reconciliation/teacher-student-info/add-session',
+      data
+    );
     return res.data.data;
   },
 

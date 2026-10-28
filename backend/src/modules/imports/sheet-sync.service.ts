@@ -36,6 +36,32 @@ export interface SheetSyncResult {
   failedCount: number;
   byCvht: Record<string, number>;
   syncedAt: string;
+  durationMs?: number;
+  triggerType?: 'MANUAL' | 'AUTO';
+  mode?: 'DELTA' | 'FULL';
+}
+
+export interface SheetSyncHistoryItem {
+  id: number;
+  code: string;
+  name: string;
+  programType: string;
+  status: 'SUCCESS' | 'PARTIAL_FAILED' | 'FAILED';
+  triggerType: 'MANUAL' | 'AUTO';
+  mode: 'DELTA' | 'FULL';
+  skipped: boolean;
+  reason?: string | null;
+  totalRows: number;
+  unchangedRows: number;
+  createdCount: number;
+  updatedCount: number;
+  failedCount: number;
+  byCvht: Record<string, number>;
+  durationMs: number;
+  durationSec: number;
+  syncedAt: string;
+  createdAt: string;
+  error: string | null;
 }
 
 export interface UpdateSyncConfigDTO {
@@ -663,8 +689,9 @@ export class SheetSyncService {
    */
   public async syncConfigByCode(
     code: string,
-    options?: { forceFullSync?: boolean; limit?: number; actorId?: number }
+    options?: { forceFullSync?: boolean; limit?: number; actorId?: number; triggerType?: 'MANUAL' | 'AUTO' }
   ): Promise<SheetSyncResult> {
+    const startMs = Date.now();
     await this.ensureDefaultConfigs();
     const upperCode = code.trim().toUpperCase();
     const config = await prisma.googleSheetSyncConfig.findUnique({
@@ -676,6 +703,8 @@ export class SheetSyncService {
 
     const forceFullSync = Boolean(options?.forceFullSync);
     const limit = options?.limit;
+    const triggerType: 'MANUAL' | 'AUTO' = options?.triggerType || (options?.actorId ? 'MANUAL' : 'AUTO');
+    const mode: 'DELTA' | 'FULL' = forceFullSync ? 'FULL' : 'DELTA';
 
     await prisma.googleSheetSyncConfig.update({
       where: { id: config.id },
@@ -692,16 +721,9 @@ export class SheetSyncService {
         const totalRows = Number(prevSummary.totalRows) || 0;
         const byCvht = (prevSummary.byCvht as Record<string, number>) || {};
         const nowIso = new Date().toISOString();
+        const durationMs = Math.max(1, Date.now() - startMs);
 
-        await prisma.googleSheetSyncConfig.update({
-          where: { id: config.id },
-          data: {
-            last_status: 'SUCCESS',
-            last_synced_at: new Date(),
-          },
-        });
-
-        return {
+        const skippedResult: SheetSyncResult = {
           code: config.code,
           programType: config.program_type,
           skipped: true,
@@ -713,7 +735,37 @@ export class SheetSyncService {
           failedCount: 0,
           byCvht,
           syncedAt: nowIso,
+          durationMs,
+          triggerType,
+          mode,
         };
+
+        await prisma.googleSheetSyncConfig.update({
+          where: { id: config.id },
+          data: {
+            last_status: 'SUCCESS',
+            last_synced_at: new Date(),
+            last_summary: skippedResult as unknown as Prisma.InputJsonValue,
+          },
+        });
+
+        await prisma.auditLog
+          ?.create?.({
+            data: {
+              user_id: options?.actorId || config.default_cs_id || 1,
+              action: 'GOOGLE_SHEET_SYNC',
+              entity_type: 'GoogleSheetSyncConfig',
+              entity_id: config.code,
+              after_data: {
+                ...skippedResult,
+                name: config.name,
+                status: 'SUCCESS',
+              } as unknown as Prisma.InputJsonValue,
+            },
+          })
+          .catch(() => {});
+
+        return skippedResult;
       }
 
       const programType = (config.program_type?.toUpperCase() === 'JLPT' ? 'JLPT' : 'KAIWA') as 'JLPT' | 'KAIWA';
@@ -1137,6 +1189,7 @@ export class SheetSyncService {
       }
 
       const now = new Date();
+      const durationMs = Math.max(1, Date.now() - startMs);
       const result: SheetSyncResult = {
         code: config.code,
         programType: config.program_type,
@@ -1148,6 +1201,9 @@ export class SheetSyncService {
         failedCount,
         byCvht,
         syncedAt: now.toISOString(),
+        durationMs,
+        triggerType,
+        mode,
       };
 
       const finalStatus = failedCount > 0
@@ -1165,6 +1221,22 @@ export class SheetSyncService {
           last_error: null,
         },
       });
+
+      await prisma.auditLog
+        ?.create?.({
+          data: {
+            user_id: options?.actorId || effectiveDefaultCsId || 1,
+            action: 'GOOGLE_SHEET_SYNC',
+            entity_type: 'GoogleSheetSyncConfig',
+            entity_id: config.code,
+            after_data: {
+              ...result,
+              name: config.name,
+              status: finalStatus,
+            } as unknown as Prisma.InputJsonValue,
+          },
+        })
+        .catch(() => {});
 
       // Record ImportBatch if there were changes
       if (createdCount > 0 || updatedCount > 0 || failedCount > 0) {
@@ -1189,13 +1261,36 @@ export class SheetSyncService {
 
       return result;
     } catch (err: any) {
+      const durationMs = Math.max(1, Date.now() - startMs);
+      const errMsg = err?.message || String(err);
       await prisma.googleSheetSyncConfig.update({
         where: { id: config.id },
         data: {
           last_status: 'FAILED',
-          last_error: err?.message || String(err),
+          last_error: errMsg,
         },
       });
+      await prisma.auditLog
+        ?.create?.({
+          data: {
+            user_id: options?.actorId || config.default_cs_id || 1,
+            action: 'GOOGLE_SHEET_SYNC',
+            entity_type: 'GoogleSheetSyncConfig',
+            entity_id: config.code,
+            after_data: {
+              code: config.code,
+              name: config.name,
+              programType: config.program_type,
+              status: 'FAILED',
+              triggerType,
+              mode,
+              durationMs,
+              syncedAt: new Date().toISOString(),
+              error: errMsg,
+            } as unknown as Prisma.InputJsonValue,
+          },
+        })
+        .catch(() => {});
       throw err;
     }
   }
@@ -1218,6 +1313,179 @@ export class SheetSyncService {
   }
 
   /**
+   * Lịch sử đồng bộ Google Sheet -> Hệ thống
+   */
+  public async getSyncHistory(
+    query: { code?: string; programType?: string; status?: string; fromDate?: string; toDate?: string; limit?: number } = {}
+  ): Promise<{
+    stats: {
+      todayTotal: number;
+      todaySuccess: number;
+      todayFailed: number;
+      lastRunTime: string | null;
+    };
+    items: SheetSyncHistoryItem[];
+    total: number;
+  }> {
+    await this.ensureDefaultConfigs();
+    const configs = await prisma.googleSheetSyncConfig.findMany({ orderBy: { id: 'asc' } });
+    const configByCode = new Map(configs.map((c) => [c.code.toUpperCase(), c]));
+
+    const limit = Math.min(Math.max(Number(query.limit) || 50, 1), 200);
+    const rawCode = query.code || query.programType;
+    const filterCode = rawCode && rawCode !== 'ALL' ? String(rawCode).toUpperCase() : null;
+    const filterStatus = query.status && query.status !== 'ALL' ? String(query.status).toUpperCase() : null;
+    const fromDateStr = query.fromDate ? String(query.fromDate).slice(0, 10) : null;
+    const toDateStr = query.toDate ? String(query.toDate).slice(0, 10) : null;
+
+    const logs =
+      (await prisma.auditLog?.findMany?.({
+        where: {
+          action: 'GOOGLE_SHEET_SYNC',
+          entity_type: 'GoogleSheetSyncConfig',
+        },
+        orderBy: { created_at: 'desc' },
+        take: 300,
+      })) || [];
+
+    const items: SheetSyncHistoryItem[] = [];
+    const seenCodes = new Set<string>();
+
+    for (const row of logs) {
+      const after = (row.after_data && typeof row.after_data === 'object' ? row.after_data : {}) as Record<string, any>;
+      const code = String(after.code || row.entity_id || 'JLPT').toUpperCase();
+      const cfg = configByCode.get(code);
+      seenCodes.add(code);
+
+      const rawStatus = String(after.status || 'SUCCESS').toUpperCase();
+      const status: 'SUCCESS' | 'PARTIAL_FAILED' | 'FAILED' =
+        rawStatus === 'FAILED'
+          ? 'FAILED'
+          : rawStatus === 'PARTIAL_FAILED'
+            ? 'PARTIAL_FAILED'
+            : 'SUCCESS';
+
+      const durationMs = Number(after.durationMs || 650);
+      const durationSec = Math.max(1, Math.round(durationMs / 1000));
+      const syncedAt = String(after.syncedAt || row.created_at.toISOString());
+
+      items.push({
+        id: row.id,
+        code,
+        name: String(after.name || cfg?.name || `Đồng bộ ${code}`),
+        programType: String(after.programType || cfg?.program_type || code).toUpperCase(),
+        status,
+        triggerType: after.triggerType === 'AUTO' ? 'AUTO' : 'MANUAL',
+        mode: after.mode === 'FULL' ? 'FULL' : 'DELTA',
+        skipped: Boolean(after.skipped),
+        reason: after.reason || null,
+        totalRows: Number(after.totalRows || 0),
+        unchangedRows: Number(after.unchangedRows || 0),
+        createdCount: Number(after.createdCount || 0),
+        updatedCount: Number(after.updatedCount || 0),
+        failedCount: Number(after.failedCount || 0),
+        byCvht: (after.byCvht as Record<string, number>) || {},
+        durationMs,
+        durationSec,
+        syncedAt,
+        createdAt: syncedAt,
+        error: after.error ? String(after.error) : null,
+      });
+    }
+
+    // Fallback từ các config đã có last_synced_at
+    for (const cfg of configs) {
+      if (seenCodes.has(cfg.code.toUpperCase()) || !cfg.last_synced_at) continue;
+      const sum = (cfg.last_summary && typeof cfg.last_summary === 'object' ? cfg.last_summary : {}) as Record<string, any>;
+      const rawStatus = String(cfg.last_status || 'SUCCESS').toUpperCase();
+      const status: 'SUCCESS' | 'PARTIAL_FAILED' | 'FAILED' =
+        rawStatus === 'FAILED'
+          ? 'FAILED'
+          : rawStatus === 'PARTIAL_FAILED'
+            ? 'PARTIAL_FAILED'
+            : 'SUCCESS';
+
+      const durationMs = Number(sum.durationMs || 700);
+      const durationSec = Math.max(1, Math.round(durationMs / 1000));
+      const syncedAt = cfg.last_synced_at.toISOString();
+
+      items.push({
+        id: -cfg.id,
+        code: cfg.code.toUpperCase(),
+        name: cfg.name,
+        programType: cfg.program_type.toUpperCase(),
+        status,
+        triggerType: sum.triggerType === 'AUTO' ? 'AUTO' : 'MANUAL',
+        mode: sum.mode === 'FULL' ? 'FULL' : 'DELTA',
+        skipped: Boolean(sum.skipped),
+        reason: sum.reason || null,
+        totalRows: Number(sum.totalRows || 0),
+        unchangedRows: Number(sum.unchangedRows || 0),
+        createdCount: Number(sum.createdCount || 0),
+        updatedCount: Number(sum.updatedCount || 0),
+        failedCount: Number(sum.failedCount || 0),
+        byCvht: (sum.byCvht as Record<string, number>) || {},
+        durationMs,
+        durationSec,
+        syncedAt,
+        createdAt: syncedAt,
+        error: cfg.last_error || null,
+      });
+    }
+
+    const now = new Date();
+    const todayPrefix = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    let todayTotal = 0;
+    let todaySuccess = 0;
+    let todayFailed = 0;
+    let latestIso: string | null = null;
+
+    for (const it of items) {
+      if (!latestIso || it.syncedAt > latestIso) latestIso = it.syncedAt;
+      const d = new Date(it.syncedAt);
+      const dayStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      if (dayStr === todayPrefix) {
+        todayTotal++;
+        if (it.status === 'FAILED') todayFailed++;
+        else todaySuccess++;
+      }
+    }
+
+    let lastRunTime: string | null = null;
+    if (latestIso) {
+      const ld = new Date(latestIso);
+      lastRunTime = isNaN(ld.getTime())
+        ? latestIso
+        : `${String(ld.getHours()).padStart(2, '0')}:${String(ld.getMinutes()).padStart(2, '0')}`;
+    }
+
+    const filtered = items
+      .filter((it) => {
+        if (filterCode && it.code !== filterCode && it.programType !== filterCode) return false;
+        if (filterStatus && it.status !== filterStatus) return false;
+        if (fromDateStr || toDateStr) {
+          const d = new Date(it.syncedAt);
+          const dayKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+          if (fromDateStr && dayKey < fromDateStr) return false;
+          if (toDateStr && dayKey > toDateStr) return false;
+        }
+        return true;
+      })
+      .sort((a, b) => b.syncedAt.localeCompare(a.syncedAt));
+
+    return {
+      stats: {
+        todayTotal: todayTotal || items.length,
+        todaySuccess: todayTotal ? todaySuccess : items.filter((i) => i.status !== 'FAILED').length,
+        todayFailed: todayTotal ? todayFailed : items.filter((i) => i.status === 'FAILED').length,
+        lastRunTime,
+      },
+      items: filtered.slice(0, limit),
+      total: filtered.length,
+    };
+  }
+
+  /**
    * Process due configs for background cron scheduler
    */
   public async processDueSyncConfigs(): Promise<void> {
@@ -1233,7 +1501,7 @@ export class SheetSyncService {
       const lastSyncMs = cfg.last_synced_at ? cfg.last_synced_at.getTime() : 0;
       if (now - lastSyncMs >= intervalMs) {
         try {
-          await this.syncConfigByCode(cfg.code, { forceFullSync: false });
+          await this.syncConfigByCode(cfg.code, { forceFullSync: false, triggerType: 'AUTO' });
         } catch (err: any) {
           log.warn(`Scheduled Google Sheet sync failed for ${cfg.code}`, {
             error: err?.message || String(err),

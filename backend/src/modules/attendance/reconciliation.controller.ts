@@ -10,6 +10,9 @@ import {
   HistoryQuerySchema,
   AttendanceImportPreviewSchema,
   AttendanceImportConfirmSchema,
+  TeacherStudentInfoQuerySchema,
+  UpdateTeacherLessonSchema,
+  AddTeacherSessionColumnSchema,
 } from './reconciliation.schema';
 import { AttendanceImportService } from './attendance-import.service';
 import { AppError } from '../../middlewares/error.middleware';
@@ -150,6 +153,38 @@ export class ReconciliationController {
     try {
       const query = TeacherSessionsQuerySchema.parse(req.query);
       const result = await reconciliationService.getTeacherSessions(req.user as Actor, query);
+      res.json({ success: true, data: result });
+    } catch (err) { next(err); }
+  }
+
+  async getTeacherStudentInfo(req: Request, res: Response, next: NextFunction) {
+    try {
+      const query = TeacherStudentInfoQuerySchema.parse(req.query);
+      const result = await reconciliationService.getTeacherStudentInfo(req.user as Actor, query);
+      res.json({ success: true, data: result });
+    } catch (err) { next(err); }
+  }
+
+  async updateTeacherStudentLesson(req: Request, res: Response, next: NextFunction) {
+    try {
+      const attendanceId = attendanceIdFrom(req);
+      const body = UpdateTeacherLessonSchema.parse(req.body);
+      const result = await reconciliationService.updateTeacherStudentLesson(
+        attendanceId,
+        body,
+        req.user as Actor,
+      );
+      res.json({ success: true, data: result });
+    } catch (err) { next(err); }
+  }
+
+  async addTeacherStudentSessionColumn(req: Request, res: Response, next: NextFunction) {
+    try {
+      const body = AddTeacherSessionColumnSchema.parse(req.body);
+      const result = await reconciliationService.addTeacherStudentSessionColumn(
+        body,
+        req.user as Actor,
+      );
       res.json({ success: true, data: result });
     } catch (err) { next(err); }
   }

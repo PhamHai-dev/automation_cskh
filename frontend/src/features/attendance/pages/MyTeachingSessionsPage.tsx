@@ -853,6 +853,7 @@ export const MyTeachingSessionsPage: React.FC = () => {
       toast.success('Điểm danh thành công! Dữ liệu đã được gửi đối soát với CSKH.');
       setIsMarkModalOpen(false);
       loadSessions();
+      window.dispatchEvent(new Event('teacher-attendance-updated'));
     } catch (err: any) {
       toast.error(err.response?.data?.message || err.message || 'Không thể ghi nhận điểm danh');
     } finally {
@@ -894,6 +895,7 @@ export const MyTeachingSessionsPage: React.FC = () => {
       setActualSessionKey(null);
       setIsActualSessionModalOpen(false);
       loadSessions();
+      window.dispatchEvent(new Event('teacher-attendance-updated'));
     } catch (err: any) {
       // Keep actualSessionKey while the modal stays open so a retry replays one session.
       toast.error(err.response?.data?.message || err.message || 'Không thể ghi nhận ca thực học');

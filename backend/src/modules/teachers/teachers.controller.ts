@@ -1,14 +1,44 @@
 import { Request, Response, NextFunction } from 'express';
 import { TeachersService } from './teachers.service';
 import { createTeacherSchema, updateTeacherSchema, provisionAccountSchema } from './teachers.schema';
+import { parsePaginationQuery, parseSearchQuery } from '../../shared/utils/query-validation';
+import { AppError } from '../../middlewares/error.middleware';
 
 const teachersService = new TeachersService();
 
 export class TeachersController {
   async list(req: Request, res: Response, next: NextFunction) {
     try {
-      const teachers = await teachersService.getAllTeachers();
-      res.json({ data: teachers, meta: null });
+      const pagination = parsePaginationQuery(req.query as Record<string, any>, 20);
+      const search = parseSearchQuery(req.query.search, 100);
+      let active: boolean | undefined;
+      if (req.query.active !== undefined && req.query.active !== '') {
+        const rawActive = String(req.query.active).trim().toLowerCase();
+        if (rawActive === 'true' || rawActive === '1') active = true;
+        else if (rawActive === 'false' || rawActive === '0') active = false;
+        else throw new AppError(400, 'Tham số active không hợp lệ (true/false)');
+      }
+
+      const teacherType =
+        typeof req.query.teacher_type === 'string' && req.query.teacher_type.trim()
+          ? req.query.teacher_type.trim().toUpperCase()
+          : undefined;
+
+      const accountStatus =
+        typeof req.query.account_status === 'string' && req.query.account_status.trim()
+          ? req.query.account_status.trim().toUpperCase()
+          : undefined;
+
+      const result = await teachersService.getTeachersWithMeta({
+        page: pagination.page,
+        pageSize: pagination.pageSize,
+        isPaginated: pagination.isPaginated,
+        search,
+        active,
+        teacherType,
+        accountStatus,
+      });
+      res.json(result);
     } catch (error) {
       next(error);
     }

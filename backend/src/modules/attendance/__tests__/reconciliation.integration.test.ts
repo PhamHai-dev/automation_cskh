@@ -251,7 +251,7 @@ describe('Two-Party Attendance Reconciliation Integration Tests', () => {
     await prisma.authSession.deleteMany({
       where: { user_id: { in: fixtureUserIds } },
     });
-    await prisma.csSheetBackupConfig.deleteMany({
+    await prisma.programSheetBackupConfig.deleteMany({
       where: { cs_user_id: { in: fixtureUserIds } },
     });
     await prisma.auditLog.deleteMany({

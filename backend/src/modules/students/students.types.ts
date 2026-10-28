@@ -104,3 +104,37 @@ export interface UpdateStudentDTO {
   handed_over_at?: string | Date;
   account_created_at?: string | Date;
 }
+
+export interface StudentListQueryOptions {
+  actor: { id: number; roles: string[]; email?: string };
+  page?: number;
+  pageSize?: number;
+  isPaginated?: boolean;
+  search?: string;
+  programType?: string;
+  csId?: number;
+  cvht?: string;
+  gender?: string;
+  status?: string;
+  sale?: string;
+}
+
+export interface StudentListMeta {
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+  facets: {
+    programCounts: { all: number; kaiwa: number; jlpt: number };
+    statusCounts: Record<string, number>;
+  };
+  filterOptions: {
+    cvhtList: string[];
+    salesList: string[];
+  };
+}
+
+export interface StudentListResult<T = any> {
+  data: T[];
+  meta: StudentListMeta;
+}

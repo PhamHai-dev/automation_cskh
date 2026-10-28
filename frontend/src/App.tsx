@@ -5,6 +5,11 @@ import { AppLayout } from './layouts/AppLayout';
 import { LoginPage } from './pages/auth/LoginPage';
 import { HomePage } from './pages/home/HomePage';
 import { UsersPage } from './pages/admin/UsersPage';
+import {
+  AdminConfigPage,
+  AutoAttendanceConfigPage,
+  SheetBackupAdminConfigPage,
+} from './pages/admin/AdminConfigPage';
 import { PackagesPage } from './features/packages/pages/PackagesPage';
 import { TeachersPage } from './features/teachers/pages/TeachersPage';
 import { StudentsPage } from './features/students/pages/StudentsPage';
@@ -27,6 +32,7 @@ import { AutomationWorkflowDetailPage } from './features/automation/pages/Automa
 import { AttendanceReconciliationPage } from './features/attendance/pages/AttendanceReconciliationPage';
 import { MyTeachingSessionsPage } from './features/attendance/pages/MyTeachingSessionsPage';
 import { TeacherAttendanceTrackingPage } from './features/attendance/pages/TeacherAttendanceTrackingPage';
+import { TeacherStudentInfoPage } from './features/attendance/pages/TeacherStudentInfoPage';
 import { PreferencesPage } from './features/preferences/pages/PreferencesPage';
 import './styles/globals.css';
 import './styles/tokens.css';
@@ -54,6 +60,10 @@ function App() {
             <Route element={<ProtectedRoute allowedRoles={['ADMIN']} />}>
               <Route path="/settings/users" element={<UsersPage />} />
               <Route path="/cai-dat/nguoi-dung" element={<Navigate to="/settings/users" replace />} />
+              <Route path="/settings/config" element={<AdminConfigPage />} />
+              <Route path="/settings/config/auto-attendance" element={<AutoAttendanceConfigPage />} />
+              <Route path="/settings/config/sheet-backup" element={<SheetBackupAdminConfigPage />} />
+              <Route path="/cai-dat/he-thong" element={<Navigate to="/settings/config" replace />} />
             </Route>
 
             {/* Admin & Manage */}
@@ -74,9 +84,7 @@ function App() {
               <Route path="/tong-quan" element={<Navigate to="/dashboard" replace />} />
 
               <Route path="/students" element={<StudentsPage />} />
-              <Route path="/students/:id/study-report" element={<StudentStudyReportPage />} />
               <Route path="/hoc-vien" element={<Navigate to="/students" replace />} />
-              <Route path="/hoc-vien/:id/bao-cao-hoc-tap" element={<StudentStudyReportPage />} />
 
               <Route path="/enrollments" element={<EnrollmentsPage />} />
               <Route path="/ghi-danh" element={<Navigate to="/enrollments" replace />} />
@@ -121,8 +129,13 @@ function App() {
               <Route path="/care" element={<CarePage />} />
               <Route path="/cham-soc" element={<Navigate to="/care" replace />} />
 
+              <Route path="/students/:id/study-report" element={<StudentStudyReportPage />} />
+              <Route path="/hoc-vien/:id/bao-cao-hoc-tap" element={<StudentStudyReportPage />} />
+
               <Route path="/teacher/my-sessions" element={<MyTeachingSessionsPage />} />
               <Route path="/lich-day-cua-toi" element={<Navigate to="/teacher/my-sessions" replace />} />
+              <Route path="/teacher/student-info" element={<TeacherStudentInfoPage />} />
+              <Route path="/thong-tin-hoc-vien-gv" element={<Navigate to="/teacher/student-info" replace />} />
               <Route path="/teacher/attendance-tracking" element={<TeacherAttendanceTrackingPage />} />
               <Route path="/theo-doi-diem-danh" element={<Navigate to="/teacher/attendance-tracking" replace />} />
 

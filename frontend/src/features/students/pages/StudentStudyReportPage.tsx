@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { studentsApi } from '../api/students.api';
 import { Student } from '../types/students.types';
 import { Enrollment } from '../../enrollments/types/enrollments.types';
@@ -7,6 +7,7 @@ import { PageContainer } from '../../../components/common/PageContainer';
 import { Button } from '../../../components/ui/Button';
 import { Select } from '../../../components/ui/Select';
 import { useToast } from '../../../components/ui/Toast';
+import { useAuth } from '../../../contexts/AuthContext';
 import { ArrowLeft, Save, CheckCircle2, Printer } from 'lucide-react';
 
 export interface StageBlockData {
@@ -132,7 +133,25 @@ const enrollmentLabel = (enr: Enrollment): string => {
 export const StudentStudyReportPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const toast = useToast();
+  const { user } = useAuth();
+
+  const isTeacherOnly = Boolean(
+    user?.roles?.includes('TEACHER') &&
+      !user?.roles?.includes('ADMIN') &&
+      !user?.roles?.includes('MANAGE') &&
+      !user?.roles?.includes('CS')
+  );
+  const fromPath = (location.state as { from?: string } | null)?.from;
+  const backTarget =
+    fromPath === '/teacher/student-info' || isTeacherOnly
+      ? '/teacher/student-info'
+      : '/students';
+  const backLabel =
+    backTarget === '/teacher/student-info'
+      ? 'Quay lại Thông tin HV & Buổi học'
+      : 'Quay lại Danh sách học viên';
 
   const [student, setStudent] = useState<Student | null>(null);
   const [loading, setLoading] = useState(true);
@@ -264,8 +283,8 @@ export const StudentStudyReportPage: React.FC = () => {
       <PageContainer>
         <div className="py-16 text-center space-y-3">
           <div className="text-sm text-text-muted">Không tìm thấy thông tin học viên.</div>
-          <Button variant="outline" size="sm" onClick={() => navigate('/students')}>
-            Quay lại Danh sách học viên
+          <Button variant="outline" size="sm" onClick={() => navigate(backTarget)}>
+            {backLabel}
           </Button>
         </div>
       </PageContainer>
@@ -690,10 +709,10 @@ export const StudentStudyReportPage: React.FC = () => {
           <Button
             variant="outline"
             size="sm"
-            onClick={() => navigate('/students')}
+            onClick={() => navigate(backTarget)}
             leftIcon={<ArrowLeft className="w-4 h-4" />}
           >
-            Quay lại Danh sách học viên
+            {backLabel}
           </Button>
           {savedAt && (
             <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-lg">

@@ -109,4 +109,28 @@ export class DashboardController {
       next(err);
     }
   };
+
+  // ---- Command Center Home & Global Search ----
+
+  getHome = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const user = (req as any).user;
+      const data = await this.service.getHome(user.id, user.roles);
+      res.status(200).json({ data, meta: {} });
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  globalSearch = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const user = (req as any).user;
+      const q = typeof req.query.q === 'string' ? req.query.q : '';
+      const rawLimit = req.query.limit ? parseInt(String(req.query.limit), 10) : undefined;
+      const data = await this.service.globalSearch(q, rawLimit, user.id, user.roles);
+      res.status(200).json({ data, meta: {} });
+    } catch (err) {
+      next(err);
+    }
+  };
 }

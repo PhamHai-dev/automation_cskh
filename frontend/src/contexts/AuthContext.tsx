@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { apiClient } from '../api/client';
+import { clearQueryCache } from '../lib/queryCache';
 
 interface User {
   id: number;
@@ -30,6 +31,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         const res = await apiClient.get('/auth/me');
         setUser(res.data);
       } catch (error) {
+        clearQueryCache();
         localStorage.removeItem('accessToken');
         setUser(null);
       } finally {
@@ -40,15 +42,19 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     fetchUser();
   }, []);
 
-  const login = (token: string, user: User) => {
+  const login = (token: string, newUser: User) => {
+    clearQueryCache();
     localStorage.setItem('accessToken', token);
-    setUser(user);
+    setUser(newUser);
   };
 
   const logout = async () => {
     try {
       await apiClient.post('/auth/logout');
+    } catch {
+      // Ignore network or expired-session errors on logout; always clear client state
     } finally {
+      clearQueryCache();
       localStorage.removeItem('accessToken');
       setUser(null);
     }

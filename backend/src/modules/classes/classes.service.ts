@@ -1,5 +1,12 @@
 import { ClassesRepository } from './classes.repository';
-import { CreateClassDTO, UpdateClassDTO, AssignTeacherDTO, EndTeacherAssignmentDTO } from './classes.types';
+import {
+  CreateClassDTO,
+  UpdateClassDTO,
+  AssignTeacherDTO,
+  EndTeacherAssignmentDTO,
+  ClassListQueryOptions,
+  ClassListResult,
+} from './classes.types';
 import { prisma } from '../../prisma/client';
 import { ClassModelType, AttendanceSourceType } from '@prisma/client';
 import { AuthUser } from '../../middlewares/auth.middleware';
@@ -65,9 +72,7 @@ export class ClassesService {
     return this.formatCompactClassCode(nextNum);
   }
 
-  async getAllClasses(user?: AuthUser) {
-    const accessibleIds = user ? await getAccessibleClassIds(user) : null;
-    const classes = await this.repository.findAll(accessibleIds);
+  private async normalizeMissingClassCodes(classes: any[]) {
     for (const c of classes) {
       if (!c.class_code || /^(CLS_|id\d+$)/i.test(c.class_code)) {
         const targetCode = this.formatCompactClassCode(c.id);
@@ -78,7 +83,25 @@ export class ClassesService {
         }
       }
     }
+  }
+
+  async getAllClasses(user?: AuthUser, options?: ClassListQueryOptions) {
+    const accessibleIds = user ? await getAccessibleClassIds(user) : null;
+    const classes = await this.repository.findAll(accessibleIds, options);
+    await this.normalizeMissingClassCodes(classes);
     return classes.map((c) => this.formatClass(c));
+  }
+
+  async getClassesWithMeta(
+    user?: AuthUser,
+    options?: ClassListQueryOptions,
+  ): Promise<ClassListResult> {
+    const accessibleIds = user ? await getAccessibleClassIds(user) : null;
+    const rawClasses = await this.repository.findAll(accessibleIds, options);
+    await this.normalizeMissingClassCodes(rawClasses);
+    const data = rawClasses.map((c) => this.formatClass(c));
+    const meta = await this.repository.computeMeta(accessibleIds, options, data);
+    return { data, meta };
   }
 
   async getClassById(id: number, user?: AuthUser) {

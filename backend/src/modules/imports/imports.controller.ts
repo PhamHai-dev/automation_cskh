@@ -360,7 +360,37 @@ export class ImportsController {
         id: user?.id || 1,
         roles: (user?.roles as string[]) || ['ADMIN'],
       };
-      const data = await this.sheetBackupService.getConfigs(actor);
+      const data = await this.sheetBackupService.listConfigs(actor);
+      res.status(200).json({ data, meta: null });
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  getSheetBackupColumnConfig = async (_req: Request, res: Response, next: NextFunction) => {
+    try {
+      const data = await this.sheetBackupService.getColumnConfigWithServiceAccount();
+      res.status(200).json({ data, meta: null });
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  updateSheetBackupColumnConfig = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const user = (req as any).user;
+      const data = await this.sheetBackupService.saveColumnConfig(req.body || {}, user?.id);
+      res.status(200).json({ data, meta: null });
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  resetSheetBackupColumnConfig = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const user = (req as any).user;
+      const programType = req.body?.programType ? String(req.body.programType) : undefined;
+      const data = await this.sheetBackupService.resetColumnConfig(programType, user?.id);
       res.status(200).json({ data, meta: null });
     } catch (err) {
       next(err);
@@ -369,35 +399,32 @@ export class ImportsController {
 
   updateSheetBackupConfig = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const csUserId = parseInt(req.params.csUserId, 10);
-      if (isNaN(csUserId)) {
-        throw new AppError(400, 'csUserId không hợp lệ');
+      const id = parseInt(req.params.id, 10);
+      if (isNaN(id)) {
+        throw new AppError(400, 'id không hợp lệ');
       }
-      const data = await this.sheetBackupService.updateConfig(csUserId, req.body || {});
+      const data = await this.sheetBackupService.updateConfig(id, req.body || {});
       res.status(200).json({ data, meta: null });
     } catch (err) {
       next(err);
     }
   };
 
-  runSheetBackupForCs = async (req: Request, res: Response, next: NextFunction) => {
+  runSheetBackupForConfig = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const csUserId = parseInt(req.params.csUserId, 10);
-      if (isNaN(csUserId)) {
-        throw new AppError(400, 'csUserId không hợp lệ');
+      const id = parseInt(req.params.id, 10);
+      if (isNaN(id)) {
+        throw new AppError(400, 'id không hợp lệ');
       }
       const user = (req as any).user;
       const roles: string[] = Array.isArray(user?.roles) ? user.roles : [];
-      const isAdminOrManage = roles.includes('ADMIN') || roles.includes('MANAGE');
+      const year = req.body?.year === undefined || req.body?.year === null ? undefined : Number(req.body.year);
 
-      if (!isAdminOrManage && csUserId !== user?.id) {
-        throw new AppError(403, 'Bạn chỉ được phép sao lưu dữ liệu học viên thuộc tài khoản của mình');
-      }
-
-      const forceFullRewrite = Boolean(req.body?.forceFullRewrite);
-      const data = await this.sheetBackupService.runBackupForCs(csUserId, {
-        forceFullRewrite,
+      const data = await this.sheetBackupService.runBackupForConfig(id, {
+        forceFullRewrite: Boolean(req.body?.forceFullRewrite),
+        year,
         actorId: user?.id,
+        actorRoles: roles,
       });
       res.status(200).json({ data, meta: null });
     } catch (err) {
@@ -409,9 +436,61 @@ export class ImportsController {
     try {
       const user = (req as any).user;
       const forceFullRewrite = Boolean(req.body?.forceFullRewrite);
+      const year = req.body?.year === undefined || req.body?.year === null ? undefined : Number(req.body.year);
+      const programType = req.body?.programType ? String(req.body.programType) : undefined;
       const data = await this.sheetBackupService.runAllBackups({
         forceFullRewrite,
+        year,
+        programType,
         actorId: user?.id,
+        triggerType: 'MANUAL',
+      });
+      res.status(200).json({ data, meta: null });
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  getSheetBackupHistory = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const user = (req as any).user;
+      const actor = {
+        id: user?.id || 1,
+        roles: (user?.roles as string[]) || ['ADMIN'],
+      };
+      const programType = req.query.programType ? String(req.query.programType) : undefined;
+      const status = req.query.status ? String(req.query.status) : undefined;
+      const fromDate = req.query.fromDate ? String(req.query.fromDate) : undefined;
+      const toDate = req.query.toDate ? String(req.query.toDate) : undefined;
+      const limit = req.query.limit ? parseInt(String(req.query.limit), 10) : 50;
+      const data = await this.sheetBackupService.getBackupHistory(actor, {
+        programType,
+        status,
+        fromDate,
+        toDate,
+        limit,
+      });
+      res.status(200).json({ data, meta: null });
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  getSheetSyncHistory = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const code = (req.query.code || req.query.programType)
+        ? String(req.query.code || req.query.programType)
+        : undefined;
+      const status = req.query.status ? String(req.query.status) : undefined;
+      const fromDate = req.query.fromDate ? String(req.query.fromDate) : undefined;
+      const toDate = req.query.toDate ? String(req.query.toDate) : undefined;
+      const limit = req.query.limit ? parseInt(String(req.query.limit), 10) : 50;
+      const data = await this.sheetSyncService.getSyncHistory({
+        code,
+        status,
+        fromDate,
+        toDate,
+        limit,
       });
       res.status(200).json({ data, meta: null });
     } catch (err) {
@@ -421,27 +500,23 @@ export class ImportsController {
 
   downloadSheetBackup = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const csUserId = parseInt(req.params.csUserId, 10);
-      if (isNaN(csUserId)) {
-        throw new AppError(400, 'csUserId không hợp lệ');
+      const id = parseInt(req.params.id, 10);
+      if (isNaN(id)) {
+        throw new AppError(400, 'id không hợp lệ');
       }
       const user = (req as any).user;
       const roles: string[] = Array.isArray(user?.roles) ? user.roles : [];
-      const isAdminOrManage = roles.includes('ADMIN') || roles.includes('MANAGE');
+      const forceRefresh = req.query.refresh === 'true';
 
-      if (!isAdminOrManage && csUserId !== user?.id) {
-        throw new AppError(403, 'Bạn chỉ được phép tải xuống dữ liệu học viên thuộc tài khoản của mình');
-      }
-
-      const refresh = req.query.refresh === 'true';
-      const { absFilePath, fileName } = await this.sheetBackupService.getBackupFileForDownload(csUserId, {
-        refresh,
+      const { absPath, fileName } = await this.sheetBackupService.getBackupFilePath(id, {
+        forceRefresh,
         actorId: user?.id,
+        actorRoles: roles,
       });
 
       res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
       res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
-      res.sendFile(absFilePath, (err) => {
+      res.sendFile(absPath, (err) => {
         if (err) next(err);
       });
     } catch (err) {

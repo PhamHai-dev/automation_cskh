@@ -1,5 +1,11 @@
 import { EnrollmentsRepository } from './enrollments.repository';
-import { CreateEnrollmentDTO, UpdateEnrollmentDTO, TransferClassDTO } from './enrollments.types';
+import {
+  CreateEnrollmentDTO,
+  UpdateEnrollmentDTO,
+  TransferClassDTO,
+  EnrollmentListFilters,
+  EnrollmentListResult,
+} from './enrollments.types';
 import { prisma } from '../../prisma/client';
 
 class CustomError extends Error {
@@ -17,43 +23,74 @@ export class EnrollmentsService {
     this.repository = new EnrollmentsRepository();
   }
 
-  async getEnrollmentsForUser(
+  private async resolveScopeCsIds(
     userId: number,
     roles: string[],
-    saleIdentifier?: string,
-    filters?: { programType?: string; csId?: number }
-  ) {
+    requestedCsId?: number,
+  ): Promise<number[] | number | undefined> {
     if (roles.includes('ADMIN')) {
-      return this.repository.findAll(saleIdentifier, filters);
-    } else if (roles.includes('MANAGE')) {
-      // Find all CS groups this MANAGE user is assigned to
+      return undefined;
+    }
+    if (roles.includes('MANAGE')) {
       const assignments = await prisma.manageAssignment.findMany({
         where: { manage_user_id: userId },
         include: {
           cs_group: {
-            include: { members: true }
-          }
-        }
+            include: { members: true },
+          },
+        },
       });
 
       const csIds = new Set<number>();
-      csIds.add(userId); // They might also have their own
-
-      assignments.forEach(a => {
-        a.cs_group.members.forEach(m => csIds.add(m.user_id));
+      csIds.add(userId);
+      assignments.forEach((a) => {
+        a.cs_group.members.forEach((m) => csIds.add(m.user_id));
       });
 
       let allowedIds = Array.from(csIds);
-      if (filters?.csId) {
-        allowedIds = allowedIds.filter((id) => id === filters.csId);
+      if (requestedCsId !== undefined) {
+        allowedIds = allowedIds.filter((id) => id === requestedCsId);
       }
+      return allowedIds;
+    }
+    return userId;
+  }
 
-      return this.repository.findAllByCSIds(allowedIds, filters?.programType);
+  async getEnrollmentsForUser(
+    userId: number,
+    roles: string[],
+    saleIdentifier?: string,
+    filters?: EnrollmentListFilters,
+  ) {
+    if (roles.includes('ADMIN')) {
+      return this.repository.findAll(saleIdentifier, filters);
+    } else if (roles.includes('MANAGE')) {
+      const allowedIds = (await this.resolveScopeCsIds(userId, roles, filters?.csId)) as number[];
+      return this.repository.findAllByCSIds(allowedIds, {
+        ...filters,
+        sale: saleIdentifier || filters?.sale,
+      });
     } else {
       // CS — B.5/D9: cs_id only; the sale identifier is never a scope grant for CS.
       // (ADMIN may still use ?sale= to narrow its own unrestricted view.)
-      return this.repository.findAllByCS(userId, filters?.programType);
+      return this.repository.findAllByCS(userId, filters);
     }
+  }
+
+  async getEnrollmentsWithMeta(
+    userId: number,
+    roles: string[],
+    saleIdentifier?: string,
+    filters?: EnrollmentListFilters,
+  ): Promise<EnrollmentListResult> {
+    const scopeCsIds = await this.resolveScopeCsIds(userId, roles, filters?.csId);
+    const effectiveSale = roles.includes('ADMIN') || roles.includes('MANAGE')
+      ? saleIdentifier || filters?.sale
+      : undefined;
+
+    const data = await this.getEnrollmentsForUser(userId, roles, effectiveSale, filters);
+    const meta = await this.repository.computeMeta(scopeCsIds, effectiveSale, filters, data);
+    return { data, meta };
   }
 
   async getEnrollmentById(id: number, userId: number, roles: string[]) {
@@ -61,7 +98,7 @@ export class EnrollmentsService {
     if (!enrollment) throw new CustomError('Enrollment not found', 404);
 
     if (roles.includes('ADMIN')) return enrollment;
-    
+
     if (roles.includes('MANAGE')) {
       const assignments = await prisma.manageAssignment.findMany({
         where: { manage_user_id: userId },
@@ -70,7 +107,7 @@ export class EnrollmentsService {
       const csIds = new Set<number>();
       csIds.add(userId);
       assignments.forEach(a => a.cs_group.members.forEach(m => csIds.add(m.user_id)));
-      
+
       if (!csIds.has(enrollment.cs_id)) {
         throw new CustomError('Forbidden: Outside of your manage scope', 403);
       }
@@ -101,9 +138,9 @@ export class EnrollmentsService {
     if (!roles.includes('ADMIN') && !roles.includes('MANAGE')) {
       throw new CustomError('Forbidden: Only Admin/Manage can reassign', 403);
     }
-    
+
     await this.getEnrollmentById(id, userId, roles); // Validates scope
-    
+
     const csUser = await prisma.user.findUnique({ where: { id: newCsId } });
     if (!csUser || !(csUser.roles as string[]).includes('CS')) {
       throw new CustomError('Invalid CS user', 400);
@@ -117,7 +154,7 @@ export class EnrollmentsService {
 
     const fromClass = await prisma.class.findUnique({ where: { id: data.from_class_id } });
     const toClass = await prisma.class.findUnique({ where: { id: data.to_class_id } });
-    
+
     if (!fromClass || !toClass) throw new CustomError('Class not found', 404);
 
     return this.repository.transferClass(enrollmentId, data);
