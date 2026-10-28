@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { teachersApi } from '../api/teachers.api';
 import { Teacher, CreateTeacherDTO, UpdateTeacherDTO } from '../types/teachers.types';
@@ -12,6 +12,7 @@ import { Input } from '../../../components/ui/Input';
 import { Select } from '../../../components/ui/Select';
 import { Modal } from '../../../components/ui/Modal';
 import { useToast } from '../../../components/ui/Toast';
+import { useDebouncedValue } from '../../../hooks/useDebouncedValue';
 import { useQuery, invalidateQueries } from '../../../hooks/useQuery';
 import { Edit, Plus, Search, UserPlus, Key } from 'lucide-react';
 
@@ -25,9 +26,14 @@ export const TeachersPage: React.FC = () => {
   const toast = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
   const [searchTerm, setSearchTerm] = useState(() => searchParams.get('search') || '');
+  const debouncedSearch = useDebouncedValue(searchTerm.trim(), 300);
   const [typeFilter, setTypeFilter] = useState(() => searchParams.get('type') || '');
   const [accountStatusFilter, setAccountStatusFilter] = useState(
     () => searchParams.get('accountStatus') || ''
+  );
+  const [page, setPage] = useState<number>(() => Math.max(1, Number(searchParams.get('page')) || 1));
+  const [pageSize, setPageSize] = useState<number>(
+    () => Math.max(1, Number(searchParams.get('pageSize')) || 10)
   );
 
   useEffect(() => {
@@ -40,6 +46,15 @@ export const TeachersPage: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
+  const isFirstFilterRenderRef = useRef(true);
+  useEffect(() => {
+    if (isFirstFilterRenderRef.current) {
+      isFirstFilterRenderRef.current = false;
+      return;
+    }
+    setPage(1);
+  }, [debouncedSearch, typeFilter, accountStatusFilter]);
+
   useEffect(() => {
     const next = new URLSearchParams(searchParams);
     if (searchTerm.trim()) next.set('search', searchTerm.trim());
@@ -48,24 +63,42 @@ export const TeachersPage: React.FC = () => {
     else next.delete('type');
     if (accountStatusFilter) next.set('accountStatus', accountStatusFilter);
     else next.delete('accountStatus');
+    if (page > 1) next.set('page', String(page));
+    else next.delete('page');
+    if (pageSize !== 10) next.set('pageSize', String(pageSize));
+    else next.delete('pageSize');
 
     if (next.toString() !== searchParams.toString()) {
       setSearchParams(next, { replace: true });
     }
-  }, [searchTerm, typeFilter, accountStatusFilter, searchParams, setSearchParams]);
+  }, [searchTerm, typeFilter, accountStatusFilter, page, pageSize, searchParams, setSearchParams]);
+
+  const queryParams = useMemo(
+    () => ({
+      page,
+      pageSize,
+      search: debouncedSearch || undefined,
+      teacher_type: typeFilter || undefined,
+      account_status: accountStatusFilter || undefined,
+    }),
+    [page, pageSize, debouncedSearch, typeFilter, accountStatusFilter]
+  );
 
   const {
-    data: teachers = [],
+    data: paginatedResult,
     isLoading: loading,
   } = useQuery({
-    queryKey: ['teachers', 'list'],
-    queryFn: (signal) => teachersApi.list(undefined, signal),
+    queryKey: ['teachers', 'paginated', queryParams],
+    queryFn: (signal) => teachersApi.listPaginated(queryParams, signal),
     staleTime: 5 * 60 * 1000,
     keepPreviousData: true,
     onError: (err: any) => {
       toast.error(err.response?.data?.error?.message || 'Không thể tải danh sách giáo viên');
     },
   });
+
+  const teachers = useMemo(() => paginatedResult?.data || [], [paginatedResult]);
+  const meta = paginatedResult?.meta;
 
   // Modal states: Edit / Create Teacher Info
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -181,29 +214,6 @@ export const TeachersPage: React.FC = () => {
       setIsProvisioning(false);
     }
   };
-
-  const filteredTeachers = useMemo(() => {
-    return teachers.filter((t) => {
-      const matchSearch =
-        !searchTerm.trim() ||
-        t.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        t.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (t.email && t.email.toLowerCase().includes(searchTerm.toLowerCase())) ||
-        (t.phone && t.phone.toLowerCase().includes(searchTerm.toLowerCase())) ||
-        (t.user?.email && t.user.email.toLowerCase().includes(searchTerm.toLowerCase()));
-
-      const matchType = !typeFilter || t.teacher_type === typeFilter;
-
-      let matchAccount = true;
-      if (accountStatusFilter === 'PROVISIONED') {
-        matchAccount = Boolean(t.user);
-      } else if (accountStatusFilter === 'UNPROVISIONED') {
-        matchAccount = !t.user;
-      }
-
-      return matchSearch && matchType && matchAccount;
-    });
-  }, [teachers, searchTerm, typeFilter, accountStatusFilter]);
 
   const activeFiltersCount =
     (searchTerm ? 1 : 0) + (typeFilter ? 1 : 0) + (accountStatusFilter ? 1 : 0);
@@ -380,8 +390,17 @@ export const TeachersPage: React.FC = () => {
 
       <DataTable
         columns={columns}
-        data={filteredTeachers}
+        data={teachers}
         isLoading={loading}
+        serverPagination={true}
+        page={page}
+        pageSize={pageSize}
+        total={meta?.total ?? teachers.length}
+        onPageChange={setPage}
+        onPageSizeChange={(newSize) => {
+          setPageSize(newSize);
+          setPage(1);
+        }}
         emptyMessage="Không tìm thấy giáo viên nào phù hợp"
       />
 

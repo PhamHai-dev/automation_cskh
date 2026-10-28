@@ -9,6 +9,7 @@ export interface TeachersListParams {
   pageSize?: number;
   search?: string;
   teacher_type?: string;
+  account_status?: string;
   active?: boolean;
 }
 

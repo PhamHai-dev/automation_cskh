@@ -330,13 +330,23 @@ export const ClassesPage: React.FC = () => {
   });
   const [assigningTeacher, setAssigningTeacher] = useState(false);
 
-  // Tính khoảng ngày của kỳ đang xem (session_from, session_to, summary_month)
+  // Tính khoảng ngày của kỳ đang xem (session_from, session_to, summary_month) + phân trang & lọc server-side
   const sessionWindowParams = useMemo(() => {
+    const baseFilterParams = {
+      page: classPage,
+      pageSize: classPageSize,
+      search: debouncedSearch || undefined,
+      model_type: modelFilter || undefined,
+      relevant_date:
+        activeTab === 'quick' && onlyClassesWithDaySessions ? selectedDate : undefined,
+    };
+
     if (activeTab === 'quick') {
       const [y, m] = selectedDate.split('-').map(Number);
       const firstDay = new Date(y, m - 1, 1);
       const lastDay = new Date(y, m, 0);
       return {
+        ...baseFilterParams,
         session_from: toLocalDateString(firstDay),
         session_to: toLocalDateString(lastDay),
         summary_month: `${y}-${String(m).padStart(2, '0')}`,
@@ -358,6 +368,7 @@ export const ClassesPage: React.FC = () => {
       const fromDate = monday < monthFirst ? monday : monthFirst;
       const toDate = sunday > monthLast ? sunday : monthLast;
       return {
+        ...baseFilterParams,
         session_from: toLocalDateString(fromDate),
         session_to: toLocalDateString(toDate),
         summary_month: summaryMonth,
@@ -367,11 +378,22 @@ export const ClassesPage: React.FC = () => {
     const firstDay = new Date(year, month, 1);
     const lastDay = new Date(year, month + 1, 0);
     return {
+      ...baseFilterParams,
       session_from: toLocalDateString(firstDay),
       session_to: toLocalDateString(lastDay),
       summary_month: summaryMonth,
     };
-  }, [activeTab, selectedDate, currentPeriodDate, detailedFilterMode]);
+  }, [
+    classPage,
+    classPageSize,
+    debouncedSearch,
+    modelFilter,
+    onlyClassesWithDaySessions,
+    activeTab,
+    selectedDate,
+    currentPeriodDate,
+    detailedFilterMode,
+  ]);
 
   const {
     data: paginatedResult,
@@ -388,6 +410,7 @@ export const ClassesPage: React.FC = () => {
   });
 
   const classes = useMemo(() => paginatedResult?.data || [], [paginatedResult]);
+  const meta = paginatedResult?.meta;
 
   // Luôn lấy dữ liệu mới nhất từ danh sách lớp để modal tự render lại sau khi refresh.
   const assignmentClass = useMemo(
@@ -505,6 +528,7 @@ export const ClassesPage: React.FC = () => {
     const monthPrefix = `${currentYear}-${String(currentMonth).padStart(2, '0')}`;
 
     const precomputedTotalByEcId = new Map<number, number>();
+    const precomputedMonthByEcId = new Map<number, number>();
     classes.forEach((cls) => {
       cls.enrollment_classes?.forEach((ec: any) => {
         if (ec.attendance_stats) {
@@ -513,14 +537,22 @@ export const ClassesPage: React.FC = () => {
               ec.attendance_stats.TEACHER?.totalAttended
             : ec.attendance_stats.totalAttendedAdmin ??
               ec.attendance_stats.ADMIN?.totalAttended;
+          const monthVal = isTeacher
+            ? ec.attendance_stats.monthAttendedTeacher ??
+              ec.attendance_stats.monthAttended
+            : ec.attendance_stats.monthAttendedAdmin ??
+              ec.attendance_stats.monthAttended;
+
           if (typeof totalVal === 'number') {
             precomputedTotalByEcId.set(ec.id, totalVal);
+          }
+          if (typeof monthVal === 'number') {
+            precomputedMonthByEcId.set(ec.id, monthVal);
+          }
+          if (typeof totalVal === 'number' || typeof monthVal === 'number') {
             stats.set(ec.id, {
-              totalAttended: totalVal,
-              monthAttended:
-                typeof ec.attendance_stats.monthAttended === 'number'
-                  ? ec.attendance_stats.monthAttended
-                  : 0,
+              totalAttended: typeof totalVal === 'number' ? totalVal : 0,
+              monthAttended: typeof monthVal === 'number' ? monthVal : 0,
             });
           }
         }
@@ -541,7 +573,7 @@ export const ClassesPage: React.FC = () => {
       if (!precomputedTotalByEcId.has(ecId)) {
         cur.totalAttended += 1;
       }
-      if (dStr && dStr.startsWith(monthPrefix)) {
+      if (!precomputedMonthByEcId.has(ecId) && dStr && dStr.startsWith(monthPrefix)) {
         cur.monthAttended += 1;
       }
       stats.set(ecId, cur);
@@ -898,19 +930,24 @@ export const ClassesPage: React.FC = () => {
     setClassPage(1);
   }, [debouncedSearch, modelFilter, activeTab, onlyClassesWithDaySessions, selectedDate]);
 
-  const classTotalPages = Math.max(1, Math.ceil(tableClasses.length / classPageSize));
+  const classTotalCount = meta ? meta.total : tableClasses.length;
+  const classTotalPages = meta
+    ? Math.max(1, meta.totalPages)
+    : Math.max(1, Math.ceil(tableClasses.length / classPageSize));
   const classPageSafe = Math.min(classPage, classTotalPages);
   const pagedClasses = useMemo(
     () =>
-      tableClasses.slice(
-        (classPageSafe - 1) * classPageSize,
-        classPageSafe * classPageSize
-      ),
-    [tableClasses, classPageSafe, classPageSize]
+      meta
+        ? tableClasses
+        : tableClasses.slice(
+            (classPageSafe - 1) * classPageSize,
+            classPageSafe * classPageSize
+          ),
+    [meta, tableClasses, classPageSafe, classPageSize]
   );
   const classStartRecord =
-    tableClasses.length === 0 ? 0 : (classPageSafe - 1) * classPageSize + 1;
-  const classEndRecord = Math.min(classPageSafe * classPageSize, tableClasses.length);
+    classTotalCount === 0 ? 0 : (classPageSafe - 1) * classPageSize + 1;
+  const classEndRecord = Math.min(classPageSafe * classPageSize, classTotalCount);
 
   // Core Attendance & Lesson/Note save action (Side: TEACHER)
   // Khi params.session là undefined (mở từ nút "+ thêm ca" hoặc ô ngày chưa có buổi),
@@ -2003,7 +2040,7 @@ export const ClassesPage: React.FC = () => {
             <span className="inline-flex items-center gap-1.5 rounded-lg border border-border/80 bg-surface px-2.5 py-1.5 shadow-2xs">
               <span>Hiển thị:</span>
               <span className="font-extrabold text-primary">{tableClasses.length}</span>
-              <span className="text-text-muted">/ {classes.length} lớp học</span>
+              <span className="text-text-muted">/ {classTotalCount} lớp học</span>
               <span className="text-border">•</span>
               <span className="font-bold text-text-primary">{tableStudentsCount}</span>
               <span className="text-text-muted">học viên</span>
@@ -2983,11 +3020,11 @@ export const ClassesPage: React.FC = () => {
         )}
 
         {/* Phân trang danh sách lớp */}
-        {tableClasses.length > 0 && (
+        {classTotalCount > 0 && (
           <PaginationFooter
             startRecord={classStartRecord}
             endRecord={classEndRecord}
-            totalCount={tableClasses.length}
+            totalCount={classTotalCount}
             pageSize={classPageSize}
             currentPage={classPageSafe}
             totalPages={classTotalPages}

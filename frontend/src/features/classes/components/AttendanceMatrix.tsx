@@ -80,6 +80,12 @@ export interface AttendanceMatrixProps {
   visibleColumns?: Record<string, boolean>;
   onVisibleRangeChange?: (range: { from: string; to: string }) => void;
   isFetchingData?: boolean;
+  serverPagination?: boolean;
+  page?: number;
+  pageSize?: number;
+  totalCount?: number;
+  onPageChange?: (page: number) => void;
+  onPageSizeChange?: (pageSize: number) => void;
 }
 
 export type AttendanceTab = 'quick' | 'detailed' | 'stats';
@@ -611,6 +617,12 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
   visibleColumns,
   onVisibleRangeChange,
   isFetchingData = false,
+  serverPagination = false,
+  page: externalPage,
+  pageSize: externalPageSize,
+  totalCount: externalTotalCount,
+  onPageChange,
+  onPageSizeChange,
 }) => {
   const isColVisible = (key: string): boolean => {
     if (!visibleColumns) return true;
@@ -665,21 +677,55 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
   const [bulkSessionIndex, setBulkSessionIndex] = useState(0);
 
   // Pagination state (rows of students)
-  const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(20);
+  const [internalPage, setInternalPage] = useState(1);
+  const [internalPageSize, setInternalPageSize] = useState(20);
 
   useEffect(() => {
-    setCurrentPage(1);
-  }, [students, activeTab]);
+    if (!serverPagination) {
+      setInternalPage(1);
+    }
+  }, [students, activeTab, serverPagination]);
 
-  const totalPages = Math.max(1, Math.ceil(students.length / pageSize));
-  const currentPageSafe = Math.min(currentPage, totalPages);
+  const effectivePageSize = serverPagination ? (externalPageSize || 20) : internalPageSize;
+  const effectiveTotalCount = serverPagination
+    ? (externalTotalCount ?? students.length)
+    : students.length;
+  const totalPages = Math.max(1, Math.ceil(effectiveTotalCount / effectivePageSize));
+  const currentPageSafe = serverPagination
+    ? Math.min(Math.max(1, externalPage || 1), totalPages)
+    : Math.min(internalPage, totalPages);
+  const pageSize = effectivePageSize;
+
   const pagedStudents = useMemo(
-    () => students.slice((currentPageSafe - 1) * pageSize, currentPageSafe * pageSize),
-    [students, currentPageSafe, pageSize]
+    () =>
+      serverPagination
+        ? students
+        : students.slice(
+            (currentPageSafe - 1) * effectivePageSize,
+            currentPageSafe * effectivePageSize
+          ),
+    [students, currentPageSafe, effectivePageSize, serverPagination]
   );
-  const startRecord = students.length === 0 ? 0 : (currentPageSafe - 1) * pageSize + 1;
-  const endRecord = Math.min(currentPageSafe * pageSize, students.length);
+  const startRecord =
+    effectiveTotalCount === 0 ? 0 : (currentPageSafe - 1) * effectivePageSize + 1;
+  const endRecord = Math.min(currentPageSafe * effectivePageSize, effectiveTotalCount);
+
+  const handleMatrixPageChange = (newPage: number) => {
+    if (serverPagination) {
+      onPageChange?.(newPage);
+    } else {
+      setInternalPage(newPage);
+    }
+  };
+
+  const handleMatrixPageSizeChange = (newSize: number) => {
+    if (serverPagination) {
+      onPageSizeChange?.(newSize);
+    } else {
+      setInternalPageSize(newSize);
+      setInternalPage(1);
+    }
+  };
 
 
   // Active date-cell popover picker
@@ -3091,19 +3137,16 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
       )}
 
       {/* Pagination Footer */}
-      {students.length > 0 && (
+      {effectiveTotalCount > 0 && (
         <PaginationFooter
           startRecord={startRecord}
           endRecord={endRecord}
-          totalCount={students.length}
-          pageSize={pageSize}
+          totalCount={effectiveTotalCount}
+          pageSize={effectivePageSize}
           currentPage={currentPageSafe}
           totalPages={totalPages}
-          onPageChange={setCurrentPage}
-          onPageSizeChange={(size) => {
-            setPageSize(size);
-            setCurrentPage(1);
-          }}
+          onPageChange={handleMatrixPageChange}
+          onPageSizeChange={handleMatrixPageSizeChange}
           recordLabel="học viên"
         />
       )}

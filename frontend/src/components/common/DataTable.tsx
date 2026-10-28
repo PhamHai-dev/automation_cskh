@@ -6,7 +6,7 @@ export interface Column<T> {
   key?: string;
   header: string | ReactNode;
   accessorKey?: keyof T;
-  cell?: (item: T) => ReactNode;
+  cell?: (item: T, rowIndex: number) => ReactNode;
   className?: string;
   width?: string;
 }
@@ -46,7 +46,7 @@ export function DataTable<T>({
 
   // Server mode uses externally supplied page/total; otherwise slice locally.
   const currentPageSafe = serverPagination ? externalPage : currentPage;
-  const effectivePageSize = serverPagination ? (pageSize || initialPageSize) : pageSize;
+  const effectivePageSize = serverPagination ? (initialPageSize || pageSize) : pageSize;
   const totalCount = serverPagination ? (total ?? data.length) : data.length;
   const totalPages = Math.ceil(totalCount / effectivePageSize) || 1;
 
@@ -132,7 +132,7 @@ export function DataTable<T>({
                   {columns.map((col, colIndex) => (
                     <td key={colIndex} className={`px-4 py-3.5 text-text-primary group-hover:bg-slate-50 ${col.className || ''}`}>
                       {col.cell
-                        ? col.cell(item)
+                        ? col.cell(item, rowIndex)
                         : col.accessorKey
                         ? (item[col.accessorKey] as ReactNode)
                         : null}
