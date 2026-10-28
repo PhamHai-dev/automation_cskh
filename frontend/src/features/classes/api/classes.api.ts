@@ -9,6 +9,7 @@ export interface ClassesListParams {
   pageSize?: number;
   search?: string;
   model_type?: string;
+  relevant_date?: string;
   session_from?: string;
   session_to?: string;
   summary_month?: string;

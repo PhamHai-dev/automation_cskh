@@ -741,9 +741,9 @@ export const StudentsPage: React.FC = () => {
       header: '#',
       width: '52px',
       className: 'sticky left-0 z-20 bg-white w-[52px] min-w-[52px] max-w-[52px] text-center',
-      cell: (item) => (
+      cell: (item, rowIndex) => (
         <span className="font-bold text-slate-400 text-xs text-center block">
-          {(page - 1) * pageSize + Math.max(0, filteredStudents.indexOf(item)) + 1}
+          {(page - 1) * pageSize + (typeof rowIndex === 'number' ? rowIndex : Math.max(0, filteredStudents.indexOf(item))) + 1}
         </span>
       ),
     },
