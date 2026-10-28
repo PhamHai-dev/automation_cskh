@@ -58,7 +58,9 @@ export interface SheetSyncHistoryItem {
   failedCount: number;
   byCvht: Record<string, number>;
   durationMs: number;
+  durationSec: number;
   syncedAt: string;
+  createdAt: string;
   error: string | null;
 }
 
@@ -1314,7 +1316,7 @@ export class SheetSyncService {
    * Lịch sử đồng bộ Google Sheet -> Hệ thống
    */
   public async getSyncHistory(
-    query: { code?: string; status?: string; limit?: number } = {}
+    query: { code?: string; programType?: string; status?: string; fromDate?: string; toDate?: string; limit?: number } = {}
   ): Promise<{
     stats: {
       todayTotal: number;
@@ -1330,8 +1332,11 @@ export class SheetSyncService {
     const configByCode = new Map(configs.map((c) => [c.code.toUpperCase(), c]));
 
     const limit = Math.min(Math.max(Number(query.limit) || 50, 1), 200);
-    const filterCode = query.code && query.code !== 'ALL' ? String(query.code).toUpperCase() : null;
+    const rawCode = query.code || query.programType;
+    const filterCode = rawCode && rawCode !== 'ALL' ? String(rawCode).toUpperCase() : null;
     const filterStatus = query.status && query.status !== 'ALL' ? String(query.status).toUpperCase() : null;
+    const fromDateStr = query.fromDate ? String(query.fromDate).slice(0, 10) : null;
+    const toDateStr = query.toDate ? String(query.toDate).slice(0, 10) : null;
 
     const logs =
       (await prisma.auditLog?.findMany?.({
@@ -1360,6 +1365,10 @@ export class SheetSyncService {
             ? 'PARTIAL_FAILED'
             : 'SUCCESS';
 
+      const durationMs = Number(after.durationMs || 650);
+      const durationSec = Math.max(1, Math.round(durationMs / 1000));
+      const syncedAt = String(after.syncedAt || row.created_at.toISOString());
+
       items.push({
         id: row.id,
         code,
@@ -1376,8 +1385,10 @@ export class SheetSyncService {
         updatedCount: Number(after.updatedCount || 0),
         failedCount: Number(after.failedCount || 0),
         byCvht: (after.byCvht as Record<string, number>) || {},
-        durationMs: Number(after.durationMs || 650),
-        syncedAt: String(after.syncedAt || row.created_at.toISOString()),
+        durationMs,
+        durationSec,
+        syncedAt,
+        createdAt: syncedAt,
         error: after.error ? String(after.error) : null,
       });
     }
@@ -1393,6 +1404,10 @@ export class SheetSyncService {
           : rawStatus === 'PARTIAL_FAILED'
             ? 'PARTIAL_FAILED'
             : 'SUCCESS';
+
+      const durationMs = Number(sum.durationMs || 700);
+      const durationSec = Math.max(1, Math.round(durationMs / 1000));
+      const syncedAt = cfg.last_synced_at.toISOString();
 
       items.push({
         id: -cfg.id,
@@ -1410,8 +1425,10 @@ export class SheetSyncService {
         updatedCount: Number(sum.updatedCount || 0),
         failedCount: Number(sum.failedCount || 0),
         byCvht: (sum.byCvht as Record<string, number>) || {},
-        durationMs: Number(sum.durationMs || 700),
-        syncedAt: cfg.last_synced_at.toISOString(),
+        durationMs,
+        durationSec,
+        syncedAt,
+        createdAt: syncedAt,
         error: cfg.last_error || null,
       });
     }
@@ -1421,10 +1438,10 @@ export class SheetSyncService {
     let todayTotal = 0;
     let todaySuccess = 0;
     let todayFailed = 0;
-    let lastRunTime: string | null = null;
+    let latestIso: string | null = null;
 
     for (const it of items) {
-      if (!lastRunTime || it.syncedAt > lastRunTime) lastRunTime = it.syncedAt;
+      if (!latestIso || it.syncedAt > latestIso) latestIso = it.syncedAt;
       const d = new Date(it.syncedAt);
       const dayStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
       if (dayStr === todayPrefix) {
@@ -1434,10 +1451,24 @@ export class SheetSyncService {
       }
     }
 
+    let lastRunTime: string | null = null;
+    if (latestIso) {
+      const ld = new Date(latestIso);
+      lastRunTime = isNaN(ld.getTime())
+        ? latestIso
+        : `${String(ld.getHours()).padStart(2, '0')}:${String(ld.getMinutes()).padStart(2, '0')}`;
+    }
+
     const filtered = items
       .filter((it) => {
-        if (filterCode && it.code !== filterCode) return false;
+        if (filterCode && it.code !== filterCode && it.programType !== filterCode) return false;
         if (filterStatus && it.status !== filterStatus) return false;
+        if (fromDateStr || toDateStr) {
+          const d = new Date(it.syncedAt);
+          const dayKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+          if (fromDateStr && dayKey < fromDateStr) return false;
+          if (toDateStr && dayKey > toDateStr) return false;
+        }
         return true;
       })
       .sort((a, b) => b.syncedAt.localeCompare(a.syncedAt));

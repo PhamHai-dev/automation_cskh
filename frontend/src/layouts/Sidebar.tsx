@@ -159,6 +159,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
           allowedRoles: ['ADMIN', 'MANAGE', 'TEACHER'],
         },
         {
+          name: 'Thông tin HV & Buổi học',
+          path: '/teacher/student-info',
+          icon: <FileSpreadsheet className="w-5 h-5 shrink-0" />,
+          allowedRoles: ['ADMIN', 'MANAGE', 'TEACHER'],
+        },
+        {
           name: 'Theo dõi điểm danh',
           path: '/teacher/attendance-tracking',
           icon: <ClipboardCheck className="w-5 h-5 shrink-0" />,

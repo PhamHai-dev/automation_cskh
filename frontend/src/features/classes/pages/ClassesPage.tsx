@@ -1000,6 +1000,7 @@ export const ClassesPage: React.FC = () => {
         `Đã lưu điểm danh (${STATUS_CONFIG[status].label})${studentName ? ` cho ${studentName}` : ''}`
       );
       await fetchClasses(true);
+      window.dispatchEvent(new Event('teacher-attendance-updated'));
     } catch (err: any) {
       toast.error(
         err.response?.data?.message ||
@@ -1099,6 +1100,7 @@ export const ClassesPage: React.FC = () => {
       }
 
       await fetchClasses(true);
+      window.dispatchEvent(new Event('teacher-attendance-updated'));
     } catch (err: any) {
       delete lastSavedNoteRef.current[key];
       toast.error(
@@ -1161,6 +1163,7 @@ export const ClassesPage: React.FC = () => {
         )}`
       );
       await fetchClasses(true);
+      window.dispatchEvent(new Event('teacher-attendance-updated'));
     } catch (err: any) {
       toast.error(
         err.response?.data?.message ||
@@ -1187,6 +1190,7 @@ export const ClassesPage: React.FC = () => {
       setDrawerState(null);
       toast.info('Đã xóa trạng thái điểm danh');
       await fetchClasses(true);
+      window.dispatchEvent(new Event('teacher-attendance-updated'));
     } catch (err: any) {
       toast.error(err.response?.data?.message || 'Không thể xóa điểm danh');
     } finally {

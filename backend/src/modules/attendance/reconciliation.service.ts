@@ -53,6 +53,28 @@ interface TeacherSessionsQuery {
   teacherId?: number;
 }
 
+export interface TeacherStudentInfoQuery {
+  teacherId?: number;
+  classId?: number;
+  search?: string;
+}
+
+export interface UpdateTeacherLessonDTO {
+  lessonTopic?: string | null;
+  note?: string | null;
+  teacherId?: number;
+}
+
+export interface AddTeacherSessionColumnDTO {
+  enrollmentClassId: number;
+  sessionDate?: string;
+  startTime?: string;
+  endTime?: string;
+  lessonTopic?: string;
+  note?: string;
+  teacherId?: number;
+}
+
 export class ReconciliationService {
   private isPrivileged(actor: Actor) {
     return actor.roles.includes('ADMIN') || actor.roles.includes('MANAGE');
@@ -1136,6 +1158,544 @@ export class ReconciliationService {
     return sessions.filter((s) =>
       findEffectiveAssignment(byClass.get(s.class_id) ?? [], s.session_date) !== null
     );
+  }
+
+  private formatScheduleDays(schedules: Array<{ schedule_pattern?: string | null }>): string {
+    if (!schedules || schedules.length === 0) return '—';
+    const raw = schedules.map((s) => (s.schedule_pattern || '').trim()).filter(Boolean).join(', ');
+    if (!raw) return '—';
+    const upper = raw.toUpperCase();
+    if (upper === '2,4,6' || upper === 'T2,T4,T6' || upper === 'T2-T4-T6' || upper === 'T246' || upper === 'MON,WED,FRI') {
+      return '月・水・金（T246）';
+    }
+    if (upper === '3,5,7' || upper === 'T3,T5,T7' || upper === 'T3-T5-T7' || upper === 'T357' || upper === 'TUE,THU,SAT') {
+      return '火・木・土（T357）';
+    }
+    return raw;
+  }
+
+  private formatScheduleTime(startTime?: string | null): string {
+    if (!startTime) return '—';
+    const trimmed = startTime.trim();
+    if (!trimmed) return '—';
+    const match = trimmed.match(/^(\d{1,2}):(\d{2})$/);
+    if (match) {
+      return `${match[1]}h${match[2]} (VNT)`;
+    }
+    return trimmed;
+  }
+
+  private toIsoDateString(val?: Date | string | null): string | null {
+    if (!val) return null;
+    if (typeof val === 'string') {
+      const m = val.match(/^(\d{4}-\d{2}-\d{2})/);
+      if (m) return m[1];
+      const d = new Date(val);
+      return isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10);
+    }
+    if (val instanceof Date && !isNaN(val.getTime())) {
+      return val.toISOString().slice(0, 10);
+    }
+    return null;
+  }
+
+  /**
+   * Get student info & dynamic session columns for the Teacher "Danh sách HV & Buổi học" tab (sheet Infoー情報).
+   */
+  async getTeacherStudentInfo(actor: Actor, query: TeacherStudentInfoQuery) {
+    let targetUserId = actor.id;
+    if (query.teacherId !== undefined) {
+      if (!this.isPrivileged(actor) && query.teacherId !== actor.id) {
+        throw new AppError(403, 'Chỉ ADMIN/MANAGE được chọn giáo viên khác');
+      }
+      targetUserId = query.teacherId;
+    } else if (!actor.roles.includes('TEACHER') && this.isPrivileged(actor)) {
+      throw new AppError(400, 'Vui lòng chọn giáo viên cần hỗ trợ');
+    }
+
+    const teacherUser = await prisma.user.findUnique({
+      where: { id: targetUserId },
+      include: { teacher: true },
+    });
+    const teacher = teacherUser?.teacher ?? (await prisma.teacher.findFirst({
+      where: { user_id: targetUserId, active: true },
+    }));
+    const teacherId = teacher?.id;
+    if (!teacherId || !teacher?.active) {
+      throw new AppError(404, 'Không tìm thấy hồ sơ giáo viên đang hoạt động');
+    }
+
+    const classTeachers = await prisma.classTeacher.findMany({
+      where: { teacher_id: teacherId },
+      select: { class_id: true, active: true, start_date: true, end_date: true },
+    });
+
+    const effectiveClassIds = new Set<number>();
+    for (const ct of classTeachers) {
+      if (ct.active || isTeacherAssignmentEffectiveInRange(ct, null, null)) {
+        effectiveClassIds.add(ct.class_id);
+      }
+    }
+
+    let classIds = Array.from(effectiveClassIds);
+    if (query.classId !== undefined) {
+      classIds = classIds.filter((id) => id === query.classId);
+    }
+    if (classIds.length === 0) {
+      return { items: [], maxRecordedSessions: 0, maxTotalSessions: 0 };
+    }
+
+    const enrollmentClasses = await prisma.enrollmentClass.findMany({
+      where: {
+        class_id: { in: classIds },
+        status: { in: ['ACTIVE', 'PLANNED', 'COMPLETED'] },
+      },
+      include: {
+        enrollment: {
+          include: {
+            student: true,
+            package: true,
+            cs: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+                code: true,
+                staff_code: true,
+              },
+            },
+          },
+        },
+        class: {
+          include: {
+            class_schedules: {
+              where: { active: true },
+              orderBy: { id: 'asc' },
+            },
+            class_sessions: {
+              where: { status: { not: 'CANCELLED' } },
+              orderBy: [
+                { session_date: 'asc' },
+                { start_time: 'asc' },
+                { session_number: 'asc' },
+              ],
+            },
+          },
+        },
+        attendance: {
+          where: { deleted_at: null },
+          include: { class_session: true },
+        },
+      },
+      orderBy: [{ class_id: 'asc' }, { id: 'asc' }],
+    });
+
+    const searchTerm = query.search?.trim().toLowerCase();
+    const filteredECs = searchTerm
+      ? enrollmentClasses.filter((ec) => {
+          const student = ec.enrollment?.student;
+          const cls = ec.class;
+          const haystack = [
+            student?.full_name,
+            student?.external_id,
+            student?.phone,
+            cls?.class_name,
+            cls?.class_code,
+          ]
+            .filter(Boolean)
+            .join(' ')
+            .toLowerCase();
+          return haystack.includes(searchTerm);
+        })
+      : enrollmentClasses;
+
+    const statusPriority: Record<string, number> = {
+      ACTIVE: 0,
+      PLANNED: 1,
+      COMPLETED: 2,
+    };
+    filteredECs.sort((a, b) => {
+      const pa = statusPriority[a.status] ?? 9;
+      const pb = statusPriority[b.status] ?? 9;
+      if (pa !== pb) return pa - pb;
+      return a.id - b.id;
+    });
+
+    const rows = filteredECs.map((ec) => {
+      const enrollment = ec.enrollment;
+      const student = enrollment.student;
+      const cls = ec.class;
+
+      const studentCode =
+        student.external_id || enrollment.external_id || String(student.id);
+      const courseType =
+        (enrollment.program_metadata as any)?.course_type ||
+        enrollment.package?.name ||
+        enrollment.program_type ||
+        'Thường';
+      const level =
+        enrollment.level || cls.level || enrollment.course_content || '—';
+      const totalSessions = enrollment.total_sessions || 0;
+      const note =
+        enrollment.sales_note || student.note || enrollment.course_content || '';
+      const startDate = this.toIsoDateString(ec.start_date || enrollment.start_date);
+      const csCode =
+        enrollment.cs?.code ||
+        enrollment.cs?.staff_code ||
+        enrollment.cs?.name ||
+        '—';
+      const csName = enrollment.cs?.name || '—';
+      const scheduleDays = this.formatScheduleDays(cls.class_schedules || []);
+      const scheduleTime = this.formatScheduleTime(
+        cls.class_schedules?.[0]?.start_time
+      );
+      const studyReportUrl =
+        enrollment.study_report_url || `/students/${student.id}/study-report`;
+
+      // Combine class sessions (non-cancelled) and student attendances (non-deleted, non-cancelled session)
+      const sessionMap = new Map<
+        number,
+        {
+          session: {
+            id: number;
+            session_number: number;
+            session_date: Date | string;
+            start_time?: string | null;
+            end_time?: string | null;
+            status?: string;
+          };
+          att?: any;
+        }
+      >();
+
+      for (const cs of cls.class_sessions || []) {
+        if (cs.status === 'CANCELLED') continue;
+        sessionMap.set(cs.id, { session: cs });
+      }
+
+      for (const att of ec.attendance || []) {
+        if (att.deleted_at) continue;
+        const cs = att.class_session;
+        if (!cs || cs.status === 'CANCELLED') continue;
+        const existing = sessionMap.get(cs.id);
+        if (existing) {
+          existing.att = att;
+        } else {
+          sessionMap.set(cs.id, { session: cs, att });
+        }
+      }
+
+      const combined = Array.from(sessionMap.values()).sort((a, b) => {
+        const da = this.toIsoDateString(a.session.session_date) || '';
+        const db = this.toIsoDateString(b.session.session_date) || '';
+        if (da !== db) return da.localeCompare(db);
+        const ta = a.session.start_time || '';
+        const tb = b.session.start_time || '';
+        if (ta !== tb) return ta.localeCompare(tb);
+        const na = a.session.session_number ?? 0;
+        const nb = b.session.session_number ?? 0;
+        if (na !== nb) return na - nb;
+        return a.session.id - b.session.id;
+      });
+
+      const sessions = combined.map(({ session, att }, idx) => {
+        const teacherStatus: AttendanceStatus | null = att?.teacher_status || null;
+        const finalStatus: AttendanceStatus | null = att?.status || null;
+        const reconciliationState: ReconciliationState | null =
+          att?.reconciliation_state || null;
+        const effectiveStatus: AttendanceStatus | null =
+          att?.teacher_status ??
+          (att?.reconciliation_state === 'MATCHED' ||
+          att?.reconciliation_state === 'RESOLVED' ||
+          !att?.reconciliation_state
+            ? att?.status ?? null
+            : null);
+        const isAttended =
+          teacherStatus === 'ATTENDED' ||
+          (teacherStatus === null && finalStatus === 'ATTENDED');
+        const isUnlocked = isAttended;
+
+        return {
+          sessionIndex: idx + 1,
+          classSessionId: session.id,
+          sessionNumber: session.session_number,
+          sessionDate: this.toIsoDateString(session.session_date),
+          startTime: session.start_time || null,
+          endTime: session.end_time || null,
+          attendanceId: att?.id || null,
+          teacherStatus,
+          finalStatus,
+          reconciliationState,
+          effectiveStatus: isAttended ? AttendanceStatus.ATTENDED : effectiveStatus,
+          isAttended,
+          isUnlocked,
+          lessonTopic: att?.lesson_topic || '',
+          teacherNote: att?.teacher_note || '',
+          rawValue: att?.teacher_raw_value || '',
+        };
+      });
+
+      return {
+        enrollmentClassId: ec.id,
+        enrollmentId: ec.enrollment_id,
+        studentId: student.id,
+        studentCode,
+        studentName: student.full_name,
+        classId: cls.id,
+        classCode: cls.class_code || cls.class_name,
+        className: cls.class_name,
+        courseType,
+        level,
+        totalSessions,
+        note,
+        startDate,
+        csCode,
+        csName,
+        scheduleDays,
+        scheduleTime,
+        studyReportUrl,
+        sessions,
+      };
+    });
+
+    const maxRecordedSessions = Math.max(0, ...rows.map((r) => r.sessions.length));
+    const maxTotalSessions = Math.max(
+      0,
+      ...rows.map((r) => Math.max(r.sessions.length, r.totalSessions || 0))
+    );
+
+    return { items: rows, maxRecordedSessions, maxTotalSessions };
+  }
+
+  /**
+   * Update lesson topic / note for a student's attended session in the teacher student info table.
+   */
+  async updateTeacherStudentLesson(
+    attendanceId: number,
+    data: UpdateTeacherLessonDTO,
+    actor: Actor
+  ) {
+    const existing = await prisma.attendance.findFirst({
+      where: { id: attendanceId, deleted_at: null },
+      include: {
+        class_session: true,
+        enrollment_class: {
+          include: {
+            enrollment: {
+              include: { student: true },
+            },
+          },
+        },
+      },
+    });
+    if (!existing) {
+      throw new AppError(404, 'Không tìm thấy bản ghi điểm danh');
+    }
+    if (existing.class_session?.status === 'CANCELLED') {
+      throw new AppError(409, 'Không thể cập nhật buổi học đã hủy');
+    }
+
+    if (this.isPrivileged(actor)) {
+      this.assertAssistMarkAuthority(actor);
+      if (data.teacherId) {
+        const candidates = await prisma.classTeacher.findMany({
+          where: {
+            class_id: existing.class_session.class_id,
+            teacher: { active: true, user_id: data.teacherId },
+          },
+          select: { active: true, start_date: true, end_date: true },
+        });
+        const effective = findEffectiveAssignment(
+          candidates,
+          existing.class_session.session_date
+        );
+        if (!effective) {
+          throw new AppError(
+            403,
+            'Giáo viên được chọn không phụ trách lớp này tại ngày dạy của buổi học'
+          );
+        }
+      }
+    } else {
+      if (data.teacherId && data.teacherId !== actor.id) {
+        throw new AppError(403, 'Bạn không được điểm danh thay giáo viên khác');
+      }
+      await this.assertTeacherScope(
+        actor,
+        existing.class_session.class_id,
+        existing.class_session.session_date
+      );
+    }
+
+    const isAttended =
+      existing.teacher_status === 'ATTENDED' ||
+      (!existing.teacher_status && existing.status === 'ATTENDED');
+    if (!isAttended) {
+      throw new AppError(409, 'Học viên chưa học buổi này nên ô nhập đang bị khóa');
+    }
+
+    const student = existing.enrollment_class?.enrollment?.student;
+    const studentCode =
+      student?.external_id ||
+      existing.enrollment_class?.enrollment?.external_id ||
+      String(student?.id ?? existing.enrollment_class_id);
+
+    const trimmedTopic =
+      data.lessonTopic !== undefined
+        ? data.lessonTopic?.trim() || null
+        : existing.lesson_topic;
+    const trimmedNote =
+      data.note !== undefined ? data.note?.trim() || null : existing.teacher_note;
+    const newRawValue = trimmedTopic
+      ? `${studentCode}-${trimmedTopic}`
+      : existing.teacher_raw_value;
+
+    const updated = await prisma.$transaction(async (tx) => {
+      const result = await tx.attendance.update({
+        where: { id: attendanceId },
+        data: {
+          lesson_topic: trimmedTopic,
+          ...(data.note !== undefined ? { teacher_note: trimmedNote } : {}),
+          teacher_raw_value: newRawValue,
+        },
+      });
+      await tx.auditLog.create({
+        data: {
+          user_id: actor.id,
+          action: 'ATTENDANCE_TEACHER_LESSON_UPDATED',
+          entity_type: 'Attendance',
+          entity_id: String(attendanceId),
+          before_data: existing as any,
+          after_data: result as any,
+        },
+      });
+      return result;
+    });
+
+    return updated;
+  }
+
+  /**
+   * Add a new session column for a student from the Teacher "Danh sách HV & Buổi học" tab,
+   * defaulting to ATTENDED so the lesson topic cell is immediately unlocked.
+   */
+  async addTeacherStudentSessionColumn(
+    data: AddTeacherSessionColumnDTO,
+    actor: Actor
+  ) {
+    const ec = await prisma.enrollmentClass.findUnique({
+      where: { id: data.enrollmentClassId },
+      include: {
+        class: {
+          include: {
+            class_schedules: { where: { active: true } },
+          },
+        },
+        enrollment: {
+          include: { student: true },
+        },
+      },
+    });
+    if (!ec) {
+      throw new AppError(404, 'Không tìm thấy học viên trong lớp');
+    }
+
+    const todayIso = new Date().toISOString().slice(0, 10);
+    const dateStr = data.sessionDate || todayIso;
+    const targetDate = new Date(`${dateStr}T00:00:00.000Z`);
+
+    if (this.isPrivileged(actor)) {
+      this.assertAssistMarkAuthority(actor);
+      if (data.teacherId) {
+        const candidates = await prisma.classTeacher.findMany({
+          where: {
+            class_id: ec.class_id,
+            teacher: { active: true, user_id: data.teacherId },
+          },
+          select: { active: true, start_date: true, end_date: true },
+        });
+        const effective = findEffectiveAssignment(candidates, targetDate);
+        if (!effective) {
+          throw new AppError(
+            403,
+            'Giáo viên được chọn không phụ trách lớp này tại ngày dạy của buổi học'
+          );
+        }
+      }
+    } else {
+      if (data.teacherId && data.teacherId !== actor.id) {
+        throw new AppError(403, 'Bạn không được điểm danh thay giáo viên khác');
+      }
+      await this.assertTeacherScope(actor, ec.class_id, targetDate);
+    }
+
+    const latest = await prisma.classSession.findFirst({
+      where: { class_id: ec.class_id },
+      orderBy: { session_number: 'desc' },
+    });
+    const sessionNumber = (latest?.session_number ?? 0) + 1;
+    const startTime =
+      data.startTime || ec.class?.class_schedules?.[0]?.start_time || undefined;
+    const endTime = data.endTime || undefined;
+
+    const session = await prisma.classSession.create({
+      data: {
+        class_id: ec.class_id,
+        session_number: sessionNumber,
+        session_date: targetDate,
+        start_time: startTime,
+        end_time: endTime,
+        status: 'COMPLETED',
+        created_by_id: actor.id,
+        teacher_id: data.teacherId || actor.id,
+      },
+    });
+
+    const studentExtId = ec.enrollment?.student?.external_id || String(ec.id);
+    const trimmedTopic = data.lessonTopic?.trim() || null;
+    const trimmedNote = data.note?.trim() || null;
+    const rawValue = trimmedTopic
+      ? `${studentExtId}-${trimmedTopic}`
+      : `${studentExtId}-ATTENDED`;
+
+    const attendance = await prisma.attendance.upsert({
+      where: {
+        enrollment_class_id_class_session_id: {
+          enrollment_class_id: ec.id,
+          class_session_id: session.id,
+        },
+      },
+      update: {
+        teacher_status: AttendanceStatus.ATTENDED,
+        status: AttendanceStatus.ATTENDED,
+        reconciliation_state: ReconciliationState.PENDING_CS,
+        lesson_topic: trimmedTopic,
+        teacher_note: trimmedNote,
+        teacher_raw_value: rawValue,
+        teacher_user_id: actor.id,
+        teacher_submitted_at: new Date(),
+        source: AttendanceSource.MANUAL,
+        deleted_at: null,
+        deleted_by_id: null,
+      },
+      create: {
+        enrollment_class_id: ec.id,
+        class_session_id: session.id,
+        teacher_status: AttendanceStatus.ATTENDED,
+        status: AttendanceStatus.ATTENDED,
+        reconciliation_state: ReconciliationState.PENDING_CS,
+        lesson_topic: trimmedTopic,
+        teacher_note: trimmedNote,
+        teacher_raw_value: rawValue,
+        teacher_user_id: actor.id,
+        teacher_submitted_at: new Date(),
+        source: AttendanceSource.MANUAL,
+        created_by_id: actor.id,
+      },
+    });
+
+    await this.runDownstream(attendance.id, attendance.reconciliation_state);
+    return { session, attendance };
   }
 }
 

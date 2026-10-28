@@ -2,6 +2,16 @@ import { prisma } from '../../prisma/client';
 import { CreateStudentDTO, UpdateStudentDTO, StudentListQueryOptions, StudentListMeta } from './students.types';
 import { AuthUser } from '../../middlewares/auth.middleware';
 import { AppError } from '../../middlewares/error.middleware';
+import { getAccessibleClassIds } from '../classes/classes.scope';
+
+function isTeacherOnlyActor(actor: AuthUser): boolean {
+  return (
+    actor.roles.includes('TEACHER') &&
+    !actor.roles.includes('ADMIN') &&
+    !actor.roles.includes('MANAGE') &&
+    !actor.roles.includes('CS')
+  );
+}
 
 export const SAFE_USER_SELECT = {
   id: true,
@@ -388,6 +398,68 @@ export class StudentsRepository {
   }
 
   async findById(id: number, actor: AuthUser) {
+    if (isTeacherOnlyActor(actor)) {
+      const accessibleClassIds = (await getAccessibleClassIds(actor)) ?? [];
+      if (accessibleClassIds.length === 0) {
+        throw new AppError(403, 'Bạn không phụ trách học viên này');
+      }
+      const student = await prisma.student.findUnique({
+        where: { id },
+        include: {
+          enrollments: {
+            where: {
+              enrollment_classes: {
+                some: { class_id: { in: accessibleClassIds } },
+              },
+            },
+            include: {
+              package: true,
+              sale: true,
+              cs: {
+                select: {
+                  id: true,
+                  name: true,
+                  email: true,
+                  staff_code: true,
+                },
+              },
+              enrollment_classes: {
+                where: { class_id: { in: accessibleClassIds } },
+                include: {
+                  class: {
+                    include: {
+                      class_teachers: {
+                        include: {
+                          teacher: {
+                            include: {
+                              user: {
+                                select: SAFE_USER_SELECT,
+                              },
+                            },
+                          },
+                        },
+                      },
+                      class_schedules: true,
+                    },
+                  },
+                  attendance: { where: { deleted_at: null } },
+                },
+              },
+              care_logs: {
+                orderBy: { after_session_number: 'asc' },
+              },
+              care_tasks: true,
+            },
+            orderBy: { created_at: 'desc' },
+          },
+        },
+      });
+      if (student && student.enrollments.length === 0) {
+        throw new AppError(403, 'Bạn không phụ trách học viên này');
+      }
+      return student;
+    }
+
     // Only enrollment details inside the existing student-list scope are exposed.
     const allowedCsIds = await getStudentCsScope(actor);
     const student = await prisma.student.findUnique({
@@ -619,6 +691,45 @@ export class StudentsRepository {
   }
 
   async update(id: number, data: UpdateStudentDTO, actor: AuthUser) {
+    if (isTeacherOnlyActor(actor)) {
+      const accessibleClassIds = (await getAccessibleClassIds(actor)) ?? [];
+      if (accessibleClassIds.length === 0) {
+        throw new AppError(403, 'Bạn không phụ trách học viên này');
+      }
+      if (!Number.isInteger(data.enrollment_id) || data.enrollment_id <= 0) {
+        throw new AppError(400, 'Hãy chọn rõ ghi danh cần cập nhật');
+      }
+      return prisma.$transaction(async (tx) => {
+        const enrollment = await tx.enrollment.findFirst({
+          where: {
+            student_id: id,
+            id: data.enrollment_id,
+            enrollment_classes: {
+              some: { class_id: { in: accessibleClassIds } },
+            },
+          },
+          orderBy: { id: 'desc' },
+        });
+        if (!enrollment) {
+          throw new AppError(403, 'Bạn không phụ trách học viên này');
+        }
+
+        const enrollmentUpdate: any = {};
+        if (data.program_metadata !== undefined) enrollmentUpdate.program_metadata = data.program_metadata;
+        if (data.exchange_info !== undefined) enrollmentUpdate.exchange_info = data.exchange_info || null;
+        if (data.study_report_url !== undefined) enrollmentUpdate.study_report_url = data.study_report_url || null;
+
+        if (Object.keys(enrollmentUpdate).length > 0) {
+          await tx.enrollment.update({
+            where: { id: enrollment.id },
+            data: enrollmentUpdate,
+          });
+        }
+
+        return tx.student.findUnique({ where: { id } });
+      });
+    }
+
     const allowedCsIds = await getStudentCsScope(actor);
     if (!Number.isInteger(data.enrollment_id) || data.enrollment_id <= 0) {
       throw new AppError(400, 'Hãy chọn rõ ghi danh cần cập nhật');

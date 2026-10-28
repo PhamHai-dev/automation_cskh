@@ -460,8 +460,16 @@ export class ImportsController {
       };
       const programType = req.query.programType ? String(req.query.programType) : undefined;
       const status = req.query.status ? String(req.query.status) : undefined;
+      const fromDate = req.query.fromDate ? String(req.query.fromDate) : undefined;
+      const toDate = req.query.toDate ? String(req.query.toDate) : undefined;
       const limit = req.query.limit ? parseInt(String(req.query.limit), 10) : 50;
-      const data = await this.sheetBackupService.getBackupHistory(actor, { programType, status, limit });
+      const data = await this.sheetBackupService.getBackupHistory(actor, {
+        programType,
+        status,
+        fromDate,
+        toDate,
+        limit,
+      });
       res.status(200).json({ data, meta: null });
     } catch (err) {
       next(err);
@@ -470,10 +478,20 @@ export class ImportsController {
 
   getSheetSyncHistory = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const code = req.query.code ? String(req.query.code) : undefined;
+      const code = (req.query.code || req.query.programType)
+        ? String(req.query.code || req.query.programType)
+        : undefined;
       const status = req.query.status ? String(req.query.status) : undefined;
+      const fromDate = req.query.fromDate ? String(req.query.fromDate) : undefined;
+      const toDate = req.query.toDate ? String(req.query.toDate) : undefined;
       const limit = req.query.limit ? parseInt(String(req.query.limit), 10) : 50;
-      const data = await this.sheetSyncService.getSyncHistory({ code, status, limit });
+      const data = await this.sheetSyncService.getSyncHistory({
+        code,
+        status,
+        fromDate,
+        toDate,
+        limit,
+      });
       res.status(200).json({ data, meta: null });
     } catch (err) {
       next(err);

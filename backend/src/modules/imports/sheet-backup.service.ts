@@ -242,6 +242,7 @@ export interface BackupHistoryItem {
   programType: string;
   staffCode: string | null;
   staffName: string | null;
+  triggerType: 'MANUAL' | 'AUTO';
   status: 'SUCCESS' | 'FAILED';
   mode: 'DELTA' | 'FULL';
   syncedToGoogleSheet: boolean;
@@ -253,7 +254,9 @@ export interface BackupHistoryItem {
   updatedCellsCount: number;
   attendanceCellsWritten: number;
   durationMs: number;
+  durationSec: number;
   backedUpAt: string;
+  createdAt: string;
   error: string | null;
   profile: SheetBackupStats | null;
   attendance: SheetBackupStats | null;
@@ -266,10 +269,13 @@ export interface BackupHistoryBatch {
   mode: 'DELTA' | 'FULL';
   startedAt: string;
   durationMs: number;
+  durationSec: number;
   status: 'SUCCESS' | 'PARTIAL' | 'FAILED';
   totalConfigs: number;
   successConfigs: number;
   failedConfigs: number;
+  successCount: number;
+  failedCount: number;
   totalStudents: number;
   updatedCellsCount: number;
   attendanceCellsWritten: number;
@@ -2387,7 +2393,7 @@ export class SheetBackupService {
 
   public async getBackupHistory(
     actor: { id: number; roles: string[] },
-    query: { programType?: string; status?: string; limit?: number } = {}
+    query: { programType?: string; status?: string; fromDate?: string; toDate?: string; limit?: number } = {}
   ): Promise<{
     stats: {
       todayTotal: number;
@@ -2405,6 +2411,8 @@ export class SheetBackupService {
     const limit = Math.min(Math.max(Number(query.limit) || 50, 1), 200);
     const filterProgram = query.programType && query.programType !== 'ALL' ? normalizeProgramType(query.programType) : null;
     const filterStatus = query.status && query.status !== 'ALL' ? String(query.status).toUpperCase() : null;
+    const fromDateStr = query.fromDate ? String(query.fromDate).slice(0, 10) : null;
+    const toDateStr = query.toDate ? String(query.toDate).slice(0, 10) : null;
 
     const logs = await prisma.auditLog.findMany({
       where: {
@@ -2434,6 +2442,8 @@ export class SheetBackupService {
       const batchId = String(after.batchId || buildBatchId(isNaN(dt.getTime()) ? row.created_at : dt));
       const triggerType: 'MANUAL' | 'AUTO' = after.triggerType === 'AUTO' ? 'AUTO' : 'MANUAL';
       const mode: 'DELTA' | 'FULL' = after.mode === 'FULL' ? 'FULL' : 'DELTA';
+      const durationMs = Number(after.durationMs || 850);
+      const durationSec = Math.max(1, Math.round(durationMs / 1000));
 
       seenConfigIdsInLogs.add(cfgId);
       items.push({
@@ -2453,8 +2463,10 @@ export class SheetBackupService {
         appendedRows: Number(after.appendedRows || 0),
         updatedCellsCount: Number(after.updatedCellsCount || 0),
         attendanceCellsWritten: Number(after.attendanceCellsWritten || 0),
-        durationMs: Number(after.durationMs || 850),
+        durationMs,
+        durationSec,
         backedUpAt,
+        createdAt: backedUpAt,
         error: after.error ? String(after.error) : null,
         profile: after.profile || null,
         attendance: after.attendance || null,
@@ -2470,6 +2482,9 @@ export class SheetBackupService {
       const sum = (cfg.last_summary && typeof cfg.last_summary === 'object' ? cfg.last_summary : {}) as Record<string, any>;
       const status: 'SUCCESS' | 'FAILED' = cfg.last_status === 'FAILED' ? 'FAILED' : 'SUCCESS';
       const dt = new Date(cfg.last_backup_at);
+      const iso = dt.toISOString();
+      const durationMs = Number(sum.durationMs || 900);
+      const durationSec = Math.max(1, Math.round(durationMs / 1000));
       items.push({
         id: -cfg.id,
         configId: cfg.id,
@@ -2487,8 +2502,10 @@ export class SheetBackupService {
         appendedRows: Number(sum.appendedRows || 0),
         updatedCellsCount: Number(sum.updatedCellsCount || 0),
         attendanceCellsWritten: Number(sum.attendanceCellsWritten || 0),
-        durationMs: Number(sum.durationMs || 900),
-        backedUpAt: dt.toISOString(),
+        durationMs,
+        durationSec,
+        backedUpAt: iso,
+        createdAt: iso,
         error: cfg.last_error || null,
         profile: sum.profile || null,
         attendance: sum.attendance || null,
@@ -2504,10 +2521,10 @@ export class SheetBackupService {
     let todayTotal = 0;
     let todaySuccess = 0;
     let todayFailed = 0;
-    let lastRunTime: string | null = null;
+    let latestIso: string | null = null;
 
     for (const it of items) {
-      if (!lastRunTime || it.backedUpAt > lastRunTime) lastRunTime = it.backedUpAt;
+      if (!latestIso || it.backedUpAt > latestIso) latestIso = it.backedUpAt;
       const d = new Date(it.backedUpAt);
       const dayStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
       if (dayStr === todayPrefix) {
@@ -2517,10 +2534,24 @@ export class SheetBackupService {
       }
     }
 
+    let lastRunTime: string | null = null;
+    if (latestIso) {
+      const ld = new Date(latestIso);
+      lastRunTime = isNaN(ld.getTime())
+        ? latestIso
+        : `${String(ld.getHours()).padStart(2, '0')}:${String(ld.getMinutes()).padStart(2, '0')}`;
+    }
+
     // Lọc theo query
     const filteredItems = items.filter((it) => {
       if (filterProgram && it.programType !== filterProgram) return false;
       if (filterStatus && it.status !== filterStatus) return false;
+      if (fromDateStr || toDateStr) {
+        const d = new Date(it.backedUpAt);
+        const dayKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        if (fromDateStr && dayKey < fromDateStr) return false;
+        if (toDateStr && dayKey > toDateStr) return false;
+      }
       return true;
     });
 
@@ -2535,10 +2566,13 @@ export class SheetBackupService {
           mode: it.mode,
           startedAt: it.backedUpAt,
           durationMs: 0,
+          durationSec: 0,
           status: 'SUCCESS',
           totalConfigs: 0,
           successConfigs: 0,
           failedConfigs: 0,
+          successCount: 0,
+          failedCount: 0,
           totalStudents: 0,
           updatedCellsCount: 0,
           attendanceCellsWritten: 0,
@@ -2548,12 +2582,18 @@ export class SheetBackupService {
       }
       b.items.push(it);
       b.totalConfigs++;
-      if (it.status === 'SUCCESS') b.successConfigs++;
-      else b.failedConfigs++;
+      if (it.status === 'SUCCESS') {
+        b.successConfigs++;
+        b.successCount++;
+      } else {
+        b.failedConfigs++;
+        b.failedCount++;
+      }
       b.totalStudents += it.totalStudents;
       b.updatedCellsCount += it.updatedCellsCount;
       b.attendanceCellsWritten += it.attendanceCellsWritten;
       b.durationMs += it.durationMs;
+      b.durationSec = Math.max(1, Math.round(b.durationMs / 1000));
       if (it.backedUpAt > b.startedAt) b.startedAt = it.backedUpAt;
       b.status =
         b.failedConfigs === 0

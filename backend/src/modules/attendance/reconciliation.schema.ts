@@ -91,3 +91,26 @@ export const AttendanceImportConfirmSchema = z.object({
   // Historical imports must explicitly opt in to SEND; default stays NO_SEND.
   deliveryPolicy: z.enum(['SEND', 'NO_SEND']).optional(),
 });
+
+export const TeacherStudentInfoQuerySchema = z.object({
+  teacherId: z.coerce.number().int().positive().optional(),
+  classId: z.coerce.number().int().positive().optional(),
+  search: z.string().optional(),
+});
+
+export const UpdateTeacherLessonSchema = z.object({
+  lessonTopic: z.string().trim().max(255).nullable().optional(),
+  note: z.string().trim().max(2000).nullable().optional(),
+  teacherId: z.coerce.number().int().positive().optional(),
+});
+
+export const AddTeacherSessionColumnSchema = z.object({
+  enrollmentClassId: z.coerce.number().int().positive(),
+  sessionDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Ngày phải có định dạng YYYY-MM-DD').optional(),
+  startTime: z.string().trim().max(20).optional(),
+  endTime: z.string().trim().max(20).optional(),
+  lessonTopic: z.string().trim().max(255).optional(),
+  note: z.string().trim().max(2000).optional(),
+  teacherId: z.coerce.number().int().positive().optional(),
+});
+
