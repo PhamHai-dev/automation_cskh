@@ -264,6 +264,11 @@ export const TeacherStudentInfoPage: React.FC = () => {
       window.setTimeout(() => {
         setSavedAttendanceIds((prev) => ({ ...prev, [attendanceId]: false }));
       }, 2200);
+      toast.success(
+        trimmed
+          ? `Đã lưu bài học Buổi ${cell.sessionIndex} (${trimmed})`
+          : `Đã xóa bài học Buổi ${cell.sessionIndex}`
+      );
       window.dispatchEvent(new Event('teacher-attendance-updated'));
     } catch (err: any) {
       toast.error(

@@ -1433,6 +1433,19 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
         });
         return next;
       });
+      if (lessonTopic !== undefined && teacherNote !== undefined) {
+        toast.success(`Đã lưu bài học & ghi chú (Ca ${caNo})`);
+      } else if (lessonTopic !== undefined) {
+        toast.success(lessonTopic ? `Đã lưu bài học (Ca ${caNo})` : `Đã xóa bài học (Ca ${caNo})`);
+      } else if (teacherNote !== undefined) {
+        toast.success(
+          teacherNote ? `Đã lưu ghi chú GV (Ca ${caNo})` : `Đã xóa ghi chú GV (Ca ${caNo})`
+        );
+      } else if (csNote !== undefined) {
+        toast.success(
+          csNote ? `Đã lưu ghi chú CSKH (Ca ${caNo})` : `Đã xóa ghi chú CSKH (Ca ${caNo})`
+        );
+      }
       onRefresh();
       window.dispatchEvent(new Event('teacher-attendance-updated'));
     } catch (err: any) {
@@ -2238,7 +2251,7 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
                   csNoteTimersRef.current[draftKey] = setTimeout(() => {
                     delete csNoteTimersRef.current[draftKey];
                     persist(caNo, session, csNoteDraftsRef.current[draftKey] ?? val);
-                  }, 450);
+                  }, 800);
                 }}
                 onBlur={() => {
                   if (csNoteTimersRef.current[draftKey]) {
@@ -2392,7 +2405,7 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
                         ? teacherLessonDraftsRef.current[draftKey] ?? nextVal
                         : teacherNoteDraftsRef.current[draftKey] ?? nextVal;
                     persistTeacherField(caNo, session, field, latestTyped);
-                  }, 450);
+                  }, 800);
                 }}
                 onBlur={() => {
                   const timerKey = `${draftKey}_${field}`;
@@ -4400,6 +4413,21 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
         saving={savingSessionId !== null}
         onSaveStatusAndNotes={async ({ session, sessionNumber, status, lesson_topic, teacher_note, cs_note }) => {
           if (!drawerState) return;
+          const dKey = `${drawerState.student.enrollment_class_id}_${drawerState.dateStr}_s${sessionNumber}`;
+          if (activeSide === 'TEACHER') {
+            if (lesson_topic !== undefined) {
+              teacherLessonDraftsRef.current[dKey] = lesson_topic || '';
+              setTeacherLessonDrafts((prev) => ({ ...prev, [dKey]: lesson_topic || '' }));
+            }
+            if (teacher_note !== undefined) {
+              teacherNoteDraftsRef.current[dKey] = teacher_note || '';
+              setTeacherNoteDrafts((prev) => ({ ...prev, [dKey]: teacher_note || '' }));
+            }
+          }
+          if (activeSide === 'CS' && cs_note !== undefined) {
+            csNoteDraftsRef.current[dKey] = cs_note || '';
+            setCsNoteDrafts((prev) => ({ ...prev, [dKey]: cs_note || '' }));
+          }
           await handleStatusSelect(
             drawerState.student.enrollment_class_id,
             drawerState.dateStr,
@@ -4416,6 +4444,21 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
         }}
         onSaveNotesOnly={async ({ session, lesson_topic, teacher_note, cs_note }) => {
           if (!drawerState || (activeSide !== 'CS' && activeSide !== 'TEACHER')) return;
+          const dKey = `${drawerState.student.enrollment_class_id}_${drawerState.dateStr}_s${drawerState.caNumber}`;
+          if (activeSide === 'TEACHER') {
+            if (lesson_topic !== undefined) {
+              teacherLessonDraftsRef.current[dKey] = lesson_topic || '';
+              setTeacherLessonDrafts((prev) => ({ ...prev, [dKey]: lesson_topic || '' }));
+            }
+            if (teacher_note !== undefined) {
+              teacherNoteDraftsRef.current[dKey] = teacher_note || '';
+              setTeacherNoteDrafts((prev) => ({ ...prev, [dKey]: teacher_note || '' }));
+            }
+          }
+          if (activeSide === 'CS' && cs_note !== undefined) {
+            csNoteDraftsRef.current[dKey] = cs_note || '';
+            setCsNoteDrafts((prev) => ({ ...prev, [dKey]: cs_note || '' }));
+          }
           await handleSaveNote(
             drawerState.student.enrollment_class_id,
             drawerState.dateStr,

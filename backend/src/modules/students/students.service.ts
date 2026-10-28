@@ -67,14 +67,36 @@ export class StudentsService {
     this.repository = new StudentsRepository();
   }
 
+  private normalizeStudentEnrollments<T extends Record<string, any>>(student: T): T {
+    if (!student || !Array.isArray(student.enrollments)) return student;
+    return {
+      ...student,
+      enrollments: student.enrollments.map((enr: any) => {
+        if (
+          enr &&
+          Array.isArray(enr.enrollment_classes) &&
+          enr.enrollment_classes.length > 0 &&
+          (enr.status === 'WAITING_CLASS' || enr.status === 'NOT_STARTED')
+        ) {
+          return { ...enr, status: 'STUDYING' };
+        }
+        return enr;
+      }),
+    };
+  }
+
   async getAllStudents(options: StudentListQueryOptions) {
     // B.5/D9: scope is derived ONLY from the actor via enrollment.cs_id
     // (getStudentCsScope in the repository); sale/handover data never grants access.
-    return this.repository.findAll(options);
+    const rows = await this.repository.findAll(options);
+    return Array.isArray(rows) ? rows.map((s) => this.normalizeStudentEnrollments(s)) : rows;
   }
 
   async getStudentsWithMeta(options: StudentListQueryOptions): Promise<StudentListResult> {
-    const data = await this.repository.findAll(options);
+    const rawData = await this.repository.findAll(options);
+    const data = Array.isArray(rawData)
+      ? rawData.map((s) => this.normalizeStudentEnrollments(s))
+      : rawData;
     const meta = await this.repository.computeMeta(options, data);
     return { data, meta };
   }
@@ -93,7 +115,7 @@ export class StudentsService {
       throw error;
     }
     if (!student) throw new CustomError('Student not found', 404);
-    return student;
+    return this.normalizeStudentEnrollments(student);
   }
 
   async createStudent(data: CreateStudentDTO, actor: AuthUser) {

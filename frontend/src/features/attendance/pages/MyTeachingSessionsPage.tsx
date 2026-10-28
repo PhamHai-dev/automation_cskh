@@ -982,6 +982,12 @@ export const MyTeachingSessionsPage: React.FC<MyTeachingSessionsPageProps> = ({
         } finally {
           setSavingKey(null);
         }
+      } else if (item.enrollmentClasses.length > 1 && (topicVal || noteVal)) {
+        lastSavedLessonRef.current[sessionDraftKey] = topicVal;
+        lastSavedNoteRef.current[sessionDraftKey] = noteVal;
+        toast.info(
+          'Đã ghi nhận nháp bài học/ghi chú — bấm "Chấm cả lớp" hoặc chấm từng học viên để lưu vào ca dạy'
+        );
       }
       return;
     }

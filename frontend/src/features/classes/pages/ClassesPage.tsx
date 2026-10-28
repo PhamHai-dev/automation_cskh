@@ -1455,6 +1455,13 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
           });
         })
       );
+      toast.success(
+        trimmed
+          ? markedTargets.length === 1
+            ? `Đã lưu bài học (Ca ${caNumber})`
+            : `Đã lưu bài học chung cho ${markedTargets.length} học viên (Ca ${caNumber})`
+          : `Đã xóa bài học (Ca ${caNumber})`
+      );
       await fetchClasses(true);
       window.dispatchEvent(new Event('teacher-attendance-updated'));
     } catch (err: any) {
@@ -2100,6 +2107,21 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
         });
       }
 
+      const caLabel = `Ca ${sessionNumber || 1}`;
+      if (normLesson !== undefined && normNote !== undefined) {
+        toast.success(`Đã lưu bài học & ghi chú (${caLabel})`);
+      } else if (normLesson !== undefined) {
+        toast.success(normLesson ? `Đã lưu bài học (${caLabel})` : `Đã xóa bài học (${caLabel})`);
+      } else if (normNote !== undefined) {
+        toast.success(
+          normNote ? `Đã lưu ghi chú GV (${caLabel})` : `Đã xóa ghi chú GV (${caLabel})`
+        );
+      } else if (normCsNote !== undefined) {
+        toast.success(
+          normCsNote ? `Đã lưu ghi chú CSKH (${caLabel})` : `Đã xóa ghi chú CSKH (${caLabel})`
+        );
+      }
+
       await fetchClasses(true);
       window.dispatchEvent(new Event('teacher-attendance-updated'));
     } catch (err: any) {
@@ -2443,7 +2465,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                 caNumber,
                 classLessonDraftsRef.current[draftKey] ?? nextVal
               );
-            }, 450);
+            }, 800);
           }}
           onBlur={() => {
             if (classLessonTimersRef.current[draftKey]) {
@@ -2506,7 +2528,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
       field === 'lesson_topic'
         ? draft?.lesson_topic !== undefined
           ? draft.lesson_topic
-          : att?.lesson_topic || getClassLessonValue(cls, dateStr, caNumber)
+          : att?.lesson_topic || ''
         : draft?.teacher_note !== undefined
         ? draft.teacher_note
         : att?.teacher_note || '';
@@ -2547,7 +2569,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
             inlineTimersRef.current[timerKey] = setTimeout(() => {
               delete inlineTimersRef.current[timerKey];
               void persist(nextVal);
-            }, 450);
+            }, 800);
           }}
           onBlur={() => {
             if (inlineTimersRef.current[timerKey]) {
@@ -2737,8 +2759,6 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
         dateStr,
         session,
         sessionNumber: caNo,
-        lessonTopic: null,
-        teacherNote: null,
         csNote: norm,
         studentName: st.full_name,
         fromPopover: true,
@@ -5480,6 +5500,25 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
         saving={!!savingKey}
         onSaveStatusAndNotes={async ({ session, sessionNumber, status, lesson_topic, teacher_note, cs_note }) => {
           if (!drawerState) return;
+          const dKey = `${drawerState.enrollmentClassId}_${drawerState.dateStr}_s${sessionNumber}`;
+          const clsKey = `${drawerState.classId}_${drawerState.dateStr}_s${sessionNumber}`;
+          if (isTeacher) {
+            setInlineDrafts((prev) => ({
+              ...prev,
+              [dKey]: {
+                ...prev[dKey],
+                ...(lesson_topic !== undefined ? { lesson_topic: lesson_topic || '' } : {}),
+                ...(teacher_note !== undefined ? { teacher_note: teacher_note || '' } : {}),
+              },
+            }));
+            if (lesson_topic !== undefined) {
+              classLessonDraftsRef.current[clsKey] = lesson_topic || '';
+              setClassLessonDrafts((prev) => ({ ...prev, [clsKey]: lesson_topic || '' }));
+            }
+          }
+          if (isCSOnly && cs_note !== undefined) {
+            setCsNoteDrafts((prev) => ({ ...prev, [dKey]: cs_note || '' }));
+          }
           await handleMarkAttendanceAndNote({
             classId: drawerState.classId,
             enrollmentClassId: drawerState.enrollmentClassId,
@@ -5494,14 +5533,32 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
         }}
         onSaveNotesOnly={async ({ session, sessionNumber, lesson_topic, teacher_note, cs_note }) => {
           if (!drawerState || (!isTeacher && !isCSOnly)) return;
+          const dKey = `${drawerState.enrollmentClassId}_${drawerState.dateStr}_s${sessionNumber}`;
+          const clsKey = `${drawerState.classId}_${drawerState.dateStr}_s${sessionNumber}`;
+          if (isTeacher) {
+            setInlineDrafts((prev) => ({
+              ...prev,
+              [dKey]: {
+                ...prev[dKey],
+                ...(lesson_topic !== undefined ? { lesson_topic: lesson_topic || '' } : {}),
+                ...(teacher_note !== undefined ? { teacher_note: teacher_note || '' } : {}),
+              },
+            }));
+            if (lesson_topic !== undefined) {
+              classLessonDraftsRef.current[clsKey] = lesson_topic || '';
+              setClassLessonDrafts((prev) => ({ ...prev, [clsKey]: lesson_topic || '' }));
+            }
+          }
+          if (isCSOnly && cs_note !== undefined) {
+            setCsNoteDrafts((prev) => ({ ...prev, [dKey]: cs_note || '' }));
+          }
           await handleSaveLessonAndNote({
             classId: drawerState.classId,
             enrollmentClassId: drawerState.enrollmentClassId,
             dateStr: drawerState.dateStr,
             session,
             sessionNumber,
-            lessonTopic: isTeacher ? lesson_topic ?? null : null,
-            teacherNote: isTeacher ? teacher_note ?? null : null,
+            ...(isTeacher ? { lessonTopic: lesson_topic ?? null, teacherNote: teacher_note ?? null } : {}),
             ...(isCSOnly ? { csNote: cs_note ?? null } : {}),
             studentName: drawerState.studentName,
             fromPopover: true,

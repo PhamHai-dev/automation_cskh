@@ -647,16 +647,21 @@ export const StudentsPage: React.FC = () => {
     field: 'study_report_url' | 'exchange_info' | 'callback_note' | 'hot_issue_note' | 'post_course_care',
     val: string
   ) => {
-    await careApi.updateEnrollmentCare(enrollmentId, { [field]: val });
-    // Local state sync
-    setStudents((prev) =>
-      prev.map((st) => ({
-        ...st,
-        enrollments: st.enrollments?.map((enr) =>
-          enr.id === enrollmentId ? { ...enr, [field]: val } : enr
-        ),
-      }))
-    );
+    try {
+      await careApi.updateEnrollmentCare(enrollmentId, { [field]: val });
+      setStudents((prev) =>
+        prev.map((st) => ({
+          ...st,
+          enrollments: st.enrollments?.map((enr) =>
+            enr.id === enrollmentId ? { ...enr, [field]: val } : enr
+          ),
+        }))
+      );
+      toast.success(val ? 'Đã lưu thông tin chăm sóc học viên' : 'Đã xóa nội dung ghi chú');
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Không thể lưu thông tin chăm sóc');
+      throw err;
+    }
   };
 
   // Handler to update JLPT program_metadata directly via studentsApi.update
@@ -670,23 +675,29 @@ export const StudentsPage: React.FC = () => {
       ...(enr.program_metadata || {}),
       ...patch,
     };
-    await studentsApi.update(student.id, {
-      enrollment_id: enr.id,
-      program_type: enr.program_type || 'JLPT',
-      program_metadata: nextMeta,
-    });
-    setStudents((prev) =>
-      prev.map((st) =>
-        st.id === student.id
-          ? {
-              ...st,
-              enrollments: st.enrollments?.map((e, idx) =>
-                idx === 0 ? { ...e, program_metadata: nextMeta } : e
-              ),
-            }
-          : st
-      )
-    );
+    try {
+      await studentsApi.update(student.id, {
+        enrollment_id: enr.id,
+        program_type: enr.program_type || 'JLPT',
+        program_metadata: nextMeta,
+      });
+      setStudents((prev) =>
+        prev.map((st) =>
+          st.id === student.id
+            ? {
+                ...st,
+                enrollments: st.enrollments?.map((e, idx) =>
+                  idx === 0 ? { ...e, program_metadata: nextMeta } : e
+                ),
+              }
+            : st
+        )
+      );
+      toast.success('Đã lưu cập nhật thông tin khóa học');
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Không thể lưu thông tin khóa học');
+      throw err;
+    }
   };
 
   // Handler to save session care log
@@ -695,34 +706,43 @@ export const StudentsPage: React.FC = () => {
     sessionNumber: number,
     content: string
   ) => {
-    await careApi.saveSessionCareLog(enrollmentId, sessionNumber, { content });
-    // Local state sync
-    setStudents((prev) =>
-      prev.map((st) => ({
-        ...st,
-        enrollments: st.enrollments?.map((enr) => {
-          if (enr.id !== enrollmentId) return enr;
-          const careLogs = [...(enr.care_logs || [])];
-          const existingIdx = careLogs.findIndex(
-            (cl) => cl.after_session_number === sessionNumber
-          );
-          if (existingIdx >= 0) {
-            careLogs[existingIdx] = {
-              ...careLogs[existingIdx],
-              content,
-            };
-          } else {
-            careLogs.push({
-              id: Date.now(),
-              after_session_number: sessionNumber,
-              content,
-              created_at: new Date().toISOString(),
-            });
-          }
-          return { ...enr, care_logs: careLogs };
-        }),
-      }))
-    );
+    try {
+      await careApi.saveSessionCareLog(enrollmentId, sessionNumber, { content });
+      setStudents((prev) =>
+        prev.map((st) => ({
+          ...st,
+          enrollments: st.enrollments?.map((enr) => {
+            if (enr.id !== enrollmentId) return enr;
+            const careLogs = [...(enr.care_logs || [])];
+            const existingIdx = careLogs.findIndex(
+              (cl) => cl.after_session_number === sessionNumber
+            );
+            if (existingIdx >= 0) {
+              careLogs[existingIdx] = {
+                ...careLogs[existingIdx],
+                content,
+              };
+            } else {
+              careLogs.push({
+                id: Date.now(),
+                after_session_number: sessionNumber,
+                content,
+                created_at: new Date().toISOString(),
+              });
+            }
+            return { ...enr, care_logs: careLogs };
+          }),
+        }))
+      );
+      toast.success(
+        content
+          ? `Đã lưu chăm sóc sau Buổi ${sessionNumber}`
+          : `Đã xóa chăm sóc sau Buổi ${sessionNumber}`
+      );
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Không thể lưu phản hồi chăm sóc');
+      throw err;
+    }
   };
 
   const openModal = (student?: Student) => {
