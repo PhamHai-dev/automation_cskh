@@ -167,7 +167,7 @@ export interface CsSheetBackupSummary {
   configId?: number;
   csUserId?: number;
   staffCode?: string | null;
-  programType?: 'JLPT' | 'KAIWA' | string;
+  programType?: 'JLPT' | 'KAIWA' | 'TEACHER' | string;
   status?: 'SUCCESS' | 'FAILED' | string;
   syncedToGoogleSheet?: boolean;
   localFilePath?: string;
@@ -181,6 +181,7 @@ export interface CsSheetBackupSummary {
   backedUpAt?: string;
   profile?: SheetBackupSheetStats;
   attendance?: SheetBackupSheetStats;
+  finalAttendance?: SheetBackupSheetStats | null;
   // alias tương thích ngược
   sheet1?: SheetBackupSheetStats;
   sheet3?: SheetBackupSheetStats;
@@ -189,7 +190,7 @@ export interface CsSheetBackupSummary {
 export interface CsSheetBackupConfigItem {
   id: number;
   cs_user_id: number;
-  program_type: 'JLPT' | 'KAIWA' | string;
+  program_type: 'JLPT' | 'KAIWA' | 'TEACHER' | string;
   name: string;
   target_spreadsheet_url?: string | null;
   target_spreadsheet_id?: string | null;
@@ -197,8 +198,11 @@ export interface CsSheetBackupConfigItem {
   profile_sheet_name: string;   // KAIWA: '1.Chăm sóc', JLPT: 'Data JLPT_Inhouse'
   profile_header_row: number;   // KAIWA: 3, JLPT: 2
   profile_enabled: boolean;
-  sheet_name: string;           // KAIWA: '3.Chấm buổi', JLPT: 'Chấm buổi'
+  sheet_name: string;           // KAIWA: '3.Chấm buổi', JLPT: 'Chấm buổi', TEACHER: '2026 スケジュール'
   header_row: number;           // 2
+  final_sheet_name?: string;    // mặc định 'Điểm danh chốt'
+  final_header_row?: number;    // mặc định 2
+  final_enabled?: boolean;      // mặc định true cho KAIWA/JLPT
   schedule_times?: string[] | null;
   backup_year?: number | null;
   enabled: boolean;
@@ -228,6 +232,8 @@ export interface UpdateCsSheetBackupConfigDTO {
   profile_enabled?: boolean;
   sheet_name?: string;
   header_row?: number;
+  final_sheet_name?: string;
+  final_enabled?: boolean;
   schedule_times?: string[];
   backup_year?: number | null;
   enabled?: boolean;
@@ -235,4 +241,68 @@ export interface UpdateCsSheetBackupConfigDTO {
   mask_sensitive_data?: boolean;
 }
 
+export interface BackupHistoryItem {
+  id: number;
+  configId: number;
+  staffCode: string;
+  staffName: string;
+  programType: string;
+  triggerType: 'AUTO' | 'MANUAL';
+  mode: 'DELTA' | 'FULL';
+  status: 'SUCCESS' | 'FAILED';
+  durationSec: number;
+  createdAt: string;
+  error?: string | null;
+  summary?: CsSheetBackupSummary | null;
+}
 
+export interface BackupHistoryBatch {
+  batchId: string;
+  startedAt: string;
+  triggerType: 'AUTO' | 'MANUAL';
+  mode: 'DELTA' | 'FULL';
+  totalConfigs: number;
+  successCount: number;
+  failedCount: number;
+  durationSec: number;
+  items: BackupHistoryItem[];
+}
+
+export interface BackupHistoryResponse {
+  stats: {
+    todayTotal: number;
+    todaySuccess: number;
+    todayFailed: number;
+    lastRunTime: string | null;
+  };
+  batches: BackupHistoryBatch[];
+  total: number;
+}
+
+export interface SyncHistoryItem {
+  id: number;
+  code: string;
+  programType: string;
+  triggerType: 'AUTO' | 'MANUAL';
+  mode: 'DELTA' | 'FULL';
+  status: 'SUCCESS' | 'PARTIAL_FAILED' | 'FAILED';
+  durationSec: number;
+  createdAt: string;
+  totalRows: number;
+  createdCount: number;
+  updatedCount: number;
+  unchangedRows: number;
+  failedCount: number;
+  error?: string | null;
+}
+
+export interface SyncHistoryResponse {
+  stats: {
+    todayTotal: number;
+    todaySuccess: number;
+    todayFailed: number;
+    lastRunTime: string | null;
+  };
+  items: SyncHistoryItem[];
+  total: number;
+}

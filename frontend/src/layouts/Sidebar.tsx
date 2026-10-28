@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { NavLink } from 'react-router-dom';
+import { NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { reconciliationApi } from '../features/attendance/api/reconciliation.api';
 import {
@@ -14,6 +14,7 @@ import {
   FileSpreadsheet,
   ShieldCheck,
   ChevronLeft,
+  ChevronDown,
   Sparkles,
   Zap,
   Link2,
@@ -29,6 +30,12 @@ interface SidebarProps {
   onMobileClose?: () => void;
 }
 
+interface NavSubItem {
+  name: string;
+  tab: string;
+  allowedRoles?: string[];
+}
+
 interface NavItem {
   name: string;
   path: string;
@@ -36,6 +43,7 @@ interface NavItem {
   allowedRoles?: string[];
   end?: boolean;
   badge?: number;
+  subItems?: NavSubItem[];
 }
 
 interface NavGroup {
@@ -48,9 +56,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onMobileClose,
 }) => {
   const { user } = useAuth();
+  const location = useLocation();
   const userRoles = user?.roles || [];
   const isTeacherOnly = userRoles.includes('TEACHER') && !userRoles.includes('ADMIN') && !userRoles.includes('MANAGE');
   const [attendancePendingCount, setAttendancePendingCount] = useState(0);
+  const [hoveredPath, setHoveredPath] = useState<string | null>(null);
 
   const loadAttendanceCount = useCallback(async () => {
     if (!isTeacherOnly) return;
@@ -208,11 +218,38 @@ export const Sidebar: React.FC<SidebarProps> = ({
       title: 'DỮ LIỆU & HỆ THỐNG',
       items: [
         {
-          name: 'Nhập & Xuất Excel',
+          name: 'Nhập xuất dữ liệu',
           path: '/imports',
           icon: <FileSpreadsheet className="w-5 h-5 shrink-0" />,
           allowedRoles: ['ADMIN', 'MANAGE', 'CS', 'TEACHER'],
           end: true,
+          subItems: [
+            {
+              name: 'Đồng bộ dữ liệu học viên',
+              tab: 'sheet-sync',
+              allowedRoles: ['ADMIN', 'MANAGE'],
+            },
+            {
+              name: 'Backup dữ liệu',
+              tab: 'sheet-backup',
+              allowedRoles: ['ADMIN', 'MANAGE', 'CS', 'TEACHER'],
+            },
+            {
+              name: 'Upload Hồ sơ',
+              tab: 'wizard',
+              allowedRoles: ['ADMIN', 'MANAGE', 'CS'],
+            },
+            {
+              name: 'Điểm danh CSHV/GV',
+              tab: 'attendance',
+              allowedRoles: ['ADMIN', 'MANAGE', 'CS', 'TEACHER'],
+            },
+            {
+              name: 'Lịch sử nhập',
+              tab: 'history',
+              allowedRoles: ['ADMIN', 'MANAGE', 'CS', 'TEACHER'],
+            },
+          ],
         },
         {
           name: 'Hàng đợi Phê duyệt Nhập liệu',
@@ -241,7 +278,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
           name: 'Cấu hình cá nhân',
           path: '/settings/preferences',
           icon: <Settings className="w-5 h-5 shrink-0" />,
-          // All authenticated users
         },
       ],
     },
@@ -287,28 +323,111 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <div className="px-3 mb-2 text-[10px] font-bold text-text-muted uppercase tracking-wider">
                 {group.title}
               </div>
-              {visibleItems.map((item) => (
-                <NavLink
-                  key={`${item.path}-${item.name}`}
-                  to={item.path}
-                  end={item.end}
-                  onClick={onMobileClose}
-                  className={({ isActive }) =>
-                    `flex items-center gap-3 px-3 py-2.5 rounded-xl font-medium text-xs sm:text-sm transition-all duration-150 ${isActive
-                      ? 'bg-primary-soft text-primary font-semibold shadow-xs'
-                      : 'text-text-secondary hover:bg-surface-muted hover:text-text-primary'
-                    }`
-                  }
-                >
-                  <span className="shrink-0">{item.icon}</span>
-                  <span className="truncate flex-1">{item.name}</span>
-                  {item.badge !== undefined && item.badge > 0 && (
-                    <span className="min-w-5 rounded-full bg-warning/15 px-1.5 py-0.5 text-center text-[10px] font-bold text-amber-700">
-                      {item.badge > 99 ? '99+' : item.badge}
-                    </span>
-                  )}
-                </NavLink>
-              ))}
+              {visibleItems.map((item) => {
+                const visibleSubItems = (item.subItems || []).filter((sub) =>
+                  hasPermission(sub.allowedRoles)
+                );
+
+                if (visibleSubItems.length > 0) {
+                  const isParentRouteActive = location.pathname === item.path;
+                  const isExpanded = isParentRouteActive || hoveredPath === item.path;
+                  const searchParams = new URLSearchParams(location.search);
+                  const rawTab = searchParams.get('tab');
+                  const defaultTab = visibleSubItems[0]?.tab;
+                  const activeSubTab =
+                    rawTab && visibleSubItems.some((s) => s.tab === rawTab)
+                      ? rawTab
+                      : defaultTab;
+
+                  return (
+                    <div
+                      key={`${item.path}-${item.name}`}
+                      onMouseEnter={() => setHoveredPath(item.path)}
+                      onMouseLeave={() => setHoveredPath(null)}
+                      className="space-y-1"
+                    >
+                      <NavLink
+                        to={item.path}
+                        end={item.end}
+                        onClick={onMobileClose}
+                        className={({ isActive }) =>
+                          `flex items-center gap-3 px-3 py-2.5 rounded-xl font-medium text-xs sm:text-sm transition-all duration-150 ${
+                            isActive
+                              ? 'bg-primary-soft text-primary font-semibold shadow-xs'
+                              : 'text-text-secondary hover:bg-surface-muted hover:text-text-primary'
+                          }`
+                        }
+                      >
+                        <span className="shrink-0">{item.icon}</span>
+                        <span className="truncate flex-1">{item.name}</span>
+                        <ChevronDown
+                          className={`w-4 h-4 shrink-0 transition-transform duration-200 ${
+                            isExpanded ? 'rotate-180 text-primary' : 'text-text-muted'
+                          }`}
+                        />
+                      </NavLink>
+
+                      <div
+                        className={`overflow-hidden transition-all duration-200 ease-in-out ${
+                          isExpanded
+                            ? 'max-h-72 opacity-100 mt-1'
+                            : 'max-h-0 opacity-0 pointer-events-none'
+                        }`}
+                      >
+                        <div className="ml-5 pl-3 border-l border-slate-200 space-y-0.5 py-0.5">
+                          {visibleSubItems.map((sub) => {
+                            const isSubActive =
+                              isParentRouteActive && activeSubTab === sub.tab;
+                            return (
+                              <NavLink
+                                key={sub.tab}
+                                to={`${item.path}?tab=${sub.tab}`}
+                                onClick={onMobileClose}
+                                className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs transition-colors ${
+                                  isSubActive
+                                    ? 'bg-blue-50/90 text-blue-600 font-semibold'
+                                    : 'text-slate-600 hover:bg-slate-100/80 hover:text-slate-900 font-medium'
+                                }`}
+                              >
+                                <span
+                                  className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                                    isSubActive ? 'bg-blue-600' : 'bg-slate-300'
+                                  }`}
+                                />
+                                <span className="truncate">{sub.name}</span>
+                              </NavLink>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                }
+
+                return (
+                  <NavLink
+                    key={`${item.path}-${item.name}`}
+                    to={item.path}
+                    end={item.end}
+                    onClick={onMobileClose}
+                    className={({ isActive }) =>
+                      `flex items-center gap-3 px-3 py-2.5 rounded-xl font-medium text-xs sm:text-sm transition-all duration-150 ${
+                        isActive
+                          ? 'bg-primary-soft text-primary font-semibold shadow-xs'
+                          : 'text-text-secondary hover:bg-surface-muted hover:text-text-primary'
+                      }`
+                    }
+                  >
+                    <span className="shrink-0">{item.icon}</span>
+                    <span className="truncate flex-1">{item.name}</span>
+                    {item.badge !== undefined && item.badge > 0 && (
+                      <span className="min-w-5 rounded-full bg-warning/15 px-1.5 py-0.5 text-center text-[10px] font-bold text-amber-700">
+                        {item.badge > 99 ? '99+' : item.badge}
+                      </span>
+                    )}
+                  </NavLink>
+                );
+              })}
             </div>
           );
         })}
