@@ -248,14 +248,19 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
   const [activeInlinePickerKey, setActiveInlinePickerKey] = useState<string | null>(null);
   // Tab 1: nháp Ghi chú CSKH theo từng học viên & từng ca (`${enrollment_class_id}_${dateStr}_s${caNo}`)
   const [csNoteDrafts, setCsNoteDrafts] = useState<Record<string, string>>({});
+  const csNoteDraftsRef = useRef<Record<string, string>>({});
   const csNoteTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const lastSavedCsNoteMapRef = useRef<Record<string, string>>({});
 
   // Tab 1: nháp Bài học & Ghi chú GV theo từng học viên & từng ca khi đăng nhập vai trò Giáo viên
   const [teacherLessonDrafts, setTeacherLessonDrafts] = useState<Record<string, string>>({});
   const [teacherNoteDrafts, setTeacherNoteDrafts] = useState<Record<string, string>>({});
+  const teacherLessonDraftsRef = useRef<Record<string, string>>({});
+  const teacherNoteDraftsRef = useRef<Record<string, string>>({});
   const teacherNoteTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const lastSavedTeacherNoteMapRef = useRef<Record<string, { lesson: string; note: string }>>({});
+  // Khóa chống tạo trùng ClassSession khi người dùng vừa bấm chấm vừa gõ bài học/ghi chú trên ca mới
+  const sessionCreateLocksRef = useRef<Record<string, Promise<ClassSession>>>({});
 
   // Filter mode for Tab 2 (Detailed): 'month' (default), 'week'
   const [internalFilterMode, setInternalFilterMode] = useState<'month' | 'week'>('month');
@@ -351,10 +356,31 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
   const [attendanceOverrides, setAttendanceOverrides] = useState<Map<string, Attendance>>(new Map());
 
   useEffect(() => {
-    setCreatedSessions([]);
-    setDeletedSessionIds(new Set());
+    if (sessions.length === 0) return;
+    const serverIds = new Set(sessions.map((s) => s.id));
+    setCreatedSessions((prev) => {
+      const remaining = prev.filter((s) => !serverIds.has(s.id));
+      return remaining.length === prev.length ? prev : remaining;
+    });
   }, [sessions]);
-  useEffect(() => setAttendanceOverrides(new Map()), [attendances]);
+  useEffect(() => {
+    if (attendances.length === 0) return;
+    setAttendanceOverrides((prev) => {
+      if (prev.size === 0) return prev;
+      const next = new Map(prev);
+      attendances.forEach((srv) => {
+        const k = `${srv.enrollment_class_id}_session_${srv.class_session_id}`;
+        const ov = next.get(k);
+        if (!ov) return;
+        const srvTime = srv.updated_at ? new Date(srv.updated_at).getTime() : 0;
+        const ovTime = ov.updated_at ? new Date(ov.updated_at).getTime() : 0;
+        if (srvTime >= ovTime) {
+          next.delete(k);
+        }
+      });
+      return next.size === prev.size ? prev : next;
+    });
+  }, [attendances]);
 
   // Đóng thanh chọn 6 trạng thái inline khi đổi ngày, đổi tab hoặc bấm phím Escape
   useEffect(() => {
@@ -436,6 +462,11 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
     return map;
   }, [effectiveSessions]);
 
+  const sessionsByClassAndDateRef = useRef<Map<string, ClassSession[]>>(new Map());
+  sessionsByClassAndDateRef.current = sessionsByClassAndDate;
+
+  const rawAttendanceMapRef = useRef<Map<string, Attendance>>(new Map());
+
   const getSessionsForCell = (enrollmentClassId: number, dateStr: string) => {
     const classId = cls?.id || students.find((item) => item.enrollment_class_id === enrollmentClassId)?.class_id;
     return classId ? sessionsByClassAndDate.get(`${classId}_${dateStr}`) || [] : [];
@@ -486,11 +517,13 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
       if ((value as any).deleted_at) {
         map.delete(key);
       } else {
-        map.set(key, value);
+        const existing = map.get(key);
+        map.set(key, existing ? { ...existing, ...value } : value);
       }
     });
     return map;
   }, [attendances, attendanceOverrides]);
+  rawAttendanceMapRef.current = rawAttendanceMap;
 
   // Kiểm tra một bản ghi điểm danh đã thực sự có kết quả CHỐT hay chưa.
   // Lưu ý: Trong DB cột `Attendance.status` không nullable nên khi GV hoặc CSKH chấm trước,
@@ -520,16 +553,17 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
     return (att.status || att.cs_status || att.teacher_status) as AttendanceStatus | undefined;
   };
 
-  // Map existing attendances by enrollment + concrete session (never by date) filtered by activeSide.
+  // Map existing attendances by enrollment + concrete session (for Tab 2 Bảng tháng & Drawer & Tab 3)
   const attendanceMap = useMemo(() => {
     const map = new Map<string, Attendance>();
     rawAttendanceMap.forEach((a, key) => {
-      const visibleStatus =
-        activeSide === 'ADMIN'
-          ? getFinalizedStatus(a)
-          : activeSide === 'TEACHER'
-          ? a.teacher_status
-          : a.cs_status;
+      const visibleStatus = (
+        activeSide === 'TEACHER'
+          ? a.teacher_status || a.status
+          : activeSide === 'CS'
+          ? a.cs_status || a.teacher_status || a.status
+          : getFinalizedStatus(a) || a.teacher_status || a.cs_status || a.status
+      ) as AttendanceStatus | undefined;
       if (!visibleStatus) return;
       map.set(key, { ...a, status: visibleStatus });
     });
@@ -674,12 +708,13 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
 
         if (!dStr || clearedKeys.has(`${s.enrollment_class_id}_session_${a.class_session_id}`)) return;
 
-        const status =
-          selectedSide === 'ADMIN'
-            ? getFinalizedStatus(a)
-            : selectedSide === 'TEACHER'
-            ? a.teacher_status
-            : a.cs_status;
+        const status = (
+          selectedSide === 'TEACHER'
+            ? a.teacher_status || a.status
+            : selectedSide === 'CS'
+            ? a.cs_status || a.teacher_status || a.status
+            : getFinalizedStatus(a) || a.teacher_status || a.cs_status || a.status
+        ) as AttendanceStatus | undefined;
         if (!status) return;
         const count = 1;
 
@@ -1220,6 +1255,47 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
   const resolveClassId = (enrollmentClassId: number, session?: ClassSession) =>
     session?.class_id || cls?.id || students.find((item) => item.enrollment_class_id === enrollmentClassId)?.class_id;
 
+  // Đảm bảo chỉ tạo đúng 1 ClassSession cho (classId, dateStr, caNo) ngay cả khi nhiều thao tác
+  // (chọn trạng thái + gõ bài học + gõ ghi chú) diễn ra đồng thời trên cùng 1 dòng.
+  const ensureSessionForCell = async (
+    classId: number,
+    dateStr: string,
+    caNo = 1,
+    passedSession?: ClassSession
+  ): Promise<ClassSession> => {
+    if (passedSession) return passedSession;
+    const existingList = sessionsByClassAndDateRef.current.get(`${classId}_${dateStr}`) || [];
+    const existingAtCa = existingList[caNo - 1];
+    if (existingAtCa) return existingAtCa;
+
+    const lockKey = `${classId}_${dateStr}_s${caNo}`;
+    if (lockKey in sessionCreateLocksRef.current) {
+      return sessionCreateLocksRef.current[lockKey];
+    }
+
+    const createPromise = (async () => {
+      try {
+        const created = await classSessionsApi.create(classId, { session_date: dateStr });
+        setCreatedSessions((current) =>
+          current.some((s) => s.id === created.id) ? current : [...current, created]
+        );
+        const curList = sessionsByClassAndDateRef.current.get(`${classId}_${dateStr}`) || [];
+        if (!curList.some((s) => s.id === created.id)) {
+          sessionsByClassAndDateRef.current.set(`${classId}_${dateStr}`, [
+            ...curList,
+            created,
+          ]);
+        }
+        return created;
+      } finally {
+        delete sessionCreateLocksRef.current[lockKey];
+      }
+    })();
+
+    sessionCreateLocksRef.current[lockKey] = createPromise;
+    return createPromise;
+  };
+
   const handleStatusSelect = async (
     enrollmentClassId: number,
     dateStr: string,
@@ -1231,43 +1307,74 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
     const classId = resolveClassId(enrollmentClassId, session);
     if (!classId) return toast.error('Không xác định được lớp học');
 
+    const caNo = fallbackSessionNumber || 1;
+    const draftKey = `${enrollmentClassId}_${dateStr}_s${caNo}`;
+    const draftLesson =
+      extra?.lesson_topic !== undefined
+        ? extra.lesson_topic
+        : teacherLessonDraftsRef.current[draftKey] !== undefined
+        ? teacherLessonDraftsRef.current[draftKey].trim() || null
+        : undefined;
+    const draftTeacherNote =
+      extra?.teacher_note !== undefined
+        ? extra.teacher_note
+        : teacherNoteDraftsRef.current[draftKey] !== undefined
+        ? teacherNoteDraftsRef.current[draftKey].trim() || null
+        : undefined;
+    const draftCsNote =
+      extra?.cs_note !== undefined
+        ? extra.cs_note
+        : csNoteDraftsRef.current[draftKey] !== undefined
+        ? csNoteDraftsRef.current[draftKey].trim() || null
+        : undefined;
+
     // Thu gọn thanh chọn trạng thái inline ngay khi chọn
     setActiveInlinePickerKey(null);
     setSavingSessionId(session?.id ?? 'draft');
     try {
-      let target = session;
       const existingCount = getSessionsForCell(enrollmentClassId, dateStr).length;
-      if (!target) {
-        target = await classSessionsApi.create(classId, { session_date: dateStr });
-        setCreatedSessions((current) => [...current, target!]);
-      }
+      const target = await ensureSessionForCell(classId, dateStr, caNo, session);
       const saved = await attendanceApi.mark(classId, target.id, {
         enrollment_class_id: enrollmentClassId,
         status,
         side: activeSide,
-        ...(extra?.lesson_topic !== undefined ? { lesson_topic: extra.lesson_topic } : {}),
-        ...(extra?.teacher_note !== undefined ? { teacher_note: extra.teacher_note } : {}),
-        ...(extra?.cs_note !== undefined ? { cs_note: extra.cs_note } : {}),
+        ...(draftLesson !== undefined ? { lesson_topic: draftLesson } : {}),
+        ...(draftTeacherNote !== undefined ? { teacher_note: draftTeacherNote } : {}),
+        ...(draftCsNote !== undefined ? { cs_note: draftCsNote } : {}),
       });
       setAttendanceOverrides((current) => {
         const next = new Map(current);
+        const key = `${enrollmentClassId}_session_${target.id}`;
+        const prev = next.get(key) || rawAttendanceMapRef.current.get(key);
         const sideStatus =
           activeSide === 'ADMIN'
             ? saved.status
             : activeSide === 'TEACHER'
             ? saved.teacher_status
             : saved.cs_status;
-        next.set(`${enrollmentClassId}_session_${target!.id}`, {
+        next.set(key, {
+          ...prev,
           ...saved,
+          class_session: saved.class_session || prev?.class_session || target,
           status: sideStatus || saved.status || status,
         });
         return next;
       });
-      const localIndex = getSessionsForCell(enrollmentClassId, dateStr).findIndex((item) => item.id === target!.id);
-      const displaySessionNo = localIndex >= 0 ? localIndex + 1 : (fallbackSessionNumber || existingCount + 1);
+      const localIndex = getSessionsForCell(enrollmentClassId, dateStr).findIndex(
+        (item) => item.id === target.id
+      );
+      const displaySessionNo =
+        localIndex >= 0 ? localIndex + 1 : fallbackSessionNumber || existingCount + 1;
       toast.success(`Đã lưu Ca ${displaySessionNo}`);
+      onRefresh();
+      window.dispatchEvent(new Event('teacher-attendance-updated'));
     } catch (err: any) {
-      toast.error(err.response?.data?.message || err.response?.data?.error?.message || err.message || 'Không thể lưu điểm danh');
+      toast.error(
+        err.response?.data?.message ||
+          err.response?.data?.error?.message ||
+          err.message ||
+          'Không thể lưu điểm danh'
+      );
       onRefresh();
     } finally {
       setSavingSessionId(null);
@@ -1278,28 +1385,25 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
     enrollmentClassId: number,
     dateStr: string,
     session: ClassSession | undefined,
-    lessonTopic: string | null,
-    teacherNote: string | null,
-    csNote?: string | null
+    lessonTopic: string | null | undefined,
+    teacherNote: string | null | undefined,
+    csNote?: string | null,
+    caNo = 1
   ) => {
     const classId = resolveClassId(enrollmentClassId, session);
     if (!classId) return toast.error('Không xác định được lớp học');
 
     setSavingSessionId(session?.id ?? 'draft');
     try {
-      let target = session;
-      if (!target) {
-        target = await classSessionsApi.create(classId, { session_date: dateStr });
-        setCreatedSessions((current) => [...current, target!]);
-      }
+      const target = await ensureSessionForCell(classId, dateStr, caNo, session);
       const key = `${enrollmentClassId}_session_${target.id}`;
-      const existingRaw = rawAttendanceMap.get(key);
+      const existingRaw = rawAttendanceMapRef.current.get(key);
       let saved: Attendance;
       if (existingRaw) {
         saved = await attendanceApi.update(classId, target.id, existingRaw.id, {
           side: activeSide,
-          lesson_topic: lessonTopic,
-          teacher_note: teacherNote,
+          ...(lessonTopic !== undefined ? { lesson_topic: lessonTopic } : {}),
+          ...(teacherNote !== undefined ? { teacher_note: teacherNote } : {}),
           ...(csNote !== undefined ? { cs_note: csNote } : {}),
         });
       } else {
@@ -1307,13 +1411,14 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
           enrollment_class_id: enrollmentClassId,
           status: 'ATTENDED',
           side: activeSide,
-          lesson_topic: lessonTopic,
-          teacher_note: teacherNote,
+          ...(lessonTopic !== undefined ? { lesson_topic: lessonTopic } : {}),
+          ...(teacherNote !== undefined ? { teacher_note: teacherNote } : {}),
           ...(csNote !== undefined ? { cs_note: csNote } : {}),
         });
       }
       setAttendanceOverrides((current) => {
         const next = new Map(current);
+        const prev = next.get(key) || rawAttendanceMapRef.current.get(key);
         const sideStatus =
           activeSide === 'ADMIN'
             ? saved.status
@@ -1321,13 +1426,22 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
             ? saved.teacher_status
             : saved.cs_status;
         next.set(key, {
+          ...prev,
           ...saved,
+          class_session: saved.class_session || prev?.class_session || target,
           status: sideStatus || saved.status || existingRaw?.status || 'ATTENDED',
         });
         return next;
       });
+      onRefresh();
+      window.dispatchEvent(new Event('teacher-attendance-updated'));
     } catch (err: any) {
-      toast.error(err.response?.data?.message || err.response?.data?.error?.message || err.message || 'Không thể lưu ghi chú');
+      toast.error(
+        err.response?.data?.message ||
+          err.response?.data?.error?.message ||
+          err.message ||
+          'Không thể lưu ghi chú'
+      );
       onRefresh();
     } finally {
       setSavingSessionId(null);
@@ -1642,6 +1756,8 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
       const newCaNumber = allDay.findIndex((s) => s.id === created.id) + 1 || allDay.length;
       setActiveInlinePickerKey(`${st.enrollment_class_id}_${dateStr}_s${newCaNumber}`);
       toast.success(`Đã thêm Ca ${newCaNumber} cho ngày ${formatSessionDate(dateStr)}`);
+      onRefresh();
+      window.dispatchEvent(new Event('teacher-attendance-updated'));
     } catch (err: any) {
       toast.error(err.response?.data?.message || 'Không thể thêm ca học');
     } finally {
@@ -2049,14 +2165,30 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
     const editable = activeSide === 'CS';
 
     const persist = (caNo: number, session: ClassSession | undefined, rawVal: string) => {
-      if (!session) return;
       const draftKey = `${st.enrollment_class_id}_${dateStr}_s${caNo}`;
       const norm = rawVal.trim() || null;
-      const att = rawAttendanceMap.get(`${st.enrollment_class_id}_session_${session.id}`);
+      const classId = cls?.id || st.class_id;
+      const latestSession =
+        session ||
+        (classId
+          ? (sessionsByClassAndDateRef.current.get(`${classId}_${dateStr}`) || [])[caNo - 1]
+          : undefined);
+      if (!latestSession && !norm) return;
+      const att = latestSession
+        ? rawAttendanceMapRef.current.get(`${st.enrollment_class_id}_session_${latestSession.id}`)
+        : undefined;
       const current = (att?.cs_note ?? '') || null;
       if ((lastSavedCsNoteMapRef.current[draftKey] ?? current) === norm) return;
       lastSavedCsNoteMapRef.current[draftKey] = norm ?? '';
-      void handleSaveNote(st.enrollment_class_id, dateStr, session, null, null, norm);
+      void handleSaveNote(
+        st.enrollment_class_id,
+        dateStr,
+        latestSession,
+        undefined,
+        undefined,
+        norm,
+        caNo
+      );
     };
 
     return (
@@ -2100,24 +2232,29 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
                 disabled={!session}
                 onChange={(e) => {
                   const val = e.target.value;
+                  csNoteDraftsRef.current[draftKey] = val;
                   setCsNoteDrafts((prev) => ({ ...prev, [draftKey]: val }));
                   if (csNoteTimersRef.current[draftKey]) clearTimeout(csNoteTimersRef.current[draftKey]);
                   csNoteTimersRef.current[draftKey] = setTimeout(() => {
                     delete csNoteTimersRef.current[draftKey];
-                    persist(caNo, session, val);
-                  }, 600);
+                    persist(caNo, session, csNoteDraftsRef.current[draftKey] ?? val);
+                  }, 450);
                 }}
                 onBlur={() => {
                   if (csNoteTimersRef.current[draftKey]) {
                     clearTimeout(csNoteTimersRef.current[draftKey]);
                     delete csNoteTimersRef.current[draftKey];
                   }
-                  persist(caNo, session, noteVal);
+                  persist(caNo, session, csNoteDraftsRef.current[draftKey] ?? noteVal);
                 }}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
                     e.preventDefault();
-                    persist(caNo, session, noteVal);
+                    if (csNoteTimersRef.current[draftKey]) {
+                      clearTimeout(csNoteTimersRef.current[draftKey]);
+                      delete csNoteTimersRef.current[draftKey];
+                    }
+                    persist(caNo, session, csNoteDraftsRef.current[draftKey] ?? noteVal);
                   }
                 }}
                 placeholder={session ? `Ghi chú CSKH Ca ${caNo}...` : 'Thêm ca để ghi chú'}
@@ -2131,7 +2268,7 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
   };
 
   // Cột "Bài học" & "Ghi chú GV" (Tab 1, khi đăng nhập vai trò Giáo viên ở chế độ Theo Học viên):
-  // nhập trực tiếp theo từng Ca (autosave 600ms/blur/Enter).
+  // nhập trực tiếp theo từng Ca (autosave 450ms/blur/Enter).
   const renderQuickTeacherFieldStack = (
     st: StudentRow,
     dateStr: string,
@@ -2147,33 +2284,63 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
     const daySessions = getSessionsForCell(st.enrollment_class_id, dateStr);
     const totalCa = Math.max(1, daySessions.length);
 
-    const persistTeacher = (
+    const persistTeacherField = (
       caNo: number,
       session: ClassSession | undefined,
-      rawLesson: string,
-      rawNote: string
+      editedField: 'lesson_topic' | 'teacher_note',
+      rawVal: string
     ) => {
       const draftKey = `${st.enrollment_class_id}_${dateStr}_s${caNo}`;
-      const normLesson = rawLesson.trim() || null;
-      const normNote = rawNote.trim() || null;
-      if (!session && !normLesson && !normNote) return;
-      const att = session
-        ? rawAttendanceMap.get(`${st.enrollment_class_id}_session_${session.id}`)
+      const normVal = rawVal.trim() || null;
+      const classId = cls?.id || st.class_id;
+      const latestSession =
+        session ||
+        (classId
+          ? (sessionsByClassAndDateRef.current.get(`${classId}_${dateStr}`) || [])[caNo - 1]
+          : undefined);
+      if (!latestSession && !normVal) return;
+
+      const att = latestSession
+        ? rawAttendanceMapRef.current.get(`${st.enrollment_class_id}_session_${latestSession.id}`)
         : undefined;
       const curLesson = (att?.lesson_topic ?? '').trim();
       const curNote = (att?.teacher_note ?? '').trim();
-      const last = lastSavedTeacherNoteMapRef.current[draftKey];
-      if (
-        (last && last.lesson === (normLesson ?? '') && last.note === (normNote ?? '')) ||
-        (!last && curLesson === (normLesson ?? '') && curNote === (normNote ?? ''))
-      ) {
-        return;
-      }
-      lastSavedTeacherNoteMapRef.current[draftKey] = {
-        lesson: normLesson ?? '',
-        note: normNote ?? '',
+      const last = lastSavedTeacherNoteMapRef.current[draftKey] || {
+        lesson: curLesson,
+        note: curNote,
       };
-      void handleSaveNote(st.enrollment_class_id, dateStr, session, normLesson, normNote);
+
+      if (editedField === 'lesson_topic') {
+        if (last.lesson === (normVal ?? '')) return;
+        lastSavedTeacherNoteMapRef.current[draftKey] = {
+          ...last,
+          lesson: normVal ?? '',
+        };
+        void handleSaveNote(
+          st.enrollment_class_id,
+          dateStr,
+          latestSession,
+          normVal,
+          undefined,
+          undefined,
+          caNo
+        );
+      } else {
+        if (last.note === (normVal ?? '')) return;
+        lastSavedTeacherNoteMapRef.current[draftKey] = {
+          ...last,
+          note: normVal ?? '',
+        };
+        void handleSaveNote(
+          st.enrollment_class_id,
+          dateStr,
+          latestSession,
+          undefined,
+          normVal,
+          undefined,
+          caNo
+        );
+      }
     };
 
     return (
@@ -2207,11 +2374,11 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
                 value={val}
                 onChange={(e) => {
                   const nextVal = e.target.value;
-                  const nextLesson = field === 'lesson_topic' ? nextVal : lessonVal;
-                  const nextNote = field === 'teacher_note' ? nextVal : noteVal;
                   if (field === 'lesson_topic') {
+                    teacherLessonDraftsRef.current[draftKey] = nextVal;
                     setTeacherLessonDrafts((prev) => ({ ...prev, [draftKey]: nextVal }));
                   } else {
+                    teacherNoteDraftsRef.current[draftKey] = nextVal;
                     setTeacherNoteDrafts((prev) => ({ ...prev, [draftKey]: nextVal }));
                   }
                   const timerKey = `${draftKey}_${field}`;
@@ -2220,8 +2387,12 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
                   }
                   teacherNoteTimersRef.current[timerKey] = setTimeout(() => {
                     delete teacherNoteTimersRef.current[timerKey];
-                    persistTeacher(caNo, session, nextLesson, nextNote);
-                  }, 600);
+                    const latestTyped =
+                      field === 'lesson_topic'
+                        ? teacherLessonDraftsRef.current[draftKey] ?? nextVal
+                        : teacherNoteDraftsRef.current[draftKey] ?? nextVal;
+                    persistTeacherField(caNo, session, field, latestTyped);
+                  }, 450);
                 }}
                 onBlur={() => {
                   const timerKey = `${draftKey}_${field}`;
@@ -2229,12 +2400,25 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
                     clearTimeout(teacherNoteTimersRef.current[timerKey]);
                     delete teacherNoteTimersRef.current[timerKey];
                   }
-                  persistTeacher(caNo, session, lessonVal, noteVal);
+                  const latestTyped =
+                    field === 'lesson_topic'
+                      ? teacherLessonDraftsRef.current[draftKey] ?? val
+                      : teacherNoteDraftsRef.current[draftKey] ?? val;
+                  persistTeacherField(caNo, session, field, latestTyped);
                 }}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
                     e.preventDefault();
-                    persistTeacher(caNo, session, lessonVal, noteVal);
+                    const timerKey = `${draftKey}_${field}`;
+                    if (teacherNoteTimersRef.current[timerKey]) {
+                      clearTimeout(teacherNoteTimersRef.current[timerKey]);
+                      delete teacherNoteTimersRef.current[timerKey];
+                    }
+                    const latestTyped =
+                      field === 'lesson_topic'
+                        ? teacherLessonDraftsRef.current[draftKey] ?? val
+                        : teacherNoteDraftsRef.current[draftKey] ?? val;
+                    persistTeacherField(caNo, session, field, latestTyped);
                   }
                 }}
                 placeholder={
@@ -4236,9 +4420,10 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
             drawerState.student.enrollment_class_id,
             drawerState.dateStr,
             session,
-            activeSide === 'TEACHER' ? lesson_topic ?? null : null,
-            activeSide === 'TEACHER' ? teacher_note ?? null : null,
-            activeSide === 'CS' ? cs_note ?? null : undefined
+            activeSide === 'TEACHER' ? lesson_topic ?? null : undefined,
+            activeSide === 'TEACHER' ? teacher_note ?? null : undefined,
+            activeSide === 'CS' ? cs_note ?? null : undefined,
+            drawerState.caNumber
           );
         }}
         onClearStatus={async (session) => {

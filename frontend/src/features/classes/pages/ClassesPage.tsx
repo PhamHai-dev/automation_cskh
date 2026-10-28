@@ -184,18 +184,50 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
   const isAdmin = Boolean(user?.roles?.includes('ADMIN'));
 
   const toast = useToast();
+  const storageKeyPrefix = `classes_ui_${user?.id || 'anon'}`;
 
-  // Chế độ hiển thị tại chỗ (Grouping Mode: Theo Học viên | Theo Lớp học)
-  const [displayMode, setDisplayMode] = useState<'students' | 'classes'>(
-    initialDisplayMode ?? (isTeacher ? 'classes' : 'students')
-  );
+  // Chế độ hiển thị tại chỗ (Grouping Mode: Theo Học viên | Theo Lớp học) — giữ nguyên khi F5
+  const [displayMode, setDisplayModeState] = useState<'students' | 'classes'>(() => {
+    if (initialDisplayMode) return initialDisplayMode;
+    try {
+      const saved = sessionStorage.getItem(`${storageKeyPrefix}_displayMode`);
+      if (saved === 'students' || saved === 'classes') return saved;
+    } catch {
+      /* ignore */
+    }
+    return isTeacher ? 'classes' : 'students';
+  });
+  const setDisplayMode = (next: 'students' | 'classes') => {
+    setDisplayModeState(next);
+    try {
+      sessionStorage.setItem(`${storageKeyPrefix}_displayMode`, next);
+    } catch {
+      /* ignore */
+    }
+  };
 
   const [classes, setClasses] = useState<Class[]>([]);
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // 3 Tab lớn dùng chung cho cả 2 chế độ và cả 3 role
-  const [activeTab, setActiveTab] = useState<AttendanceTab>('quick');
+  // 3 Tab lớn dùng chung cho cả 2 chế độ và cả 3 role — giữ nguyên khi F5
+  const [activeTab, setActiveTabState] = useState<AttendanceTab>(() => {
+    try {
+      const saved = sessionStorage.getItem(`${storageKeyPrefix}_activeTab`);
+      if (saved === 'quick' || saved === 'detailed' || saved === 'stats') return saved;
+    } catch {
+      /* ignore */
+    }
+    return 'quick';
+  });
+  const setActiveTab = (next: AttendanceTab) => {
+    setActiveTabState(next);
+    try {
+      sessionStorage.setItem(`${storageKeyPrefix}_activeTab`, next);
+    } catch {
+      /* ignore */
+    }
+  };
   const prefScope: PreferenceScope = `enrollments.${activeTab}`;
   const { visible: visibleColumns } = useColumnVisibility(prefScope);
   const isColVisible = (key: string): boolean => {
@@ -228,8 +260,24 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
   const csNoteTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const lastSavedCsNoteMapRef = useRef<Record<string, string>>({});
 
-  // Tab 1 (Điểm danh nhanh): 1 ngày đang chọn (mặc định Hôm nay)
-  const [selectedDate, setSelectedDate] = useState<string>(() => toLocalDateString(new Date()));
+  // Tab 1 (Điểm danh nhanh): 1 ngày đang chọn (mặc định Hôm nay, giữ nguyên khi F5)
+  const [selectedDate, setSelectedDateState] = useState<string>(() => {
+    try {
+      const saved = sessionStorage.getItem(`${storageKeyPrefix}_selectedDate`);
+      if (saved && /^\d{4}-\d{2}-\d{2}$/.test(saved)) return saved;
+    } catch {
+      /* ignore */
+    }
+    return toLocalDateString(new Date());
+  });
+  const setSelectedDate = (next: string) => {
+    setSelectedDateState(next);
+    try {
+      sessionStorage.setItem(`${storageKeyPrefix}_selectedDate`, next);
+    } catch {
+      /* ignore */
+    }
+  };
 
   // Tab 2 (Lịch sử & Bảng tháng): Chế độ lọc kỳ (Theo tuần | Theo tháng), chế độ hiển thị (Bảng điểm danh | Nhật ký bài học), và lọc chỉ ngày có buổi học
   const [detailedFilterMode, setDetailedFilterMode] = useState<DetailedFilterMode>('month');
@@ -246,6 +294,8 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
   >({});
   // Bài học chung theo ca của lớp: gõ 1 lần ở dòng lớp, áp cho mọi học viên khi chấm
   const [classLessonDrafts, setClassLessonDrafts] = useState<Record<string, string>>({});
+  const classLessonDraftsRef = useRef<Record<string, string>>({});
+  const classLessonTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   // Ca đang chọn nhập điểm danh, key `${classId}_${dateStr}` (mặc định Ca 1)
   const [quickSelectedCa, setQuickSelectedCa] = useState<Record<string, number>>({});
   // Ô đang bung bảng 6 trạng thái ở Tab Nhập điểm danh, key `${enrollment_class_id}_${dateStr}_s${ca}`
@@ -533,11 +583,13 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
 
     attendanceByEcAndSession.forEach((att) => {
       const ecId = att.enrollment_class_id;
-      const effectiveStatus = isTeacher
-        ? att.teacher_status
-        : isCSOnly
-        ? att.cs_status
-        : getFinalizedStatus(att);
+      const effectiveStatus = (
+        isTeacher
+          ? att.teacher_status || att.status
+          : isCSOnly
+          ? att.cs_status || att.teacher_status || att.status
+          : getFinalizedStatus(att) || att.teacher_status || att.cs_status || att.status
+      ) as AttendanceStatus | undefined;
       if (!effectiveStatus) return;
 
       const sess = att.class_session || sessionsById.get(att.class_session_id);
@@ -696,53 +748,56 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
       });
     }
 
-    // Bổ sung các học viên từ classes (đối với Giáo viên hoặc lớp chưa có trong enrollments)
-    classes.forEach((cls) => {
-      const mainTeacher =
-        cls.class_teachers?.find((t) => t.role === 'MAIN' && t.active !== false)?.teacher ||
-        cls.class_teachers?.find((t) => t.active !== false)?.teacher ||
-        cls.class_teachers?.[0]?.teacher;
-      const schedule = cls.class_schedules?.[0];
-      const studentsOfCls = getStudentsOfClass(cls);
-      const cleanedClassName =
-        cleanClassIdentifier(cls.class_name) ||
-        cleanClassIdentifier(cls.class_code) ||
-        cls.class_name;
+    // Bổ sung các học viên từ classes (đối với Giáo viên hoặc khi chưa tải enrollments;
+    // với CSKH giữ nguyên phạm vi enrollments của chính CSKH đó để tránh lẫn học viên của CSKH khác)
+    if (isTeacher || (enrollments.length === 0 && !isCSOnly)) {
+      classes.forEach((cls) => {
+        const mainTeacher =
+          cls.class_teachers?.find((t) => t.role === 'MAIN' && t.active !== false)?.teacher ||
+          cls.class_teachers?.find((t) => t.active !== false)?.teacher ||
+          cls.class_teachers?.[0]?.teacher;
+        const schedule = cls.class_schedules?.[0];
+        const studentsOfCls = getStudentsOfClass(cls);
+        const cleanedClassName =
+          cleanClassIdentifier(cls.class_name) ||
+          cleanClassIdentifier(cls.class_code) ||
+          cls.class_name;
 
-      studentsOfCls.forEach((st) => {
-        if (seenEcIds.has(st.enrollment_class_id)) return;
-        seenEcIds.add(st.enrollment_class_id);
-        rows.push({
-          enrollment_class_id: st.enrollment_class_id,
-          class_id: cls.id,
-          class_code: formatClassCode(cls.class_code, cls.id),
-          student_id: st.student_id,
-          external_id: st.external_id,
-          full_name: st.full_name,
-          package_name: st.package_name || '—',
-          course_content: st.course_content || '—',
-          total_sessions: st.total_sessions || 0,
-          level: st.level || cls.level || '—',
-          email: st.email || '',
-          phone: st.phone || '',
-          model_type: normalizeClassModel(cls.model_type, studentsOfCls.length),
-          remaining_sessions: st.remaining_sessions ?? null,
-          attended_previous_years: st.attended_previous_years ?? 0,
-          start_date: st.start_date || null,
-          status: st.status || (cls.active ? 'STUDYING' : 'FINISHED'),
-          end_date: st.end_date || null,
-          start_time: formatScheduleTimeDisplay(schedule?.start_time),
-          schedule_pattern: schedule?.schedule_pattern || '',
-          duration_minutes: schedule?.duration_minutes || 0,
-          teacher_name: mainTeacher?.name || '—',
-          teacher_code: (mainTeacher as any)?.code || '—',
-          class_name: cleanedClassName,
-          sale_name: st.sale_name || '—',
-          program_type: st.program_type || (cls.level?.toUpperCase().includes('N') ? 'JLPT' : 'KAIWA'),
-          cs_staff_code: st.cs_staff_code || null,
+        studentsOfCls.forEach((st) => {
+          if (seenEcIds.has(st.enrollment_class_id)) return;
+          seenEcIds.add(st.enrollment_class_id);
+          rows.push({
+            enrollment_class_id: st.enrollment_class_id,
+            class_id: cls.id,
+            class_code: formatClassCode(cls.class_code, cls.id),
+            student_id: st.student_id,
+            external_id: st.external_id,
+            full_name: st.full_name,
+            package_name: st.package_name || '—',
+            course_content: st.course_content || '—',
+            total_sessions: st.total_sessions || 0,
+            level: st.level || cls.level || '—',
+            email: st.email || '',
+            phone: st.phone || '',
+            model_type: normalizeClassModel(cls.model_type, studentsOfCls.length),
+            remaining_sessions: st.remaining_sessions ?? null,
+            attended_previous_years: st.attended_previous_years ?? 0,
+            start_date: st.start_date || null,
+            status: st.status || (cls.active ? 'STUDYING' : 'FINISHED'),
+            end_date: st.end_date || null,
+            start_time: formatScheduleTimeDisplay(schedule?.start_time),
+            schedule_pattern: schedule?.schedule_pattern || '',
+            duration_minutes: schedule?.duration_minutes || 0,
+            teacher_name: mainTeacher?.name || '—',
+            teacher_code: (mainTeacher as any)?.code || '—',
+            class_name: cleanedClassName,
+            sale_name: st.sale_name || '—',
+            program_type: st.program_type || (cls.level?.toUpperCase().includes('N') ? 'JLPT' : 'KAIWA'),
+            cs_staff_code: st.cs_staff_code || null,
+          });
         });
       });
-    });
+    }
 
     return rows;
   }, [isTeacher, enrollments, classes]);
@@ -1345,42 +1400,63 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
   };
 
   // Bài học chung của lớp cho 1 ca: cập nhật lesson_topic cho mọi học viên đã có điểm danh ca đó.
-  // Nếu chưa có học viên nào được chấm ở ca này, giữ nguyên nháp trong classLessonDrafts để tự động
-  // gắn vào khi giáo viên bấm chấm điểm danh (tránh báo lỗi làm gián đoạn thao tác).
-  const handleSaveClassLesson = async (cls: Class, dateStr: string, caNumber: number) => {
+  // Với lớp 1:1 (hoặc chỉ 1 học viên) nếu chưa có ca/điểm danh mà GV gõ bài học trước thì tự động tạo ca và lưu luôn.
+  const handleSaveClassLesson = async (
+    cls: Class,
+    dateStr: string,
+    caNumber: number,
+    explicitVal?: string
+  ) => {
     if (!isTeacher) return;
     const key = `classlesson_${cls.id}_${dateStr}_s${caNumber}`;
     const draftKey = `${cls.id}_${dateStr}_s${caNumber}`;
-    if (!(draftKey in classLessonDrafts)) return;
-    const trimmed = (classLessonDrafts[draftKey] || '').trim();
+    const rawVal =
+      explicitVal !== undefined
+        ? explicitVal
+        : classLessonDraftsRef.current[draftKey] ?? classLessonDrafts[draftKey];
+    if (rawVal === undefined) return;
+    const trimmed = rawVal.trim();
     if (lastClassLessonRef.current[key] === trimmed) return;
 
+    const allStudents = getStudentsOfClass(cls);
     const session = getDaySessions(cls.id, dateStr)[caNumber - 1];
-    if (!session) return;
-    const targets = getStudentsOfClass(cls).filter(
-      (s) => attendanceByEcAndSession.get(`${s.enrollment_class_id}_session_${session.id}`)?.id
-    );
-    if (targets.length === 0) {
+    const markedTargets = session
+      ? allStudents.filter(
+          (s) => attendanceByEcAndSession.get(`${s.enrollment_class_id}_session_${session.id}`)?.id
+        )
+      : [];
+
+    if (markedTargets.length === 0) {
+      if (allStudents.length === 1 && trimmed) {
+        lastClassLessonRef.current[key] = trimmed;
+        await handleSaveLessonAndNote({
+          classId: cls.id,
+          enrollmentClassId: allStudents[0].enrollment_class_id,
+          dateStr,
+          session,
+          sessionNumber: caNumber,
+          lessonTopic: trimmed,
+          studentName: allStudents[0].full_name,
+          fromPopover: true,
+        });
+      }
       return;
     }
+
     lastClassLessonRef.current[key] = trimmed;
     setSavingClassLessonKey(key);
     try {
       await Promise.all(
-        targets.map(async (s) => {
-          const att = attendanceByEcAndSession.get(`${s.enrollment_class_id}_session_${session.id}`)!;
-          await attendanceApi.update(cls.id, session.id, att.id, {
+        markedTargets.map(async (s) => {
+          const att = attendanceByEcAndSession.get(`${s.enrollment_class_id}_session_${session!.id}`)!;
+          await attendanceApi.update(cls.id, session!.id, att.id, {
             side: 'TEACHER',
             lesson_topic: trimmed || null,
           });
         })
       );
-      toast.success(
-        targets.length === 1
-          ? `Đã lưu bài học (Ca ${caNumber})`
-          : `Đã áp dụng bài học chung cho ${targets.length} học viên (Ca ${caNumber})`
-      );
       await fetchClasses(true);
+      window.dispatchEvent(new Event('teacher-attendance-updated'));
     } catch (err: any) {
       delete lastClassLessonRef.current[key];
       toast.error(err.response?.data?.message || 'Không thể áp dụng bài học chung');
@@ -1406,20 +1482,6 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
       setCollapsedClassIds(new Set());
     }
   };
-
-  // Mặc định ở tab Nhập: chỉ xòe lớp có ca trong ngày đang chọn (đổi ngày sẽ tính lại).
-  const autoCollapsedSignatureRef = useRef<string>('');
-  useEffect(() => {
-    if (loading || filteredClasses.length === 0) return;
-    const signature = `${selectedDate}|${filteredClasses.map((c) => c.id).join(',')}`;
-    if (autoCollapsedSignatureRef.current === signature) return;
-    autoCollapsedSignatureRef.current = signature;
-    const irrelevant = multiStudentClasses
-      .filter((c) => !isClassRelevantOnDate(c, selectedDate))
-      .map((c) => c.id);
-    setCollapsedClassIds(new Set(irrelevant));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, selectedDate, filteredClasses]);
 
   // Danh sách lớp hiển thị trên bảng: tab Nhập có thể thu gọn còn lớp liên quan tới ngày chọn
   const tableClasses = useMemo(() => {
@@ -1945,8 +2007,8 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
     dateStr: string;
     session?: ClassSession;
     sessionNumber?: number;
-    lessonTopic: string | null;
-    teacherNote: string | null;
+    lessonTopic?: string | null;
+    teacherNote?: string | null;
     csNote?: string | null;
     studentName?: string;
     fromPopover?: boolean;
@@ -1961,9 +2023,9 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
       csNote,
       fromPopover,
     } = params;
-    const normLesson = (lessonTopic || '').trim();
-    const normNote = (teacherNote || '').trim();
-    const normCsNote = (csNote || '').trim();
+    const normLesson = lessonTopic !== undefined ? (lessonTopic || '').trim() : undefined;
+    const normNote = teacherNote !== undefined ? (teacherNote || '').trim() : undefined;
+    const normCsNote = csNote !== undefined ? (csNote || '').trim() : undefined;
 
     const daySessions = sessionsByClassAndDate.get(`${classId}_${dateStr}`) || [];
     let resolvedSession = params.session;
@@ -1974,6 +2036,10 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
     if (!resolvedSession && !fromPopover) {
       resolvedSession = daySessions[0];
     }
+    if (!resolvedSession && !normLesson && !normNote && !normCsNote) {
+      return;
+    }
+
     const key = resolvedSession
       ? `${enrollmentClassId}_session_${resolvedSession.id}`
       : `${enrollmentClassId}_${dateStr}_new_${sessionNumber || 1}`;
@@ -1984,14 +2050,13 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
     if (activeSide === 'TEACHER') {
       const origLesson = (existingAttBefore?.lesson_topic || '').trim();
       const origNote = (existingAttBefore?.teacher_note || '').trim();
-      const lastSaved = lastSavedNoteRef.current[key];
-      if (
-        (lastSaved && lastSaved.lesson === normLesson && lastSaved.note === normNote) ||
-        (!lastSaved && origLesson === normLesson && origNote === normNote)
-      ) {
+      const lastSaved = lastSavedNoteRef.current[key] || { lesson: origLesson, note: origNote };
+      const nextLessonToSave = normLesson !== undefined ? normLesson : lastSaved.lesson;
+      const nextNoteToSave = normNote !== undefined ? normNote : lastSaved.note;
+      if (lastSaved.lesson === nextLessonToSave && lastSaved.note === nextNoteToSave) {
         return;
       }
-      lastSavedNoteRef.current[key] = { lesson: normLesson, note: normNote };
+      lastSavedNoteRef.current[key] = { lesson: nextLessonToSave, note: nextNoteToSave };
     }
 
     setSavingKey(key);
@@ -2000,10 +2065,8 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
       if (!targetSession) {
         targetSession = await classSessionsApi.create(classId, { session_date: dateStr });
         if (activeSide === 'TEACHER') {
-          lastSavedNoteRef.current[`${enrollmentClassId}_session_${targetSession.id}`] = {
-            lesson: normLesson,
-            note: normNote,
-          };
+          lastSavedNoteRef.current[`${enrollmentClassId}_session_${targetSession.id}`] =
+            lastSavedNoteRef.current[key];
         }
       }
 
@@ -2014,24 +2077,31 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
       if (existingAtt) {
         await attendanceApi.update(classId, targetSession.id, existingAtt.id, {
           side: activeSide,
-          ...(activeSide === 'TEACHER'
-            ? { lesson_topic: normLesson || null, teacher_note: normNote || null }
+          ...(activeSide === 'TEACHER' && normLesson !== undefined
+            ? { lesson_topic: normLesson || null }
             : {}),
-          ...(csNote !== undefined ? { cs_note: normCsNote || null } : {}),
+          ...(activeSide === 'TEACHER' && normNote !== undefined
+            ? { teacher_note: normNote || null }
+            : {}),
+          ...(normCsNote !== undefined ? { cs_note: normCsNote || null } : {}),
         });
       } else {
         await attendanceApi.mark(classId, targetSession.id, {
           enrollment_class_id: enrollmentClassId,
           status: 'ATTENDED',
           side: activeSide,
-          ...(activeSide === 'TEACHER'
-            ? { lesson_topic: normLesson || null, teacher_note: normNote || null }
+          ...(activeSide === 'TEACHER' && normLesson !== undefined
+            ? { lesson_topic: normLesson || null }
             : {}),
-          ...(csNote !== undefined ? { cs_note: normCsNote || null } : {}),
+          ...(activeSide === 'TEACHER' && normNote !== undefined
+            ? { teacher_note: normNote || null }
+            : {}),
+          ...(normCsNote !== undefined ? { cs_note: normCsNote || null } : {}),
         });
       }
 
       await fetchClasses(true);
+      window.dispatchEvent(new Event('teacher-attendance-updated'));
     } catch (err: any) {
       delete lastSavedNoteRef.current[key];
       toast.error(
@@ -2340,6 +2410,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
     totalCa: number,
     isOneToOne: boolean
   ) => {
+    const draftKey = `${cls.id}_${dateStr}_s${caNumber}`;
     const val = getClassLessonValue(cls, dateStr, caNumber);
     return (
       <div key={caNumber} className="flex min-h-7 items-center gap-1.5">
@@ -2354,17 +2425,51 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
         <input
           type="text"
           value={val}
-          onChange={(e) =>
+          onChange={(e) => {
+            const nextVal = e.target.value;
+            classLessonDraftsRef.current[draftKey] = nextVal;
             setClassLessonDrafts((prev) => ({
               ...prev,
-              [`${cls.id}_${dateStr}_s${caNumber}`]: e.target.value,
-            }))
-          }
-          onBlur={() => handleSaveClassLesson(cls, dateStr, caNumber)}
+              [draftKey]: nextVal,
+            }));
+            if (classLessonTimersRef.current[draftKey]) {
+              clearTimeout(classLessonTimersRef.current[draftKey]);
+            }
+            classLessonTimersRef.current[draftKey] = setTimeout(() => {
+              delete classLessonTimersRef.current[draftKey];
+              void handleSaveClassLesson(
+                cls,
+                dateStr,
+                caNumber,
+                classLessonDraftsRef.current[draftKey] ?? nextVal
+              );
+            }, 450);
+          }}
+          onBlur={() => {
+            if (classLessonTimersRef.current[draftKey]) {
+              clearTimeout(classLessonTimersRef.current[draftKey]);
+              delete classLessonTimersRef.current[draftKey];
+            }
+            void handleSaveClassLesson(
+              cls,
+              dateStr,
+              caNumber,
+              classLessonDraftsRef.current[draftKey] ?? val
+            );
+          }}
           onKeyDown={(e) => {
             if (e.key === 'Enter') {
               e.preventDefault();
-              handleSaveClassLesson(cls, dateStr, caNumber);
+              if (classLessonTimersRef.current[draftKey]) {
+                clearTimeout(classLessonTimersRef.current[draftKey]);
+                delete classLessonTimersRef.current[draftKey];
+              }
+              void handleSaveClassLesson(
+                cls,
+                dateStr,
+                caNumber,
+                classLessonDraftsRef.current[draftKey] ?? val
+              );
             }
           }}
           placeholder={
@@ -2388,7 +2493,8 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
     st: EnrolledStudentItem,
     dateStr: string,
     caNumber: number,
-    totalCa = 1
+    totalCa = 1,
+    field: 'lesson_topic' | 'teacher_note' = 'teacher_note'
   ) => {
     const session = getDaySessions(cls.id, dateStr)[caNumber - 1];
     const att = session
@@ -2396,24 +2502,30 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
       : undefined;
     const draftKey = `${st.enrollment_class_id}_${dateStr}_s${caNumber}`;
     const draft = inlineDrafts[draftKey];
-    const lessonVal =
-      draft?.lesson_topic !== undefined
-        ? draft.lesson_topic
-        : att?.lesson_topic || getClassLessonValue(cls, dateStr, caNumber);
-    const noteVal = draft?.teacher_note !== undefined ? draft.teacher_note : att?.teacher_note || '';
+    const val =
+      field === 'lesson_topic'
+        ? draft?.lesson_topic !== undefined
+          ? draft.lesson_topic
+          : att?.lesson_topic || getClassLessonValue(cls, dateStr, caNumber)
+        : draft?.teacher_note !== undefined
+        ? draft.teacher_note
+        : att?.teacher_note || '';
 
-    const persist = (nextLesson: string, nextNote: string) =>
+    const persist = (nextVal: string) =>
       handleSaveLessonAndNote({
         classId: cls.id,
         enrollmentClassId: st.enrollment_class_id,
         dateStr,
         session,
         sessionNumber: caNumber,
-        lessonTopic: nextLesson.trim() || null,
-        teacherNote: nextNote.trim() || null,
+        ...(field === 'lesson_topic'
+          ? { lessonTopic: nextVal.trim() || null }
+          : { teacherNote: nextVal.trim() || null }),
         studentName: st.full_name,
         fromPopover: true,
       });
+
+    const timerKey = `${draftKey}_${field}`;
 
     return (
       <div key={caNumber} className="flex min-h-7 items-center gap-1.5">
@@ -2424,87 +2536,47 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
         )}
         <input
           type="text"
-          value={noteVal}
+          value={val}
           onChange={(e) => {
-            const val = e.target.value;
+            const nextVal = e.target.value;
             setInlineDrafts((prev) => ({
               ...prev,
-              [draftKey]: { ...prev[draftKey], teacher_note: val },
+              [draftKey]: { ...prev[draftKey], [field]: nextVal },
             }));
-            if (inlineTimersRef.current[draftKey]) clearTimeout(inlineTimersRef.current[draftKey]);
-            inlineTimersRef.current[draftKey] = setTimeout(() => {
-              delete inlineTimersRef.current[draftKey];
-              persist(lessonVal, val);
-            }, 600);
+            if (inlineTimersRef.current[timerKey]) clearTimeout(inlineTimersRef.current[timerKey]);
+            inlineTimersRef.current[timerKey] = setTimeout(() => {
+              delete inlineTimersRef.current[timerKey];
+              void persist(nextVal);
+            }, 450);
           }}
           onBlur={() => {
-            if (inlineTimersRef.current[draftKey]) {
-              clearTimeout(inlineTimersRef.current[draftKey]);
-              delete inlineTimersRef.current[draftKey];
+            if (inlineTimersRef.current[timerKey]) {
+              clearTimeout(inlineTimersRef.current[timerKey]);
+              delete inlineTimersRef.current[timerKey];
             }
-            persist(lessonVal, noteVal);
+            void persist(val);
           }}
           onKeyDown={(e) => {
             if (e.key === 'Enter') {
               e.preventDefault();
-              persist(lessonVal, noteVal);
+              if (inlineTimersRef.current[timerKey]) {
+                clearTimeout(inlineTimersRef.current[timerKey]);
+                delete inlineTimersRef.current[timerKey];
+              }
+              void persist(val);
             }
           }}
-          placeholder={`Ghi chú riêng Ca ${caNumber}...`}
-          className="h-7 w-full min-w-[120px] rounded-lg border border-border/80 bg-white px-2.5 text-xs text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/40"
+          placeholder={
+            field === 'lesson_topic'
+              ? `Bài học Ca ${caNumber}...`
+              : `Ghi chú riêng Ca ${caNumber}...`
+          }
+          className={
+            field === 'lesson_topic'
+              ? 'h-7 w-full min-w-[120px] rounded-lg border border-indigo-300/70 bg-indigo-50/60 px-2.5 text-xs font-semibold text-indigo-900 focus:outline-none focus:ring-2 focus:ring-primary/40'
+              : 'h-7 w-full min-w-[120px] rounded-lg border border-border/80 bg-white px-2.5 text-xs text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/40'
+          }
         />
-      </div>
-    );
-  };
-
-  // Giá trị hiển thị chỉ đọc của Bài học / Ghi chú (tab Nhập: chỉ để nhìn, tự động tách theo từng Ca 1..Ca N)
-  const renderCaReadonlyStack = (
-    cls: Class,
-    st: EnrolledStudentItem,
-    dateStr: string,
-    field: 'lesson_topic' | 'teacher_note'
-  ) => {
-    const totalCa = getVisibleCaCount(cls, dateStr);
-    const daySessions = getDaySessions(cls.id, dateStr);
-    return (
-      <div className="flex flex-col gap-1.5">
-        {Array.from({ length: totalCa }, (_, idx) => {
-          const caNumber = idx + 1;
-          const session = daySessions[caNumber - 1];
-          const att = session
-            ? attendanceByEcAndSession.get(`${st.enrollment_class_id}_session_${session.id}`)
-            : undefined;
-          const fallbackLesson =
-            field === 'lesson_topic' ? getClassLessonValue(cls, dateStr, caNumber) : '';
-          const text =
-            (
-              (field === 'lesson_topic' ? att?.lesson_topic || fallbackLesson : att?.teacher_note) ||
-              ''
-            ).trim();
-          return (
-            <div key={caNumber} className="flex min-h-7 items-center gap-1.5">
-              {totalCa > 1 && (
-                <span className="inline-flex h-5 shrink-0 items-center rounded border border-border/70 bg-slate-100 px-1.5 text-[10px] font-bold text-slate-500">
-                  Ca {caNumber}
-                </span>
-              )}
-              {text ? (
-                <span
-                  className={`block truncate text-xs ${
-                    field === 'lesson_topic'
-                      ? 'font-medium text-teal-700'
-                      : 'italic text-text-secondary'
-                  }`}
-                  title={text}
-                >
-                  {field === 'teacher_note' ? `"${text}"` : text}
-                </span>
-              ) : (
-                <span className="text-[11px] text-text-muted">—</span>
-              )}
-            </div>
-          );
-        })}
       </div>
     );
   };
@@ -3082,10 +3154,10 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
           const att = attendanceByEcAndSession.get(`${st.enrollment_class_id}_session_${sess.id}`);
           const displayStatus = (
             isTeacher
-              ? att?.teacher_status
+              ? att?.teacher_status || att?.status
               : isCSOnly
-              ? att?.cs_status
-              : getFinalizedStatus(att)
+              ? att?.cs_status || att?.teacher_status || att?.status
+              : getFinalizedStatus(att) || att?.teacher_status || att?.cs_status || att?.status
           ) as AttendanceStatus | undefined;
           const cfg = displayStatus ? STATUS_CONFIG[displayStatus] : null;
           const hasNote = Boolean(att?.lesson_topic || att?.teacher_note || att?.cs_note);
@@ -5134,7 +5206,20 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                                         {renderQuickStatusCell(cls, st, selectedDate)}
                                       </td>
                                       <td className="px-2.5 py-2 border-r border-border/60 bg-indigo-50/10 select-text align-top">
-                                        {renderCaReadonlyStack(cls, st, selectedDate, 'lesson_topic')}
+                                        <div className="flex flex-col gap-1.5">
+                                          {Array.from(
+                                            { length: getVisibleCaCount(cls, selectedDate) },
+                                            (_, idx) =>
+                                              renderCaNoteInput(
+                                                cls,
+                                                st,
+                                                selectedDate,
+                                                idx + 1,
+                                                getVisibleCaCount(cls, selectedDate),
+                                                'lesson_topic'
+                                              )
+                                          )}
+                                        </div>
                                       </td>
                                       <td className="px-2.5 py-2 border-r border-border/60 bg-indigo-50/10 select-text align-top">
                                         <div className="flex flex-col gap-1.5">
