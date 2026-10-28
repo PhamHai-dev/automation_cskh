@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { packagesApi } from '../api/packages.api';
 import { Package, CreatePackageDTO, UpdatePackageDTO } from '../types/packages.types';
 import { PageContainer } from '../../../components/common/PageContainer';
@@ -11,13 +12,46 @@ import { Input } from '../../../components/ui/Input';
 import { Textarea } from '../../../components/ui/Textarea';
 import { Modal } from '../../../components/ui/Modal';
 import { useToast } from '../../../components/ui/Toast';
+import { useQuery, invalidateQueries } from '../../../hooks/useQuery';
 import { Edit, Plus, Search } from 'lucide-react';
 
 export const PackagesPage: React.FC = () => {
   const toast = useToast();
-  const [packages, setPackages] = useState<Package[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchTerm, setSearchTerm] = useState(() => searchParams.get('search') || '');
+
+  useEffect(() => {
+    const q = searchParams.get('search') || '';
+    if (q !== searchTerm) {
+      setSearchTerm(q);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
+  useEffect(() => {
+    const next = new URLSearchParams(searchParams);
+    if (searchTerm.trim()) {
+      next.set('search', searchTerm.trim());
+    } else {
+      next.delete('search');
+    }
+    if (next.toString() !== searchParams.toString()) {
+      setSearchParams(next, { replace: true });
+    }
+  }, [searchTerm, searchParams, setSearchParams]);
+
+  const {
+    data: packages = [],
+    isLoading: loading,
+  } = useQuery({
+    queryKey: ['packages', 'list'],
+    queryFn: (signal) => packagesApi.list(undefined, signal),
+    staleTime: 5 * 60 * 1000,
+    keepPreviousData: true,
+    onError: (err: any) => {
+      toast.error(err.response?.data?.error?.message || 'Không thể tải danh sách gói học');
+    },
+  });
 
   // Modal states
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -31,22 +65,6 @@ export const PackagesPage: React.FC = () => {
     description: '',
     active: true,
   });
-
-  const fetchPackages = async () => {
-    try {
-      setLoading(true);
-      const data = await packagesApi.list();
-      setPackages(data);
-    } catch (err: any) {
-      toast.error(err.response?.data?.error?.message || 'Không thể tải danh sách gói học');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchPackages();
-  }, []);
 
   const openModal = (pkg?: Package) => {
     if (pkg) {
@@ -93,7 +111,7 @@ export const PackagesPage: React.FC = () => {
         toast.success('Tạo gói học mới thành công!');
       }
       closeModal();
-      fetchPackages();
+      invalidateQueries('packages');
     } catch (err: any) {
       toast.error(err.response?.data?.error?.message || 'Thao tác không thành công');
     }

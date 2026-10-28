@@ -17,6 +17,8 @@ import { useToast } from '../../../components/ui/Toast';
 import { HorizontalTabs } from '../../../components/ui/HorizontalTabs';
 import { useAuth } from '../../../contexts/AuthContext';
 import { useColumnVisibility } from '../../preferences/hooks/useColumnVisibility';
+import { useDebouncedValue } from '../../../hooks/useDebouncedValue';
+import { useQuery, invalidateQueries } from '../../../hooks/useQuery';
 import {
   Edit,
   Plus,
@@ -185,8 +187,12 @@ export const StudentsPage: React.FC = () => {
   const { user } = useAuth();
   const isCS = user?.roles.includes('CS') && !user?.roles.includes('ADMIN');
 
+  const [searchParams, setSearchParams] = useSearchParams();
+
   // Active tab state: 'students' (Tab 1) | 'care_reports' (Tab 2)
-  const [activeTab, setActiveTab] = useState<'students' | 'care_reports'>('students');
+  const [activeTab, setActiveTab] = useState<'students' | 'care_reports'>(() =>
+    searchParams.get('tab') === 'care_reports' ? 'care_reports' : 'students'
+  );
 
   // Column visibility preference (per user, per tab)
   const { visible: visibleColumns } = useColumnVisibility(
@@ -197,28 +203,82 @@ export const StudentsPage: React.FC = () => {
   const keepColumn = (col: Column<Student>): boolean =>
     !col.key || visibleColumns[col.key] !== false;
 
-  const [students, setStudents] = useState<Student[]>([]);
-  const [loading, setLoading] = useState(true);
-
   // Care milestones state (mặc định các mốc chuẩn: 1, 3, 10, 15)
   const [configuredMilestones, setConfiguredMilestones] = useState<number[]>([1, 3, 10, 15]);
   const [isAddMilestoneModalOpen, setIsAddMilestoneModalOpen] = useState(false);
   const [newMilestoneInput, setNewMilestoneInput] = useState<number | ''>('');
   const [addingMilestone, setAddingMilestone] = useState(false);
 
-  // Filter states
-  const [searchParams] = useSearchParams();
-  const [programFilter, setProgramFilter] = useState<'ALL' | 'KAIWA' | 'JLPT'>('ALL');
-  const [cvhtFilter, setCvhtFilter] = useState('');
+  // Filter & Pagination states synced with URL
+  const [programFilter, setProgramFilter] = useState<'ALL' | 'KAIWA' | 'JLPT'>(() => {
+    const p = (searchParams.get('program') || '').toUpperCase();
+    return p === 'KAIWA' || p === 'JLPT' ? p : 'ALL';
+  });
+  const [cvhtFilter, setCvhtFilter] = useState(() => searchParams.get('cvht') || '');
   const [searchTerm, setSearchTerm] = useState(() => searchParams.get('search') || '');
-  const [genderFilter, setGenderFilter] = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
-  const [saleFilter, setSaleFilter] = useState('');
+  const debouncedSearch = useDebouncedValue(searchTerm.trim(), 300);
+  const [genderFilter, setGenderFilter] = useState(() => searchParams.get('gender') || '');
+  const [statusFilter, setStatusFilter] = useState(() => searchParams.get('status') || '');
+  const [saleFilter, setSaleFilter] = useState(() => searchParams.get('sale') || '');
+  const [page, setPage] = useState<number>(() => Math.max(1, Number(searchParams.get('page')) || 1));
+  const [pageSize, setPageSize] = useState<number>(
+    () => Math.max(1, Number(searchParams.get('pageSize')) || 20)
+  );
 
   useEffect(() => {
-    const q = searchParams.get('search');
-    if (q !== null) setSearchTerm(q);
+    const q = searchParams.get('search') || '';
+    if (q !== searchTerm) setSearchTerm(q);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
+
+  // Reset page to 1 when any filter or debounced search changes
+  const isFirstFilterRenderRef = React.useRef(true);
+  useEffect(() => {
+    if (isFirstFilterRenderRef.current) {
+      isFirstFilterRenderRef.current = false;
+      return;
+    }
+    setPage(1);
+  }, [debouncedSearch, programFilter, cvhtFilter, genderFilter, statusFilter, saleFilter]);
+
+  // Sync filters and pagination to URL
+  useEffect(() => {
+    const next = new URLSearchParams(searchParams);
+    if (searchTerm.trim()) next.set('search', searchTerm.trim());
+    else next.delete('search');
+    if (programFilter !== 'ALL') next.set('program', programFilter);
+    else next.delete('program');
+    if (cvhtFilter) next.set('cvht', cvhtFilter);
+    else next.delete('cvht');
+    if (statusFilter) next.set('status', statusFilter);
+    else next.delete('status');
+    if (genderFilter) next.set('gender', genderFilter);
+    else next.delete('gender');
+    if (saleFilter) next.set('sale', saleFilter);
+    else next.delete('sale');
+    if (activeTab !== 'students') next.set('tab', activeTab);
+    else next.delete('tab');
+    if (page > 1) next.set('page', String(page));
+    else next.delete('page');
+    if (pageSize !== 20) next.set('pageSize', String(pageSize));
+    else next.delete('pageSize');
+
+    if (next.toString() !== searchParams.toString()) {
+      setSearchParams(next, { replace: true });
+    }
+  }, [
+    searchTerm,
+    programFilter,
+    cvhtFilter,
+    statusFilter,
+    genderFilter,
+    saleFilter,
+    activeTab,
+    page,
+    pageSize,
+    searchParams,
+    setSearchParams,
+  ]);
 
   // Modal states
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -281,50 +341,76 @@ export const StudentsPage: React.FC = () => {
     program_metadata: {},
   };
 
-  const [teachersList, setTeachersList] = useState<Teacher[]>([]);
   const [formData, setFormData] = useState<CreateStudentDTO>(initialFormData);
   const [formModalTab, setFormModalTab] = useState<'profile' | 'course' | 'class' | 'care'>('profile');
 
-  const fetchStudents = async () => {
-    try {
-      setLoading(true);
-      const data = await studentsApi.list();
-      setStudents(data);
-    } catch (err: any) {
+  const queryParams = useMemo(
+    () => ({
+      page,
+      pageSize,
+      search: debouncedSearch || undefined,
+      program_type: programFilter !== 'ALL' ? programFilter : undefined,
+      cvht: cvhtFilter || undefined,
+      gender: genderFilter || undefined,
+      status: statusFilter || undefined,
+      sale: saleFilter || undefined,
+    }),
+    [page, pageSize, debouncedSearch, programFilter, cvhtFilter, genderFilter, statusFilter, saleFilter]
+  );
+
+  const {
+    data: paginatedResult,
+    isLoading: loading,
+    isFetching,
+    mutateData: mutateStudentsData,
+  } = useQuery({
+    queryKey: ['students', 'paginated', queryParams],
+    queryFn: (signal) => studentsApi.listPaginated(queryParams, signal),
+    staleTime: 30 * 1000,
+    keepPreviousData: true,
+    onError: (err: any) => {
       toast.error(err.response?.data?.error?.message || 'Không thể tải danh sách học viên');
-    } finally {
-      setLoading(false);
-    }
+    },
+  });
+
+  const students = useMemo(() => paginatedResult?.data || [], [paginatedResult]);
+  const meta = paginatedResult?.meta;
+
+  const setStudents = (updater: (prev: Student[]) => Student[]) => {
+    mutateStudentsData((prev) => {
+      if (!prev) return prev as any;
+      return {
+        ...prev,
+        data: updater(prev.data),
+      };
+    });
   };
 
-  const fetchMilestones = async () => {
-    try {
-      const list = await careApi.getMilestones();
-      if (list && list.length > 0) {
-        setConfiguredMilestones(list.map((m) => m.session_number).sort((a, b) => a - b));
-      }
-    } catch (err) {
-      console.error('Lỗi khi tải cấu hình mốc buổi:', err);
-    }
-  };
+  const { data: teachersList = [] } = useQuery<Teacher[]>({
+    queryKey: ['teachers', 'list'],
+    queryFn: (signal) => teachersApi.list(undefined, signal),
+    staleTime: 5 * 60 * 1000,
+    keepPreviousData: true,
+  });
 
-  const fetchTeachers = async () => {
-    try {
-      const data = await teachersApi.list();
-      setTeachersList(data);
-    } catch (err) {
-      console.error('Lỗi khi tải danh sách giáo viên:', err);
-    }
-  };
+  const { data: milestonesData } = useQuery({
+    queryKey: ['milestones', 'list'],
+    queryFn: (signal) => careApi.getMilestones(signal),
+    staleTime: 5 * 60 * 1000,
+    keepPreviousData: true,
+  });
 
   useEffect(() => {
-    fetchStudents();
-    fetchMilestones();
-    fetchTeachers();
-  }, []);
+    if (milestonesData && milestonesData.length > 0) {
+      setConfiguredMilestones(milestonesData.map((m) => m.session_number).sort((a, b) => a - b));
+    }
+  }, [milestonesData]);
 
   // Counts by program_type for the top Program Switcher
   const programCounts = useMemo(() => {
+    if (meta?.facets?.programCounts) {
+      return meta.facets.programCounts;
+    }
     let kaiwa = 0;
     let jlpt = 0;
     students.forEach((s) => {
@@ -336,76 +422,26 @@ export const StudentsPage: React.FC = () => {
         kaiwa++;
       }
     });
-    return { all: students.length, kaiwa, jlpt };
-  }, [students]);
+    return { all: meta?.total ?? students.length, kaiwa, jlpt };
+  }, [students, meta]);
 
   // Extract unique CVHT codes list for Filter
   const cvhtList = useMemo(() => {
-    const set = new Set<string>(['CVHT01', 'CVHT02', 'CVHT03']);
+    const set = new Set<string>(['CVHT01', 'CVHT02', 'CVHT03', ...(meta?.filterOptions?.cvhtList || [])]);
     students.forEach((s) => {
       s.enrollments?.forEach((e) => {
         if (e.cs?.staff_code) set.add(e.cs.staff_code.toUpperCase());
       });
     });
+    if (cvhtFilter) set.add(cvhtFilter.toUpperCase());
     return Array.from(set).filter(Boolean).sort();
-  }, [students]);
+  }, [students, meta, cvhtFilter]);
 
-  // Filtered students list matching Sheet 1 & Sheet JLPT
-  const filteredStudents = useMemo(() => {
-    return students.filter((s) => {
-      // Primary enrollment for Sheet 1 attributes
-      const enr = s.enrollments?.[0];
-
-      // Program filter (ALL | KAIWA | JLPT)
-      if (programFilter !== 'ALL') {
-        const pType = (enr?.program_type || 'KAIWA').toUpperCase();
-        if (pType !== programFilter) return false;
-      }
-
-      // CVHT filter
-      if (cvhtFilter) {
-        const code = (enr?.cs?.staff_code || enr?.cs?.name || '').toUpperCase();
-        if (!code.includes(cvhtFilter.toUpperCase())) return false;
-      }
-
-      // Search term
-      const query = searchTerm.toLowerCase().trim();
-      const matchSearch =
-        !query ||
-        s.full_name.toLowerCase().includes(query) ||
-        (s.phone && s.phone.includes(query)) ||
-        (s.external_id && s.external_id.toLowerCase().includes(query)) ||
-        (s.email && s.email.toLowerCase().includes(query));
-
-      // Gender filter
-      const matchGender = !genderFilter || s.gender === genderFilter;
-
-      // Status filter
-      const matchStatus = !statusFilter || (enr && enr.status === statusFilter);
-
-      // Sale filter
-      let matchSale = true;
-      if (isCS) {
-        const userIdentifier = (user?.name || user?.email || '').toLowerCase();
-        const userStaffCode = (user?.staff_code || '').toLowerCase();
-        const saleName = (enr?.sale_name || enr?.cs?.name || enr?.cs?.email || '').toLowerCase();
-        const csCode = (enr?.cs?.staff_code || '').toLowerCase();
-        matchSale =
-          enr?.cs_id === user?.id ||
-          (userStaffCode !== '' && csCode === userStaffCode) ||
-          (userIdentifier !== '' && saleName.includes(userIdentifier));
-      } else if (saleFilter) {
-        const saleName = (enr?.sale_name || enr?.cs?.name || enr?.cs?.email || '').toLowerCase();
-        matchSale = saleName === saleFilter.toLowerCase();
-      }
-
-      return matchSearch && matchGender && matchStatus && matchSale;
-    });
-  }, [students, programFilter, cvhtFilter, searchTerm, genderFilter, statusFilter, saleFilter, isCS, user]);
+  const filteredStudents = students;
 
   // Extract unique Sales list for Filter
   const salesList = useMemo(() => {
-    const set = new Set<string>();
+    const set = new Set<string>(meta?.filterOptions?.salesList || []);
     students.forEach((s) => {
       s.enrollments?.forEach((e) => {
         if (e.sale_name) set.add(e.sale_name);
@@ -414,8 +450,9 @@ export const StudentsPage: React.FC = () => {
         if (e.cs?.email) set.add(e.cs.email);
       });
     });
+    if (saleFilter) set.add(saleFilter);
     return Array.from(set).filter(Boolean);
-  }, [students]);
+  }, [students, meta, saleFilter]);
 
   // All active session milestones depending on programFilter (KAIWA vs JLPT vs ALL)
   const activeMilestones = useMemo(() => {
@@ -687,7 +724,7 @@ export const StudentsPage: React.FC = () => {
         toast.success('Thêm mới học viên thành công!');
       }
       setIsModalOpen(false);
-      fetchStudents();
+      invalidateQueries(['students', 'enrollments', 'classes']);
     } catch (err: any) {
       toast.error(err.response?.data?.error?.message || 'Có lỗi xảy ra khi lưu học viên');
     } finally {
@@ -706,7 +743,7 @@ export const StudentsPage: React.FC = () => {
       className: 'sticky left-0 z-20 bg-white w-[52px] min-w-[52px] max-w-[52px] text-center',
       cell: (item) => (
         <span className="font-bold text-slate-400 text-xs text-center block">
-          {filteredStudents.indexOf(item) + 1}
+          {(page - 1) * pageSize + Math.max(0, filteredStudents.indexOf(item)) + 1}
         </span>
       ),
     },
@@ -1850,7 +1887,7 @@ export const StudentsPage: React.FC = () => {
             value: 'students',
             label: 'Hồ sơ học viên',
             icon: <Users />,
-            badge: `${filteredStudents.length} HV`,
+            badge: `${meta?.total ?? filteredStudents.length} HV`,
           },
           {
             value: 'care_reports',
@@ -1919,7 +1956,12 @@ export const StudentsPage: React.FC = () => {
           <div className="text-xs text-text-muted flex items-center gap-1">
             <span>Hiển thị:</span>
             <strong className="text-text-primary font-bold">{filteredStudents.length}</strong>
-            <span>/ {students.length} học viên</span>
+            <span>/ {meta?.total ?? students.length} học viên</span>
+            {isFetching && !loading && (
+              <span className="ml-1 inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200 animate-pulse">
+                Đang đồng bộ...
+              </span>
+            )}
           </div>
         </div>
 
@@ -1935,11 +1977,20 @@ export const StudentsPage: React.FC = () => {
       </div>
 
       {/* Main Table View */}
-      <div className="bg-surface rounded-2xl border border-border/80 shadow-soft overflow-hidden">
+      <div className={`bg-surface rounded-2xl border border-border/80 shadow-soft overflow-hidden transition-opacity ${isFetching && !loading ? 'opacity-90' : ''}`}>
         <DataTable
           data={filteredStudents}
           columns={(activeTab === 'students' ? tab1Columns : tab2Columns).filter(keepColumn)}
           isLoading={loading}
+          serverPagination={true}
+          total={meta?.total ?? filteredStudents.length}
+          page={page}
+          pageSize={pageSize}
+          onPageChange={setPage}
+          onPageSizeChange={(newSize) => {
+            setPageSize(newSize);
+            setPage(1);
+          }}
           emptyMessage="Không tìm thấy học viên nào phù hợp với điều kiện lọc."
         />
       </div>

@@ -53,8 +53,8 @@ export const careApi = {
   },
 
   // Milestones
-  getMilestones: async (): Promise<Array<{ id: number; session_number: number; display_order: number }>> => {
-    const res = await apiClient.get('/milestones');
+  getMilestones: async (signal?: AbortSignal): Promise<Array<{ id: number; session_number: number; display_order: number }>> => {
+    const res = await apiClient.get('/milestones', { signal });
     return res.data.data;
   },
 

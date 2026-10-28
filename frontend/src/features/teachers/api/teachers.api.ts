@@ -1,14 +1,33 @@
 import { apiClient } from '../../../api/client';
+import { PaginatedMeta, PaginatedResponse, normalizePaginatedResponse } from '../../../api/pagination.types';
 import { Teacher, CreateTeacherDTO, UpdateTeacherDTO, ProvisionAccountDTO } from '../types/teachers.types';
 
+export type { PaginatedMeta, PaginatedResponse };
+
+export interface TeachersListParams {
+  page?: number;
+  pageSize?: number;
+  search?: string;
+  teacher_type?: string;
+  active?: boolean;
+}
+
 export const teachersApi = {
-  list: async (): Promise<Teacher[]> => {
-    const res = await apiClient.get('/teachers');
+  list: async (params?: TeachersListParams, signal?: AbortSignal): Promise<Teacher[]> => {
+    const res = await apiClient.get('/teachers', { params, signal });
     return res.data.data;
   },
 
-  get: async (id: number): Promise<Teacher> => {
-    const res = await apiClient.get(`/teachers/${id}`);
+  listPaginated: async (
+    params?: TeachersListParams,
+    signal?: AbortSignal
+  ): Promise<PaginatedResponse<Teacher>> => {
+    const res = await apiClient.get('/teachers', { params, signal });
+    return normalizePaginatedResponse<Teacher>(res.data, params);
+  },
+
+  get: async (id: number, signal?: AbortSignal): Promise<Teacher> => {
+    const res = await apiClient.get(`/teachers/${id}`, { signal });
     return res.data.data;
   },
 

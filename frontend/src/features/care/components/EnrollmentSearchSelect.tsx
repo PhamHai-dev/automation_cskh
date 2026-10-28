@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { enrollmentsApi } from '../../enrollments/api/enrollments.api';
 import { Enrollment } from '../../enrollments/types/enrollments.types';
+import { useDebouncedValue } from '../../../hooks/useDebouncedValue';
+import { useQuery } from '../../../hooks/useQuery';
 import { Search, X } from 'lucide-react';
 
 interface EnrollmentSearchSelectProps {
@@ -26,35 +28,32 @@ export const EnrollmentSearchSelect: React.FC<EnrollmentSearchSelectProps> = ({
   disabled = false,
   fallbackLabel,
 }) => {
-  const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState(false);
   const [query, setQuery] = useState('');
+  const debouncedQuery = useDebouncedValue(query.trim(), 300);
   const [open, setOpen] = useState(false);
   const [highlighted, setHighlighted] = useState(0);
+  const [cachedSelected, setCachedSelected] = useState<Enrollment | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Load enrollments once on mount (backend applies role-scoped filtering automatically)
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const data = await enrollmentsApi.list();
-        if (!cancelled) {
-          setEnrollments(data);
-          setLoadError(false);
-        }
-      } catch {
-        if (!cancelled) setLoadError(true);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const {
+    data: paginatedResult,
+    isLoading: loading,
+    isFetching,
+    error: loadError,
+  } = useQuery({
+    queryKey: ['enrollments', 'search-select', { search: debouncedQuery, page: 1, pageSize: 50 }],
+    queryFn: (signal) =>
+      enrollmentsApi.listPaginated(
+        { search: debouncedQuery || undefined, page: 1, pageSize: 50 },
+        signal
+      ),
+    staleTime: 30 * 1000,
+    keepPreviousData: true,
+    enabled: !disabled,
+  });
+
+  const enrollments = useMemo(() => paginatedResult?.data || [], [paginatedResult]);
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -69,9 +68,12 @@ export const EnrollmentSearchSelect: React.FC<EnrollmentSearchSelectProps> = ({
 
   const byId = useMemo(() => {
     const map = new Map<number, Enrollment>();
+    if (cachedSelected) {
+      map.set(cachedSelected.id, cachedSelected);
+    }
     enrollments.forEach((e) => map.set(e.id, e));
     return map;
-  }, [enrollments]);
+  }, [enrollments, cachedSelected]);
 
   const selectedEnrollment = value != null ? byId.get(value) || null : null;
   const selectedLabel =
@@ -105,6 +107,7 @@ export const EnrollmentSearchSelect: React.FC<EnrollmentSearchSelectProps> = ({
   }, [query, open]);
 
   const handleSelect = (enr: Enrollment) => {
+    setCachedSelected(enr);
     onChange(enr.id, enr);
     setQuery('');
     setOpen(false);
@@ -112,6 +115,7 @@ export const EnrollmentSearchSelect: React.FC<EnrollmentSearchSelectProps> = ({
   };
 
   const handleClear = () => {
+    setCachedSelected(null);
     onChange(null, null);
     setQuery('');
     setOpen(false);
@@ -183,7 +187,7 @@ export const EnrollmentSearchSelect: React.FC<EnrollmentSearchSelectProps> = ({
               </div>
             ) : filtered.length === 0 ? (
               <div className="px-3 py-3 text-xs text-slate-400">
-                Không tìm thấy học viên / ghi danh phù hợp.
+                {isFetching ? 'Đang tìm kiếm học viên...' : 'Không tìm thấy học viên / ghi danh phù hợp.'}
               </div>
             ) : (
               filtered.map((enr, idx) => (

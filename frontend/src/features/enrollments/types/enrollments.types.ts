@@ -84,6 +84,14 @@ export interface Enrollment {
     id: number;
     class_id: number;
     status?: string;
+    attendance_stats?: {
+      ADMIN?: { totalAttended: number; totalAbsentA: number; totalAbsentC: number; totalTeacherD: number };
+      TEACHER?: { totalAttended: number; totalAbsentA: number; totalAbsentC: number; totalTeacherD: number };
+      CS?: { totalAttended: number; totalAbsentA: number; totalAbsentC: number; totalTeacherD: number };
+      totalAttendedAdmin?: number;
+      totalAttendedTeacher?: number;
+      totalAttendedCs?: number;
+    };
     class?: {
       id: number;
       class_name: string;
