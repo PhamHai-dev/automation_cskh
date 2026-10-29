@@ -317,7 +317,7 @@ export interface Attendance {
 
 export interface MarkAttendanceDTO {
   enrollment_class_id: number;
-  status: AttendanceStatus;
+  status?: AttendanceStatus;
   side?: AttendanceSide;
   lesson_topic?: string | null;
   teacher_note?: string | null;

@@ -19,6 +19,14 @@ import { attendanceApi, classSessionsApi } from '../api/sessions.api';
 import { useAuth } from '../../../contexts/AuthContext';
 import { AttendanceSessionDrawer } from './AttendanceSessionDrawer';
 import {
+  MonthlyEmptyDateCell,
+  MonthlySessionBadge,
+  AttendanceMatrixLegendBar,
+  classifySessionAttendance,
+  MatrixCellFilter,
+  AttendanceLegendCounts,
+} from './AttendanceCellBadge';
+import {
   ChevronLeft,
   ChevronRight,
   Check,
@@ -554,15 +562,18 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
   };
 
   // Map existing attendances by enrollment + concrete session (for Tab 2 Bảng tháng & Drawer & Tab 3)
+  // Tuyệt đối KHÔNG fallback sang `a.status` khi `reconciliation_state` chưa chốt (PENDING_CS / PENDING_TEACHER / CONFLICT),
+  // vì các bản ghi AUTO_SCHEDULE hoặc chỉ mới nhập ghi chú có `teacher_status = null` và `cs_status = null`.
   const attendanceMap = useMemo(() => {
     const map = new Map<string, Attendance>();
     rawAttendanceMap.forEach((a, key) => {
+      const finalized = getFinalizedStatus(a);
       const visibleStatus = (
         activeSide === 'TEACHER'
-          ? a.teacher_status || a.status
+          ? a.teacher_status || finalized
           : activeSide === 'CS'
-          ? a.cs_status || a.teacher_status || a.status
-          : getFinalizedStatus(a) || a.teacher_status || a.cs_status || a.status
+          ? a.cs_status || a.teacher_status || finalized
+          : finalized || a.teacher_status || a.cs_status
       ) as AttendanceStatus | undefined;
       if (!visibleStatus) return;
       map.set(key, { ...a, status: visibleStatus });
@@ -708,12 +719,13 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
 
         if (!dStr || clearedKeys.has(`${s.enrollment_class_id}_session_${a.class_session_id}`)) return;
 
+        const finalized = getFinalizedStatus(a);
         const status = (
           selectedSide === 'TEACHER'
-            ? a.teacher_status || a.status
+            ? a.teacher_status || finalized
             : selectedSide === 'CS'
-            ? a.cs_status || a.teacher_status || a.status
-            : getFinalizedStatus(a) || a.teacher_status || a.cs_status || a.status
+            ? a.cs_status || finalized
+            : finalized
         ) as AttendanceStatus | undefined;
         if (!status) return;
         const count = 1;
@@ -1409,7 +1421,7 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
       } else {
         saved = await attendanceApi.mark(classId, target.id, {
           enrollment_class_id: enrollmentClassId,
-          status: 'ATTENDED',
+          status: undefined,
           side: activeSide,
           ...(lessonTopic !== undefined ? { lesson_topic: lessonTopic } : {}),
           ...(teacherNote !== undefined ? { teacher_note: teacherNote } : {}),
@@ -1429,7 +1441,9 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
           ...prev,
           ...saved,
           class_session: saved.class_session || prev?.class_session || target,
-          status: sideStatus || saved.status || existingRaw?.status || 'ATTENDED',
+          teacher_status: prev?.teacher_status ?? saved.teacher_status ?? null,
+          cs_status: prev?.cs_status ?? saved.cs_status ?? null,
+          status: sideStatus || prev?.status || saved.status || 'ATTENDED',
         });
         return next;
       });
@@ -1778,11 +1792,73 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
     }
   };
 
+  // Bộ lọc nhanh theo trạng thái ô trên Bảng tháng
+  const [matrixCellFilter, setMatrixCellFilter] = useState<MatrixCellFilter>('ALL');
+
+  const matrixLegendStats = useMemo(() => {
+    const counts: AttendanceLegendCounts = {
+      conflict: 0,
+      pendingOneSide: 0,
+      sessionUnmarked: 0,
+      matched: 0,
+      adminResolved: 0,
+    };
+    const matchingStudentIdsByFilter: Record<Exclude<MatrixCellFilter, 'ALL'>, Set<number>> = {
+      CONFLICT: new Set<number>(),
+      PENDING_ONE_SIDE: new Set<number>(),
+      SESSION_UNMARKED: new Set<number>(),
+      MATCHED: new Set<number>(),
+      ADMIN_RESOLVED: new Set<number>(),
+    };
+
+    students.forEach((st) => {
+      if (st.enrollment_class_id <= 0) return;
+      visibleDatesList.forEach((d) => {
+        const dateStr = toDateString(d);
+        const daySessions = getSessionsForCell(st.enrollment_class_id, dateStr);
+        daySessions.forEach((sess) => {
+          const rawAtt = rawAttendanceMap.get(`${st.enrollment_class_id}_session_${sess.id}`);
+          const classified = classifySessionAttendance(rawAtt);
+          if (classified.category === 'CONFLICT') {
+            counts.conflict++;
+            matchingStudentIdsByFilter.CONFLICT.add(st.enrollment_class_id);
+          } else if (classified.category === 'PENDING_ONE_SIDE') {
+            counts.pendingOneSide++;
+            matchingStudentIdsByFilter.PENDING_ONE_SIDE.add(st.enrollment_class_id);
+          } else if (classified.category === 'SESSION_UNMARKED') {
+            counts.sessionUnmarked++;
+            matchingStudentIdsByFilter.SESSION_UNMARKED.add(st.enrollment_class_id);
+          } else if (classified.category === 'MATCHED') {
+            counts.matched++;
+            matchingStudentIdsByFilter.MATCHED.add(st.enrollment_class_id);
+          } else if (classified.category === 'ADMIN_RESOLVED') {
+            counts.adminResolved++;
+            matchingStudentIdsByFilter.ADMIN_RESOLVED.add(st.enrollment_class_id);
+          }
+        });
+      });
+    });
+
+    return { counts, matchingStudentIdsByFilter };
+  }, [students, visibleDatesList, sessionsByClassAndDate, rawAttendanceMap]);
+
+  const matrixFilteredStudents = useMemo(() => {
+    if (matrixCellFilter === 'ALL') return students;
+    const allowedSet = matrixLegendStats.matchingStudentIdsByFilter[matrixCellFilter];
+    return students.filter((st) => allowedSet.has(st.enrollment_class_id));
+  }, [students, matrixCellFilter, matrixLegendStats]);
+
   // Mở ngăn chi tiết buổi học (AttendanceSessionDrawer) cho Tab 2
   const openDrawer = (st: StudentRow, dateStr: string, caNumber: number, defaultEditing?: boolean) => {
     const sess = getSessionsForCell(st.enrollment_class_id, dateStr)[caNumber - 1];
-    const att = sess ? attendanceMap.get(`${st.enrollment_class_id}_session_${sess.id}`) : undefined;
-    const shouldEdit = defaultEditing !== undefined ? defaultEditing : !att;
+    const rawAtt = sess ? rawAttendanceMap.get(`${st.enrollment_class_id}_session_${sess.id}`) : undefined;
+    const hasMyMark =
+      activeSide === 'TEACHER'
+        ? Boolean(rawAtt?.teacher_status)
+        : activeSide === 'CS'
+        ? Boolean(rawAtt?.cs_status)
+        : isAttendanceFinalized(rawAtt);
+    const shouldEdit = defaultEditing !== undefined ? defaultEditing : !hasMyMark;
     setDrawerState({ student: st, dateStr, caNumber, defaultEditing: shouldEdit });
   };
 
@@ -1798,8 +1874,7 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
     return `Tháng ${month} / ${year}`;
   }, [currentDate, filterMode, datesList]);
 
-  // Tab 2 (Bảng tháng): mỗi ca 1 badge gọn, bấm vào mở ngăn chi tiết bên phải (drawer).
-  // Ô "—" khi chưa có ca; nút "+" mở drawer ở chế độ tạo Ca mới.
+  // Tab 2 (Bảng tháng): hiển thị phân biệt rõ 7 trạng thái quy trình (Chưa tạo ca / Đã mở ca chưa chấm / Mới 1 bên chấm / Hai bên lệch / Đã khớp / Admin chốt / Có ghi chú).
   const renderMatrixDateCell = (st: StudentRow, dateStr: string) => {
     if (st.enrollment_class_id <= 0) {
       return <span className="whitespace-nowrap rounded bg-slate-100/80 px-2 py-0.5 text-[10px] italic text-text-muted">Chưa xếp lớp</span>;
@@ -1809,18 +1884,12 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
 
     if (daySessions.length === 0) {
       return (
-        <div className="flex min-h-9 w-full min-w-[52px] items-center justify-center px-1 py-1">
-          <button
-            id={`attendance-cell-${st.enrollment_class_id}-${dateStr}`}
-            type="button"
-            onClick={() => openDrawer(st, dateStr, 1, true)}
-            aria-label={`Điểm danh ${st.full_name} ngày ${formattedDateLabel}, Ca 1`}
-            title="Điểm danh Ca 1"
-            className="inline-flex h-6 min-w-6 items-center justify-center rounded-md border border-border/60 bg-surface px-2 text-xs font-semibold text-text-muted transition hover:border-primary/50 hover:bg-surface-muted hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
-          >
-            —
-          </button>
-        </div>
+        <MonthlyEmptyDateCell
+          id={`attendance-cell-${st.enrollment_class_id}-${dateStr}`}
+          studentName={st.full_name}
+          dateLabel={formattedDateLabel}
+          onClick={() => openDrawer(st, dateStr, 1, true)}
+        />
       );
     }
 
@@ -1829,45 +1898,23 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
     return (
       <div
         id={`attendance-cell-${st.enrollment_class_id}-${dateStr}`}
-        className="flex min-h-9 w-full min-w-[60px] flex-wrap items-center justify-center gap-1 px-1 py-1"
+        className="group/cell flex min-h-9 w-full min-w-[64px] flex-wrap items-center justify-center gap-1 px-1 py-1"
       >
         {daySessions.map((session, index) => {
           const sessionNumber = index + 1;
-          const attendance = attendanceMap.get(`${st.enrollment_class_id}_session_${session.id}`);
           const rawAtt = rawAttendanceMap.get(`${st.enrollment_class_id}_session_${session.id}`);
-          const hasNoteOrLesson = Boolean(
-            rawAtt?.lesson_topic || rawAtt?.teacher_note || rawAtt?.cs_note
-          );
-          const cfg = attendance ? STATUS_CONFIG[attendance.status] : null;
-          const noteTooltip = [
-            rawAtt?.lesson_topic ? `Bài học: ${rawAtt.lesson_topic}` : '',
-            rawAtt?.teacher_note ? `Ghi chú GV: ${rawAtt.teacher_note}` : '',
-            rawAtt?.cs_note ? `Ghi chú CSKH: ${rawAtt.cs_note}` : '',
-          ]
-            .filter(Boolean)
-            .join(' | ');
           return (
-            <button
+            <MonthlySessionBadge
               id={`attendance-badge-${st.enrollment_class_id}-${dateStr}-${sessionNumber}`}
               key={session.id}
-              type="button"
+              session={session}
+              sessionNumber={sessionNumber}
+              totalSessionsInDay={daySessions.length}
+              att={rawAtt}
+              studentName={st.full_name}
+              dateLabel={formattedDateLabel}
               onClick={() => openDrawer(st, dateStr, sessionNumber)}
-              aria-label={`Xem chi tiết ${st.full_name} ngày ${formattedDateLabel}, Ca ${sessionNumber}`}
-              title={`Ca ${sessionNumber}${session.start_time ? ` · ${session.start_time}` : ''}: ${cfg?.label || 'Chưa điểm danh'}${noteTooltip ? ` — ${noteTooltip}` : ''} — bấm để xem/sửa`}
-              className={`relative inline-flex h-6 min-w-6 items-center justify-center rounded-md border px-1.5 text-[10px] font-extrabold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${
-                cfg
-                  ? `${cfg.bg} ${cfg.text} ${cfg.border}`
-                  : 'border-border bg-surface text-text-muted hover:border-primary/50 hover:bg-surface-muted'
-              }`}
-            >
-              {cfg ? cfg.short : sessionNumber}
-              {hasNoteOrLesson && (
-                <span
-                  className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full border border-white bg-indigo-600"
-                  aria-hidden="true"
-                />
-              )}
-            </button>
+            />
           );
         })}
 
@@ -1877,7 +1924,7 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
           onClick={() => openDrawer(st, dateStr, nextSessionNumber, true)}
           aria-label={`Thêm Ca ${nextSessionNumber} cho ${st.full_name} ngày ${formattedDateLabel}`}
           title={`Thêm ca tiếp theo (Ca ${nextSessionNumber})`}
-          className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-dashed border-primary/50 text-xs font-extrabold text-primary transition hover:bg-primary-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+          className="inline-flex h-6 w-5 items-center justify-center rounded-md border border-dashed border-primary/50 text-xs font-extrabold text-primary opacity-0 group-hover/cell:opacity-100 focus:opacity-100 transition hover:bg-primary-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
         >
           +
         </button>
@@ -3444,16 +3491,10 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
                   .slice((page - 1) * pageSize, page * pageSize)
                   .map((row, idx) => {
                   const { student: st, dateStr, caNumber, att } = row;
-                  const tCfg = att?.teacher_status ? STATUS_CONFIG[att.teacher_status as AttendanceStatus] : null;
-                  const csCfg = att?.cs_status ? STATUS_CONFIG[att.cs_status as AttendanceStatus] : null;
-                  const finalSt = (att?.status || att?.cs_status || att?.teacher_status) as AttendanceStatus | undefined;
-                  const finalCfg = finalSt ? STATUS_CONFIG[finalSt] : null;
-                  const isConflict =
-                    att?.reconciliation_state === 'CONFLICT' ||
-                    Boolean(att?.teacher_status && att?.cs_status && att.teacher_status !== att.cs_status);
-                  const isMatched =
-                    att?.reconciliation_state === 'MATCHED' ||
-                    Boolean(att?.teacher_status && att?.cs_status && att.teacher_status === att.cs_status);
+                  const classified = classifySessionAttendance(att);
+                  const tCfg = classified.teacherStatus ? STATUS_CONFIG[classified.teacherStatus] : null;
+                  const csCfg = classified.csStatus ? STATUS_CONFIG[classified.csStatus] : null;
+                  const finalCfg = classified.finalStatus ? STATUS_CONFIG[classified.finalStatus] : null;
                   const dObj = new Date(`${dateStr}T00:00:00`);
                   return (
                     <tr
@@ -3498,24 +3539,28 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
                         )}
                       </td>
                       <td className="px-3 py-2.5 border-r border-border/60 text-center whitespace-nowrap">
-                        {isConflict ? (
-                          <span className="inline-flex h-6 items-center rounded-md border border-rose-300 bg-rose-100 px-2 text-[10px] font-extrabold text-rose-800">
-                            Lệch (GV: {tCfg?.short || '?'} | CSKH: {csCfg?.short || '?'})
+                        {classified.category === 'ADMIN_RESOLVED' && finalCfg ? (
+                          <span className={`inline-flex h-6 items-center gap-1 rounded-md border px-2 text-[10px] font-extrabold ring-1 ring-violet-500/70 ${finalCfg.bg.replace(/\s*hover:\S+/g, '')} ${finalCfg.text} ${finalCfg.border}`}>
+                            ✓ {finalCfg.short} · Admin đã chốt
                           </span>
-                        ) : isMatched && finalCfg ? (
+                        ) : classified.category === 'CONFLICT' ? (
+                          <span className="inline-flex h-6 items-center rounded-md border-2 border-rose-500 bg-rose-50 px-2 text-[10px] font-extrabold text-rose-800">
+                            Lệch (GV: {tCfg?.short || '?'} ≠ CSKH: {csCfg?.short || '?'})
+                          </span>
+                        ) : classified.category === 'MATCHED' && finalCfg ? (
                           <span className={`inline-flex h-6 items-center gap-1 rounded-md border px-2 text-[10px] font-extrabold ${finalCfg.bg.replace(/\s*hover:\S+/g, '')} ${finalCfg.text} ${finalCfg.border}`}>
                             {finalCfg.short} · Đã khớp
                           </span>
-                        ) : att?.reconciliation_state === 'RESOLVED' && finalCfg ? (
-                          <span className={`inline-flex h-6 items-center gap-1 rounded-md border px-2 text-[10px] font-extrabold ${finalCfg.bg.replace(/\s*hover:\S+/g, '')} ${finalCfg.text} ${finalCfg.border}`}>
-                            {finalCfg.short} · Đã phân xử
-                          </span>
-                        ) : att && (att.teacher_status || att.cs_status) ? (
-                          <span className="inline-flex h-6 items-center rounded-md border border-amber-200 bg-amber-50 px-2 text-[10px] font-bold text-amber-700">
-                            {att.teacher_status ? 'Chờ CSKH' : 'Chờ GV'}
+                        ) : classified.category === 'PENDING_ONE_SIDE' ? (
+                          <span className="inline-flex h-6 items-center rounded-md border border-dashed border-amber-400 bg-amber-50 px-2 text-[10px] font-bold text-amber-800">
+                            {classified.provisionalSide === 'GV'
+                              ? `Mới GV chấm (${tCfg?.short}) · Chờ CSKH`
+                              : `Mới CSKH chấm (${csCfg?.short}) · Chờ GV`}
                           </span>
                         ) : (
-                          <span className="text-text-muted">—</span>
+                          <span className="inline-flex h-6 items-center rounded-md border border-dashed border-slate-400 bg-slate-50 px-2 text-[10px] font-bold text-slate-600">
+                            ? · Đã mở ca, chưa chấm
+                          </span>
                         )}
                       </td>
                       <td className="px-3 py-2.5 border-r border-border/60">
@@ -3558,7 +3603,16 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
       )}
 
       {activeTab === 'detailed' && detailedViewMode === 'matrix' && (
-        <div className="w-full overflow-x-auto select-none">
+        <div>
+          <AttendanceMatrixLegendBar
+            activeFilter={matrixCellFilter}
+            onFilterChange={(f) => {
+              setMatrixCellFilter(f);
+              setPage(1);
+            }}
+            counts={matrixLegendStats.counts}
+          />
+          <div className="w-full overflow-x-auto select-none">
           <table className="w-full text-xs text-left border-collapse">
             <thead>
               <tr className="bg-surface-muted/90 text-text-secondary border-b border-border/80 text-[11px] font-bold">
@@ -3719,14 +3773,16 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
             </thead>
 
             <tbody>
-              {students.length === 0 ? (
+              {matrixFilteredStudents.length === 0 ? (
                 <tr>
                   <td colSpan={22 + visibleDatesList.length + (showClassManageActions ? 1 : 0)} className="text-center py-10 text-text-muted">
-                    Không có học viên nào để điểm danh.
+                    {matrixCellFilter === 'ALL'
+                      ? 'Không có học viên nào để điểm danh.'
+                      : 'Không có học viên nào có ca học khớp bộ lọc trạng thái đã chọn trong kỳ này.'}
                   </td>
                 </tr>
               ) : (
-                students
+                matrixFilteredStudents
                   .slice((page - 1) * pageSize, page * pageSize)
                   .map((st, idx) => {
                   const stat = studentStats.get(st.enrollment_class_id);
@@ -3944,6 +4000,7 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
               )}
             </tbody>
           </table>
+          </div>
         </div>
       )}
 
@@ -4250,6 +4307,8 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
             ? quickVisibleStudents.length
             : activeTab === 'detailed' && detailedViewMode === 'log'
             ? periodSessionLogs.length
+            : activeTab === 'detailed' && detailedViewMode === 'matrix'
+            ? matrixFilteredStudents.length
             : students.length;
         const totalPages = Math.max(1, Math.ceil(totalRows / pageSize));
         const safePage = Math.min(page, totalPages);

@@ -6,7 +6,7 @@ const attendanceSideSchema = z.enum(['TEACHER', 'CS', 'ADMIN']);
 export const markAttendanceSchema = z.object({
   body: z.object({
     enrollment_class_id: z.number().int().positive(),
-    status: z.nativeEnum(AttendanceStatus),
+    status: z.nativeEnum(AttendanceStatus).optional(),
     side: attendanceSideSchema.optional(),
     lesson_topic: z.string().nullable().optional(),
     teacher_note: z.string().nullable().optional(),

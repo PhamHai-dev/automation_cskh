@@ -49,7 +49,7 @@ export class AttendanceRepository {
   async mark(
     enrollmentClassId: number,
     classSessionId: number,
-    status: string,
+    status: string | undefined,
     source: string,
     userId: number,
     side: AttendanceSide,
@@ -61,7 +61,8 @@ export class AttendanceRepository {
   ) {
     const isTeacher = side === 'TEACHER';
     const isAdmin = side === 'ADMIN';
-    const parsedStatus = status as AttendanceStatus;
+    const hasExplicitStatus = Boolean(status);
+    const parsedStatus = (status || 'ATTENDED') as AttendanceStatus;
 
     return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       const existing = await tx.attendance.findUnique({
@@ -72,6 +73,48 @@ export class AttendanceRepository {
           },
         },
       });
+
+      // Note-only save without selecting an attendance status: keep teacher_status & cs_status untouched
+      if (!hasExplicitStatus) {
+        const noteUpdate: any = {
+          deleted_at: null,
+          deleted_by_id: null,
+        };
+        const noteCreate: any = {
+          enrollment_class_id: enrollmentClassId,
+          class_session_id: classSessionId,
+          status: AttendanceStatus.ATTENDED,
+          source: source as any,
+          reconciliation_state: ReconciliationState.PENDING_CS,
+          teacher_status: null,
+          cs_status: null,
+          created_by_id: userId,
+        };
+        if (isTeacher) {
+          if (options?.lesson_topic !== undefined) {
+            noteUpdate.lesson_topic = options.lesson_topic;
+            noteCreate.lesson_topic = options.lesson_topic;
+          }
+          if (options?.teacher_note !== undefined) {
+            noteUpdate.teacher_note = options.teacher_note;
+            noteCreate.teacher_note = options.teacher_note;
+          }
+        }
+        if (options?.cs_note !== undefined) {
+          noteUpdate.cs_note = options.cs_note;
+          noteCreate.cs_note = options.cs_note;
+        }
+        return tx.attendance.upsert({
+          where: {
+            enrollment_class_id_class_session_id: {
+              enrollment_class_id: enrollmentClassId,
+              class_session_id: classSessionId,
+            },
+          },
+          update: noteUpdate,
+          create: noteCreate,
+        });
+      }
 
       let recState: ReconciliationState;
       if (isAdmin) {

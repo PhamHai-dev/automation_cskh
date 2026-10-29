@@ -324,11 +324,19 @@ export const AttendanceSessionDrawer: React.FC<AttendanceSessionDrawerProps> = (
       };
 
       const effectiveStatus = d.status ?? recSideStatus;
-      if (canMarkStatus && (effectiveStatus || !sess || !rec)) {
+      const hasNoteInput = Boolean(
+        d.lessonTopic.trim() ||
+          d.teacherNote.trim() ||
+          d.csNote.trim() ||
+          rec?.lesson_topic ||
+          rec?.teacher_note ||
+          rec?.cs_note
+      );
+      if (canMarkStatus && effectiveStatus) {
         await onSaveStatusAndNotes({
           session: sess,
           sessionNumber: caNo,
-          status: effectiveStatus || 'ATTENDED',
+          status: effectiveStatus,
           ...(canEditTeacherFields
             ? {
                 lesson_topic: d.lessonTopic.trim() || null,
@@ -341,13 +349,30 @@ export const AttendanceSessionDrawer: React.FC<AttendanceSessionDrawerProps> = (
               }
             : {}),
         });
-      } else if (onSaveNotesOnly && sess) {
+      } else if (onSaveNotesOnly && (sess || hasNoteInput)) {
         await onSaveNotesOnly({
           session: sess,
           sessionNumber: caNo,
           lesson_topic: d.lessonTopic.trim() || null,
           teacher_note: d.teacherNote.trim() || null,
           cs_note: d.csNote.trim() || null,
+        });
+      } else if (canMarkStatus && !sess && !rec) {
+        await onSaveStatusAndNotes({
+          session: sess,
+          sessionNumber: caNo,
+          status: 'ATTENDED',
+          ...(canEditTeacherFields
+            ? {
+                lesson_topic: d.lessonTopic.trim() || null,
+                teacher_note: d.teacherNote.trim() || null,
+              }
+            : {}),
+          ...(canEditCsFields
+            ? {
+                cs_note: d.csNote.trim() || null,
+              }
+            : {}),
         });
       }
     }
@@ -467,7 +492,18 @@ export const AttendanceSessionDrawer: React.FC<AttendanceSessionDrawerProps> = (
                     </span>
                   ) : !sess ? (
                     <span className="text-[10px] opacity-80">(Mới)</span>
-                  ) : null}
+                  ) : (
+                    <span
+                      className={`inline-flex h-4 min-w-4 items-center justify-center rounded border border-dashed px-1 text-[10px] font-bold ${
+                        isSelected
+                          ? 'border-white/60 bg-white/15 text-white'
+                          : 'border-slate-400 bg-white text-slate-500'
+                      }`}
+                      title="Ca đã tạo nhưng chưa chấm điểm danh"
+                    >
+                      ?
+                    </span>
+                  )}
                   {isEditing && draftForCa?.dirty && (
                     <span
                       className={`h-1.5 w-1.5 rounded-full ${isSelected ? 'bg-amber-200' : 'bg-amber-500'}`}
@@ -498,9 +534,63 @@ export const AttendanceSessionDrawer: React.FC<AttendanceSessionDrawerProps> = (
 
         {/* Body */}
         <form onSubmit={handleSaveAll} className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
-          {isCreatingNewCa && (
+          {isCreatingNewCa ? (
             <div className="rounded-xl border border-amber-200 bg-amber-50/80 px-3.5 py-2.5 text-xs text-amber-900">
               <span className="font-bold">Đang tạo Ca {selectedSessionNumber} mới:</span> Chọn trạng thái điểm danh rồi bấm <strong>Lưu thông tin</strong> ở cuối khung.
+            </div>
+          ) : (
+            <div className="rounded-xl border border-slate-200 bg-slate-50/90 p-3 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-600">
+                  Tóm tắt trạng thái Ca {selectedSessionNumber}
+                </span>
+                {att?.reconciliation_state === 'RESOLVED' ? (
+                  <span className="inline-flex items-center gap-1 rounded-full border border-violet-300 bg-violet-100 px-2 py-0.5 text-[10px] font-extrabold text-violet-800">
+                    ✓ Admin đã chốt: {adminFinalCfg ? `${adminFinalCfg.short} · ${adminFinalCfg.label}` : '—'}
+                  </span>
+                ) : isConflict ? (
+                  <span className="inline-flex items-center gap-1 rounded-full border border-rose-300 bg-rose-100 px-2 py-0.5 text-[10px] font-extrabold text-rose-800">
+                    ! Hai bên lệch ({teacherCfg?.short || '?'} ≠ {csCfg?.short || '?'}) — Chờ Admin chốt
+                  </span>
+                ) : adminFinalCfg ? (
+                  <span className="inline-flex items-center gap-1 rounded-full border border-emerald-300 bg-emerald-100 px-2 py-0.5 text-[10px] font-extrabold text-emerald-800">
+                    Đã khớp 2 bên: {adminFinalCfg.short} · {adminFinalCfg.label}
+                  </span>
+                ) : teacherCfg && !csCfg ? (
+                  <span className="inline-flex items-center gap-1 rounded-full border border-dashed border-amber-400 bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-800">
+                    Mới GV chấm ({teacherCfg.short}) — Chờ CSKH chấm
+                  </span>
+                ) : !teacherCfg && csCfg ? (
+                  <span className="inline-flex items-center gap-1 rounded-full border border-dashed border-amber-400 bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-800">
+                    Mới CSKH chấm ({csCfg.short}) — Chờ GV chấm
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 rounded-full border border-dashed border-slate-400 bg-white px-2 py-0.5 text-[10px] font-bold text-slate-600">
+                    ? Đã mở ca — Cả GV & CSKH đều chưa chấm
+                  </span>
+                )}
+              </div>
+
+              <div className="grid grid-cols-3 gap-2 text-[11px]">
+                <div className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5">
+                  <div className="text-[10px] font-semibold text-slate-500">Giáo viên</div>
+                  <div className="mt-0.5 font-bold text-slate-800">
+                    {teacherCfg ? `${teacherCfg.short} · ${teacherCfg.label}` : 'Chưa chấm'}
+                  </div>
+                </div>
+                <div className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5">
+                  <div className="text-[10px] font-semibold text-slate-500">CSKH</div>
+                  <div className="mt-0.5 font-bold text-slate-800">
+                    {csCfg ? `${csCfg.short} · ${csCfg.label}` : 'Chưa chấm'}
+                  </div>
+                </div>
+                <div className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5">
+                  <div className="text-[10px] font-semibold text-slate-500">Kết quả chốt</div>
+                  <div className="mt-0.5 font-bold text-slate-800">
+                    {adminFinalCfg ? `${adminFinalCfg.short} · ${adminFinalCfg.label}` : 'Chưa chốt'}
+                  </div>
+                </div>
+              </div>
             </div>
           )}
 

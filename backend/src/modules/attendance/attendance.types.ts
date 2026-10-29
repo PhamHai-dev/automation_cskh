@@ -2,7 +2,7 @@ export type AttendanceSide = 'TEACHER' | 'CS' | 'ADMIN';
 
 export interface MarkAttendanceDTO {
   enrollment_class_id: number;
-  status: 'ATTENDED' | 'ABSENT_APPROVED_A' | 'LEAVE_B' | 'ABSENT_UNAPPROVED_C' | 'TEACHER_ABSENT_D' | 'TECH_ERROR_E';
+  status?: 'ATTENDED' | 'ABSENT_APPROVED_A' | 'LEAVE_B' | 'ABSENT_UNAPPROVED_C' | 'TEACHER_ABSENT_D' | 'TECH_ERROR_E';
   side?: AttendanceSide;
   lesson_topic?: string | null;
   teacher_note?: string | null;

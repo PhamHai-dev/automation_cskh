@@ -650,7 +650,11 @@ export const AttendanceReconciliationPage: React.FC = () => {
       {
         header: 'Trạng thái chờ',
         cell: (r) =>
-          r.reconciliation_state === 'PENDING_CS' ? (
+          !r.teacher_status && !r.cs_status ? (
+            <Badge variant="neutral" size="sm" dot>
+              Chưa bên nào chấm
+            </Badge>
+          ) : r.reconciliation_state === 'PENDING_CS' ? (
             <Badge variant="warning" size="sm" dot>
               Chờ CSKH chấm
             </Badge>
@@ -664,7 +668,18 @@ export const AttendanceReconciliationPage: React.FC = () => {
         header: 'Thao tác',
         className: 'text-right',
         cell: (r) =>
-          r.reconciliation_state === 'PENDING_CS' ? (
+          !r.teacher_status && !r.cs_status ? (
+            <div className="flex items-center justify-end gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => handleOpenCSMark(r)}
+                disabled={isSubmitting}
+              >
+                Chấm điểm danh
+              </Button>
+            </div>
+          ) : r.reconciliation_state === 'PENDING_CS' ? (
             <div className="flex items-center justify-end gap-2">
               <Button
                 size="sm"

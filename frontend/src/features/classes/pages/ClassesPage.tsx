@@ -34,6 +34,12 @@ import {
   toLocalDateString,
 } from '../components/AttendanceMatrix';
 import { AttendanceSessionDrawer } from '../components/AttendanceSessionDrawer';
+import {
+  MonthlyEmptyDateCell,
+  MonthlySessionBadge,
+  AttendanceMatrixLegendBar,
+  classifySessionAttendance,
+} from '../components/AttendanceCellBadge';
 import { useColumnVisibility } from '../../preferences/hooks/useColumnVisibility';
 import { PreferenceScope } from '../../preferences/columns';
 import { ColumnVisibilityDropdown } from '../../preferences/components/ColumnVisibilityDropdown';
@@ -583,12 +589,13 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
 
     attendanceByEcAndSession.forEach((att) => {
       const ecId = att.enrollment_class_id;
+      const finalized = getFinalizedStatus(att);
       const effectiveStatus = (
         isTeacher
-          ? att.teacher_status || att.status
+          ? att.teacher_status || finalized
           : isCSOnly
-          ? att.cs_status || att.teacher_status || att.status
-          : getFinalizedStatus(att) || att.teacher_status || att.cs_status || att.status
+          ? att.cs_status || finalized
+          : finalized
       ) as AttendanceStatus | undefined;
       if (!effectiveStatus) return;
 
@@ -2095,7 +2102,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
       } else {
         await attendanceApi.mark(classId, targetSession.id, {
           enrollment_class_id: enrollmentClassId,
-          status: 'ATTENDED',
+          status: undefined,
           side: activeSide,
           ...(activeSide === 'TEACHER' && normLesson !== undefined
             ? { lesson_topic: normLesson || null }
@@ -3146,67 +3153,39 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
     );
   };
 
-  // Render Attendance Cell cho Bảng tháng (Tab 2) — bấm mở ngăn chi tiết bên phải cho cả 3 role
+  // Render Attendance Cell cho Bảng tháng (Tab 2) — dùng chung MonthlyEmptyDateCell & MonthlySessionBadge với Theo Học viên
   const renderMatrixDateCell = (cls: Class, st: EnrolledStudentItem, dateStr: string) => {
     const daySessions = sessionsByClassAndDate.get(`${cls.id}_${dateStr}`) || [];
+    const formattedDateLabel = new Date(`${dateStr}T00:00:00`).toLocaleDateString('vi-VN');
 
     if (daySessions.length === 0) {
       return (
-        <div className="flex min-h-9 w-full min-w-[52px] items-center justify-center px-1 py-1">
-          <button
-            type="button"
-            onClick={() => openDrawer(cls, st, dateStr, 1, true)}
-            className="inline-flex h-6 min-w-6 items-center justify-center rounded-md border border-border/60 bg-surface px-2 text-xs font-semibold text-text-muted transition hover:border-primary/50 hover:bg-surface-muted hover:text-text-primary"
-            title={`Điểm danh ${st.full_name} ngày ${dateStr}, Ca 1`}
-          >
-            —
-          </button>
-        </div>
+        <MonthlyEmptyDateCell
+          studentName={st.full_name}
+          dateLabel={formattedDateLabel}
+          onClick={() => openDrawer(cls, st, dateStr, 1, true)}
+        />
       );
     }
 
     const nextSessionNumber = daySessions.length + 1;
 
     return (
-      <div className="group/cell flex min-h-9 w-full min-w-[60px] flex-wrap items-center justify-center gap-1 px-1 py-1">
+      <div className="group/cell flex min-h-9 w-full min-w-[64px] flex-wrap items-center justify-center gap-1 px-1 py-1">
         {daySessions.map((sess, idx) => {
           const sessionNumber = idx + 1;
           const att = attendanceByEcAndSession.get(`${st.enrollment_class_id}_session_${sess.id}`);
-          const displayStatus = (
-            isTeacher
-              ? att?.teacher_status || att?.status
-              : isCSOnly
-              ? att?.cs_status || att?.teacher_status || att?.status
-              : getFinalizedStatus(att) || att?.teacher_status || att?.cs_status || att?.status
-          ) as AttendanceStatus | undefined;
-          const cfg = displayStatus ? STATUS_CONFIG[displayStatus] : null;
-          const hasNote = Boolean(att?.lesson_topic || att?.teacher_note || att?.cs_note);
-          const tooltip = [
-            `Ca ${sessionNumber}: ${cfg?.label || 'Chưa điểm danh'}`,
-            att?.lesson_topic ? `Bài học: ${att.lesson_topic}` : '',
-            att?.teacher_note ? `Ghi chú GV: ${att.teacher_note}` : '',
-            att?.cs_note ? `Ghi chú CSKH: ${att.cs_note}` : '',
-          ]
-            .filter(Boolean)
-            .join(' | ');
-
           return (
-            <button
+            <MonthlySessionBadge
               key={sess.id}
-              type="button"
+              session={sess}
+              sessionNumber={sessionNumber}
+              totalSessionsInDay={daySessions.length}
+              att={att}
+              studentName={st.full_name}
+              dateLabel={formattedDateLabel}
               onClick={() => openDrawer(cls, st, dateStr, sessionNumber)}
-              title={tooltip}
-              className={`relative inline-flex h-6 min-w-6 items-center justify-center rounded-md border px-1.5 text-[10px] font-extrabold transition ${
-                cfg
-                  ? `${cfg.bg} ${cfg.text} ${cfg.border}`
-                  : 'border-border bg-surface text-text-muted hover:border-primary/50 hover:bg-surface-muted'
-              }`}
-            >
-              {cfg ? cfg.short : sessionNumber}
-              {hasNote && (
-                <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full border border-white bg-indigo-600" />
-              )}
-            </button>
+            />
           );
         })}
 
@@ -4109,30 +4088,16 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                   periodSessionLogs
                     .slice((page - 1) * pageSize, page * pageSize)
                     .map(({ key, cls, student, dateStr, caNumber, att }, idx) => {
-                      const tCfg = att?.teacher_status
-                        ? STATUS_CONFIG[att.teacher_status as AttendanceStatus]
+                      const classified = classifySessionAttendance(att);
+                      const tCfg = classified.teacherStatus
+                        ? STATUS_CONFIG[classified.teacherStatus]
                         : null;
-                      const csCfg = att?.cs_status
-                        ? STATUS_CONFIG[att.cs_status as AttendanceStatus]
+                      const csCfg = classified.csStatus
+                        ? STATUS_CONFIG[classified.csStatus]
                         : null;
-                      const finalSt = (att?.status || att?.cs_status || att?.teacher_status) as
-                        | AttendanceStatus
-                        | undefined;
-                      const finalCfg = finalSt ? STATUS_CONFIG[finalSt] : null;
-                      const isConflict =
-                        att?.reconciliation_state === 'CONFLICT' ||
-                        Boolean(
-                          att?.teacher_status &&
-                            att?.cs_status &&
-                            att.teacher_status !== att.cs_status
-                        );
-                      const isMatched =
-                        att?.reconciliation_state === 'MATCHED' ||
-                        Boolean(
-                          att?.teacher_status &&
-                            att?.cs_status &&
-                            att.teacher_status === att.cs_status
-                        );
+                      const finalCfg = classified.finalStatus
+                        ? STATUS_CONFIG[classified.finalStatus]
+                        : null;
                       const dObj = new Date(`${dateStr}T00:00:00`);
                       const mainTeacher =
                         cls.class_teachers?.find((t) => t.role === 'MAIN' && t.active !== false)
@@ -4202,11 +4167,20 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                             )}
                           </td>
                           <td className="px-3 py-2.5 border-r border-border/60 text-center whitespace-nowrap">
-                            {isConflict ? (
-                              <span className="inline-flex h-6 items-center rounded-md border border-rose-300 bg-rose-100 px-2 text-[10px] font-extrabold text-rose-800">
-                                Lệch (GV: {tCfg?.short || '?'} | CSKH: {csCfg?.short || '?'})
+                            {classified.category === 'ADMIN_RESOLVED' && finalCfg ? (
+                              <span
+                                className={`inline-flex h-6 items-center gap-1 rounded-md border px-2 text-[10px] font-extrabold ring-1 ring-violet-500/70 ${finalCfg.bg.replace(
+                                  /\s*hover:\S+/g,
+                                  ''
+                                )} ${finalCfg.text} ${finalCfg.border}`}
+                              >
+                                ✓ {finalCfg.short} · Admin đã chốt
                               </span>
-                            ) : isMatched && finalCfg ? (
+                            ) : classified.category === 'CONFLICT' ? (
+                              <span className="inline-flex h-6 items-center rounded-md border-2 border-rose-500 bg-rose-50 px-2 text-[10px] font-extrabold text-rose-800">
+                                Lệch (GV: {tCfg?.short || '?'} ≠ CSKH: {csCfg?.short || '?'})
+                              </span>
+                            ) : classified.category === 'MATCHED' && finalCfg ? (
                               <span
                                 className={`inline-flex h-6 items-center gap-1 rounded-md border px-2 text-[10px] font-extrabold ${finalCfg.bg.replace(
                                   /\s*hover:\S+/g,
@@ -4215,21 +4189,16 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                               >
                                 {finalCfg.short} · Đã khớp
                               </span>
-                            ) : att?.reconciliation_state === 'RESOLVED' && finalCfg ? (
-                              <span
-                                className={`inline-flex h-6 items-center gap-1 rounded-md border px-2 text-[10px] font-extrabold ${finalCfg.bg.replace(
-                                  /\s*hover:\S+/g,
-                                  ''
-                                )} ${finalCfg.text} ${finalCfg.border}`}
-                              >
-                                {finalCfg.short} · Đã phân xử
-                              </span>
-                            ) : att && (att.teacher_status || att.cs_status) ? (
-                              <span className="inline-flex h-6 items-center rounded-md border border-amber-200 bg-amber-50 px-2 text-[10px] font-bold text-amber-700">
-                                {att.teacher_status ? 'Chờ CSKH' : 'Chờ GV'}
+                            ) : classified.category === 'PENDING_ONE_SIDE' ? (
+                              <span className="inline-flex h-6 items-center rounded-md border border-dashed border-amber-400 bg-amber-50 px-2 text-[10px] font-bold text-amber-800">
+                                {classified.provisionalSide === 'GV'
+                                  ? `Mới GV chấm (${tCfg?.short}) · Chờ CSKH`
+                                  : `Mới CSKH chấm (${csCfg?.short}) · Chờ GV`}
                               </span>
                             ) : (
-                              <span className="text-text-muted">—</span>
+                              <span className="inline-flex h-6 items-center rounded-md border border-dashed border-slate-400 bg-slate-50 px-2 text-[10px] font-bold text-slate-600">
+                                ? · Đã mở ca, chưa chấm
+                              </span>
                             )}
                           </td>
                           <td className="px-3 py-2.5 border-r border-border/60">
@@ -4274,7 +4243,9 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
             </table>
           </div>
         ) : (
-        <div className="w-full overflow-x-auto select-none">
+        <div>
+          {activeTab === 'detailed' && <AttendanceMatrixLegendBar />}
+          <div className="w-full overflow-x-auto select-none">
           <table className="w-full text-xs text-left border-collapse">
             <thead>
               <tr className="bg-surface-muted/90 text-text-secondary border-b border-border/80 text-[11px] font-bold">
@@ -5316,6 +5287,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
               )}
             </tbody>
           </table>
+          </div>
         </div>
         )}
 
