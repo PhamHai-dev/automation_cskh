@@ -470,16 +470,15 @@ export const TeacherStudentInfoPage: React.FC = () => {
               <table className="w-full text-xs text-left border-collapse">
                 <thead>
                   <tr className="bg-surface-muted/90 text-text-secondary border-b border-border/80 text-[11px] font-bold">
-                    {/* Cột # (STT) */}
-                    <th className="px-2 py-3 border-r border-border/60 w-10 min-w-[40px] text-center bg-slate-100/90">
+                    <th className="sticky left-0 z-30 px-2 py-3 border-r border-border/60 bg-slate-100 text-text-secondary text-center w-10 min-w-[40px] max-w-[40px] whitespace-nowrap">
                       #
                     </th>
-                    {/* Cột Mã HV - sticky left 0 */}
-                    <th className="sticky left-0 z-20 px-3 py-3 border-r border-border/60 bg-slate-100 text-text-secondary text-left min-w-[100px] w-[100px] whitespace-nowrap">
+                    {/* Cột Mã HV - sticky left 40px */}
+                    <th className="sticky left-10 z-30 px-3 py-3 border-r border-border/60 bg-slate-100 text-text-secondary text-left w-[110px] min-w-[110px] max-w-[110px] whitespace-nowrap overflow-hidden">
                       Mã HV
                     </th>
-                    {/* Cột Họ tên HV - sticky left */}
-                    <th className="sticky left-[100px] z-20 px-3 py-3 border-r-2 border-border/80 bg-slate-100 text-text-secondary text-left min-w-[165px] w-[165px] whitespace-nowrap shadow-[2px_0_4px_-1px_rgba(0,0,0,0.06)]">
+                    {/* Cột Họ tên HV - sticky left 150px */}
+                    <th className="sticky left-[150px] z-30 px-3 py-3 border-r-2 border-border/80 bg-slate-100 text-text-secondary text-left w-[175px] min-w-[175px] max-w-[175px] whitespace-nowrap shadow-[2px_0_4px_-1px_rgba(0,0,0,0.06)] overflow-hidden">
                       Họ tên HV
                     </th>
                     {/* Lớp học */}
@@ -546,20 +545,20 @@ export const TeacherStudentInfoPage: React.FC = () => {
                         }`}
                       >
                         {/* Cột # (STT) */}
-                        <td className="px-2 py-2.5 border-r border-border/60 text-center text-text-muted font-bold">
+                        <td className={`sticky left-0 z-20 ${stickyBg} px-2 py-2.5 border-r border-border/60 text-center text-text-muted font-bold w-10 min-w-[40px]`}>
                           {(safePage - 1) * pageSize + rIdx + 1}
                         </td>
 
                         {/* Cột Mã HV */}
                         <td
-                          className={`sticky left-0 z-10 ${stickyBg} px-3 py-2.5 border-r border-border/60 font-mono font-bold text-text-primary whitespace-nowrap min-w-[100px] w-[100px]`}
+                          className={`sticky left-10 z-20 ${stickyBg} px-3 py-2.5 border-r border-border/60 font-mono font-bold text-text-primary whitespace-nowrap w-[110px] min-w-[110px] max-w-[110px] overflow-hidden`}
                         >
                           {row.studentCode || `HV_${row.studentId}`}
                         </td>
 
                         {/* Cột Họ tên HV */}
                         <td
-                          className={`sticky left-[100px] z-10 ${stickyBg} px-3 py-2.5 border-r-2 border-border/80 font-bold text-text-primary min-w-[165px] w-[165px] shadow-[2px_0_4px_-1px_rgba(0,0,0,0.06)]`}
+                          className={`sticky left-[150px] z-20 ${stickyBg} px-3 py-2.5 border-r-2 border-border/80 font-bold text-text-primary w-[175px] min-w-[175px] max-w-[175px] shadow-[2px_0_4px_-1px_rgba(0,0,0,0.06)] overflow-hidden`}
                         >
                           <div
                             className="truncate max-w-[150px]"

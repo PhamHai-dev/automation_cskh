@@ -878,7 +878,7 @@ export const StudentsPage: React.FC = () => {
       key: 'stt',
       header: '#',
       width: '52px',
-      className: 'sticky left-0 z-20 bg-white w-[52px] min-w-[52px] max-w-[52px] text-center',
+      className: 'sticky left-0 z-20 w-[52px] min-w-[52px] max-w-[52px] text-center border-r border-border/60 overflow-hidden',
       cell: (item) => (
         <span className="font-bold text-slate-400 text-xs text-center block">
           {filteredStudents.indexOf(item) + 1}
@@ -888,10 +888,10 @@ export const StudentsPage: React.FC = () => {
     {
       key: 'external_id',
       header: 'Mã học viên',
-      width: '124px',
-      className: 'sticky left-[52px] z-20 bg-white w-[124px] min-w-[124px] max-w-[124px]',
+      width: '132px',
+      className: 'sticky left-[52px] z-20 w-[132px] min-w-[132px] max-w-[132px] border-r border-border/60 overflow-hidden',
       cell: (item) => (
-        <span className="font-mono font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded text-[11px] whitespace-nowrap">
+        <span className="font-mono font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded text-[11px] whitespace-nowrap inline-block max-w-full truncate">
           {item.external_id || `HV_${item.id}`}
         </span>
       ),
@@ -901,15 +901,16 @@ export const StudentsPage: React.FC = () => {
       header: 'Họ và tên',
       width: '210px',
       className:
-        'sticky left-[176px] z-20 bg-white w-[210px] min-w-[210px] shadow-[4px_0_6px_-2px_rgba(0,0,0,0.06)]',
+        'sticky left-[184px] z-20 w-[210px] min-w-[210px] max-w-[210px] border-r-2 border-border/80 shadow-[4px_0_6px_-2px_rgba(0,0,0,0.06)] overflow-hidden',
       cell: (item) => (
-        <div className="flex items-center space-x-2 whitespace-nowrap">
+        <div className="flex items-center space-x-2 whitespace-nowrap overflow-hidden">
           <div className="w-7 h-7 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-xs shrink-0">
             {item.full_name.charAt(0).toUpperCase()}
           </div>
           <span
-            className="font-bold text-slate-900 text-xs hover:text-blue-600 cursor-pointer"
+            className="font-bold text-slate-900 text-xs hover:text-blue-600 cursor-pointer truncate"
             onClick={() => setViewingStudent(item)}
+            title={item.full_name}
           >
             {item.full_name}
           </span>
@@ -1046,7 +1047,7 @@ export const StudentsPage: React.FC = () => {
   const actionColumn: Column<Student> = {
     key: 'action',
     header: 'Thao tác',
-    className: 'text-right sticky right-0 bg-white z-10 shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.06)]',
+    className: 'text-right sticky right-0 z-20 border-l border-border/60 shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.06)]',
     cell: (item) => (
       <div className="flex justify-end gap-1 whitespace-nowrap">
         <Button

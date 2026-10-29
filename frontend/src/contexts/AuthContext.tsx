@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { apiClient } from '../api/client';
 import { clearQueryCache } from '../lib/queryCache';
+import { disconnectSocket, connectSocket } from '../lib/socket';
 
 interface User {
   id: number;
@@ -44,8 +45,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const login = (token: string, newUser: User) => {
     clearQueryCache();
+    disconnectSocket();
     localStorage.setItem('accessToken', token);
     setUser(newUser);
+    connectSocket();
   };
 
   const logout = async () => {
@@ -55,6 +58,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       // Ignore network or expired-session errors on logout; always clear client state
     } finally {
       clearQueryCache();
+      disconnectSocket();
       localStorage.removeItem('accessToken');
       setUser(null);
     }

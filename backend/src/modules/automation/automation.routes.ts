@@ -1,14 +1,15 @@
 /**
- * Automation Routes — CRUD workflows, steps, enrollments, deliveries.
- * Scope: CS sees own workflows only; ADMIN/MANAGE can manage all.
+ * Automation Routes — CRUD workflows, steps, CSKH assignments, enrollments, deliveries.
+ * Scope:
+ *   - ADMIN / MANAGE: create/edit/delete workflows & trigger steps, and assign participating CSKHs.
+ *   - CS: view assigned workflows & read-only trigger steps; view/add/remove ONLY their own students and deliveries.
  */
 
-import { Router, Request, Response, NextFunction } from 'express';
+import { Router, Request, Response } from 'express';
 import { z } from 'zod';
-import { authenticate } from '../../middlewares/auth.middleware';
+import { authenticate, requireRoles } from '../../middlewares/auth.middleware';
 import { automationService } from './automation.service';
 import { broadcastRouter } from './broadcast.routes';
-import { prisma } from '../../prisma/client';
 
 const router = Router();
 
@@ -32,9 +33,20 @@ function handleError(res: Response, err: any) {
   res.status(status).json({ success: false, message: err.message ?? 'Internal error' });
 }
 
+// ─── Assignable CSKH Users ───────────────────────────────────────────
+
+router.get('/cs-users', async (_req: Request, res: Response) => {
+  try {
+    const items = await automationService.listAssignableCsUsers();
+    res.json({ success: true, items, data: items });
+  } catch (err: any) {
+    handleError(res, err);
+  }
+});
+
 // ─── Workflow CRUD ───────────────────────────────────────────────────
 
-// List workflows
+// List workflows (ADMIN/MANAGE see all; CS sees only assigned workflows)
 router.get('/workflows', async (req: Request, res: Response) => {
   try {
     const userId = req.user!.id;
@@ -52,12 +64,13 @@ router.get('/workflows', async (req: Request, res: Response) => {
   }
 });
 
-// Create workflow
-router.post('/workflows', async (req: Request, res: Response) => {
+// Create workflow (ADMIN / MANAGE only)
+router.post('/workflows', requireRoles(['ADMIN', 'MANAGE']), async (req: Request, res: Response) => {
   try {
     const schema = z.object({
       name: z.string().min(1, 'Name is required').max(200),
       description: z.string().max(2000).optional(),
+      assigned_cs_ids: z.array(z.number().int().positive()).optional(),
     });
     const dto = schema.parse(req.body);
     const workflow = await automationService.createWorkflow(req.user!.id, dto);
@@ -70,7 +83,7 @@ router.post('/workflows', async (req: Request, res: Response) => {
   }
 });
 
-// Available enrollments (popup chon HV)
+// Available enrollments (popup chọn HV — CS chỉ thấy HV của mình)
 router.get('/workflows/:id/enrollments/available', async (req: Request, res: Response) => {
   try {
     const workflowId = Number(req.params.id);
@@ -93,31 +106,34 @@ router.get('/workflows/:id/enrollments/available', async (req: Request, res: Res
   }
 });
 
-// Get workflow detail (with steps + enrollments count)
+// Get workflow detail (with steps + per-CSKH enrollments count + assigned CSKHs)
 router.get('/workflows/:id', async (req: Request, res: Response) => {
   try {
     const id = Number(req.params.id);
-    const workflow = await automationService.getWorkflow(id);
     const role = getRole(req);
-    if (!['ADMIN', 'MANAGE'].includes(role) && workflow.owner_cs_id !== req.user!.id) {
-      return res.status(403).json({ success: false, message: 'Forbidden' });
-    }
+    const workflow = await automationService.getWorkflow(id, req.user!.id, role);
     res.json({ success: true, workflow });
   } catch (err: any) {
     handleError(res, err);
   }
 });
 
-// Update workflow
-router.patch('/workflows/:id', async (req: Request, res: Response) => {
+// Update workflow (ADMIN / MANAGE only)
+router.patch('/workflows/:id', requireRoles(['ADMIN', 'MANAGE']), async (req: Request, res: Response) => {
   try {
     const schema = z.object({
       name: z.string().min(1).max(200).optional(),
       description: z.string().max(2000).optional().nullable(),
       active: z.boolean().optional(),
+      assigned_cs_ids: z.array(z.number().int().positive()).optional(),
     });
     const dto = schema.parse(req.body);
-    const updated = await automationService.updateWorkflow(Number(req.params.id), dto as any, req.user!.id, getRole(req));
+    const updated = await automationService.updateWorkflow(
+      Number(req.params.id),
+      dto as any,
+      req.user!.id,
+      getRole(req),
+    );
     res.json({ success: true, workflow: updated });
   } catch (err: any) {
     if (err instanceof z.ZodError) return res.status(422).json({ success: false, errors: err.issues });
@@ -125,8 +141,37 @@ router.patch('/workflows/:id', async (req: Request, res: Response) => {
   }
 });
 
-// Delete workflow
-router.delete('/workflows/:id', async (req: Request, res: Response) => {
+// Assign / update participating CSKHs on a workflow (ADMIN / MANAGE only)
+router.put(
+  '/workflows/:id/cs-assignments',
+  requireRoles(['ADMIN', 'MANAGE']),
+  async (req: Request, res: Response) => {
+    try {
+      const workflowId = Number(req.params.id);
+      const schema = z.object({
+        assigned_cs_ids: z.array(z.number().int().positive()),
+      });
+      const dto = schema.parse(req.body);
+      await automationService.setWorkflowCsAssignments(
+        workflowId,
+        dto.assigned_cs_ids,
+        req.user!.id,
+      );
+      const workflow = await automationService.getWorkflow(
+        workflowId,
+        req.user!.id,
+        getRole(req),
+      );
+      res.json({ success: true, workflow });
+    } catch (err: any) {
+      if (err instanceof z.ZodError) return res.status(422).json({ success: false, errors: err.issues });
+      handleError(res, err);
+    }
+  },
+);
+
+// Delete workflow (ADMIN / MANAGE only)
+router.delete('/workflows/:id', requireRoles(['ADMIN', 'MANAGE']), async (req: Request, res: Response) => {
   try {
     await automationService.deleteWorkflow(Number(req.params.id), req.user!.id, getRole(req));
     res.json({ success: true, message: 'Workflow deleted' });
@@ -135,17 +180,26 @@ router.delete('/workflows/:id', async (req: Request, res: Response) => {
   }
 });
 
-// ─── Steps (cụm trigger) ────────────────────────────────────────────
+// ─── Steps (cụm trigger — ADMIN / MANAGE only) ──────────────────────
 
 // Add step to workflow
-router.post('/workflows/:id/steps', async (req: Request, res: Response) => {
+router.post('/workflows/:id/steps', requireRoles(['ADMIN', 'MANAGE']), async (req: Request, res: Response) => {
   try {
     const workflowId = Number(req.params.id);
     const schema = z.object({
       session_number: z.number().int().min(1, 'Session number >= 1'),
-      trigger_event: z.enum(['ATTENDED', 'ABSENT_APPROVED_A', 'LEAVE_B', 'ABSENT_UNAPPROVED_C', 'TEACHER_ABSENT_D', 'TECH_ERROR_E']),
+      trigger_event: z.enum([
+        'ATTENDED',
+        'ABSENT_APPROVED_A',
+        'LEAVE_B',
+        'ABSENT_UNAPPROVED_C',
+        'TEACHER_ABSENT_D',
+        'TECH_ERROR_E',
+      ]),
       delay_minutes: z.number().int().min(0).max(10080),
-      channel: z.enum(['ZALO_PERSONAL', 'ZALO_GROUP', 'LINE_PERSONAL', 'LINE_GROUP']).default('ZALO_PERSONAL'),
+      channel: z
+        .enum(['ZALO_PERSONAL', 'ZALO_GROUP', 'LINE_PERSONAL', 'LINE_GROUP'])
+        .default('ZALO_PERSONAL'),
       target_group_id: z.number().int().optional().nullable(),
       message_content: z.string().min(1, 'Message content required').max(5000),
       message_variables: z.array(z.string()).default([]),
@@ -155,7 +209,10 @@ router.post('/workflows/:id/steps', async (req: Request, res: Response) => {
 
     // If ZALO_GROUP or LINE_GROUP, target_group_id is required
     if ((dto.channel === 'ZALO_GROUP' || dto.channel === 'LINE_GROUP') && !dto.target_group_id) {
-      return res.status(422).json({ success: false, message: `target_group_id is required for ${dto.channel} channel` });
+      return res.status(422).json({
+        success: false,
+        message: `target_group_id is required for ${dto.channel} channel`,
+      });
     }
 
     const step = await automationService.addStep(workflowId, dto, req.user!.id, getRole(req));
@@ -167,13 +224,24 @@ router.post('/workflows/:id/steps', async (req: Request, res: Response) => {
 });
 
 // Update step
-router.patch('/steps/:stepId', async (req: Request, res: Response) => {
+router.patch('/steps/:stepId', requireRoles(['ADMIN', 'MANAGE']), async (req: Request, res: Response) => {
   try {
     const schema = z.object({
       session_number: z.number().int().min(1).optional(),
-      trigger_event: z.enum(['ATTENDED', 'ABSENT_APPROVED_A', 'LEAVE_B', 'ABSENT_UNAPPROVED_C', 'TEACHER_ABSENT_D', 'TECH_ERROR_E']).optional(),
+      trigger_event: z
+        .enum([
+          'ATTENDED',
+          'ABSENT_APPROVED_A',
+          'LEAVE_B',
+          'ABSENT_UNAPPROVED_C',
+          'TEACHER_ABSENT_D',
+          'TECH_ERROR_E',
+        ])
+        .optional(),
       delay_minutes: z.number().int().min(0).max(10080).optional(),
-      channel: z.enum(['ZALO_PERSONAL', 'ZALO_GROUP', 'LINE_PERSONAL', 'LINE_GROUP']).optional(),
+      channel: z
+        .enum(['ZALO_PERSONAL', 'ZALO_GROUP', 'LINE_PERSONAL', 'LINE_GROUP'])
+        .optional(),
       target_group_id: z.number().int().optional().nullable(),
       message_content: z.string().min(1).max(5000).optional(),
       message_variables: z.array(z.string()).optional(),
@@ -185,10 +253,18 @@ router.patch('/steps/:stepId', async (req: Request, res: Response) => {
       (dto.channel === 'ZALO_GROUP' || dto.channel === 'LINE_GROUP') &&
       dto.target_group_id === null
     ) {
-      return res.status(422).json({ success: false, message: `target_group_id is required for ${dto.channel} channel` });
+      return res.status(422).json({
+        success: false,
+        message: `target_group_id is required for ${dto.channel} channel`,
+      });
     }
 
-    const updated = await automationService.updateStep(Number(req.params.stepId), dto, req.user!.id, getRole(req));
+    const updated = await automationService.updateStep(
+      Number(req.params.stepId),
+      dto,
+      req.user!.id,
+      getRole(req),
+    );
     res.json({ success: true, step: updated });
   } catch (err: any) {
     if (err instanceof z.ZodError) return res.status(422).json({ success: false, errors: err.issues });
@@ -197,7 +273,7 @@ router.patch('/steps/:stepId', async (req: Request, res: Response) => {
 });
 
 // Delete step
-router.delete('/steps/:stepId', async (req: Request, res: Response) => {
+router.delete('/steps/:stepId', requireRoles(['ADMIN', 'MANAGE']), async (req: Request, res: Response) => {
   try {
     await automationService.deleteStep(Number(req.params.stepId), req.user!.id, getRole(req));
     res.json({ success: true, message: 'Step deleted' });
@@ -206,17 +282,24 @@ router.delete('/steps/:stepId', async (req: Request, res: Response) => {
   }
 });
 
-// ─── Enrollments (add học viên vào workflow) ─────────────────────────
+// ─── Enrollments (add/remove học viên vào workflow) ──────────────────
 
 router.post('/workflows/:id/enrollments', async (req: Request, res: Response) => {
   try {
     const workflowId = Number(req.params.id);
-    const schema = z.object({
-      enrollment_id: z.number().int().optional(),
-      enrollment_ids: z.array(z.number().int()).optional(),
-    }).refine((d) => d.enrollment_id !== undefined || (d.enrollment_ids && d.enrollment_ids.length > 0), {
-      message: 'Either enrollment_id or enrollment_ids is required',
-    });
+    const schema = z
+      .object({
+        enrollment_id: z.number().int().optional(),
+        enrollment_ids: z.array(z.number().int()).optional(),
+      })
+      .refine(
+        (d) =>
+          d.enrollment_id !== undefined ||
+          (d.enrollment_ids && d.enrollment_ids.length > 0),
+        {
+          message: 'Either enrollment_id or enrollment_ids is required',
+        },
+      );
     const parsed = schema.parse(req.body);
     const ids: number[] = parsed.enrollment_ids ?? [parsed.enrollment_id!];
 
@@ -224,11 +307,24 @@ router.post('/workflows/:id/enrollments', async (req: Request, res: Response) =>
     const errors: any[] = [];
     for (const eid of ids) {
       try {
-        const added = await automationService.addEnrollment(workflowId, eid, req.user!.id, getRole(req));
+        const added = await automationService.addEnrollment(
+          workflowId,
+          eid,
+          req.user!.id,
+          getRole(req),
+        );
         results.push(added);
       } catch (e: any) {
         errors.push({ enrollment_id: eid, message: e.message });
       }
+    }
+
+    if (results.length === 0 && errors.length > 0) {
+      return res.status(403).json({
+        success: false,
+        message: errors[0]?.message || 'Không thể thêm học viên vào kịch bản',
+        errors,
+      });
     }
 
     res.status(201).json({ success: true, enrolled: results.length, results, errors });
@@ -240,7 +336,12 @@ router.post('/workflows/:id/enrollments', async (req: Request, res: Response) =>
 
 router.delete('/workflows/:id/enrollments/:enrollmentId', async (req: Request, res: Response) => {
   try {
-    await automationService.removeEnrollment(Number(req.params.id), Number(req.params.enrollmentId), req.user!.id, getRole(req));
+    await automationService.removeEnrollment(
+      Number(req.params.id),
+      Number(req.params.enrollmentId),
+      req.user!.id,
+      getRole(req),
+    );
     res.json({ success: true, message: 'Enrollment removed' });
   } catch (err: any) {
     handleError(res, err);
@@ -249,23 +350,32 @@ router.delete('/workflows/:id/enrollments/:enrollmentId', async (req: Request, r
 
 router.get('/workflows/:id/enrollments', async (req: Request, res: Response) => {
   try {
-    const items = await automationService.listEnrollments(Number(req.params.id));
+    const items = await automationService.listEnrollments(
+      Number(req.params.id),
+      req.user!.id,
+      getRole(req),
+    );
     res.json({ success: true, items });
   } catch (err: any) {
     handleError(res, err);
   }
 });
 
-// ─── Deliveries ──────────────────────────────────────────────────────
+// ─── Deliveries (Lịch sử gửi tin — CS chỉ thấy HV của mình) ─────────
 
 router.get('/workflows/:id/deliveries', async (req: Request, res: Response) => {
   try {
-    const result = await automationService.listDeliveries(Number(req.params.id), {
-      status: req.query.status as string | undefined,
-      enrollmentId: req.query.enrollment_id ? Number(req.query.enrollment_id) : undefined,
-      page: req.query.page ? Number(req.query.page) : undefined,
-      limit: req.query.limit ? Number(req.query.limit) : undefined,
-    });
+    const result = await automationService.listDeliveries(
+      Number(req.params.id),
+      {
+        status: req.query.status as string | undefined,
+        enrollmentId: req.query.enrollment_id ? Number(req.query.enrollment_id) : undefined,
+        page: req.query.page ? Number(req.query.page) : undefined,
+        limit: req.query.limit ? Number(req.query.limit) : undefined,
+      },
+      req.user!.id,
+      getRole(req),
+    );
     res.json({ success: true, ...result });
   } catch (err: any) {
     handleError(res, err);

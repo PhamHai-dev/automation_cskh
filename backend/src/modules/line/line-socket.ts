@@ -27,10 +27,14 @@ export function registerLineSocketHandlers(io: Server): void {
       try {
         const account = await prisma.lineAccount.findUnique({
           where: { id: accountId },
-          select: { id: true },
+          select: { id: true, cs_id: true },
         });
         if (!account) {
           log.warn(`[line-socket] rejected subscribe for non-existent LINE account ${accountId}`);
+          return;
+        }
+        if (socket.data?.userId && account.cs_id !== socket.data.userId) {
+          log.warn(`[line-socket] rejected subscribe for LINE account ${accountId} — not owned by user ${socket.data.userId}`);
           return;
         }
         socket.join(`line:${accountId}`);

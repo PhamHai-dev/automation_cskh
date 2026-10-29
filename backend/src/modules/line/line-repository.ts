@@ -124,6 +124,20 @@ export class LineRepository {
       avatar_url: string | null;
     }>,
   ) {
+    if (data.line_mid) {
+      await prisma.lineAccount
+        .updateMany({
+          where: {
+            line_mid: data.line_mid,
+            id: { not: id },
+          },
+          data: {
+            line_mid: null,
+          },
+        })
+        .catch(() => undefined);
+    }
+
     return prisma.lineAccount.update({
       where: { id },
       data,
@@ -138,6 +152,8 @@ export class LineRepository {
       where: { id },
       data: {
         status: 'DISABLED',
+        line_mid: null,
+        basic_id: null,
         encrypted_session_data: null,
         qr_code: null,
         pin_code: null,

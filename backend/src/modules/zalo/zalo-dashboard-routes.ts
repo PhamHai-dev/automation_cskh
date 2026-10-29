@@ -62,7 +62,7 @@ router.get('/dashboard/stats', async (req: Request, res: Response) => {
     const yesterday = new Date(today.getTime() - 86_400_000);
 
     const accounts = await prisma.zaloAccount.findMany({
-      where: { archived_at: null },
+      where: { archived_at: null, cs_id: req.user!.id },
       select: { id: true, status: true, last_connected_at: true },
     });
     const accountIds = accounts.map((a) => a.id);
@@ -134,10 +134,12 @@ router.get('/dashboard/enriched', async (req: Request, res: Response) => {
   try {
     const today = startOfDay(new Date());
 
-    // F7: includeArchived lets admin see deleted nicks for restore
     const includeArchived = (req.query.includeArchived as string) === 'true';
     const accounts = await prisma.zaloAccount.findMany({
-      where: includeArchived ? {} : { archived_at: null },
+      where: {
+        cs_id: req.user!.id,
+        ...(includeArchived ? {} : { archived_at: null }),
+      },
       select: {
         id: true,
         zalo_uid: true,
@@ -309,7 +311,7 @@ router.post('/bulk-action', async (req: Request, res: Response) => {
   }
 
   const accounts = await prisma.zaloAccount.findMany({
-    where: { id: { in: ids } },
+    where: { id: { in: ids }, cs_id: user.id },
   });
 
   const results: Array<{ id: number; ok: boolean; error?: string }> = [];

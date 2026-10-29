@@ -33,12 +33,12 @@ const router = Router({ mergeParams: true });
 /**
  * Helper: resolve account or throw 404 if not found / not owned.
  */
-async function ensureAccount(accountId: number, userId: number, isAdmin: boolean) {
+async function ensureAccount(accountId: number, userId: number, _isAdmin?: boolean) {
   const { prisma } = await import('../../prisma/client');
   const account = await prisma.zaloAccount.findUnique({ where: { id: accountId } });
   if (!account) throw Object.assign(new Error('Account not found'), { code: 'NOT_FOUND', statusCode: 404 });
-  if (!isAdmin && account.cs_id !== userId) {
-    throw Object.assign(new Error('Account not found'), { code: 'NOT_FOUND', statusCode: 404 });
+  if (account.cs_id !== userId) {
+    throw Object.assign(new Error('Không có quyền truy cập tài khoản Zalo của người dùng khác'), { code: 'FORBIDDEN', statusCode: 403 });
   }
   return account;
 }

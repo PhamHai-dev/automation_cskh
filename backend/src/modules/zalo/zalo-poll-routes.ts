@@ -15,14 +15,11 @@ const log = createLogger('ZaloPolls');
 const router = Router();
 
 // ─── Helper: resolve account + conversation ──────────────────────────────
-async function resolveConversation(accountId: number, threadId: string, userId: number, isAdmin: boolean) {
+async function resolveConversation(accountId: number, threadId: string, userId: number, _isAdmin?: boolean) {
   const account = await prisma.zaloAccount.findUnique({ where: { id: accountId } });
   if (!account) throw Object.assign(new Error('Account not found'), { status: 404 });
-  if (!isAdmin && account.cs_id !== userId) {
-    const access = await prisma.zaloAccountAccess.findUnique({
-      where: { zalo_account_id_user_id: { zalo_account_id: accountId, user_id: userId } },
-    });
-    if (!access) throw Object.assign(new Error('No access'), { status: 403 });
+  if (account.cs_id !== userId) {
+    throw Object.assign(new Error('Không có quyền truy cập tài khoản Zalo của người dùng khác'), { status: 403 });
   }
 
   const conversation = await prisma.conversation.findFirst({

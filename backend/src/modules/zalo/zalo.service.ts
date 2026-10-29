@@ -13,8 +13,12 @@ import { backfillIfEmpty } from './zalo-backfill-service';
 const log = createLogger('ZaloService');
 
 export class ZaloService {
-  async getPoolStatus() {
-    const accounts = await zaloRepository.findAll();
+  async getPoolStatus(ownerUserId?: number) {
+    const allAccounts = await zaloRepository.findAll();
+    const accounts =
+      ownerUserId !== undefined
+        ? allAccounts.filter((a) => a.cs_id === ownerUserId)
+        : allAccounts;
     const poolStatus = zaloPool.getPoolStatus();
     const poolMap = new Map(poolStatus.map((p) => [p.accountId, p]));
 
@@ -46,6 +50,14 @@ export class ZaloService {
     return account;
   }
 
+  async assertAccountOwner(id: number, userId: number) {
+    const account = await this.getAccountById(id);
+    if (account.cs_id !== userId) {
+      throw new AppError(403, 'Không có quyền truy cập tài khoản Zalo của người dùng khác');
+    }
+    return account;
+  }
+
   async getAccountLiveStatus(id: number) {
     const account = await this.getAccountById(id);
     const liveStatus = zaloPool.getStatus(id);
@@ -54,17 +66,8 @@ export class ZaloService {
 
   async disconnectAccount(id: number, requesterId: number) {
     const account = await this.getAccountById(id);
-    const requester = await prisma.user.findUnique({ where: { id: requesterId } });
-    const isPrivileged =
-      requester && Array.isArray(requester.roles)
-        ? (requester.roles as string[]).some((r: string) => ['ADMIN', 'MANAGE'].includes(r))
-        : false;
-    const access = await prisma.zaloAccountAccess.findUnique({
-      where: { zalo_account_id_user_id: { zalo_account_id: id, user_id: requesterId } },
-    });
-    const hasAdminAccess = access?.permission === 'admin';
-    if (!isPrivileged && account.cs_id !== requesterId && !hasAdminAccess) {
-      throw new AppError(403, 'Forbidden: not your Zalo account');
+    if (account.cs_id !== requesterId) {
+      throw new AppError(403, 'Không có quyền ngắt kết nối tài khoản Zalo của người dùng khác');
     }
     try {
       zaloPool.disconnect(id);
@@ -228,16 +231,12 @@ export class ZaloService {
     return updated;
   }
 
-  /** Liệt kê nick đã ẩn (tab "Nick đã xóa") — admin thấy tất cả, sale chỉ thấy nick mình */
+  /** Liệt kê nick đã ẩn (tab "Nick đã xóa") — chỉ hiển thị tài khoản của đúng user đang đăng nhập */
   async getArchivedAccounts(requesterId: number) {
-    const requester = await prisma.user.findUnique({ where: { id: requesterId } });
-    const isAdmin = requester && Array.isArray(requester.roles)
-      ? (requester.roles as string[]).some((r) => ['ADMIN', 'MANAGE'].includes(r))
-      : false;
     const rows = await prisma.zaloAccount.findMany({
       where: {
         archived_at: { not: null },
-        ...(isAdmin ? {} : { cs_id: requesterId }),
+        cs_id: requesterId,
       },
       select: {
         id: true, display_name: true, zalo_uid: true, zalo_phone: true,
@@ -322,24 +321,8 @@ export class ZaloService {
 
   async generateQr(accountId: number, requesterId: number) {
     const account = await this.getAccountById(accountId);
-    // Scope check: CS can only QR for own accounts; ADMIN/MANAGE can QR for any
-    const requester = await prisma.user.findUnique({ where: { id: requesterId } });
-    log.info('generateQr check', {
-      accountId,
-      accountCsId: account.cs_id,
-      requesterId,
-      requesterEmail: requester?.email,
-      requesterRoles: requester?.roles,
-    });
-    const isPrivileged =
-      requester && Array.isArray(requester.roles)
-        ? (requester.roles as string[]).some((r: string) => ['ADMIN', 'MANAGE'].includes(r))
-        : false;
-    const access = await prisma.zaloAccountAccess.findUnique({
-      where: { zalo_account_id_user_id: { zalo_account_id: accountId, user_id: requesterId } },
-    });
-    const hasAdminAccess = access?.permission === 'admin';
-    if (!isPrivileged && account.cs_id !== requesterId && !hasAdminAccess) {
+    // Strict per-user isolation: only the owner can generate QR for their Zalo account
+    if (account.cs_id !== requesterId) {
       throw new AppError(403, `Forbidden: not your Zalo account (account cs_id: ${account.cs_id}, your user id: ${requesterId})`);
     }
 

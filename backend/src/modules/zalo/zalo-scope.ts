@@ -37,24 +37,13 @@ export interface ZaloScope {
 
 // ─── Scope descriptor ────────────────────────────────────────────────────
 
-export function getZaloScope(role: ZaloRole): ZaloScope {
-  switch (role) {
-    case 'ADMIN':
-    case 'MANAGE':
-      return {
-        seeAll: true,
-        manageAll: true,
-        sendAll: true,
-        ownAccountOnly: false,
-      };
-    case 'CS':
-      return {
-        seeAll: false,
-        manageAll: false,
-        sendAll: false,
-        ownAccountOnly: true,
-      };
-  }
+export function getZaloScope(_role: ZaloRole): ZaloScope {
+  return {
+    seeAll: false,
+    manageAll: false,
+    sendAll: false,
+    ownAccountOnly: true,
+  };
 }
 
 // ─── Account resolution ──────────────────────────────────────────────────
@@ -224,33 +213,22 @@ export function nickSendBlockReason(
  * Prisma WHERE clause: accounts visible in the "nick list" (display tab).
  * Includes ACTIVE + EXPIRED + QR_PENDING + CONNECTING, excludes archived/deleted.
  */
-export function DISPLAYABLE_NICK_WHERE(userId: number, role: ZaloRole) {
-  const base: any = {
+export function DISPLAYABLE_NICK_WHERE(userId: number, _role: ZaloRole) {
+  return {
     archived_at: null,
     status: { notIn: ['DISABLED'] },
+    cs_id: userId,
   };
-
-  // CS: only own accounts
-  if (role === 'CS') {
-    base.cs_id = userId;
-  }
-
-  return base;
 }
 
 /**
  * Prisma WHERE clause: accounts that can SEND messages right now.
  */
-export function ACTIVE_SEND_NICK_WHERE(userId: number, role: ZaloRole) {
-  const base: any = {
+export function ACTIVE_SEND_NICK_WHERE(userId: number, _role: ZaloRole) {
+  return {
     archived_at: null,
     status: 'ACTIVE',
     disconnect_reason: { not: 'manual' },
+    cs_id: userId,
   };
-
-  if (role === 'CS') {
-    base.cs_id = userId;
-  }
-
-  return base;
 }

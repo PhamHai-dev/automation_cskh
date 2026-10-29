@@ -462,10 +462,18 @@ export class LinePersonalAdapter {
     const encrypted = encryptJson(this.sessionData);
     const now = new Date();
 
+    const existingAccount = await lineRepository.findAccountById(this.accountId);
+    const keepDisplayName =
+      existingAccount?.display_name &&
+      !existingAccount.display_name.startsWith('LINE ') &&
+      existingAccount.display_name !== 'LINE Personal'
+        ? existingAccount.display_name
+        : displayName || existingAccount?.display_name || null;
+
     const updated = await lineRepository.updateAccount(this.accountId, {
       status: 'ACTIVE',
       ...(mid ? { line_mid: mid } : {}),
-      ...(displayName ? { display_name: displayName } : {}),
+      ...(keepDisplayName ? { display_name: keepDisplayName } : {}),
       ...(pictureUrl ? { avatar_url: pictureUrl } : {}),
       encrypted_session_data: encrypted,
       qr_code: null,
@@ -474,6 +482,7 @@ export class LinePersonalAdapter {
       last_login_at: now,
       last_active_at: now,
       disconnect_reason: null,
+      last_sync_error: null,
       session_epoch: runEpoch,
     });
 
@@ -779,44 +788,103 @@ export class LinePersonalAdapter {
   }
 
   /**
-   * Sync all contacts (`LineFriend`) for this Personal LINE account.
+   * Sync all contacts (`LineFriend`) and active message boxes (`LineConversation`) for this Personal LINE account.
    */
   async syncFriends(): Promise<{ synced: number }> {
     if (!this.client) return { synced: 0 };
 
     try {
-      let contacts: any[] = [];
+      const contactByMid = new Map<string, any>();
+
       if (typeof this.client.fetchUsers === 'function') {
-        contacts = (await this.client.fetchUsers()) ?? [];
-      } else if (this.client.base?.talk) {
+        const fetched = (await this.client.fetchUsers().catch(() => [])) ?? [];
+        for (const c of fetched) {
+          const raw = c?.raw ?? c;
+          const mid = c?.mid ?? raw?.mid ?? raw?.targetUserMid;
+          if (mid) contactByMid.set(String(mid), c);
+        }
+      }
+
+      if (this.client.base?.talk) {
         const contactIds: string[] =
-          (await this.client.base.talk.getAllContactIds?.()) ?? [];
-        if (contactIds.length) {
-          contacts =
-            (await this.client.base.talk.getContacts?.({ mids: contactIds })) ?? [];
+          (await this.client.base.talk.getAllContactIds?.().catch(() => [])) ?? [];
+        if (contactIds.length > 0 && typeof this.client.base.talk.getContacts === 'function') {
+          const talkContacts =
+            (await this.client.base.talk.getContacts({ mids: contactIds }).catch(() => [])) ?? [];
+          for (const tc of talkContacts) {
+            const mid = tc?.mid;
+            if (mid && !contactByMid.has(String(mid))) {
+              contactByMid.set(String(mid), tc);
+            }
+          }
+        }
+      }
+
+      // Also inspect active messageBoxes so conversations with users appear in Inbox
+      const messageBoxByMid = new Map<string, { unreadCount: number; deliveredTime?: number }>();
+      if (typeof this.client.base?.talk?.getMessageBoxes === 'function') {
+        const mBoxesRes = await this.client.base.talk
+          .getMessageBoxes({ messageBoxListRequest: { messageBoxCountLimit: 50 } })
+          .catch(() => null);
+        const boxes: any[] = mBoxesRes?.messageBoxes ?? [];
+        for (const box of boxes) {
+          const boxId = box?.id ? String(box.id) : '';
+          if (!boxId) continue;
+          const deliveredRaw = box?.lastDeliveredMessageId?.deliveredTime;
+          const deliveredMs =
+            typeof deliveredRaw === 'bigint'
+              ? Number(deliveredRaw)
+              : typeof deliveredRaw === 'number'
+              ? deliveredRaw
+              : undefined;
+          messageBoxByMid.set(boxId, {
+            unreadCount: Number(box?.unreadCount ?? 0),
+            deliveredTime:
+              deliveredMs && deliveredMs > 946684800000 && deliveredMs < 2100000000000
+                ? deliveredMs
+                : Date.now(),
+          });
         }
       }
 
       let synced = 0;
-      for (const c of contacts) {
+      for (const [mid, c] of contactByMid.entries()) {
         const raw = c?.raw ?? c;
-        const mid = c?.mid ?? raw?.mid;
-        if (!mid) continue;
+        const displayName =
+          c?.displayName ?? raw?.displayName ?? raw?.overriddenDisplayName ?? null;
+        const avatarUrl = raw?.pictureStatus
+          ? `https://obs.line-scdn.net/${raw.pictureStatus}`
+          : null;
+        const hasConv = messageBoxByMid.has(mid);
+
         await lineRepository.upsertFriend(this.accountId, mid, {
           friendship_status: 'friend',
           relationship_kind: 'friend',
-          line_display_name:
-            c?.displayName ?? raw?.displayName ?? raw?.overriddenDisplayName ?? null,
+          line_display_name: displayName,
           alias_in_nick: raw?.overriddenDisplayName ?? null,
-          line_avatar_url: raw?.pictureStatus
-            ? `https://obs.line-scdn.net/${raw.pictureStatus}`
-            : null,
+          line_avatar_url: avatarUrl,
           status_message: c?.statusMessage ?? raw?.statusMessage ?? null,
+          has_conversation: hasConv,
         });
+
+        if (hasConv) {
+          const mb = messageBoxByMid.get(mid)!;
+          await lineRepository.upsertConversation({
+            line_account_id: this.accountId,
+            external_thread_id: mid,
+            thread_type: 'user',
+            display_name: displayName ?? mid,
+            avatar_url: avatarUrl,
+            last_message_at: mb.deliveredTime ? new Date(mb.deliveredTime) : new Date(),
+          });
+        }
         synced++;
       }
 
-      await lineRepository.updateAccount(this.accountId, { last_sync_at: new Date() });
+      await lineRepository.updateAccount(this.accountId, {
+        last_sync_at: new Date(),
+        last_sync_error: null,
+      });
       return { synced };
     } catch (err) {
       return this.handleTalkOperationError(err);

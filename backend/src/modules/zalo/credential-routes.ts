@@ -39,14 +39,9 @@ router.get(`${BASE}/export`, async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Account not found' });
     }
 
-    // Only admin or owner (cs_id = userId) can export credentials
-    if (!isAdmin && account.cs_id !== user.id) {
-      const access = await prisma.zaloAccountAccess.findFirst({
-        where: { zalo_account_id: accountId, user_id: user.id, permission: 'admin' },
-      });
-      if (!access) {
-        return res.status(403).json({ error: 'Admin permission required to export credentials' });
-      }
+    // Strict per-user isolation: only owner (cs_id = user.id) can export credentials
+    if (account.cs_id !== user.id) {
+      return res.status(403).json({ error: 'Không có quyền xuất thông tin phiên tài khoản Zalo của người dùng khác' });
     }
 
     if (!account.encrypted_session_data) {
@@ -92,14 +87,9 @@ router.post(`${BASE}/import`, async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Account not found' });
     }
 
-    // Only admin or owner can import credentials
-    if (!isAdmin && account.cs_id !== user.id) {
-      const access = await prisma.zaloAccountAccess.findFirst({
-        where: { zalo_account_id: accountId, user_id: user.id, permission: 'admin' },
-      });
-      if (!access) {
-        return res.status(403).json({ error: 'Admin permission required to import credentials' });
-      }
+    // Strict per-user isolation: only owner can import credentials
+    if (account.cs_id !== user.id) {
+      return res.status(403).json({ error: 'Không có quyền nhập thông tin phiên vào tài khoản Zalo của người dùng khác' });
     }
 
     const body = req.body as Record<string, unknown> | undefined;

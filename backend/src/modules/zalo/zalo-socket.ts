@@ -30,10 +30,14 @@ export function registerZaloSocketHandlers(io: Server): void {
       try {
         const account = await prisma.zaloAccount.findUnique({
           where: { id: accountId },
-          select: { id: true },
+          select: { id: true, cs_id: true },
         });
         if (!account) {
           log.warn(`[zalo-socket] từ chối subscribe account ${accountId} — không tồn tại`);
+          return;
+        }
+        if (socket.data?.userId && account.cs_id !== socket.data.userId) {
+          log.warn(`[zalo-socket] từ chối subscribe account ${accountId} — không thuộc user ${socket.data.userId}`);
           return;
         }
         socket.join(`account:${accountId}`);

@@ -49,7 +49,6 @@ function notifyAccessChanged(
  */
 async function isOwnerOrAdmin(req: Request, res: Response, accountId: number): Promise<boolean> {
   const user = req.user!;
-  if (user.roles.includes('ADMIN') || user.roles.includes('MANAGE')) return true;
 
   const account = await prisma.zaloAccount.findUnique({
     where: { id: accountId },
@@ -61,7 +60,7 @@ async function isOwnerOrAdmin(req: Request, res: Response, accountId: number): P
   }
   if (account.cs_id === user.id) return true;
 
-  res.status(403).json({ error: 'Chỉ owner của nick hoặc admin mới quản lý quyền truy cập' });
+  res.status(403).json({ error: 'Không có quyền truy cập tài khoản Zalo của người dùng khác' });
   return false;
 }
 
@@ -70,8 +69,7 @@ router.get('/:id/access', async (req: Request, res: Response) => {
   const accountId = parseInt(req.params.id, 10);
   if (Number.isNaN(accountId)) return res.status(404).json({ error: 'Zalo account not found' });
 
-  const account = await prisma.zaloAccount.findUnique({ where: { id: accountId } });
-  if (!account) return res.status(404).json({ error: 'Zalo account not found' });
+  if (!(await isOwnerOrAdmin(req, res, accountId))) return;
 
   const accessList = await prisma.zaloAccountAccess.findMany({
     where: { zalo_account_id: accountId },

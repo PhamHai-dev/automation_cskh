@@ -73,6 +73,13 @@ export const TEMPLATE_VARIABLES = [
   { key: 'cs_name', label: 'Tên CSKH phụ trách' },
 ];
 
+export interface AssignableCsUser {
+  id: number;
+  name: string | null;
+  email: string;
+  staff_code: string | null;
+}
+
 export interface AutomationWorkflow {
   id: number;
   name: string;
@@ -84,6 +91,8 @@ export interface AutomationWorkflow {
   owner?: { id: number; name: string; email: string };
   steps?: AutomationStep[];
   _count?: { enrollments: number; steps: number };
+  assigned_cs_ids?: number[];
+  assigned_cs_users?: AssignableCsUser[];
 }
 
 export interface AutomationStep {

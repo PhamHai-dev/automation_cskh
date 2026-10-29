@@ -7,12 +7,14 @@
 export interface CreateWorkflowDTO {
   name: string;
   description?: string;
+  assigned_cs_ids?: number[];
 }
 
 export interface UpdateWorkflowDTO {
   name?: string;
   description?: string;
   active?: boolean;
+  assigned_cs_ids?: number[];
 }
 
 // ─── Step (cụm trigger) ──────────────────────────────────────────────

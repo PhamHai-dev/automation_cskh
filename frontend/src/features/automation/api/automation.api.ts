@@ -6,6 +6,7 @@ import type {
   AutomationWorkflow,
   AutomationStep,
   AutomationEnrollment,
+  AssignableCsUser,
   MessageDelivery,
   WorkflowListResult,
   SuggestLinkItem,
@@ -17,6 +18,14 @@ import type {
 } from '../types/automation.types';
 
 export const automationApi = {
+  // ─── Assignable CSKH Users ────────────────────────────────────────────
+
+  listCsUsers: async (): Promise<{ items: AssignableCsUser[] }> => {
+    const res = await apiClient.get('/automation/cs-users');
+    const items = res.data?.items ?? res.data?.data ?? [];
+    return { items: Array.isArray(items) ? items : [] };
+  },
+
   // ─── Workflow CRUD ────────────────────────────────────────────────────
 
   listWorkflows: async (params?: {
@@ -37,6 +46,7 @@ export const automationApi = {
   createWorkflow: async (data: {
     name: string;
     description?: string;
+    assigned_cs_ids?: number[];
   }): Promise<{ workflow: AutomationWorkflow }> => {
     const res = await apiClient.post('/automation/workflows', data);
     return res.data;
@@ -44,9 +54,24 @@ export const automationApi = {
 
   updateWorkflow: async (
     id: number,
-    data: { name?: string; description?: string | null; active?: boolean }
+    data: {
+      name?: string;
+      description?: string | null;
+      active?: boolean;
+      assigned_cs_ids?: number[];
+    }
   ): Promise<{ workflow: AutomationWorkflow }> => {
     const res = await apiClient.patch(`/automation/workflows/${id}`, data);
+    return res.data;
+  },
+
+  updateWorkflowCsAssignments: async (
+    id: number,
+    assignedCsIds: number[]
+  ): Promise<{ workflow: AutomationWorkflow }> => {
+    const res = await apiClient.put(`/automation/workflows/${id}/cs-assignments`, {
+      assigned_cs_ids: assignedCsIds,
+    });
     return res.data;
   },
 

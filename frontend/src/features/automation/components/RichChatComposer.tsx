@@ -975,7 +975,7 @@ export const RichChatComposer: React.FC<RichChatComposerProps> = ({
                 leftIcon={<Paperclip className="w-3.5 h-3.5 text-primary" />}
                 onClick={() => fileInputRef.current?.click()}
               >
-                + Đính kèm Ảnh / File
+                Đính kèm Ảnh / File
               </Button>
 
               <Button
@@ -988,7 +988,7 @@ export const RichChatComposer: React.FC<RichChatComposerProps> = ({
                   setShowLinkBuilder(false);
                 }}
               >
-                + Thêm URL Ảnh/File
+                Thêm URL Ảnh/File
               </Button>
 
               <Button
@@ -1001,7 +1001,7 @@ export const RichChatComposer: React.FC<RichChatComposerProps> = ({
                   setShowUrlAttachmentForm(false);
                 }}
               >
-                + Gắn Link / Nút bấm
+                Gắn Link / Nút bấm
               </Button>
             </div>
 

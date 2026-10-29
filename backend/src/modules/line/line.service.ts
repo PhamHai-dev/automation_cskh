@@ -66,6 +66,16 @@ export class LineService {
     return account;
   }
 
+  async assertAccountOwner(accountId: number, userId: number) {
+    const account = await this.getAccount(accountId);
+    if (account.cs_id !== userId) {
+      const err: any = new Error('Không có quyền truy cập tài khoản LINE của người dùng khác');
+      err.statusCode = 403;
+      throw err;
+    }
+    return account;
+  }
+
   async createAccount(input: {
     account_type?: 'OA' | 'PERSONAL';
     cs_id?: number;
@@ -644,8 +654,8 @@ export class LineService {
   ) {
     let conv = await lineRepository.findConversationByThread(accountId, threadIdOrConvId);
     if (!conv && /^\d+$/.test(threadIdOrConvId)) {
-      conv = await prisma.lineConversation.findUnique({
-        where: { id: Number(threadIdOrConvId) },
+      conv = await prisma.lineConversation.findFirst({
+        where: { id: Number(threadIdOrConvId), line_account_id: accountId },
       });
     }
 
@@ -689,8 +699,8 @@ export class LineService {
   async markRead(accountId: number, threadIdOrConvId: string) {
     let conv = await lineRepository.findConversationByThread(accountId, threadIdOrConvId);
     if (!conv && /^\d+$/.test(threadIdOrConvId)) {
-      conv = await prisma.lineConversation.findUnique({
-        where: { id: Number(threadIdOrConvId) },
+      conv = await prisma.lineConversation.findFirst({
+        where: { id: Number(threadIdOrConvId), line_account_id: accountId },
       });
     }
     if (!conv) return { updated: false };
@@ -703,6 +713,7 @@ export class LineService {
   async listUnlinkedStudents(opts?: {
     q?: string;
     csId?: number;
+    ownerUserId?: number;
     page?: number;
     limit?: number;
   }) {
@@ -710,10 +721,14 @@ export class LineService {
     const limit = Math.min(200, Math.max(1, opts?.limit ?? 50));
     const skip = (page - 1) * limit;
     const q = opts?.q?.trim();
+    const ownerId = opts?.ownerUserId ?? opts?.csId;
 
     const where: any = {
       line_contact_relations: {
-        none: { relation_status: 'FRIEND' },
+        none: {
+          relation_status: 'FRIEND',
+          ...(ownerId ? { line_account: { cs_id: ownerId } } : {}),
+        },
       },
       ...(opts?.csId
         ? {
@@ -813,9 +828,12 @@ export class LineService {
     };
   }
 
-  async listLinksByStudent(studentId: number) {
+  async listLinksByStudent(studentId: number, ownerUserId?: number) {
     const items = await prisma.lineContactRelation.findMany({
-      where: { student_id: studentId },
+      where: {
+        student_id: studentId,
+        ...(ownerUserId ? { line_account: { cs_id: ownerUserId } } : {}),
+      },
       include: {
         student: {
           select: {
@@ -867,6 +885,7 @@ export class LineService {
     display_name?: string | null;
     avatar_url?: string | null;
     friend_line_uid?: string | null;
+    ownerUserId?: number;
   }) {
     const relationStatus = input.relation_status ?? 'FRIEND';
 
@@ -901,6 +920,10 @@ export class LineService {
       const err: any = new Error('line_account_id or line_group_id is required');
       err.statusCode = 400;
       throw err;
+    }
+
+    if (input.ownerUserId !== undefined) {
+      await this.assertAccountOwner(effectiveAccountId, input.ownerUserId);
     }
 
     const isGroupLink = resolvedGroup != null || input.target_type === 'GROUP';
@@ -971,13 +994,25 @@ export class LineService {
       friend_line_uid?: string;
       line_group_id?: number | null;
       target_type?: 'USER' | 'GROUP';
+      ownerUserId?: number;
     },
   ) {
-    const existing = await prisma.lineContactRelation.findUnique({ where: { id: linkId } });
+    const existing = await prisma.lineContactRelation.findUnique({
+      where: { id: linkId },
+      include: { line_account: { select: { cs_id: true } } },
+    });
     if (!existing) {
       const err: any = new Error('LINE contact link not found');
       err.statusCode = 404;
       throw err;
+    }
+    if (data.ownerUserId !== undefined && existing.line_account.cs_id !== data.ownerUserId) {
+      const err: any = new Error('Không có quyền chỉnh sửa liên kết LINE của người dùng khác');
+      err.statusCode = 403;
+      throw err;
+    }
+    if (data.ownerUserId !== undefined && data.new_line_account_id !== undefined) {
+      await this.assertAccountOwner(data.new_line_account_id, data.ownerUserId);
     }
 
     let resolvedGroup: {
@@ -1003,6 +1038,9 @@ export class LineService {
         const err: any = new Error('LINE group not found');
         err.statusCode = 404;
         throw err;
+      }
+      if (data.ownerUserId !== undefined) {
+        await this.assertAccountOwner(resolvedGroup.line_account_id, data.ownerUserId);
       }
     }
 
@@ -1059,7 +1097,23 @@ export class LineService {
     return { relation: updated };
   }
 
-  async deleteLink(linkId: number) {
+  async deleteLink(linkId: number, ownerUserId?: number) {
+    if (ownerUserId !== undefined) {
+      const existing = await prisma.lineContactRelation.findUnique({
+        where: { id: linkId },
+        include: { line_account: { select: { cs_id: true } } },
+      });
+      if (!existing) {
+        const err: any = new Error('LINE contact link not found');
+        err.statusCode = 404;
+        throw err;
+      }
+      if (existing.line_account.cs_id !== ownerUserId) {
+        const err: any = new Error('Không có quyền xóa liên kết LINE của người dùng khác');
+        err.statusCode = 403;
+        throw err;
+      }
+    }
     await prisma.lineContactRelation.delete({ where: { id: linkId } });
     return { deleted: true };
   }
@@ -1067,8 +1121,10 @@ export class LineService {
   /**
    * Generate a unique 2-tap Deep-Link binding code (`LK-XXXXXX`) and `https://line.me/R/oaMessage/...` URL.
    */
-  async generateStudentDeepLink(studentId: number, lineAccountId: number) {
-    const account = await this.getAccount(lineAccountId);
+  async generateStudentDeepLink(studentId: number, lineAccountId: number, ownerUserId?: number) {
+    const account = ownerUserId !== undefined
+      ? await this.assertAccountOwner(lineAccountId, ownerUserId)
+      : await this.getAccount(lineAccountId);
     const randomSuffix = crypto.randomBytes(3).toString('hex').toUpperCase();
     const linkCode = `LK-${studentId}${randomSuffix}`.slice(0, 12);
 
@@ -1093,10 +1149,12 @@ export class LineService {
   /**
    * Match last 9 digits of `Student.phone` against `LineFriend.phone_from_sdk`.
    */
-  async autoSuggestLinks(opts?: { lineAccountId?: number; csId?: number }) {
+  async autoSuggestLinks(opts?: { lineAccountId?: number; csId?: number; ownerUserId?: number }) {
+    const ownerId = opts?.ownerUserId ?? opts?.csId;
     const friends = await prisma.lineFriend.findMany({
       where: {
         ...(opts?.lineAccountId ? { line_account_id: opts.lineAccountId } : {}),
+        ...(ownerId ? { line_account: { cs_id: ownerId } } : {}),
         phone_from_sdk: { not: null },
       },
       include: {

@@ -26,11 +26,15 @@ export class AutomationRepository {
     });
   }
 
-  async listWorkflows(ownerCsId: number, options?: { active?: boolean; search?: string; page?: number; limit?: number }) {
+  async listWorkflows(
+    ownerCsId?: number,
+    options?: { active?: boolean; search?: string; page?: number; limit?: number; workflowIds?: number[] },
+  ) {
     const page = options?.page ?? 1;
     const limit = options?.limit ?? 20;
     const where: Prisma.AutomationWorkflowWhereInput = {
-      owner_cs_id: ownerCsId,
+      ...(ownerCsId !== undefined ? { owner_cs_id: ownerCsId } : {}),
+      ...(options?.workflowIds !== undefined ? { id: { in: options.workflowIds } } : {}),
       ...(options?.active !== undefined ? { active: options.active } : {}),
       ...(options?.search ? { name: { contains: options.search } } : {}),
     };
@@ -121,9 +125,12 @@ export class AutomationRepository {
     });
   }
 
-  async listEnrollments(workflowId: number) {
+  async listEnrollments(workflowId: number, csId?: number) {
     return prisma.automationEnrollment.findMany({
-      where: { workflow_id: workflowId },
+      where: {
+        workflow_id: workflowId,
+        ...(csId !== undefined ? { enrollment: { cs_id: csId } } : {}),
+      },
       include: {
         enrollment: {
           include: {
@@ -551,13 +558,17 @@ export class AutomationRepository {
     });
   }
 
-  async listDeliveries(workflowId: number, options?: { status?: string; enrollmentId?: number; page?: number; limit?: number }) {
+  async listDeliveries(
+    workflowId: number,
+    options?: { status?: string; enrollmentId?: number; csId?: number; page?: number; limit?: number },
+  ) {
     const page = options?.page ?? 1;
     const limit = options?.limit ?? 20;
     const where: Prisma.MessageDeliveryWhereInput = {
       automation_step: { workflow_id: workflowId },
       ...(options?.status ? { status: options.status as any } : {}),
       ...(options?.enrollmentId ? { enrollment_id: options.enrollmentId } : {}),
+      ...(options?.csId !== undefined ? { enrollment: { cs_id: options.csId } } : {}),
     };
 
     const [items, total] = await Promise.all([

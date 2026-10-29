@@ -3582,12 +3582,12 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
                   #
                 </th>
                 {isColVisible('external_id') && (
-                <th className="px-3 py-3 border-r border-border/60 sticky left-[80px] bg-slate-100 z-20 whitespace-nowrap min-w-[85px]">
+                <th className="px-3 py-3 border-r border-border/60 sticky left-[80px] bg-slate-100 z-20 whitespace-nowrap w-[110px] min-w-[110px] max-w-[110px] overflow-hidden">
                   ID
                 </th>
                 )}
                 {isColVisible('full_name') && (
-                <th className="px-4 py-3 border-r-2 border-border/80 sticky left-[165px] bg-slate-100 z-20 whitespace-nowrap min-w-[160px] shadow-[4px_0_6px_-2px_rgba(0,0,0,0.06)]">
+                <th className={`px-4 py-3 border-r-2 border-border/80 bg-slate-100 z-20 whitespace-nowrap w-[180px] min-w-[180px] max-w-[180px] overflow-hidden shadow-[4px_0_6px_-2px_rgba(0,0,0,0.06)] sticky ${isColVisible('external_id') ? 'left-[190px]' : 'left-[80px]'}`}>
                   Họ tên HV
                 </th>
                 )}
@@ -3764,14 +3764,14 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
 
                       {/* Mã HV (A) */}
                       {isColVisible('external_id') && (
-                      <td className="px-3 py-2.5 border-r border-border/60 font-mono font-bold text-text-primary whitespace-nowrap sticky left-[80px] bg-slate-100 z-10">
+                      <td className="px-3 py-2.5 border-r border-border/60 font-mono font-bold text-text-primary whitespace-nowrap sticky left-[80px] bg-slate-100 z-10 w-[110px] min-w-[110px] max-w-[110px] overflow-hidden">
                         {st.external_id || `HV_${st.student_id}`}
                       </td>
                       )}
 
                       {/* Họ và tên (B) */}
                       {isColVisible('full_name') && (
-                      <td className="px-4 py-2.5 border-r-2 border-border/80 font-bold text-text-primary whitespace-nowrap sticky left-[165px] bg-slate-100 z-10 shadow-[4px_0_6px_-2px_rgba(0,0,0,0.06)]">
+                      <td className={`px-4 py-2.5 border-r-2 border-border/80 font-bold text-text-primary whitespace-nowrap bg-slate-100 z-10 w-[180px] min-w-[180px] max-w-[180px] overflow-hidden shadow-[4px_0_6px_-2px_rgba(0,0,0,0.06)] sticky ${isColVisible('external_id') ? 'left-[190px]' : 'left-[80px]'}`}>
                         {st.full_name}
                       </td>
                       )}
@@ -4038,12 +4038,12 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
                     #
                   </th>
                   {isColVisible('external_id') && (
-                  <th className="px-3 py-3 border-r border-border/60 sticky left-10 bg-slate-100 z-20 whitespace-nowrap min-w-[85px]">
+                  <th className="px-3 py-3 border-r border-border/60 sticky left-10 bg-slate-100 z-20 whitespace-nowrap w-[110px] min-w-[110px] max-w-[110px] overflow-hidden">
                     ID
                   </th>
                   )}
                   {isColVisible('full_name') && (
-                  <th className="px-4 py-3 border-r-2 border-border/80 sticky left-[125px] bg-slate-100 z-20 whitespace-nowrap min-w-[160px] shadow-[4px_0_6px_-2px_rgba(0,0,0,0.06)]">
+                  <th className={`px-4 py-3 border-r-2 border-border/80 bg-slate-100 z-20 whitespace-nowrap w-[180px] min-w-[180px] max-w-[180px] overflow-hidden shadow-[4px_0_6px_-2px_rgba(0,0,0,0.06)] sticky ${isColVisible('external_id') ? 'left-[150px]' : 'left-10'}`}>
                     Họ tên HV
                   </th>
                   )}
@@ -4150,12 +4150,12 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
                           {(page - 1) * pageSize + idx + 1}
                         </td>
                         {isColVisible('external_id') && (
-                        <td className="px-3 py-2.5 border-r border-border/60 font-mono font-bold text-text-primary whitespace-nowrap sticky left-10 bg-slate-100 z-10">
+                        <td className="px-3 py-2.5 border-r border-border/60 font-mono font-bold text-text-primary whitespace-nowrap sticky left-10 bg-slate-100 z-10 w-[110px] min-w-[110px] max-w-[110px] overflow-hidden">
                           {st.external_id || `HV_${st.student_id}`}
                         </td>
                         )}
                         {isColVisible('full_name') && (
-                        <td className="px-4 py-2.5 border-r-2 border-border/80 font-bold text-text-primary whitespace-nowrap sticky left-[125px] bg-slate-100 z-10 shadow-[4px_0_6px_-2px_rgba(0,0,0,0.06)]">
+                        <td className={`px-4 py-2.5 border-r-2 border-border/80 font-bold text-text-primary whitespace-nowrap bg-slate-100 z-10 w-[180px] min-w-[180px] max-w-[180px] overflow-hidden shadow-[4px_0_6px_-2px_rgba(0,0,0,0.06)] sticky ${isColVisible('external_id') ? 'left-[150px]' : 'left-10'}`}>
                           {st.full_name}
                         </td>
                         )}

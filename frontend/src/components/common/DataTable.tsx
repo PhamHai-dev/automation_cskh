@@ -98,27 +98,27 @@ export function DataTable<T>({
     >
       {/* Table Scrollable Container */}
       <div className="w-full overflow-x-auto">
-        <table className="w-full text-sm text-left border-collapse">
-          <thead>
-            <tr className="border-b border-border/80 bg-surface-muted/60 text-text-secondary">
+        <table className="w-full text-sm text-left border-separate border-spacing-0">
+          <thead className="relative z-20">
+            <tr className="bg-slate-100 text-text-secondary">
               {columns.map((col, index) => (
                 <th
                   key={index}
                   style={col.width ? { width: col.width } : undefined}
-                  className={`px-4 py-3.5 text-xs font-bold whitespace-nowrap ${col.className || ''} !text-center`}
+                  className={`px-4 py-3.5 text-xs font-bold whitespace-nowrap border-b border-border/80 bg-slate-100 ${col.className || ''} !text-center`}
                 >
                   {col.header}
                 </th>
               ))}
             </tr>
           </thead>
-          <tbody className="divide-y divide-border/60">
+          <tbody>
             {isLoading ? (
               // Skeleton loading rows
               Array.from({ length: pageSize > 5 ? 5 : pageSize }).map((_, rIdx) => (
                 <tr key={`skeleton-${rIdx}`} className="animate-pulse">
                   {columns.map((_, cIdx) => (
-                    <td key={`skeleton-cell-${cIdx}`} className="px-4 py-4">
+                    <td key={`skeleton-cell-${cIdx}`} className="px-4 py-4 border-b border-border/60">
                       <div className="h-4 bg-slate-200/70 rounded-md w-3/4" />
                     </td>
                   ))}
@@ -140,12 +140,15 @@ export function DataTable<T>({
                 <tr
                   key={rowIndex}
                   onClick={() => onRowClick?.(item)}
-                  className={`group transition-colors hover:bg-slate-50/80 ${
+                  className={`group transition-colors hover:bg-slate-50 ${
                     onRowClick ? 'cursor-pointer' : ''
                   }`}
                 >
                   {columns.map((col, colIndex) => (
-                    <td key={colIndex} className={`px-4 py-3.5 text-text-primary group-hover:bg-slate-50 ${col.className || ''}`}>
+                    <td
+                      key={colIndex}
+                      className={`px-4 py-3.5 text-text-primary border-b border-border/60 bg-white group-hover:bg-slate-50 ${col.className || ''}`}
+                    >
                       {col.cell
                         ? col.cell(item, rowIndex)
                         : col.accessorKey

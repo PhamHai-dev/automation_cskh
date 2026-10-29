@@ -32,26 +32,15 @@ export async function checkZaloAccess(args: {
   zaloAccountId: number;
   minPermission: Permission;
 }): Promise<ZaloAccessResult> {
-  const { userId, roles, zaloAccountId, minPermission } = args;
+  const { userId, zaloAccountId } = args;
 
-  // Admin/MANAGE → full access to all accounts (single-org)
-  if (roles.includes('ADMIN') || roles.includes('MANAGE')) return 'ok';
-
-  // Owner of account (cs_id = userId) → full access
+  // Strict per-user ownership isolation: only the user who logged in the account (cs_id === userId) can access it
   const account = await prisma.zaloAccount.findUnique({
     where: { id: zaloAccountId },
     select: { cs_id: true },
   });
   if (account?.cs_id === userId) return 'ok';
-
-  // Check explicit ZaloAccountAccess row
-  const access = await prisma.zaloAccountAccess.findUnique({
-    where: { zalo_account_id_user_id: { zalo_account_id: zaloAccountId, user_id: userId } },
-  });
-  if (!access) return 'no_grant';
-
-  const userLevel = hierarchy[access.permission as Permission] ?? 0;
-  return userLevel >= hierarchy[minPermission] ? 'ok' : 'insufficient';
+  return 'no_grant';
 }
 
 /**
@@ -68,17 +57,12 @@ export async function hasZaloAccess(args: {
 
 /**
  * Express middleware factory: requireZaloAccess(minPermission)
- * Resolves accountId from route params and checks access.
+ * Resolves accountId from route params and checks strict per-user ownership.
  */
 export function requireZaloAccess(minPermission: Permission) {
   return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     const user = req.user!;
     const accountId = parseInt(req.params.accountId || req.params.id, 10);
-
-    // Owner/admin bypass — full access to all accounts
-    if (user.roles.includes('ADMIN') || user.roles.includes('MANAGE')) {
-      return next();
-    }
 
     if (!accountId || Number.isNaN(accountId)) {
       res.status(404).json({ error: 'Not found' });
@@ -92,12 +76,8 @@ export function requireZaloAccess(minPermission: Permission) {
         zaloAccountId: accountId,
         minPermission,
       });
-      if (result === 'no_grant') {
-        res.status(403).json({ error: 'Không có quyền truy cập tài khoản Zalo này' });
-        return;
-      }
-      if (result === 'insufficient') {
-        res.status(403).json({ error: 'Không đủ quyền' });
+      if (result !== 'ok') {
+        res.status(403).json({ error: 'Không có quyền truy cập tài khoản Zalo của người dùng khác' });
         return;
       }
       next();

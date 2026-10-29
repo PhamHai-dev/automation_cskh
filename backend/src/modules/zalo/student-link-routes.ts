@@ -33,9 +33,7 @@ function handleError(res: Response, err: any) {
 // ─── 0. Student Care Group Auto-Sync & Report ────────────────────────
 router.post('/care-groups/sync-and-match', async (req: Request, res: Response) => {
   try {
-    const role = getRole(req);
     const userId = req.user!.id;
-    const isAdmin = ['ADMIN', 'MANAGE'].includes(role);
 
     const schema = z.object({
       refreshLiveGroups: z.boolean().optional(),
@@ -46,7 +44,8 @@ router.post('/care-groups/sync-and-match', async (req: Request, res: Response) =
     });
     const dto = schema.parse(req.body ?? {});
 
-    const effectiveCsId = isAdmin ? dto.cs_id : userId;
+    // Strict per-user isolation: only sync/match against the logged-in user's own Zalo/LINE accounts
+    const effectiveCsId = userId;
 
     const report = await syncAndMatchCareGroups({
       triggeredBy: 'manual',
@@ -68,11 +67,8 @@ router.post('/care-groups/sync-and-match', async (req: Request, res: Response) =
 
 router.get('/care-groups/report', async (req: Request, res: Response) => {
   try {
-    const role = getRole(req);
     const userId = req.user!.id;
-    const isAdmin = ['ADMIN', 'MANAGE'].includes(role);
-    const csIdParam = req.query.cs_id ? Number(req.query.cs_id) : undefined;
-    const effectiveCsId = isAdmin ? csIdParam : userId;
+    const effectiveCsId = userId;
 
     const report = await syncAndMatchCareGroups({
       triggeredBy: 'manual',
@@ -87,21 +83,18 @@ router.get('/care-groups/report', async (req: Request, res: Response) => {
   }
 });
 
-// ─── 0b. GET /zalo/groups (list all Zalo groups across active non-archived accounts) ───
+// ─── 0b. GET /zalo/groups (list all Zalo groups across current user's active non-archived accounts) ───
 router.get('/groups', async (req: Request, res: Response) => {
   try {
-    const role = getRole(req);
     const userId = req.user!.id;
-    const isAdmin = ['ADMIN', 'MANAGE'].includes(role);
-    const csIdParam = req.query.cs_id ? Number(req.query.cs_id) : undefined;
-    const effectiveCsId = isAdmin ? csIdParam : userId;
+    const effectiveCsId = userId;
 
     const groups = await prisma.zaloGroup.findMany({
       where: {
         zalo_account: {
           archived_at: null,
           status: { notIn: ['DISABLED', 'BANNED'] },
-          ...(effectiveCsId ? { cs_id: effectiveCsId } : {}),
+          cs_id: effectiveCsId,
         },
       },
       include: {
@@ -142,7 +135,7 @@ router.get('/students/unlinked', async (req: Request, res: Response) => {
       ? (csIdParam ? { cs_id: csIdParam } : {})
       : { cs_id: userId };
 
-    // Students that have NO active FRIEND zalo_contact_relations
+    // Students that have NO active FRIEND zalo_contact_relations on the current user's Zalo accounts
     const where: any = {
       enrollments: {
         some: csWhere,
@@ -150,7 +143,7 @@ router.get('/students/unlinked', async (req: Request, res: Response) => {
       zalo_contact_relations: {
         none: {
           relation_status: 'FRIEND',
-          zalo_account: { archived_at: null },
+          zalo_account: { archived_at: null, cs_id: userId },
         },
       },
       ...(q
@@ -207,14 +200,14 @@ router.get('/:accountId/students-linked', async (req: Request, res: Response) =>
     const accountId = Number(req.params.accountId);
     const q = (req.query.q as string)?.trim() ?? '';
 
-    // Verify account visibility (Q-003: CS only own nick)
+    // Verify account visibility (Strict per-user isolation: only own nick)
     const account = await prisma.zaloAccount.findUnique({
       where: { id: accountId },
       select: { id: true, cs_id: true },
     });
     if (!account) return res.status(404).json({ success: false, message: 'Account not found' });
-    if (role === 'CS' && account.cs_id !== userId) {
-      return res.status(403).json({ success: false, message: 'Forbidden — not your nick' });
+    if (account.cs_id !== userId) {
+      return res.status(403).json({ success: false, message: 'Không có quyền truy cập tài khoản Zalo của người dùng khác' });
     }
 
     const relations = await prisma.zaloContactRelation.findMany({
@@ -366,7 +359,10 @@ router.get('/students/:id/links', async (req: Request, res: Response) => {
     }
 
     const relations = await prisma.zaloContactRelation.findMany({
-      where: { student_id: studentId },
+      where: {
+        student_id: studentId,
+        zalo_account: { cs_id: userId },
+      },
       include: {
         zalo_account: {
           select: {
@@ -462,10 +458,10 @@ router.post('/links', async (req: Request, res: Response) => {
     });
     if (!account) return res.status(404).json({ success: false, message: 'Zalo account not found' });
 
+    if (account.cs_id !== userId) {
+      return res.status(403).json({ success: false, message: 'Không có quyền liên kết trên tài khoản Zalo của người dùng khác' });
+    }
     if (role === 'CS') {
-      if (account.cs_id !== userId) {
-        return res.status(403).json({ success: false, message: 'Forbidden — not your nick' });
-      }
       const enrollment = await prisma.enrollment.findFirst({
         where: { student_id: dto.student_id, cs_id: userId },
         select: { id: true },
@@ -588,17 +584,8 @@ router.delete('/links/:id', async (req: Request, res: Response) => {
     });
     if (!relation) return res.status(404).json({ success: false, message: 'Link not found' });
 
-    if (role === 'CS') {
-      if (relation.zalo_account.cs_id !== userId) {
-        // CS: also allow if student belongs to them
-        const enrollment = await prisma.enrollment.findFirst({
-          where: { student_id: relation.student_id, cs_id: userId },
-          select: { id: true },
-        });
-        if (!enrollment && relation.zalo_account.cs_id !== userId) {
-          return res.status(403).json({ success: false, message: 'Forbidden' });
-        }
-      }
+    if (relation.zalo_account.cs_id !== userId) {
+      return res.status(403).json({ success: false, message: 'Không có quyền xóa liên kết của tài khoản Zalo người dùng khác' });
     }
 
     await prisma.zaloContactRelation.delete({ where: { id: relationId } });
@@ -658,28 +645,19 @@ router.patch('/links/:id', async (req: Request, res: Response) => {
       }
     }
 
-    // If transferring to another nick, verify the new account belongs to user (Q-003)
     if (dto.new_zalo_account_id !== undefined && dto.new_zalo_account_id !== relation.zalo_account_id) {
       const newAccount = await prisma.zaloAccount.findUnique({
         where: { id: dto.new_zalo_account_id },
         select: { id: true, cs_id: true },
       });
       if (!newAccount) return res.status(404).json({ success: false, message: 'Target Zalo account not found' });
-      if (role === 'CS' && newAccount.cs_id !== userId) {
-        return res.status(403).json({ success: false, message: 'Forbidden — not your nick' });
+      if (newAccount.cs_id !== userId) {
+        return res.status(403).json({ success: false, message: 'Không có quyền chuyển sang tài khoản Zalo của người dùng khác' });
       }
     }
 
-    if (role === 'CS') {
-      if (relation.zalo_account.cs_id !== userId) {
-        const enrollment = await prisma.enrollment.findFirst({
-          where: { student_id: relation.student_id, cs_id: userId },
-          select: { id: true },
-        });
-        if (!enrollment && relation.zalo_account.cs_id !== userId) {
-          return res.status(403).json({ success: false, message: 'Forbidden' });
-        }
-      }
+    if (relation.zalo_account.cs_id !== userId) {
+      return res.status(403).json({ success: false, message: 'Không có quyền chỉnh sửa liên kết trên tài khoản Zalo của người dùng khác' });
     }
 
     const groupPatchFields = resolvedGroup
@@ -832,12 +810,10 @@ router.post('/auto-suggest-links', async (req: Request, res: Response) => {
       orderBy: { full_name: 'asc' },
     });
 
-    // Load friends for the account (or all CS's accounts for admin)
+    // Strict per-user isolation: only suggest against the current user's own Zalo accounts
     const accountWhere: any = dto.zalo_account_id
-      ? { id: dto.zalo_account_id }
-      : isAdmin
-        ? {}
-        : { cs_id: userId };
+      ? { id: dto.zalo_account_id, cs_id: userId }
+      : { cs_id: userId };
 
     const accounts = await prisma.zaloAccount.findMany({
       where: accountWhere,

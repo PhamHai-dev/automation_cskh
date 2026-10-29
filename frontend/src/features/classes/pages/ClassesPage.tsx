@@ -4279,8 +4279,8 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
             <thead>
               <tr className="bg-surface-muted/90 text-text-secondary border-b border-border/80 text-[11px] font-bold">
                 <th
-                  className={`px-2 py-3 border-r border-border/60 w-10 min-w-[40px] text-center bg-slate-100/90 ${
-                    activeTab === 'detailed' ? 'sticky left-0 z-20 bg-slate-100' : ''
+                  className={`px-2 py-3 border-r border-border/60 w-10 min-w-[40px] max-w-[40px] text-center bg-slate-100 ${
+                    activeTab === 'detailed' ? 'sticky left-0 z-30 bg-slate-100' : ''
                   }`}
                 >
                   <input
@@ -4297,16 +4297,16 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                   />
                 </th>
                 <th
-                  className={`px-3 py-3 border-r border-border/60 whitespace-nowrap w-28 min-w-[112px] ${
-                    activeTab === 'detailed' ? 'sticky left-10 z-20 bg-slate-100' : ''
+                  className={`px-3 py-3 border-r border-border/60 whitespace-nowrap w-28 min-w-[112px] max-w-[112px] overflow-hidden ${
+                    activeTab === 'detailed' ? 'sticky left-10 z-30 bg-slate-100' : ''
                   }`}
                 >
                   Mã lớp
                 </th>
                 <th
-                  className={`px-3 py-3 border-r border-border/60 whitespace-nowrap w-[155px] min-w-[155px] ${
+                  className={`px-3 py-3 border-r-2 border-border/80 whitespace-nowrap w-[155px] min-w-[155px] max-w-[155px] overflow-hidden ${
                     activeTab === 'detailed'
-                      ? 'sticky left-[152px] z-20 bg-slate-100'
+                      ? 'sticky left-[152px] z-30 bg-slate-100 shadow-[4px_0_6px_-2px_rgba(0,0,0,0.08)]'
                       : ''
                   }`}
                 >
@@ -4340,7 +4340,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                 <th
                   className={`px-3 py-3 border-r-2 border-border/80 whitespace-nowrap min-w-[175px] ${
                     activeTab === 'detailed'
-                      ? 'sticky left-[307px] z-20 bg-slate-100 shadow-[4px_0_6px_-2px_rgba(0,0,0,0.08)]'
+                      ? 'bg-slate-100'
                       : ''
                   }`}
                 >
@@ -4594,9 +4594,9 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                       >
                         {/* Checkbox chọn lớp / toàn bộ học viên của lớp */}
                         <td
-                          className={`px-2 py-2.5 border-r border-border/60 w-10 min-w-[40px] text-center ${
+                          className={`px-2 py-2.5 border-r border-border/60 w-10 min-w-[40px] max-w-[40px] text-center ${
                             activeTab === 'detailed'
-                              ? `sticky left-0 z-10 ${isOneToOne ? 'bg-surface' : 'bg-slate-100'}`
+                              ? `sticky left-0 z-20 ${isOneToOne ? 'bg-surface' : 'bg-slate-100'}`
                               : ''
                           }`}
                         >
@@ -4618,9 +4618,9 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
 
                         {/* Mã lớp chuẩn class_0001 */}
                         <td
-                          className={`px-3 py-2.5 border-r border-border/60 whitespace-nowrap w-28 min-w-[112px] ${
+                          className={`px-3 py-2.5 border-r border-border/60 whitespace-nowrap w-28 min-w-[112px] max-w-[112px] overflow-hidden ${
                             activeTab === 'detailed'
-                              ? `sticky left-10 z-10 ${isOneToOne ? 'bg-surface' : 'bg-slate-100'}`
+                              ? `sticky left-10 z-20 ${isOneToOne ? 'bg-surface' : 'bg-slate-100'}`
                               : ''
                           }`}
                         >
@@ -4631,9 +4631,9 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
 
                         {/* Tên lớp */}
                         <td
-                          className={`px-3 py-2.5 border-r border-border/60 font-bold text-slate-900 text-xs whitespace-nowrap w-[155px] min-w-[155px] ${
+                          className={`px-3 py-2.5 border-r-2 border-border/80 font-bold text-slate-900 text-xs whitespace-nowrap w-[155px] min-w-[155px] max-w-[155px] overflow-hidden ${
                             activeTab === 'detailed'
-                              ? `sticky left-[152px] z-10 ${
+                              ? `sticky left-[152px] z-20 shadow-[4px_0_6px_-2px_rgba(0,0,0,0.08)] ${
                                   isOneToOne ? 'bg-surface' : 'bg-slate-100'
                                 }`
                               : ''
@@ -4705,7 +4705,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                         <td
                           className={`px-3 py-2.5 border-r-2 border-border/80 whitespace-nowrap min-w-[175px] ${
                             activeTab === 'detailed'
-                              ? `sticky left-[307px] z-10 shadow-[4px_0_6px_-2px_rgba(0,0,0,0.08)] ${
+                              ? `${
                                   isOneToOne ? 'bg-surface' : 'bg-slate-100'
                                 }`
                               : ''
@@ -5123,8 +5123,8 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                                 }`}
                               >
                                 <td
-                                  className={`px-2 py-2 border-r border-border/50 w-10 min-w-[40px] text-center ${
-                                    activeTab === 'detailed' ? 'sticky left-0 z-10 bg-white' : ''
+                                  className={`px-2 py-2 border-r border-border/50 w-10 min-w-[40px] max-w-[40px] text-center ${
+                                    activeTab === 'detailed' ? 'sticky left-0 z-20 bg-white' : ''
                                   }`}
                                 >
                                   <input
@@ -5138,16 +5138,16 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                                   />
                                 </td>
                                 <td
-                                  className={`py-2 pl-[1cm] pr-3 border-r border-border/50 text-left font-mono text-[10px] text-slate-400 w-28 min-w-[112px] ${
-                                    activeTab === 'detailed' ? 'sticky left-10 z-10 bg-white' : ''
+                                  className={`py-2 pl-[1cm] pr-3 border-r border-border/50 text-left font-mono text-[10px] text-slate-400 w-28 min-w-[112px] max-w-[112px] overflow-hidden ${
+                                    activeTab === 'detailed' ? 'sticky left-10 z-20 bg-white' : ''
                                   }`}
                                 >
                                   {formattedCode}.{sIdx + 1}
                                 </td>
                                 <td
-                                  className={`px-3 py-2 border-r border-border/50 text-[11px] text-slate-500 whitespace-nowrap w-[155px] min-w-[155px] ${
+                                  className={`px-3 py-2 border-r-2 border-border/80 text-[11px] text-slate-500 whitespace-nowrap w-[155px] min-w-[155px] max-w-[155px] overflow-hidden ${
                                     activeTab === 'detailed'
-                                      ? 'sticky left-[152px] z-10 bg-white'
+                                      ? 'sticky left-[152px] z-20 bg-white shadow-[4px_0_6px_-2px_rgba(0,0,0,0.08)]'
                                       : ''
                                   }`}
                                   title={cleanedClassName}
@@ -5198,7 +5198,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                                 <td
                                   className={`px-3 py-2 border-r-2 border-border/80 whitespace-nowrap min-w-[175px] ${
                                     activeTab === 'detailed'
-                                      ? 'sticky left-[307px] z-10 bg-purple-50/95 shadow-[4px_0_6px_-2px_rgba(0,0,0,0.08)]'
+                                      ? 'bg-purple-50'
                                       : 'bg-purple-50/20'
                                   }`}
                                 >

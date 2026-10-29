@@ -282,6 +282,7 @@ export interface LineSocketStatusEvent {
   accountId: number;
   status: LineAccountStatus;
   reason?: string;
+  disconnectReason?: string | null;
   pinCode?: string | null;
 }
 

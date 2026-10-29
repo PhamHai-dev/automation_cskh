@@ -91,6 +91,9 @@ export const LineQrLoginDialog: React.FC<LineQrLoginDialogProps> = ({
         setPhase('expired');
       } else if (data.status === 'QR_PENDING') {
         setPhase('qr');
+      } else if (data.status === 'NOT_LOGGED_IN' && data.disconnectReason) {
+        setError(`Đăng nhập chưa hoàn tất: ${data.disconnectReason}`);
+        setPhase('expired');
       }
     },
     [account.id, onSuccess],
@@ -156,6 +159,16 @@ export const LineQrLoginDialog: React.FC<LineQrLoginDialogProps> = ({
           clearInterval(interval);
           setTimeout(() => onSuccess(), 900);
         } else if (st === 'EXPIRED') {
+          setPhase('expired');
+        } else if (
+          st === 'NOT_LOGGED_IN' &&
+          phase === 'pin' &&
+          (acc as any).disconnect_reason === 'qr_login_failed'
+        ) {
+          setError(
+            (acc as any).last_sync_error ||
+              'Xác thực trên điện thoại bị gián đoạn, vui lòng tạo mã QR mới.',
+          );
           setPhase('expired');
         }
       } catch {

@@ -7,6 +7,8 @@
  */
 import { Server as HttpServer } from 'node:http';
 import { Server, type ServerOptions } from 'socket.io';
+import jwt from 'jsonwebtoken';
+import { env } from '../../config/env';
 import { createLogger } from '../logger/logger';
 
 const log = createLogger('SocketSingleton');
@@ -26,6 +28,29 @@ export function setupIo(httpServer: HttpServer, opts?: Partial<ServerOptions>): 
     cors: { origin: '*', methods: ['GET', 'POST'] },
     ...opts,
   });
+
+  // Extract authenticated userId from handshake token if provided and join user room
+  io.use((socket, next) => {
+    const rawToken =
+      socket.handshake.auth?.token ||
+      (typeof socket.handshake.headers?.authorization === 'string' &&
+      socket.handshake.headers.authorization.startsWith('Bearer ')
+        ? socket.handshake.headers.authorization.slice(7)
+        : undefined);
+    if (rawToken && typeof rawToken === 'string') {
+      try {
+        const decoded = jwt.verify(rawToken, env.JWT_SECRET) as { id?: number };
+        if (decoded?.id) {
+          socket.data.userId = Number(decoded.id);
+          socket.join(`user:${decoded.id}`);
+        }
+      } catch {
+        // Invalid/expired token — socket.data.userId remains undefined
+      }
+    }
+    next();
+  });
+
   log.info('Socket.IO server initialized');
   return io;
 }

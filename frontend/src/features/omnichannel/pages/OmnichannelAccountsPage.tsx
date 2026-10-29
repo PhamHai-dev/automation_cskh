@@ -444,7 +444,7 @@ export const OmnichannelAccountsPage: React.FC<{ initialChannel?: ChannelFilterT
               }}
               leftIcon={<Plus className="w-4 h-4" />}
             >
-              + Thêm Zalo
+              Thêm Zalo
             </Button>
             <Button
               size="sm"
@@ -465,7 +465,7 @@ export const OmnichannelAccountsPage: React.FC<{ initialChannel?: ChannelFilterT
               }}
               leftIcon={<Bot className="w-4 h-4" />}
             >
-              + Thêm LINE OA
+              Thêm LINE OA
             </Button>
             <Button
               size="sm"
@@ -482,7 +482,7 @@ export const OmnichannelAccountsPage: React.FC<{ initialChannel?: ChannelFilterT
               }}
               leftIcon={<Smartphone className="w-4 h-4" />}
             >
-              + Thêm LINE Cá nhân
+              Thêm LINE Cá nhân
             </Button>
           </div>
         }
@@ -615,8 +615,8 @@ export const OmnichannelAccountsPage: React.FC<{ initialChannel?: ChannelFilterT
               ) : filteredRows.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="py-12 text-center text-gray-500">
-                    Chưa có tài khoản nào khớp bộ lọc. Hãy nhấn <strong>+ Thêm Zalo</strong> hoặc{' '}
-                    <strong>+ Thêm LINE</strong> ở góc trên.
+                    Chưa có tài khoản nào khớp bộ lọc. Hãy nhấn <strong>Thêm Zalo</strong> hoặc{' '}
+                    <strong>Thêm LINE</strong> ở góc trên.
                   </td>
                 </tr>
               ) : (

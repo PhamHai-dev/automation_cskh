@@ -70,11 +70,46 @@ lineRouter.post('/webhook', async (req: Request, res: Response, next: NextFuncti
 lineRouter.use(authenticate);
 lineRouter.use(requireRoles(['ADMIN', 'MANAGE', 'CS']));
 
-// Accounts
+function getCurrentUserId(req: Request): number {
+  return Number((req as any).user?.id ?? (req as any).user?.userId);
+}
+
+// Enforce strict per-user ownership on any route with :id (under /accounts/:id*) or :accountId
+lineRouter.param('id', async (req: Request, res: Response, next: NextFunction, rawId: string) => {
+  // Note: /links/:id also uses :id, so only check account ownership when path starts with /accounts/
+  if (!req.path.startsWith('/accounts/')) {
+    return next();
+  }
+  try {
+    const accountId = Number(rawId);
+    const userId = getCurrentUserId(req);
+    await lineService.assertAccountOwner(accountId, userId);
+    next();
+  } catch (err) {
+    handleLineError(err, res, next);
+  }
+});
+
+lineRouter.param('accountId', async (req: Request, res: Response, next: NextFunction, rawId: string) => {
+  // Skip public webhook routes (/webhook/:accountId) which authenticate via HMAC signature
+  if (req.path.startsWith('/webhook')) {
+    return next();
+  }
+  try {
+    const accountId = Number(rawId);
+    const userId = getCurrentUserId(req);
+    await lineService.assertAccountOwner(accountId, userId);
+    next();
+  } catch (err) {
+    handleLineError(err, res, next);
+  }
+});
+
+// Accounts — strict per-user isolation: every user only sees and manages their own LINE accounts
 lineRouter.get('/accounts', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const csId = req.query.cs_id ? Number(req.query.cs_id) : undefined;
-    const accounts = await lineService.listAccounts(csId);
+    const userId = getCurrentUserId(req);
+    const accounts = await lineService.listAccounts(userId);
     res.json({ data: accounts, accounts });
   } catch (err) {
     handleLineError(err, res, next);
@@ -92,10 +127,11 @@ lineRouter.get('/accounts/:id', async (req: Request, res: Response, next: NextFu
 
 lineRouter.post('/accounts', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const userId = (req as any).user?.id ?? (req as any).user?.userId ?? 1;
+    const userId = getCurrentUserId(req);
     const account = await lineService.createAccount({
       ...req.body,
-      cs_id: req.body.cs_id ?? req.body.csId ?? userId,
+      cs_id: userId,
+      csId: userId,
     });
     res.status(201).json({ data: account, account });
   } catch (err) {
@@ -312,11 +348,11 @@ lineRouter.post('/accounts/:id/friends/request', async (req: Request, res: Respo
   }
 });
 
-// Groups
+// Groups — strict per-user isolation: only groups from the logged-in user's own LINE accounts
 lineRouter.get('/groups', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const csId = req.query.cs_id ? Number(req.query.cs_id) : undefined;
-    const groups = await lineService.listAllGroups(csId);
+    const userId = getCurrentUserId(req);
+    const groups = await lineService.listAllGroups(userId);
     res.json({ data: groups, groups });
   } catch (err) {
     handleLineError(err, res, next);
@@ -425,9 +461,13 @@ lineRouter.post(
 // Student ↔ LINE Linking (supports both `/line/students/...` and `/line/links/...` paths)
 lineRouter.get('/students/unlinked', async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const userId = getCurrentUserId(req);
+    const roles: string[] = (req as any).user?.roles ?? [];
+    const isAdmin = roles.includes('ADMIN') || roles.includes('MANAGE');
     const result = await lineService.listUnlinkedStudents({
       q: req.query.q as string | undefined,
-      csId: req.query.cs_id ? Number(req.query.cs_id) : undefined,
+      csId: userId,
+      ownerUserId: userId,
       page: req.query.page ? Number(req.query.page) : undefined,
       limit: req.query.limit ? Number(req.query.limit) : undefined,
     });
@@ -439,9 +479,13 @@ lineRouter.get('/students/unlinked', async (req: Request, res: Response, next: N
 
 lineRouter.get('/links/unlinked-students', async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const userId = getCurrentUserId(req);
+    const roles: string[] = (req as any).user?.roles ?? [];
+    const isAdmin = roles.includes('ADMIN') || roles.includes('MANAGE');
     const result = await lineService.listUnlinkedStudents({
       q: req.query.q as string | undefined,
-      csId: req.query.cs_id ? Number(req.query.cs_id) : undefined,
+      csId: userId,
+      ownerUserId: userId,
       page: req.query.page ? Number(req.query.page) : undefined,
       limit: req.query.limit ? Number(req.query.limit) : undefined,
     });
@@ -477,7 +521,8 @@ lineRouter.get('/links/by-account/:accountId', async (req: Request, res: Respons
 
 lineRouter.get('/students/:studentId/links', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const result = await lineService.listLinksByStudent(Number(req.params.studentId));
+    const userId = getCurrentUserId(req);
+    const result = await lineService.listLinksByStudent(Number(req.params.studentId), userId);
     res.json({ data: result, ...result });
   } catch (err) {
     handleLineError(err, res, next);
@@ -486,7 +531,8 @@ lineRouter.get('/students/:studentId/links', async (req: Request, res: Response,
 
 lineRouter.get('/links/by-student/:studentId', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const result = await lineService.listLinksByStudent(Number(req.params.studentId));
+    const userId = getCurrentUserId(req);
+    const result = await lineService.listLinksByStudent(Number(req.params.studentId), userId);
     res.json({ data: result, ...result });
   } catch (err) {
     handleLineError(err, res, next);
@@ -495,6 +541,7 @@ lineRouter.get('/links/by-student/:studentId', async (req: Request, res: Respons
 
 lineRouter.post('/links', async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const userId = getCurrentUserId(req);
     const rawLineGroupId = req.body.line_group_id ?? req.body.lineGroupId;
     const rawLineAccountId = req.body.line_account_id ?? req.body.lineAccountId;
     const result = await lineService.createOrUpdateLink({
@@ -511,6 +558,7 @@ lineRouter.post('/links', async (req: Request, res: Response, next: NextFunction
       display_name: req.body.display_name ?? req.body.displayName,
       avatar_url: req.body.avatar_url ?? req.body.avatarUrl,
       friend_line_uid: req.body.friend_line_uid ?? req.body.friendLineUid,
+      ownerUserId: userId,
     });
     res.status(201).json({ data: result, ...result });
   } catch (err) {
@@ -520,9 +568,11 @@ lineRouter.post('/links', async (req: Request, res: Response, next: NextFunction
 
 lineRouter.patch('/links/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const userId = getCurrentUserId(req);
     const rawLineGroupId = req.body?.line_group_id ?? req.body?.lineGroupId;
     const result = await lineService.updateLinkById(Number(req.params.id), {
       ...req.body,
+      ownerUserId: userId,
       ...(rawLineGroupId !== undefined
         ? { line_group_id: rawLineGroupId === null ? null : Number(rawLineGroupId) }
         : {}),
@@ -538,9 +588,11 @@ lineRouter.patch('/links/:id', async (req: Request, res: Response, next: NextFun
 
 lineRouter.put('/links/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const userId = getCurrentUserId(req);
     const rawLineGroupId = req.body?.line_group_id ?? req.body?.lineGroupId;
     const result = await lineService.updateLinkById(Number(req.params.id), {
       ...req.body,
+      ownerUserId: userId,
       ...(rawLineGroupId !== undefined
         ? { line_group_id: rawLineGroupId === null ? null : Number(rawLineGroupId) }
         : {}),
@@ -556,7 +608,8 @@ lineRouter.put('/links/:id', async (req: Request, res: Response, next: NextFunct
 
 lineRouter.delete('/links/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const result = await lineService.deleteLink(Number(req.params.id));
+    const userId = getCurrentUserId(req);
+    const result = await lineService.deleteLink(Number(req.params.id), userId);
     res.json({ data: result, ...result });
   } catch (err) {
     handleLineError(err, res, next);
@@ -565,9 +618,11 @@ lineRouter.delete('/links/:id', async (req: Request, res: Response, next: NextFu
 
 lineRouter.post('/links/deep-link', async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const userId = getCurrentUserId(req);
     const result = await lineService.generateStudentDeepLink(
       Number(req.body.student_id ?? req.body.studentId),
       Number(req.body.line_account_id ?? req.body.lineAccountId),
+      userId,
     );
     res.json({ data: result, ...result });
   } catch (err) {
@@ -577,9 +632,11 @@ lineRouter.post('/links/deep-link', async (req: Request, res: Response, next: Ne
 
 lineRouter.post('/links/generate-deep-link', async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const userId = getCurrentUserId(req);
     const result = await lineService.generateStudentDeepLink(
       Number(req.body.student_id ?? req.body.studentId),
       Number(req.body.line_account_id ?? req.body.lineAccountId),
+      userId,
     );
     res.json({ data: result, ...result });
   } catch (err) {
@@ -589,9 +646,13 @@ lineRouter.post('/links/generate-deep-link', async (req: Request, res: Response,
 
 lineRouter.post('/auto-suggest-links', async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const userId = getCurrentUserId(req);
+    const roles: string[] = (req as any).user?.roles ?? [];
+    const isAdmin = roles.includes('ADMIN') || roles.includes('MANAGE');
     const result = await lineService.autoSuggestLinks({
       lineAccountId: req.body?.line_account_id ? Number(req.body.line_account_id) : undefined,
-      csId: req.body?.cs_id ? Number(req.body.cs_id) : undefined,
+      csId: isAdmin ? (req.body?.cs_id ? Number(req.body.cs_id) : undefined) : userId,
+      ownerUserId: userId,
     });
     res.json({ data: result, ...result });
   } catch (err) {
