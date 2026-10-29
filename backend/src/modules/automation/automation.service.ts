@@ -128,10 +128,12 @@ export class AutomationService {
       .map((id) => csUsersMap.get(id))
       .filter((u): u is AssignableCsUser => Boolean(u));
 
+    const isViewerCsOnly = Boolean(viewer && !['ADMIN', 'MANAGE'].includes(viewer.role));
+
     let enrollmentCount = workflow._count?.enrollments ?? 0;
     if (
+      isViewerCsOnly &&
       viewer &&
-      !['ADMIN', 'MANAGE'].includes(viewer.role) &&
       typeof (prisma as any)?.automationEnrollment?.count === 'function'
     ) {
       enrollmentCount = await prisma.automationEnrollment.count({
@@ -148,8 +150,9 @@ export class AutomationService {
         ...(workflow._count ?? {}),
         enrollments: enrollmentCount,
       },
-      assigned_cs_ids: assignedCsIds,
-      assigned_cs_users: assignedCsUsers,
+      // Do not expose which other CSKHs are assigned when viewed by a CS user
+      assigned_cs_ids: isViewerCsOnly ? [] : assignedCsIds,
+      assigned_cs_users: isViewerCsOnly ? [] : assignedCsUsers,
     };
   }
 
@@ -209,7 +212,13 @@ export class AutomationService {
     );
 
     if (userId !== undefined && !['ADMIN', 'MANAGE'].includes(role)) {
-      if (!enriched.assigned_cs_ids.includes(userId)) {
+      const rawAssigned = assignmentsMap[String(workflow.id)];
+      const actualAssignedIds = Array.isArray(rawAssigned)
+        ? rawAssigned
+        : csUsersMap.has(workflow.owner_cs_id)
+          ? [workflow.owner_cs_id]
+          : [];
+      if (!actualAssignedIds.includes(userId)) {
         throw Object.assign(
           new Error('Bạn chưa được phân quyền tham gia kịch bản tự động này'),
           { status: 403 },

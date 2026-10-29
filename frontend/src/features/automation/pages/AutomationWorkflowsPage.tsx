@@ -229,33 +229,37 @@ export const AutomationWorkflowsPage: React.FC = () => {
         </span>
       ),
     },
-    {
-      header: 'CSKH được phân quyền',
-      cell: (item) => {
-        const assignedUsers = item.assigned_cs_users ?? [];
-        if (assignedUsers.length === 0) {
-          return (
-            <span className="text-xs text-amber-600 font-medium">
-              Chưa phân quyền CSKH
-            </span>
-          );
-        }
-        return (
-          <div className="flex flex-wrap gap-1 max-w-xs">
-            {assignedUsers.map((u) => (
-              <span
-                key={u.id}
-                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200"
-              >
-                <UserCheck className="w-3 h-3" />
-                {u.name || u.email}
-                {u.staff_code ? ` (${u.staff_code})` : ''}
-              </span>
-            ))}
-          </div>
-        );
-      },
-    },
+    ...(isAdminOrManage
+      ? [
+          {
+            header: 'CSKH được phân quyền',
+            cell: (item: AutomationWorkflow) => {
+              const assignedUsers = item.assigned_cs_users ?? [];
+              if (assignedUsers.length === 0) {
+                return (
+                  <span className="text-xs text-amber-600 font-medium">
+                    Chưa phân quyền CSKH
+                  </span>
+                );
+              }
+              return (
+                <div className="flex flex-wrap gap-1 max-w-xs">
+                  {assignedUsers.map((u) => (
+                    <span
+                      key={u.id}
+                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200"
+                    >
+                      <UserCheck className="w-3 h-3" />
+                      {u.name || u.email}
+                      {u.staff_code ? ` (${u.staff_code})` : ''}
+                    </span>
+                  ))}
+                </div>
+              );
+            },
+          },
+        ]
+      : []),
     {
       header: 'Trạng thái',
       cell: (item) => (

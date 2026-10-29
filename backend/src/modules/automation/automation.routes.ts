@@ -35,7 +35,7 @@ function handleError(res: Response, err: any) {
 
 // ─── Assignable CSKH Users ───────────────────────────────────────────
 
-router.get('/cs-users', async (_req: Request, res: Response) => {
+router.get('/cs-users', requireRoles(['ADMIN', 'MANAGE']), async (_req: Request, res: Response) => {
   try {
     const items = await automationService.listAssignableCsUsers();
     res.json({ success: true, items, data: items });

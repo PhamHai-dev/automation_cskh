@@ -534,30 +534,30 @@ export const AutomationWorkflowDetailPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Assigned CSKH Summary Bar */}
-        <div className="mt-3 p-3 rounded-xl bg-surface border border-border/80 flex items-center justify-between flex-wrap gap-2">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-xs font-semibold text-text-secondary flex items-center gap-1">
-              <UserCheck className="w-3.5 h-3.5 text-indigo-600" />
-              CSKH tham gia kịch bản:
-            </span>
-            {assignedUsers.length === 0 ? (
-              <span className="text-xs text-amber-600 font-medium">
-                Chưa có CSKH nào được phân quyền
+        {/* Assigned CSKH Summary Bar (Admin / Manage only — hidden from CS) */}
+        {isAdminOrManage && (
+          <div className="mt-3 p-3 rounded-xl bg-surface border border-border/80 flex items-center justify-between flex-wrap gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs font-semibold text-text-secondary flex items-center gap-1">
+                <UserCheck className="w-3.5 h-3.5 text-indigo-600" />
+                CSKH tham gia kịch bản:
               </span>
-            ) : (
-              assignedUsers.map((u) => (
-                <span
-                  key={u.id}
-                  className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200"
-                >
-                  {u.name || u.email}
-                  {u.staff_code ? ` (${u.staff_code})` : ''}
+              {assignedUsers.length === 0 ? (
+                <span className="text-xs text-amber-600 font-medium">
+                  Chưa có CSKH nào được phân quyền
                 </span>
-              ))
-            )}
-          </div>
-          {isAdminOrManage && (
+              ) : (
+                assignedUsers.map((u) => (
+                  <span
+                    key={u.id}
+                    className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200"
+                  >
+                    {u.name || u.email}
+                    {u.staff_code ? ` (${u.staff_code})` : ''}
+                  </span>
+                ))
+              )}
+            </div>
             <button
               type="button"
               onClick={openAssignCsModal}
@@ -565,8 +565,8 @@ export const AutomationWorkflowDetailPage: React.FC = () => {
             >
               Thay đổi phân quyền →
             </button>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
       {/* Tabs */}
