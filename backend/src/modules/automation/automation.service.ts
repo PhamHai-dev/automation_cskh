@@ -146,6 +146,7 @@ export class AutomationService {
 
     return {
       ...workflow,
+      ...(isViewerCsOnly ? { owner: null, owner_cs_id: undefined } : {}),
       _count: {
         ...(workflow._count ?? {}),
         enrollments: enrollmentCount,
