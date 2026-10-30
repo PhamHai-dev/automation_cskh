@@ -98,6 +98,35 @@ function normalizeModelValue(model?: string | null): string {
   return model || '1:1';
 }
 
+function buildRelevantDateClause(dateStr: string): any {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const targetDate = new Date(Date.UTC(y, m - 1, d));
+  const jsDay = new Date(y, m - 1, d).getDay();
+  const dayToken = jsDay === 0 ? 'CN' : String(jsDay + 1);
+
+  return {
+    OR: [
+      {
+        class_sessions: {
+          some: {
+            session_date: targetDate,
+          },
+        },
+      },
+      {
+        class_schedules: {
+          some: {
+            AND: [
+              { schedule_pattern: { contains: dayToken } },
+              { NOT: { schedule_pattern: { contains: 'LKCD' } } },
+            ],
+          },
+        },
+      },
+    ],
+  };
+}
+
 export class EnrollmentsRepository {
   /**
    * Build the Prisma `where` clause combining mandatory CS scope with optional filters.
@@ -156,10 +185,28 @@ export class EnrollmentsRepository {
 
     // 4. Status
     if (includeStatus && filters?.status && filters.status.trim()) {
-      andClauses.push({ status: filters.status.trim().toUpperCase() as any });
+      const st = filters.status.trim().toUpperCase();
+      if (st === 'STUDYING') {
+        andClauses.push({
+          OR: [
+            { status: 'STUDYING' as any },
+            {
+              status: { in: ['WAITING_CLASS', 'NOT_STARTED'] as any },
+              enrollment_classes: { some: {} },
+            },
+          ],
+        });
+      } else if (st === 'WAITING_CLASS') {
+        andClauses.push({
+          status: { in: ['WAITING_CLASS', 'NOT_STARTED'] as any },
+          enrollment_classes: { none: {} },
+        });
+      } else {
+        andClauses.push({ status: st as any });
+      }
     }
 
-    // 5. Search (student.full_name, student.external_id, external_id, student.phone, student.email)
+    // 5. Search (student.full_name, student.external_id, external_id, student.phone, student.email, class_code, class_name, teacher.name)
     if (filters?.search && filters.search.trim()) {
       const q = filters.search.trim();
       andClauses.push({
@@ -169,6 +216,27 @@ export class EnrollmentsRepository {
           { student: { external_id: { contains: q } } },
           { student: { phone: { contains: q } } },
           { student: { email: { contains: q } } },
+          {
+            enrollment_classes: {
+              some: {
+                class: {
+                  OR: [
+                    { class_code: { contains: q } },
+                    { class_name: { contains: q } },
+                    {
+                      class_teachers: {
+                        some: {
+                          teacher: {
+                            name: { contains: q },
+                          },
+                        },
+                      },
+                    },
+                  ],
+                },
+              },
+            },
+          },
         ],
       });
     }
@@ -320,6 +388,17 @@ export class EnrollmentsRepository {
       if (filters.totalSessionsMin !== undefined) numCond.gte = filters.totalSessionsMin;
       if (filters.totalSessionsMax !== undefined) numCond.lte = filters.totalSessionsMax;
       andClauses.push({ total_sessions: numCond });
+    }
+
+    // 11. Relevant date (filter enrollments that have a class with session or schedule on date)
+    if (filters?.relevantDate && filters.relevantDate.trim()) {
+      andClauses.push({
+        enrollment_classes: {
+          some: {
+            class: buildRelevantDateClause(filters.relevantDate.trim()),
+          },
+        },
+      });
     }
 
     if (andClauses.length === 0) return undefined;

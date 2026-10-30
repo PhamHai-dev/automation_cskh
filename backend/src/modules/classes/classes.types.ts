@@ -51,11 +51,39 @@ export interface ClassListQueryOptions {
   isPaginated?: boolean;
   search?: string;
   modelType?: string;
+  modelFilter?: string;
   active?: boolean;
   relevantDate?: string;
   sessionFrom?: string;
   sessionTo?: string;
   summaryMonth?: string;
+  programType?: string;
+  status?: string;
+  packageName?: string;
+  courseCategory?: 'KAIWA' | 'JNPT' | string;
+  courseLevel?: string;
+  teacherName?: string;
+  teacherCode?: string;
+  className?: string;
+  schedulePattern?: string;
+  startTime?: string;
+  sale?: string;
+  startDateOp?: 'EXACT' | 'RANGE';
+  startDateExact?: string;
+  startDateFrom?: string;
+  startDateTo?: string;
+  endDateOp?: 'EXACT' | 'RANGE';
+  endDateExact?: string;
+  endDateFrom?: string;
+  endDateTo?: string;
+  totalSessionsOp?: 'EXACT' | 'RANGE';
+  totalSessionsExact?: number;
+  totalSessionsMin?: number;
+  totalSessionsMax?: number;
+  remainingSessionsOp?: 'EXACT' | 'RANGE';
+  remainingSessionsExact?: number;
+  remainingSessionsMin?: number;
+  remainingSessionsMax?: number;
 }
 
 export interface ClassListMeta {

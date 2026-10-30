@@ -67,6 +67,7 @@ export class EnrollmentsController {
 
       const sessionFrom = parseIsoDateParam(q.session_from, 'session_from')?.dateStr;
       const sessionTo = parseIsoDateParam(q.session_to, 'session_to')?.dateStr;
+      const relevantDate = parseIsoDateParam(q.relevant_date, 'relevant_date')?.dateStr;
 
       // Numeric session filters
       const totalSessionsOp = parseOp(q.total_sessions_op);
@@ -128,6 +129,7 @@ export class EnrollmentsController {
           remainingSessionsMax,
           sessionFrom,
           sessionTo,
+          relevantDate,
         },
       );
       res.json(result);

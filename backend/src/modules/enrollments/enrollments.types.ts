@@ -82,6 +82,7 @@ export interface EnrollmentListFilters {
   remainingSessionsMax?: number;
   sessionFrom?: string;
   sessionTo?: string;
+  relevantDate?: string;
 }
 
 export interface EnrollmentListMeta {

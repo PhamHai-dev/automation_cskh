@@ -475,9 +475,119 @@ describe('Query Validation & Security/Pagination across 5 modules', () => {
         facets: {
           totalStudentsCount: 42,
           relevantOnDateCount: 7,
+          programCounts: {
+            all: 1,
+            kaiwa: 1,
+            jlpt: 0,
+          },
         },
-        filterOptions: {},
+        filterOptions: {
+          salesList: [],
+          packagesList: [],
+          teachersList: [],
+          teacherCodesList: [],
+          classesList: ['Lớp Kaiwa 12'],
+        },
       });
+    });
+
+    it('supports advanced filters on ClassesRepository.buildWhereClause and enrollments status/search/relevantDate', () => {
+      const classesRepo = new ClassesRepository();
+      const classWhere = classesRepo.buildWhereClause([10, 20], {
+        programType: 'JLPT',
+        status: 'STUDYING',
+        packageName: 'Gói N3',
+        courseCategory: 'JNPT',
+        courseLevel: 'N3',
+        teacherName: 'Tanaka',
+        teacherCode: 'GV_TNK',
+        className: 'N3-01',
+        modelFilter: '1:1',
+        schedulePattern: '246',
+        startTime: '19:30',
+        sale: 'Sale A',
+        startDateOp: 'EXACT',
+        startDateExact: '2026-10-01',
+        endDateFrom: '2026-12-01',
+        endDateTo: '2026-12-31',
+        totalSessionsOp: 'EXACT',
+        totalSessionsExact: 30,
+        remainingSessionsMin: 5,
+        remainingSessionsMax: 25,
+      });
+
+      expect(classWhere.AND).toEqual(
+        expect.arrayContaining([
+          { id: { in: [10, 20] } },
+          { model_type: 'ONE_TO_ONE' },
+          { active: true },
+          { class_teachers: { some: { teacher: { name: { contains: 'Tanaka' } } } } },
+          { class_teachers: { some: { teacher: { code: { contains: 'GV_TNK' } } } } },
+          { OR: [{ class_name: { contains: 'N3-01' } }, { class_code: { contains: 'N3-01' } }] },
+          { class_schedules: { some: { schedule_pattern: { contains: '246' } } } },
+          { class_schedules: { some: { start_time: { contains: '19:30' } } } },
+        ]),
+      );
+
+      const enrRepo = new EnrollmentsRepository();
+      const enrWhereStudying = enrRepo.buildWhereClause(10, undefined, {
+        status: 'STUDYING',
+        search: 'Tanaka',
+        relevantDate: '2026-10-26',
+      });
+      expect(enrWhereStudying.AND).toEqual(
+        expect.arrayContaining([
+          { cs_id: 10 },
+          {
+            OR: [
+              { status: 'STUDYING' },
+              {
+                status: { in: ['WAITING_CLASS', 'NOT_STARTED'] },
+                enrollment_classes: { some: {} },
+              },
+            ],
+          },
+          expect.objectContaining({
+            OR: expect.arrayContaining([
+              {
+                enrollment_classes: {
+                  some: {
+                    class: {
+                      OR: [
+                        { class_code: { contains: 'Tanaka' } },
+                        { class_name: { contains: 'Tanaka' } },
+                        { class_teachers: { some: { teacher: { name: { contains: 'Tanaka' } } } } },
+                      ],
+                    },
+                  },
+                },
+              },
+            ]),
+          }),
+          expect.objectContaining({
+            enrollment_classes: {
+              some: {
+                class: expect.objectContaining({
+                  OR: expect.any(Array),
+                }),
+              },
+            },
+          }),
+        ]),
+      );
+
+      const enrWhereWaiting = enrRepo.buildWhereClause(10, undefined, {
+        status: 'WAITING_CLASS',
+      });
+      expect(enrWhereWaiting.AND).toEqual(
+        expect.arrayContaining([
+          { cs_id: 10 },
+          {
+            status: { in: ['WAITING_CLASS', 'NOT_STARTED'] },
+            enrollment_classes: { none: {} },
+          },
+        ]),
+      );
     });
 
     it('enforces TEACHER accessibleClassIds via AND with search/model filters', async () => {
