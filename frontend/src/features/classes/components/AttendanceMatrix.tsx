@@ -72,6 +72,17 @@ export interface StudentRow {
   sale_name?: string | null;        // Sale phụ trách
   program_type?: 'JLPT' | 'KAIWA' | string; // Khóa học (JLPT / KAIWA)
   cs_staff_code?: string | null;    // Mã CVHT phụ trách
+  attendance_stats?: {
+    ADMIN?: { totalAttended: number; totalAbsentA: number; totalAbsentC: number; totalTeacherD: number };
+    TEACHER?: { totalAttended: number; totalAbsentA: number; totalAbsentC: number; totalTeacherD: number };
+    CS?: { totalAttended: number; totalAbsentA: number; totalAbsentC: number; totalTeacherD: number };
+    totalAttendedAdmin?: number;
+    totalAttendedTeacher?: number;
+    totalAttendedCs?: number;
+    monthAttendedAdmin?: number;
+    monthAttendedTeacher?: number;
+    monthAttendedCs?: number;
+  };
 }
 
 export interface AttendanceMatrixProps {
@@ -105,6 +116,13 @@ export interface AttendanceMatrixProps {
   onOnlyDaysWithSessionsChange?: (val: boolean) => void;
   selectedEnrollmentIds?: Set<number>;
   onSelectedEnrollmentIdsChange?: (next: Set<number>) => void;
+  serverPagination?: boolean;
+  page?: number;
+  pageSize?: number;
+  totalCount?: number;
+  onPageChange?: (page: number) => void;
+  onPageSizeChange?: (pageSize: number) => void;
+  isFetchingData?: boolean;
 }
 
 export type AttendanceTab = 'quick' | 'detailed' | 'stats';
@@ -221,6 +239,13 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
   onOnlyDaysWithSessionsChange: _onOnlyDaysWithSessionsChange,
   selectedEnrollmentIds: controlledSelectedEnrollmentIds,
   onSelectedEnrollmentIdsChange,
+  serverPagination = false,
+  page: externalPage,
+  pageSize: externalPageSize,
+  totalCount: externalTotalCount,
+  onPageChange,
+  onPageSizeChange,
+  isFetchingData = false,
 }) => {
   const isColVisible = (key: string): boolean => {
     if (!visibleColumns) return true;
@@ -319,8 +344,30 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
   };
 
   // Phân trang mặc định 25 dòng/trang (tùy chọn 25, 50, 100, 200)
-  const [page, setPage] = useState<number>(1);
-  const [pageSize, setPageSize] = useState<number>(25);
+  const [internalPage, setInternalPage] = useState<number>(1);
+  const [internalPageSize, setInternalPageSize] = useState<number>(25);
+
+  const page = serverPagination ? Math.max(1, externalPage || 1) : internalPage;
+  const pageSize = serverPagination ? (externalPageSize || 25) : internalPageSize;
+
+  const setPage = (next: number | ((prev: number) => number)) => {
+    const val = typeof next === 'function' ? next(page) : next;
+    const safeVal = Math.max(1, val);
+    if (serverPagination) {
+      onPageChange?.(safeVal);
+    } else {
+      setInternalPage(safeVal);
+    }
+  };
+
+  const setPageSize = (nextSize: number) => {
+    if (serverPagination) {
+      onPageSizeChange?.(nextSize);
+    } else {
+      setInternalPageSize(nextSize);
+      setInternalPage(1);
+    }
+  };
 
   // Track optimistic updates: Key is `${enrollment_class_id}_${dateString}_${sessionIndex}`
   const [optimisticUpdates, setOptimisticUpdates] = useState<
@@ -395,10 +442,18 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
     setActiveInlinePickerKey(null);
   }, [quickDate, activeTab]);
 
-  // Tự động quay về trang 1 khi đổi tab, chế độ xem, ngày hoặc danh sách học viên
   useEffect(() => {
-    setPage(1);
-  }, [activeTab, detailedViewMode, onlyStudentsWithDaySchedule, quickDate, students.length]);
+    if (isFetchingData && activeInlinePickerKey) {
+      setActiveInlinePickerKey(null);
+    }
+  }, [isFetchingData, activeInlinePickerKey]);
+
+  // Tự động quay về trang 1 khi đổi tab, chế độ xem, ngày hoặc danh sách học viên (chế độ client-side)
+  useEffect(() => {
+    if (!serverPagination) {
+      setInternalPage(1);
+    }
+  }, [activeTab, detailedViewMode, onlyStudentsWithDaySchedule, quickDate, students.length, serverPagination]);
 
   useEffect(() => {
     if (!activeInlinePickerKey) return;
@@ -660,7 +715,36 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
     const currentMonth = currentDate.getMonth() + 1;
     const monthPrefix = `${currentYear}-${String(currentMonth).padStart(2, '0')}`;
 
+    const baseAttendanceByKey = new Map<string, Attendance>();
+    attendances.forEach((a) => {
+      if ((a as any).deleted_at) return;
+      baseAttendanceByKey.set(`${a.enrollment_class_id}_session_${a.class_session_id}`, a);
+    });
+
+    const getStatusForSide = (a?: Attendance | null): AttendanceStatus | undefined => {
+      if (!a || (a as any).deleted_at) return undefined;
+      const finalized = getFinalizedStatus(a);
+      return (
+        selectedSide === 'TEACHER'
+          ? a.teacher_status || finalized
+          : selectedSide === 'CS'
+          ? a.cs_status || finalized
+          : finalized
+      ) as AttendanceStatus | undefined;
+    };
+
     students.forEach((s) => {
+      const rawStats = s.attendance_stats;
+      const precomputedSide = rawStats?.[selectedSide];
+      const fallbackTotalAttended =
+        selectedSide === 'TEACHER'
+          ? rawStats?.totalAttendedTeacher
+          : selectedSide === 'CS'
+          ? rawStats?.totalAttendedCs ?? rawStats?.totalAttendedAdmin
+          : rawStats?.totalAttendedAdmin;
+      const hasPrecomputed =
+        Boolean(precomputedSide) || typeof fallbackTotalAttended === 'number';
+
       let totalAttended = 0;
       let totalAbsentA = 0;
       let totalAbsentC = 0;
@@ -691,10 +775,12 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
 
         const status = opt.status;
         const count = 1;
-        if (status === 'ATTENDED') totalAttended += count;
-        else if (status === 'ABSENT_APPROVED_A') totalAbsentA++;
-        else if (status === 'ABSENT_UNAPPROVED_C') totalAbsentC++;
-        else if (status === 'TEACHER_ABSENT_D') totalTeacherD++;
+        if (!hasPrecomputed) {
+          if (status === 'ATTENDED') totalAttended += count;
+          else if (status === 'ABSENT_APPROVED_A') totalAbsentA++;
+          else if (status === 'ABSENT_UNAPPROVED_C') totalAbsentC++;
+          else if (status === 'TEACHER_ABSENT_D') totalTeacherD++;
+        }
 
         if (dStr && dStr.startsWith(monthPrefix)) {
           if (status === 'ATTENDED') monthAttended += count;
@@ -719,21 +805,16 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
 
         if (!dStr || clearedKeys.has(`${s.enrollment_class_id}_session_${a.class_session_id}`)) return;
 
-        const finalized = getFinalizedStatus(a);
-        const status = (
-          selectedSide === 'TEACHER'
-            ? a.teacher_status || finalized
-            : selectedSide === 'CS'
-            ? a.cs_status || finalized
-            : finalized
-        ) as AttendanceStatus | undefined;
+        const status = getStatusForSide(a);
         if (!status) return;
         const count = 1;
 
-        if (status === 'ATTENDED') totalAttended += count;
-        else if (status === 'ABSENT_APPROVED_A') totalAbsentA++;
-        else if (status === 'ABSENT_UNAPPROVED_C') totalAbsentC++;
-        else if (status === 'TEACHER_ABSENT_D') totalTeacherD++;
+        if (!hasPrecomputed) {
+          if (status === 'ATTENDED') totalAttended += count;
+          else if (status === 'ABSENT_APPROVED_A') totalAbsentA++;
+          else if (status === 'ABSENT_UNAPPROVED_C') totalAbsentC++;
+          else if (status === 'TEACHER_ABSENT_D') totalTeacherD++;
+        }
 
         if (dStr.startsWith(monthPrefix)) {
           if (status === 'ATTENDED') monthAttended += count;
@@ -744,6 +825,70 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
           else if (status === 'TECH_ERROR_E') monthTechE++;
         }
       });
+
+      if (hasPrecomputed) {
+        totalAttended = precomputedSide?.totalAttended ?? fallbackTotalAttended ?? 0;
+        totalAbsentA = precomputedSide?.totalAbsentA ?? 0;
+        totalAbsentC = precomputedSide?.totalAbsentC ?? 0;
+        totalTeacherD = precomputedSide?.totalTeacherD ?? 0;
+
+        const applyDelta = (st: AttendanceStatus | null | undefined, sign: 1 | -1) => {
+          if (!st) return;
+          if (st === 'ATTENDED') totalAttended += sign;
+          else if (st === 'ABSENT_APPROVED_A') totalAbsentA += sign;
+          else if (st === 'ABSENT_UNAPPROVED_C') totalAbsentC += sign;
+          else if (st === 'TEACHER_ABSENT_D') totalTeacherD += sign;
+        };
+
+        // Adjust for optimistic updates
+        Object.entries(optimisticUpdates).forEach(([key, opt]) => {
+          const parts = key.split('_');
+          const ecIdStr = parts[0];
+          const dStr = parts[1];
+          if (parseInt(ecIdStr, 10) !== s.enrollment_class_id) return;
+          const daySessions = getSessionsForCell(s.enrollment_class_id, dStr);
+          const targetSess = daySessions[opt.sessionIndex ?? 0];
+          const oldAtt = targetSess
+            ? baseAttendanceByKey.get(`${s.enrollment_class_id}_session_${targetSess.id}`)
+            : undefined;
+          const oldStatus = getStatusForSide(oldAtt);
+          if (oldStatus !== opt.status) {
+            applyDelta(oldStatus, -1);
+            applyDelta(opt.status, 1);
+          }
+        });
+
+        // Adjust for popover overrides & clearedKeys
+        const touchedSessionKeys = new Set<string>();
+        attendanceOverrides.forEach((_, key) => {
+          if (key.startsWith(`${s.enrollment_class_id}_session_`)) {
+            touchedSessionKeys.add(key);
+          }
+        });
+        clearedKeys.forEach((key) => {
+          if (key.startsWith(`${s.enrollment_class_id}_session_`)) {
+            touchedSessionKeys.add(key);
+          }
+        });
+
+        touchedSessionKeys.forEach((key) => {
+          const sessionId = Number(key.split('_session_')[1]);
+          if (suppressedSessionIds.has(sessionId)) return;
+          const oldStatus = getStatusForSide(baseAttendanceByKey.get(key));
+          const newStatus = clearedKeys.has(key)
+            ? undefined
+            : getStatusForSide(attendanceOverrides.get(key));
+          if (oldStatus !== newStatus) {
+            applyDelta(oldStatus, -1);
+            applyDelta(newStatus, 1);
+          }
+        });
+
+        totalAttended = Math.max(0, totalAttended);
+        totalAbsentA = Math.max(0, totalAbsentA);
+        totalAbsentC = Math.max(0, totalAbsentC);
+        totalTeacherD = Math.max(0, totalTeacherD);
+      }
 
       statsMap.set(s.enrollment_class_id, {
         totalAttended,
@@ -762,6 +907,8 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
     return statsMap;
   }, [
     students,
+    attendances,
+    attendanceOverrides,
     rawAttendanceMap,
     effectiveSessions,
     sessionsByClassAndDate,
@@ -3246,9 +3393,10 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
                   </td>
                 </tr>
               ) : (
-                quickVisibleStudents
-                  .slice((page - 1) * pageSize, page * pageSize)
-                  .map((st, idx) => {
+                (serverPagination
+                  ? quickVisibleStudents
+                  : quickVisibleStudents.slice((page - 1) * pageSize, page * pageSize)
+                ).map((st, idx) => {
                   const isSelected = selectedStudents.has(st.enrollment_class_id);
 
                   return (
@@ -3782,9 +3930,10 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
                   </td>
                 </tr>
               ) : (
-                matrixFilteredStudents
-                  .slice((page - 1) * pageSize, page * pageSize)
-                  .map((st, idx) => {
+                (serverPagination
+                  ? matrixFilteredStudents
+                  : matrixFilteredStudents.slice((page - 1) * pageSize, page * pageSize)
+                ).map((st, idx) => {
                   const stat = studentStats.get(st.enrollment_class_id);
                   const prevAttended = st.attended_previous_years || 0;
                   const currentAttended = stat?.totalAttended || 0;
@@ -4191,9 +4340,10 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
                     </td>
                   </tr>
                 ) : (
-                  students
-                    .slice((page - 1) * pageSize, page * pageSize)
-                    .map((st, idx) => {
+                  (serverPagination
+                    ? students
+                    : students.slice((page - 1) * pageSize, page * pageSize)
+                  ).map((st, idx) => {
                     const stat = studentStats.get(st.enrollment_class_id);
 
                     return (
@@ -4302,18 +4452,21 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
 
       {/* Legend & Pagination Footer */}
       {(() => {
-        const totalRows =
-          activeTab === 'quick'
-            ? quickVisibleStudents.length
-            : activeTab === 'detailed' && detailedViewMode === 'log'
-            ? periodSessionLogs.length
-            : activeTab === 'detailed' && detailedViewMode === 'matrix'
-            ? matrixFilteredStudents.length
-            : students.length;
-        const totalPages = Math.max(1, Math.ceil(totalRows / pageSize));
-        const safePage = Math.min(page, totalPages);
-        const startIdx = totalRows === 0 ? 0 : (safePage - 1) * pageSize + 1;
-        const endIdx = Math.min(safePage * pageSize, totalRows);
+        const isLogView = activeTab === 'detailed' && detailedViewMode === 'log';
+        const effectivePageSize = pageSize;
+        const totalRows = isLogView
+          ? periodSessionLogs.length
+          : serverPagination
+          ? (externalTotalCount ?? students.length)
+          : activeTab === 'quick'
+          ? quickVisibleStudents.length
+          : activeTab === 'detailed' && detailedViewMode === 'matrix'
+          ? matrixFilteredStudents.length
+          : students.length;
+        const totalPages = Math.max(1, Math.ceil(totalRows / effectivePageSize));
+        const safePage = Math.min(Math.max(1, page), totalPages);
+        const startIdx = totalRows === 0 ? 0 : (safePage - 1) * effectivePageSize + 1;
+        const endIdx = Math.min(safePage * effectivePageSize, totalRows);
 
         return (
           <div className="p-3.5 px-4 border-t border-border/80 bg-surface-muted/30 flex flex-wrap items-center justify-between gap-4 text-xs text-text-secondary">
@@ -4341,10 +4494,9 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
                 <div className="flex items-center gap-1.5">
                   <span>Mỗi trang:</span>
                   <select
-                    value={pageSize}
+                    value={effectivePageSize}
                     onChange={(e) => {
                       setPageSize(Number(e.target.value));
-                      setPage(1);
                     }}
                     className="bg-surface border border-border rounded-lg px-2 py-1 text-xs font-semibold text-text-primary focus:outline-none focus:ring-1 focus:ring-primary"
                   >
@@ -4358,7 +4510,7 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    onClick={() => setPage(Math.max(1, safePage - 1))}
                     disabled={safePage <= 1}
                     className="h-7 px-2"
                   >
@@ -4370,7 +4522,7 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                    onClick={() => setPage(Math.min(totalPages, safePage + 1))}
                     disabled={safePage >= totalPages}
                     className="h-7 px-2"
                   >
