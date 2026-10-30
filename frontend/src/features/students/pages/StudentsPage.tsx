@@ -2222,7 +2222,10 @@ export const StudentsPage: React.FC = () => {
             </label>
             <select
               value={csFilter}
-              onChange={(e) => setCsFilter(e.target.value)}
+              onChange={(e) => {
+                setCsFilter(e.target.value);
+                if (e.target.value) setCvhtFilter('');
+              }}
               className="w-full h-9 px-3 border border-border rounded-xl text-sm bg-white text-text-primary focus:outline-none focus:ring-2 focus:ring-primary shadow-xs transition cursor-pointer"
             >
               <option value="">Tất cả CSKH phụ trách</option>
@@ -2294,7 +2297,11 @@ export const StudentsPage: React.FC = () => {
                 <button
                   key={code}
                   type="button"
-                  onClick={() => setCvhtFilter(code === cvhtFilter ? '' : code)}
+                  onClick={() => {
+                    const nextCode = code === cvhtFilter ? '' : code;
+                    setCvhtFilter(nextCode);
+                    if (nextCode) setCsFilter('');
+                  }}
                   className={`px-2.5 py-1 rounded-lg text-xs font-mono font-bold border transition cursor-pointer ${
                     cvhtFilter === code
                       ? 'bg-primary text-white border-primary shadow-2xs'
