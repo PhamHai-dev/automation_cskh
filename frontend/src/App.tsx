@@ -52,10 +52,6 @@ function App() {
             {/* Command Center / Home */}
             <Route path="/" element={<HomePage />} />
 
-            {/* Personal preferences — all authenticated users */}
-            <Route path="/settings/preferences" element={<PreferencesPage />} />
-            <Route path="/cai-dat/cau-hinh" element={<Navigate to="/settings/preferences" replace />} />
-
             {/* Admin Settings */}
             <Route element={<ProtectedRoute allowedRoles={['ADMIN']} />}>
               <Route path="/settings/users" element={<UsersPage />} />
@@ -80,6 +76,12 @@ function App() {
 
             {/* Core Staff: Admin, Manage, CS */}
             <Route element={<ProtectedRoute allowedRoles={['ADMIN', 'MANAGE', 'CS']} />}>
+              <Route path="/settings/preferences" element={<PreferencesPage />} />
+              <Route path="/cai-dat/cau-hinh" element={<Navigate to="/settings/preferences" replace />} />
+
+              <Route path="/imports" element={<ImportsPage />} />
+              <Route path="/nhap-xuat-excel" element={<Navigate to="/imports" replace />} />
+
               <Route path="/dashboard" element={<DashboardPage />} />
               <Route path="/tong-quan" element={<Navigate to="/dashboard" replace />} />
 
@@ -124,7 +126,7 @@ function App() {
               <Route path="/doi-soat-diem-danh" element={<Navigate to="/attendance/reconciliation" replace />} />
             </Route>
 
-            {/* Classes, Attendance, Care, Imports/Exports: Admin, Manage, CS, Teacher */}
+            {/* Classes, Attendance, Care: Admin, Manage, CS, Teacher */}
             <Route element={<ProtectedRoute allowedRoles={['ADMIN', 'MANAGE', 'CS', 'TEACHER']} />}>
               <Route path="/care" element={<CarePage />} />
               <Route path="/cham-soc" element={<Navigate to="/care" replace />} />
@@ -138,9 +140,6 @@ function App() {
               <Route path="/thong-tin-hoc-vien-gv" element={<Navigate to="/teacher/student-info" replace />} />
               <Route path="/teacher/attendance-tracking" element={<TeacherAttendanceTrackingPage />} />
               <Route path="/theo-doi-diem-danh" element={<Navigate to="/teacher/attendance-tracking" replace />} />
-
-              <Route path="/imports" element={<ImportsPage />} />
-              <Route path="/nhap-xuat-excel" element={<Navigate to="/imports" replace />} />
 
               <Route path="/classes" element={<ClassesPage />} />
               <Route path="/lop-hoc" element={<Navigate to="/classes" replace />} />

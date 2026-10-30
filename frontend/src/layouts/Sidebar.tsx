@@ -222,7 +222,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           path: '/imports',
           activePaths: ['/imports', '/imports/approval-queue'],
           icon: <FileSpreadsheet className="w-5 h-5 shrink-0" />,
-          allowedRoles: ['ADMIN', 'MANAGE', 'CS', 'TEACHER'],
+          allowedRoles: ['ADMIN', 'MANAGE', 'CS'],
           end: true,
           subItems: [
             {
@@ -233,7 +233,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             {
               name: 'Backup dữ liệu',
               tab: 'sheet-backup',
-              allowedRoles: ['ADMIN', 'MANAGE', 'CS', 'TEACHER'],
+              allowedRoles: ['ADMIN', 'MANAGE', 'CS'],
             },
             {
               name: 'Upload Hồ sơ',
@@ -243,7 +243,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             {
               name: 'Điểm danh CSKH / GV',
               tab: 'attendance',
-              allowedRoles: ['ADMIN', 'MANAGE', 'CS', 'TEACHER'],
+              allowedRoles: ['ADMIN', 'MANAGE', 'CS'],
             },
             {
               name: 'Phê duyệt nhập liệu',
@@ -253,7 +253,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             {
               name: 'Lịch sử nhập',
               tab: 'history',
-              allowedRoles: ['ADMIN', 'MANAGE', 'CS', 'TEACHER'],
+              allowedRoles: ['ADMIN', 'MANAGE', 'CS'],
             },
           ],
         },
@@ -278,6 +278,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           name: 'Cấu hình cá nhân',
           path: '/settings/preferences',
           icon: <Settings className="w-5 h-5 shrink-0" />,
+          allowedRoles: ['ADMIN', 'MANAGE', 'CS'],
         },
       ],
     },

@@ -107,7 +107,7 @@ export const QUICK_LINK_REGISTRY: QuickLinkDef[] = [
     path: '/imports',
     icon: <FileSpreadsheet className={ICON_SVG} />,
     iconClass: 'bg-lime-50 text-lime-600',
-    allowedRoles: ['ADMIN', 'MANAGE', 'CS', 'TEACHER'],
+    allowedRoles: ['ADMIN', 'MANAGE', 'CS'],
     pinnedByDefault: false,
   },
   {
