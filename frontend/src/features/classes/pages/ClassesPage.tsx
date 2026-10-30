@@ -3,7 +3,6 @@ import { useSearchParams } from 'react-router-dom';
 import { classesApi } from '../api/classes.api';
 import { classSessionsApi, attendanceApi } from '../api/sessions.api';
 import { enrollmentsApi } from '../../enrollments/api/enrollments.api';
-import { Enrollment } from '../../enrollments/types/enrollments.types';
 import {
   Class,
   ClassSession,
@@ -46,7 +45,11 @@ import { PreferenceScope } from '../../preferences/columns';
 import { ColumnVisibilityDropdown } from '../../preferences/components/ColumnVisibilityDropdown';
 import { PageContainer } from '../../../components/common/PageContainer';
 import { PageHeader } from '../../../components/common/PageHeader';
-import { FilterBar } from '../../../components/common/FilterBar';
+import { EnrollmentFilterBar } from '../../enrollments/components/EnrollmentFilterBar';
+import {
+  EnrollmentFilterState,
+  INITIAL_ENROLLMENT_FILTERS,
+} from '../../enrollments/types/enrollmentFilter.types';
 import { HorizontalTabs } from '../../../components/ui/HorizontalTabs';
 import { Button } from '../../../components/ui/Button';
 import { Badge } from '../../../components/ui/Badge';
@@ -56,13 +59,13 @@ import { Modal } from '../../../components/ui/Modal';
 import { useToast } from '../../../components/ui/Toast';
 import { useAuth } from '../../../contexts/AuthContext';
 import { useDebouncedValue } from '../../../hooks/useDebouncedValue';
+import { useQuery, invalidateQueries } from '../../../hooks/useQuery';
 import {
   Edit,
   Plus,
   CalendarDays,
   ListChecks,
   Zap,
-  Search,
   Sparkles,
   ChevronLeft,
   ChevronRight,
@@ -172,6 +175,7 @@ interface EnrolledStudentItem {
   program_type?: string;
   sale_name?: string | null;
   cs_staff_code?: string | null;
+  attendance_stats?: StudentRow['attendance_stats'];
 }
 
 export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) => {
@@ -217,10 +221,6 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
     }
   };
 
-  const [classes, setClasses] = useState<Class[]>([]);
-  const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
-  const [loading, setLoading] = useState(true);
-
   // 3 Tab lớn dùng chung cho cả 2 chế độ và cả 3 role — ưu tiên URL, sau đó sessionStorage
   const [activeTab, setActiveTabState] = useState<AttendanceTab>(() => {
     const urlTab = searchParams.get('tab');
@@ -248,28 +248,42 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
     return visibleColumns[key] !== false;
   };
 
-  // Filters dùng chung cho cả 2 chế độ (đồng bộ với URL)
+  // Filters dùng chung cho cả 2 chế độ (đồng bộ với URL + EnrollmentFilterBar)
   const [programFilter, setProgramFilter] = useState<'ALL' | 'KAIWA' | 'JLPT'>(() => {
     const p = (searchParams.get('program') || '').toUpperCase();
     return p === 'KAIWA' || p === 'JLPT' ? p : 'ALL';
   });
-  const [searchTerm, setSearchTerm] = useState(() => searchParams.get('search') || '');
-  const debouncedSearch = useDebouncedValue(searchTerm.trim(), 300);
-  const [modelFilter, setModelFilter] = useState(() => searchParams.get('model') || '');
-  const [teacherFilter, setTeacherFilter] = useState<string>(() => searchParams.get('teacher') || '');
-  const [levelPackageFilter, setLevelPackageFilter] = useState<string>(
-    () => searchParams.get('level') || ''
-  );
-  const [statusFilter, setStatusFilter] = useState<string>(() => searchParams.get('status') || '');
+
+  const [filters, setFilters] = useState<EnrollmentFilterState>(() => ({
+    ...INITIAL_ENROLLMENT_FILTERS,
+    searchQuery: searchParams.get('search') || '',
+    statusFilter: searchParams.get('status') || '',
+    modelFilter: searchParams.get('model') || '',
+    teacherName: searchParams.get('teacher') || '',
+    packageName: searchParams.get('package') || '',
+    courseLevel: searchParams.get('level') || '',
+    className: searchParams.get('className') || '',
+    selectedSale: searchParams.get('sale') || '',
+  }));
+
   const [onlyScheduledOnDate, setOnlyScheduledOnDate] = useState<boolean>(
     () => searchParams.get('onlyScheduled') === '1' || searchParams.get('onlyScheduled') === 'true'
   );
   const [statsAttendanceFilter, setStatsAttendanceFilter] = useState<'' | 'ATTENTION' | 'GOOD'>('');
 
+  // Debounce text inputs in EnrollmentFilterBar (300ms)
+  const debouncedSearch = useDebouncedValue(filters.searchQuery.trim(), 300);
+  const debouncedPackageName = useDebouncedValue(filters.packageName.trim(), 300);
+  const debouncedClassName = useDebouncedValue(filters.className.trim(), 300);
+  const debouncedSchedulePattern = useDebouncedValue(filters.schedulePattern.trim(), 300);
+  const debouncedStartTime = useDebouncedValue(filters.startTime.trim(), 300);
+
   // Sync external URL search change (e.g. Back/Forward)
   useEffect(() => {
-    const q = searchParams.get('search') || '';
-    if (q !== searchTerm) setSearchTerm(q);
+    const q = searchParams.get('search');
+    if (q !== null && q !== filters.searchQuery) {
+      setFilters((prev) => ({ ...prev, searchQuery: q }));
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
@@ -386,11 +400,6 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
   // Modal Phân công Giáo viên (D8 — Admin kết thúc phân công, ADMIN/MANAGE thêm phân công)
   const [isAssignmentModalOpen, setIsAssignmentModalOpen] = useState(false);
   const [assignmentClassId, setAssignmentClassId] = useState<number | null>(null);
-  // Luôn lấy dữ liệu mới nhất từ danh sách lớp để modal tự render lại sau khi refresh.
-  const assignmentClass = useMemo(
-    () => classes.find((c) => c.id === assignmentClassId) || null,
-    [classes, assignmentClassId]
-  );
   const [assignmentTeachers, setAssignmentTeachers] = useState<Teacher[]>([]);
   const [endingAssignmentId, setEndingAssignmentId] = useState<number | null>(null);
   const [endDateDraft, setEndDateDraft] = useState('');
@@ -408,6 +417,275 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
   });
   const [assigningTeacher, setAssigningTeacher] = useState(false);
 
+  // Phân trang mặc định 25 dòng/trang (tùy chọn 25, 50, 100, 200) — đồng bộ với URL
+  const [page, setPage] = useState<number>(() => Math.max(1, Number(searchParams.get('page')) || 1));
+  const [pageSize, setPageSize] = useState<number>(() => {
+    const ps = Number(searchParams.get('pageSize'));
+    return [25, 50, 100, 200].includes(ps) ? ps : 25;
+  });
+
+  // Tính khoảng ngày của kỳ đang xem (session_from, session_to, summary_month) để chỉ tải các buổi trong kỳ
+  const sessionWindow = useMemo(() => {
+    if (activeTab === 'quick') {
+      const [y, m] = selectedDate.split('-').map(Number);
+      const firstDay = new Date(y, m - 1, 1);
+      const lastDay = new Date(y, m, 0);
+      return {
+        session_from: toLocalDateString(firstDay),
+        session_to: toLocalDateString(lastDay),
+        summary_month: `${y}-${String(m).padStart(2, '0')}`,
+      };
+    }
+
+    const year = currentPeriodDate.getFullYear();
+    const month = currentPeriodDate.getMonth();
+    const summaryMonth = `${year}-${String(month + 1).padStart(2, '0')}`;
+
+    if (activeTab === 'detailed' && detailedFilterMode === 'week') {
+      const day = currentPeriodDate.getDay();
+      const diff = currentPeriodDate.getDate() - day + (day === 0 ? -6 : 1);
+      const monday = new Date(year, month, diff);
+      const sunday = new Date(monday);
+      sunday.setDate(monday.getDate() + 6);
+      const monthFirst = new Date(year, month, 1);
+      const monthLast = new Date(year, month + 1, 0);
+      const fromDate = monday < monthFirst ? monday : monthFirst;
+      const toDate = sunday > monthLast ? sunday : monthLast;
+      return {
+        session_from: toLocalDateString(fromDate),
+        session_to: toLocalDateString(toDate),
+        summary_month: summaryMonth,
+      };
+    }
+
+    const firstDay = new Date(year, month, 1);
+    const lastDay = new Date(year, month + 1, 0);
+    return {
+      session_from: toLocalDateString(firstDay),
+      session_to: toLocalDateString(lastDay),
+      summary_month: summaryMonth,
+    };
+  }, [activeTab, selectedDate, currentPeriodDate, detailedFilterMode]);
+
+  const sharedFilterParams = useMemo(
+    () => ({
+      search: debouncedSearch || undefined,
+      program_type: programFilter !== 'ALL' ? programFilter : undefined,
+      status: filters.statusFilter || undefined,
+      package_name: debouncedPackageName || undefined,
+      course_category: filters.courseCategory !== 'ALL' ? filters.courseCategory : undefined,
+      course_level: filters.courseLevel || undefined,
+      teacher_name: !isTeacher && filters.teacherName ? filters.teacherName : undefined,
+      teacher_code: !isTeacher && filters.teacherCode ? filters.teacherCode : undefined,
+      class_name: debouncedClassName || undefined,
+      model_filter: filters.modelFilter || undefined,
+      schedule_pattern: debouncedSchedulePattern || undefined,
+      start_time: debouncedStartTime || undefined,
+      sale: !isCSOnly && !isTeacher && filters.selectedSale ? filters.selectedSale : undefined,
+      total_sessions_op:
+        filters.totalSessionsOp === 'EXACT' && filters.totalSessionsExact !== ''
+          ? 'EXACT'
+          : filters.totalSessionsOp === 'RANGE' &&
+            (filters.totalSessionsMin !== '' || filters.totalSessionsMax !== '')
+          ? 'RANGE'
+          : undefined,
+      total_sessions_exact:
+        filters.totalSessionsOp === 'EXACT' && filters.totalSessionsExact !== ''
+          ? filters.totalSessionsExact
+          : undefined,
+      total_sessions_min:
+        filters.totalSessionsOp === 'RANGE' && filters.totalSessionsMin !== ''
+          ? filters.totalSessionsMin
+          : undefined,
+      total_sessions_max:
+        filters.totalSessionsOp === 'RANGE' && filters.totalSessionsMax !== ''
+          ? filters.totalSessionsMax
+          : undefined,
+      attended_sessions_op:
+        filters.attendedSessionsOp === 'EXACT' && filters.attendedSessionsExact !== ''
+          ? 'EXACT'
+          : filters.attendedSessionsOp === 'RANGE' &&
+            (filters.attendedSessionsMin !== '' || filters.attendedSessionsMax !== '')
+          ? 'RANGE'
+          : undefined,
+      attended_sessions_exact:
+        filters.attendedSessionsOp === 'EXACT' && filters.attendedSessionsExact !== ''
+          ? filters.attendedSessionsExact
+          : undefined,
+      attended_sessions_min:
+        filters.attendedSessionsOp === 'RANGE' && filters.attendedSessionsMin !== ''
+          ? filters.attendedSessionsMin
+          : undefined,
+      attended_sessions_max:
+        filters.attendedSessionsOp === 'RANGE' && filters.attendedSessionsMax !== ''
+          ? filters.attendedSessionsMax
+          : undefined,
+      remaining_sessions_op:
+        filters.remainingSessionsOp === 'EXACT' && filters.remainingSessionsExact !== ''
+          ? 'EXACT'
+          : filters.remainingSessionsOp === 'RANGE' &&
+            (filters.remainingSessionsMin !== '' || filters.remainingSessionsMax !== '')
+          ? 'RANGE'
+          : undefined,
+      remaining_sessions_exact:
+        filters.remainingSessionsOp === 'EXACT' && filters.remainingSessionsExact !== ''
+          ? filters.remainingSessionsExact
+          : undefined,
+      remaining_sessions_min:
+        filters.remainingSessionsOp === 'RANGE' && filters.remainingSessionsMin !== ''
+          ? filters.remainingSessionsMin
+          : undefined,
+      remaining_sessions_max:
+        filters.remainingSessionsOp === 'RANGE' && filters.remainingSessionsMax !== ''
+          ? filters.remainingSessionsMax
+          : undefined,
+      start_date_op:
+        filters.startDateOp === 'EXACT' && filters.startDateExact
+          ? 'EXACT'
+          : filters.startDateOp === 'RANGE' && (filters.startDateFrom || filters.startDateTo)
+          ? 'RANGE'
+          : undefined,
+      start_date_exact:
+        filters.startDateOp === 'EXACT' && filters.startDateExact
+          ? filters.startDateExact
+          : undefined,
+      start_date_from:
+        filters.startDateOp === 'RANGE' && filters.startDateFrom
+          ? filters.startDateFrom
+          : undefined,
+      start_date_to:
+        filters.startDateOp === 'RANGE' && filters.startDateTo
+          ? filters.startDateTo
+          : undefined,
+      end_date_op:
+        filters.endDateOp === 'EXACT' && filters.endDateExact
+          ? 'EXACT'
+          : filters.endDateOp === 'RANGE' && (filters.endDateFrom || filters.endDateTo)
+          ? 'RANGE'
+          : undefined,
+      end_date_exact:
+        filters.endDateOp === 'EXACT' && filters.endDateExact
+          ? filters.endDateExact
+          : undefined,
+      end_date_from:
+        filters.endDateOp === 'RANGE' && filters.endDateFrom
+          ? filters.endDateFrom
+          : undefined,
+      end_date_to:
+        filters.endDateOp === 'RANGE' && filters.endDateTo
+          ? filters.endDateTo
+          : undefined,
+      relevant_date:
+        activeTab === 'quick' && onlyScheduledOnDate ? selectedDate : undefined,
+      session_from: sessionWindow.session_from,
+      session_to: sessionWindow.session_to,
+      summary_month: sessionWindow.summary_month,
+    }),
+    [
+      debouncedSearch,
+      debouncedPackageName,
+      debouncedClassName,
+      debouncedSchedulePattern,
+      debouncedStartTime,
+      programFilter,
+      filters,
+      isTeacher,
+      isCSOnly,
+      activeTab,
+      onlyScheduledOnDate,
+      selectedDate,
+      sessionWindow.session_from,
+      sessionWindow.session_to,
+      sessionWindow.summary_month,
+    ]
+  );
+
+  const isStudentsQueryMode = !isTeacher && (displayMode === 'students' || activeTab === 'stats');
+  const isClassesQueryMode = isTeacher || (displayMode === 'classes' && activeTab !== 'stats');
+
+  const enrollmentQueryParams = useMemo(
+    () => ({
+      page,
+      pageSize,
+      ...sharedFilterParams,
+    }),
+    [page, pageSize, sharedFilterParams]
+  );
+
+  const classQueryParams = useMemo(
+    () => ({
+      page,
+      pageSize,
+      model_type: filters.modelFilter || undefined,
+      ...sharedFilterParams,
+    }),
+    [page, pageSize, filters.modelFilter, sharedFilterParams]
+  );
+
+  const {
+    data: enrollmentsResult,
+    isLoading: loadingEnrollments,
+    isFetching: fetchingEnrollments,
+  } = useQuery({
+    queryKey: ['enrollments', 'paginated', enrollmentQueryParams],
+    queryFn: (signal) => enrollmentsApi.listPaginated(enrollmentQueryParams, signal),
+    enabled: isStudentsQueryMode,
+    staleTime: 30 * 1000,
+    keepPreviousData: true,
+    onError: (err: any) => {
+      toast.error(err.response?.data?.error?.message || 'Không thể tải danh sách ghi danh');
+    },
+  });
+
+  const {
+    data: classesResult,
+    isLoading: loadingClasses,
+    isFetching: fetchingClasses,
+  } = useQuery({
+    queryKey: ['classes', 'paginated', classQueryParams],
+    queryFn: (signal) => classesApi.listPaginated(classQueryParams, signal),
+    enabled: isClassesQueryMode,
+    staleTime: 30 * 1000,
+    keepPreviousData: true,
+    onError: (err: any) => {
+      toast.error(err.response?.data?.error?.message || 'Không thể tải danh sách lớp học');
+    },
+  });
+
+  const enrollments = useMemo(
+    () => (isStudentsQueryMode ? enrollmentsResult?.data || [] : []),
+    [isStudentsQueryMode, enrollmentsResult]
+  );
+  const enrollmentsMeta = enrollmentsResult?.meta;
+
+  const classes = useMemo(
+    () => (isClassesQueryMode ? classesResult?.data || [] : []),
+    [isClassesQueryMode, classesResult]
+  );
+  const classesMeta = classesResult?.meta;
+
+  const loading = isStudentsQueryMode ? loadingEnrollments : loadingClasses;
+  const isFetching = isStudentsQueryMode ? fetchingEnrollments : fetchingClasses;
+
+  // Luôn lấy dữ liệu mới nhất từ danh sách lớp để modal tự render lại sau khi refresh.
+  const assignmentClass = useMemo(() => {
+    if (!assignmentClassId) return null;
+    const fromClasses = classes.find((c) => c.id === assignmentClassId);
+    if (fromClasses) return fromClasses;
+    for (const enr of enrollments) {
+      for (const ec of enr.enrollment_classes || []) {
+        if (ec.class?.id === assignmentClassId) return ec.class as unknown as Class;
+      }
+    }
+    return null;
+  }, [classes, enrollments, assignmentClassId]);
+
+  useEffect(() => {
+    if (isFetching && activeQuickPickerKey) {
+      setActiveQuickPickerKey(null);
+    }
+  }, [isFetching, activeQuickPickerKey]);
+
   // Chuẩn hóa sinh mã lớp tiếp theo dạng class_0001, class_0002...
   const generateNextClassCode = () => {
     let maxNum = 0;
@@ -424,30 +702,9 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
     return `class_${String(maxNum + 1).padStart(4, '0')}`;
   };
 
-  const fetchClasses = async (silent = false) => {
-    try {
-      if (!silent) setLoading(true);
-      if (isTeacher) {
-        const data = await classesApi.list();
-        setClasses(data);
-      } else {
-        const [classesData, enrollmentsData] = await Promise.all([
-          classesApi.list(),
-          enrollmentsApi.list().catch(() => [] as Enrollment[]),
-        ]);
-        setClasses(classesData);
-        setEnrollments(enrollmentsData);
-      }
-    } catch (err: any) {
-      toast.error(err.response?.data?.error?.message || 'Không thể tải danh sách lớp học & điểm danh');
-    } finally {
-      if (!silent) setLoading(false);
-    }
+  const fetchClasses = async (_silent = false) => {
+    invalidateQueries(['classes', 'enrollments', 'students']);
   };
-
-  useEffect(() => {
-    fetchClasses();
-  }, [isTeacher]);
 
   const normalizeModel = (model?: string | null, studentCount?: number): '1:1' | '1:2' | '1:n' =>
     normalizeClassModel(model, studentCount);
@@ -490,6 +747,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
         program_type: enr?.program_type || 'KAIWA',
         sale_name: enr?.sale_name || enr?.sale?.name || null,
         cs_staff_code: enr?.cs?.staff_code || null,
+        attendance_stats: ec.attendance_stats,
       });
     });
     return list;
@@ -660,8 +918,51 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
       stats.set(ecId, cur);
     });
 
+    // Bổ sung tổng số buổi toàn khóa từ backend attendance_stats khi chỉ tải các buổi trong kỳ
+    classes.forEach((cls) => {
+      cls.enrollment_classes?.forEach((ec: any) => {
+        const ecStats = ec.attendance_stats;
+        if (!ecStats) return;
+        const cur = stats.get(ec.id) || {
+          totalAttended: 0,
+          monthAttended: 0,
+          monthAbsentOrLeave: 0,
+        };
+        const precomputedTotal = isTeacher
+          ? ecStats.TEACHER?.totalAttended ?? ecStats.totalAttendedTeacher
+          : isCSOnly
+          ? ecStats.CS?.totalAttended ?? ecStats.totalAttendedCs ?? ecStats.totalAttendedAdmin
+          : ecStats.ADMIN?.totalAttended ?? ecStats.totalAttendedAdmin;
+        if (typeof precomputedTotal === 'number' && precomputedTotal > cur.totalAttended) {
+          cur.totalAttended = precomputedTotal;
+        }
+        stats.set(ec.id, cur);
+      });
+    });
+
+    enrollments.forEach((enr) => {
+      enr.enrollment_classes?.forEach((ec) => {
+        const ecStats = ec.attendance_stats;
+        if (!ecStats) return;
+        const cur = stats.get(ec.id) || {
+          totalAttended: 0,
+          monthAttended: 0,
+          monthAbsentOrLeave: 0,
+        };
+        const precomputedTotal = isTeacher
+          ? ecStats.TEACHER?.totalAttended ?? ecStats.totalAttendedTeacher
+          : isCSOnly
+          ? ecStats.CS?.totalAttended ?? ecStats.totalAttendedCs ?? ecStats.totalAttendedAdmin
+          : ecStats.ADMIN?.totalAttended ?? ecStats.totalAttendedAdmin;
+        if (typeof precomputedTotal === 'number' && precomputedTotal > cur.totalAttended) {
+          cur.totalAttended = precomputedTotal;
+        }
+        stats.set(ec.id, cur);
+      });
+    });
+
     return stats;
-  }, [attendanceByEcAndSession, sessionsById, currentPeriodDate, isTeacher, isCSOnly]);
+  }, [attendanceByEcAndSession, sessionsById, currentPeriodDate, isTeacher, isCSOnly, classes, enrollments]);
 
   // Danh sách học viên đầy đủ cho chế độ "Theo Học viên" & Tab 3 "Thống kê chuyên cần"
   const allStudentRows: StudentRow[] = useMemo(() => {
@@ -743,6 +1044,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
               sale_name: enr.sale_name || (enr as any).sale?.name || '—',
               program_type: enr.program_type || 'KAIWA',
               cs_staff_code: enr.cs?.staff_code || null,
+              attendance_stats: ec.attendance_stats,
             });
           });
         } else {
@@ -837,6 +1139,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
             sale_name: st.sale_name || '—',
             program_type: st.program_type || (cls.level?.toUpperCase().includes('N') ? 'JLPT' : 'KAIWA'),
             cs_staff_code: st.cs_staff_code || null,
+            attendance_stats: st.attendance_stats,
           });
         });
       });
@@ -845,7 +1148,15 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
     return rows;
   }, [isTeacher, enrollments, classes]);
 
+  const activeMeta = isStudentsQueryMode ? enrollmentsMeta : classesMeta;
+
   const programCounts = useMemo(() => {
+    if (enrollmentsMeta?.facets?.programCounts) {
+      return enrollmentsMeta.facets.programCounts;
+    }
+    if (classesMeta?.facets?.programCounts) {
+      return classesMeta.facets.programCounts;
+    }
     let kaiwa = 0;
     let jlpt = 0;
     allStudentRows.forEach((s) => {
@@ -853,105 +1164,133 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
       if (pType === 'JLPT') jlpt++;
       else kaiwa++;
     });
-    return { all: allStudentRows.length, kaiwa, jlpt };
-  }, [allStudentRows]);
+    return { all: activeMeta?.total ?? allStudentRows.length, kaiwa, jlpt };
+  }, [allStudentRows, enrollmentsMeta, classesMeta, activeMeta]);
 
-  // Danh sách Giáo viên trích xuất từ lớp học & học viên để lọc
-  const teacherOptions = useMemo(() => {
-    const names = new Set<string>();
+  // Dynamic lists for EnrollmentFilterBar dropdowns (combining backend filterOptions with local data)
+  const salesList = useMemo(() => {
+    const set = new Set<string>([
+      ...(enrollmentsMeta?.filterOptions?.salesList || []),
+      ...(classesMeta?.filterOptions?.salesList || []),
+    ]);
+    enrollments.forEach((e) => {
+      if (e.sale_name) set.add(e.sale_name);
+      if (e.cs?.name) set.add(e.cs.name);
+      if (e.cs?.email) set.add(e.cs.email);
+    });
+    allStudentRows.forEach((s) => {
+      if (s.sale_name && s.sale_name !== '—') set.add(s.sale_name);
+    });
+    if (filters.selectedSale) set.add(filters.selectedSale);
+    return Array.from(set).filter(Boolean).sort((a, b) => a.localeCompare(b, 'vi-VN'));
+  }, [enrollments, allStudentRows, enrollmentsMeta, classesMeta, filters.selectedSale]);
+
+  const packagesList = useMemo(() => {
+    const set = new Set<string>([
+      ...(enrollmentsMeta?.filterOptions?.packagesList || []),
+      ...(classesMeta?.filterOptions?.packagesList || []),
+    ]);
+    classes.forEach((c) => {
+      if (c.level && c.level.trim() && c.level.trim() !== '—') {
+        set.add(c.level.trim());
+      }
+    });
+    allStudentRows.forEach((s) => {
+      if (s.package_name && s.package_name !== 'Gói học' && s.package_name !== '—' && s.package_name !== '-') {
+        set.add(s.package_name.trim());
+      }
+    });
+    if (filters.packageName) set.add(filters.packageName);
+    return Array.from(set).filter(Boolean).sort((a, b) => a.localeCompare(b, 'vi-VN'));
+  }, [classes, allStudentRows, enrollmentsMeta, classesMeta, filters.packageName]);
+
+  const teachersList = useMemo(() => {
+    const set = new Set<string>([
+      ...(enrollmentsMeta?.filterOptions?.teachersList || []),
+      ...(classesMeta?.filterOptions?.teachersList || []),
+    ]);
     classes.forEach((c) => {
       const mainTeacher =
         c.class_teachers?.find((t) => t.role === 'MAIN' && t.active !== false)?.teacher ||
         c.class_teachers?.find((t) => t.active !== false)?.teacher ||
         c.class_teachers?.[0]?.teacher;
-      if (mainTeacher?.name && mainTeacher.name !== '—') names.add(mainTeacher.name.trim());
+      if (mainTeacher?.name && mainTeacher.name !== '—') set.add(mainTeacher.name.trim());
     });
     allStudentRows.forEach((st) => {
-      if (st.teacher_name && st.teacher_name !== '—' && st.teacher_name !== 'Chưa xếp GV') {
-        names.add(st.teacher_name.trim());
+      if (st.teacher_name && st.teacher_name !== '—' && st.teacher_name !== 'Chưa xếp GV' && st.teacher_name !== 'Giáo viên') {
+        set.add(st.teacher_name.trim());
       }
     });
-    return Array.from(names).sort((a, b) => a.localeCompare(b, 'vi-VN'));
-  }, [classes, allStudentRows]);
+    if (filters.teacherName) set.add(filters.teacherName);
+    return Array.from(set).filter(Boolean).sort((a, b) => a.localeCompare(b, 'vi-VN'));
+  }, [classes, allStudentRows, enrollmentsMeta, classesMeta, filters.teacherName]);
 
-  // Danh sách Trình độ / Gói học trích xuất từ dữ liệu để lọc
-  const levelPackageOptions = useMemo(() => {
-    const values = new Set<string>();
+  const teacherCodesList = useMemo(() => {
+    const set = new Set<string>([
+      ...(enrollmentsMeta?.filterOptions?.teacherCodesList || []),
+      ...(classesMeta?.filterOptions?.teacherCodesList || []),
+    ]);
     classes.forEach((c) => {
-      if (c.level && c.level.trim() && c.level.trim() !== '—') {
-        values.add(c.level.trim());
+      const mainTeacher =
+        c.class_teachers?.find((t) => t.role === 'MAIN' && t.active !== false)?.teacher ||
+        c.class_teachers?.find((t) => t.active !== false)?.teacher ||
+        c.class_teachers?.[0]?.teacher;
+      const code =
+        (mainTeacher as any)?.code ||
+        (mainTeacher as any)?.teacher_profile?.teacher_code ||
+        (mainTeacher as any)?.teacher_code;
+      if (code && code !== '—' && code !== 'GV_--') set.add(String(code).trim());
+    });
+    allStudentRows.forEach((s) => {
+      if (s.teacher_code && s.teacher_code !== '—' && s.teacher_code !== 'GV_--') {
+        set.add(s.teacher_code.trim());
       }
     });
-    allStudentRows.forEach((st) => {
-      if (st.level && st.level.trim() && st.level.trim() !== '—') {
-        values.add(st.level.trim());
-      }
-      if (st.package_name && st.package_name.trim() && st.package_name.trim() !== '—') {
-        values.add(st.package_name.trim());
-      }
-    });
-    return Array.from(values).sort((a, b) => a.localeCompare(b, 'vi-VN'));
-  }, [classes, allStudentRows]);
+    if (filters.teacherCode) set.add(filters.teacherCode);
+    return Array.from(set).filter(Boolean).sort();
+  }, [classes, allStudentRows, enrollmentsMeta, classesMeta, filters.teacherCode]);
 
+  const classesList = useMemo(() => {
+    const set = new Set<string>([
+      ...(enrollmentsMeta?.filterOptions?.classesList || []),
+      ...(classesMeta?.filterOptions?.classesList || []),
+    ]);
+    classes.forEach((c) => {
+      const cleaned = cleanClassIdentifier(c.class_name) || c.class_name;
+      if (cleaned && cleaned !== '—') set.add(cleaned.trim());
+    });
+    allStudentRows.forEach((s) => {
+      if (s.class_name && s.class_name !== 'Chưa xếp lớp' && s.class_name !== '—' && s.class_name !== 'Lớp học') {
+        set.add(s.class_name.trim());
+      }
+    });
+    if (filters.className) set.add(filters.className);
+    return Array.from(set).filter(Boolean).sort((a, b) => a.localeCompare(b, 'vi-VN'));
+  }, [classes, allStudentRows, enrollmentsMeta, classesMeta, filters.className]);
+
+  const handleResetFilters = () => {
+    setFilters(INITIAL_ENROLLMENT_FILTERS);
+    setProgramFilter('ALL');
+    setOnlyScheduledOnDate(false);
+    setOnlyDaysWithSessions(false);
+    setStatsAttendanceFilter('');
+    setPage(1);
+  };
+
+  // Server already filters and paginates the current page of enrollments/classes;
+  // only apply optional client-side statsAttendanceFilter when in Tab 3 (stats).
   const matrixStudents = useMemo(() => {
-    const q = debouncedSearch.trim().toLocaleLowerCase('vi-VN');
-    return allStudentRows.filter((st) => {
-      if (programFilter !== 'ALL') {
-        const pType = (st.program_type || 'KAIWA').toUpperCase();
-        if (pType !== programFilter) return false;
-      }
-      if (q) {
-        const matched = [
-          st.external_id,
-          st.full_name,
-          st.phone,
-          st.email,
-          st.class_name,
-          st.class_code,
-          st.teacher_name,
-          st.package_name,
-        ].some((val) => val?.toLocaleLowerCase('vi-VN').includes(q));
-        if (!matched) return false;
-      }
-      if (modelFilter && normalizeModel(st.model_type) !== modelFilter) {
-        return false;
-      }
-      if (!isTeacher && teacherFilter) {
-        if ((st.teacher_name || '').trim() !== teacherFilter) return false;
-      }
-      if (levelPackageFilter) {
-        const matchLv = (st.level || '').trim() === levelPackageFilter;
-        const matchPkg = (st.package_name || '').trim() === levelPackageFilter;
-        if (!matchLv && !matchPkg) return false;
-      }
-      if (statusFilter) {
-        if (statusFilter === 'WAITING_CLASS') {
-          if (st.enrollment_class_id > 0 && st.status !== 'WAITING_CLASS') return false;
-        } else if (st.status !== statusFilter) {
-          return false;
-        }
-      }
-      if (activeTab === 'stats' && statsAttendanceFilter) {
+    if (activeTab === 'stats' && statsAttendanceFilter) {
+      return allStudentRows.filter((st) => {
         const stStat = studentAttendanceStats.get(st.enrollment_class_id);
         const absentOrLeave = stStat?.monthAbsentOrLeave || 0;
         if (statsAttendanceFilter === 'ATTENTION' && absentOrLeave < 2) return false;
         if (statsAttendanceFilter === 'GOOD' && absentOrLeave >= 2) return false;
-      }
-      return true;
-    });
-  }, [
-    allStudentRows,
-    programFilter,
-    debouncedSearch,
-    modelFilter,
-    isTeacher,
-    teacherFilter,
-    levelPackageFilter,
-    statusFilter,
-    activeTab,
-    statsAttendanceFilter,
-    studentAttendanceStats,
-  ]);
+        return true;
+      });
+    }
+    return allStudentRows;
+  }, [allStudentRows, activeTab, statsAttendanceFilter, studentAttendanceStats]);
 
   const allSessions = useMemo(() => Array.from(sessionsById.values()), [sessionsById]);
   const allAttendances = useMemo(
@@ -959,16 +1298,15 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
     [attendanceByEcAndSession]
   );
 
-  // Filtered classes
+  // Filtered classes: server already paginates & filters; apply client-side fallback for any additional EnrollmentFilterBar fields
   const filteredClasses = useMemo(() => {
-    const q = debouncedSearch.trim().toLowerCase();
     return classes.filter((c) => {
-      const formattedCode = formatClassCode(c.class_code, c.id).toLowerCase();
       const students = getStudentsOfClass(c);
       const mainTeacher =
         c.class_teachers?.find((t) => t.role === 'MAIN' && t.active !== false)?.teacher ||
         c.class_teachers?.find((t) => t.active !== false)?.teacher ||
         c.class_teachers?.[0]?.teacher;
+      const schedule = c.class_schedules?.[0];
 
       if (programFilter !== 'ALL') {
         const isJlptClass =
@@ -978,43 +1316,76 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
         if (classProg !== programFilter) return false;
       }
 
-      const matchSearch =
-        !q ||
-        c.class_name.toLowerCase().includes(q) ||
-        formattedCode.includes(q) ||
-        (c.class_code && c.class_code.toLowerCase().includes(q)) ||
-        (mainTeacher?.name && mainTeacher.name.toLowerCase().includes(q)) ||
-        students.some(
-          (st) =>
-            st.full_name.toLowerCase().includes(q) ||
-            st.external_id.toLowerCase().includes(q) ||
-            (st.phone && st.phone.toLowerCase().includes(q)) ||
-            (st.email && st.email.toLowerCase().includes(q))
-        );
-
-      const modelNormalized = normalizeModel(c.model_type, students.length);
-      const matchModel = !modelFilter || modelNormalized === modelFilter || c.model_type === modelFilter;
-
-      if (!matchSearch || !matchModel) return false;
-
-      if (!isTeacher && teacherFilter) {
-        if ((mainTeacher?.name || '').trim() !== teacherFilter) return false;
+      if (!isTeacher && filters.teacherName) {
+        if ((mainTeacher?.name || '').trim() !== filters.teacherName) return false;
       }
 
-      if (levelPackageFilter) {
-        const matchClassLv = (c.level || '').trim() === levelPackageFilter;
-        const matchStLvOrPkg = students.some(
-          (st) =>
-            (st.level || '').trim() === levelPackageFilter ||
-            (st.package_name || '').trim() === levelPackageFilter
-        );
-        if (!matchClassLv && !matchStLvOrPkg) return false;
+      if (!isTeacher && filters.teacherCode) {
+        const tCode =
+          (mainTeacher as any)?.code ||
+          (mainTeacher as any)?.teacher_profile?.teacher_code ||
+          (mainTeacher as any)?.teacher_code ||
+          '';
+        if (String(tCode).trim() !== filters.teacherCode) return false;
       }
 
-      if (statusFilter) {
+      if (debouncedClassName) {
+        const targetCls = debouncedClassName.toLowerCase();
+        const cleaned = (cleanClassIdentifier(c.class_name) || c.class_name || '').toLowerCase();
+        const code = formatClassCode(c.class_code, c.id).toLowerCase();
+        if (!cleaned.includes(targetCls) && !c.class_name.toLowerCase().includes(targetCls) && !code.includes(targetCls)) {
+          return false;
+        }
+      }
+
+      if (debouncedPackageName) {
+        const pkgQuery = debouncedPackageName.toLowerCase();
+        const matchClassLv = (c.level || '').toLowerCase().includes(pkgQuery);
+        const matchStPkg = students.some(
+          (st) =>
+            (st.package_name || '').toLowerCase().includes(pkgQuery) ||
+            (st.level || '').toLowerCase().includes(pkgQuery)
+        );
+        if (!matchClassLv && !matchStPkg) return false;
+      }
+
+      if (filters.courseCategory !== 'ALL') {
+        const isJlpt =
+          students.some((s) => (s.program_type || '').toUpperCase() === 'JLPT') ||
+          /\b(jlpt|jnpt|n[1-5])\b/i.test(`${c.class_name} ${c.level || ''}`);
+        if (filters.courseCategory === 'JNPT' && !isJlpt) return false;
+        if (filters.courseCategory === 'KAIWA' && isJlpt) return false;
+      }
+
+      if (filters.courseLevel) {
+        const lvQuery = filters.courseLevel.toLowerCase();
+        const matchClassLv = (c.level || '').toLowerCase().includes(lvQuery) || c.class_name.toLowerCase().includes(lvQuery);
+        const matchStLv = students.some(
+          (st) =>
+            (st.level || '').toLowerCase().includes(lvQuery) ||
+            (st.course_content || '').toLowerCase().includes(lvQuery)
+        );
+        if (!matchClassLv && !matchStLv) return false;
+      }
+
+      if (debouncedSchedulePattern) {
+        const patQuery = debouncedSchedulePattern.toLowerCase();
+        const schedStr = (schedule?.schedule_pattern || '').toLowerCase();
+        if (!schedStr.includes(patQuery)) return false;
+      }
+
+      if (debouncedStartTime) {
+        const timeQuery = debouncedStartTime.toLowerCase();
+        const timeStr = formatScheduleTimeDisplay(schedule?.start_time).toLowerCase();
+        if (!timeStr.includes(timeQuery) && !(schedule?.start_time || '').toLowerCase().includes(timeQuery)) {
+          return false;
+        }
+      }
+
+      if (filters.statusFilter) {
         const classDisplayStatus = resolveClassDisplayStatus(c, students).statusKey;
-        if (classDisplayStatus === statusFilter) return true;
-        if (students.length > 0 && students.some((st) => st.status === statusFilter)) {
+        if (classDisplayStatus === filters.statusFilter) return true;
+        if (students.length > 0 && students.some((st) => st.status === filters.statusFilter)) {
           return true;
         }
         return false;
@@ -1024,25 +1395,18 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
     });
   }, [
     classes,
-    debouncedSearch,
-    modelFilter,
     programFilter,
     isTeacher,
-    teacherFilter,
-    levelPackageFilter,
-    statusFilter,
+    filters.teacherName,
+    filters.teacherCode,
+    filters.courseCategory,
+    filters.courseLevel,
+    filters.statusFilter,
+    debouncedClassName,
+    debouncedPackageName,
+    debouncedSchedulePattern,
+    debouncedStartTime,
   ]);
-
-  const activeFiltersCount =
-    (programFilter !== 'ALL' ? 1 : 0) +
-    (searchTerm ? 1 : 0) +
-    (modelFilter ? 1 : 0) +
-    (!isTeacher && teacherFilter ? 1 : 0) +
-    (levelPackageFilter ? 1 : 0) +
-    (statusFilter ? 1 : 0) +
-    (activeTab === 'quick' && onlyScheduledOnDate ? 1 : 0) +
-    (activeTab === 'detailed' && onlyDaysWithSessions ? 1 : 0) +
-    (activeTab === 'stats' && statsAttendanceFilter ? 1 : 0);
 
   // Dates list for Tab 2 (Điểm danh chi tiết: Theo tuần | Theo tháng)
   const periodDates = useMemo(() => {
@@ -1195,13 +1559,6 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
     setActiveQuickPickerKey(null);
   }, [selectedDate, activeTab]);
 
-  // Phân trang mặc định 25 dòng/trang (tùy chọn 25, 50, 100, 200) — đồng bộ với URL
-  const [page, setPage] = useState<number>(() => Math.max(1, Number(searchParams.get('page')) || 1));
-  const [pageSize, setPageSize] = useState<number>(() => {
-    const ps = Number(searchParams.get('pageSize'));
-    return [25, 50, 100, 200].includes(ps) ? ps : 25;
-  });
-
   const isFirstFilterRenderRef = useRef(true);
   useEffect(() => {
     if (isFirstFilterRenderRef.current) {
@@ -1210,6 +1567,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
     }
     setPage(1);
   }, [
+    displayMode,
     activeTab,
     detailedViewMode,
     onlyScheduledOnDate,
@@ -1217,10 +1575,37 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
     selectedDate,
     programFilter,
     debouncedSearch,
-    modelFilter,
-    teacherFilter,
-    levelPackageFilter,
-    statusFilter,
+    debouncedPackageName,
+    debouncedClassName,
+    debouncedSchedulePattern,
+    debouncedStartTime,
+    filters.statusFilter,
+    filters.modelFilter,
+    filters.courseCategory,
+    filters.courseLevel,
+    filters.teacherName,
+    filters.teacherCode,
+    filters.selectedSale,
+    filters.totalSessionsOp,
+    filters.totalSessionsExact,
+    filters.totalSessionsMin,
+    filters.totalSessionsMax,
+    filters.attendedSessionsOp,
+    filters.attendedSessionsExact,
+    filters.attendedSessionsMin,
+    filters.attendedSessionsMax,
+    filters.remainingSessionsOp,
+    filters.remainingSessionsExact,
+    filters.remainingSessionsMin,
+    filters.remainingSessionsMax,
+    filters.startDateOp,
+    filters.startDateExact,
+    filters.startDateFrom,
+    filters.startDateTo,
+    filters.endDateOp,
+    filters.endDateExact,
+    filters.endDateFrom,
+    filters.endDateTo,
     statsAttendanceFilter,
   ]);
 
@@ -1237,19 +1622,22 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
     if (programFilter !== 'ALL') next.set('program', programFilter);
     else next.delete('program');
 
-    if (searchTerm.trim()) next.set('search', searchTerm.trim());
+    if (filters.searchQuery.trim()) next.set('search', filters.searchQuery.trim());
     else next.delete('search');
 
-    if (modelFilter) next.set('model', modelFilter);
+    if (filters.modelFilter) next.set('model', filters.modelFilter);
     else next.delete('model');
 
-    if (!isTeacher && teacherFilter) next.set('teacher', teacherFilter);
+    if (!isTeacher && filters.teacherName) next.set('teacher', filters.teacherName);
     else next.delete('teacher');
 
-    if (levelPackageFilter) next.set('level', levelPackageFilter);
+    if (filters.courseLevel) next.set('level', filters.courseLevel);
     else next.delete('level');
 
-    if (statusFilter) next.set('status', statusFilter);
+    if (filters.packageName) next.set('package', filters.packageName);
+    else next.delete('package');
+
+    if (filters.statusFilter) next.set('status', filters.statusFilter);
     else next.delete('status');
 
     const todayStr = toLocalDateString(new Date());
@@ -1281,11 +1669,12 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
     isTeacher,
     activeTab,
     programFilter,
-    searchTerm,
-    modelFilter,
-    teacherFilter,
-    levelPackageFilter,
-    statusFilter,
+    filters.searchQuery,
+    filters.modelFilter,
+    filters.teacherName,
+    filters.courseLevel,
+    filters.packageName,
+    filters.statusFilter,
     selectedDate,
     onlyScheduledOnDate,
     currentPeriodDate,
@@ -3471,21 +3860,84 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
     }
   };
 
+  const totalStudentsCount = enrollmentsMeta?.total ?? classesMeta?.total ?? matrixStudents.length;
+  const totalClassesCount = classesMeta?.total ?? tableClasses.length;
+
   return (
     <PageContainer>
       <PageHeader
         title="Lớp học & Điểm danh"
         actions={
-          canManageClasses ? (
-            <Button
-              onClick={() => openModal()}
-              variant="primary"
-              size="sm"
-              leftIcon={<Plus className="w-4 h-4" />}
-            >
-              Thêm lớp học mới
-            </Button>
-          ) : undefined
+          <div className="flex flex-wrap items-center gap-2.5">
+            {/* Bộ chọn Chương trình (Tất cả | Giao tiếp Kaiwa | Luyện thi JLPT) kèm số đếm giống test_diem_danh */}
+            <div className="inline-flex items-center p-1 bg-slate-100 rounded-xl border border-slate-200/80 gap-1">
+              <button
+                type="button"
+                onClick={() => setProgramFilter('ALL')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  programFilter === 'ALL'
+                    ? 'bg-white text-slate-900 shadow-xs border border-slate-200/80'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <span>Tất cả</span>
+                <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-slate-200/80 text-slate-700 font-extrabold">
+                  {programCounts.all}
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setProgramFilter('KAIWA')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  programFilter === 'KAIWA'
+                    ? 'bg-teal-600 text-white shadow-xs'
+                    : 'text-slate-600 hover:text-teal-700'
+                }`}
+              >
+                <span>Giao tiếp (Kaiwa)</span>
+                <span
+                  className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${
+                    programFilter === 'KAIWA'
+                      ? 'bg-teal-700 text-white'
+                      : 'bg-teal-100 text-teal-800'
+                  }`}
+                >
+                  {programCounts.kaiwa}
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setProgramFilter('JLPT')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  programFilter === 'JLPT'
+                    ? 'bg-indigo-600 text-white shadow-xs'
+                    : 'text-slate-600 hover:text-indigo-700'
+                }`}
+              >
+                <span>Luyện thi (JLPT)</span>
+                <span
+                  className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${
+                    programFilter === 'JLPT'
+                      ? 'bg-indigo-700 text-white'
+                      : 'bg-indigo-100 text-indigo-800'
+                  }`}
+                >
+                  {programCounts.jlpt}
+                </span>
+              </button>
+            </div>
+
+            {canManageClasses && (
+              <Button
+                onClick={() => openModal()}
+                variant="primary"
+                size="sm"
+                leftIcon={<Plus className="w-4 h-4" />}
+              >
+                Thêm lớp học mới
+              </Button>
+            )}
+          </div>
         }
       />
 
@@ -3494,7 +3946,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
         ariaLabel="Chế độ điểm danh & chuyên cần"
         value={activeTab}
         onChange={setActiveTab}
-        className="mb-4"
+        className="mb-3"
         items={[
           { value: 'quick', label: 'Nhập điểm danh', icon: <Zap /> },
           { value: 'detailed', label: 'Lịch sử & Bảng tháng', icon: <ListChecks /> },
@@ -3502,35 +3954,18 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
         ]}
       />
 
-      <FilterBar
-        title="Bộ lọc & Chế độ hiển thị"
-        activeCount={activeFiltersCount}
-        onClear={() => {
-          setProgramFilter('ALL');
-          setSearchTerm('');
-          setModelFilter('');
-          setTeacherFilter('');
-          setLevelPackageFilter('');
-          setStatusFilter('');
-          setOnlyScheduledOnDate(false);
-          setOnlyDaysWithSessions(false);
-          setStatsAttendanceFilter('');
-        }}
-        gridClassName="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 items-end"
-      >
-        <div>
-          <label className="block text-[11px] font-semibold text-text-secondary uppercase tracking-wider mb-1.5">
-            Chế độ hiển thị
-          </label>
+      {/* Thanh điều khiển Chế độ hiển thị (Theo Học viên | Theo Lớp học) & tùy chọn nhanh theo Tab */}
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2.5">
+        <div className="flex flex-wrap items-center gap-2.5">
           <div
-            className="grid grid-cols-2 h-9 p-1 bg-slate-100 rounded-xl border border-border gap-1"
+            className="inline-flex h-9 p-1 bg-slate-100 rounded-xl border border-border gap-1"
             role="tablist"
             aria-label="Chế độ hiển thị Theo Học viên hoặc Theo Lớp học"
           >
             <button
               type="button"
               onClick={() => setDisplayMode('students')}
-              className={`h-full rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 whitespace-nowrap ${
+              className={`px-3 h-full rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 whitespace-nowrap ${
                 displayMode === 'students'
                   ? 'bg-primary text-white shadow-xs'
                   : 'text-slate-600 hover:text-slate-900 hover:bg-white/70'
@@ -3542,7 +3977,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
             <button
               type="button"
               onClick={() => setDisplayMode('classes')}
-              className={`h-full rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 whitespace-nowrap ${
+              className={`px-3 h-full rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 whitespace-nowrap ${
                 displayMode === 'classes'
                   ? 'bg-primary text-white shadow-xs'
                   : 'text-slate-600 hover:text-slate-900 hover:bg-white/70'
@@ -3552,159 +3987,65 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
               <span>Theo Lớp học</span>
             </button>
           </div>
-        </div>
 
-        <div>
-          <label className="block text-[11px] font-semibold text-text-secondary uppercase tracking-wider mb-1.5">
-            Tìm kiếm
-          </label>
-          <div className="relative">
-            <input
-              type="text"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Tên/Mã HV, Mã/Tên lớp, Giáo viên, SĐT, Email..."
-              className="w-full h-9 pl-9 pr-3 border border-border rounded-xl text-sm bg-white text-text-primary focus:outline-none focus:ring-2 focus:ring-primary shadow-xs transition"
-            />
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
-          </div>
-        </div>
-
-        <div>
-          <label className="block text-[11px] font-semibold text-text-secondary uppercase tracking-wider mb-1.5">
-            Chương trình
-          </label>
-          <select
-            value={programFilter}
-            onChange={(e) => setProgramFilter(e.target.value as 'ALL' | 'KAIWA' | 'JLPT')}
-            className="w-full h-9 px-3 border border-border rounded-xl text-sm bg-white text-text-primary focus:outline-none focus:ring-2 focus:ring-primary shadow-xs transition cursor-pointer"
-          >
-            <option value="ALL">Tất cả chương trình ({programCounts.all})</option>
-            <option value="KAIWA">Giao tiếp - Kaiwa ({programCounts.kaiwa})</option>
-            <option value="JLPT">Luyện thi - JLPT ({programCounts.jlpt})</option>
-          </select>
-        </div>
-
-        <div>
-          <label className="block text-[11px] font-semibold text-text-secondary uppercase tracking-wider mb-1.5">
-            Mô hình lớp
-          </label>
-          <select
-            value={modelFilter}
-            onChange={(e) => setModelFilter(e.target.value)}
-            className="w-full h-9 px-3 border border-border rounded-xl text-sm bg-white text-text-primary focus:outline-none focus:ring-2 focus:ring-primary shadow-xs transition cursor-pointer"
-          >
-            <option value="">Tất cả mô hình</option>
-            <option value="1:1">1:1</option>
-            <option value="1:2">1:2</option>
-            <option value="1:n">1:n</option>
-          </select>
-        </div>
-
-        {!isTeacher && (
-          <div>
-            <label className="block text-[11px] font-semibold text-text-secondary uppercase tracking-wider mb-1.5">
-              Giáo viên phụ trách
+          {activeTab === 'quick' && (
+            <label className="inline-flex h-9 items-center gap-2 rounded-xl border border-border/80 bg-surface px-3 text-xs font-semibold text-text-secondary cursor-pointer hover:bg-slate-50 transition">
+              <input
+                type="checkbox"
+                checked={onlyScheduledOnDate}
+                onChange={(e) => setOnlyScheduledOnDate(e.target.checked)}
+                className="h-3.5 w-3.5 rounded border-slate-300 text-primary accent-primary focus:ring-primary"
+              />
+              <span>Chỉ có lịch / ca ngày đang chọn</span>
             </label>
-            <select
-              value={teacherFilter}
-              onChange={(e) => setTeacherFilter(e.target.value)}
-              className="w-full h-9 px-3 border border-border rounded-xl text-sm bg-white text-text-primary focus:outline-none focus:ring-2 focus:ring-primary shadow-xs transition cursor-pointer"
-            >
-              <option value="">Tất cả giáo viên</option>
-              {teacherOptions.map((name) => (
-                <option key={name} value={name}>
-                  {name}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
+          )}
 
-        <div>
-          <label className="block text-[11px] font-semibold text-text-secondary uppercase tracking-wider mb-1.5">
-            Gói học / Trình độ
-          </label>
-          <select
-            value={levelPackageFilter}
-            onChange={(e) => setLevelPackageFilter(e.target.value)}
-            className="w-full h-9 px-3 border border-border rounded-xl text-sm bg-white text-text-primary focus:outline-none focus:ring-2 focus:ring-primary shadow-xs transition cursor-pointer"
-          >
-            <option value="">Tất cả trình độ / gói</option>
-            {levelPackageOptions.map((val) => (
-              <option key={val} value={val}>
-                {val}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div>
-          <label className="block text-[11px] font-semibold text-text-secondary uppercase tracking-wider mb-1.5">
-            Trạng thái
-          </label>
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="w-full h-9 px-3 border border-border rounded-xl text-sm bg-white text-text-primary focus:outline-none focus:ring-2 focus:ring-primary shadow-xs transition cursor-pointer"
-          >
-            <option value="">Tất cả trạng thái</option>
-            <option value="STUDYING">Đang học</option>
-            <option value="PAUSED">Bảo lưu</option>
-            <option value="WAITING_CLASS">Chờ lớp</option>
-            <option value="FINISHED">Kết thúc</option>
-          </select>
-        </div>
-
-        {activeTab === 'quick' && (
-          <div>
-            <label className="block text-[11px] font-semibold text-text-secondary uppercase tracking-wider mb-1.5">
-              Lịch học trong ngày
+          {activeTab === 'detailed' && (
+            <label className="inline-flex h-9 items-center gap-2 rounded-xl border border-border/80 bg-surface px-3 text-xs font-semibold text-text-secondary cursor-pointer hover:bg-slate-50 transition">
+              <input
+                type="checkbox"
+                checked={onlyDaysWithSessions}
+                onChange={(e) => setOnlyDaysWithSessions(e.target.checked)}
+                className="h-3.5 w-3.5 rounded border-slate-300 text-primary accent-primary focus:ring-primary"
+              />
+              <span>Chỉ ngày có buổi học</span>
             </label>
-            <select
-              value={onlyScheduledOnDate ? 'SCHEDULED' : 'ALL'}
-              onChange={(e) => setOnlyScheduledOnDate(e.target.value === 'SCHEDULED')}
-              className="w-full h-9 px-3 border border-border rounded-xl text-sm bg-white text-text-primary focus:outline-none focus:ring-2 focus:ring-primary shadow-xs transition cursor-pointer"
-            >
-              <option value="ALL">Tất cả lịch học</option>
-              <option value="SCHEDULED">Chỉ có lịch / ca ngày đang chọn</option>
-            </select>
-          </div>
-        )}
+          )}
 
-        {activeTab === 'detailed' && (
-          <div>
-            <label className="block text-[11px] font-semibold text-text-secondary uppercase tracking-wider mb-1.5">
-              Phạm vi ngày trong kỳ
-            </label>
-            <select
-              value={onlyDaysWithSessions ? 'WITH_SESSIONS' : 'ALL'}
-              onChange={(e) => setOnlyDaysWithSessions(e.target.value === 'WITH_SESSIONS')}
-              className="w-full h-9 px-3 border border-border rounded-xl text-sm bg-white text-text-primary focus:outline-none focus:ring-2 focus:ring-primary shadow-xs transition cursor-pointer"
-            >
-              <option value="ALL">Tất cả ngày trong kỳ</option>
-              <option value="WITH_SESSIONS">Chỉ ngày có buổi học</option>
-            </select>
-          </div>
-        )}
-
-        {activeTab === 'stats' && (
-          <div>
-            <label className="block text-[11px] font-semibold text-text-secondary uppercase tracking-wider mb-1.5">
-              Mức chuyên cần
-            </label>
+          {activeTab === 'stats' && (
             <select
               value={statsAttendanceFilter}
               onChange={(e) => setStatsAttendanceFilter(e.target.value as '' | 'ATTENTION' | 'GOOD')}
-              className="w-full h-9 px-3 border border-border rounded-xl text-sm bg-white text-text-primary focus:outline-none focus:ring-2 focus:ring-primary shadow-xs transition cursor-pointer"
+              aria-label="Lọc mức chuyên cần"
+              className="h-9 px-3 border border-border/80 rounded-xl text-xs font-semibold bg-surface text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/20 cursor-pointer"
             >
               <option value="">Tất cả mức chuyên cần</option>
               <option value="ATTENTION">Cần chú ý (Vắng/Bảo lưu ≥ 2 buổi)</option>
               <option value="GOOD">Đạt yêu cầu</option>
             </select>
-          </div>
+          )}
+        </div>
+
+        {isFetching && !loading && (
+          <span className="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50/80 px-2.5 py-1 text-[11px] font-bold text-primary">
+            <span className="h-2 w-2 rounded-full bg-primary animate-ping" />
+            <span>Đang đồng bộ...</span>
+          </span>
         )}
-      </FilterBar>
+      </div>
+
+      {/* Bộ lọc Quản lý Điểm danh & Lớp học chuyên nghiệp 2 tầng (giống test_diem_danh) */}
+      <EnrollmentFilterBar
+        filters={filters}
+        onChange={setFilters}
+        onReset={handleResetFilters}
+        salesList={salesList}
+        packagesList={packagesList}
+        teachersList={teachersList}
+        teacherCodesList={teacherCodesList}
+        classesList={classesList}
+        isCS={isCSOnly || isTeacher}
+      />
 
       {/* NỘI DUNG CHÍNH: THEO HỌC VIÊN (hoặc Tab 3 Thống kê) ⇄ THEO LỚP HỌC */}
       {displayMode === 'students' || activeTab === 'stats' ? (
@@ -3721,7 +4062,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                 <span className="inline-flex items-center gap-1.5 rounded-lg border border-border/80 bg-surface px-2.5 py-1.5 shadow-2xs">
                   <span>Hiển thị:</span>
                   <span className="font-extrabold text-primary">{matrixStudents.length}</span>
-                  <span className="text-text-muted">/ {allStudentRows.length} học viên</span>
+                  <span className="text-text-muted">/ {totalStudentsCount} học viên</span>
                 </span>
                 <ColumnVisibilityDropdown scope={prefScope} />
               </div>
@@ -3746,19 +4087,37 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
             onOnlyDaysWithSessionsChange={setOnlyDaysWithSessions}
             selectedEnrollmentIds={selectedEnrollmentIds}
             onSelectedEnrollmentIdsChange={setSelectedEnrollmentIds}
+            serverPagination={true}
+            page={page}
+            pageSize={pageSize}
+            totalCount={totalStudentsCount}
+            onPageChange={setPage}
+            onPageSizeChange={(newSize) => {
+              setPageSize(newSize);
+              setPage(1);
+            }}
+            isFetchingData={isFetching}
             onAssignTeacherForClass={
               canManageClasses
                 ? (classId) => {
-                    const target = classes.find((c) => c.id === classId);
-                    if (target) openAssignmentModal(target);
+                    const target =
+                      classes.find((c) => c.id === classId) ||
+                      enrollments
+                        .flatMap((e) => e.enrollment_classes || [])
+                        .find((ec) => ec.class?.id === classId)?.class;
+                    if (target) openAssignmentModal(target as Class);
                   }
                 : undefined
             }
             onEditClassById={
               canManageClasses
                 ? (classId) => {
-                    const target = classes.find((c) => c.id === classId);
-                    if (target) openModal(target);
+                    const target =
+                      classes.find((c) => c.id === classId) ||
+                      enrollments
+                        .flatMap((e) => e.enrollment_classes || [])
+                        .find((ec) => ec.class?.id === classId)?.class;
+                    if (target) openModal(target as Class);
                   }
                 : undefined
             }
@@ -3772,7 +4131,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
             <span className="inline-flex items-center gap-1.5 rounded-lg border border-border/80 bg-surface px-2.5 py-1.5 shadow-2xs">
               <span>Hiển thị:</span>
               <span className="font-extrabold text-primary">{tableClasses.length}</span>
-              <span className="text-text-muted">/ {classes.length} lớp học</span>
+              <span className="text-text-muted">/ {totalClassesCount} lớp học</span>
               <span className="text-border">•</span>
               <span className="font-bold text-text-primary">{tableStudentsCount}</span>
               <span className="text-text-muted">học viên</span>
@@ -4606,9 +4965,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                   </td>
                 </tr>
               ) : (
-                tableClasses
-                  .slice((page - 1) * pageSize, page * pageSize)
-                  .map((cls) => {
+                tableClasses.map((cls) => {
                   const formattedCode = formatClassCode(cls.class_code, cls.id);
                   const students = getStudentsOfClass(cls);
                   const modelNorm = normalizeModel(cls.model_type, students.length);
@@ -5410,7 +5767,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
         {/* Chú thích mã & Phân trang ở chân bảng */}
         {(() => {
           const isLogMode = activeTab === 'detailed' && detailedViewMode === 'log';
-          const totalRows = isLogMode ? periodSessionLogs.length : tableClasses.length;
+          const totalRows = isLogMode ? periodSessionLogs.length : totalClassesCount;
           const totalPages = Math.max(1, Math.ceil(totalRows / pageSize));
           const safePage = Math.min(page, totalPages);
           const startIdx = totalRows === 0 ? 0 : (safePage - 1) * pageSize + 1;

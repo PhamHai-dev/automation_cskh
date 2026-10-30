@@ -41,6 +41,7 @@ export interface EnrollmentsListParams {
   end_date_exact?: string;
   end_date_from?: string;
   end_date_to?: string;
+  relevant_date?: string;
   session_from?: string;
   session_to?: string;
   summary_month?: string;

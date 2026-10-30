@@ -30,6 +30,7 @@ import { useAuth } from '../../../contexts/AuthContext';
 import { useColumnVisibility } from '../../preferences/hooks/useColumnVisibility';
 import { ColumnVisibilityDropdown } from '../../preferences/components/ColumnVisibilityDropdown';
 import { useDebouncedValue } from '../../../hooks/useDebouncedValue';
+import { useQuery, invalidateQueries } from '../../../hooks/useQuery';
 import {
   Edit,
   Plus,
@@ -227,10 +228,6 @@ export const StudentsPage: React.FC = () => {
   const keepColumn = (col: Column<Student>): boolean =>
     !col.key || visibleColumns[col.key] !== false;
 
-  const [students, setStudents] = useState<Student[]>([]);
-  const [studentsMeta, setStudentsMeta] = useState<StudentsListMeta | null>(null);
-  const [loading, setLoading] = useState(true);
-
   // Care milestones state (mặc định các mốc chuẩn: 1, 3, 10, 15)
   const [configuredMilestones, setConfiguredMilestones] = useState<number[]>([1, 3, 10, 15]);
   const [isAddMilestoneModalOpen, setIsAddMilestoneModalOpen] = useState(false);
@@ -394,21 +391,88 @@ export const StudentsPage: React.FC = () => {
     program_metadata: {},
   };
 
-  const [teachersList, setTeachersList] = useState<Teacher[]>([]);
   const [formData, setFormData] = useState<CreateStudentDTO>(initialFormData);
   const [formModalTab, setFormModalTab] = useState<'profile' | 'course' | 'class' | 'care'>('profile');
 
-  const fetchStudents = async () => {
-    try {
-      setLoading(true);
-      const res = await studentsApi.listPaginated();
-      setStudents(res.data);
-      setStudentsMeta(res.meta);
-    } catch (err: any) {
-      toast.error(err.response?.data?.error?.message || 'Không thể tải danh sách học viên');
-    } finally {
-      setLoading(false);
+  const queryParams = useMemo(() => {
+    let parsedCsId: number | undefined;
+    let parsedCvht: string | undefined;
+    if (isAdminOrManage) {
+      if (cvhtFilter) {
+        parsedCvht = cvhtFilter;
+      } else if (csFilter) {
+        if (csFilter.startsWith('ID:')) {
+          parsedCsId = Number(csFilter.slice(3)) || undefined;
+        } else {
+          parsedCvht = csFilter; // 'UNASSIGNED' or 'CODE:xxx'
+        }
+      }
     }
+    return {
+      page,
+      pageSize,
+      search: debouncedSearch || undefined,
+      program_type: programFilter !== 'ALL' ? programFilter : undefined,
+      status: statusFilter || undefined,
+      model: modelFilter || undefined,
+      payment: paymentFilter || undefined,
+      cs_id: parsedCsId,
+      cvht: parsedCvht,
+      sale: saleFilter || undefined,
+      gender: genderFilter || undefined,
+    };
+  }, [
+    page,
+    pageSize,
+    debouncedSearch,
+    programFilter,
+    statusFilter,
+    modelFilter,
+    paymentFilter,
+    csFilter,
+    cvhtFilter,
+    saleFilter,
+    genderFilter,
+    isAdminOrManage,
+  ]);
+
+  const {
+    data: paginatedResult,
+    isLoading: loading,
+    isFetching,
+    mutateData: mutateStudentsData,
+  } = useQuery({
+    queryKey: ['students', 'paginated', queryParams],
+    queryFn: (signal) => studentsApi.listPaginated(queryParams, signal),
+    staleTime: 30 * 1000,
+    keepPreviousData: true,
+    onError: (err: any) => {
+      toast.error(err.response?.data?.error?.message || 'Không thể tải danh sách học viên');
+    },
+  });
+
+  const students = useMemo(() => paginatedResult?.data || [], [paginatedResult]);
+  const studentsMeta: StudentsListMeta | null = paginatedResult?.meta || null;
+
+  const setStudents = (updater: (prev: Student[]) => Student[]) => {
+    mutateStudentsData((prev) => {
+      if (!prev) return prev as any;
+      return {
+        ...prev,
+        data: updater(prev.data),
+      };
+    });
+  };
+
+  const { data: teachersList = [] } = useQuery<Teacher[]>({
+    queryKey: ['teachers', 'list'],
+    queryFn: (signal) => teachersApi.list(undefined, signal),
+    staleTime: 5 * 60 * 1000,
+    keepPreviousData: true,
+  });
+
+  const fetchStudents = async () => {
+    invalidateQueries(['students', 'enrollments', 'classes']);
   };
 
   const fetchMilestones = async () => {
@@ -422,46 +486,9 @@ export const StudentsPage: React.FC = () => {
     }
   };
 
-  const fetchTeachers = async () => {
-    try {
-      const data = await teachersApi.list();
-      setTeachersList(data);
-    } catch (err) {
-      console.error('Lỗi khi tải danh sách giáo viên:', err);
-    }
-  };
-
   useEffect(() => {
-    fetchStudents();
     fetchMilestones();
-    fetchTeachers();
   }, []);
-
-  // Chuẩn hóa mô hình lớp về 1:1 | 1:2 | 1:n
-  const normalizeModel = (model?: string | null): '1:1' | '1:2' | '1:n' =>
-    normalizeClassModel(model);
-
-  // Chuẩn hóa tình trạng học phí về PAID | DEBT | UNSET
-  const classifyPaymentStatus = (raw?: string | null): 'PAID' | 'DEBT' | 'UNSET' => {
-    const val = (raw || '').trim();
-    if (!val || val === '—') return 'UNSET';
-    const lower = val.toLowerCase();
-    if (lower.includes('đủ') || lower.includes('hoàn tất') || lower === 'paid') {
-      return 'PAID';
-    }
-    if (
-      lower.includes('nợ') ||
-      lower.includes('chưa') ||
-      lower.includes('phần') ||
-      lower.includes('thiếu') ||
-      lower === 'debt' ||
-      lower === 'partial' ||
-      lower === 'unpaid'
-    ) {
-      return 'DEBT';
-    }
-    return 'PAID';
-  };
 
   // Tập học viên thuộc phạm vi quyền của user đang đăng nhập (tầng dữ liệu cơ sở allRows)
   const allRows = useMemo(() => {
@@ -508,7 +535,7 @@ export const StudentsPage: React.FC = () => {
 
   // Counts by program_type
   const programCounts = useMemo(() => {
-    if (allRows.length === 0 && studentsMeta?.facets?.programCounts) {
+    if (studentsMeta?.facets?.programCounts) {
       return studentsMeta.facets.programCounts;
     }
     let kaiwa = 0;
@@ -522,7 +549,7 @@ export const StudentsPage: React.FC = () => {
         kaiwa++;
       }
     });
-    return { all: allRows.length, kaiwa, jlpt };
+    return { all: studentsMeta?.total ?? allRows.length, kaiwa, jlpt };
   }, [allRows, studentsMeta]);
 
   // Danh sách CSKH thực tế trích xuất từ dữ liệu thuộc phạm vi xem của ADMIN / MANAGE
@@ -598,159 +625,17 @@ export const StudentsPage: React.FC = () => {
     return Array.from(set).filter(Boolean).sort((a, b) => a.localeCompare(b, 'vi-VN'));
   }, [allRows, studentsMeta, saleFilter]);
 
-  // Filtered students list matching Sheet 1 & Sheet JLPT
-  const filteredStudents = useMemo(() => {
-    const query = debouncedSearch.toLowerCase().trim();
-
-    return allRows.filter((s) => {
-      // Primary enrollment for Sheet 1 attributes
-      const enr = s.enrollments?.[0];
-      const ec = enr?.enrollment_classes?.[0];
-
-      // 1. Search term: Mã HV, Họ tên, SĐT, Email, Lớp học, Giáo viên
-      if (query) {
-        const classCode =
-          ec?.class?.class_code ||
-          enr?.program_metadata?.latest_class_code ||
-          '';
-        const className = ec?.class?.class_name || '';
-        const teacherName = ec?.class?.class_teachers?.[0]?.teacher?.name || '';
-        const matchSearch =
-          s.full_name.toLowerCase().includes(query) ||
-          (s.phone && s.phone.toLowerCase().includes(query)) ||
-          (s.external_id && s.external_id.toLowerCase().includes(query)) ||
-          `hv_${s.id}`.includes(query) ||
-          (s.email && s.email.toLowerCase().includes(query)) ||
-          classCode.toLowerCase().includes(query) ||
-          className.toLowerCase().includes(query) ||
-          teacherName.toLowerCase().includes(query);
-        if (!matchSearch) return false;
-      }
-
-      // 2. Chương trình (ALL | KAIWA | JLPT)
-      if (programFilter !== 'ALL') {
-        const pType = (enr?.program_type || 'KAIWA').toUpperCase();
-        if (pType !== programFilter) return false;
-      }
-
-      // 3. Trạng thái học (chuẩn hóa theo việc đã được xếp lớp hay chưa)
-      if (statusFilter) {
-        const hasAssignedClass = Boolean(
-          ec?.class?.id ||
-            ec?.class?.class_code ||
-            ec?.class?.class_name ||
-            enr?.program_metadata?.latest_class_code
-        );
-        const stStatus = resolveEffectiveEnrollmentStatus(
-          enr?.status,
-          hasAssignedClass,
-          `${enr?.class_model || ''} ${enr?.level || ''}`
-        );
-        if (stStatus !== statusFilter && enr?.status !== statusFilter) return false;
-      }
-
-      // 4. Mô hình lớp (1:1 | 1:2 | 1:n)
-      if (modelFilter) {
-        const rawModel = enr?.class_model || ec?.class?.model_type || '';
-        if (normalizeModel(rawModel) !== modelFilter) return false;
-      }
-
-      // 5. Tình trạng học phí (PAID | DEBT | UNSET)
-      if (paymentFilter) {
-        if (classifyPaymentStatus(enr?.payment_status) !== paymentFilter) return false;
-      }
-
-      // 6. CSKH phụ trách (chỉ áp dụng khi ADMIN / MANAGE chọn lọc)
-      if (isAdminOrManage && csFilter) {
-        const csId = (enr as any)?.cs_user_id ?? enr?.cs_id ?? enr?.cs?.id;
-        const code = (
-          (enr as any)?.cs_staff_code ||
-          enr?.cs?.staff_code ||
-          (enr?.cs as any)?.code ||
-          ''
-        )
-          .trim()
-          .toUpperCase();
-        const name = (enr?.cs?.name || '').trim();
-        const hasCs = Boolean(csId || code || name);
-
-        if (csFilter === 'UNASSIGNED') {
-          if (hasCs) return false;
-        } else if (csFilter.startsWith('CODE:')) {
-          const targetCode = csFilter.slice(5);
-          if (code !== targetCode) return false;
-        } else if (csFilter.startsWith('ID:')) {
-          const targetId = Number(csFilter.slice(3));
-          if (csId !== targetId) return false;
-        }
-      }
-
-      // 7. CVHT phụ trách (dải nút lọc nhanh 1-click cho ADMIN / MANAGE)
-      if (isAdminOrManage && cvhtFilter) {
-        const targetCvht = cvhtFilter.trim().toUpperCase();
-        const code = (
-          (enr as any)?.cs_staff_code ||
-          enr?.cs?.staff_code ||
-          (enr?.cs as any)?.code ||
-          ''
-        )
-          .trim()
-          .toUpperCase();
-        const name = (enr?.cs?.name || '').trim().toUpperCase();
-        if (code !== targetCvht && !code.includes(targetCvht) && !name.includes(targetCvht)) {
-          return false;
-        }
-      }
-
-      // 8. Sale phụ trách
-      if (saleFilter) {
-        const targetSale = saleFilter.trim().toLowerCase();
-        const saleCandidates = [
-          enr?.sale_name,
-          (enr as any)?.sale?.name,
-          enr?.cs?.name,
-          enr?.cs?.email,
-        ]
-          .filter(Boolean)
-          .map((v) => String(v).trim().toLowerCase());
-        if (!saleCandidates.some((v) => v === targetSale || v.includes(targetSale))) {
-          return false;
-        }
-      }
-
-      // 9. Giới tính (MALE | FEMALE | OTHER)
-      if (genderFilter) {
-        if ((s.gender || '').toUpperCase() !== genderFilter.toUpperCase()) return false;
-      }
-
-      return true;
-    });
-  }, [
-    allRows,
-    debouncedSearch,
-    programFilter,
-    statusFilter,
-    modelFilter,
-    paymentFilter,
-    csFilter,
-    cvhtFilter,
-    saleFilter,
-    genderFilter,
-    isAdminOrManage,
-  ]);
-
-  const totalStudents = filteredStudents.length;
-  const totalPages = Math.max(1, Math.ceil(totalStudents / pageSize));
+  // Server already filters and paginates the current page
+  const filteredStudents = allRows;
+  const totalStudents = studentsMeta?.total ?? filteredStudents.length;
+  const totalPages = studentsMeta?.totalPages ?? Math.max(1, Math.ceil(totalStudents / pageSize));
   useEffect(() => {
-    if (page > totalPages) {
+    if (studentsMeta && page > totalPages && totalPages >= 1) {
       setPage(1);
     }
-  }, [page, totalPages]);
+  }, [page, totalPages, studentsMeta]);
 
-  const paginatedStudents = useMemo(() => {
-    const start = (page - 1) * pageSize;
-    return filteredStudents.slice(start, start + pageSize);
-  }, [filteredStudents, page, pageSize]);
+  const paginatedStudents = filteredStudents;
 
   const activeFiltersCount =
     (searchTerm.trim() ? 1 : 0) +
@@ -2318,10 +2203,18 @@ export const StudentsPage: React.FC = () => {
 
       {/* Thanh trạng thái hiển thị & tùy chọn cột */}
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <div className="text-xs font-semibold text-text-secondary inline-flex items-center gap-1.5 rounded-lg border border-border/80 bg-surface px-2.5 py-1.5 shadow-2xs">
-          <span>Hiển thị:</span>
-          <strong className="text-primary font-extrabold">{totalStudents}</strong>
-          <span className="text-text-muted">/ {allRows.length} học viên</span>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="text-xs font-semibold text-text-secondary inline-flex items-center gap-1.5 rounded-lg border border-border/80 bg-surface px-2.5 py-1.5 shadow-2xs">
+            <span>Hiển thị:</span>
+            <strong className="text-primary font-extrabold">{paginatedStudents.length}</strong>
+            <span className="text-text-muted">/ {totalStudents} học viên</span>
+          </div>
+          {isFetching && !loading && (
+            <span className="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50/80 px-2.5 py-1 text-[11px] font-bold text-primary">
+              <span className="h-2 w-2 rounded-full bg-primary animate-ping" />
+              <span>Đang đồng bộ...</span>
+            </span>
+          )}
         </div>
         <ColumnVisibilityDropdown
           scope={activeTab === 'students' ? 'students.tab1' : 'students.tab2'}
@@ -2329,7 +2222,7 @@ export const StudentsPage: React.FC = () => {
       </div>
 
       {/* Main Table View */}
-      <div className="bg-surface rounded-2xl border border-border/80 shadow-soft overflow-hidden">
+      <div className={`bg-surface rounded-2xl border border-border/80 shadow-soft overflow-hidden transition-opacity ${isFetching && !loading ? 'opacity-90' : ''}`}>
         <DataTable
           data={paginatedStudents}
           columns={(activeTab === 'students' ? tab1Columns : tab2Columns).filter(keepColumn)}
