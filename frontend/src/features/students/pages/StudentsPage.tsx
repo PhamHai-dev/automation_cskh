@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { studentsApi } from '../api/students.api';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { studentsApi, StudentsListMeta } from '../api/students.api';
 import { careApi } from '../../care/api/care.api';
 import { Student, CreateStudentDTO } from '../types/students.types';
 import { teachersApi } from '../../teachers/api/teachers.api';
@@ -29,6 +29,7 @@ import { HorizontalTabs } from '../../../components/ui/HorizontalTabs';
 import { useAuth } from '../../../contexts/AuthContext';
 import { useColumnVisibility } from '../../preferences/hooks/useColumnVisibility';
 import { ColumnVisibilityDropdown } from '../../preferences/components/ColumnVisibilityDropdown';
+import { useDebouncedValue } from '../../../hooks/useDebouncedValue';
 import {
   Edit,
   Plus,
@@ -210,8 +211,12 @@ export const StudentsPage: React.FC = () => {
   );
   const isCSOnly = Boolean(user?.roles?.includes('CS') && !isAdminOrManage);
 
+  const [searchParams, setSearchParams] = useSearchParams();
+
   // Active tab state: 'students' (Tab 1) | 'care_reports' (Tab 2)
-  const [activeTab, setActiveTab] = useState<'students' | 'care_reports'>('students');
+  const [activeTab, setActiveTab] = useState<'students' | 'care_reports'>(() =>
+    searchParams.get('tab') === 'care_reports' ? 'care_reports' : 'students'
+  );
 
   // Column visibility preference (per user, per tab)
   const { visible: visibleColumns } = useColumnVisibility(
@@ -223,6 +228,7 @@ export const StudentsPage: React.FC = () => {
     !col.key || visibleColumns[col.key] !== false;
 
   const [students, setStudents] = useState<Student[]>([]);
+  const [studentsMeta, setStudentsMeta] = useState<StudentsListMeta | null>(null);
   const [loading, setLoading] = useState(true);
 
   // Care milestones state (mặc định các mốc chuẩn: 1, 3, 10, 15)
@@ -231,13 +237,101 @@ export const StudentsPage: React.FC = () => {
   const [newMilestoneInput, setNewMilestoneInput] = useState<number | ''>('');
   const [addingMilestone, setAddingMilestone] = useState(false);
 
-  // Filter states
-  const [searchTerm, setSearchTerm] = useState('');
-  const [programFilter, setProgramFilter] = useState<'ALL' | 'KAIWA' | 'JLPT'>('ALL');
-  const [statusFilter, setStatusFilter] = useState('');
-  const [modelFilter, setModelFilter] = useState('');
-  const [paymentFilter, setPaymentFilter] = useState('');
-  const [csFilter, setCsFilter] = useState('');
+  // Filter & Pagination states synced with URL
+  const [searchTerm, setSearchTerm] = useState(() => searchParams.get('search') || '');
+  const debouncedSearch = useDebouncedValue(searchTerm.trim(), 300);
+  const [programFilter, setProgramFilter] = useState<'ALL' | 'KAIWA' | 'JLPT'>(() => {
+    const p = (searchParams.get('program') || '').toUpperCase();
+    return p === 'KAIWA' || p === 'JLPT' ? p : 'ALL';
+  });
+  const [statusFilter, setStatusFilter] = useState(() => searchParams.get('status') || '');
+  const [modelFilter, setModelFilter] = useState(() => searchParams.get('model') || '');
+  const [paymentFilter, setPaymentFilter] = useState(() => searchParams.get('payment') || '');
+  const [csFilter, setCsFilter] = useState(() => searchParams.get('cs') || '');
+  const [cvhtFilter, setCvhtFilter] = useState(() => searchParams.get('cvht') || '');
+  const [saleFilter, setSaleFilter] = useState(() => searchParams.get('sale') || '');
+  const [genderFilter, setGenderFilter] = useState(() => searchParams.get('gender') || '');
+  const [page, setPage] = useState<number>(() => Math.max(1, Number(searchParams.get('page')) || 1));
+  const [pageSize, setPageSize] = useState<number>(() => {
+    const ps = Number(searchParams.get('pageSize'));
+    return [25, 50, 100, 200].includes(ps) ? ps : 25;
+  });
+
+  // Sync external URL changes (e.g. Back/Forward or global search link)
+  useEffect(() => {
+    const q = searchParams.get('search') || '';
+    if (q !== searchTerm) setSearchTerm(q);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
+  // Reset page to 1 when any filter or debounced search changes
+  const isFirstFilterRenderRef = React.useRef(true);
+  useEffect(() => {
+    if (isFirstFilterRenderRef.current) {
+      isFirstFilterRenderRef.current = false;
+      return;
+    }
+    setPage(1);
+  }, [
+    debouncedSearch,
+    programFilter,
+    statusFilter,
+    modelFilter,
+    paymentFilter,
+    csFilter,
+    cvhtFilter,
+    saleFilter,
+    genderFilter,
+  ]);
+
+  // Sync filters and pagination to URL
+  useEffect(() => {
+    const next = new URLSearchParams(searchParams);
+    if (activeTab !== 'students') next.set('tab', activeTab);
+    else next.delete('tab');
+    if (searchTerm.trim()) next.set('search', searchTerm.trim());
+    else next.delete('search');
+    if (programFilter !== 'ALL') next.set('program', programFilter);
+    else next.delete('program');
+    if (statusFilter) next.set('status', statusFilter);
+    else next.delete('status');
+    if (modelFilter) next.set('model', modelFilter);
+    else next.delete('model');
+    if (paymentFilter) next.set('payment', paymentFilter);
+    else next.delete('payment');
+    if (isAdminOrManage && csFilter) next.set('cs', csFilter);
+    else next.delete('cs');
+    if (isAdminOrManage && cvhtFilter) next.set('cvht', cvhtFilter);
+    else next.delete('cvht');
+    if (saleFilter) next.set('sale', saleFilter);
+    else next.delete('sale');
+    if (genderFilter) next.set('gender', genderFilter);
+    else next.delete('gender');
+    if (page > 1) next.set('page', String(page));
+    else next.delete('page');
+    if (pageSize !== 25) next.set('pageSize', String(pageSize));
+    else next.delete('pageSize');
+
+    if (next.toString() !== searchParams.toString()) {
+      setSearchParams(next, { replace: true });
+    }
+  }, [
+    activeTab,
+    searchTerm,
+    programFilter,
+    statusFilter,
+    modelFilter,
+    paymentFilter,
+    csFilter,
+    cvhtFilter,
+    saleFilter,
+    genderFilter,
+    page,
+    pageSize,
+    isAdminOrManage,
+    searchParams,
+    setSearchParams,
+  ]);
 
   // Modal states
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -307,8 +401,9 @@ export const StudentsPage: React.FC = () => {
   const fetchStudents = async () => {
     try {
       setLoading(true);
-      const data = await studentsApi.list();
-      setStudents(data);
+      const res = await studentsApi.listPaginated();
+      setStudents(res.data);
+      setStudentsMeta(res.meta);
     } catch (err: any) {
       toast.error(err.response?.data?.error?.message || 'Không thể tải danh sách học viên');
     } finally {
@@ -413,6 +508,9 @@ export const StudentsPage: React.FC = () => {
 
   // Counts by program_type
   const programCounts = useMemo(() => {
+    if (allRows.length === 0 && studentsMeta?.facets?.programCounts) {
+      return studentsMeta.facets.programCounts;
+    }
     let kaiwa = 0;
     let jlpt = 0;
     allRows.forEach((s) => {
@@ -425,11 +523,16 @@ export const StudentsPage: React.FC = () => {
       }
     });
     return { all: allRows.length, kaiwa, jlpt };
-  }, [allRows]);
+  }, [allRows, studentsMeta]);
 
   // Danh sách CSKH thực tế trích xuất từ dữ liệu thuộc phạm vi xem của ADMIN / MANAGE
   const csOptions = useMemo(() => {
     const map = new Map<string, { value: string; label: string }>();
+    if (studentsMeta?.filterOptions?.csOptions) {
+      studentsMeta.filterOptions.csOptions.forEach((opt) => {
+        if (opt?.value) map.set(opt.value, opt);
+      });
+    }
     allRows.forEach((s) => {
       s.enrollments?.forEach((enr) => {
         const csId = (enr as any)?.cs_user_id ?? enr?.cs_id ?? enr?.cs?.id;
@@ -453,18 +556,58 @@ export const StudentsPage: React.FC = () => {
       });
     });
     return Array.from(map.values()).sort((a, b) => a.label.localeCompare(b.label, 'vi-VN'));
-  }, [allRows]);
+  }, [allRows, studentsMeta]);
+
+  // Danh sách mã CVHT phụ trách để bấm lọc nhanh 1-click (từ test_diem_danh)
+  const cvhtList = useMemo(() => {
+    const set = new Set<string>([
+      'CVHT01',
+      'CVHT02',
+      'CVHT03',
+      ...(studentsMeta?.filterOptions?.cvhtList || []),
+    ]);
+    allRows.forEach((s) => {
+      s.enrollments?.forEach((enr) => {
+        const code = (
+          (enr as any)?.cs_staff_code ||
+          enr?.cs?.staff_code ||
+          (enr?.cs as any)?.code ||
+          ''
+        )
+          .trim()
+          .toUpperCase();
+        if (code) set.add(code);
+      });
+    });
+    if (cvhtFilter) set.add(cvhtFilter.toUpperCase());
+    return Array.from(set).filter(Boolean).sort();
+  }, [allRows, studentsMeta, cvhtFilter]);
+
+  // Danh sách Sale phụ trách (từ test_diem_danh)
+  const salesList = useMemo(() => {
+    const set = new Set<string>(studentsMeta?.filterOptions?.salesList || []);
+    allRows.forEach((s) => {
+      s.enrollments?.forEach((enr) => {
+        if (enr?.sale_name) set.add(enr.sale_name.trim());
+        if ((enr as any)?.sale?.name) set.add((enr as any).sale.name.trim());
+        if (enr?.cs?.name) set.add(enr.cs.name.trim());
+        if (enr?.cs?.email) set.add(enr.cs.email.trim());
+      });
+    });
+    if (saleFilter) set.add(saleFilter);
+    return Array.from(set).filter(Boolean).sort((a, b) => a.localeCompare(b, 'vi-VN'));
+  }, [allRows, studentsMeta, saleFilter]);
 
   // Filtered students list matching Sheet 1 & Sheet JLPT
   const filteredStudents = useMemo(() => {
-    const query = searchTerm.toLowerCase().trim();
+    const query = debouncedSearch.toLowerCase().trim();
 
     return allRows.filter((s) => {
       // Primary enrollment for Sheet 1 attributes
       const enr = s.enrollments?.[0];
       const ec = enr?.enrollment_classes?.[0];
 
-      // 1. Search term: Mã HV, Họ tên, SĐT, Email, Lớp học...
+      // 1. Search term: Mã HV, Họ tên, SĐT, Email, Lớp học, Giáo viên
       if (query) {
         const classCode =
           ec?.class?.class_code ||
@@ -503,7 +646,7 @@ export const StudentsPage: React.FC = () => {
           hasAssignedClass,
           `${enr?.class_model || ''} ${enr?.level || ''}`
         );
-        if (stStatus !== statusFilter) return false;
+        if (stStatus !== statusFilter && enr?.status !== statusFilter) return false;
       }
 
       // 4. Mô hình lớp (1:1 | 1:2 | 1:n)
@@ -542,18 +685,72 @@ export const StudentsPage: React.FC = () => {
         }
       }
 
+      // 7. CVHT phụ trách (dải nút lọc nhanh 1-click cho ADMIN / MANAGE)
+      if (isAdminOrManage && cvhtFilter) {
+        const targetCvht = cvhtFilter.trim().toUpperCase();
+        const code = (
+          (enr as any)?.cs_staff_code ||
+          enr?.cs?.staff_code ||
+          (enr?.cs as any)?.code ||
+          ''
+        )
+          .trim()
+          .toUpperCase();
+        const name = (enr?.cs?.name || '').trim().toUpperCase();
+        if (code !== targetCvht && !code.includes(targetCvht) && !name.includes(targetCvht)) {
+          return false;
+        }
+      }
+
+      // 8. Sale phụ trách
+      if (saleFilter) {
+        const targetSale = saleFilter.trim().toLowerCase();
+        const saleCandidates = [
+          enr?.sale_name,
+          (enr as any)?.sale?.name,
+          enr?.cs?.name,
+          enr?.cs?.email,
+        ]
+          .filter(Boolean)
+          .map((v) => String(v).trim().toLowerCase());
+        if (!saleCandidates.some((v) => v === targetSale || v.includes(targetSale))) {
+          return false;
+        }
+      }
+
+      // 9. Giới tính (MALE | FEMALE | OTHER)
+      if (genderFilter) {
+        if ((s.gender || '').toUpperCase() !== genderFilter.toUpperCase()) return false;
+      }
+
       return true;
     });
   }, [
     allRows,
-    searchTerm,
+    debouncedSearch,
     programFilter,
     statusFilter,
     modelFilter,
     paymentFilter,
     csFilter,
+    cvhtFilter,
+    saleFilter,
+    genderFilter,
     isAdminOrManage,
   ]);
+
+  const totalStudents = filteredStudents.length;
+  const totalPages = Math.max(1, Math.ceil(totalStudents / pageSize));
+  useEffect(() => {
+    if (page > totalPages) {
+      setPage(1);
+    }
+  }, [page, totalPages]);
+
+  const paginatedStudents = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return filteredStudents.slice(start, start + pageSize);
+  }, [filteredStudents, page, pageSize]);
 
   const activeFiltersCount =
     (searchTerm.trim() ? 1 : 0) +
@@ -561,7 +758,10 @@ export const StudentsPage: React.FC = () => {
     (statusFilter ? 1 : 0) +
     (modelFilter ? 1 : 0) +
     (paymentFilter ? 1 : 0) +
-    (isAdminOrManage && csFilter ? 1 : 0);
+    (isAdminOrManage && csFilter ? 1 : 0) +
+    (isAdminOrManage && cvhtFilter ? 1 : 0) +
+    (saleFilter ? 1 : 0) +
+    (genderFilter ? 1 : 0);
 
   const handleResetFilters = () => {
     setSearchTerm('');
@@ -570,6 +770,10 @@ export const StudentsPage: React.FC = () => {
     setModelFilter('');
     setPaymentFilter('');
     setCsFilter('');
+    setCvhtFilter('');
+    setSaleFilter('');
+    setGenderFilter('');
+    setPage(1);
   };
 
   // All active session milestones depending on programFilter (KAIWA vs JLPT vs ALL)
@@ -879,9 +1083,9 @@ export const StudentsPage: React.FC = () => {
       header: '#',
       width: '52px',
       className: 'sticky left-0 z-20 w-[52px] min-w-[52px] max-w-[52px] text-center border-r border-border/60 overflow-hidden',
-      cell: (item) => (
+      cell: (_item, rowIndex) => (
         <span className="font-bold text-slate-400 text-xs text-center block">
-          {filteredStudents.indexOf(item) + 1}
+          {(page - 1) * pageSize + rowIndex + 1}
         </span>
       ),
     },
@@ -1906,7 +2110,7 @@ export const StudentsPage: React.FC = () => {
             value: 'students',
             label: 'Hồ sơ học viên',
             icon: <Users />,
-            badge: `${filteredStudents.length} HV`,
+            badge: `${totalStudents} HV`,
           },
           {
             value: 'care_reports',
@@ -1921,9 +2125,7 @@ export const StudentsPage: React.FC = () => {
         title="Tìm kiếm & Lọc học viên"
         activeCount={activeFiltersCount}
         onClear={handleResetFilters}
-        gridClassName={`grid grid-cols-1 sm:grid-cols-2 ${
-          isAdminOrManage ? 'lg:grid-cols-3 xl:grid-cols-6' : 'lg:grid-cols-3 xl:grid-cols-5'
-        } gap-3.5 items-end`}
+        gridClassName="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-4 gap-3.5 items-end"
       >
         {/* 1. Tìm kiếm */}
         <div>
@@ -1935,7 +2137,7 @@ export const StudentsPage: React.FC = () => {
               type="text"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Mã HV, Họ tên, SĐT, Email, Lớp học..."
+              placeholder="Mã HV, Họ tên, SĐT, Email, Lớp học, GV..."
               className="w-full h-9 pl-9 pr-3 border border-border rounded-xl text-sm bg-white text-text-primary focus:outline-none focus:ring-2 focus:ring-primary shadow-xs transition"
             />
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
@@ -1973,6 +2175,8 @@ export const StudentsPage: React.FC = () => {
             <option value="PAUSED">Bảo lưu</option>
             <option value="WAITING_CLASS">Chờ lớp</option>
             <option value="FINISHED">Kết thúc</option>
+            <option value="UPCOMING">Sắp học</option>
+            <option value="NOT_STARTED">Chưa học</option>
           </select>
         </div>
 
@@ -2031,13 +2235,85 @@ export const StudentsPage: React.FC = () => {
             </select>
           </div>
         )}
+
+        {/* 7. Sale phụ trách */}
+        <div>
+          <label className="block text-[11px] font-semibold text-text-secondary uppercase tracking-wider mb-1.5">
+            Sale phụ trách
+          </label>
+          <select
+            value={saleFilter}
+            onChange={(e) => setSaleFilter(e.target.value)}
+            className="w-full h-9 px-3 border border-border rounded-xl text-sm bg-white text-text-primary focus:outline-none focus:ring-2 focus:ring-primary shadow-xs transition cursor-pointer"
+          >
+            <option value="">Tất cả nhân viên Sale</option>
+            {salesList.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* 8. Giới tính */}
+        <div>
+          <label className="block text-[11px] font-semibold text-text-secondary uppercase tracking-wider mb-1.5">
+            Giới tính
+          </label>
+          <select
+            value={genderFilter}
+            onChange={(e) => setGenderFilter(e.target.value)}
+            className="w-full h-9 px-3 border border-border rounded-xl text-sm bg-white text-text-primary focus:outline-none focus:ring-2 focus:ring-primary shadow-xs transition cursor-pointer"
+          >
+            <option value="">Tất cả giới tính</option>
+            <option value="MALE">Nam</option>
+            <option value="FEMALE">Nữ</option>
+            <option value="OTHER">Khác</option>
+          </select>
+        </div>
+
+        {/* 9. Dải nút bấm nhanh CVHT phụ trách (1-click cho ADMIN / MANAGE) */}
+        {isAdminOrManage && (
+          <div className="col-span-full pt-2.5 border-t border-border/60 flex flex-wrap items-center gap-2">
+            <span className="text-[11px] font-bold text-text-secondary uppercase tracking-wider whitespace-nowrap">
+              CVHT phụ trách:
+            </span>
+            <div className="inline-flex flex-wrap items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setCvhtFilter('')}
+                className={`px-2.5 py-1 rounded-lg text-xs font-bold border transition cursor-pointer ${
+                  cvhtFilter === ''
+                    ? 'bg-primary text-white border-primary shadow-2xs'
+                    : 'bg-white text-slate-600 border-border hover:bg-slate-50'
+                }`}
+              >
+                Tất cả CVHT
+              </button>
+              {cvhtList.map((code) => (
+                <button
+                  key={code}
+                  type="button"
+                  onClick={() => setCvhtFilter(code === cvhtFilter ? '' : code)}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-mono font-bold border transition cursor-pointer ${
+                    cvhtFilter === code
+                      ? 'bg-primary text-white border-primary shadow-2xs'
+                      : 'bg-blue-50/70 text-blue-800 border-blue-200 hover:bg-blue-100'
+                  }`}
+                >
+                  {code}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </FilterBar>
 
       {/* Thanh trạng thái hiển thị & tùy chọn cột */}
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div className="text-xs font-semibold text-text-secondary inline-flex items-center gap-1.5 rounded-lg border border-border/80 bg-surface px-2.5 py-1.5 shadow-2xs">
           <span>Hiển thị:</span>
-          <strong className="text-primary font-extrabold">{filteredStudents.length}</strong>
+          <strong className="text-primary font-extrabold">{totalStudents}</strong>
           <span className="text-text-muted">/ {allRows.length} học viên</span>
         </div>
         <ColumnVisibilityDropdown
@@ -2048,9 +2324,18 @@ export const StudentsPage: React.FC = () => {
       {/* Main Table View */}
       <div className="bg-surface rounded-2xl border border-border/80 shadow-soft overflow-hidden">
         <DataTable
-          data={filteredStudents}
+          data={paginatedStudents}
           columns={(activeTab === 'students' ? tab1Columns : tab2Columns).filter(keepColumn)}
           isLoading={loading}
+          serverPagination
+          total={totalStudents}
+          page={page}
+          pageSize={pageSize}
+          onPageChange={setPage}
+          onPageSizeChange={(ps) => {
+            setPageSize(ps);
+            setPage(1);
+          }}
           emptyMessage="Không tìm thấy học viên nào phù hợp với điều kiện lọc."
         />
       </div>

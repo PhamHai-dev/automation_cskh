@@ -10,6 +10,7 @@ export interface PaginatedMeta {
   filterOptions?: {
     cvhtList?: string[];
     salesList?: string[];
+    csOptions?: Array<{ value: string; label: string }>;
     packagesList?: string[];
     teachersList?: string[];
     teacherCodesList?: string[];

@@ -4,6 +4,8 @@ import { Student, CreateStudentDTO, UpdateStudentDTO } from '../types/students.t
 
 export type { PaginatedMeta, PaginatedResponse };
 
+export type StudentsListMeta = PaginatedMeta;
+
 export interface StudentsListParams {
   page?: number;
   pageSize?: number;
@@ -13,6 +15,8 @@ export interface StudentsListParams {
   cvht?: string;
   gender?: string;
   status?: string;
+  model?: string;
+  payment?: string;
   sale?: string;
 }
 
