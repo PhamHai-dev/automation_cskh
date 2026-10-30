@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { classesApi } from '../api/classes.api';
 import { classSessionsApi, attendanceApi } from '../api/sessions.api';
 import { enrollmentsApi } from '../../enrollments/api/enrollments.api';
@@ -54,6 +55,7 @@ import { Select } from '../../../components/ui/Select';
 import { Modal } from '../../../components/ui/Modal';
 import { useToast } from '../../../components/ui/Toast';
 import { useAuth } from '../../../contexts/AuthContext';
+import { useDebouncedValue } from '../../../hooks/useDebouncedValue';
 import {
   Edit,
   Plus,
@@ -190,10 +192,13 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
   const isAdmin = Boolean(user?.roles?.includes('ADMIN'));
 
   const toast = useToast();
+  const [searchParams, setSearchParams] = useSearchParams();
   const storageKeyPrefix = `classes_ui_${user?.id || 'anon'}`;
 
-  // Chế độ hiển thị tại chỗ (Grouping Mode: Theo Học viên | Theo Lớp học) — giữ nguyên khi F5
+  // Chế độ hiển thị tại chỗ (Grouping Mode: Theo Học viên | Theo Lớp học) — ưu tiên URL, sau đó sessionStorage
   const [displayMode, setDisplayModeState] = useState<'students' | 'classes'>(() => {
+    const urlMode = searchParams.get('mode');
+    if (urlMode === 'students' || urlMode === 'classes') return urlMode;
     if (initialDisplayMode) return initialDisplayMode;
     try {
       const saved = sessionStorage.getItem(`${storageKeyPrefix}_displayMode`);
@@ -216,8 +221,10 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // 3 Tab lớn dùng chung cho cả 2 chế độ và cả 3 role — giữ nguyên khi F5
+  // 3 Tab lớn dùng chung cho cả 2 chế độ và cả 3 role — ưu tiên URL, sau đó sessionStorage
   const [activeTab, setActiveTabState] = useState<AttendanceTab>(() => {
+    const urlTab = searchParams.get('tab');
+    if (urlTab === 'quick' || urlTab === 'detailed' || urlTab === 'stats') return urlTab;
     try {
       const saved = sessionStorage.getItem(`${storageKeyPrefix}_activeTab`);
       if (saved === 'quick' || saved === 'detailed' || saved === 'stats') return saved;
@@ -241,15 +248,30 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
     return visibleColumns[key] !== false;
   };
 
-  // Filters dùng chung cho cả 2 chế độ
-  const [programFilter, setProgramFilter] = useState<'ALL' | 'KAIWA' | 'JLPT'>('ALL');
-  const [searchTerm, setSearchTerm] = useState('');
-  const [modelFilter, setModelFilter] = useState('');
-  const [teacherFilter, setTeacherFilter] = useState<string>('');
-  const [levelPackageFilter, setLevelPackageFilter] = useState<string>('');
-  const [statusFilter, setStatusFilter] = useState<string>('');
-  const [onlyScheduledOnDate, setOnlyScheduledOnDate] = useState<boolean>(false);
+  // Filters dùng chung cho cả 2 chế độ (đồng bộ với URL)
+  const [programFilter, setProgramFilter] = useState<'ALL' | 'KAIWA' | 'JLPT'>(() => {
+    const p = (searchParams.get('program') || '').toUpperCase();
+    return p === 'KAIWA' || p === 'JLPT' ? p : 'ALL';
+  });
+  const [searchTerm, setSearchTerm] = useState(() => searchParams.get('search') || '');
+  const debouncedSearch = useDebouncedValue(searchTerm.trim(), 300);
+  const [modelFilter, setModelFilter] = useState(() => searchParams.get('model') || '');
+  const [teacherFilter, setTeacherFilter] = useState<string>(() => searchParams.get('teacher') || '');
+  const [levelPackageFilter, setLevelPackageFilter] = useState<string>(
+    () => searchParams.get('level') || ''
+  );
+  const [statusFilter, setStatusFilter] = useState<string>(() => searchParams.get('status') || '');
+  const [onlyScheduledOnDate, setOnlyScheduledOnDate] = useState<boolean>(
+    () => searchParams.get('onlyScheduled') === '1' || searchParams.get('onlyScheduled') === 'true'
+  );
   const [statsAttendanceFilter, setStatsAttendanceFilter] = useState<'' | 'ATTENTION' | 'GOOD'>('');
+
+  // Sync external URL search change (e.g. Back/Forward)
+  useEffect(() => {
+    const q = searchParams.get('search') || '';
+    if (q !== searchTerm) setSearchTerm(q);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   // State chọn học viên & lớp học đồng bộ 100% giữa 2 chế độ và Thanh Nghiệp Vụ Hàng Loạt
   const [selectedEnrollmentIds, setSelectedEnrollmentIds] = useState<Set<number>>(new Set());
@@ -266,8 +288,10 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
   const csNoteTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const lastSavedCsNoteMapRef = useRef<Record<string, string>>({});
 
-  // Tab 1 (Điểm danh nhanh): 1 ngày đang chọn (mặc định Hôm nay, giữ nguyên khi F5)
+  // Tab 1 (Điểm danh nhanh): 1 ngày đang chọn (ưu tiên URL, sau đó sessionStorage, mặc định Hôm nay)
   const [selectedDate, setSelectedDateState] = useState<string>(() => {
+    const urlDate = searchParams.get('date');
+    if (urlDate && /^\d{4}-\d{2}-\d{2}$/.test(urlDate)) return urlDate;
     try {
       const saved = sessionStorage.getItem(`${storageKeyPrefix}_selectedDate`);
       if (saved && /^\d{4}-\d{2}-\d{2}$/.test(saved)) return saved;
@@ -289,7 +313,19 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
   const [detailedFilterMode, setDetailedFilterMode] = useState<DetailedFilterMode>('month');
   const [detailedViewMode, setDetailedViewMode] = useState<DetailedViewMode>('matrix');
   const [onlyDaysWithSessions, setOnlyDaysWithSessions] = useState<boolean>(false);
-  const [currentPeriodDate, setCurrentPeriodDate] = useState<Date>(() => new Date());
+  const [currentPeriodDate, setCurrentPeriodDate] = useState<Date>(() => {
+    const urlMonth = searchParams.get('month');
+    if (urlMonth && /^\d{4}-\d{2}$/.test(urlMonth)) {
+      const [y, m] = urlMonth.split('-').map(Number);
+      if (y && m) return new Date(y, m - 1, 1);
+    }
+    const urlDate = searchParams.get('date');
+    if (urlDate && /^\d{4}-\d{2}-\d{2}$/.test(urlDate)) {
+      const [y, m, d] = urlDate.split('-').map(Number);
+      if (y && m && d) return new Date(y, m - 1, d);
+    }
+    return new Date();
+  });
 
   // Collapsed state for 1:2 / 1:n classes (empty set = all expanded by default)
   const [collapsedClassIds, setCollapsedClassIds] = useState<Set<number>>(new Set());
@@ -858,7 +894,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
   }, [classes, allStudentRows]);
 
   const matrixStudents = useMemo(() => {
-    const q = searchTerm.trim().toLocaleLowerCase('vi-VN');
+    const q = debouncedSearch.trim().toLocaleLowerCase('vi-VN');
     return allStudentRows.filter((st) => {
       if (programFilter !== 'ALL') {
         const pType = (st.program_type || 'KAIWA').toUpperCase();
@@ -906,7 +942,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
   }, [
     allStudentRows,
     programFilter,
-    searchTerm,
+    debouncedSearch,
     modelFilter,
     isTeacher,
     teacherFilter,
@@ -925,7 +961,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
 
   // Filtered classes
   const filteredClasses = useMemo(() => {
-    const q = searchTerm.trim().toLowerCase();
+    const q = debouncedSearch.trim().toLowerCase();
     return classes.filter((c) => {
       const formattedCode = formatClassCode(c.class_code, c.id).toLowerCase();
       const students = getStudentsOfClass(c);
@@ -988,7 +1024,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
     });
   }, [
     classes,
-    searchTerm,
+    debouncedSearch,
     modelFilter,
     programFilter,
     isTeacher,
@@ -1159,11 +1195,19 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
     setActiveQuickPickerKey(null);
   }, [selectedDate, activeTab]);
 
-  // Phân trang mặc định 25 dòng/trang (tùy chọn 25, 50, 100, 200)
-  const [page, setPage] = useState<number>(1);
-  const [pageSize, setPageSize] = useState<number>(25);
+  // Phân trang mặc định 25 dòng/trang (tùy chọn 25, 50, 100, 200) — đồng bộ với URL
+  const [page, setPage] = useState<number>(() => Math.max(1, Number(searchParams.get('page')) || 1));
+  const [pageSize, setPageSize] = useState<number>(() => {
+    const ps = Number(searchParams.get('pageSize'));
+    return [25, 50, 100, 200].includes(ps) ? ps : 25;
+  });
 
+  const isFirstFilterRenderRef = useRef(true);
   useEffect(() => {
+    if (isFirstFilterRenderRef.current) {
+      isFirstFilterRenderRef.current = false;
+      return;
+    }
     setPage(1);
   }, [
     activeTab,
@@ -1171,12 +1215,84 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
     onlyScheduledOnDate,
     onlyDaysWithSessions,
     selectedDate,
-    searchTerm,
+    programFilter,
+    debouncedSearch,
     modelFilter,
     teacherFilter,
     levelPackageFilter,
     statusFilter,
     statsAttendanceFilter,
+  ]);
+
+  // Đồng bộ các trạng thái lọc chính của ClassesPage lên URL query params bên cạnh sessionStorage
+  useEffect(() => {
+    const next = new URLSearchParams(searchParams);
+    const defaultMode = initialDisplayMode || (isTeacher ? 'classes' : 'students');
+    if (displayMode !== defaultMode) next.set('mode', displayMode);
+    else next.delete('mode');
+
+    if (activeTab !== 'quick') next.set('tab', activeTab);
+    else next.delete('tab');
+
+    if (programFilter !== 'ALL') next.set('program', programFilter);
+    else next.delete('program');
+
+    if (searchTerm.trim()) next.set('search', searchTerm.trim());
+    else next.delete('search');
+
+    if (modelFilter) next.set('model', modelFilter);
+    else next.delete('model');
+
+    if (!isTeacher && teacherFilter) next.set('teacher', teacherFilter);
+    else next.delete('teacher');
+
+    if (levelPackageFilter) next.set('level', levelPackageFilter);
+    else next.delete('level');
+
+    if (statusFilter) next.set('status', statusFilter);
+    else next.delete('status');
+
+    const todayStr = toLocalDateString(new Date());
+    if (selectedDate && selectedDate !== todayStr) next.set('date', selectedDate);
+    else next.delete('date');
+
+    if (onlyScheduledOnDate) next.set('onlyScheduled', '1');
+    else next.delete('onlyScheduled');
+
+    const currentMonthStr = `${currentPeriodDate.getFullYear()}-${String(
+      currentPeriodDate.getMonth() + 1
+    ).padStart(2, '0')}`;
+    const todayMonthStr = todayStr.slice(0, 7);
+    if (currentMonthStr !== todayMonthStr) next.set('month', currentMonthStr);
+    else next.delete('month');
+
+    if (page > 1) next.set('page', String(page));
+    else next.delete('page');
+
+    if (pageSize !== 25) next.set('pageSize', String(pageSize));
+    else next.delete('pageSize');
+
+    if (next.toString() !== searchParams.toString()) {
+      setSearchParams(next, { replace: true });
+    }
+  }, [
+    displayMode,
+    initialDisplayMode,
+    isTeacher,
+    activeTab,
+    programFilter,
+    searchTerm,
+    modelFilter,
+    teacherFilter,
+    levelPackageFilter,
+    statusFilter,
+    selectedDate,
+    onlyScheduledOnDate,
+    currentPeriodDate,
+    page,
+    pageSize,
+    searchParams,
+    setSearchParams,
   ]);
 
   useEffect(() => {

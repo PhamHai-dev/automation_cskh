@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   AlertTriangle,
   Clock,
@@ -29,6 +30,8 @@ import {
   formatClassCode,
   formatScheduleTimeDisplay,
 } from '../../classes/types/classes.types';
+import { classesApi } from '../../classes/api/classes.api';
+import { Class } from '../../classes/types/classes.types';
 import { reconciliationApi } from '../api/reconciliation.api';
 import {
   AttendanceRecord,
@@ -109,18 +112,57 @@ export const AttendanceReconciliationPage: React.FC = () => {
   // D2 (owner-confirmed): resolution authority is ADMIN only. CS submits an
   // opinion (cs-mark); MANAGE/CS must not see or trigger resolve-conflict.
   const isAdmin = Boolean(user?.roles.includes('ADMIN'));
+  const [searchParams, setSearchParams] = useSearchParams();
 
-  const [activeTab, setActiveTab] = useState<ReconciliationTab>('conflicts');
+  const [activeTab, setActiveTab] = useState<ReconciliationTab>(() => {
+    const t = searchParams.get('tab');
+    return t === 'pending' || t === 'history' ? t : 'conflicts';
+  });
   const [isLoading, setIsLoading] = useState(false);
 
   // Filters (shared across tabs)
-  const [search, setSearch] = useState('');
-  const [appliedSearch, setAppliedSearch] = useState('');
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
+  const [search, setSearch] = useState(() => searchParams.get('search') || '');
+  const [appliedSearch, setAppliedSearch] = useState(() => searchParams.get('search') || '');
+  const [classId, setClassId] = useState<number | undefined>(() => {
+    const cid = Number(searchParams.get('classId'));
+    return cid > 0 ? cid : undefined;
+  });
+  const [classesList, setClassesList] = useState<Class[]>([]);
+  const [startDate, setStartDate] = useState(() => searchParams.get('startDate') || '');
+  const [endDate, setEndDate] = useState(() => searchParams.get('endDate') || '');
 
   // Pending sub filter
-  const [pendingFilter, setPendingFilter] = useState<PendingFilter>('all');
+  const [pendingFilter, setPendingFilter] = useState<PendingFilter>(() => {
+    const pf = searchParams.get('pendingFilter');
+    return pf === 'PENDING_CS' || pf === 'PENDING_TEACHER' ? pf : 'all';
+  });
+
+  useEffect(() => {
+    classesApi
+      .list()
+      .then((items) => setClassesList(items || []))
+      .catch(() => {});
+  }, []);
+
+  // Sync filters to URL
+  useEffect(() => {
+    const next = new URLSearchParams(searchParams);
+    if (activeTab !== 'conflicts') next.set('tab', activeTab);
+    else next.delete('tab');
+    if (search.trim()) next.set('search', search.trim());
+    else next.delete('search');
+    if (classId) next.set('classId', String(classId));
+    else next.delete('classId');
+    if (startDate) next.set('startDate', startDate);
+    else next.delete('startDate');
+    if (endDate) next.set('endDate', endDate);
+    else next.delete('endDate');
+    if (pendingFilter !== 'all') next.set('pendingFilter', pendingFilter);
+    else next.delete('pendingFilter');
+    if (next.toString() !== searchParams.toString()) {
+      setSearchParams(next, { replace: true });
+    }
+  }, [activeTab, search, classId, startDate, endDate, pendingFilter, searchParams, setSearchParams]);
 
   // Stats (KPI cards, independent of pagination)
   const [stats, setStats] = useState<ReconciliationStats>({
@@ -172,12 +214,13 @@ export const AttendanceReconciliationPage: React.FC = () => {
   }, [search]);
 
   const baseFilters = useMemo(() => {
-    const f: Record<string, string> = {};
+    const f: Record<string, any> = {};
     if (appliedSearch) f.search = appliedSearch;
+    if (classId) f.classId = classId;
     if (startDate) f.startDate = startDate;
     if (endDate) f.endDate = endDate;
     return f;
-  }, [appliedSearch, startDate, endDate]);
+  }, [appliedSearch, classId, startDate, endDate]);
 
   const loadStats = useCallback(async () => {
     try {
@@ -836,24 +879,26 @@ export const AttendanceReconciliationPage: React.FC = () => {
     },
   ];
 
-  const pendingFilterButtons: { value: PendingFilter; label: string }[] = [
-    { value: 'all', label: 'Tất cả' },
-    { value: 'PENDING_CS', label: 'Chờ CSKH' },
-    { value: 'PENDING_TEACHER', label: 'Chờ GV' },
+  const pendingFilterButtons: { value: PendingFilter; label: string; count: number }[] = [
+    { value: 'all', label: 'Tất cả', count: stats.pendingCsCount + stats.pendingTeacherCount },
+    { value: 'PENDING_CS', label: 'Chờ CSKH', count: stats.pendingCsCount },
+    { value: 'PENDING_TEACHER', label: 'Chờ GV', count: stats.pendingTeacherCount },
   ];
 
   const activeFiltersCount = useMemo(
     () =>
       (search.trim() ? 1 : 0) +
+      (classId ? 1 : 0) +
       (startDate ? 1 : 0) +
       (endDate ? 1 : 0) +
       (activeTab === 'pending' && pendingFilter !== 'all' ? 1 : 0),
-    [search, startDate, endDate, activeTab, pendingFilter]
+    [search, classId, startDate, endDate, activeTab, pendingFilter]
   );
 
   const handleResetFilters = () => {
     setSearch('');
     setAppliedSearch('');
+    setClassId(undefined);
     setStartDate('');
     setEndDate('');
     setPendingFilter('all');
@@ -881,7 +926,7 @@ export const AttendanceReconciliationPage: React.FC = () => {
         activeCount={activeFiltersCount}
         onClear={handleResetFilters}
         gridClassName={`grid grid-cols-1 sm:grid-cols-2 ${
-          activeTab === 'pending' ? 'lg:grid-cols-4' : 'lg:grid-cols-3'
+          activeTab === 'pending' ? 'lg:grid-cols-5' : 'lg:grid-cols-4'
         } gap-3.5 items-end`}
       >
         <div>
@@ -900,6 +945,34 @@ export const AttendanceReconciliationPage: React.FC = () => {
           </div>
         </div>
 
+        <div>
+          <label className="block text-[11px] font-semibold text-text-secondary uppercase tracking-wider mb-1.5">
+            Lớp học
+          </label>
+          <select
+            value={classId ?? ''}
+            onChange={(e) => {
+              setClassId(e.target.value ? Number(e.target.value) : undefined);
+              setConflictPage(1);
+              setPendingPage(1);
+              setHistoryPage(1);
+            }}
+            className="w-full h-9 px-3 border border-border rounded-xl text-xs font-semibold bg-white text-text-primary focus:outline-none focus:ring-2 focus:ring-primary shadow-xs transition cursor-pointer"
+          >
+            <option value="">Tất cả lớp học</option>
+            {classesList.map((cls) => {
+              const cleaned = cleanClassIdentifier(cls.class_name) || cls.class_name;
+              const code = formatClassCode(cls.class_code, cls.id);
+              return (
+                <option key={cls.id} value={cls.id}>
+                  {cleaned}
+                  {code && code !== '—' && code !== cleaned ? ` (${code})` : ''}
+                </option>
+              );
+            })}
+          </select>
+        </div>
+
         {activeTab === 'pending' && (
           <div>
             <label className="block text-[11px] font-semibold text-text-secondary uppercase tracking-wider mb-1.5">
@@ -913,9 +986,11 @@ export const AttendanceReconciliationPage: React.FC = () => {
               }}
               className="w-full h-9 px-3 border border-border rounded-xl text-xs font-semibold bg-white text-text-primary focus:outline-none focus:ring-2 focus:ring-primary shadow-xs transition cursor-pointer"
             >
-              <option value="all">Tất cả trạng thái chờ</option>
-              <option value="PENDING_CS">Chờ CSKH duyệt</option>
-              <option value="PENDING_TEACHER">Chờ GV điểm danh</option>
+              <option value="all">
+                Tất cả trạng thái chờ ({stats.pendingCsCount + stats.pendingTeacherCount})
+              </option>
+              <option value="PENDING_CS">Chờ CSKH duyệt ({stats.pendingCsCount})</option>
+              <option value="PENDING_TEACHER">Chờ GV điểm danh ({stats.pendingTeacherCount})</option>
             </select>
           </div>
         )}
@@ -1031,7 +1106,7 @@ export const AttendanceReconciliationPage: React.FC = () => {
                         : 'bg-white/60 text-slate-600 hover:bg-white hover:text-slate-900'
                     }`}
                   >
-                    {f.label}
+                    {f.label} ({f.count})
                   </button>
                 ))}
               </div>
