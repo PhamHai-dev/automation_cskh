@@ -709,7 +709,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
   const normalizeModel = (model?: string | null, studentCount?: number): '1:1' | '1:2' | '1:n' =>
     normalizeClassModel(model, studentCount);
 
-  const getStudentsOfClass = (cls: Class): EnrolledStudentItem[] => {
+  const getAllStudentsOfClass = (cls: Class): EnrolledStudentItem[] => {
     const list: EnrolledStudentItem[] = [];
     cls.enrollment_classes?.forEach((ec: any) => {
       const enr = ec.enrollment;
@@ -751,6 +751,75 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
       });
     });
     return list;
+  };
+
+  // Kiểm tra 1 học viên trong lớp có khớp với các bộ lọc cấp học viên đang bật hay không
+  const doesStudentMatchClassFilters = (st: EnrolledStudentItem, cls: Class): boolean => {
+    if (filters.statusFilter) {
+      if ((st.status || '').toUpperCase() !== filters.statusFilter.toUpperCase()) {
+        return false;
+      }
+    }
+    if (programFilter !== 'ALL') {
+      const isClassJlpt = /\b(jlpt|jnpt|n[1-5])\b/i.test(`${cls.class_name} ${cls.level || ''}`);
+      const stProg = (st.program_type || (isClassJlpt ? 'JLPT' : 'KAIWA')).toUpperCase();
+      if (stProg !== programFilter) return false;
+    }
+    if (debouncedPackageName) {
+      const pkgQuery = debouncedPackageName.toLowerCase();
+      const matchClassLv = (cls.level || '').toLowerCase().includes(pkgQuery);
+      const matchSt =
+        (st.package_name || '').toLowerCase().includes(pkgQuery) ||
+        (st.level || '').toLowerCase().includes(pkgQuery);
+      if (!matchClassLv && !matchSt) return false;
+    }
+    if (filters.courseLevel) {
+      const lvQuery = filters.courseLevel.toLowerCase();
+      const matchClassLv =
+        (cls.level || '').toLowerCase().includes(lvQuery) ||
+        cls.class_name.toLowerCase().includes(lvQuery);
+      const matchStLv =
+        (st.level || '').toLowerCase().includes(lvQuery) ||
+        (st.course_content || '').toLowerCase().includes(lvQuery);
+      if (!matchClassLv && !matchStLv) return false;
+    }
+    if (filters.selectedSale) {
+      const saleQ = filters.selectedSale.trim().toLowerCase();
+      if (!(st.sale_name || '').toLowerCase().includes(saleQ)) return false;
+    }
+    if (debouncedSearch) {
+      const q = debouncedSearch.toLowerCase();
+      const classMatched =
+        cls.class_name.toLowerCase().includes(q) ||
+        formatClassCode(cls.class_code, cls.id).toLowerCase().includes(q) ||
+        (cls.class_code && cls.class_code.toLowerCase().includes(q)) ||
+        Boolean(
+          cls.class_teachers?.some((ct) => ct.teacher?.name?.toLowerCase().includes(q))
+        );
+      if (!classMatched) {
+        const stMatched =
+          st.full_name.toLowerCase().includes(q) ||
+          st.external_id.toLowerCase().includes(q) ||
+          Boolean(st.phone && st.phone.toLowerCase().includes(q)) ||
+          Boolean(st.email && st.email.toLowerCase().includes(q));
+        if (!stMatched) return false;
+      }
+    }
+    return true;
+  };
+
+  const getStudentsOfClass = (cls: Class): EnrolledStudentItem[] => {
+    const all = getAllStudentsOfClass(cls);
+    const hasStudentLevelFilter = Boolean(
+      filters.statusFilter ||
+        programFilter !== 'ALL' ||
+        debouncedPackageName ||
+        filters.courseLevel ||
+        filters.selectedSale ||
+        debouncedSearch
+    );
+    if (!hasStudentLevelFilter) return all;
+    return all.filter((st) => doesStudentMatchClassFilters(st, cls));
   };
 
   // Build lookup maps from classes + enrollments payload
@@ -1987,7 +2056,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
   const multiStudentClasses = useMemo(
     () =>
       filteredClasses.filter(
-        (c) => normalizeModel(c.model_type) !== '1:1' || getStudentsOfClass(c).length > 1
+        (c) => normalizeModel(c.model_type) !== '1:1' || getAllStudentsOfClass(c).length > 1
       ),
     [filteredClasses]
   );
@@ -4967,8 +5036,9 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
               ) : (
                 tableClasses.map((cls) => {
                   const formattedCode = formatClassCode(cls.class_code, cls.id);
+                  const allClassStudents = getAllStudentsOfClass(cls);
                   const students = getStudentsOfClass(cls);
-                  const modelNorm = normalizeModel(cls.model_type, students.length);
+                  const modelNorm = normalizeModel(cls.model_type, allClassStudents.length);
                   const conf = CLASS_MODEL_BADGE_STYLES[modelNorm] || CLASS_MODEL_BADGE_STYLES['1:1'];
                   const classStatusInfo = resolveClassDisplayStatus(cls, students);
                   const cleanedClassName =

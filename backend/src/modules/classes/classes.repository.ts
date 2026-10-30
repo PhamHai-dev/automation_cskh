@@ -342,7 +342,29 @@ export class ClassesRepository {
           ],
         });
       } else if (st === 'STUDYING') {
-        andClauses.push({ active: true });
+        andClauses.push({
+          active: true,
+          enrollment_classes: {
+            some: {
+              enrollment: {
+                status: { in: ['STUDYING', 'WAITING_CLASS', 'NOT_STARTED'] as any },
+              },
+            },
+          },
+        });
+      } else if (st === 'WAITING_CLASS') {
+        andClauses.push({
+          OR: [
+            { enrollment_classes: { none: {} } },
+            {
+              enrollment_classes: {
+                some: {
+                  enrollment: { status: 'WAITING_CLASS' as any },
+                },
+              },
+            },
+          ],
+        });
       } else {
         andClauses.push({
           enrollment_classes: {
