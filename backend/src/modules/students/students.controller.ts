@@ -13,7 +13,7 @@ export class StudentsController {
   async list(req: Request, res: Response, next: NextFunction) {
     try {
       const user = (req as any).user;
-      const pagination = parsePaginationQuery(req.query as Record<string, any>, 50);
+      const pagination = parsePaginationQuery(req.query as Record<string, any>, 25);
       const search = parseSearchQuery(req.query.search, 100);
       const programType =
         typeof req.query.program_type === 'string' && req.query.program_type.trim()
@@ -31,6 +31,18 @@ export class StudentsController {
       const status =
         typeof req.query.status === 'string' && req.query.status.trim()
           ? req.query.status.trim().toUpperCase()
+          : undefined;
+      const rawModel =
+        typeof req.query.model === 'string' && req.query.model.trim()
+          ? req.query.model.trim()
+          : typeof req.query.model_filter === 'string' && req.query.model_filter.trim()
+          ? req.query.model_filter.trim()
+          : undefined;
+      const payment =
+        typeof req.query.payment === 'string' && req.query.payment.trim()
+          ? req.query.payment.trim().toUpperCase()
+          : typeof req.query.payment_status === 'string' && req.query.payment_status.trim()
+          ? req.query.payment_status.trim().toUpperCase()
           : undefined;
       const sale =
         typeof req.query.sale === 'string' && req.query.sale.trim()
@@ -50,6 +62,8 @@ export class StudentsController {
         cvht,
         gender,
         status,
+        model: rawModel,
+        payment,
         sale,
       });
       res.json(result);

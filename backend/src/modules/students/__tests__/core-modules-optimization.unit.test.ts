@@ -129,11 +129,11 @@ describe('Query Validation & Security/Pagination across 5 modules', () => {
   });
 
   describe('2. Query Params Validation (parsePaginationQuery, parseSearchQuery, parseIsoDateParam)', () => {
-    it('validates page and pageSize, clamping pageSize > 100 to 100 and rejecting <= 0 or non-integers with 400', () => {
+    it('validates page and pageSize, clamping pageSize > 200 to 200 and rejecting <= 0 or non-integers with 400', () => {
       expect(parsePaginationQuery({})).toEqual({
         isPaginated: false,
         page: 1,
-        pageSize: 50,
+        pageSize: 25,
       });
 
       expect(parsePaginationQuery({ page: '2', pageSize: '25' })).toEqual({
@@ -147,9 +147,9 @@ describe('Query Validation & Security/Pagination across 5 modules', () => {
       expect(parsePaginationQuery({ page: '1', pageSize: '500' })).toEqual({
         isPaginated: true,
         page: 1,
-        pageSize: 100,
+        pageSize: 200,
         skip: 0,
-        take: 100,
+        take: 200,
       });
 
       expect(() => parsePaginationQuery({ page: '0' })).toThrow();
@@ -218,7 +218,15 @@ describe('Query Validation & Security/Pagination across 5 modules', () => {
         expect.arrayContaining([
           { cs_id: { in: [10] } },
           { program_type: 'KAIWA' },
-          { status: 'STUDYING' },
+          {
+            OR: [
+              { status: 'STUDYING' },
+              {
+                status: { in: ['WAITING_CLASS', 'NOT_STARTED'] },
+                enrollment_classes: { some: {} },
+              },
+            ],
+          },
         ]),
       );
 
@@ -232,6 +240,65 @@ describe('Query Validation & Security/Pagination across 5 modules', () => {
       });
       expect(result.meta.filterOptions.cvhtList).toContain('CVHT01');
       expect(result.meta.filterOptions.salesList).toContain('Sale X');
+      expect(result.meta.filterOptions.csOptions).toEqual([
+        { value: 'CODE:CVHT01', label: 'CVHT01 - CS 10' },
+      ]);
+    });
+
+    it('supports model, payment, WAITING_CLASS status, and CODE:/ID:/UNASSIGNED cvht filters while preserving legacy query structure', async () => {
+      mockPrisma.student.findMany.mockResolvedValue([]);
+      const repo = new StudentsRepository();
+
+      // Legacy structure when only actor/csId/programType are passed
+      await repo.findAll({
+        actor: { id: 10, roles: ['CS'] },
+        programType: 'JLPT',
+      });
+      expect(mockPrisma.student.findMany).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          where: {
+            enrollments: {
+              some: { cs_id: { in: [10] }, program_type: 'JLPT' },
+            },
+          },
+        }),
+      );
+
+      // Advanced filters: WAITING_CLASS, model 1:1, payment DEBT, cvht CODE:CVHT02
+      await repo.findAll({
+        actor: { id: 1, roles: ['ADMIN'] },
+        status: 'WAITING_CLASS',
+        model: '1:1',
+        payment: 'DEBT',
+        cvht: 'CODE:CVHT02',
+      });
+      const advCall = mockPrisma.student.findMany.mock.calls[1][0];
+      expect(advCall.where.enrollments.some.AND).toEqual(
+        expect.arrayContaining([
+          {
+            status: { in: ['WAITING_CLASS', 'NOT_STARTED'] },
+            enrollment_classes: { none: {} },
+          },
+          expect.objectContaining({
+            OR: expect.arrayContaining([
+              { enrollment_classes: { some: { class: { model_type: 'ONE_TO_ONE' } } } },
+            ]),
+          }),
+          expect.objectContaining({
+            OR: expect.arrayContaining([{ payment_status: { contains: 'nợ' } }]),
+          }),
+          {
+            cs: {
+              OR: [
+                { staff_code: { equals: 'CVHT02' } },
+                { code: { equals: 'CVHT02' } },
+                { staff_code: { contains: 'CVHT02' } },
+                { code: { contains: 'CVHT02' } },
+              ],
+            },
+          },
+        ]),
+      );
     });
   });
 

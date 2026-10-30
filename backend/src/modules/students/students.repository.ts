@@ -91,6 +91,22 @@ async function authorizeUpdatedCsId(csId: number, tx: any, allowedCsIds: number[
   }
 }
 
+function normalizeStudentModelFilter(raw?: string | null): '1:1' | '1:2' | '1:n' | undefined {
+  if (!raw || !raw.trim()) return undefined;
+  const trimmed = raw.trim();
+  const upper = trimmed.toUpperCase();
+  if (upper === '1:1' || upper === '1-1' || upper === 'ONE_TO_ONE' || trimmed.toLowerCase().includes('kèm')) {
+    return '1:1';
+  }
+  if (upper === '1:2' || upper === '1-2' || upper === 'ONE_TO_TWO') {
+    return '1:2';
+  }
+  if (upper === '1:N' || upper === '1-N' || upper === 'ONE_TO_N' || upper === 'GROUP' || trimmed.toLowerCase().includes('nhóm')) {
+    return '1:n';
+  }
+  return undefined;
+}
+
 export class StudentsRepository {
   /**
    * Builds the enrollment filter combining mandatory actor scope (`allowedCsIds`)
@@ -109,9 +125,17 @@ export class StudentsRepository {
         ? options.programType.toUpperCase()
         : undefined;
 
+    const normalizedModel = normalizeStudentModelFilter(options.model);
+    const normalizedPayment =
+      options.payment && ['PAID', 'DEBT', 'UNSET'].includes(options.payment.trim().toUpperCase())
+        ? (options.payment.trim().toUpperCase() as 'PAID' | 'DEBT' | 'UNSET')
+        : undefined;
+
     const hasAdvanced =
       Boolean(options.cvht && options.cvht.trim()) ||
       Boolean(includeStatus && options.status && options.status.trim()) ||
+      Boolean(normalizedModel) ||
+      Boolean(normalizedPayment) ||
       Boolean(options.sale && options.sale.trim());
 
     // Keep exact legacy structure when only scope/csId/programType are used
@@ -149,20 +173,130 @@ export class StudentsRepository {
     }
 
     if (includeStatus && options.status && options.status.trim()) {
-      andClauses.push({ status: options.status.trim() as any });
+      const st = options.status.trim().toUpperCase();
+      if (st === 'STUDYING') {
+        andClauses.push({
+          OR: [
+            { status: 'STUDYING' as any },
+            {
+              status: { in: ['WAITING_CLASS', 'NOT_STARTED'] as any },
+              enrollment_classes: { some: {} },
+            },
+          ],
+        });
+      } else if (st === 'WAITING_CLASS') {
+        andClauses.push({
+          status: { in: ['WAITING_CLASS', 'NOT_STARTED'] as any },
+          enrollment_classes: { none: {} },
+        });
+      } else {
+        andClauses.push({ status: st as any });
+      }
+    }
+
+    if (normalizedModel) {
+      if (normalizedModel === '1:1') {
+        andClauses.push({
+          OR: [
+            { class_model: { in: ['1:1', '1-1', 'ONE_TO_ONE'] } },
+            { class_model: { contains: '1:1' } },
+            { class_model: { contains: 'kèm' } },
+            { class_model: { contains: 'Kèm' } },
+            { enrollment_classes: { some: { class: { model_type: 'ONE_TO_ONE' as any } } } },
+          ],
+        });
+      } else if (normalizedModel === '1:2') {
+        andClauses.push({
+          OR: [
+            { class_model: { in: ['1:2', '1-2', 'ONE_TO_TWO'] } },
+            { class_model: { contains: '1:2' } },
+            { enrollment_classes: { some: { class: { model_type: 'ONE_TO_TWO' as any } } } },
+          ],
+        });
+      } else {
+        andClauses.push({
+          OR: [
+            { class_model: { in: ['1:n', '1-n', '1:N', '1-N', 'ONE_TO_N', 'GROUP', 'Nhóm', 'nhóm'] } },
+            { class_model: { contains: '1:n' } },
+            { class_model: { contains: 'Nhóm' } },
+            { class_model: { contains: 'nhóm' } },
+            { enrollment_classes: { some: { class: { model_type: 'ONE_TO_N' as any } } } },
+          ],
+        });
+      }
+    }
+
+    if (normalizedPayment) {
+      const debtClauses = [
+        { payment_status: { in: ['DEBT', 'PARTIAL', 'UNPAID', 'debt', 'partial', 'unpaid'] } },
+        { payment_status: { contains: 'nợ' } },
+        { payment_status: { contains: 'Nợ' } },
+        { payment_status: { contains: 'chưa' } },
+        { payment_status: { contains: 'Chưa' } },
+        { payment_status: { contains: 'thiếu' } },
+        { payment_status: { contains: 'Thiếu' } },
+        { payment_status: { contains: 'phần' } },
+        { payment_status: { contains: 'Phần' } },
+      ];
+      if (normalizedPayment === 'DEBT') {
+        andClauses.push({ OR: debtClauses });
+      } else if (normalizedPayment === 'UNSET') {
+        andClauses.push({
+          OR: [
+            { payment_status: null },
+            { payment_status: '' },
+            { payment_status: '—' },
+          ],
+        });
+      } else if (normalizedPayment === 'PAID') {
+        andClauses.push({
+          AND: [
+            { payment_status: { not: null } },
+            { NOT: { payment_status: { in: ['', '—'] } } },
+            { NOT: { OR: debtClauses } },
+          ],
+        });
+      }
     }
 
     if (options.cvht && options.cvht.trim()) {
       const cvht = options.cvht.trim();
-      andClauses.push({
-        cs: {
-          OR: [
-            { staff_code: { contains: cvht } },
-            { code: { contains: cvht } },
-            { name: { contains: cvht } },
-          ],
-        },
-      });
+      if (cvht.toUpperCase() === 'UNASSIGNED') {
+        andClauses.push({ cs_id: null as any });
+      } else if (cvht.toUpperCase().startsWith('CODE:')) {
+        const targetCode = cvht.slice(5).trim();
+        andClauses.push({
+          cs: {
+            OR: [
+              { staff_code: { equals: targetCode } },
+              { code: { equals: targetCode } },
+              { staff_code: { contains: targetCode } },
+              { code: { contains: targetCode } },
+            ],
+          },
+        });
+      } else if (cvht.toUpperCase().startsWith('ID:')) {
+        const targetId = parseInt(cvht.slice(3).trim(), 10);
+        if (!Number.isNaN(targetId)) {
+          if (allowedCsIds !== undefined) {
+            andClauses.push({
+              cs_id: allowedCsIds.includes(targetId) ? targetId : { in: [] },
+            });
+          } else {
+            andClauses.push({ cs_id: targetId });
+          }
+        }
+      } else {
+        andClauses.push({
+          cs: {
+            OR: [
+              { staff_code: { contains: cvht } },
+              { code: { contains: cvht } },
+              { name: { contains: cvht } },
+            ],
+          },
+        });
+      }
     }
 
     if (options.sale && options.sale.trim()) {
@@ -206,12 +340,41 @@ export class StudentsRepository {
     }
     if (hasSearch) {
       const q = options.search!.trim();
+      const hvIdMatch = q.match(/^hv_?0*(\d+)$/i);
+      const parsedStudentId = hvIdMatch ? parseInt(hvIdMatch[1], 10) : undefined;
       andClauses.push({
         OR: [
           { full_name: { contains: q } },
           { phone: { contains: q } },
           { external_id: { contains: q } },
           { email: { contains: q } },
+          ...(parsedStudentId && !Number.isNaN(parsedStudentId) ? [{ id: parsedStudentId }] : []),
+          {
+            enrollments: {
+              some: {
+                ...(hasEnrollmentFilter ? { AND: [enrollmentFilter] } : {}),
+                enrollment_classes: {
+                  some: {
+                    class: {
+                      OR: [
+                        { class_code: { contains: q } },
+                        { class_name: { contains: q } },
+                        {
+                          class_teachers: {
+                            some: {
+                              teacher: {
+                                name: { contains: q },
+                              },
+                            },
+                          },
+                        },
+                      ],
+                    },
+                  },
+                },
+              },
+            },
+          },
         ],
       });
     }
@@ -230,7 +393,7 @@ export class StudentsRepository {
     const { where, enrollmentFilter } = this.buildStudentWhere(allowedCsIds, options);
 
     const page = options.page && options.page >= 1 ? options.page : 1;
-    const pageSize = options.pageSize && options.pageSize >= 1 ? Math.min(options.pageSize, 100) : 50;
+    const pageSize = options.pageSize && options.pageSize >= 1 ? Math.min(options.pageSize, 200) : 25;
 
     return prisma.student.findMany({
       where,
@@ -317,11 +480,13 @@ export class StudentsRepository {
             enrollments: {
               where: enrFilterNoProgram,
               select: {
+                cs_id: true,
                 program_type: true,
                 status: true,
                 sale_name: true,
                 sale: { select: { name: true } },
-                cs: { select: { name: true, email: true, staff_code: true, code: true } },
+                cs: { select: { id: true, name: true, email: true, staff_code: true, code: true } },
+                enrollment_classes: { select: { id: true } },
               },
               orderBy: { created_at: 'desc' },
             },
@@ -340,6 +505,7 @@ export class StudentsRepository {
     const statusCounts: Record<string, number> = {};
     const cvhtSet = new Set<string>(['CVHT01', 'CVHT02', 'CVHT03']);
     const salesSet = new Set<string>();
+    const csOptionsMap = new Map<string, { value: string; label: string }>();
     const normalizedProgramFilter =
       options.programType && options.programType.toUpperCase() !== 'ALL'
         ? options.programType.toUpperCase()
@@ -357,7 +523,12 @@ export class StudentsRepository {
 
       if (!normalizedProgramFilter || pType === normalizedProgramFilter) {
         matchingTotal++;
-        const st = enr?.status || 'NOT_STARTED';
+        const hasClass = Array.isArray(enr?.enrollment_classes) && enr.enrollment_classes.length > 0;
+        const rawSt = enr?.status || 'NOT_STARTED';
+        const st =
+          hasClass && (rawSt === 'WAITING_CLASS' || rawSt === 'NOT_STARTED')
+            ? 'STUDYING'
+            : rawSt;
         statusCounts[st] = (statusCounts[st] || 0) + 1;
       }
 
@@ -368,12 +539,26 @@ export class StudentsRepository {
         if (e.sale?.name) salesSet.add(e.sale.name);
         if (e.cs?.name) salesSet.add(e.cs.name);
         if (e.cs?.email) salesSet.add(e.cs.email);
+
+        const csId = e.cs_id ?? e.cs?.id;
+        const code = String(e.cs?.staff_code || e.cs?.code || '').trim();
+        const name = String(e.cs?.name || '').trim();
+        if (csId || code || name) {
+          const key = code ? `CODE:${code.toUpperCase()}` : `ID:${csId}`;
+          if (!csOptionsMap.has(key)) {
+            const label =
+              code && name
+                ? `${code} - ${name}`
+                : code || name || `CSKH #${csId}`;
+            csOptionsMap.set(key, { value: key, label });
+          }
+        }
       }
     }
 
     const total = isPaginated ? matchingTotal : currentData.length;
     const effectivePageSize = isPaginated
-      ? (options.pageSize && options.pageSize >= 1 ? Math.min(options.pageSize, 100) : 50)
+      ? (options.pageSize && options.pageSize >= 1 ? Math.min(options.pageSize, 200) : 25)
       : Math.max(1, currentData.length);
     const totalPages = Math.max(1, Math.ceil(total / effectivePageSize));
 
@@ -393,6 +578,9 @@ export class StudentsRepository {
       filterOptions: {
         cvhtList: Array.from(cvhtSet).filter(Boolean).sort(),
         salesList: Array.from(salesSet).filter(Boolean).sort(),
+        csOptions: Array.from(csOptionsMap.values()).sort((a, b) =>
+          a.label.localeCompare(b.label, 'vi-VN'),
+        ),
       },
     };
   }

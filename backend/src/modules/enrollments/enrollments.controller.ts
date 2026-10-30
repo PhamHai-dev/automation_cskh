@@ -32,7 +32,7 @@ export class EnrollmentsController {
   async list(req: Request, res: Response, next: NextFunction) {
     try {
       const q = req.query as Record<string, any>;
-      const pagination = parsePaginationQuery(q, 50);
+      const pagination = parsePaginationQuery(q, 25);
       const search = parseSearchQuery(q.search, 100);
       const sale = parseStr(q.sale);
       const programTypeRaw = parseStr(q.program_type)?.toUpperCase();

@@ -246,7 +246,7 @@ export class ClassesRepository {
 
     const isPaginated = Boolean(options?.isPaginated);
     const page = options?.page && options.page >= 1 ? options.page : 1;
-    const pageSize = options?.pageSize && options.pageSize >= 1 ? Math.min(options.pageSize, 100) : 50;
+    const pageSize = options?.pageSize && options.pageSize >= 1 ? Math.min(options.pageSize, 200) : 25;
 
     const classes = await prisma.class.findMany({
       where,
@@ -345,7 +345,7 @@ export class ClassesRepository {
     }
 
     const effectivePageSize = isPaginated
-      ? (options?.pageSize && options.pageSize >= 1 ? Math.min(options.pageSize, 100) : 50)
+      ? (options?.pageSize && options.pageSize >= 1 ? Math.min(options.pageSize, 200) : 25)
       : Math.max(1, currentData.length);
     const totalPages = Math.max(1, Math.ceil(total / effectivePageSize));
 

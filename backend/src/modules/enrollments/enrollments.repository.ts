@@ -544,7 +544,7 @@ export class EnrollmentsRepository {
     );
 
     const page = filters?.page && filters.page >= 1 ? filters.page : 1;
-    const pageSize = filters?.pageSize && filters.pageSize >= 1 ? Math.min(filters.pageSize, 100) : 50;
+    const pageSize = filters?.pageSize && filters.pageSize >= 1 ? Math.min(filters.pageSize, 200) : 25;
     const isPaginated = Boolean(filters?.isPaginated);
 
     const rows = await prisma.enrollment.findMany({
@@ -708,7 +708,7 @@ export class EnrollmentsRepository {
 
     const total = isPaginated ? matchingTotal : currentData.length;
     const effectivePageSize = isPaginated
-      ? (filters?.pageSize && filters.pageSize >= 1 ? Math.min(filters.pageSize, 100) : 50)
+      ? (filters?.pageSize && filters.pageSize >= 1 ? Math.min(filters.pageSize, 200) : 25)
       : Math.max(1, currentData.length);
     const totalPages = Math.max(1, Math.ceil(total / effectivePageSize));
 

@@ -116,6 +116,8 @@ export interface StudentListQueryOptions {
   cvht?: string;
   gender?: string;
   status?: string;
+  model?: string;
+  payment?: string;
   sale?: string;
 }
 
@@ -131,6 +133,7 @@ export interface StudentListMeta {
   filterOptions: {
     cvhtList: string[];
     salesList: string[];
+    csOptions?: Array<{ value: string; label: string }>;
   };
 }
 

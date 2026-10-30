@@ -19,7 +19,7 @@ export class ClassesController {
   async list(req: Request, res: Response, next: NextFunction) {
     try {
       const q = req.query as Record<string, any>;
-      const pagination = parsePaginationQuery(q, 50);
+      const pagination = parsePaginationQuery(q, 25);
       const search = parseSearchQuery(q.search, 100);
       const modelType =
         typeof q.model_type === 'string' && q.model_type.trim()
