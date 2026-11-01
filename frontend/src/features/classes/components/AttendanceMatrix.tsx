@@ -3223,7 +3223,7 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
       {/* TAB 1: ĐIỂM DANH NHANH (A -> H + K + 1 Cột Ngày Hiện Tại)                 */}
       {/* ========================================================================= */}
       {activeTab === 'quick' && (
-        <div className="w-full overflow-x-auto select-none">
+        <div className="w-full overflow-x-auto">
           <table className="w-full text-xs text-left border-collapse">
             <thead>
               <tr className="bg-surface-muted/90 text-text-secondary border-b border-border/80 text-[11px] font-bold">
@@ -3610,7 +3610,7 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
       {/* TAB 2: CHI TIẾT MA TRẬN THEO THÁNG HOẶC NHẬT KÝ BUỔI HỌC                  */}
       {/* ========================================================================= */}
       {activeTab === 'detailed' && detailedViewMode === 'log' && (
-        <div className="w-full overflow-x-auto select-none">
+        <div className="w-full overflow-x-auto">
           <table className="w-full text-xs text-left border-collapse">
             <thead>
               <tr className="bg-surface-muted/90 text-text-secondary border-b border-border/80 text-[11px] font-bold">
@@ -3760,7 +3760,7 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
             }}
             counts={matrixLegendStats.counts}
           />
-          <div className="w-full overflow-x-auto select-none">
+          <div className="w-full overflow-x-auto">
           <table className="w-full text-xs text-left border-collapse">
             <thead>
               <tr className="bg-surface-muted/90 text-text-secondary border-b border-border/80 text-[11px] font-bold">
@@ -4236,7 +4236,7 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
           </div>
 
           {/* Table: Cột A -> H + Y -> AH */}
-          <div className="w-full overflow-x-auto select-none rounded-xl border border-border/80">
+          <div className="w-full overflow-x-auto rounded-xl border border-border/80">
             <table className="w-full text-xs text-left border-collapse">
               <thead>
                 <tr className="bg-surface-muted/90 text-text-secondary border-b border-border/80 text-[11px] font-bold">

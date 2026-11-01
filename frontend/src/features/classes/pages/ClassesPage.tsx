@@ -4604,7 +4604,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
 
         {/* Bảng Lớp học & Điểm danh (hoặc Nhật ký bài học khi chọn ở Tab 2) */}
         {activeTab === 'detailed' && detailedViewMode === 'log' ? (
-          <div className="w-full overflow-x-auto select-none">
+          <div className="w-full overflow-x-auto">
             <table className="w-full text-xs text-left border-collapse">
               <thead>
                 <tr className="bg-surface-muted/90 text-text-secondary border-b border-border/80 text-[11px] font-bold">
@@ -4789,7 +4789,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
         ) : (
         <div>
           {activeTab === 'detailed' && <AttendanceMatrixLegendBar />}
-          <div className="w-full overflow-x-auto select-none">
+          <div className="w-full overflow-x-auto">
           <table className="w-full text-xs text-left border-collapse">
             <thead>
               <tr className="bg-surface-muted/90 text-text-secondary border-b border-border/80 text-[11px] font-bold">
