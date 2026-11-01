@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { importsApi } from '../api/imports.api';
 import {
   CsUserOption,
@@ -6,6 +7,7 @@ import {
   ServiceAccountInfo,
   SyncHistoryItem,
   SyncHistoryResponse,
+  SyncSourceType,
   UpdateGoogleSheetSyncConfigDTO,
 } from '../types/imports.types';
 import { useAuth } from '../../../contexts/AuthContext';
@@ -16,12 +18,12 @@ import {
   AlertTriangle,
   CheckCircle2,
   ChevronDown,
-  ChevronRight,
   Clock,
   Copy,
   Download,
   ExternalLink,
   FileSpreadsheet,
+  FolderOpen,
   History,
   Info,
   MoreHorizontal,
@@ -57,21 +59,42 @@ const deriveCvhtCodes = (
   return Array.from(seen).sort();
 };
 
+const isSyncConfigReady = (
+  cfg: Partial<GoogleSheetSyncConfig>,
+  draft?: Partial<UpdateGoogleSheetSyncConfigDTO>
+): boolean => {
+  const sheetName = (draft?.sheet_name ?? cfg.sheet_name ?? '').trim();
+  if (!sheetName) return false;
+
+  const sourceType: SyncSourceType =
+    draft?.source_type ||
+    cfg.source_type ||
+    ((draft?.spreadsheet_url ?? cfg.spreadsheet_url ?? '').trim()
+      ? 'GOOGLE_SHEET'
+      : 'LOCAL_FILE');
+
+  if (sourceType === 'GOOGLE_SHEET') {
+    return Boolean((draft?.spreadsheet_url ?? cfg.spreadsheet_url ?? '').trim());
+  }
+  return Boolean((draft?.local_file_path ?? cfg.local_file_path ?? '').trim());
+};
+
 const DEFAULT_CONFIGS: GoogleSheetSyncConfig[] = [
   {
     id: 1,
     code: 'JLPT',
     name: 'Khóa Luyện thi JLPT',
     program_type: 'JLPT',
+    source_type: 'LOCAL_FILE',
     spreadsheet_url: '',
-    local_file_path: 'docs/data/hoc_vien/hoc_vien_jlpt.xlsx',
+    local_file_path: '',
     sheet_name: 'Data JLPT_Inhouse',
     setting_sheet_name: 'Setting',
     header_row: 2,
     cvht_mapping: {},
     default_cs_id: null,
     sync_interval_minutes: 10,
-    enabled: true,
+    enabled: false,
     last_status: null,
     last_synced_at: null,
     last_summary: null,
@@ -81,15 +104,16 @@ const DEFAULT_CONFIGS: GoogleSheetSyncConfig[] = [
     code: 'KAIWA',
     name: 'Khóa Giao tiếp Kaiwa',
     program_type: 'KAIWA',
+    source_type: 'LOCAL_FILE',
     spreadsheet_url: '',
-    local_file_path: 'docs/data/hoc_vien/hoc_vien_kaiwa.xlsx',
+    local_file_path: '',
     sheet_name: 'Tổng',
     setting_sheet_name: null,
     header_row: 2,
     cvht_mapping: {},
     default_cs_id: null,
     sync_interval_minutes: 10,
-    enabled: true,
+    enabled: false,
     last_status: null,
     last_synced_at: null,
     last_summary: null,
@@ -220,6 +244,8 @@ export const GoogleSheetSyncPanel: React.FC = () => {
   // Slide-over Drawer
   const [drawerCode, setDrawerCode] = useState<string | null>(null);
   const [drawerTab, setDrawerTab] = useState<SyncDrawerTabKey>('config');
+  const localFileInputRef = useRef<HTMLInputElement>(null);
+  const [uploadingLocalFileCode, setUploadingLocalFileCode] = useState<string | null>(null);
 
   // History state
   const [historyData, setHistoryData] = useState<SyncHistoryResponse | null>(null);
@@ -277,7 +303,14 @@ export const GoogleSheetSyncPanel: React.FC = () => {
           }
         });
 
-        nextDrafts[cfg.code] = {
+        const resolvedSourceType: SyncSourceType =
+          cfg.source_type ||
+          (cfg.spreadsheet_url && cfg.spreadsheet_url.trim()
+            ? 'GOOGLE_SHEET'
+            : 'LOCAL_FILE');
+
+        const initialDraft: UpdateGoogleSheetSyncConfigDTO = {
+          source_type: resolvedSourceType,
           spreadsheet_url: cfg.spreadsheet_url || '',
           local_file_path: cfg.local_file_path || '',
           sheet_name: cfg.sheet_name,
@@ -287,6 +320,10 @@ export const GoogleSheetSyncPanel: React.FC = () => {
           sync_interval_minutes: cfg.sync_interval_minutes || 10,
           enabled: cfg.enabled,
         };
+        initialDraft.enabled =
+          isSyncConfigReady(cfg, initialDraft) && Boolean(cfg.enabled);
+
+        nextDrafts[cfg.code] = initialDraft;
       });
       setDrafts(nextDrafts);
     } catch (err: any) {
@@ -294,6 +331,7 @@ export const GoogleSheetSyncPanel: React.FC = () => {
       const fallbackDrafts: Record<string, UpdateGoogleSheetSyncConfigDTO> = {};
       DEFAULT_CONFIGS.forEach((cfg) => {
         fallbackDrafts[cfg.code] = {
+          source_type: cfg.source_type || 'LOCAL_FILE',
           spreadsheet_url: cfg.spreadsheet_url || '',
           local_file_path: cfg.local_file_path || '',
           sheet_name: cfg.sheet_name,
@@ -301,7 +339,7 @@ export const GoogleSheetSyncPanel: React.FC = () => {
           cvht_mapping: cfg.cvht_mapping || {},
           default_cs_id: cfg.default_cs_id ?? null,
           sync_interval_minutes: cfg.sync_interval_minutes || 10,
-          enabled: cfg.enabled,
+          enabled: false,
         };
       });
       setDrafts(fallbackDrafts);
@@ -354,13 +392,21 @@ export const GoogleSheetSyncPanel: React.FC = () => {
   }, [activeSubTab, drawerTab, fetchHistory]);
 
   const updateDraft = (code: string, patch: Partial<UpdateGoogleSheetSyncConfigDTO>) => {
-    setDrafts((prev) => ({
-      ...prev,
-      [code]: {
-        ...(prev[code] || {}),
+    setDrafts((prev) => {
+      const current = prev[code] || {};
+      const merged: UpdateGoogleSheetSyncConfigDTO = {
+        ...current,
         ...patch,
-      },
-    }));
+      };
+      const matchedCfg = configs.find((c) => c.code === code) || { code };
+      if (!isSyncConfigReady(matchedCfg, merged)) {
+        merged.enabled = false;
+      }
+      return {
+        ...prev,
+        [code]: merged,
+      };
+    });
   };
 
   const updateCvhtMapping = (code: string, cvhtCode: string, userIdStr: string) => {
@@ -383,29 +429,81 @@ export const GoogleSheetSyncPanel: React.FC = () => {
   };
 
   const buildPayload = (
-    draft: UpdateGoogleSheetSyncConfigDTO
-  ): UpdateGoogleSheetSyncConfigDTO => ({
-    spreadsheet_url: draft.spreadsheet_url?.trim() || null,
-    local_file_path: draft.local_file_path?.trim() || null,
-    sheet_name: draft.sheet_name?.trim() || undefined,
-    setting_sheet_name: draft.setting_sheet_name?.trim() || null,
-    cvht_mapping: draft.cvht_mapping || {},
-    default_cs_id: draft.default_cs_id ? Number(draft.default_cs_id) : null,
-    sync_interval_minutes: Number(draft.sync_interval_minutes) || 10,
-    enabled: Boolean(draft.enabled),
-  });
+    draft: UpdateGoogleSheetSyncConfigDTO,
+    cfg?: Partial<GoogleSheetSyncConfig>
+  ): UpdateGoogleSheetSyncConfigDTO => {
+    const ready = isSyncConfigReady(cfg || {}, draft);
+    return {
+      source_type: draft.source_type || 'LOCAL_FILE',
+      spreadsheet_url: draft.spreadsheet_url?.trim() || null,
+      local_file_path: draft.local_file_path?.trim() || null,
+      sheet_name: draft.sheet_name?.trim() || undefined,
+      setting_sheet_name: draft.setting_sheet_name?.trim() || null,
+      cvht_mapping: draft.cvht_mapping || {},
+      default_cs_id: draft.default_cs_id ? Number(draft.default_cs_id) : null,
+      sync_interval_minutes: Number(draft.sync_interval_minutes) || 10,
+      enabled: ready && Boolean(draft.enabled),
+    };
+  };
+
+  const handleSelectLocalFile = async (
+    code: string,
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+
+    const nativePath = (file as any).path as string | undefined;
+    try {
+      setUploadingLocalFileCode(code);
+      const res = await importsApi.uploadSheetSyncLocalFile(code, file);
+      const resolvedPath =
+        nativePath || res?.local_file_path || `docs/data/hoc_vien/${file.name}`;
+      updateDraft(code, {
+        source_type: 'LOCAL_FILE',
+        local_file_path: resolvedPath,
+      });
+      setConfigs((prev) =>
+        prev.map((c) =>
+          c.code === code
+            ? {
+                ...c,
+                source_type: 'LOCAL_FILE',
+                local_file_path: resolvedPath,
+              }
+            : c
+        )
+      );
+      toast.success(`Đã chọn file "${file.name}" cho nguồn ${code}`);
+    } catch (err: any) {
+      const fallbackPath = nativePath || `docs/data/hoc_vien/${file.name}`;
+      updateDraft(code, {
+        source_type: 'LOCAL_FILE',
+        local_file_path: fallbackPath,
+      });
+      toast.error(
+        err.response?.data?.error?.message ||
+          err.response?.data?.message ||
+          `Đã điền đường dẫn "${fallbackPath}" nhưng chưa thể tải file lên server`
+      );
+    } finally {
+      setUploadingLocalFileCode(null);
+    }
+  };
 
   const handleToggleEnabledInline = async (cfg: GoogleSheetSyncConfig) => {
     const code = cfg.code;
     const currentDraft = drafts[code];
     if (!currentDraft) return;
+    if (!isSyncConfigReady(cfg, currentDraft)) return;
     const nextEnabled = !currentDraft.enabled;
     const nextDraft = { ...currentDraft, enabled: nextEnabled };
     updateDraft(code, { enabled: nextEnabled });
 
     try {
       setTogglingCode(code);
-      await importsApi.updateSheetSyncConfig(code, buildPayload(nextDraft));
+      await importsApi.updateSheetSyncConfig(code, buildPayload(nextDraft, cfg));
       setConfigs((prev) =>
         prev.map((c) => (c.code === code ? { ...c, enabled: nextEnabled } : c))
       );
@@ -427,9 +525,10 @@ export const GoogleSheetSyncPanel: React.FC = () => {
   const handleSaveConfig = async (code: string, closeDrawerAfter = true) => {
     const draft = drafts[code];
     if (!draft) return;
+    const matchedCfg = configs.find((c) => c.code === code);
     try {
       setSavingCode(code);
-      await importsApi.updateSheetSyncConfig(code, buildPayload(draft));
+      await importsApi.updateSheetSyncConfig(code, buildPayload(draft, matchedCfg));
       toast.success(`Đã lưu cấu hình đồng bộ cho nguồn ${code}!`);
       await fetchConfigs();
       if (closeDrawerAfter) {
@@ -447,11 +546,16 @@ export const GoogleSheetSyncPanel: React.FC = () => {
   };
 
   const handleRunSync = async (code: string, forceFullSync = false) => {
+    const matchedCfg = configs.find((c) => c.code === code);
+    const draft = drafts[code];
+    if (!isSyncConfigReady(matchedCfg || { code }, draft)) {
+      toast.error(`Vui lòng cấu hình đầy đủ nguồn dữ liệu cho ${code} trước khi chạy`);
+      return;
+    }
     try {
       setSyncingCode(`${code}_${forceFullSync ? 'full' : 'diff'}`);
-      const draft = drafts[code];
       if (draft) {
-        await importsApi.updateSheetSyncConfig(code, buildPayload(draft));
+        await importsApi.updateSheetSyncConfig(code, buildPayload(draft, matchedCfg));
       }
 
       const res = await importsApi.runSheetSync(code, { forceFullSync });
@@ -529,14 +633,21 @@ export const GoogleSheetSyncPanel: React.FC = () => {
     }
   };
 
+  const hasAnyReadyConfig = useMemo(
+    () => configs.some((c) => isSyncConfigReady(c, drafts[c.code])),
+    [configs, drafts]
+  );
+
   const summaryCounts = useMemo(() => {
     const total = configs.length;
-    const enabledCount = configs.filter((c) => c.enabled).length;
+    const enabledCount = configs.filter(
+      (c) => isSyncConfigReady(c, drafts[c.code]) && Boolean(drafts[c.code]?.enabled ?? c.enabled)
+    ).length;
     const failedCount = configs.filter(
       (c) => c.last_status === 'FAILED' || c.last_status === 'PARTIAL_FAILED'
     ).length;
     return { total, enabledCount, failedCount };
-  }, [configs]);
+  }, [configs, drafts]);
 
   const filteredConfigs = useMemo(() => {
     return configs.filter((cfg) => {
@@ -660,22 +771,12 @@ export const GoogleSheetSyncPanel: React.FC = () => {
 
   return (
     <div className="space-y-5">
-      {/* A. Breadcrumb & Top Header Bar */}
+      {/* A. Top Header Bar */}
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
         <div>
-          <nav className="flex items-center gap-1.5 text-xs text-slate-500 font-medium mb-1">
-            <span>Nhập &amp; Xuất dữ liệu</span>
-            <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
-            <span className="text-slate-700 font-semibold">
-              Đồng bộ dữ liệu học viên
-            </span>
-          </nav>
           <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
             Đồng bộ dữ liệu học viên
           </h1>
-          <p className="text-sm text-slate-500 mt-0.5">
-            Quản lý đồng bộ danh sách học viên từ Google Sheet về hệ thống theo mã CSKH
-          </p>
         </div>
 
         {/* Right: Pill Google + Split Button Đồng bộ tất cả */}
@@ -720,9 +821,14 @@ export const GoogleSheetSyncPanel: React.FC = () => {
           <div className="relative inline-flex" ref={splitMenuRef}>
             <button
               type="button"
-              disabled={syncingAllMode !== null}
+              disabled={syncingAllMode !== null || !hasAnyReadyConfig}
               onClick={() => handleSyncAll(false)}
-              className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white rounded-l-xl px-3.5 py-2 text-xs font-semibold transition-colors cursor-pointer shadow-2xs"
+              title={
+                !hasAnyReadyConfig
+                  ? 'Vui lòng cấu hình ít nhất 1 nguồn dữ liệu trước khi đồng bộ'
+                  : undefined
+              }
+              className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-l-xl px-3.5 py-2 text-xs font-semibold transition-colors cursor-pointer shadow-2xs"
             >
               <RefreshCw
                 className={`w-3.5 h-3.5 ${
@@ -733,8 +839,9 @@ export const GoogleSheetSyncPanel: React.FC = () => {
             </button>
             <button
               type="button"
+              disabled={syncingAllMode !== null || !hasAnyReadyConfig}
               onClick={() => setSplitMenuOpen((prev) => !prev)}
-              className="inline-flex items-center justify-center bg-blue-600 hover:bg-blue-700 text-white rounded-r-xl px-2.5 py-2 border-l border-blue-400/50 transition-colors cursor-pointer"
+              className="inline-flex items-center justify-center bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-r-xl px-2.5 py-2 border-l border-blue-400/50 transition-colors cursor-pointer"
               aria-label="Tùy chọn đồng bộ"
             >
               <ChevronDown className="w-3.5 h-3.5" />
@@ -909,7 +1016,13 @@ export const GoogleSheetSyncPanel: React.FC = () => {
                       const isJlpt =
                         cfg.code === 'JLPT' || cfg.program_type === 'JLPT';
                       const draft = drafts[cfg.code] || {
+                        source_type:
+                          cfg.source_type ||
+                          (cfg.spreadsheet_url?.trim()
+                            ? 'GOOGLE_SHEET'
+                            : 'LOCAL_FILE'),
                         spreadsheet_url: cfg.spreadsheet_url || '',
+                        local_file_path: cfg.local_file_path || '',
                         sheet_name: cfg.sheet_name,
                         setting_sheet_name: cfg.setting_sheet_name || '',
                         cvht_mapping: cfg.cvht_mapping || {},
@@ -917,12 +1030,26 @@ export const GoogleSheetSyncPanel: React.FC = () => {
                         sync_interval_minutes: cfg.sync_interval_minutes || 10,
                         enabled: cfg.enabled,
                       };
+                      const effectiveSourceType: SyncSourceType =
+                        draft.source_type ||
+                        cfg.source_type ||
+                        (cfg.spreadsheet_url?.trim()
+                          ? 'GOOGLE_SHEET'
+                          : 'LOCAL_FILE');
                       const sheetUrl = (
-                        draft.spreadsheet_url ||
-                        cfg.spreadsheet_url ||
+                        draft.spreadsheet_url ??
+                        cfg.spreadsheet_url ??
                         ''
                       ).trim();
-                      const hasGoogleSheet = Boolean(sheetUrl);
+                      const isGoogleSheetSource =
+                        effectiveSourceType === 'GOOGLE_SHEET';
+                      const localPathDisplay = (
+                        draft.local_file_path ??
+                        cfg.local_file_path ??
+                        ''
+                      ).trim();
+                      const isReady = isSyncConfigReady(cfg, draft);
+                      const isAutoEnabled = isReady && Boolean(draft.enabled);
                       const { date: runDate, time: runTime } = formatDateParts(
                         cfg.last_synced_at
                       );
@@ -970,19 +1097,28 @@ export const GoogleSheetSyncPanel: React.FC = () => {
 
                           {/* 2. Nguồn dữ liệu */}
                           <td className="py-3.5 px-3 align-middle">
-                            {hasGoogleSheet ? (
-                              <a
-                                href={sheetUrl}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="inline-flex items-center gap-1.5 font-semibold text-slate-800 hover:text-blue-600 transition-colors"
-                              >
-                                <span className="w-4 h-4 rounded bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-600 shrink-0">
-                                  <FileSpreadsheet className="w-3 h-3" />
-                                </span>
-                                <span>Google Sheet</span>
-                                <ExternalLink className="w-3 h-3 text-slate-400" />
-                              </a>
+                            {isGoogleSheetSource ? (
+                              sheetUrl ? (
+                                <a
+                                  href={sheetUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="inline-flex items-center gap-1.5 font-semibold text-slate-800 hover:text-blue-600 transition-colors"
+                                >
+                                  <span className="w-4 h-4 rounded bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-600 shrink-0">
+                                    <FileSpreadsheet className="w-3 h-3" />
+                                  </span>
+                                  <span>Google Sheet</span>
+                                  <ExternalLink className="w-3 h-3 text-slate-400" />
+                                </a>
+                              ) : (
+                                <div className="inline-flex items-center gap-1.5 font-semibold text-slate-700">
+                                  <span className="w-4 h-4 rounded bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-600 shrink-0">
+                                    <FileSpreadsheet className="w-3 h-3" />
+                                  </span>
+                                  <span>Google Sheet</span>
+                                </div>
+                              )
                             ) : (
                               <div className="inline-flex items-center gap-1.5 font-semibold text-slate-700">
                                 <span className="w-4 h-4 rounded bg-emerald-600 text-white text-[9px] font-extrabold flex items-center justify-center shrink-0">
@@ -992,12 +1128,9 @@ export const GoogleSheetSyncPanel: React.FC = () => {
                               </div>
                             )}
                             <div className="text-[11px] text-slate-400 mt-0.5 truncate max-w-[200px]">
-                              {hasGoogleSheet
-                                ? sheetUrl
-                                : cfg.local_file_path ||
-                                  (isJlpt
-                                    ? 'docs/data/hoc_vien/hoc_vien_jlpt.xlsx'
-                                    : 'docs/data/hoc_vien/hoc_vien_kaiwa.xlsx')}
+                              {isGoogleSheetSource
+                                ? sheetUrl || 'Chưa cấu hình'
+                                : localPathDisplay || 'Chưa cấu hình'}
                             </div>
                           </td>
 
@@ -1018,22 +1151,37 @@ export const GoogleSheetSyncPanel: React.FC = () => {
                           {/* 4. Chu kỳ tự động */}
                           <td className="py-3.5 px-3 align-middle">
                             <div className="flex items-center gap-2.5">
-                              <span className="text-slate-700 font-medium">
+                              <span
+                                className={
+                                  isReady
+                                    ? 'text-slate-700 font-medium'
+                                    : 'text-slate-400 font-medium'
+                                }
+                              >
                                 Mỗi {draft.sync_interval_minutes || 10} phút
                               </span>
                               <button
                                 type="button"
                                 role="switch"
-                                aria-checked={Boolean(draft.enabled)}
-                                disabled={togglingCode === cfg.code}
+                                aria-checked={isAutoEnabled}
+                                disabled={!isReady || togglingCode === cfg.code}
+                                title={
+                                  !isReady
+                                    ? 'Vui lòng cấu hình đầy đủ nguồn dữ liệu và tên sheet trước khi bật tự động đồng bộ'
+                                    : undefined
+                                }
                                 onClick={() => handleToggleEnabledInline(cfg)}
-                                className={`relative inline-flex w-9 h-5 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out ${
-                                  draft.enabled ? 'bg-blue-600' : 'bg-slate-200'
-                                } ${togglingCode === cfg.code ? 'opacity-60' : ''}`}
+                                className={`relative inline-flex w-9 h-5 shrink-0 cursor-pointer disabled:cursor-not-allowed rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out ${
+                                  isAutoEnabled ? 'bg-blue-600' : 'bg-slate-200'
+                                } ${
+                                  !isReady || togglingCode === cfg.code
+                                    ? 'opacity-50'
+                                    : ''
+                                }`}
                               >
                                 <span
                                   className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-xs transition duration-200 ease-in-out ${
-                                    draft.enabled ? 'translate-x-4' : 'translate-x-0'
+                                    isAutoEnabled ? 'translate-x-4' : 'translate-x-0'
                                   }`}
                                 />
                               </button>
@@ -1100,9 +1248,14 @@ export const GoogleSheetSyncPanel: React.FC = () => {
                               {isFailed ? (
                                 <button
                                   type="button"
-                                  disabled={isSyncingThis}
+                                  disabled={!isReady || isSyncingThis}
+                                  title={
+                                    !isReady
+                                      ? 'Vui lòng cấu hình đầy đủ nguồn dữ liệu trước khi chạy'
+                                      : undefined
+                                  }
                                   onClick={() => handleRunSync(cfg.code, false)}
-                                  className="border border-blue-200 bg-blue-50/50 text-blue-600 hover:bg-blue-100 rounded-lg px-3 py-1.5 text-xs font-semibold inline-flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-60"
+                                  className="border border-blue-200 bg-blue-50/50 text-blue-600 hover:bg-blue-100 rounded-lg px-3 py-1.5 text-xs font-semibold inline-flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
                                   <RotateCcw
                                     className={`w-3 h-3 ${
@@ -1114,9 +1267,14 @@ export const GoogleSheetSyncPanel: React.FC = () => {
                               ) : (
                                 <button
                                   type="button"
-                                  disabled={isSyncingThis}
+                                  disabled={!isReady || isSyncingThis}
+                                  title={
+                                    !isReady
+                                      ? 'Vui lòng cấu hình đầy đủ nguồn dữ liệu trước khi đồng bộ'
+                                      : undefined
+                                  }
                                   onClick={() => handleRunSync(cfg.code, false)}
-                                  className="border border-blue-200 bg-white text-blue-600 hover:bg-blue-50 rounded-lg px-3 py-1.5 text-xs font-semibold inline-flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-60"
+                                  className="border border-blue-200 bg-white text-blue-600 hover:bg-blue-50 rounded-lg px-3 py-1.5 text-xs font-semibold inline-flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
                                   {isSyncingThis ? (
                                     <RefreshCw className="w-3 h-3 animate-spin" />
@@ -1162,11 +1320,13 @@ export const GoogleSheetSyncPanel: React.FC = () => {
                                     </button>
                                     <button
                                       type="button"
+                                      disabled={!isReady || isSyncingThis}
                                       onClick={() => {
+                                        if (!isReady) return;
                                         setOpenRowMenuCode(null);
                                         handleRunSync(cfg.code, true);
                                       }}
-                                      className="w-full px-3.5 py-2 text-slate-700 hover:bg-slate-50 flex items-center gap-2 font-medium cursor-pointer"
+                                      className="w-full px-3.5 py-2 text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 font-medium cursor-pointer"
                                     >
                                       <RotateCcw className="w-3.5 h-3.5 text-amber-600" />
                                       <span>Làm mới toàn bộ (Full Sync)</span>
@@ -1348,6 +1508,14 @@ export const GoogleSheetSyncPanel: React.FC = () => {
                     effectiveHistory.items.map((item) => {
                       const isJlpt = item.programType.toUpperCase() === 'JLPT';
                       const isFailed = item.status !== 'SUCCESS';
+                      const itemCode = (item.code || item.programType).toUpperCase();
+                      const matchedCfg = configs.find(
+                        (c) => c.code.toUpperCase() === itemCode
+                      );
+                      const isItemReady = isSyncConfigReady(
+                        matchedCfg || { code: itemCode },
+                        drafts[itemCode]
+                      );
 
                       return (
                         <React.Fragment key={item.id}>
@@ -1444,13 +1612,19 @@ export const GoogleSheetSyncPanel: React.FC = () => {
                                     </button>
                                     <button
                                       type="button"
+                                      disabled={!isItemReady || syncingCode !== null}
+                                      title={
+                                        !isItemReady
+                                          ? 'Vui lòng cấu hình đầy đủ nguồn dữ liệu trước khi chạy lại'
+                                          : undefined
+                                      }
                                       onClick={() =>
                                         handleRunSync(
                                           item.code || item.programType,
                                           false
                                         )
                                       }
-                                      className="bg-white border border-blue-200 hover:bg-blue-50 text-blue-600 rounded-lg px-2.5 py-1 text-xs font-semibold inline-flex items-center gap-1 transition-colors cursor-pointer"
+                                      className="bg-white border border-blue-200 hover:bg-blue-50 text-blue-600 rounded-lg px-2.5 py-1 text-xs font-semibold inline-flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                                     >
                                       <RotateCcw className="w-3.5 h-3.5" />
                                       <span>Chạy lại</span>
@@ -1728,7 +1902,11 @@ export const GoogleSheetSyncPanel: React.FC = () => {
           const cfg = activeDrawerConfig;
           const isJlpt = cfg.code === 'JLPT' || cfg.program_type === 'JLPT';
           const draft = drafts[cfg.code] || {
+            source_type:
+              cfg.source_type ||
+              (cfg.spreadsheet_url?.trim() ? 'GOOGLE_SHEET' : 'LOCAL_FILE'),
             spreadsheet_url: cfg.spreadsheet_url || '',
+            local_file_path: cfg.local_file_path || '',
             sheet_name: cfg.sheet_name,
             setting_sheet_name: cfg.setting_sheet_name || '',
             cvht_mapping: cfg.cvht_mapping || {},
@@ -1736,6 +1914,12 @@ export const GoogleSheetSyncPanel: React.FC = () => {
             sync_interval_minutes: cfg.sync_interval_minutes || 10,
             enabled: cfg.enabled,
           };
+          const selectedSourceType: SyncSourceType =
+            draft.source_type ||
+            cfg.source_type ||
+            (cfg.spreadsheet_url?.trim() ? 'GOOGLE_SHEET' : 'LOCAL_FILE');
+          const isDraftReady = isSyncConfigReady(cfg, draft);
+          const isDraftAutoEnabled = isDraftReady && Boolean(draft.enabled);
           const summary = cfg.last_summary;
           const byCvht = summary?.byCvht || {};
           const cvhtCodes = deriveCvhtCodes(
@@ -1749,8 +1933,8 @@ export const GoogleSheetSyncPanel: React.FC = () => {
               i.programType.toUpperCase() === cfg.code.toUpperCase()
           );
 
-          return (
-            <div className="fixed inset-0 z-50 bg-slate-900/25 backdrop-blur-[1px] flex justify-end">
+          return createPortal(
+            <div className="fixed inset-0 z-50 h-screen bg-slate-900/25 backdrop-blur-[1px] flex justify-end">
               <div
                 className="flex-1"
                 onClick={() => setDrawerCode(null)}
@@ -1834,48 +2018,97 @@ export const GoogleSheetSyncPanel: React.FC = () => {
                 <div className="flex-1 overflow-y-auto p-6 space-y-6 text-xs">
                   {drawerTab === 'config' && (
                     <>
-                      {/* 1. Nguồn dữ liệu Google Sheet */}
+                      {/* 1. Nguồn dữ liệu */}
                       <div className="space-y-3.5">
-                        <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
-                          Nguồn dữ liệu Google Sheet
-                        </h3>
-
-                        <div>
-                          <label className="block text-xs font-medium text-slate-700 mb-1.5">
-                            Link Google Sheet
-                          </label>
-                          <div className="flex items-center gap-2">
-                            <div className="flex-1">
-                              <Input
-                                value={draft.spreadsheet_url || ''}
-                                onChange={(e) =>
-                                  updateDraft(cfg.code, {
-                                    spreadsheet_url: e.target.value,
-                                  })
-                                }
-                                placeholder="https://docs.google.com/spreadsheets/d/..."
-                              />
-                            </div>
-                            <button
-                              type="button"
-                              disabled={!draft.spreadsheet_url?.trim()}
-                              onClick={() => {
-                                const url = draft.spreadsheet_url?.trim();
-                                if (url) window.open(url, '_blank', 'noopener,noreferrer');
-                              }}
-                              className="h-9 px-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-50 text-slate-700 font-semibold text-xs inline-flex items-center gap-1.5 shrink-0 cursor-pointer"
-                            >
-                              <ExternalLink className="w-3.5 h-3.5 text-slate-500" />
-                              <span>Mở Sheet</span>
-                            </button>
-                          </div>
-                          <span className="block text-[11px] text-slate-400 mt-1">
-                            Để trống hệ thống sẽ đọc từ file mẫu local:{' '}
-                            <code className="font-mono text-slate-600">
-                              {cfg.local_file_path}
-                            </code>
-                          </span>
+                        <div className="flex items-center justify-between gap-3">
+                          <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                            Nguồn dữ liệu
+                          </h3>
+                          <select
+                            value={selectedSourceType}
+                            onChange={(e) =>
+                              updateDraft(cfg.code, {
+                                source_type: e.target.value as SyncSourceType,
+                              })
+                            }
+                            className="h-8 rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                          >
+                            <option value="LOCAL_FILE">File local (.xlsx)</option>
+                            <option value="GOOGLE_SHEET">Google Sheet</option>
+                          </select>
                         </div>
+
+                        {selectedSourceType === 'GOOGLE_SHEET' ? (
+                          <div>
+                            <label className="block text-xs font-medium text-slate-700 mb-1.5">
+                              Link Google Sheet
+                            </label>
+                            <div className="flex items-center gap-2">
+                              <div className="flex-1">
+                                <Input
+                                  value={draft.spreadsheet_url ?? ''}
+                                  onChange={(e) =>
+                                    updateDraft(cfg.code, {
+                                      spreadsheet_url: e.target.value,
+                                    })
+                                  }
+                                  placeholder="https://docs.google.com/spreadsheets/d/..."
+                                />
+                              </div>
+                              <button
+                                type="button"
+                                disabled={!draft.spreadsheet_url?.trim()}
+                                onClick={() => {
+                                  const url = draft.spreadsheet_url?.trim();
+                                  if (url) window.open(url, '_blank', 'noopener,noreferrer');
+                                }}
+                                className="h-9 px-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-50 text-slate-700 font-semibold text-xs inline-flex items-center gap-1.5 shrink-0 cursor-pointer"
+                              >
+                                <ExternalLink className="w-3.5 h-3.5 text-slate-500" />
+                                <span>Mở Sheet</span>
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div>
+                            <label className="block text-xs font-medium text-slate-700 mb-1.5">
+                              Đường dẫn File local (.xlsx)
+                            </label>
+                            <div className="flex items-center gap-2">
+                              <div className="flex-1">
+                                <Input
+                                  value={draft.local_file_path ?? ''}
+                                  onChange={(e) =>
+                                    updateDraft(cfg.code, {
+                                      local_file_path: e.target.value,
+                                    })
+                                  }
+                                  placeholder="Nhập đường dẫn hoặc chọn file..."
+                                />
+                              </div>
+                              <input
+                                ref={localFileInputRef}
+                                type="file"
+                                accept=".xlsx,.xls"
+                                className="hidden"
+                                onChange={(e) => handleSelectLocalFile(cfg.code, e)}
+                              />
+                              <button
+                                type="button"
+                                disabled={uploadingLocalFileCode === cfg.code}
+                                onClick={() => localFileInputRef.current?.click()}
+                                className="h-9 px-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-50 text-slate-700 font-semibold text-xs inline-flex items-center gap-1.5 shrink-0 cursor-pointer"
+                              >
+                                {uploadingLocalFileCode === cfg.code ? (
+                                  <RefreshCw className="w-3.5 h-3.5 text-slate-500 animate-spin" />
+                                ) : (
+                                  <FolderOpen className="w-3.5 h-3.5 text-slate-500" />
+                                )}
+                                <span>Chọn file</span>
+                              </button>
+                            </div>
+                          </div>
+                        )}
 
                         <div className="grid grid-cols-2 gap-3">
                           <div>
@@ -1926,28 +2159,30 @@ export const GoogleSheetSyncPanel: React.FC = () => {
                       {/* 2. Lịch đồng bộ tự động */}
                       <div className="space-y-3.5">
                         <div className="flex items-center justify-between">
-                          <div>
-                            <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
-                              Chu kỳ tự động
-                            </h3>
-                            <p className="text-[11px] text-slate-500 mt-0.5">
-                              Tự động kiểm tra và đồng bộ dữ liệu học viên mới
-                            </p>
-                          </div>
+                          <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                            Chu kỳ tự động
+                          </h3>
                           <button
                             type="button"
                             role="switch"
-                            aria-checked={Boolean(draft.enabled)}
+                            aria-checked={isDraftAutoEnabled}
+                            disabled={!isDraftReady}
+                            title={
+                              !isDraftReady
+                                ? 'Vui lòng cấu hình đầy đủ nguồn dữ liệu và tên sheet trước khi bật tự động đồng bộ'
+                                : undefined
+                            }
                             onClick={() =>
+                              isDraftReady &&
                               updateDraft(cfg.code, { enabled: !draft.enabled })
                             }
-                            className={`relative inline-flex w-10 h-5 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out ${
-                              draft.enabled ? 'bg-blue-600' : 'bg-slate-200'
+                            className={`relative inline-flex w-10 h-5 shrink-0 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out ${
+                              isDraftAutoEnabled ? 'bg-blue-600' : 'bg-slate-200'
                             }`}
                           >
                             <span
                               className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-xs transition duration-200 ease-in-out ${
-                                draft.enabled ? 'translate-x-5' : 'translate-x-0'
+                                isDraftAutoEnabled ? 'translate-x-5' : 'translate-x-0'
                               }`}
                             />
                           </button>
@@ -1959,12 +2194,13 @@ export const GoogleSheetSyncPanel: React.FC = () => {
                           </label>
                           <select
                             value={draft.sync_interval_minutes || 10}
+                            disabled={!isDraftReady}
                             onChange={(e) =>
                               updateDraft(cfg.code, {
                                 sync_interval_minutes: Number(e.target.value),
                               })
                             }
-                            className="w-full h-9 rounded-xl border border-slate-200 bg-white px-3 text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                            className="w-full h-9 rounded-xl border border-slate-200 bg-white disabled:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed px-3 text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                           >
                             <option value={5}>Mỗi 5 phút</option>
                             <option value={10}>Mỗi 10 phút</option>
@@ -2124,6 +2360,7 @@ export const GoogleSheetSyncPanel: React.FC = () => {
                         <Button
                           variant="outline"
                           size="sm"
+                          disabled={!isDraftReady || syncingCode !== null}
                           onClick={() => handleRunSync(cfg.code, true)}
                           isLoading={syncingCode === `${cfg.code}_full`}
                           leftIcon={<RotateCcw className="w-3.5 h-3.5 text-amber-600" />}
@@ -2133,6 +2370,7 @@ export const GoogleSheetSyncPanel: React.FC = () => {
                         <Button
                           variant="primary"
                           size="sm"
+                          disabled={!isDraftReady || syncingCode !== null}
                           onClick={() => handleRunSync(cfg.code, false)}
                           isLoading={syncingCode === `${cfg.code}_diff`}
                           leftIcon={<RefreshCw className="w-3.5 h-3.5" />}
@@ -2212,7 +2450,8 @@ export const GoogleSheetSyncPanel: React.FC = () => {
                   </button>
                 </div>
               </div>
-            </div>
+            </div>,
+            document.body
           );
         })()}
     </div>

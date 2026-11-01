@@ -97,11 +97,14 @@ export interface GoogleSheetSyncSummary {
   skipped?: boolean;
 }
 
+export type SyncSourceType = 'GOOGLE_SHEET' | 'LOCAL_FILE';
+
 export interface GoogleSheetSyncConfig {
   id: number;
   code: 'JLPT' | 'KAIWA' | string;
   name: string;
   program_type: 'JLPT' | 'KAIWA' | string;
+  source_type?: SyncSourceType;
   spreadsheet_url?: string | null;
   spreadsheet_id?: string | null;
   local_file_path?: string | null;
@@ -120,6 +123,7 @@ export interface GoogleSheetSyncConfig {
 }
 
 export interface UpdateGoogleSheetSyncConfigDTO {
+  source_type?: SyncSourceType;
   spreadsheet_url?: string | null;
   local_file_path?: string | null;
   sheet_name?: string;

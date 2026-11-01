@@ -64,7 +64,10 @@ export interface SheetSyncHistoryItem {
   error: string | null;
 }
 
+export type SyncSourceType = 'GOOGLE_SHEET' | 'LOCAL_FILE';
+
 export interface UpdateSyncConfigDTO {
+  source_type?: SyncSourceType;
   spreadsheet_url?: string | null;
   local_file_path?: string | null;
   sheet_name?: string;
@@ -90,6 +93,7 @@ interface ParsedServiceAccountKey {
 }
 
 const SERVICE_ACCOUNT_SETTING_KEY = 'GOOGLE_SERVICE_ACCOUNT_JSON';
+const SYNC_SOURCE_TYPES_SETTING_KEY = 'SHEET_SYNC_SOURCE_TYPES';
 let cachedAccessToken: { token: string; expiresAtMs: number; clientEmail: string } | null = null;
 
 export class SheetSyncService {
@@ -455,37 +459,132 @@ export class SheetSyncService {
   }
 
   /**
+   * Read saved source_type map ("JLPT" | "KAIWA" -> "GOOGLE_SHEET" | "LOCAL_FILE") from AppSetting
+   */
+  public async getSourceTypeMap(): Promise<Record<string, SyncSourceType>> {
+    try {
+      const setting = await prisma.appSetting.findUnique({
+        where: { key: SYNC_SOURCE_TYPES_SETTING_KEY },
+      });
+      if (setting && setting.value && typeof setting.value === 'object') {
+        return setting.value as Record<string, SyncSourceType>;
+      }
+    } catch {
+      // Ignore lookup errors
+    }
+    return {};
+  }
+
+  /**
+   * Save source_type for a config code into AppSetting
+   */
+  public async setSourceType(code: string, sourceType: SyncSourceType, userId?: number): Promise<void> {
+    const upperCode = code.trim().toUpperCase();
+    const current = await this.getSourceTypeMap();
+    const next: Record<string, SyncSourceType> = {
+      ...current,
+      [upperCode]: sourceType === 'GOOGLE_SHEET' ? 'GOOGLE_SHEET' : 'LOCAL_FILE',
+    };
+    await prisma.appSetting
+      .upsert({
+        where: { key: SYNC_SOURCE_TYPES_SETTING_KEY },
+        update: {
+          value: next as Prisma.InputJsonValue,
+          updated_by_id: userId || null,
+        },
+        create: {
+          key: SYNC_SOURCE_TYPES_SETTING_KEY,
+          value: next as Prisma.InputJsonValue,
+          updated_by_id: userId || null,
+        },
+      })
+      .catch(() => {});
+  }
+
+  /**
+   * Resolve effective source_type for a config record
+   */
+  public resolveConfigSourceType(
+    cfg: { code: string; spreadsheet_url?: string | null },
+    sourceTypeMap: Record<string, SyncSourceType>
+  ): SyncSourceType {
+    const upper = cfg.code.trim().toUpperCase();
+    const explicit = sourceTypeMap[upper];
+    if (explicit === 'GOOGLE_SHEET' || explicit === 'LOCAL_FILE') {
+      return explicit;
+    }
+    return cfg.spreadsheet_url && cfg.spreadsheet_url.trim() ? 'GOOGLE_SHEET' : 'LOCAL_FILE';
+  }
+
+  /**
+   * Check whether a config has enough source & sheet configuration to run sync
+   */
+  public isConfigReady(
+    cfg: {
+      code: string;
+      spreadsheet_url?: string | null;
+      local_file_path?: string | null;
+      sheet_name?: string | null;
+    },
+    sourceTypeMap: Record<string, SyncSourceType>
+  ): boolean {
+    const sheetName = (cfg.sheet_name || '').trim();
+    if (!sheetName) return false;
+
+    const sourceType = this.resolveConfigSourceType(cfg, sourceTypeMap);
+    if (sourceType === 'GOOGLE_SHEET') {
+      return Boolean(this.extractSpreadsheetId(cfg.spreadsheet_url) || (cfg.spreadsheet_url || '').trim());
+    }
+    return Boolean((cfg.local_file_path || '').trim());
+  }
+
+  /**
    * Get all sync configs + CS users + Service Account status for UI
    */
   public async getConfigs() {
     await this.ensureDefaultConfigs();
     const { csUsers, mapping, defaultCsId } = await this.buildDefaultCvhtMapping();
     const { info: serviceAccount } = await this.getServiceAccountKey();
+    const sourceTypeMap = await this.getSourceTypeMap();
     const configs = await prisma.googleSheetSyncConfig.findMany({
       orderBy: { id: 'asc' },
     });
 
-    // Ensure cvht_mapping is populated if null
+    // Ensure cvht_mapping is populated if null, and auto-disable if source is not configured
+    const enrichedConfigs = [];
     for (const cfg of configs) {
-      if (!cfg.cvht_mapping || Object.keys(cfg.cvht_mapping as object).length === 0) {
+      const isReady = this.isConfigReady(cfg, sourceTypeMap);
+      const needsMappingInit = !cfg.cvht_mapping || Object.keys(cfg.cvht_mapping as object).length === 0;
+      const needsDisable = !isReady && cfg.enabled;
+
+      if (needsMappingInit || needsDisable) {
         const updated = await prisma.googleSheetSyncConfig.update({
           where: { id: cfg.id },
           data: {
-            cvht_mapping: mapping,
-            default_cs_id: cfg.default_cs_id || defaultCsId,
+            ...(needsMappingInit
+              ? {
+                  cvht_mapping: mapping,
+                  default_cs_id: cfg.default_cs_id || defaultCsId,
+                }
+              : {}),
+            ...(needsDisable ? { enabled: false } : {}),
           },
         });
         Object.assign(cfg, updated);
       }
+      enrichedConfigs.push({
+        ...cfg,
+        source_type: this.resolveConfigSourceType(cfg, sourceTypeMap),
+      });
     }
 
-    return { configs, csUsers, serviceAccount };
+    return { configs: enrichedConfigs, csUsers, serviceAccount };
   }
 
   /**
    * Update a specific sync config by code ("JLPT" | "KAIWA")
    */
-  public async updateConfig(code: string, dto: UpdateSyncConfigDTO) {
+  public async updateConfig(code: string, dto: UpdateSyncConfigDTO, userId?: number) {
     await this.ensureDefaultConfigs();
     const upperCode = code.trim().toUpperCase();
     const existing = await prisma.googleSheetSyncConfig.findUnique({
@@ -495,11 +594,34 @@ export class SheetSyncService {
       throw new AppError(404, `Không tìm thấy cấu hình đồng bộ cho mã [${upperCode}]`);
     }
 
+    if (dto.source_type === 'GOOGLE_SHEET' || dto.source_type === 'LOCAL_FILE') {
+      await this.setSourceType(upperCode, dto.source_type, userId);
+    }
+
+    const sourceTypeMap = await this.getSourceTypeMap();
+    const nextSpreadsheetUrl = dto.spreadsheet_url !== undefined ? dto.spreadsheet_url : existing.spreadsheet_url;
+    const nextLocalFilePath = dto.local_file_path !== undefined ? dto.local_file_path : existing.local_file_path;
+    const nextSheetName = dto.sheet_name !== undefined ? dto.sheet_name : existing.sheet_name;
+
+    const isReadyAfterUpdate = this.isConfigReady(
+      {
+        code: upperCode,
+        spreadsheet_url: nextSpreadsheetUrl,
+        local_file_path: nextLocalFilePath,
+        sheet_name: nextSheetName,
+      },
+      sourceTypeMap
+    );
+
     const spreadsheetId = dto.spreadsheet_url !== undefined
       ? this.extractSpreadsheetId(dto.spreadsheet_url)
       : existing.spreadsheet_id;
 
-    return prisma.googleSheetSyncConfig.update({
+    const nextEnabled = isReadyAfterUpdate
+      ? (dto.enabled !== undefined ? dto.enabled : existing.enabled)
+      : false;
+
+    const updated = await prisma.googleSheetSyncConfig.update({
       where: { id: existing.id },
       data: {
         ...(dto.spreadsheet_url !== undefined ? { spreadsheet_url: dto.spreadsheet_url, spreadsheet_id: spreadsheetId } : {}),
@@ -509,9 +631,65 @@ export class SheetSyncService {
         ...(dto.cvht_mapping !== undefined ? { cvht_mapping: dto.cvht_mapping as Prisma.InputJsonValue } : {}),
         ...(dto.default_cs_id !== undefined ? { default_cs_id: dto.default_cs_id } : {}),
         ...(dto.sync_interval_minutes !== undefined ? { sync_interval_minutes: dto.sync_interval_minutes } : {}),
-        ...(dto.enabled !== undefined ? { enabled: dto.enabled } : {}),
+        enabled: nextEnabled,
       },
     });
+
+    return {
+      ...updated,
+      source_type: this.resolveConfigSourceType(updated, sourceTypeMap),
+    };
+  }
+
+  /**
+   * Save an uploaded local Excel file for a sync config ("JLPT" | "KAIWA") and return its relative path
+   */
+  public async saveUploadedLocalFile(
+    code: string,
+    file: Express.Multer.File,
+    userId?: number
+  ): Promise<{ local_file_path: string; file_name: string; config: any }> {
+    await this.ensureDefaultConfigs();
+    const upperCode = code.trim().toUpperCase();
+    const existing = await prisma.googleSheetSyncConfig.findUnique({
+      where: { code: upperCode },
+    });
+    if (!existing) {
+      throw new AppError(404, `Không tìm thấy cấu hình đồng bộ cho mã [${upperCode}]`);
+    }
+
+    const safeOriginal = path
+      .basename(file.originalname || `hoc_vien_${upperCode.toLowerCase()}.xlsx`)
+      .replace(/[^a-zA-Z0-9._-À-ɏḀ-ỿ]/g, '_');
+
+    const rootCandidates = [
+      path.resolve(process.cwd(), '..', 'docs/data/hoc_vien'),
+      path.resolve(process.cwd(), 'docs/data/hoc_vien'),
+    ];
+    const targetDir = rootCandidates.find((d) => fs.existsSync(path.dirname(d))) || rootCandidates[0];
+    fs.mkdirSync(targetDir, { recursive: true });
+
+    const destPath = path.join(targetDir, safeOriginal);
+    fs.writeFileSync(destPath, file.buffer);
+
+    const relPath = `docs/data/hoc_vien/${safeOriginal}`;
+    await this.setSourceType(upperCode, 'LOCAL_FILE', userId);
+    const updated = await prisma.googleSheetSyncConfig.update({
+      where: { id: existing.id },
+      data: {
+        local_file_path: relPath,
+        last_file_hash: null,
+      },
+    });
+
+    return {
+      local_file_path: relPath,
+      file_name: safeOriginal,
+      config: {
+        ...updated,
+        source_type: 'LOCAL_FILE' as SyncSourceType,
+      },
+    };
   }
 
   /**
@@ -590,6 +768,7 @@ export class SheetSyncService {
    * public export URL, or local file path fallback
    */
   private async loadWorkbookBuffer(config: {
+    source_type?: SyncSourceType;
     spreadsheet_url?: string | null;
     spreadsheet_id?: string | null;
     local_file_path?: string | null;
@@ -597,7 +776,10 @@ export class SheetSyncService {
     setting_sheet_name?: string | null;
     program_type?: string;
   }): Promise<{ buffer: Buffer; sourceLabel: string }> {
-    const sheetId = config.spreadsheet_id || this.extractSpreadsheetId(config.spreadsheet_url);
+    const useGoogleSheet = config.source_type !== 'LOCAL_FILE';
+    const sheetId = useGoogleSheet
+      ? config.spreadsheet_id || this.extractSpreadsheetId(config.spreadsheet_url)
+      : null;
     if (sheetId) {
       const { key: saKey } = await this.getServiceAccountKey();
 
@@ -662,17 +844,22 @@ export class SheetSyncService {
           error: err?.message || String(err),
         });
       }
+    } else if (config.source_type === 'GOOGLE_SHEET' && !config.local_file_path) {
+      throw new AppError(400, 'Vui lòng nhập Link Google Sheet hợp lệ');
     }
 
-    if (!config.local_file_path) {
+    const cleanedLocalPath = (config.local_file_path || '').trim().replace(/^["']|["']$/g, '');
+    if (!cleanedLocalPath) {
       throw new AppError(400, 'Chưa cấu hình đường dẫn file local hoặc Google Sheet URL hợp lệ');
     }
 
-    const candidates = [
-      path.resolve(process.cwd(), config.local_file_path),
-      path.resolve(process.cwd(), '..', config.local_file_path),
-      path.resolve(__dirname, '../../../../', config.local_file_path),
-    ];
+    const candidates = path.isAbsolute(cleanedLocalPath)
+      ? [cleanedLocalPath]
+      : [
+          path.resolve(process.cwd(), cleanedLocalPath),
+          path.resolve(process.cwd(), '..', cleanedLocalPath),
+          path.resolve(__dirname, '../../../../', cleanedLocalPath),
+        ];
 
     for (const candidate of candidates) {
       if (fs.existsSync(candidate)) {
@@ -681,7 +868,7 @@ export class SheetSyncService {
       }
     }
 
-    throw new AppError(404, `Không tìm thấy file dữ liệu nguồn tại: ${config.local_file_path}`);
+    throw new AppError(404, `Không tìm thấy file dữ liệu nguồn tại: ${cleanedLocalPath}`);
   }
 
   /**
@@ -701,6 +888,9 @@ export class SheetSyncService {
       throw new AppError(404, `Không tìm thấy cấu hình đồng bộ [${upperCode}]`);
     }
 
+    const sourceTypeMap = await this.getSourceTypeMap();
+    const effectiveSourceType = this.resolveConfigSourceType(config, sourceTypeMap);
+
     const forceFullSync = Boolean(options?.forceFullSync);
     const limit = options?.limit;
     const triggerType: 'MANUAL' | 'AUTO' = options?.triggerType || (options?.actorId ? 'MANUAL' : 'AUTO');
@@ -712,7 +902,10 @@ export class SheetSyncService {
     });
 
     try {
-      const { buffer, sourceLabel } = await this.loadWorkbookBuffer(config);
+      const { buffer, sourceLabel } = await this.loadWorkbookBuffer({
+        ...config,
+        source_type: effectiveSourceType,
+      });
       const fileHash = this.sha256(buffer);
 
       // Fast path: if file hash hasn't changed and not forceFullSync and no custom limit
@@ -1300,12 +1493,18 @@ export class SheetSyncService {
    */
   public async syncAll(options?: { forceFullSync?: boolean; limit?: number; actorId?: number }) {
     await this.ensureDefaultConfigs();
+    const sourceTypeMap = await this.getSourceTypeMap();
     const configs = await prisma.googleSheetSyncConfig.findMany({
       orderBy: { id: 'asc' },
     });
 
+    const readyConfigs = configs.filter((cfg) => this.isConfigReady(cfg, sourceTypeMap));
+    if (readyConfigs.length === 0) {
+      throw new AppError(400, 'Chưa có nguồn đồng bộ nào được cấu hình đủ dữ liệu');
+    }
+
     const results: SheetSyncResult[] = [];
-    for (const cfg of configs) {
+    for (const cfg of readyConfigs) {
       const res = await this.syncConfigByCode(cfg.code, options);
       results.push(res);
     }
@@ -1490,6 +1689,7 @@ export class SheetSyncService {
    */
   public async processDueSyncConfigs(): Promise<void> {
     await this.ensureDefaultConfigs();
+    const sourceTypeMap = await this.getSourceTypeMap();
     const configs = await prisma.googleSheetSyncConfig.findMany({
       where: { enabled: true },
     });
@@ -1497,6 +1697,15 @@ export class SheetSyncService {
     const now = Date.now();
     for (const cfg of configs) {
       if (cfg.last_status === 'SYNCING') continue;
+      if (!this.isConfigReady(cfg, sourceTypeMap)) {
+        await prisma.googleSheetSyncConfig
+          .update({
+            where: { id: cfg.id },
+            data: { enabled: false },
+          })
+          .catch(() => {});
+        continue;
+      }
       const intervalMs = Math.max(1, cfg.sync_interval_minutes || 10) * 60 * 1000;
       const lastSyncMs = cfg.last_synced_at ? cfg.last_synced_at.getTime() : 0;
       if (now - lastSyncMs >= intervalMs) {

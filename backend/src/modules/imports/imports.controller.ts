@@ -313,8 +313,23 @@ export class ImportsController {
   updateSheetSyncConfig = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const code = req.params.code;
-      const updated = await this.sheetSyncService.updateConfig(code, req.body || {});
+      const user = (req as any).user;
+      const updated = await this.sheetSyncService.updateConfig(code, req.body || {}, user?.id);
       res.status(200).json({ data: updated, meta: null });
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  uploadSheetSyncLocalFile = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      if (!req.file) {
+        throw new AppError(400, 'Vui lòng chọn file Excel (.xlsx) từ máy tính');
+      }
+      const code = req.params.code;
+      const user = (req as any).user;
+      const data = await this.sheetSyncService.saveUploadedLocalFile(code, req.file, user?.id);
+      res.status(200).json({ data, meta: null });
     } catch (err) {
       next(err);
     }

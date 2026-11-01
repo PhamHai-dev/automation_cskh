@@ -11,7 +11,7 @@ import { CsSheetBackupPanel } from '../components/CsSheetBackupPanel';
 import { AttendanceExcelImportPanel } from '../../attendance/components/AttendanceExcelImportPanel';
 import { importsApi } from '../api/imports.api';
 import { useAuth } from '../../../contexts/AuthContext';
-import { ChevronRight, Download } from 'lucide-react';
+import { Download } from 'lucide-react';
 
 type ImportTabValue = 'sheet-sync' | 'sheet-backup' | 'wizard' | 'attendance' | 'approval' | 'history';
 
@@ -140,18 +140,12 @@ export const ImportsPage: React.FC = () => {
   return (
     <PageContainer>
       <div className="space-y-5">
-        {/* Breadcrumb & Header */}
+        {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
-            <nav className="flex items-center gap-1.5 text-xs text-slate-500 font-medium mb-1">
-              <span>Nhập xuất dữ liệu</span>
-              <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
-              <span className="text-slate-700 font-semibold">{currentMeta.label}</span>
-            </nav>
             <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
               {currentMeta.label}
             </h1>
-            <p className="text-sm text-slate-500 mt-0.5">{currentMeta.subtitle}</p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">

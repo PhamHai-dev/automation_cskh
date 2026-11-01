@@ -968,20 +968,12 @@ export const CsSheetBackupPanel: React.FC = () => {
 
   return (
     <div className="space-y-5">
-      {/* A. Breadcrumb & Top Header Bar */}
+      {/* A. Top Header Bar */}
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
         <div>
-          <nav className="flex items-center gap-1.5 text-xs text-slate-500 font-medium mb-1">
-            <span>Nhập &amp; Xuất dữ liệu</span>
-            <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
-            <span className="text-slate-700 font-semibold">Backup sổ CSKH</span>
-          </nav>
           <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
             Backup sổ CSKH
           </h1>
-          <p className="text-sm text-slate-500 mt-0.5">
-            Quản lý sao lưu dữ liệu học viên và điểm danh
-          </p>
         </div>
 
         {/* Right: 3 horizontal elements */}

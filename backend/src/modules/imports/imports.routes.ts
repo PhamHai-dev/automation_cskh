@@ -27,6 +27,7 @@ router.get('/sheet-sync/history', requireRoles(['ADMIN', 'MANAGE', 'CS']), contr
 // Service Account JSON configuration is restricted to ADMIN only (configured in Admin Settings page)
 router.put('/sheet-sync/service-account', requireRoles(['ADMIN']), controller.saveServiceAccount);
 router.put('/sheet-sync/configs/:code', requireRoles(['ADMIN', 'MANAGE']), controller.updateSheetSyncConfig);
+router.post('/sheet-sync/configs/:code/upload-file', requireRoles(['ADMIN', 'MANAGE']), upload.single('file'), controller.uploadSheetSyncLocalFile);
 router.post('/sheet-sync/configs/:code/sync', requireRoles(['ADMIN', 'MANAGE']), controller.syncSheetByCode);
 router.post('/sheet-sync/sync-all', requireRoles(['ADMIN', 'MANAGE']), controller.syncAllSheets);
 

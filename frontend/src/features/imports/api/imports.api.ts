@@ -184,6 +184,26 @@ export const importsApi = {
     return res.data?.data || res.data;
   },
 
+  uploadSheetSyncLocalFile: async (
+    code: string,
+    file: File
+  ): Promise<{
+    local_file_path: string;
+    file_name: string;
+    config: GoogleSheetSyncConfig;
+  }> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const res = await apiClient.post(
+      `/imports/sheet-sync/configs/${code}/upload-file`,
+      formData,
+      {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      }
+    );
+    return res.data?.data || res.data;
+  },
+
   runSheetSync: async (
     code: string,
     options?: { forceFullSync?: boolean; limit?: number }
