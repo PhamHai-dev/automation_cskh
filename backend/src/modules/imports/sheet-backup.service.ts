@@ -468,7 +468,7 @@ export class SheetBackupService {
             data: {
               cs_user_id: user.id,
               program_type: program,
-              name: `Backup ${program} - ${user.staff_code || user.name || user.email}`,
+              name: `Backup ${program} - ${(user.staff_code || user.name || user.email || '').slice(0, 100)}`.slice(0, 255),
               local_backup_path: this.relativeBackupPathFor(staffLabel, program),
               sheet_name: this.defaultSheetNameFor(program),
               header_row: 2,
@@ -530,7 +530,7 @@ export class SheetBackupService {
               data: {
                 cs_user_id: ownerUserId,
                 program_type: programTypeForDb,
-                name: `Backup Điểm danh GV - ${tCode} (${teacher.name || tCode})`,
+                name: `Backup Điểm danh GV - ${tCode} (${(teacher.name || tCode).slice(0, 100)})`.slice(0, 255),
                 local_backup_path: `backups/giao_vien/diem_danh_gv_${tCode}.xlsx`,
                 sheet_name: '2026 スケジュール',
                 header_row: 2,
