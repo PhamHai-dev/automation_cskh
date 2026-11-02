@@ -22,6 +22,7 @@ import {
   ClipboardCheck,
   Settings,
   Sliders,
+  RefreshCw,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -218,20 +219,40 @@ export const Sidebar: React.FC<SidebarProps> = ({
       title: 'DỮ LIỆU & HỆ THỐNG',
       items: [
         {
-          name: 'Nhập xuất dữ liệu',
-          path: '/imports',
-          activePaths: ['/imports', '/imports/approval-queue'],
+          name: 'Đồng bộ dữ liệu',
+          path: '/data-sync',
+          activePaths: ['/data-sync', '/imports?tab=sheet-sync'],
+          icon: <RefreshCw className="w-5 h-5 shrink-0" />,
+          allowedRoles: ['ADMIN', 'MANAGE', 'CS'],
+          end: true,
+          subItems: [
+            {
+              name: 'Danh sách nguồn đồng bộ',
+              tab: 'configs',
+              allowedRoles: ['ADMIN', 'MANAGE', 'CS'],
+            },
+            {
+              name: 'Lịch sử đồng bộ',
+              tab: 'history',
+              allowedRoles: ['ADMIN', 'MANAGE', 'CS'],
+            },
+            {
+              name: 'Ánh xạ CSKH & Kết nối',
+              tab: 'connection',
+              allowedRoles: ['ADMIN', 'MANAGE', 'CS'],
+            },
+          ],
+        },
+        {
+          name: 'Backup & Xuất nhập',
+          path: '/data-backup',
+          activePaths: ['/data-backup', '/imports'],
           icon: <FileSpreadsheet className="w-5 h-5 shrink-0" />,
           allowedRoles: ['ADMIN', 'MANAGE', 'CS'],
           end: true,
           subItems: [
             {
-              name: 'Đồng bộ dữ liệu học viên',
-              tab: 'sheet-sync',
-              allowedRoles: ['ADMIN', 'MANAGE'],
-            },
-            {
-              name: 'Backup dữ liệu',
+              name: 'Backup sổ CSKH & GV',
               tab: 'sheet-backup',
               allowedRoles: ['ADMIN', 'MANAGE', 'CS'],
             },
@@ -330,12 +351,26 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 );
 
                 if (visibleSubItems.length > 0) {
+                  const fullLocation = `${location.pathname}${location.search}`;
                   const isParentRouteActive =
                     location.pathname === item.path ||
                     Boolean(
-                      item.activePaths?.some(
-                        (p) => location.pathname === p || location.pathname.startsWith(`${p}/`)
-                      )
+                      item.activePaths?.some((p) => {
+                        if (p.includes('?')) {
+                          return fullLocation === p;
+                        }
+                        if (
+                          p === '/imports' &&
+                          location.pathname === '/imports' &&
+                          new URLSearchParams(location.search).get('tab') === 'sheet-sync'
+                        ) {
+                          return false;
+                        }
+                        return (
+                          location.pathname === p ||
+                          location.pathname.startsWith(`${p}/`)
+                        );
+                      })
                     );
                   const isExpanded = isParentRouteActive || hoveredPath === item.path;
                   const searchParams = new URLSearchParams(location.search);

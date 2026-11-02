@@ -1,6 +1,7 @@
 import ExcelJS from 'exceljs';
-import { CareLogOutcome, ClassModelType, EnrollmentStatus } from '@prisma/client';
+import { AttendanceStatus, CareLogOutcome, ClassModelType, EnrollmentStatus } from '@prisma/client';
 import { classifyClassModel } from './model-mapper';
+import { detectJlptMonthBlocks } from './attendance-sheet.util';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const JSZip = require('jszip');
@@ -124,6 +125,8 @@ export interface NormalizedSheetRow {
   occupation: string | null;
   saleName: string | null;
   studentSourceStatus: string | null;
+  activeState?: string | null; // Normalized "Active" | "Deactive"
+  rawStatusText?: string | null;
   paidAt: string | null; // ISO date
   courseContent: string | null;
   paymentStatus: string | null;
@@ -152,8 +155,68 @@ export interface NormalizedSheetRow {
   hotIssueNote: string | null;
   postCourseCare: string | null;
   handedOverAt: string | null;
+  accountCreatedAt?: string | null;
   careLogs: NormalizedCareLogItem[];
   programMetadata: Record<string, any>;
+}
+
+/**
+ * Normalize JLPT active state ("Deative" -> "Deactive")
+ */
+export function normalizeActiveState(rawVal: string | null | undefined): string | null {
+  if (!rawVal) return null;
+  const trimmed = String(rawVal).trim();
+  if (!trimmed || trimmed === '-') return null;
+  const lower = trimmed.toLowerCase();
+  if (lower === 'deative' || lower === 'deactive' || lower === 'inactive') {
+    return 'Deactive';
+  }
+  if (lower === 'active') {
+    return 'Active';
+  }
+  return trimmed;
+}
+
+/**
+ * Extract hyperlink URL from an ExcelJS cell (if it has an actual hyperlink or HYPERLINK formula or http URL)
+ * Never returns a plain student name as URL.
+ */
+export function extractCellHyperlink(cell: ExcelJS.Cell | undefined | null): string | null {
+  if (!cell) return null;
+  const val: any = cell.value;
+  if (val === null || val === undefined) return null;
+
+  if (typeof val === 'object') {
+    if ('hyperlink' in val && val.hyperlink) {
+      const link = String(val.hyperlink).trim();
+      if (/^https?:\/\//i.test(link)) return link;
+    }
+    if ('formula' in val && val.formula) {
+      const fStr = String(val.formula);
+      const hlMatch = fStr.match(/HYPERLINK\s*\(\s*"([^"]+)"/i);
+      if (hlMatch && /^https?:\/\//i.test(hlMatch[1].trim())) {
+        return hlMatch[1].trim();
+      }
+      const urlMatch = fStr.match(/https?:\/\/[^\s"')]*/i);
+      if (urlMatch) return urlMatch[0].trim();
+    }
+    if ('text' in val && val.text) {
+      const t = String(val.text).trim();
+      if (/^https?:\/\//i.test(t)) return t;
+    }
+  }
+
+  if (typeof val === 'string') {
+    const trimmed = val.trim();
+    if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  }
+
+  if ((cell as any).hyperlink && typeof (cell as any).hyperlink === 'string') {
+    const hl = String((cell as any).hyperlink).trim();
+    if (/^https?:\/\//i.test(hl)) return hl;
+  }
+
+  return null;
 }
 
 /**
@@ -177,7 +240,13 @@ export function extractCellValue(cellValue: any): any {
         if (typeof res === 'object' && 'error' in res) return null;
         if (typeof res === 'string') {
           const trimmedRes = res.trim();
-          if (trimmedRes === '#REF!' || trimmedRes === '#N/A' || trimmedRes === '#VALUE!' || trimmedRes === '#ERROR!' || trimmedRes === '#NAME?') {
+          if (
+            trimmedRes === '#REF!' ||
+            trimmedRes === '#N/A' ||
+            trimmedRes === '#VALUE!' ||
+            trimmedRes === '#ERROR!' ||
+            trimmedRes === '#NAME?'
+          ) {
             return null;
           }
         }
@@ -246,7 +315,7 @@ export function parseSheetDate(rawVal: any): Date | null {
 
   if (typeof val === 'string') {
     let trimmed = val.trim();
-    if (!trimmed || trimmed === '-') return null;
+    if (!trimmed || trimmed === '-' || trimmed.toLowerCase().includes('invalid date')) return null;
     if (trimmed.includes('\n')) {
       trimmed = trimmed.split(/\r?\n/)[0].trim();
     }
@@ -445,10 +514,7 @@ export function cleanSheetNote(rawVal: string | null | undefined): string | null
 }
 
 /**
- * Map class model string to ClassModelType enum. E.1: delegates to the single
- * canonical mapper (model-mapper.ts) shared by every ingestion path. Kept as
- * the stable import name for sheet-sync.service so behavior is unchanged while
- * there is now exactly one decision rule in the codebase.
+ * Map class model string to ClassModelType enum.
  */
 export function mapClassModelType(rawModel: string | null | undefined): ClassModelType {
   return classifyClassModel(rawModel);
@@ -499,7 +565,7 @@ export function extractSchedulePattern(rawPattern: any): string | null {
     .replace(/THỨ\s*/g, '')
     .replace(/THU\s*/g, '')
     .replace(/T(?=[2-7])/g, '')
-    .replace(/[\s\-_,./+~;]+/g, '');
+    .replace(/[\s\-_,./+~;()（）月火水木金土日・]+/g, '');
 
   const tokens = new Set<number>();
   for (let i = 0; i < cleaned.length; ) {
@@ -514,7 +580,6 @@ export function extractSchedulePattern(rawPattern: any): string | null {
       i += ch === '8' ? 1 : 2;
       continue;
     }
-    // Unrecognized token -> fallback to LKCD so AutoAttendanceService never logs a warning
     return 'LKCD';
   }
 
@@ -599,7 +664,7 @@ export function parseJlptAttendedSessions(workbook: ExcelJS.Workbook): Map<strin
     }
   }
 
-  // 2. Check 'Chấm buổi' (Col B = ID học viên, Col L = Số buổi đã học or count daily columns >= 19)
+  // 2. Check 'Chấm buổi' (Col B = ID học viên, Col L = Số buổi đã học)
   const cb = workbook.getWorksheet('Chấm buổi');
   if (cb) {
     for (let r = 3; r <= cb.rowCount; r++) {
@@ -676,7 +741,7 @@ export function parseJlptSheetRows(
     const salesNote = cleanSheetNote(cellText(row.getCell(13)));
     const expectedStartDateObj = parseSheetDate(row.getCell(14).value);
     const expectedStartDate = formatIsoDateOnly(expectedStartDateObj);
-    const activeState = cellText(row.getCell(15)) || null;
+    const activeState = normalizeActiveState(cellText(row.getCell(15)));
     const cvhtCode = extractCvhtCode(row.getCell(16).value, salesNote);
 
     const rawCourseCode = cellText(row.getCell(17));
@@ -797,6 +862,8 @@ export function parseJlptSheetRows(
       occupation: null,
       saleName,
       studentSourceStatus,
+      activeState,
+      rawStatusText: rawStatus || null,
       paidAt,
       courseContent,
       paymentStatus,
@@ -834,7 +901,7 @@ export function parseJlptSheetRows(
 }
 
 /**
- * Parse all valid student enrollment rows from Kaiwa sheet ('Tổng')
+ * Parse all valid student enrollment rows from Kaiwa sheet ('Tổng' or '1.Chăm sóc')
  */
 export function parseKaiwaSheetRows(
   workbook: ExcelJS.Workbook,
@@ -842,13 +909,31 @@ export function parseKaiwaSheetRows(
   headerRow = 2,
   limit?: number
 ): NormalizedSheetRow[] {
-  const ws = workbook.getWorksheet(sheetName);
+  let ws = workbook.getWorksheet(sheetName);
+  if (!ws) {
+    ws = workbook.getWorksheet('Tổng') || workbook.getWorksheet('1.Chăm sóc');
+  }
   if (!ws) return [];
+
+  // Auto-detect header row between row 2 ('Tổng') and row 3 ('1.Chăm sóc')
+  let effectiveHeaderRow = headerRow;
+  const r2Col1 = cellText(ws.getRow(2).getCell(1)).toUpperCase();
+  const r3Col1 = cellText(ws.getRow(3).getCell(1)).toUpperCase();
+  if (r3Col1 === 'ID' && r2Col1 !== 'ID') {
+    effectiveHeaderRow = 3;
+  } else if (r2Col1 === 'ID') {
+    effectiveHeaderRow = 2;
+  }
+
+  const isChamSocLayout =
+    ws.name.toLowerCase().includes('chăm sóc') ||
+    ws.name.startsWith('1.') ||
+    cellText(ws.getRow(effectiveHeaderRow).getCell(37)).toLowerCase().includes('báo cáo học tập');
 
   const results: NormalizedSheetRow[] = [];
   const syncKeyCounter = new Map<string, number>();
 
-  for (let r = headerRow + 1; r <= ws.rowCount; r++) {
+  for (let r = effectiveHeaderRow + 1; r <= ws.rowCount; r++) {
     if (limit && limit > 0 && results.length >= limit) break;
 
     const row = ws.getRow(r);
@@ -914,32 +999,68 @@ export function parseKaiwaSheetRows(
       durationMinutes = durNum > 0 && durNum <= 5 ? Math.round(durNum * 60) : Math.round(durNum);
     }
 
+    // Secondary schedule (Ca học 2): Col 27 = Giờ học (2), Col 28 = Lịch học (2), Col 29 = Thời lượng buổi học (2), Col 30 = Vòng lặp
+    const startTime2 = extractStartTime(row.getCell(27).value);
+    const sched2 = extractSchedulePattern(row.getCell(28).value);
+    const rawDur2 = extractCellValue(row.getCell(29).value);
+    let durationMinutes2: number | null = null;
+    if (rawDur2 !== null && rawDur2 !== undefined && rawDur2 !== '' && !Number.isNaN(Number(rawDur2))) {
+      const durNum2 = Number(rawDur2);
+      durationMinutes2 = durNum2 > 0 && durNum2 <= 5 ? Math.round(durNum2 * 60) : Math.round(durNum2);
+    }
+    const loopType = cellText(row.getCell(30)) || null;
+
     const teacherName = cellText(row.getCell(32)) || null;
     const teacherCode = cellText(row.getCell(33)) || teacherName || null;
     const className = cleanClassIdentifier(cellText(row.getCell(34)));
     const status = mapEnrollmentStatus(rawStatus, Boolean(className));
 
-    const rawAttPrev = extractCellValue(row.getCell(35).value);
+    const rawAttPrev = extractCellValue(row.getCell(isChamSocLayout ? 36 : 35).value);
     const attendedPreviousYears = rawAttPrev !== null && rawAttPrev !== undefined && rawAttPrev !== '' && !Number.isNaN(Number(rawAttPrev))
       ? Math.round(Number(rawAttPrev))
       : 0;
 
-    const exchangeInfo = cellText(row.getCell(37)) || null;
-    const callbackNote = cellText(row.getCell(38)) || null;
-    const studyReportUrl = cellText(row.getCell(39)) || null;
+    // In 'Tổng': Col 37 = Thông tin trao đổi với HV, Col 38 = Lịch hẹn gọi, Col 39 = Báo cáo học tập
+    // In '1.Chăm sóc': Col 37 = Báo cáo học tập, Col 38 = Thông tin trao đổi với HV, Col 39 = Lịch hẹn gọi
+    const exchangeInfo = cellText(row.getCell(isChamSocLayout ? 38 : 37)) || null;
+    const callbackNote = cellText(row.getCell(isChamSocLayout ? 39 : 38)) || null;
+    const studyReportUrl =
+      extractCellHyperlink(row.getCell(isChamSocLayout ? 37 : 39)) ||
+      extractCellHyperlink(row.getCell(isChamSocLayout ? 39 : 37)) ||
+      null;
     const hotIssueNote = cellText(row.getCell(40)) || null;
 
-    // Care logs: Col 41..46 -> 1, 3, 10, 15, 20, 25; Col 47 -> 27
+    // Care logs:
+    // In 'Tổng': Col 41..47 -> 1, 3, 10, 15, 20, 25, 27
+    // In '1.Chăm sóc': Col 41..55 -> 1, 3, 10, 15, 20, 25, 29, 30, 35, 45, 55, 59, 60, 89, 90
     const careLogs: NormalizedCareLogItem[] = [];
-    const careColumns: Array<{ col: number; session: number }> = [
-      { col: 41, session: 1 },
-      { col: 42, session: 3 },
-      { col: 43, session: 10 },
-      { col: 44, session: 15 },
-      { col: 45, session: 20 },
-      { col: 46, session: 25 },
-      { col: 47, session: 27 },
-    ];
+    const careColumns: Array<{ col: number; session: number }> = isChamSocLayout
+      ? [
+          { col: 41, session: 1 },
+          { col: 42, session: 3 },
+          { col: 43, session: 10 },
+          { col: 44, session: 15 },
+          { col: 45, session: 20 },
+          { col: 46, session: 25 },
+          { col: 47, session: 29 },
+          { col: 48, session: 30 },
+          { col: 49, session: 35 },
+          { col: 50, session: 45 },
+          { col: 51, session: 55 },
+          { col: 52, session: 59 },
+          { col: 53, session: 60 },
+          { col: 54, session: 89 },
+          { col: 55, session: 90 },
+        ]
+      : [
+          { col: 41, session: 1 },
+          { col: 42, session: 3 },
+          { col: 43, session: 10 },
+          { col: 44, session: 15 },
+          { col: 45, session: 20 },
+          { col: 46, session: 25 },
+          { col: 47, session: 27 },
+        ];
     for (const cc of careColumns) {
       const content = cellText(row.getCell(cc.col));
       if (content && content !== '-') {
@@ -951,12 +1072,25 @@ export function parseKaiwaSheetRows(
       }
     }
 
-    const postCourseCare = cellText(row.getCell(48)) || null;
-    const handedOverAt = formatIsoDateOnly(parseSheetDate(row.getCell(55).value));
+    const postCourseCare = cellText(row.getCell(isChamSocLayout ? 56 : 48)) || null;
+    const handedOverAt = formatIsoDateOnly(parseSheetDate(row.getCell(isChamSocLayout ? 58 : 55).value));
+    const accountCreatedAt = isChamSocLayout
+      ? formatIsoDateOnly(parseSheetDate(row.getCell(60).value))
+      : null;
 
     const programMetadata: Record<string, any> = {};
     if (rawCourseContent !== null && rawCourseContent !== undefined && String(rawCourseContent).trim() !== '') {
       programMetadata.tuition_fee = rawCourseContent;
+    }
+    if (startTime2 || sched2 || durationMinutes2) {
+      programMetadata.second_schedule = {
+        start_time: startTime2,
+        schedule_pattern: sched2,
+        duration_minutes: durationMinutes2,
+      };
+    }
+    if (loopType) {
+      programMetadata.loop_type = loopType;
     }
 
     const baseKey = `KAIWA::${externalId}::${packageCode}::${className || paidAt || `r${r}`}`;
@@ -977,6 +1111,7 @@ export function parseKaiwaSheetRows(
       occupation,
       saleName,
       studentSourceStatus,
+      rawStatusText: rawStatus || null,
       paidAt,
       courseContent,
       paymentStatus,
@@ -1005,10 +1140,1062 @@ export function parseKaiwaSheetRows(
       hotIssueNote,
       postCourseCare,
       handedOverAt,
+      accountCreatedAt,
       careLogs,
       programMetadata,
     });
   }
 
   return results;
+}
+
+/* ============================================================================
+ * FLOW 2 & 3: ATTENDANCE PARSERS (CSKH_ATTENDANCE & TEACHER_ATTENDANCE)
+ * ============================================================================ */
+
+export interface ParsedAttendanceEntry {
+  date: string; // YYYY-MM-DD
+  colLetter: string;
+  colNumber: number;
+  rawValue: string;
+  status: AttendanceStatus | null;
+  lessonTopic: string | null;
+  isValid: boolean;
+  errorMessage?: string;
+}
+
+export interface ParsedStudentAttendanceRow {
+  rowNumber: number;
+  programType: 'JLPT' | 'KAIWA';
+  externalId: string;
+  studentName: string;
+  packageCode: string | null;
+  classCode: string | null;
+  className: string | null;
+  rawStatusText: string | null;
+  startTime: string | null;
+  schedulePattern: string | null;
+  durationMinutes: number | null;
+  cvhtCode: string | null;
+  teacherCode: string | null;
+  entries: ParsedAttendanceEntry[];
+  warnings: string[];
+  errors: string[];
+}
+
+export interface DiscoveredStudyReportLink {
+  externalId: string;
+  studentName: string;
+  classCode: string | null;
+  packageCode: string | null;
+  programType: 'JLPT' | 'KAIWA';
+  studyReportUrl: string;
+}
+
+/**
+ * Parse raw attendance mark cell into AttendanceStatus & optional lessonTopic
+ */
+export function parseAttendanceCellMark(
+  rawVal: string,
+  expectedPrefix?: string | null
+): {
+  status: AttendanceStatus | null;
+  lessonTopic: string | null;
+  prefixCode: string | null;
+  isValid: boolean;
+  errorMessage?: string;
+} {
+  const trimmed = (rawVal || '').trim();
+  if (!trimmed || trimmed === '0' || trimmed === '0.0' || trimmed === '-') {
+    return { status: null, lessonTopic: null, prefixCode: null, isValid: true };
+  }
+
+  const upper = trimmed.toUpperCase();
+  if (upper === '1' || upper === '1.0' || upper === '2' || upper === '2.0' || upper === 'X' || upper === 'ĐÃ HỌC') {
+    return { status: AttendanceStatus.ATTENDED, lessonTopic: null, prefixCode: null, isValid: true };
+  }
+  if (upper === 'A') return { status: AttendanceStatus.ABSENT_APPROVED_A, lessonTopic: null, prefixCode: null, isValid: true };
+  if (upper === 'B') return { status: AttendanceStatus.LEAVE_B, lessonTopic: null, prefixCode: null, isValid: true };
+  if (upper === 'C') return { status: AttendanceStatus.ABSENT_UNAPPROVED_C, lessonTopic: null, prefixCode: null, isValid: true };
+  if (upper === 'D') return { status: AttendanceStatus.TEACHER_ABSENT_D, lessonTopic: null, prefixCode: null, isValid: true };
+  if (upper === 'E') return { status: AttendanceStatus.TECH_ERROR_E, lessonTopic: null, prefixCode: null, isValid: true };
+
+  // Format: [Mã lớp hoặc Mã HV]-[Tên bài hoặc Mã nghỉ A/B/C/D/E]
+  const dashIdx = trimmed.indexOf('-');
+  if (dashIdx > 0) {
+    const prefix = trimmed.slice(0, dashIdx).trim();
+    const suffix = trimmed.slice(dashIdx + 1).trim();
+    const suffixUpper = suffix.toUpperCase();
+    if (!suffix) {
+      return {
+        status: null,
+        lessonTopic: null,
+        prefixCode: prefix,
+        isValid: false,
+        errorMessage: `Ô điểm danh "${trimmed}" thiếu mã buổi học hoặc mã nghỉ sau dấu "-"`,
+      };
+    }
+    if (suffixUpper === 'A') return { status: AttendanceStatus.ABSENT_APPROVED_A, lessonTopic: null, prefixCode: prefix, isValid: true };
+    if (suffixUpper === 'B') return { status: AttendanceStatus.LEAVE_B, lessonTopic: null, prefixCode: prefix, isValid: true };
+    if (suffixUpper === 'C') return { status: AttendanceStatus.ABSENT_UNAPPROVED_C, lessonTopic: null, prefixCode: prefix, isValid: true };
+    if (suffixUpper === 'D') return { status: AttendanceStatus.TEACHER_ABSENT_D, lessonTopic: null, prefixCode: prefix, isValid: true };
+    if (suffixUpper === 'E') return { status: AttendanceStatus.TECH_ERROR_E, lessonTopic: null, prefixCode: prefix, isValid: true };
+    return { status: AttendanceStatus.ATTENDED, lessonTopic: suffix, prefixCode: prefix, isValid: true };
+  }
+
+  if (expectedPrefix) {
+    return {
+      status: null,
+      lessonTopic: null,
+      prefixCode: null,
+      isValid: false,
+      errorMessage: `Giá trị điểm danh "${trimmed}" không đúng định dạng [Mã]-[Bài học/A/B/C/D/E]`,
+    };
+  }
+
+  return {
+    status: null,
+    lessonTopic: null,
+    prefixCode: null,
+    isValid: false,
+    errorMessage: `Mã điểm danh "${trimmed}" không hợp lệ (chỉ chấp nhận 1, A, B, C, D, E)`,
+  };
+}
+
+/**
+ * Filter daily columns of an attendance worksheet by syncYear and months[].
+ * If the sheet has columns matching syncYear, ONLY take those columns.
+ * Only if the entire sheet has 0 columns matching syncYear, remap the existing year to syncYear with a warning.
+ */
+export function selectAttendanceDayCols(
+  ws: ExcelJS.Worksheet,
+  syncYear: number,
+  months?: number[],
+  headerRow = 2
+): {
+  dayCols: Array<{ colNumber: number; colLetter: string; date: string; month: number; year: number }>;
+  remappedFromYear: number | null;
+  availableYears: number[];
+} {
+  const blocks = detectJlptMonthBlocks(ws, headerRow);
+  const allCols: Array<{ colNumber: number; colLetter: string; date: string; month: number; year: number }> = [];
+  const yearSet = new Set<number>();
+
+  for (const b of blocks) {
+    for (const dc of b.dailyCols) {
+      yearSet.add(dc.year);
+      allCols.push({
+        colNumber: dc.colNumber,
+        colLetter: dc.colLetter,
+        date: dc.date,
+        month: dc.month,
+        year: dc.year,
+      });
+    }
+  }
+
+  const availableYears = [...yearSet].sort((a, b) => a - b);
+  const monthFilter = months && months.length > 0 ? new Set(months.map(Number)) : null;
+
+  const exactYearCols = allCols.filter((c) => c.year === syncYear);
+  if (exactYearCols.length > 0) {
+    const filtered = monthFilter ? exactYearCols.filter((c) => monthFilter.has(c.month)) : exactYearCols;
+    return {
+      dayCols: filtered,
+      remappedFromYear: null,
+      availableYears,
+    };
+  }
+
+  // Fallback: if sheet has no columns matching syncYear (e.g., giao_vien_kaiwa.xlsx has 2025 headers in '2026 スケジュール')
+  if (allCols.length > 0) {
+    const sourceYear = availableYears[availableYears.length - 1];
+    const remapped = allCols
+      .filter((c) => c.year === sourceYear && (!monthFilter || monthFilter.has(c.month)))
+      .map((c) => {
+        const remappedDate = `${syncYear}${c.date.slice(4)}`;
+        return {
+          ...c,
+          year: syncYear,
+          date: remappedDate,
+        };
+      });
+    return {
+      dayCols: remapped,
+      remappedFromYear: sourceYear,
+      availableYears,
+    };
+  }
+
+  return { dayCols: [], remappedFromYear: null, availableYears: [] };
+}
+
+/**
+ * Parse CSKH Attendance sheet:
+ * - JLPT 'Chấm buổi': Parent row per class (Col 1 = Mã lớp, Col 2 = empty) + Child rows (Col 1 = Mã lớp, Col 2 = ID học viên).
+ *   Child rows inherit startTime, durationMinutes, teacherCode, cvhtCode, and daily attendance marks from Parent row when Child cell is empty.
+ * - KAIWA '3.Chấm buổi': Col 1 = ID, Col 2 = Họ tên, Col 3 = Gói học, Col 11 = Trạng thái, Col 13 = Giờ học (1), Col 15 = Thời lượng (1), Col 22 = Mã GV, Col 23 = Tên lớp.
+ */
+export function parseCskhAttendanceSheet(
+  workbook: ExcelJS.Workbook,
+  options: {
+    programType: 'JLPT' | 'KAIWA';
+    sheetName?: string;
+    headerRow?: number;
+    syncYear: number;
+    months?: number[];
+    enrollmentStatuses?: string[];
+    limit?: number;
+  }
+): {
+  rows: ParsedStudentAttendanceRow[];
+  warnings: string[];
+  filteredOutCount: number;
+  totalRowsScanned: number;
+} {
+  const { programType, syncYear, months, enrollmentStatuses, limit } = options;
+  const headerRow = options.headerRow || 2;
+  const defaultSheet = programType === 'JLPT' ? 'Chấm buổi' : '3.Chấm buổi';
+  const ws =
+    (options.sheetName ? workbook.getWorksheet(options.sheetName) : undefined) ||
+    workbook.getWorksheet(defaultSheet) ||
+    workbook.worksheets.find((w) => w.name.toLowerCase().includes('chấm buổi'));
+
+  if (!ws) {
+    return { rows: [], warnings: [`Không tìm thấy sheet điểm danh (${options.sheetName || defaultSheet})`], filteredOutCount: 0, totalRowsScanned: 0 };
+  }
+
+  const { dayCols, remappedFromYear } = selectAttendanceDayCols(ws, syncYear, months, headerRow);
+  const warnings: string[] = [];
+  if (remappedFromYear !== null && remappedFromYear !== syncYear) {
+    warnings.push(`Đã tự động quy đổi năm tiêu đề cột ngày (${remappedFromYear} → ${syncYear}) theo cấu hình năm ${syncYear}`);
+  }
+
+  const allowedStatuses =
+    enrollmentStatuses && enrollmentStatuses.length > 0
+      ? new Set(enrollmentStatuses.map((s) => s.trim().toLowerCase()))
+      : null;
+
+  const rows: ParsedStudentAttendanceRow[] = [];
+  let filteredOutCount = 0;
+  let totalRowsScanned = 0;
+
+  if (programType === 'JLPT') {
+    interface JlptParentState {
+      classCode: string;
+      rawStatusText: string | null;
+      startTime: string | null;
+      schedulePattern: string | null;
+      durationMinutes: number | null;
+      cvhtCode: string | null;
+      teacherCode: string | null;
+      marksByCol: Map<number, string>;
+    }
+
+    const parentByClass = new Map<string, JlptParentState>();
+
+    for (let r = headerRow + 1; r <= ws.rowCount; r++) {
+      if (limit && limit > 0 && rows.length >= limit) break;
+
+      const row = ws.getRow(r);
+      const rawClassCode = cleanClassIdentifier(cellText(row.getCell(1)));
+      const externalId = normalizeExternalId(row.getCell(2).value);
+      const studentName = cellText(row.getCell(3));
+      const rawStatus = cellText(row.getCell(4)) || null;
+      const startTime = extractStartTime(row.getCell(5).value);
+      const cvhtCode = extractCvhtCode(row.getCell(7).value);
+      const schedulePattern = extractSchedulePattern(row.getCell(8).value);
+      const rawDur = extractCellValue(row.getCell(9).value);
+      const durationMinutes =
+        rawDur !== null && rawDur !== undefined && rawDur !== '' && !Number.isNaN(Number(rawDur))
+          ? Math.round(Number(rawDur))
+          : null;
+      const teacherCode = cellText(row.getCell(10)) || null;
+
+      if (!rawClassCode && !externalId && !studentName) continue;
+
+      // Collect non-empty daily marks on this row
+      const rowMarks = new Map<number, string>();
+      for (const dc of dayCols) {
+        const val = cellText(row.getCell(dc.colNumber));
+        if (val && val !== '0' && val !== '0.0' && val !== '-' && !val.startsWith('#')) {
+          rowMarks.set(dc.colNumber, val);
+        }
+      }
+
+      // Parent Row of 1-n class: has classCode in Col 1, but Col 2 (externalId) is empty
+      if (rawClassCode && !externalId) {
+        parentByClass.set(rawClassCode.toUpperCase(), {
+          classCode: rawClassCode,
+          rawStatusText: rawStatus,
+          startTime,
+          schedulePattern,
+          durationMinutes,
+          cvhtCode,
+          teacherCode,
+          marksByCol: rowMarks,
+        });
+        continue;
+      }
+
+      if (!externalId) continue;
+      totalRowsScanned++;
+
+      const parent = rawClassCode ? parentByClass.get(rawClassCode.toUpperCase()) : undefined;
+      const effectiveStatusText =
+        rawStatus && !rawStatus.startsWith('#') ? rawStatus : parent?.rawStatusText || null;
+
+      if (allowedStatuses) {
+        const normSt = (effectiveStatusText || '').trim().toLowerCase();
+        if (!normSt || !allowedStatuses.has(normSt)) {
+          filteredOutCount++;
+          continue;
+        }
+      }
+
+      const effectiveStartTime = startTime || parent?.startTime || null;
+      const effectiveSchedule = schedulePattern || parent?.schedulePattern || null;
+      const effectiveDuration = durationMinutes ?? parent?.durationMinutes ?? null;
+      const effectiveCvht = cvhtCode || parent?.cvhtCode || null;
+      const effectiveTeacher = teacherCode || parent?.teacherCode || null;
+
+      // Merge marks: Child cell takes precedence; if Child cell is empty, inherit from Parent of same classCode
+      const entries: ParsedAttendanceEntry[] = [];
+      const rowErrors: string[] = [];
+
+      for (const dc of dayCols) {
+        const childVal = rowMarks.get(dc.colNumber);
+        const inheritedVal = childVal !== undefined ? childVal : parent?.marksByCol.get(dc.colNumber);
+        if (!inheritedVal) continue;
+
+        const parsedMark = parseAttendanceCellMark(inheritedVal);
+        entries.push({
+          date: dc.date,
+          colLetter: dc.colLetter,
+          colNumber: dc.colNumber,
+          rawValue: inheritedVal,
+          status: parsedMark.status,
+          lessonTopic: parsedMark.lessonTopic,
+          isValid: parsedMark.isValid,
+          errorMessage: parsedMark.errorMessage,
+        });
+        if (!parsedMark.isValid && parsedMark.errorMessage) {
+          rowErrors.push(`Cột ${dc.colLetter} (${dc.date}): ${parsedMark.errorMessage}`);
+        }
+      }
+
+      if (entries.length === 0) continue;
+
+      rows.push({
+        rowNumber: r,
+        programType: 'JLPT',
+        externalId,
+        studentName: studentName || `Học viên ${externalId}`,
+        packageCode: null,
+        classCode: rawClassCode,
+        className: rawClassCode,
+        rawStatusText: effectiveStatusText,
+        startTime: effectiveStartTime,
+        schedulePattern: effectiveSchedule,
+        durationMinutes: effectiveDuration,
+        cvhtCode: effectiveCvht,
+        teacherCode: effectiveTeacher,
+        entries,
+        warnings: [],
+        errors: rowErrors,
+      });
+    }
+  } else {
+    // KAIWA '3.Chấm buổi'
+    for (let r = headerRow + 1; r <= ws.rowCount; r++) {
+      if (limit && limit > 0 && rows.length >= limit) break;
+
+      const row = ws.getRow(r);
+      const externalId = normalizeExternalId(row.getCell(1).value);
+      const studentName = cellText(row.getCell(2));
+      if (!externalId && !studentName) continue;
+      if (!externalId || externalId.toUpperCase() === 'ID') continue;
+
+      totalRowsScanned++;
+
+      const packageCode = cellText(row.getCell(3)) || null;
+      const rawStatus = cellText(row.getCell(11)) || null;
+
+      if (allowedStatuses) {
+        const normSt = (rawStatus || '').trim().toLowerCase();
+        if (!normSt || !allowedStatuses.has(normSt)) {
+          filteredOutCount++;
+          continue;
+        }
+      }
+
+      const startTime = extractStartTime(row.getCell(13).value);
+      const schedulePattern = extractSchedulePattern(row.getCell(14).value);
+      const rawDur = extractCellValue(row.getCell(15).value);
+      const durationMinutes =
+        rawDur !== null && rawDur !== undefined && rawDur !== '' && !Number.isNaN(Number(rawDur))
+          ? Math.round(Number(rawDur))
+          : null;
+      const teacherCode = cellText(row.getCell(22)) || cellText(row.getCell(21)) || null;
+      const className = cleanClassIdentifier(cellText(row.getCell(23)));
+
+      const entries: ParsedAttendanceEntry[] = [];
+      const rowErrors: string[] = [];
+
+      for (const dc of dayCols) {
+        const val = cellText(row.getCell(dc.colNumber));
+        if (!val || val === '0' || val === '0.0' || val === '-' || val.startsWith('#')) continue;
+
+        const parsedMark = parseAttendanceCellMark(val);
+        entries.push({
+          date: dc.date,
+          colLetter: dc.colLetter,
+          colNumber: dc.colNumber,
+          rawValue: val,
+          status: parsedMark.status,
+          lessonTopic: parsedMark.lessonTopic,
+          isValid: parsedMark.isValid,
+          errorMessage: parsedMark.errorMessage,
+        });
+        if (!parsedMark.isValid && parsedMark.errorMessage) {
+          rowErrors.push(`Cột ${dc.colLetter} (${dc.date}): ${parsedMark.errorMessage}`);
+        }
+      }
+
+      if (entries.length === 0) continue;
+
+      rows.push({
+        rowNumber: r,
+        programType: 'KAIWA',
+        externalId,
+        studentName: studentName || `Học viên ${externalId}`,
+        packageCode,
+        classCode: className,
+        className,
+        rawStatusText: rawStatus,
+        startTime,
+        schedulePattern,
+        durationMinutes,
+        cvhtCode: null,
+        teacherCode,
+        entries,
+        warnings: [],
+        errors: rowErrors,
+      });
+    }
+  }
+
+  return { rows, warnings, filteredOutCount, totalRowsScanned };
+}
+
+/**
+ * Parse Teacher Info sheet ('Info' in giao_vien_JLPT.xlsx or 'Infoー情報' in giao_vien_kaiwa.xlsx)
+ * to extract:
+ *  1. classCode -> Set of student externalIds & student metadata
+ *  2. Study report hyperlinks in the "Báo cáo học tập" column
+ */
+export function parseTeacherInfoSheet(
+  workbook: ExcelJS.Workbook,
+  programType: 'JLPT' | 'KAIWA'
+): {
+  studentsByClassCode: Map<string, Array<{ externalId: string; studentName: string; packageCode: string | null; cvhtCode: string | null; startTime: string | null }>>;
+  studentInfoByExtId: Map<string, { externalId: string; studentName: string; classCode: string | null; packageCode: string | null; cvhtCode: string | null; startTime: string | null }>;
+  studyReportLinks: DiscoveredStudyReportLink[];
+} {
+  const studentsByClassCode = new Map<string, Array<{ externalId: string; studentName: string; packageCode: string | null; cvhtCode: string | null; startTime: string | null }>>();
+  const studentInfoByExtId = new Map<string, { externalId: string; studentName: string; classCode: string | null; packageCode: string | null; cvhtCode: string | null; startTime: string | null }>();
+  const studyReportLinks: DiscoveredStudyReportLink[] = [];
+
+  const ws =
+    workbook.getWorksheet('Info') ||
+    workbook.getWorksheet('Infoー情報') ||
+    workbook.worksheets.find((w) => w.name.toLowerCase().includes('info'));
+
+  if (!ws) {
+    return { studentsByClassCode, studentInfoByExtId, studyReportLinks };
+  }
+
+  // Locate header row of "Danh sách học viên" table
+  let tableHeaderRow = -1;
+  let colClassCode = -1;
+  let colStudentId = -1;
+  let colStudentName = -1;
+  let colPackage = -1;
+  let colCvht = -1;
+  let colStartTime = -1;
+  let colReportLink = -1;
+
+  for (let r = 1; r <= Math.min(80, ws.rowCount); r++) {
+    const row = ws.getRow(r);
+    let foundStudentHeader = false;
+    for (let c = 1; c <= Math.min(20, ws.columnCount); c++) {
+      const txt = cellText(row.getCell(c)).toLowerCase();
+      if (txt.includes('mã học viên') || txt.includes('学籍番号')) {
+        foundStudentHeader = true;
+        break;
+      }
+    }
+    if (foundStudentHeader) {
+      tableHeaderRow = r;
+      for (let c = 1; c <= Math.min(20, ws.columnCount); c++) {
+        const txt = cellText(row.getCell(c)).toLowerCase();
+        if (txt.includes('mã lớp') || txt.includes('クラスコード')) colClassCode = c;
+        else if (txt.includes('mã học viên') || txt.includes('学籍番号')) colStudentId = c;
+        else if (txt.includes('họ tên') || txt.includes('お名前')) colStudentName = c;
+        else if (txt.includes('khoá') || txt.includes('khóa') || txt.includes('コース')) colPackage = c;
+        else if (txt.includes('cố vấn') || txt.includes('cvht')) colCvht = c;
+        else if (txt.includes('giờ học') || txt.includes('スケジュール')) colStartTime = c;
+        else if (txt.includes('báo cáo học') || txt.includes('レポート')) colReportLink = c;
+      }
+      break;
+    }
+  }
+
+  if (tableHeaderRow === -1) {
+    return { studentsByClassCode, studentInfoByExtId, studyReportLinks };
+  }
+
+  for (let r = tableHeaderRow + 1; r <= ws.rowCount; r++) {
+    const row = ws.getRow(r);
+    const extId = colStudentId > 0 ? normalizeExternalId(row.getCell(colStudentId).value) : '';
+    const stuName = colStudentName > 0 ? cellText(row.getCell(colStudentName)) : '';
+    const clsCode = colClassCode > 0 ? cleanClassIdentifier(cellText(row.getCell(colClassCode))) : null;
+
+    if (!extId && !stuName) continue;
+    if (!extId) continue;
+
+    const pkgCode = colPackage > 0 ? cellText(row.getCell(colPackage)) || null : null;
+    const cvht = colCvht > 0 ? extractCvhtCode(row.getCell(colCvht).value) : null;
+    const startTime = colStartTime > 0 ? extractStartTime(row.getCell(colStartTime).value) : null;
+    const reportUrl = colReportLink > 0 ? extractCellHyperlink(row.getCell(colReportLink)) : null;
+
+    const item = {
+      externalId: extId,
+      studentName: stuName || `Học viên ${extId}`,
+      classCode: clsCode,
+      packageCode: pkgCode,
+      cvhtCode: cvht,
+      startTime,
+    };
+
+    studentInfoByExtId.set(extId, item);
+    if (clsCode) {
+      const upperCls = clsCode.toUpperCase();
+      const list = studentsByClassCode.get(upperCls) || [];
+      list.push(item);
+      studentsByClassCode.set(upperCls, list);
+    }
+
+    if (reportUrl) {
+      studyReportLinks.push({
+        externalId: extId,
+        studentName: item.studentName,
+        classCode: clsCode,
+        packageCode: pkgCode,
+        programType,
+        studyReportUrl: reportUrl,
+      });
+    }
+  }
+
+  return { studentsByClassCode, studentInfoByExtId, studyReportLinks };
+}
+
+/**
+ * Parse Teacher Attendance sheet ('2026 スケジュール') for both JLPT and Kaiwa
+ */
+export function parseTeacherAttendanceSheet(
+  workbook: ExcelJS.Workbook,
+  options: {
+    programType: 'JLPT' | 'KAIWA';
+    sheetName?: string;
+    headerRow?: number;
+    syncYear: number;
+    months?: number[];
+    teacherCode?: string | null;
+  }
+): {
+  rows: ParsedStudentAttendanceRow[];
+  studyReportLinks: DiscoveredStudyReportLink[];
+  warnings: string[];
+  totalRowsScanned: number;
+} {
+  const { programType, syncYear, months, teacherCode } = options;
+  const headerRow = options.headerRow || 2;
+
+  const { studentsByClassCode, studentInfoByExtId, studyReportLinks } = parseTeacherInfoSheet(workbook, programType);
+
+  const ws =
+    (options.sheetName ? workbook.getWorksheet(options.sheetName) : undefined) ||
+    workbook.getWorksheet(`${syncYear} スケジュール`) ||
+    workbook.getWorksheet('2026 スケジュール') ||
+    workbook.worksheets.find((w) => w.name.includes('スケジュール'));
+
+  if (!ws) {
+    return {
+      rows: [],
+      studyReportLinks,
+      warnings: [`Không tìm thấy sheet lịch dạy giáo viên (${options.sheetName || '2026 スケジュール'})`],
+      totalRowsScanned: 0,
+    };
+  }
+
+  const { dayCols, remappedFromYear } = selectAttendanceDayCols(ws, syncYear, months, headerRow);
+  const warnings: string[] = [];
+  if (remappedFromYear !== null && remappedFromYear !== syncYear) {
+    warnings.push(`Đã tự động quy đổi năm tiêu đề cột ngày (${remappedFromYear} → ${syncYear}) theo cấu hình năm`);
+  }
+
+  const rows: ParsedStudentAttendanceRow[] = [];
+  let totalRowsScanned = 0;
+
+  if (programType === 'JLPT') {
+    // giao_vien_JLPT.xlsx: Col 1 = Mã khoá, Col 2 = Mã lớp, Col 5 = Thời gian học
+    for (let r = headerRow + 1; r <= ws.rowCount; r++) {
+      const row = ws.getRow(r);
+      const packageCode = cellText(row.getCell(1)) || null;
+      const classCode = cleanClassIdentifier(cellText(row.getCell(2)));
+      const startTime = extractStartTime(row.getCell(5).value);
+
+      if (!classCode) continue;
+      totalRowsScanned++;
+
+      const entries: ParsedAttendanceEntry[] = [];
+      const rowErrors: string[] = [];
+
+      for (const dc of dayCols) {
+        const val = cellText(row.getCell(dc.colNumber));
+        if (!val || val === '0' || val === '0.0' || val === '-' || val.startsWith('#')) continue;
+
+        const parsedMark = parseAttendanceCellMark(val, classCode);
+        entries.push({
+          date: dc.date,
+          colLetter: dc.colLetter,
+          colNumber: dc.colNumber,
+          rawValue: val,
+          status: parsedMark.status,
+          lessonTopic: parsedMark.lessonTopic,
+          isValid: parsedMark.isValid,
+          errorMessage: parsedMark.errorMessage,
+        });
+        if (!parsedMark.isValid && parsedMark.errorMessage) {
+          rowErrors.push(`Cột ${dc.colLetter} (${dc.date}): ${parsedMark.errorMessage}`);
+        }
+      }
+
+      if (entries.length === 0) continue;
+
+      const infoStudents = studentsByClassCode.get(classCode.toUpperCase()) || [];
+      if (infoStudents.length > 0) {
+        for (const stu of infoStudents) {
+          rows.push({
+            rowNumber: r,
+            programType: 'JLPT',
+            externalId: stu.externalId,
+            studentName: stu.studentName,
+            packageCode: stu.packageCode || packageCode,
+            classCode,
+            className: classCode,
+            rawStatusText: 'Đang học',
+            startTime: startTime || stu.startTime,
+            schedulePattern: null,
+            durationMinutes: null,
+            cvhtCode: stu.cvhtCode,
+            teacherCode: teacherCode || null,
+            entries,
+            warnings: [],
+            errors: rowErrors,
+          });
+        }
+      } else {
+        // Class has no students listed in Info sheet yet -> emit a class-level placeholder row so service can resolve students by EnrollmentClass in DB
+        rows.push({
+          rowNumber: r,
+          programType: 'JLPT',
+          externalId: `CLASS::${classCode}`,
+          studentName: `Lớp ${classCode}`,
+          packageCode,
+          classCode,
+          className: classCode,
+          rawStatusText: 'Đang học',
+          startTime,
+          schedulePattern: null,
+          durationMinutes: null,
+          cvhtCode: null,
+          teacherCode: teacherCode || null,
+          entries,
+          warnings: [],
+          errors: rowErrors,
+        });
+      }
+    }
+  } else {
+    // giao_vien_kaiwa.xlsx: Col 1 = Mô hình lớp, Col 2 = Mã học viên/Mã lớp, Col 3 = Họ tên học viên, Col 6 = Thời gian
+    for (let r = headerRow + 1; r <= ws.rowCount; r++) {
+      const row = ws.getRow(r);
+      const externalId = normalizeExternalId(row.getCell(2).value);
+      const studentName = cellText(row.getCell(3));
+      const startTime = extractStartTime(row.getCell(6).value);
+
+      if (!externalId && !studentName) continue;
+      if (!externalId) continue;
+      totalRowsScanned++;
+
+      const entries: ParsedAttendanceEntry[] = [];
+      const rowErrors: string[] = [];
+
+      for (const dc of dayCols) {
+        const val = cellText(row.getCell(dc.colNumber));
+        if (!val || val === '0' || val === '0.0' || val === '-' || val.startsWith('#')) continue;
+
+        const parsedMark = parseAttendanceCellMark(val, externalId);
+        entries.push({
+          date: dc.date,
+          colLetter: dc.colLetter,
+          colNumber: dc.colNumber,
+          rawValue: val,
+          status: parsedMark.status,
+          lessonTopic: parsedMark.lessonTopic,
+          isValid: parsedMark.isValid,
+          errorMessage: parsedMark.errorMessage,
+        });
+        if (!parsedMark.isValid && parsedMark.errorMessage) {
+          rowErrors.push(`Cột ${dc.colLetter} (${dc.date}): ${parsedMark.errorMessage}`);
+        }
+      }
+
+      if (entries.length === 0) continue;
+
+      const info = studentInfoByExtId.get(externalId);
+      rows.push({
+        rowNumber: r,
+        programType: 'KAIWA',
+        externalId,
+        studentName: studentName || info?.studentName || `Học viên ${externalId}`,
+        packageCode: info?.packageCode || null,
+        classCode: info?.classCode || null,
+        className: info?.classCode || null,
+        rawStatusText: 'Đang học',
+        startTime: startTime || info?.startTime || null,
+        schedulePattern: null,
+        durationMinutes: null,
+        cvhtCode: info?.cvhtCode || null,
+        teacherCode: teacherCode || null,
+        entries,
+        warnings: [],
+        errors: rowErrors,
+      });
+    }
+  }
+
+  return { rows, studyReportLinks, warnings, totalRowsScanned };
+}
+
+/* ============================================================================
+ * FLOW 4: STUDY REPORT PARSERS (KAIWA & JLPT)
+ * ============================================================================ */
+
+export interface KaiwaStudyReportSession1And3 {
+  preparation: string;
+  interaction: string;
+  comprehension: string;
+}
+
+export interface KaiwaStudyReportMilestoneBlock {
+  date_range: string;
+  absent_excused: string;
+  absent_unexcused: string;
+  teacher_absent: string;
+  preparation: string;
+  homework_completion: string;
+  homework_completed: string;
+  interaction: string;
+  comprehension: string;
+  strengths_progress: string;
+  strengths: string;
+  weaknesses: string;
+  additional_comments: string;
+  additional_notes: string;
+}
+
+export interface KaiwaStudyReportExamBlock {
+  vocabulary: string;
+  grammar: string;
+  pronunciation: string;
+  intonation: string;
+  fluency: string;
+  total_score: string;
+  score: string;
+  additional_comments: string;
+  additional_notes: string;
+}
+
+export interface KaiwaStudyReportData {
+  exchange_with_student: string;
+  session_1: KaiwaStudyReportSession1And3;
+  session_3: KaiwaStudyReportSession1And3;
+  sessions_1_10: KaiwaStudyReportMilestoneBlock;
+  sessions_11_20: KaiwaStudyReportMilestoneBlock;
+  sessions_21_30: KaiwaStudyReportMilestoneBlock;
+  midterm: KaiwaStudyReportExamBlock;
+  final_exam: KaiwaStudyReportExamBlock;
+}
+
+export interface JlptDailyReportItem {
+  rowNumber: number;
+  dateLabel: string;
+  date: string;
+  comment: string;
+  summary_note: string;
+  isTemplateOnly?: boolean;
+}
+
+export interface ParsedStudyReportResult {
+  programType: 'JLPT' | 'KAIWA';
+  sheetName: string;
+  detectedStudentExternalId: string | null;
+  detectedStudentName: string | null;
+  detectedPackageCode: string | null;
+  detectedTeacherName: string | null;
+  kaiwaReport?: KaiwaStudyReportData;
+  jlptDailyReports?: JlptDailyReportItem[];
+  warnings: string[];
+}
+
+function extractValueAfterColon(raw: string): string {
+  if (!raw) return '';
+  const idx = raw.lastIndexOf(':');
+  if (idx === -1) return raw.trim();
+  const after = raw.slice(idx + 1).trim();
+  // Ignore pure placeholders like ".../10", ".../100", "/100", ".../.../... - .../.../..."
+  if (/^\.*\/\d+$/.test(after) || after === '/100' || after.includes('.../...')) {
+    return '';
+  }
+  return after;
+}
+
+function cleanStudyReportCellValue(raw: string, stripLabelPrefix = false): string {
+  if (!raw) return '';
+  const trimmed = raw.trim();
+  if (!trimmed || trimmed === '.../10' || trimmed === '.../100' || trimmed === '/100') return '';
+  if (stripLabelPrefix) {
+    return extractValueAfterColon(trimmed);
+  }
+  if (trimmed.includes('.../.../...')) {
+    const cleaned = trimmed
+      .replace(/^Ngày từ\s*\(日付\)\s*/i, '')
+      .replace(/\.\.\.\/\.\.\.\/\.\.\.\s*-\s*\.\.\.\/\.\.\.\/\.\.\./g, '')
+      .trim();
+    return cleaned;
+  }
+  if (/^Ngày từ\s*\(日付\)/i.test(trimmed)) {
+    return trimmed.replace(/^Ngày từ\s*\(日付\)\s*/i, '').trim();
+  }
+  return trimmed;
+}
+
+/**
+ * Parse Kaiwa Study Report ('Format báo cáo học tập kaiwa.xlsx' - Tab 1)
+ */
+export function parseKaiwaStudyReportWorkbook(
+  workbook: ExcelJS.Workbook,
+  preferredSheetName?: string
+): ParsedStudyReportResult {
+  const ws =
+    (preferredSheetName ? workbook.getWorksheet(preferredSheetName) : undefined) ||
+    workbook.worksheets.find((w) => w.name.includes('学習レポート') || w.name.toLowerCase().includes('báo cáo')) ||
+    workbook.worksheets[0];
+
+  if (!ws) {
+    return {
+      programType: 'KAIWA',
+      sheetName: '',
+      detectedStudentExternalId: null,
+      detectedStudentName: null,
+      detectedPackageCode: null,
+      detectedTeacherName: null,
+      warnings: ['Không tìm thấy tab Báo cáo học tập Kaiwa'],
+    };
+  }
+
+  const getC2 = (r: number) => cellText(ws.getRow(r).getCell(2));
+  const getC1 = (r: number) => cellText(ws.getRow(r).getCell(1));
+
+  // Header info rows 4..7
+  const rawNameLine = getC1(4) || getC2(4);
+  const rawIdLine = getC1(5) || getC2(5);
+  const rawCourseLine = getC1(6) || getC2(6);
+  const rawTeacherLine = getC1(7) || getC2(7);
+
+  const detectedStudentName = extractValueAfterColon(rawNameLine) || null;
+  const rawExtId = extractValueAfterColon(rawIdLine);
+  const detectedStudentExternalId = normalizeExternalId(rawExtId) || null;
+  const detectedPackageCode = extractValueAfterColon(rawCourseLine) || null;
+  const detectedTeacherName = extractValueAfterColon(rawTeacherLine) || null;
+
+  // Row 8-9: Thông tin trao đổi với HV
+  const r8C2 = getC2(8);
+  const r9C1 = getC1(9);
+  const r9C2 = getC2(9);
+  const exchangeWithStudent =
+    (r8C2 && !r8C2.toLowerCase().includes('thông tin trao đổi') ? r8C2 : '') ||
+    r9C2 ||
+    r9C1 ||
+    '';
+
+  const parseMilestone = (startRow: number): KaiwaStudyReportMilestoneBlock => {
+    // startRow is the header row of the block: e.g. 22 for 1-10, 36 for 11-20, 50 for 21-30
+    // +2 = date_range (row 24, 38, 52)
+    // +3 = absent_excused (row 25, 39, 53)
+    // +4 = absent_unexcused (row 26, 40, 54)
+    // +5 = teacher_absent (row 27, 41, 55)
+    // +6 = preparation (row 28, 42, 56)
+    // +7 = homework_completion (row 29, 43, 57)
+    // +8 = interaction (row 30, 44, 58)
+    // +9 = comprehension (row 31, 45, 59)
+    // +10 = strengths_progress (row 32, 46, 60)
+    // +11 = weaknesses (row 33, 47, 61)
+    // +12 = additional_comments (row 34, 48, 62)
+    const hw = cleanStudyReportCellValue(getC2(startRow + 7));
+    const strProg = cleanStudyReportCellValue(getC2(startRow + 10));
+    const addComm = cleanStudyReportCellValue(getC2(startRow + 12));
+    return {
+      date_range: cleanStudyReportCellValue(getC2(startRow + 2)),
+      absent_excused: cleanStudyReportCellValue(getC2(startRow + 3), true),
+      absent_unexcused: cleanStudyReportCellValue(getC2(startRow + 4), true),
+      teacher_absent: cleanStudyReportCellValue(getC2(startRow + 5), true),
+      preparation: cleanStudyReportCellValue(getC2(startRow + 6)),
+      homework_completion: hw,
+      homework_completed: hw,
+      interaction: cleanStudyReportCellValue(getC2(startRow + 8)),
+      comprehension: cleanStudyReportCellValue(getC2(startRow + 9)),
+      strengths_progress: strProg,
+      strengths: strProg,
+      weaknesses: cleanStudyReportCellValue(getC2(startRow + 11)),
+      additional_comments: addComm,
+      additional_notes: addComm,
+    };
+  };
+
+  const parseExam = (startRow: number): KaiwaStudyReportExamBlock => {
+    const pron = cleanStudyReportCellValue(getC2(startRow + 3), true);
+    const totScore = cleanStudyReportCellValue(getC2(startRow + 5), true);
+    const addComm = cleanStudyReportCellValue(getC2(startRow + 6));
+    return {
+      vocabulary: cleanStudyReportCellValue(getC2(startRow + 1), true),
+      grammar: cleanStudyReportCellValue(getC2(startRow + 2), true),
+      pronunciation: pron,
+      intonation: pron,
+      fluency: cleanStudyReportCellValue(getC2(startRow + 4), true),
+      total_score: totScore,
+      score: totScore,
+      additional_comments: addComm,
+      additional_notes: addComm,
+    };
+  };
+
+  const kaiwaReport: KaiwaStudyReportData = {
+    exchange_with_student: exchangeWithStudent,
+    session_1: {
+      preparation: cleanStudyReportCellValue(getC2(12)),
+      interaction: cleanStudyReportCellValue(getC2(13)),
+      comprehension: cleanStudyReportCellValue(getC2(14)),
+    },
+    session_3: {
+      preparation: cleanStudyReportCellValue(getC2(18)),
+      interaction: cleanStudyReportCellValue(getC2(19)),
+      comprehension: cleanStudyReportCellValue(getC2(20)),
+    },
+    sessions_1_10: parseMilestone(22),
+    sessions_11_20: parseMilestone(36),
+    sessions_21_30: parseMilestone(50),
+    midterm: parseExam(64),
+    final_exam: parseExam(72),
+  };
+
+  return {
+    programType: 'KAIWA',
+    sheetName: ws.name,
+    detectedStudentExternalId,
+    detectedStudentName,
+    detectedPackageCode,
+    detectedTeacherName,
+    kaiwaReport,
+    warnings: [],
+  };
+}
+
+/**
+ * Parse JLPT Study Report ('Format báo cáo học tập JLPT.xlsx' - Tab 1: Col A = Ngày, Col B = Nhận xét)
+ */
+export function parseJlptStudyReportWorkbook(
+  workbook: ExcelJS.Workbook,
+  preferredSheetName?: string
+): ParsedStudyReportResult {
+  const ws =
+    (preferredSheetName ? workbook.getWorksheet(preferredSheetName) : undefined) ||
+    workbook.worksheets[0];
+
+  if (!ws) {
+    return {
+      programType: 'JLPT',
+      sheetName: '',
+      detectedStudentExternalId: null,
+      detectedStudentName: null,
+      detectedPackageCode: null,
+      detectedTeacherName: null,
+      jlptDailyReports: [],
+      warnings: ['Không tìm thấy tab Báo cáo học tập JLPT'],
+    };
+  }
+
+  const jlptDailyReports: JlptDailyReportItem[] = [];
+
+  for (let r = 2; r <= ws.rowCount; r++) {
+    const row = ws.getRow(r);
+    const colA = cellText(row.getCell(1));
+    const colB = cellText(row.getCell(2));
+    if (!colA && !colB) continue;
+
+    // Extract date from Col A or from "vào Thứ ... ngày dd/mm như sau" inside Col B
+    let dateLabel = colA;
+    if (!dateLabel && colB) {
+      const m = colB.match(/ngày\s+(\d{1,2})\s*[/.-]\s*(\d{1,2})(?:\s*[/.-]\s*(\d{2,4}))?/i);
+      if (m) {
+        const dd = m[1].padStart(2, '0');
+        const mm = m[2].padStart(2, '0');
+        dateLabel = m[3] ? `${dd}/${mm}/${m[3]}` : `${dd}/${mm}`;
+      }
+    }
+
+    // Check if this row is an unfilled template row (e.g. "vào Thứ  ngày  như sau" with empty Ưu điểm / Nhược điểm)
+    const isUnfilledTemplate =
+      !dateLabel &&
+      /vào\s+Thứ\s+ngày\s+như\s+sau/i.test(colB) &&
+      /Ưu điểm:\s*\r?\n\s*📍\s*Nhược điểm:\s*\r?\n/i.test(colB);
+
+    if (isUnfilledTemplate) {
+      continue;
+    }
+
+    const resolvedDate = dateLabel || `Buổi ${jlptDailyReports.length + 1}`;
+    jlptDailyReports.push({
+      rowNumber: r,
+      dateLabel: resolvedDate,
+      date: resolvedDate,
+      comment: colB,
+      summary_note: colB,
+    });
+  }
+
+  return {
+    programType: 'JLPT',
+    sheetName: ws.name,
+    detectedStudentExternalId: null,
+    detectedStudentName: null,
+    detectedPackageCode: null,
+    detectedTeacherName: null,
+    jlptDailyReports,
+    warnings: [],
+  };
 }

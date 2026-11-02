@@ -99,10 +99,34 @@ export interface GoogleSheetSyncSummary {
 
 export type SyncSourceType = 'GOOGLE_SHEET' | 'LOCAL_FILE';
 
+export type SyncFlowType =
+  | 'STUDENT_MASTER'
+  | 'CSKH_ATTENDANCE'
+  | 'TEACHER_ATTENDANCE'
+  | 'STUDY_REPORT';
+
+export interface SyncFilterConfig {
+  sourceStatuses?: string[];
+  enrollmentStatuses?: string[];
+  months?: number[];
+  cvhtCodes?: string[];
+  teacherCodes?: string[];
+  classCodes?: string[];
+}
+
+export interface SyncFlowCounts {
+  ALL: number;
+  STUDENT_MASTER: number;
+  CSKH_ATTENDANCE: number;
+  TEACHER_ATTENDANCE: number;
+  STUDY_REPORT: number;
+}
+
 export interface GoogleSheetSyncConfig {
   id: number;
   code: 'JLPT' | 'KAIWA' | string;
   name: string;
+  flow_type?: SyncFlowType;
   program_type: 'JLPT' | 'KAIWA' | string;
   source_type?: SyncSourceType;
   spreadsheet_url?: string | null;
@@ -111,6 +135,13 @@ export interface GoogleSheetSyncConfig {
   sheet_name: string;
   setting_sheet_name?: string | null;
   header_row: number;
+  sync_year?: number | null;
+  filter_config?: SyncFilterConfig | null;
+  target_student_external_id?: string | null;
+  target_student_name?: string | null;
+  target_class_code?: string | null;
+  target_teacher_code?: string | null;
+  is_system_default?: boolean;
   cvht_mapping?: Record<string, number> | null;
   default_cs_id?: number | null;
   sync_interval_minutes: number;
@@ -122,16 +153,141 @@ export interface GoogleSheetSyncConfig {
   last_error?: string | null;
 }
 
-export interface UpdateGoogleSheetSyncConfigDTO {
+export interface CreateGoogleSheetSyncConfigDTO {
+  code?: string;
+  name: string;
+  flow_type: SyncFlowType;
+  program_type: 'JLPT' | 'KAIWA' | string;
   source_type?: SyncSourceType;
   spreadsheet_url?: string | null;
   local_file_path?: string | null;
   sheet_name?: string;
   setting_sheet_name?: string | null;
+  header_row?: number;
+  sync_year?: number | null;
+  filter_config?: SyncFilterConfig | null;
+  target_student_external_id?: string | null;
+  target_student_name?: string | null;
+  target_class_code?: string | null;
+  target_teacher_code?: string | null;
   cvht_mapping?: Record<string, number>;
   default_cs_id?: number | null;
   sync_interval_minutes?: number;
   enabled?: boolean;
+}
+
+export interface UpdateGoogleSheetSyncConfigDTO {
+  name?: string;
+  flow_type?: SyncFlowType;
+  program_type?: 'JLPT' | 'KAIWA' | string;
+  source_type?: SyncSourceType;
+  spreadsheet_url?: string | null;
+  local_file_path?: string | null;
+  sheet_name?: string;
+  setting_sheet_name?: string | null;
+  header_row?: number;
+  sync_year?: number | null;
+  filter_config?: SyncFilterConfig | null;
+  target_student_external_id?: string | null;
+  target_student_name?: string | null;
+  target_class_code?: string | null;
+  target_teacher_code?: string | null;
+  cvht_mapping?: Record<string, number>;
+  default_cs_id?: number | null;
+  sync_interval_minutes?: number;
+  enabled?: boolean;
+}
+
+export interface BulkPasteLinkItemResult {
+  lineNumber: number;
+  rawLine: string;
+  status: 'VALID' | 'DUPLICATE' | 'INVALID_URL';
+  spreadsheetUrl?: string;
+  spreadsheetId?: string;
+  studentExternalId?: string | null;
+  studentName?: string | null;
+  classCode?: string | null;
+  teacherCode?: string | null;
+  matchedStudentId?: number | null;
+  matchedClassId?: number | null;
+  matchedTeacherId?: number | null;
+  existingConfigCode?: string | null;
+  message?: string;
+}
+
+export interface BulkPasteLinksResponse {
+  mode: 'VALIDATE_ONLY' | 'CREATE';
+  totalLines: number;
+  validCount: number;
+  duplicateCount: number;
+  invalidCount: number;
+  createdCount?: number;
+  items: BulkPasteLinkItemResult[];
+  createdConfigs?: GoogleSheetSyncConfig[];
+}
+
+export type SyncPreviewRowClassification =
+  | 'CREATE'
+  | 'UPDATE'
+  | 'CONFLICT'
+  | 'INVALID'
+  | 'UNCHANGED';
+
+export interface SyncFieldDiffItem {
+  field: string;
+  fieldLabel: string;
+  before: unknown;
+  after: unknown;
+  entityType?: 'STUDENT' | 'ENROLLMENT' | 'ATTENDANCE' | 'STUDY_REPORT' | string;
+}
+
+export interface SyncPreviewRowItem {
+  itemKey: string;
+  rowNumber: number;
+  externalId: string;
+  fullName: string;
+  classCode?: string | null;
+  packageCode?: string | null;
+  teacherCode?: string | null;
+  sourceStatus?: string | null;
+  enrollmentStatus?: string | null;
+  classification: SyncPreviewRowClassification;
+  entityType: 'STUDENT' | 'ATTENDANCE' | 'STUDY_REPORT' | string;
+  fieldDiffs: SyncFieldDiffItem[];
+  warnings: string[];
+  errors: string[];
+}
+
+export interface SyncPreviewResponse {
+  previewToken: string;
+  config: GoogleSheetSyncConfig;
+  appliedFilter: {
+    syncYear?: number | null;
+    filterConfig?: SyncFilterConfig | null;
+  };
+  warnings: string[];
+  summary: {
+    totalRowsScanned: number;
+    filteredOutCount: number;
+    unchangedCount: number;
+    createCount: number;
+    updateCount: number;
+    conflictCount: number;
+    invalidCount: number;
+  };
+  items: SyncPreviewRowItem[];
+}
+
+export interface SyncCommitResponse {
+  runId: number;
+  code: string;
+  status: 'SUCCESS' | 'PARTIAL_FAILED' | 'FAILED';
+  appliedCount: number;
+  createdCount: number;
+  updatedCount: number;
+  skippedCount: number;
+  failedCount: number;
+  message?: string;
 }
 
 export interface ServiceAccountInfo {
@@ -142,7 +298,9 @@ export interface ServiceAccountInfo {
 }
 
 export interface SheetSyncResult {
+  runId?: number;
   code?: string;
+  flow_type?: SyncFlowType;
   program_type?: string;
   status?: string;
   totalRows?: number;
@@ -286,10 +444,12 @@ export interface BackupHistoryResponse {
 export interface SyncHistoryItem {
   id: number;
   code: string;
+  name?: string;
+  flowType?: SyncFlowType;
   programType: string;
   triggerType: 'AUTO' | 'MANUAL';
   mode: 'DELTA' | 'FULL';
-  status: 'SUCCESS' | 'PARTIAL_FAILED' | 'FAILED';
+  status: 'SUCCESS' | 'PARTIAL_FAILED' | 'FAILED' | 'ROLLED_BACK';
   durationSec: number;
   createdAt: string;
   totalRows: number;
@@ -297,6 +457,7 @@ export interface SyncHistoryItem {
   updatedCount: number;
   unchangedRows: number;
   failedCount: number;
+  rolledBackCount?: number;
   error?: string | null;
 }
 
@@ -309,4 +470,73 @@ export interface SyncHistoryResponse {
   };
   items: SyncHistoryItem[];
   total: number;
+}
+
+export type SyncHistoryChangeStatus =
+  | 'APPLIED'
+  | 'ROLLED_BACK'
+  | 'CONFLICT_MODIFIED'
+  | 'FAILED';
+
+export interface SyncHistoryChangeLogItem {
+  id: number;
+  rowNumber: number;
+  externalId: string;
+  fullName: string;
+  classCode?: string | null;
+  packageCode?: string | null;
+  entityType: 'STUDENT' | 'ATTENDANCE' | 'STUDY_REPORT' | string;
+  action: 'CREATE' | 'UPDATE' | 'CONFLICT' | 'ERROR';
+  status: SyncHistoryChangeStatus;
+  fieldDiffs: SyncFieldDiffItem[];
+  currentWebValueSummary?: string | null;
+  conflictReason?: string | null;
+  rolledBackAt?: string | null;
+}
+
+export interface SyncHistoryDetailResponse {
+  run: {
+    id: number;
+    code: string;
+    name: string;
+    flowType: SyncFlowType;
+    programType: 'JLPT' | 'KAIWA' | string;
+    triggerType: 'AUTO' | 'MANUAL';
+    mode: 'DELTA' | 'FULL';
+    status: 'SUCCESS' | 'PARTIAL_FAILED' | 'FAILED' | 'ROLLED_BACK';
+    durationSec: number;
+    createdAt: string;
+    actorName?: string | null;
+    error?: string | null;
+  };
+  summary: {
+    totalRowsScanned: number;
+    createdCount: number;
+    updatedCount: number;
+    failedOrSkippedCount: number;
+    rolledBackCount: number;
+    remainingAppliedCount: number;
+  };
+  items: SyncHistoryChangeLogItem[];
+}
+
+export interface SyncRollbackConflictItem {
+  changeId: number;
+  rowNumber: number;
+  externalId: string;
+  fullName: string;
+  fieldLabel: string;
+  beforeSyncValue: unknown;
+  syncedValue: unknown;
+  currentWebValue: unknown;
+  conflictMessage: string;
+}
+
+export interface SyncRollbackResponse {
+  runId: number;
+  conflictDetected: boolean;
+  rolledBackCount: number;
+  skippedConflictCount: number;
+  conflicts?: SyncRollbackConflictItem[];
+  message?: string;
 }

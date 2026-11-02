@@ -8,7 +8,7 @@ import { Button } from '../../../components/ui/Button';
 import { Select } from '../../../components/ui/Select';
 import { useToast } from '../../../components/ui/Toast';
 import { useAuth } from '../../../contexts/AuthContext';
-import { ArrowLeft, Save, CheckCircle2, Printer } from 'lucide-react';
+import { ArrowLeft, Save, CheckCircle2, Printer, Plus, Trash2 } from 'lucide-react';
 
 export interface StageBlockData {
   date_range: string;
@@ -33,6 +33,11 @@ export interface ExamBlockData {
   additional_notes: string;
 }
 
+export interface JlptDailyReportItem {
+  date: string;
+  summary_note: string;
+}
+
 export interface StudyReportData {
   exchange_with_student: string;
   session_1: {
@@ -50,7 +55,12 @@ export interface StudyReportData {
   sessions_21_30: StageBlockData;
   midterm: ExamBlockData;
   final_exam: ExamBlockData;
+  jlpt_daily_reports?: JlptDailyReportItem[];
 }
+
+type StudyReportTemplateMode = 'KAIWA' | 'JLPT';
+
+const DEFAULT_JLPT_NOTE_TEMPLATE = `Kính gửi các quý PHHS, GV xin phép gửi [Tổng hợp buổi học]\n- Nội dung bài học: ...\n- Tinh thần & thái độ học tập: ...\n- Bài tập về nhà & dặn dò: ...`;
 
 const emptyStageBlock = (): StageBlockData => ({
   date_range: '',
@@ -75,6 +85,22 @@ const emptyExamBlock = (): ExamBlockData => ({
   additional_notes: '',
 });
 
+const normalizeStageBlock = (raw?: any): StageBlockData => ({
+  ...emptyStageBlock(),
+  ...(raw || {}),
+  homework_completed: raw?.homework_completed ?? raw?.homework_completion ?? '',
+  strengths: raw?.strengths ?? raw?.strengths_progress ?? '',
+  additional_notes: raw?.additional_notes ?? raw?.additional_comments ?? '',
+});
+
+const normalizeExamBlock = (raw?: any): ExamBlockData => ({
+  ...emptyExamBlock(),
+  ...(raw || {}),
+  intonation: raw?.intonation ?? raw?.pronunciation ?? '',
+  score: raw?.score ?? raw?.total_score ?? '',
+  additional_notes: raw?.additional_notes ?? raw?.additional_comments ?? '',
+});
+
 const createInitialReportData = (raw?: Partial<StudyReportData> | null): StudyReportData => ({
   exchange_with_student: raw?.exchange_with_student ?? '',
   session_1: {
@@ -87,26 +113,22 @@ const createInitialReportData = (raw?: Partial<StudyReportData> | null): StudyRe
     interaction: raw?.session_3?.interaction ?? '',
     comprehension: raw?.session_3?.comprehension ?? '',
   },
-  sessions_1_10: {
-    ...emptyStageBlock(),
-    ...(raw?.sessions_1_10 || {}),
-  },
-  sessions_11_20: {
-    ...emptyStageBlock(),
-    ...(raw?.sessions_11_20 || {}),
-  },
-  sessions_21_30: {
-    ...emptyStageBlock(),
-    ...(raw?.sessions_21_30 || {}),
-  },
-  midterm: {
-    ...emptyExamBlock(),
-    ...(raw?.midterm || {}),
-  },
-  final_exam: {
-    ...emptyExamBlock(),
-    ...(raw?.final_exam || {}),
-  },
+  sessions_1_10: normalizeStageBlock(raw?.sessions_1_10),
+  sessions_11_20: normalizeStageBlock(raw?.sessions_11_20),
+  sessions_21_30: normalizeStageBlock(raw?.sessions_21_30),
+  midterm: normalizeExamBlock(raw?.midterm),
+  final_exam: normalizeExamBlock(raw?.final_exam),
+  jlpt_daily_reports: Array.isArray(raw?.jlpt_daily_reports)
+    ? raw!.jlpt_daily_reports.map((r: any) => ({
+        date: r?.date ?? r?.dateLabel ?? '',
+        summary_note: r?.summary_note ?? r?.comment ?? '',
+      }))
+    : [
+        {
+          date: 'Thứ sáu - 03/04',
+          summary_note: '',
+        },
+      ],
 });
 
 const hydrateReportFromEnrollment = (enr?: Enrollment): StudyReportData => {
@@ -121,6 +143,20 @@ const hydrateReportFromEnrollment = (enr?: Enrollment): StudyReportData => {
         ? savedReport.exchange_with_student
         : enr?.exchange_info || '',
   });
+};
+
+const detectTemplateMode = (enr?: Enrollment): StudyReportTemplateMode => {
+  const savedReport = (enr?.program_metadata as any)?.study_report;
+  const programUpper = (enr?.program_type || '').toUpperCase();
+  if (programUpper === 'JLPT') return 'JLPT';
+  if (
+    Array.isArray(savedReport?.jlpt_daily_reports) &&
+    savedReport.jlpt_daily_reports.length > 0 &&
+    savedReport.jlpt_daily_reports.some((r: any) => Boolean(r?.summary_note?.trim()))
+  ) {
+    return 'JLPT';
+  }
+  return 'KAIWA';
 };
 
 const enrollmentLabel = (enr: Enrollment): string => {
@@ -159,6 +195,7 @@ export const StudentStudyReportPage: React.FC = () => {
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [report, setReport] = useState<StudyReportData>(() => createInitialReportData());
   const [selectedEnrollmentId, setSelectedEnrollmentId] = useState<number | null>(null);
+  const [templateMode, setTemplateMode] = useState<StudyReportTemplateMode>('KAIWA');
   const [hydratedSnapshot, setHydratedSnapshot] = useState<string>(() => JSON.stringify(createInitialReportData()));
 
   useEffect(() => {
@@ -168,9 +205,6 @@ export const StudentStudyReportPage: React.FC = () => {
         setLoading(true);
         const data = await studentsApi.get(Number(id));
         setStudent(data);
-        // D11 policy (renamed from reused-D9 to avoid the Sale↔CS backlog code):
-        // only auto-select when the student has exactly one enrollment; with
-        // several, the user must pick explicitly (never implicitly guess).
         const list = data.enrollments ?? [];
         setSelectedEnrollmentId(list.length === 1 ? list[0].id : null);
       } catch (err: any) {
@@ -182,14 +216,14 @@ export const StudentStudyReportPage: React.FC = () => {
     fetchDetail();
   }, [id]);
 
-  // Re-hydrate the form whenever the selected enrollment changes (also covers
-  // the initial auto-selection after fetch).
+  // Re-hydrate the form whenever the selected enrollment changes
   useEffect(() => {
     if (!student || selectedEnrollmentId == null) return;
     const enr = student.enrollments?.find((e) => e.id === selectedEnrollmentId);
     if (!enr) return;
     const next = hydrateReportFromEnrollment(enr);
     setReport(next);
+    setTemplateMode(detectTemplateMode(enr));
     setHydratedSnapshot(JSON.stringify(next));
   }, [student, selectedEnrollmentId]);
 
@@ -225,7 +259,7 @@ export const StudentStudyReportPage: React.FC = () => {
       };
       await studentsApi.update(student.id, {
         enrollment_id: enr.id,
-        program_type: (enr.program_type as any) || 'KAIWA',
+        program_type: (enr.program_type as any) || templateMode,
         program_metadata: nextMeta,
         exchange_info: report.exchange_with_student,
         study_report_url: `/students/${student.id}/study-report`,
@@ -266,6 +300,46 @@ export const StudentStudyReportPage: React.FC = () => {
         [field]: val,
       },
     }));
+  };
+
+  const jlptRows: JlptDailyReportItem[] = report.jlpt_daily_reports || [];
+
+  const handleAddJlptRow = () => {
+    setReport((prev) => ({
+      ...prev,
+      jlpt_daily_reports: [
+        ...(prev.jlpt_daily_reports || []),
+        {
+          date: '',
+          summary_note: DEFAULT_JLPT_NOTE_TEMPLATE,
+        },
+      ],
+    }));
+  };
+
+  const handleUpdateJlptRow = (
+    idx: number,
+    patch: Partial<JlptDailyReportItem>
+  ) => {
+    setReport((prev) => {
+      const list = [...(prev.jlpt_daily_reports || [])];
+      list[idx] = { ...list[idx], ...patch };
+      return {
+        ...prev,
+        jlpt_daily_reports: list,
+      };
+    });
+  };
+
+  const handleRemoveJlptRow = (idx: number) => {
+    setReport((prev) => {
+      const list = [...(prev.jlpt_daily_reports || [])];
+      list.splice(idx, 1);
+      return {
+        ...prev,
+        jlpt_daily_reports: list,
+      };
+    });
   };
 
   if (loading) {
@@ -722,7 +796,33 @@ export const StudentStudyReportPage: React.FC = () => {
           )}
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Template Mode Switcher: Báo cáo Kaiwa vs Báo cáo JLPT (Theo buổi) */}
+          <div className="inline-flex rounded-xl bg-slate-200/80 p-1">
+            <button
+              type="button"
+              onClick={() => setTemplateMode('KAIWA')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                templateMode === 'KAIWA'
+                  ? 'bg-white text-teal-700 shadow-2xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Báo cáo Kaiwa
+            </button>
+            <button
+              type="button"
+              onClick={() => setTemplateMode('JLPT')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                templateMode === 'JLPT'
+                  ? 'bg-white text-violet-700 shadow-2xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Báo cáo JLPT (Theo buổi)
+            </button>
+          </div>
+
           <Button
             variant="outline"
             size="sm"
@@ -744,7 +844,7 @@ export const StudentStudyReportPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Explicit enrollment picker (D11: never implicitly guess when multiple exist) */}
+      {/* Explicit enrollment picker */}
       {enrollments.length > 1 && (
         <div className="mb-4 max-w-5xl mx-auto print:hidden">
           <div className="flex items-end gap-3">
@@ -776,151 +876,297 @@ export const StudentStudyReportPage: React.FC = () => {
         </div>
       )}
 
-      {/* Sheet 1 Container (giống bố cục Theo_doi_hoc_tap.xlsx) */}
       {enrollments.length > 1 && selectedEnrollmentId == null ? (
         <div className="max-w-5xl mx-auto py-16 text-center text-sm text-text-muted bg-white rounded-xl border border-slate-400 shadow-soft mb-10">
           Vui lòng chọn gói ghi danh
         </div>
+      ) : templateMode === 'JLPT' ? (
+        /* MẪU BÁO CÁO HỌC TẬP JLPT (Bảng 2 cột: Ngày / Buổi học | Nhận xét tổng hợp buổi học) */
+        <div className="max-w-5xl mx-auto bg-white rounded-xl border border-slate-400 shadow-soft overflow-hidden mb-10">
+          {/* Header JLPT Info */}
+          <div className="bg-[#D9E1F2] border-b border-slate-400 py-4 px-5 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="font-extrabold text-base sm:text-lg text-slate-900 uppercase tracking-wide">
+                BÁO CÁO HỌC TẬP JLPT (THEO BUỔI HỌC)
+              </h2>
+              <div className="text-xs text-slate-700 mt-1 flex flex-wrap items-center gap-3">
+                <span>
+                  Học viên: <strong>{student.full_name}</strong> ({studentCode})
+                </span>
+                <span>•</span>
+                <span>
+                  Khóa học: <strong>{courseCode}</strong>
+                </span>
+                <span>•</span>
+                <span>
+                  Giáo viên: <strong>{teacher}</strong>
+                </span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 print:hidden">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleAddJlptRow}
+                leftIcon={<Plus className="w-4 h-4 text-violet-600" />}
+              >
+                Thêm buổi nhận xét
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={handleSave}
+                isLoading={saving}
+                leftIcon={<Save className="w-4 h-4" />}
+              >
+                Lưu báo cáo
+              </Button>
+            </div>
+          </div>
+
+          <table className="w-full border-collapse text-xs text-slate-900">
+            <thead>
+              <tr className="bg-[#FFE599] font-extrabold text-slate-900 text-center">
+                <th className="border border-slate-400 px-3 py-2.5 w-44">
+                  Ngày / Buổi học
+                </th>
+                <th className="border border-slate-400 px-3 py-2.5 flex-1 text-left">
+                  Nhận xét tổng hợp buổi học
+                </th>
+                <th className="border border-slate-400 px-2 py-2.5 w-20 print:hidden">
+                  Thao tác
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {jlptRows.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={3}
+                    className="border border-slate-400 py-10 text-center text-slate-500"
+                  >
+                    Chưa có buổi nhận xét nào. Bấm{' '}
+                    <strong>[+ Thêm buổi nhận xét]</strong> để thêm dòng mới.
+                  </td>
+                </tr>
+              ) : (
+                jlptRows.map((row, idx) => (
+                  <tr key={idx} className="hover:bg-amber-50/20">
+                    {/* Cột 1 (w-44): Ngày / Buổi học */}
+                    <td className="border border-slate-400 p-2 align-top w-44 bg-slate-50/50">
+                      <input
+                        type="text"
+                        value={row.date}
+                        onChange={(e) =>
+                          handleUpdateJlptRow(idx, { date: e.target.value })
+                        }
+                        placeholder="VD: Thứ sáu - 03/04"
+                        className="w-full border border-slate-300 bg-white rounded-lg px-2.5 py-1.5 text-xs font-bold text-slate-900 focus:outline-none focus:ring-1 focus:ring-violet-600"
+                      />
+                      <div className="text-[10px] text-slate-400 mt-1 px-0.5">
+                        Buổi #{idx + 1}
+                      </div>
+                    </td>
+
+                    {/* Cột 2 (flex-1): Nhận xét tổng hợp buổi học */}
+                    <td className="border border-slate-400 p-2 align-top">
+                      <textarea
+                        rows={5}
+                        value={row.summary_note}
+                        onChange={(e) =>
+                          handleUpdateJlptRow(idx, {
+                            summary_note: e.target.value,
+                          })
+                        }
+                        placeholder={
+                          'Kính gửi các quý PHHS, GV xin phép gửi [Tổng hợp buổi học]...'
+                        }
+                        className="w-full px-3 py-2 text-xs text-slate-800 bg-white border border-slate-200 rounded-lg focus:bg-amber-50/30 focus:outline-none focus:ring-1 focus:ring-violet-600 resize-y leading-relaxed"
+                      />
+                    </td>
+
+                    {/* Cột xóa dòng */}
+                    <td className="border border-slate-400 p-2 align-top text-center print:hidden">
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveJlptRow(idx)}
+                        title="Xóa dòng nhận xét này"
+                        className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg border border-rose-200 bg-rose-50/70 hover:bg-rose-100 text-rose-600 font-semibold text-[11px] transition-colors cursor-pointer"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>Xóa dòng</span>
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+
+          {/* Bottom Bar inside JLPT card */}
+          <div className="p-3.5 bg-slate-50 border-t border-slate-300 flex items-center justify-between print:hidden">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleAddJlptRow}
+              leftIcon={<Plus className="w-4 h-4 text-violet-600" />}
+            >
+              Thêm buổi nhận xét
+            </Button>
+
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={handleSave}
+              isLoading={saving}
+              leftIcon={<Save className="w-4 h-4" />}
+            >
+              Lưu báo cáo
+            </Button>
+          </div>
+        </div>
       ) : (
-      <div className="max-w-5xl mx-auto bg-white rounded-xl border border-slate-400 shadow-soft overflow-hidden mb-10">
-        <table className="w-full border-collapse text-xs text-slate-900">
-          <tbody>
-            {/* Row 1: BÁO CÁO HỌC TẬP */}
-            <tr>
-              <td
-                colSpan={2}
-                className="bg-[#B6D7A8] border border-slate-400 py-4 px-4 text-center font-extrabold text-lg tracking-wide text-slate-900 uppercase"
-              >
-                BÁO CÁO HỌC TẬP
-              </td>
-            </tr>
+        /* MẪU BÁO CÁO HỌC TẬP KAIWA (Bảng 8 phần truyền thống) */
+        <div className="max-w-5xl mx-auto bg-white rounded-xl border border-slate-400 shadow-soft overflow-hidden mb-10">
+          <table className="w-full border-collapse text-xs text-slate-900">
+            <tbody>
+              {/* Row 1: BÁO CÁO HỌC TẬP */}
+              <tr>
+                <td
+                  colSpan={2}
+                  className="bg-[#B6D7A8] border border-slate-400 py-4 px-4 text-center font-extrabold text-lg tracking-wide text-slate-900 uppercase"
+                >
+                  BÁO CÁO HỌC TẬP
+                </td>
+              </tr>
 
-            {/* Row 2: Spacer */}
-            <tr className="h-3 bg-white">
-              <td colSpan={2} className="border-x border-slate-400" />
-            </tr>
+              {/* Row 2: Spacer */}
+              <tr className="h-3 bg-white">
+                <td colSpan={2} className="border-x border-slate-400" />
+              </tr>
 
-            {/* Row 3-7: THÔNG TIN HỌC VIÊN (Điền sẵn) */}
-            <tr>
-              <td
-                colSpan={2}
-                className="border border-slate-400 px-4 py-2 font-extrabold text-sm text-slate-900 bg-slate-50 uppercase"
-              >
-                THÔNG TIN HỌC VIÊN
-              </td>
-            </tr>
-            <tr>
-              <td colSpan={2} className="border border-slate-400 px-4 py-2 text-xs">
-                <span className="font-semibold text-slate-700 inline-block w-48">
-                  - Họ tên học viên:
-                </span>
-                <strong className="text-slate-900 text-sm">{student.full_name}</strong>
-              </td>
-            </tr>
-            <tr>
-              <td colSpan={2} className="border border-slate-400 px-4 py-2 text-xs">
-                <span className="font-semibold text-slate-700 inline-block w-48">
-                  - Mã học viên:
-                </span>
-                <strong className="font-mono text-slate-900">{studentCode}</strong>
-              </td>
-            </tr>
-            <tr>
-              <td colSpan={2} className="border border-slate-400 px-4 py-2 text-xs">
-                <span className="font-semibold text-slate-700 inline-block w-48">
-                  - Khóa học:
-                </span>
-                <strong className="text-slate-900">{courseCode}</strong>
-              </td>
-            </tr>
-            <tr>
-              <td colSpan={2} className="border border-slate-400 px-4 py-2 text-xs">
-                <span className="font-semibold text-slate-700 inline-block w-48">
-                  - Giáo viên giảng dạy:
-                </span>
-                <strong className="text-slate-900">{teacher}</strong>
-              </td>
-            </tr>
+              {/* Row 3-7: THÔNG TIN HỌC VIÊN (Điền sẵn) */}
+              <tr>
+                <td
+                  colSpan={2}
+                  className="border border-slate-400 px-4 py-2 font-extrabold text-sm text-slate-900 bg-slate-50 uppercase"
+                >
+                  THÔNG TIN HỌC VIÊN
+                </td>
+              </tr>
+              <tr>
+                <td colSpan={2} className="border border-slate-400 px-4 py-2 text-xs">
+                  <span className="font-semibold text-slate-700 inline-block w-48">
+                    - Họ tên học viên:
+                  </span>
+                  <strong className="text-slate-900 text-sm">{student.full_name}</strong>
+                </td>
+              </tr>
+              <tr>
+                <td colSpan={2} className="border border-slate-400 px-4 py-2 text-xs">
+                  <span className="font-semibold text-slate-700 inline-block w-48">
+                    - Mã học viên:
+                  </span>
+                  <strong className="font-mono text-slate-900">{studentCode}</strong>
+                </td>
+              </tr>
+              <tr>
+                <td colSpan={2} className="border border-slate-400 px-4 py-2 text-xs">
+                  <span className="font-semibold text-slate-700 inline-block w-48">
+                    - Khóa học:
+                  </span>
+                  <strong className="text-slate-900">{courseCode}</strong>
+                </td>
+              </tr>
+              <tr>
+                <td colSpan={2} className="border border-slate-400 px-4 py-2 text-xs">
+                  <span className="font-semibold text-slate-700 inline-block w-48">
+                    - Giáo viên giảng dạy:
+                  </span>
+                  <strong className="text-slate-900">{teacher}</strong>
+                </td>
+              </tr>
 
-            {/* Row 8: Thông tin trao đổi với HV */}
-            <tr>
-              <td className="bg-[#C9DAF8] border border-slate-400 px-3 py-2.5 font-bold text-slate-900 align-middle w-[34%]">
-                Thông tin trao đổi với HV
-              </td>
-              <td className="border border-slate-400 p-1.5 w-[66%]">
-                <textarea
-                  rows={2}
-                  value={report.exchange_with_student}
-                  onChange={(e) =>
-                    setReport((prev) => ({
-                      ...prev,
-                      exchange_with_student: e.target.value,
-                    }))
-                  }
-                  placeholder="Nhập thông tin trao đổi với học viên..."
-                  className="w-full px-2.5 py-1.5 text-xs text-slate-800 bg-transparent rounded focus:bg-blue-50/40 focus:outline-none focus:ring-1 focus:ring-primary resize-y"
-                />
-              </td>
-            </tr>
+              {/* Row 8: Thông tin trao đổi với HV */}
+              <tr>
+                <td className="bg-[#C9DAF8] border border-slate-400 px-3 py-2.5 font-bold text-slate-900 align-middle w-[34%]">
+                  Thông tin trao đổi với HV
+                </td>
+                <td className="border border-slate-400 p-1.5 w-[66%]">
+                  <textarea
+                    rows={2}
+                    value={report.exchange_with_student}
+                    onChange={(e) =>
+                      setReport((prev) => ({
+                        ...prev,
+                        exchange_with_student: e.target.value,
+                      }))
+                    }
+                    placeholder="Nhập thông tin trao đổi với học viên..."
+                    className="w-full px-2.5 py-1.5 text-xs text-slate-800 bg-transparent rounded focus:bg-blue-50/40 focus:outline-none focus:ring-1 focus:ring-primary resize-y"
+                  />
+                </td>
+              </tr>
 
-            {/* Spacer */}
-            <tr className="h-3 bg-white">
-              <td colSpan={2} className="border-x border-slate-400" />
-            </tr>
+              {/* Spacer */}
+              <tr className="h-3 bg-white">
+                <td colSpan={2} className="border-x border-slate-400" />
+              </tr>
 
-            {/* Buổi 1 */}
-            {renderShortSessionSection('Buổi 1', 'session_1')}
+              {/* Buổi 1 */}
+              {renderShortSessionSection('Buổi 1', 'session_1')}
 
-            {/* Spacer */}
-            <tr className="h-3 bg-white">
-              <td colSpan={2} className="border-x border-slate-400" />
-            </tr>
+              {/* Spacer */}
+              <tr className="h-3 bg-white">
+                <td colSpan={2} className="border-x border-slate-400" />
+              </tr>
 
-            {/* Buổi 3 */}
-            {renderShortSessionSection('Buổi 3', 'session_3')}
+              {/* Buổi 3 */}
+              {renderShortSessionSection('Buổi 3', 'session_3')}
 
-            {/* Spacer */}
-            <tr className="h-3 bg-white">
-              <td colSpan={2} className="border-x border-slate-400" />
-            </tr>
+              {/* Spacer */}
+              <tr className="h-3 bg-white">
+                <td colSpan={2} className="border-x border-slate-400" />
+              </tr>
 
-            {/* Buổi 1-10 */}
-            {renderTenSessionSection('Buổi 1-10', 'sessions_1_10')}
+              {/* Buổi 1-10 */}
+              {renderTenSessionSection('Buổi 1-10', 'sessions_1_10')}
 
-            {/* Spacer */}
-            <tr className="h-3 bg-white">
-              <td colSpan={2} className="border-x border-slate-400" />
-            </tr>
+              {/* Spacer */}
+              <tr className="h-3 bg-white">
+                <td colSpan={2} className="border-x border-slate-400" />
+              </tr>
 
-            {/* Buổi 11-20 */}
-            {renderTenSessionSection('Buổi 11-20', 'sessions_11_20')}
+              {/* Buổi 11-20 */}
+              {renderTenSessionSection('Buổi 11-20', 'sessions_11_20')}
 
-            {/* Spacer */}
-            <tr className="h-3 bg-white">
-              <td colSpan={2} className="border-x border-slate-400" />
-            </tr>
+              {/* Spacer */}
+              <tr className="h-3 bg-white">
+                <td colSpan={2} className="border-x border-slate-400" />
+              </tr>
 
-            {/* Buổi 21-30 */}
-            {renderTenSessionSection('Buổi 21-30', 'sessions_21_30')}
+              {/* Buổi 21-30 */}
+              {renderTenSessionSection('Buổi 21-30', 'sessions_21_30')}
 
-            {/* Spacer */}
-            <tr className="h-3 bg-white">
-              <td colSpan={2} className="border-x border-slate-400" />
-            </tr>
+              {/* Spacer */}
+              <tr className="h-3 bg-white">
+                <td colSpan={2} className="border-x border-slate-400" />
+              </tr>
 
-            {/* KẾT QUẢ GIỮA KỲ */}
-            {renderExamSection('KẾT QUẢ GIỮA KỲ', 'midterm')}
+              {/* KẾT QUẢ GIỮA KỲ */}
+              {renderExamSection('KẾT QUẢ GIỮA KỲ', 'midterm')}
 
-            {/* Spacer */}
-            <tr className="h-3 bg-white">
-              <td colSpan={2} className="border-x border-slate-400" />
-            </tr>
+              {/* Spacer */}
+              <tr className="h-3 bg-white">
+                <td colSpan={2} className="border-x border-slate-400" />
+              </tr>
 
-            {/* KẾT QUẢ CUỐI KHOÁ */}
-            {renderExamSection('KẾT QUẢ CUỐI KHOÁ', 'final_exam')}
-          </tbody>
-        </table>
-      </div>
+              {/* KẾT QUẢ CUỐI KHOÁ */}
+              {renderExamSection('KẾT QUẢ CUỐI KHOÁ', 'final_exam')}
+            </tbody>
+          </table>
+        </div>
       )}
     </PageContainer>
   );

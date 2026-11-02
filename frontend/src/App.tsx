@@ -17,6 +17,9 @@ import { StudentStudyReportPage } from './features/students/pages/StudentStudyRe
 import { ClassesPage } from './features/classes/pages/ClassesPage';
 import { EnrollmentsPage } from './features/enrollments/pages/EnrollmentsPage';
 import { ImportsPage } from './features/imports/pages/ImportsPage';
+import { DataSyncPage } from './features/imports/pages/DataSyncPage';
+import { SyncPreviewPage } from './features/imports/pages/SyncPreviewPage';
+import { SyncHistoryDetailPage } from './features/imports/pages/SyncHistoryDetailPage';
 import { ImportApprovalQueuePage } from './features/imports/pages/ImportApprovalQueuePage';
 import { DashboardPage } from './features/dashboard/pages/DashboardPage';
 import { CarePage } from './features/care/pages/CarePage';
@@ -79,6 +82,13 @@ function App() {
               <Route path="/settings/preferences" element={<PreferencesPage />} />
               <Route path="/cai-dat/cau-hinh" element={<Navigate to="/settings/preferences" replace />} />
 
+              {/* Đồng bộ dữ liệu (4 luồng) */}
+              <Route path="/data-sync" element={<DataSyncPage />} />
+              <Route path="/data-sync/preview/:code" element={<SyncPreviewPage />} />
+              <Route path="/data-sync/history/:runId" element={<SyncHistoryDetailPage />} />
+
+              {/* Backup & Xuất nhập */}
+              <Route path="/data-backup" element={<ImportsPage />} />
               <Route path="/imports" element={<ImportsPage />} />
               <Route path="/nhap-xuat-excel" element={<Navigate to="/imports" replace />} />
 

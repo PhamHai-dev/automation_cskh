@@ -27,8 +27,8 @@ describe('Google Sheet Sync & CVHT Scope Integration', () => {
   let cvht02Id: number;
   let cvht03Id: number;
 
-  const jlptPath = path.resolve(__dirname, '../../../../../docs/data/hoc_vien/hoc_vien_jlpt.xlsx');
-  const kaiwaPath = path.resolve(__dirname, '../../../../../docs/data/hoc_vien/hoc_vien_kaiwa.xlsx');
+  const jlptPath = path.resolve(__dirname, '../../../../../docs/data/import_data/File nguồn tổng JLPT.xlsx');
+  const kaiwaPath = path.resolve(__dirname, '../../../../../docs/data/import_data/File nguồn tổng Kaiwa.xlsx');
 
   beforeAll(async () => {
     const adminUser = await prisma.user.upsert({
@@ -198,10 +198,24 @@ describe('Google Sheet Sync & CVHT Scope Integration', () => {
     });
 
     it('should update config via PUT /api/v1/imports/sheet-sync/configs/:code', async () => {
+      await request(app)
+        .put('/api/v1/imports/sheet-sync/configs/KAIWA')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({
+          source_type: 'LOCAL_FILE',
+          local_file_path: 'docs/data/import_data/File nguồn tổng Kaiwa.xlsx',
+          sheet_name: 'Tổng',
+          default_cs_id: cvht01Id,
+        });
+
       const res = await request(app)
         .put('/api/v1/imports/sheet-sync/configs/JLPT')
         .set('Authorization', `Bearer ${adminToken}`)
         .send({
+          source_type: 'LOCAL_FILE',
+          local_file_path: 'docs/data/import_data/File nguồn tổng JLPT.xlsx',
+          sheet_name: 'Data JLPT_Inhouse',
+          setting_sheet_name: 'Setting',
           cvht_mapping: {
             CVHT01: cvht01Id,
             CVHT02: cvht02Id,

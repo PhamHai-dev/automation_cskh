@@ -1056,31 +1056,106 @@ model ProgramSheetBackupConfig {
 }
 
 model GoogleSheetSyncConfig {
-  id                    Int       @id @default(autoincrement())
-  code                  String    @unique // "JLPT" | "KAIWA"
-  name                  String
-  program_type          String    @default("KAIWA") // "JLPT" | "KAIWA"
-  spreadsheet_url       String?   @db.Text
-  spreadsheet_id        String?
-  local_file_path       String?
-  sheet_name            String
-  setting_sheet_name    String?
-  header_row            Int       @default(2)
-  cvht_mapping          Json? // { "CVHT01": 2, "CVHT02": 3, "CVHT03": 4 }
-  default_cs_id         Int?
-  sync_interval_minutes Int       @default(10)
-  enabled               Boolean   @default(true)
-  last_file_hash        String?
-  last_synced_at        DateTime?
-  last_status           String? // "IDLE" | "SYNCING" | "SUCCESS" | "PARTIAL_FAILED" | "FAILED"
-  last_summary          Json?
-  last_error            String?   @db.Text
-  created_at            DateTime  @default(now())
-  updated_at            DateTime  @updatedAt
+  id                         Int       @id @default(autoincrement())
+  code                       String    @unique // "JLPT" | "KAIWA" | custom codes
+  name                       String
+  flow_type                  String    @default("STUDENT_MASTER") // "STUDENT_MASTER" | "CSKH_ATTENDANCE" | "TEACHER_ATTENDANCE" | "STUDY_REPORT"
+  source_type                String    @default("GOOGLE_SHEET") // "GOOGLE_SHEET" | "LOCAL_FILE"
+  program_type               String    @default("KAIWA") // "JLPT" | "KAIWA"
+  spreadsheet_url            String?   @db.Text
+  spreadsheet_id             String?
+  sheet_gid                  String?
+  local_file_path            String?
+  sheet_name                 String
+  setting_sheet_name         String?
+  header_row                 Int       @default(2)
+  sync_year                  Int?
+  filter_config              Json? // { sourceStatuses?: string[], activeStates?: string[], enrollmentStatuses?: string[], months?: number[] }
+  target_student_external_id String?
+  target_student_name        String?
+  target_class_code          String?
+  target_teacher_code        String?
+  cvht_mapping               Json? // { "CVHT01": 2, "CVHT02": 3, "CVHT03": 4 }
+  default_cs_id              Int?
+  sync_interval_minutes      Int       @default(30)
+  enabled                    Boolean   @default(true)
+  last_file_hash             String?
+  last_synced_at             DateTime?
+  last_status                String? // "IDLE" | "SYNCING" | "SUCCESS" | "PARTIAL_FAILED" | "FAILED"
+  last_summary               Json?
+  last_error                 String?   @db.Text
+  created_at                 DateTime  @default(now())
+  updated_at                 DateTime  @updatedAt
 
   row_states GoogleSheetRowState[]
+  sync_runs  GoogleSheetSyncRun[]
 
+  @@index([flow_type, program_type])
+  @@index([enabled, source_type])
+  @@index([target_student_external_id])
   @@map("google_sheet_sync_configs")
+}
+
+model GoogleSheetSyncRun {
+  id                Int       @id @default(autoincrement())
+  config_id         Int
+  config_code       String
+  config_name       String
+  flow_type         String
+  program_type      String
+  trigger_type      String    @default("MANUAL") // "AUTO" | "MANUAL"
+  status            String    @default("SUCCESS") // "SUCCESS" | "PARTIAL_FAILED" | "FAILED" | "ROLLED_BACK" | "PARTIAL_ROLLED_BACK"
+  sync_year         Int?
+  filter_snapshot   Json?
+  total_rows        Int       @default(0)
+  created_count     Int       @default(0)
+  updated_count     Int       @default(0)
+  unchanged_count   Int       @default(0)
+  conflict_count    Int       @default(0)
+  failed_count      Int       @default(0)
+  rolled_back_count Int       @default(0)
+  duration_ms       Int       @default(0)
+  error_message     String?   @db.Text
+  triggered_by_id   Int?
+  started_at        DateTime  @default(now())
+  completed_at      DateTime?
+  rolled_back_at    DateTime?
+
+  config GoogleSheetSyncConfig    @relation(fields: [config_id], references: [id], onDelete: Cascade)
+  items  GoogleSheetSyncRunItem[]
+
+  @@index([config_id, started_at])
+  @@index([flow_type, program_type, started_at])
+  @@index([status])
+  @@map("google_sheet_sync_runs")
+}
+
+model GoogleSheetSyncRunItem {
+  id                Int       @id @default(autoincrement())
+  run_id            Int
+  row_number        Int?
+  external_id       String?
+  student_name      String?
+  class_code        String?
+  entity_type       String // "StudentEnrollment" | "Attendance" | "StudyReport"
+  entity_id         String? // enrollmentId or attendanceId
+  action            String // "CREATE" | "UPDATE" | "CONFLICT" | "INVALID" | "SKIPPED"
+  status            String    @default("APPLIED") // "APPLIED" | "SKIPPED" | "FAILED" | "ROLLED_BACK"
+  summary_text      String?   @db.Text
+  field_diffs       Json? // Array<{ field: string, label: string, before: any, after: any }>
+  before_snapshot   Json? // Full data needed to rollback
+  after_snapshot    Json? // Full data after apply (used to detect manual edit conflict before rollback)
+  warnings          Json?
+  error_message     String?   @db.Text
+  rolled_back_at    DateTime?
+  rolled_back_by_id Int?
+  created_at        DateTime  @default(now())
+
+  run GoogleSheetSyncRun @relation(fields: [run_id], references: [id], onDelete: Cascade)
+
+  @@index([run_id, action])
+  @@index([external_id])
+  @@map("google_sheet_sync_run_items")
 }
 
 model GoogleSheetRowState {

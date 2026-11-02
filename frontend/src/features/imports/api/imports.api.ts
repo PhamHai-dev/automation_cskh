@@ -7,6 +7,7 @@ import {
   ImportRowItem,
   GoogleSheetSyncConfig,
   CsUserOption,
+  CreateGoogleSheetSyncConfigDTO,
   UpdateGoogleSheetSyncConfigDTO,
   SheetSyncResult,
   ServiceAccountInfo,
@@ -15,6 +16,14 @@ import {
   CsSheetBackupSummary,
   BackupHistoryResponse,
   SyncHistoryResponse,
+  SyncFlowType,
+  SyncFlowCounts,
+  SyncFilterConfig,
+  BulkPasteLinksResponse,
+  SyncPreviewResponse,
+  SyncCommitResponse,
+  SyncHistoryDetailResponse,
+  SyncRollbackResponse,
 } from '../types/imports.types';
 
 export const importsApi = {
@@ -157,13 +166,100 @@ export const importsApi = {
     return res.data;
   },
 
-  // Google Sheet Sync (JLPT & Kaiwa)
-  getSheetSyncConfigs: async (): Promise<{
+  // Google Sheet Sync (4 Flows: STUDENT_MASTER, CSKH_ATTENDANCE, TEACHER_ATTENDANCE, STUDY_REPORT)
+  getSheetSyncConfigs: async (params?: {
+    flowType?: SyncFlowType | 'ALL';
+    programType?: string;
+    sourceType?: string;
+    enabled?: boolean;
+    status?: string;
+    search?: string;
+    page?: number;
+    pageSize?: number;
+  }): Promise<{
     configs: GoogleSheetSyncConfig[];
     csUsers: CsUserOption[];
     serviceAccount?: ServiceAccountInfo;
+    flowCounts?: SyncFlowCounts;
+    total?: number;
   }> => {
-    const res = await apiClient.get('/imports/sheet-sync/configs');
+    const res = await apiClient.get('/imports/sheet-sync/configs', { params });
+    return res.data?.data || res.data;
+  },
+
+  createSheetSyncConfig: async (
+    payload: CreateGoogleSheetSyncConfigDTO
+  ): Promise<GoogleSheetSyncConfig> => {
+    const res = await apiClient.post('/imports/sheet-sync/configs', payload);
+    return res.data?.data || res.data;
+  },
+
+  deleteSheetSyncConfig: async (code: string): Promise<{ deleted: boolean; code: string }> => {
+    const res = await apiClient.delete(`/imports/sheet-sync/configs/${encodeURIComponent(code)}`);
+    return res.data?.data || res.data;
+  },
+
+  bulkPasteSheetSyncLinks: async (payload: {
+    mode: 'VALIDATE_ONLY' | 'CREATE';
+    flow_type: SyncFlowType;
+    program_type: 'JLPT' | 'KAIWA' | string;
+    enabled?: boolean;
+    sync_interval_minutes?: number;
+    sync_year?: number | null;
+    raw_text: string;
+  }): Promise<BulkPasteLinksResponse> => {
+    const res = await apiClient.post('/imports/sheet-sync/configs/bulk-links', payload);
+    return res.data?.data || res.data;
+  },
+
+  previewSheetSyncConfig: async (
+    code: string,
+    payload?: {
+      sync_year?: number | null;
+      filter_config?: SyncFilterConfig | null;
+      forceFullSync?: boolean;
+    }
+  ): Promise<SyncPreviewResponse> => {
+    const res = await apiClient.post(
+      `/imports/sheet-sync/configs/${encodeURIComponent(code)}/preview`,
+      payload || {}
+    );
+    return res.data?.data || res.data;
+  },
+
+  commitSheetSyncPreview: async (
+    code: string,
+    payload: {
+      previewToken?: string;
+      selectedItemKeys?: string[];
+      sync_year?: number | null;
+      filter_config?: SyncFilterConfig | null;
+    }
+  ): Promise<SyncCommitResponse> => {
+    const res = await apiClient.post(
+      `/imports/sheet-sync/configs/${encodeURIComponent(code)}/commit`,
+      payload
+    );
+    return res.data?.data || res.data;
+  },
+
+  getSheetSyncHistoryDetail: async (runId: number | string): Promise<SyncHistoryDetailResponse> => {
+    const res = await apiClient.get(`/imports/sheet-sync/history/${runId}`);
+    return res.data?.data || res.data;
+  },
+
+  rollbackSheetSyncHistory: async (
+    runId: number | string,
+    payload?: {
+      changeIds?: number[];
+      rollbackAll?: boolean;
+      forceOverwriteConflicts?: boolean;
+    }
+  ): Promise<SyncRollbackResponse> => {
+    const res = await apiClient.post(
+      `/imports/sheet-sync/history/${runId}/rollback`,
+      payload || { rollbackAll: true }
+    );
     return res.data?.data || res.data;
   },
 
@@ -180,7 +276,7 @@ export const importsApi = {
     code: string,
     payload: UpdateGoogleSheetSyncConfigDTO
   ): Promise<GoogleSheetSyncConfig> => {
-    const res = await apiClient.put(`/imports/sheet-sync/configs/${code}`, payload);
+    const res = await apiClient.put(`/imports/sheet-sync/configs/${encodeURIComponent(code)}`, payload);
     return res.data?.data || res.data;
   },
 
@@ -195,7 +291,7 @@ export const importsApi = {
     const formData = new FormData();
     formData.append('file', file);
     const res = await apiClient.post(
-      `/imports/sheet-sync/configs/${code}/upload-file`,
+      `/imports/sheet-sync/configs/${encodeURIComponent(code)}/upload-file`,
       formData,
       {
         headers: { 'Content-Type': 'multipart/form-data' },
@@ -208,19 +304,22 @@ export const importsApi = {
     code: string,
     options?: { forceFullSync?: boolean; limit?: number }
   ): Promise<SheetSyncResult> => {
-    const res = await apiClient.post(`/imports/sheet-sync/configs/${code}/sync`, options || {});
+    const res = await apiClient.post(`/imports/sheet-sync/configs/${encodeURIComponent(code)}/sync`, options || {});
     return res.data?.data || res.data;
   },
 
   runSheetSyncAll: async (options?: {
     forceFullSync?: boolean;
     limit?: number;
+    flowType?: SyncFlowType;
   }): Promise<{ results: SheetSyncResult[] }> => {
     const res = await apiClient.post('/imports/sheet-sync/sync-all', options || {});
     return res.data?.data || res.data;
   },
 
   getSheetSyncHistory: async (params?: {
+    code?: string;
+    flowType?: SyncFlowType | string;
     programType?: string;
     status?: string;
     fromDate?: string;

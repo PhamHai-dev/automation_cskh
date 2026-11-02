@@ -13,14 +13,14 @@ import { importsApi } from '../api/imports.api';
 import { useAuth } from '../../../contexts/AuthContext';
 import { Download } from 'lucide-react';
 
-type ImportTabValue = 'sheet-sync' | 'sheet-backup' | 'wizard' | 'attendance' | 'approval' | 'history';
+type ImportTabValue = 'sheet-backup' | 'wizard' | 'attendance' | 'approval' | 'history' | 'sheet-sync';
 
-const TAB_ORDER: ImportTabValue[] = ['sheet-sync', 'sheet-backup', 'wizard', 'attendance', 'approval', 'history'];
+const TAB_ORDER: ImportTabValue[] = ['sheet-backup', 'wizard', 'attendance', 'approval', 'history', 'sheet-sync'];
 
 const TAB_META: Record<ImportTabValue, { label: string; subtitle: string }> = {
   'sheet-sync': {
-    label: 'Đồng bộ dữ liệu học viên',
-    subtitle: 'Quản lý đồng bộ danh sách học viên từ Google Sheet về hệ thống theo mã CSKH',
+    label: 'Đồng bộ dữ liệu',
+    subtitle: 'Quản lý đồng bộ dữ liệu 4 luồng từ Google Sheet & File Excel',
   },
   'sheet-backup': {
     label: 'Backup sổ CSKH & GV',
@@ -57,11 +57,11 @@ export const ImportsPage: React.FC = () => {
 
   const allowedTabs = useMemo<ImportTabValue[]>(() => {
     if (isAdminOrManage) return TAB_ORDER;
-    if (isCS) return ['sheet-backup', 'wizard', 'attendance', 'history'];
+    if (isCS) return ['sheet-backup', 'wizard', 'attendance', 'history', 'sheet-sync'];
     return ['sheet-backup', 'attendance', 'history'];
   }, [isAdminOrManage, isCS]);
 
-  const defaultTab = allowedTabs[0];
+  const defaultTab: ImportTabValue = 'sheet-backup';
 
   const resolveAllowedTab = useCallback(
     (rawTab: string | null): ImportTabValue => {

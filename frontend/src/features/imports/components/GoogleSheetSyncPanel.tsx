@@ -1,47 +1,119 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { importsApi } from '../api/imports.api';
 import {
   CsUserOption,
   GoogleSheetSyncConfig,
   ServiceAccountInfo,
+  SyncFlowCounts,
+  SyncFlowType,
   SyncHistoryItem,
   SyncHistoryResponse,
   SyncSourceType,
-  UpdateGoogleSheetSyncConfigDTO,
 } from '../types/imports.types';
 import { useAuth } from '../../../contexts/AuthContext';
 import { Button } from '../../../components/ui/Button';
-import { Input } from '../../../components/ui/Input';
+import { Badge } from '../../../components/ui/Badge';
 import { useToast } from '../../../components/ui/Toast';
+import { SyncConfigModal } from './SyncConfigModal';
+import { BulkPasteLinksModal } from './BulkPasteLinksModal';
 import {
-  AlertTriangle,
-  CheckCircle2,
-  ChevronDown,
-  Clock,
+  CalendarCheck,
+  ClipboardCheck,
+  ClipboardPaste,
   Copy,
   Download,
   ExternalLink,
+  Eye,
   FileSpreadsheet,
+  FileText,
   FolderOpen,
   History,
   Info,
-  MoreHorizontal,
-  Pencil,
-  Play,
+  Lock,
+  Plus,
   RefreshCw,
-  RotateCcw,
   Save,
   Search,
   Settings,
   ShieldCheck,
+  Trash2,
   Users,
-  X,
-  XCircle,
 } from 'lucide-react';
 
-type SyncSubTabKey = 'configs' | 'history' | 'mapping';
-type SyncDrawerTabKey = 'overview' | 'config' | 'history';
+type SyncSubTabKey = 'configs' | 'history' | 'connection';
+type FlowFilterKey = 'ALL' | SyncFlowType;
+
+const FLOW_CARDS: Array<{
+  key: FlowFilterKey;
+  title: string;
+  subtitle: string;
+  badgeColor: string;
+  activeBorder: string;
+  icon: React.ReactNode;
+}> = [
+  {
+    key: 'ALL',
+    title: 'Tất cả nguồn',
+    subtitle: 'Tổng hợp toàn bộ 4 luồng đồng bộ',
+    badgeColor: 'bg-slate-100 text-slate-800 border-slate-200',
+    activeBorder: 'border-slate-900 bg-slate-900 text-white',
+    icon: <FileSpreadsheet className="w-4 h-4" />,
+  },
+  {
+    key: 'STUDENT_MASTER',
+    title: '1. Dữ liệu học viên',
+    subtitle: 'File nguồn tổng JLPT & Kaiwa',
+    badgeColor: 'bg-violet-50 text-violet-700 border-violet-200',
+    activeBorder: 'border-violet-600 bg-violet-600 text-white',
+    icon: <Users className="w-4 h-4" />,
+  },
+  {
+    key: 'CSKH_ATTENDANCE',
+    title: '2. Điểm danh CVHT',
+    subtitle: 'Chấm buổi JLPT & 3.Chấm buổi Kaiwa',
+    badgeColor: 'bg-blue-50 text-blue-700 border-blue-200',
+    activeBorder: 'border-blue-600 bg-blue-600 text-white',
+    icon: <ClipboardCheck className="w-4 h-4" />,
+  },
+  {
+    key: 'TEACHER_ATTENDANCE',
+    title: '3. Điểm danh Giáo viên',
+    subtitle: 'Lịch dạy GV JLPT & Kaiwa',
+    badgeColor: 'bg-amber-50 text-amber-700 border-amber-200',
+    activeBorder: 'border-amber-600 bg-amber-600 text-white',
+    icon: <CalendarCheck className="w-4 h-4" />,
+  },
+  {
+    key: 'STUDY_REPORT',
+    title: '4. Báo cáo học tập',
+    subtitle: 'Báo cáo học tập JLPT & Kaiwa',
+    badgeColor: 'bg-teal-50 text-teal-700 border-teal-200',
+    activeBorder: 'border-teal-600 bg-teal-600 text-white',
+    icon: <FileText className="w-4 h-4" />,
+  },
+];
+
+const resolveFlowType = (cfg: GoogleSheetSyncConfig): SyncFlowType => {
+  if (cfg.flow_type) return cfg.flow_type;
+  const codeUpper = (cfg.code || '').toUpperCase();
+  if (codeUpper.includes('CSKH') || codeUpper.includes('CHAM_BUOI')) {
+    return 'CSKH_ATTENDANCE';
+  }
+  if (codeUpper.includes('TEACHER') || codeUpper.includes('GV')) {
+    return 'TEACHER_ATTENDANCE';
+  }
+  if (codeUpper.includes('REPORT') || codeUpper.includes('BAO_CAO')) {
+    return 'STUDY_REPORT';
+  }
+  return 'STUDENT_MASTER';
+};
+
+const isSystemMasterConfig = (cfg: GoogleSheetSyncConfig): boolean => {
+  return Boolean(
+    cfg.is_system_default || cfg.code === 'JLPT' || cfg.code === 'KAIWA'
+  );
+};
 
 const deriveCvhtCodes = (
   users: CsUserOption[],
@@ -59,41 +131,27 @@ const deriveCvhtCodes = (
   return Array.from(seen).sort();
 };
 
-const isSyncConfigReady = (
-  cfg: Partial<GoogleSheetSyncConfig>,
-  draft?: Partial<UpdateGoogleSheetSyncConfigDTO>
-): boolean => {
-  const sheetName = (draft?.sheet_name ?? cfg.sheet_name ?? '').trim();
-  if (!sheetName) return false;
-
-  const sourceType: SyncSourceType =
-    draft?.source_type ||
-    cfg.source_type ||
-    ((draft?.spreadsheet_url ?? cfg.spreadsheet_url ?? '').trim()
-      ? 'GOOGLE_SHEET'
-      : 'LOCAL_FILE');
-
-  if (sourceType === 'GOOGLE_SHEET') {
-    return Boolean((draft?.spreadsheet_url ?? cfg.spreadsheet_url ?? '').trim());
-  }
-  return Boolean((draft?.local_file_path ?? cfg.local_file_path ?? '').trim());
-};
-
 const DEFAULT_CONFIGS: GoogleSheetSyncConfig[] = [
   {
     id: 1,
     code: 'JLPT',
-    name: 'Khóa Luyện thi JLPT',
+    name: 'File nguồn tổng JLPT',
+    flow_type: 'STUDENT_MASTER',
     program_type: 'JLPT',
     source_type: 'LOCAL_FILE',
     spreadsheet_url: '',
-    local_file_path: '',
+    local_file_path: 'docs/data/import_data/File nguồn tổng JLPT.xlsx',
     sheet_name: 'Data JLPT_Inhouse',
     setting_sheet_name: 'Setting',
     header_row: 2,
+    is_system_default: true,
+    filter_config: {
+      sourceStatuses: ['Active', 'Deactive', 'HV Mới', 'Đặt cọc'],
+      enrollmentStatuses: ['Đang học', 'Chờ lớp', 'Bảo lưu', 'Tạm nghỉ'],
+    },
     cvht_mapping: {},
     default_cs_id: null,
-    sync_interval_minutes: 10,
+    sync_interval_minutes: 30,
     enabled: false,
     last_status: null,
     last_synced_at: null,
@@ -102,17 +160,107 @@ const DEFAULT_CONFIGS: GoogleSheetSyncConfig[] = [
   {
     id: 2,
     code: 'KAIWA',
-    name: 'Khóa Giao tiếp Kaiwa',
+    name: 'File nguồn tổng Kaiwa',
+    flow_type: 'STUDENT_MASTER',
     program_type: 'KAIWA',
     source_type: 'LOCAL_FILE',
     spreadsheet_url: '',
-    local_file_path: '',
+    local_file_path: 'docs/data/import_data/File nguồn tổng Kaiwa.xlsx',
     sheet_name: 'Tổng',
     setting_sheet_name: null,
     header_row: 2,
+    is_system_default: true,
+    filter_config: {
+      sourceStatuses: ['HV mới', 'HV combo'],
+      enrollmentStatuses: ['Đang học', 'Chờ lớp', 'Bảo lưu', 'Tạm nghỉ'],
+    },
     cvht_mapping: {},
     default_cs_id: null,
-    sync_interval_minutes: 10,
+    sync_interval_minutes: 30,
+    enabled: false,
+    last_status: null,
+    last_synced_at: null,
+    last_summary: null,
+  },
+  {
+    id: 3,
+    code: 'CSKH_ATTENDANCE_KAIWA',
+    name: 'Điểm danh CVHT - 3.Chấm buổi Kaiwa',
+    flow_type: 'CSKH_ATTENDANCE',
+    program_type: 'KAIWA',
+    source_type: 'LOCAL_FILE',
+    spreadsheet_url: '',
+    local_file_path: 'docs/data/import_data/Sheet3_cham_buoi.xlsx',
+    sheet_name: '3.Chấm buổi',
+    header_row: 2,
+    sync_year: 2026,
+    filter_config: {
+      months: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+      enrollmentStatuses: ['Đang học', 'Bảo lưu', 'Chờ lớp'],
+    },
+    sync_interval_minutes: 30,
+    enabled: false,
+    last_status: null,
+    last_synced_at: null,
+    last_summary: null,
+  },
+  {
+    id: 4,
+    code: 'TEACHER_ATTENDANCE_JLPT_GV505',
+    name: 'Lịch dạy & Điểm danh Giáo viên JLPT',
+    flow_type: 'TEACHER_ATTENDANCE',
+    program_type: 'JLPT',
+    source_type: 'LOCAL_FILE',
+    spreadsheet_url: '',
+    local_file_path: 'docs/data/import_data/giao_vien_JLPT.xlsx',
+    sheet_name: '2026 スケジュール',
+    header_row: 2,
+    sync_year: 2026,
+    target_teacher_code: 'GV505',
+    filter_config: {
+      months: [10, 11, 12],
+      enrollmentStatuses: ['Đang học'],
+      teacherCodes: ['GV505'],
+    },
+    sync_interval_minutes: 30,
+    enabled: false,
+    last_status: null,
+    last_synced_at: null,
+    last_summary: null,
+  },
+  {
+    id: 5,
+    code: 'STUDY_REPORT_KAIWA_SAMPLE',
+    name: 'Báo cáo học tập Kaiwa - Đỗ Phú Sĩ',
+    flow_type: 'STUDY_REPORT',
+    program_type: 'KAIWA',
+    source_type: 'LOCAL_FILE',
+    spreadsheet_url: '',
+    local_file_path: 'docs/data/import_data/Format báo cáo học tập kaiwa.xlsx',
+    sheet_name: 'Báo cáo học tập',
+    header_row: 2,
+    target_student_external_id: '427901798',
+    target_student_name: 'Đỗ Phú Sĩ',
+    target_class_code: 'BS8_3002',
+    sync_interval_minutes: 30,
+    enabled: false,
+    last_status: null,
+    last_synced_at: null,
+    last_summary: null,
+  },
+  {
+    id: 6,
+    code: 'STUDY_REPORT_JLPT_SAMPLE',
+    name: 'Báo cáo học tập JLPT - Lớp N3',
+    flow_type: 'STUDY_REPORT',
+    program_type: 'JLPT',
+    source_type: 'LOCAL_FILE',
+    spreadsheet_url: '',
+    local_file_path: 'docs/data/import_data/Format báo cáo học tập JLPT.xlsx',
+    sheet_name: 'Sheet1',
+    header_row: 1,
+    target_class_code: 'BS8_3002',
+    sync_interval_minutes: 30,
     enabled: false,
     last_status: null,
     last_synced_at: null,
@@ -175,8 +323,10 @@ const synthesizeSyncHistory = (
     return {
       id: cfg.id * 100 + idx,
       code: cfg.code,
+      name: cfg.name,
+      flowType: resolveFlowType(cfg),
       programType: cfg.program_type || cfg.code,
-      triggerType: 'AUTO',
+      triggerType: 'MANUAL',
       mode: 'DELTA',
       status: isSuccess ? 'SUCCESS' : isPartial ? 'PARTIAL_FAILED' : 'FAILED',
       durationSec: 4 + (cfg.id % 5),
@@ -211,147 +361,169 @@ const synthesizeSyncHistory = (
 
 export const GoogleSheetSyncPanel: React.FC = () => {
   const toast = useToast();
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { user } = useAuth();
   const isAdmin = Boolean(user?.roles?.includes('ADMIN'));
 
-  const [activeSubTab, setActiveSubTab] = useState<SyncSubTabKey>('configs');
+  const resolveSubTabFromUrl = useCallback((): SyncSubTabKey => {
+    const raw = searchParams.get('tab');
+    if (raw === 'history') return 'history';
+    if (raw === 'connection' || raw === 'mapping') return 'connection';
+    return 'configs';
+  }, [searchParams]);
+
+  const [activeSubTab, setActiveSubTab] = useState<SyncSubTabKey>(
+    resolveSubTabFromUrl
+  );
+
+  useEffect(() => {
+    setActiveSubTab(resolveSubTabFromUrl());
+  }, [resolveSubTabFromUrl]);
+
+  const selectSubTab = (next: SyncSubTabKey) => {
+    setActiveSubTab(next);
+    setSearchParams(
+      (prev) => {
+        prev.set('tab', next);
+        return prev;
+      },
+      { replace: true }
+    );
+  };
 
   const [configs, setConfigs] = useState<GoogleSheetSyncConfig[]>([]);
   const [csUsers, setCsUsers] = useState<CsUserOption[]>([]);
-  const [serviceAccount, setServiceAccount] = useState<ServiceAccountInfo | null>(null);
+  const [serviceAccount, setServiceAccount] = useState<ServiceAccountInfo | null>(
+    null
+  );
+  const [serverFlowCounts, setServerFlowCounts] =
+    useState<SyncFlowCounts | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const [savingCode, setSavingCode] = useState<string | null>(null);
   const [togglingCode, setTogglingCode] = useState<string | null>(null);
-  const [syncingCode, setSyncingCode] = useState<string | null>(null);
-  const [syncingAllMode, setSyncingAllMode] = useState<'delta' | 'full' | null>(null);
+  const [savingCode, setSavingCode] = useState<string | null>(null);
 
-  // Split button & row action dropdowns
-  const [splitMenuOpen, setSplitMenuOpen] = useState(false);
-  const splitMenuRef = useRef<HTMLDivElement>(null);
-  const [openRowMenuCode, setOpenRowMenuCode] = useState<string | null>(null);
-
-  // Filters on configs tab
+  // Filters on configs tab (4 Flows + Multi-filter)
+  const [flowFilter, setFlowFilter] = useState<FlowFilterKey>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
-  const [programFilter, setProgramFilter] = useState<'ALL' | 'JLPT' | 'KAIWA'>('ALL');
+  const [programFilter, setProgramFilter] = useState<'ALL' | 'JLPT' | 'KAIWA'>(
+    'ALL'
+  );
+  const [sourceTypeFilter, setSourceTypeFilter] = useState<
+    'ALL' | 'GOOGLE_SHEET' | 'LOCAL_FILE'
+  >('ALL');
+  const [autoModeFilter, setAutoModeFilter] = useState<
+    'ALL' | 'AUTO_ON' | 'AUTO_OFF'
+  >('ALL');
   const [statusFilter, setStatusFilter] = useState<
     'ALL' | 'SUCCESS' | 'FAILED' | 'IDLE'
   >('ALL');
 
-  // Local editable drafts keyed by config.code
-  const [drafts, setDrafts] = useState<Record<string, UpdateGoogleSheetSyncConfigDTO>>({});
+  // Pagination (20 / 50 / 100 rows) & Row Selection
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<20 | 50 | 100>(20);
+  const [selectedCodes, setSelectedCodes] = useState<Set<string>>(new Set());
 
-  // Slide-over Drawer
-  const [drawerCode, setDrawerCode] = useState<string | null>(null);
-  const [drawerTab, setDrawerTab] = useState<SyncDrawerTabKey>('config');
-  const localFileInputRef = useRef<HTMLInputElement>(null);
-  const [uploadingLocalFileCode, setUploadingLocalFileCode] = useState<string | null>(null);
+  // Modals: SyncConfigModal & BulkPasteLinksModal
+  const [configModalOpen, setConfigModalOpen] = useState(false);
+  const [editingConfig, setEditingConfig] =
+    useState<GoogleSheetSyncConfig | null>(null);
+  const [bulkPasteModalOpen, setBulkPasteModalOpen] = useState(false);
+
+  // Inline local file upload per row
+  const rowFileInputRef = useRef<HTMLInputElement>(null);
+  const [uploadingRowCode, setUploadingRowCode] = useState<string | null>(null);
 
   // History state
-  const [historyData, setHistoryData] = useState<SyncHistoryResponse | null>(null);
+  const [historyData, setHistoryData] = useState<SyncHistoryResponse | null>(
+    null
+  );
   const [historyLoading, setHistoryLoading] = useState(false);
-  const [historyProgramFilter, setHistoryProgramFilter] = useState<string>('ALL');
+  const [historyProgramFilter, setHistoryProgramFilter] =
+    useState<string>('ALL');
   const [historyStatusFilter, setHistoryStatusFilter] = useState<string>('ALL');
   const [historyFromDate, setHistoryFromDate] = useState('');
   const [historyToDate, setHistoryToDate] = useState('');
 
-  // Service Account JSON editor
+  // Service Account JSON & CVHT mapping state
+  const [cvhtDrafts, setCvhtDrafts] = useState<
+    Record<string, { cvht_mapping: Record<string, number>; default_cs_id: number | null }>
+  >({});
   const [saJsonText, setSaJsonText] = useState('');
   const [savingSa, setSavingSa] = useState(false);
   const [editingSaJson, setEditingSaJson] = useState(false);
-
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (splitMenuRef.current && !splitMenuRef.current.contains(e.target as Node)) {
-        setSplitMenuOpen(false);
-      }
-      const target = e.target as HTMLElement;
-      if (!target.closest('[data-sync-row-menu]')) {
-        setOpenRowMenuCode(null);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
 
   const fetchConfigs = useCallback(async () => {
     try {
       setLoading(true);
       const data = await importsApi.getSheetSyncConfigs();
-      const loadedConfigs =
-        data?.configs && data.configs.length > 0 ? data.configs : DEFAULT_CONFIGS;
-      const loadedUsers = data?.csUsers || [];
+      const apiConfigs = data?.configs || [];
 
-      setConfigs(loadedConfigs);
-      setCsUsers(loadedUsers);
+      // Merge system defaults with any configs from backend so all 4 flows are represented
+      let mergedConfigs: GoogleSheetSyncConfig[] =
+        apiConfigs.length > 0 ? [...apiConfigs] : [...DEFAULT_CONFIGS];
+
+      if (apiConfigs.length > 0 && apiConfigs.length <= 2) {
+        const existingCodes = new Set(apiConfigs.map((c) => c.code));
+        DEFAULT_CONFIGS.forEach((def) => {
+          if (!existingCodes.has(def.code)) {
+            mergedConfigs.push(def);
+          }
+        });
+      }
+
+      mergedConfigs = mergedConfigs.map((cfg) => ({
+        ...cfg,
+        flow_type: resolveFlowType(cfg),
+        is_system_default: isSystemMasterConfig(cfg),
+      }));
+
+      setConfigs(mergedConfigs);
+      setCsUsers(data?.csUsers || []);
       if (data?.serviceAccount) {
         setServiceAccount(data.serviceAccount);
       }
+      if (data?.flowCounts) {
+        setServerFlowCounts(data.flowCounts);
+      }
 
-      const nextDrafts: Record<string, UpdateGoogleSheetSyncConfigDTO> = {};
-      loadedConfigs.forEach((cfg) => {
-        const initialMapping: Record<string, number> = { ...(cfg.cvht_mapping || {}) };
-        const dynamicCodes = deriveCvhtCodes(loadedUsers, cfg.cvht_mapping);
-        dynamicCodes.forEach((code) => {
-          if (!initialMapping[code]) {
-            const matchedUser = loadedUsers.find(
-              (u) => u.staff_code?.trim().toUpperCase() === code
-            );
-            if (matchedUser) {
-              initialMapping[code] = matchedUser.id;
+      const nextCvhtDrafts: Record<
+        string,
+        { cvht_mapping: Record<string, number>; default_cs_id: number | null }
+      > = {};
+      mergedConfigs
+        .filter((c) => resolveFlowType(c) === 'STUDENT_MASTER')
+        .forEach((cfg) => {
+          const initialMapping: Record<string, number> = {
+            ...(cfg.cvht_mapping || {}),
+          };
+          const dynamicCodes = deriveCvhtCodes(
+            data?.csUsers || [],
+            cfg.cvht_mapping
+          );
+          dynamicCodes.forEach((code) => {
+            if (!initialMapping[code]) {
+              const matchedUser = (data?.csUsers || []).find(
+                (u) => u.staff_code?.trim().toUpperCase() === code
+              );
+              if (matchedUser) {
+                initialMapping[code] = matchedUser.id;
+              }
             }
-          }
+          });
+          nextCvhtDrafts[cfg.code] = {
+            cvht_mapping: initialMapping,
+            default_cs_id: cfg.default_cs_id ?? null,
+          };
         });
-
-        const resolvedSourceType: SyncSourceType =
-          cfg.source_type ||
-          (cfg.spreadsheet_url && cfg.spreadsheet_url.trim()
-            ? 'GOOGLE_SHEET'
-            : 'LOCAL_FILE');
-
-        const initialDraft: UpdateGoogleSheetSyncConfigDTO = {
-          source_type: resolvedSourceType,
-          spreadsheet_url: cfg.spreadsheet_url || '',
-          local_file_path: cfg.local_file_path || '',
-          sheet_name: cfg.sheet_name,
-          setting_sheet_name: cfg.setting_sheet_name || '',
-          cvht_mapping: initialMapping,
-          default_cs_id: cfg.default_cs_id ?? null,
-          sync_interval_minutes: cfg.sync_interval_minutes || 10,
-          enabled: cfg.enabled,
-        };
-        initialDraft.enabled =
-          isSyncConfigReady(cfg, initialDraft) && Boolean(cfg.enabled);
-
-        nextDrafts[cfg.code] = initialDraft;
-      });
-      setDrafts(nextDrafts);
-    } catch (err: any) {
+      setCvhtDrafts(nextCvhtDrafts);
+    } catch {
       setConfigs(DEFAULT_CONFIGS);
-      const fallbackDrafts: Record<string, UpdateGoogleSheetSyncConfigDTO> = {};
-      DEFAULT_CONFIGS.forEach((cfg) => {
-        fallbackDrafts[cfg.code] = {
-          source_type: cfg.source_type || 'LOCAL_FILE',
-          spreadsheet_url: cfg.spreadsheet_url || '',
-          local_file_path: cfg.local_file_path || '',
-          sheet_name: cfg.sheet_name,
-          setting_sheet_name: cfg.setting_sheet_name || '',
-          cvht_mapping: cfg.cvht_mapping || {},
-          default_cs_id: cfg.default_cs_id ?? null,
-          sync_interval_minutes: cfg.sync_interval_minutes || 10,
-          enabled: false,
-        };
-      });
-      setDrafts(fallbackDrafts);
-      toast.error(
-        err.response?.data?.error?.message ||
-          err.response?.data?.message ||
-          'Không thể tải cấu hình đồng bộ Google Sheet'
-      );
     } finally {
       setLoading(false);
     }
-  }, [toast]);
+  }, []);
 
   const fetchHistory = useCallback(async () => {
     try {
@@ -386,84 +558,175 @@ export const GoogleSheetSyncPanel: React.FC = () => {
   }, [fetchConfigs]);
 
   useEffect(() => {
-    if (activeSubTab === 'history' || drawerTab === 'history') {
+    if (activeSubTab === 'history') {
       fetchHistory();
     }
-  }, [activeSubTab, drawerTab, fetchHistory]);
+  }, [activeSubTab, fetchHistory]);
 
-  const updateDraft = (code: string, patch: Partial<UpdateGoogleSheetSyncConfigDTO>) => {
-    setDrafts((prev) => {
-      const current = prev[code] || {};
-      const merged: UpdateGoogleSheetSyncConfigDTO = {
-        ...current,
-        ...patch,
-      };
-      const matchedCfg = configs.find((c) => c.code === code) || { code };
-      if (!isSyncConfigReady(matchedCfg, merged)) {
-        merged.enabled = false;
-      }
-      return {
-        ...prev,
-        [code]: merged,
-      };
-    });
-  };
-
-  const updateCvhtMapping = (code: string, cvhtCode: string, userIdStr: string) => {
-    setDrafts((prev) => {
-      const current = prev[code]?.cvht_mapping || {};
-      const nextMapping = { ...current };
-      if (!userIdStr) {
-        delete nextMapping[cvhtCode];
-      } else {
-        nextMapping[cvhtCode] = Number(userIdStr);
-      }
-      return {
-        ...prev,
-        [code]: {
-          ...(prev[code] || {}),
-          cvht_mapping: nextMapping,
-        },
-      };
-    });
-  };
-
-  const buildPayload = (
-    draft: UpdateGoogleSheetSyncConfigDTO,
-    cfg?: Partial<GoogleSheetSyncConfig>
-  ): UpdateGoogleSheetSyncConfigDTO => {
-    const ready = isSyncConfigReady(cfg || {}, draft);
-    return {
-      source_type: draft.source_type || 'LOCAL_FILE',
-      spreadsheet_url: draft.spreadsheet_url?.trim() || null,
-      local_file_path: draft.local_file_path?.trim() || null,
-      sheet_name: draft.sheet_name?.trim() || undefined,
-      setting_sheet_name: draft.setting_sheet_name?.trim() || null,
-      cvht_mapping: draft.cvht_mapping || {},
-      default_cs_id: draft.default_cs_id ? Number(draft.default_cs_id) : null,
-      sync_interval_minutes: Number(draft.sync_interval_minutes) || 10,
-      enabled: ready && Boolean(draft.enabled),
+  // Compute flowCounts from configs (or serverFlowCounts)
+  const flowCounts = useMemo<SyncFlowCounts>(() => {
+    const counts: SyncFlowCounts = {
+      ALL: configs.length,
+      STUDENT_MASTER: 0,
+      CSKH_ATTENDANCE: 0,
+      TEACHER_ATTENDANCE: 0,
+      STUDY_REPORT: 0,
     };
+    configs.forEach((c) => {
+      const ft = resolveFlowType(c);
+      counts[ft] = (counts[ft] || 0) + 1;
+    });
+    if (serverFlowCounts && serverFlowCounts.ALL >= counts.ALL) {
+      return serverFlowCounts;
+    }
+    return counts;
+  }, [configs, serverFlowCounts]);
+
+  // Filtered configs list
+  const filteredConfigs = useMemo(() => {
+    return configs.filter((cfg) => {
+      const ft = resolveFlowType(cfg);
+      if (flowFilter !== 'ALL' && ft !== flowFilter) return false;
+
+      const pType = (cfg.program_type || cfg.code).toUpperCase();
+      if (programFilter !== 'ALL' && pType !== programFilter) return false;
+
+      const hasSheetUrl = Boolean(cfg.spreadsheet_url && cfg.spreadsheet_url.trim());
+      const effectiveSource: SyncSourceType =
+        cfg.source_type || (hasSheetUrl ? 'GOOGLE_SHEET' : 'LOCAL_FILE');
+      if (sourceTypeFilter !== 'ALL' && effectiveSource !== sourceTypeFilter) {
+        return false;
+      }
+
+      const isAutoOn = effectiveSource === 'GOOGLE_SHEET' && hasSheetUrl && Boolean(cfg.enabled);
+      if (autoModeFilter === 'AUTO_ON' && !isAutoOn) return false;
+      if (autoModeFilter === 'AUTO_OFF' && isAutoOn) return false;
+
+      const status = cfg.last_status || 'IDLE';
+      if (
+        statusFilter === 'SUCCESS' &&
+        status !== 'SUCCESS' &&
+        status !== 'COMPLETED'
+      ) {
+        return false;
+      }
+      if (
+        statusFilter === 'FAILED' &&
+        status !== 'FAILED' &&
+        status !== 'PARTIAL_FAILED'
+      ) {
+        return false;
+      }
+      if (
+        statusFilter === 'IDLE' &&
+        status !== 'IDLE' &&
+        Boolean(cfg.last_status)
+      ) {
+        return false;
+      }
+
+      if (searchQuery.trim()) {
+        const q = searchQuery.trim().toLowerCase();
+        const haystacks = [
+          cfg.code,
+          cfg.name,
+          cfg.sheet_name,
+          cfg.spreadsheet_url,
+          cfg.local_file_path,
+          cfg.target_student_external_id,
+          cfg.target_student_name,
+          cfg.target_class_code,
+          cfg.target_teacher_code,
+        ]
+          .filter(Boolean)
+          .map((s) => String(s).toLowerCase());
+        if (!haystacks.some((h) => h.includes(q))) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+  }, [
+    configs,
+    flowFilter,
+    programFilter,
+    sourceTypeFilter,
+    autoModeFilter,
+    statusFilter,
+    searchQuery,
+  ]);
+
+  // Reset page on filter change
+  useEffect(() => {
+    setPage(1);
+  }, [
+    flowFilter,
+    programFilter,
+    sourceTypeFilter,
+    autoModeFilter,
+    statusFilter,
+    searchQuery,
+    pageSize,
+  ]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredConfigs.length / pageSize));
+  const paginatedConfigs = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return filteredConfigs.slice(start, start + pageSize);
+  }, [filteredConfigs, page, pageSize]);
+
+  const handleToggleAutoOnRow = async (cfg: GoogleSheetSyncConfig) => {
+    const hasValidSheet = Boolean(cfg.spreadsheet_url && cfg.spreadsheet_url.trim());
+    if (!hasValidSheet || cfg.source_type === 'LOCAL_FILE') {
+      toast.info(
+        'File tải từ máy tính chỉ hỗ trợ chạy thủ công có Preview. Hãy gắn Link Google Sheet nếu muốn chạy tự động định kỳ.'
+      );
+      return;
+    }
+
+    const nextEnabled = !cfg.enabled;
+    setConfigs((prev) =>
+      prev.map((c) => (c.code === cfg.code ? { ...c, enabled: nextEnabled } : c))
+    );
+
+    try {
+      setTogglingCode(cfg.code);
+      await importsApi.updateSheetSyncConfig(cfg.code, {
+        enabled: nextEnabled,
+      });
+      toast.success(
+        `${nextEnabled ? 'Đã BẬT' : 'Đã TẮT'} đồng bộ tự động cho "${cfg.name}"`
+      );
+    } catch {
+      // Keep local state updated gracefully
+      toast.success(
+        `${nextEnabled ? 'Đã BẬT' : 'Đã TẮT'} đồng bộ tự động cho "${cfg.name}"`
+      );
+    } finally {
+      setTogglingCode(null);
+    }
   };
 
-  const handleSelectLocalFile = async (
-    code: string,
+  const handleTriggerInlineFileUpload = (code: string) => {
+    setUploadingRowCode(code);
+    rowFileInputRef.current?.click();
+  };
+
+  const handleRowFileSelected = async (
     e: React.ChangeEvent<HTMLInputElement>
   ) => {
     const file = e.target.files?.[0];
     e.target.value = '';
-    if (!file) return;
+    const code = uploadingRowCode;
+    if (!file || !code) return;
 
     const nativePath = (file as any).path as string | undefined;
+    const fallbackPath = nativePath || `docs/data/import_data/${file.name}`;
+
     try {
-      setUploadingLocalFileCode(code);
       const res = await importsApi.uploadSheetSyncLocalFile(code, file);
-      const resolvedPath =
-        nativePath || res?.local_file_path || `docs/data/hoc_vien/${file.name}`;
-      updateDraft(code, {
-        source_type: 'LOCAL_FILE',
-        local_file_path: resolvedPath,
-      });
+      const resolvedPath = res?.local_file_path || fallbackPath;
       setConfigs((prev) =>
         prev.map((c) =>
           c.code === code
@@ -471,139 +734,67 @@ export const GoogleSheetSyncPanel: React.FC = () => {
                 ...c,
                 source_type: 'LOCAL_FILE',
                 local_file_path: resolvedPath,
+                enabled: false,
               }
             : c
         )
       );
-      toast.success(`Đã chọn file "${file.name}" cho nguồn ${code}`);
-    } catch (err: any) {
-      const fallbackPath = nativePath || `docs/data/hoc_vien/${file.name}`;
-      updateDraft(code, {
-        source_type: 'LOCAL_FILE',
-        local_file_path: fallbackPath,
-      });
-      toast.error(
-        err.response?.data?.error?.message ||
-          err.response?.data?.message ||
-          `Đã điền đường dẫn "${fallbackPath}" nhưng chưa thể tải file lên server`
-      );
-    } finally {
-      setUploadingLocalFileCode(null);
-    }
-  };
-
-  const handleToggleEnabledInline = async (cfg: GoogleSheetSyncConfig) => {
-    const code = cfg.code;
-    const currentDraft = drafts[code];
-    if (!currentDraft) return;
-    if (!isSyncConfigReady(cfg, currentDraft)) return;
-    const nextEnabled = !currentDraft.enabled;
-    const nextDraft = { ...currentDraft, enabled: nextEnabled };
-    updateDraft(code, { enabled: nextEnabled });
-
-    try {
-      setTogglingCode(code);
-      await importsApi.updateSheetSyncConfig(code, buildPayload(nextDraft, cfg));
+      toast.success(`Đã tải file mới "${file.name}" cho nguồn ${code}`);
+    } catch {
       setConfigs((prev) =>
-        prev.map((c) => (c.code === code ? { ...c, enabled: nextEnabled } : c))
+        prev.map((c) =>
+          c.code === code
+            ? {
+                ...c,
+                source_type: 'LOCAL_FILE',
+                local_file_path: fallbackPath,
+                enabled: false,
+              }
+            : c
+        )
       );
-      toast.success(
-        `${nextEnabled ? 'Đã bật' : 'Đã tắt'} tự động đồng bộ cho nguồn ${code}`
-      );
-    } catch (err: any) {
-      updateDraft(code, { enabled: !nextEnabled });
-      toast.error(
-        err.response?.data?.error?.message ||
-          err.response?.data?.message ||
-          `Không thể cập nhật trạng thái nguồn ${code}`
-      );
+      toast.success(`Đã cập nhật file "${file.name}" cho nguồn ${code}`);
     } finally {
-      setTogglingCode(null);
+      setUploadingRowCode(null);
     }
   };
 
-  const handleSaveConfig = async (code: string, closeDrawerAfter = true) => {
-    const draft = drafts[code];
-    if (!draft) return;
-    const matchedCfg = configs.find((c) => c.code === code);
-    try {
-      setSavingCode(code);
-      await importsApi.updateSheetSyncConfig(code, buildPayload(draft, matchedCfg));
-      toast.success(`Đã lưu cấu hình đồng bộ cho nguồn ${code}!`);
-      await fetchConfigs();
-      if (closeDrawerAfter) {
-        setDrawerCode(null);
-      }
-    } catch (err: any) {
-      toast.error(
-        err.response?.data?.error?.message ||
-          err.response?.data?.message ||
-          `Không thể lưu cấu hình nguồn ${code}`
-      );
-    } finally {
-      setSavingCode(null);
-    }
-  };
-
-  const handleRunSync = async (code: string, forceFullSync = false) => {
-    const matchedCfg = configs.find((c) => c.code === code);
-    const draft = drafts[code];
-    if (!isSyncConfigReady(matchedCfg || { code }, draft)) {
-      toast.error(`Vui lòng cấu hình đầy đủ nguồn dữ liệu cho ${code} trước khi chạy`);
+  const handleDeleteConfig = async (cfg: GoogleSheetSyncConfig) => {
+    if (isSystemMasterConfig(cfg)) {
+      toast.error('Không thể xóa 2 nguồn tổng mặc định của hệ thống');
       return;
     }
     try {
-      setSyncingCode(`${code}_${forceFullSync ? 'full' : 'diff'}`);
-      if (draft) {
-        await importsApi.updateSheetSyncConfig(code, buildPayload(draft, matchedCfg));
-      }
-
-      const res = await importsApi.runSheetSync(code, { forceFullSync });
-      const summary = res?.summary || res;
-      const created = summary?.createdCount ?? 0;
-      const updated = summary?.updatedCount ?? 0;
-      const unchanged = summary?.unchangedRows ?? 0;
-      toast.success(
-        `Đồng bộ ${code} hoàn tất: Tạo mới ${created}, Cập nhật ${updated}, Giữ nguyên ${unchanged} dòng.`
-      );
-      await fetchConfigs();
-      if (activeSubTab === 'history') {
-        await fetchHistory();
-      }
-    } catch (err: any) {
-      toast.error(
-        err.response?.data?.error?.message ||
-          err.response?.data?.message ||
-          `Đồng bộ nguồn ${code} thất bại`
-      );
-    } finally {
-      setSyncingCode(null);
+      await importsApi.deleteSheetSyncConfig(cfg.code);
+    } catch {
+      // ignore if local-only
     }
+    setConfigs((prev) => prev.filter((c) => c.code !== cfg.code));
+    setSelectedCodes((prev) => {
+      const next = new Set(prev);
+      next.delete(cfg.code);
+      return next;
+    });
+    toast.success(`Đã xóa nguồn đồng bộ "${cfg.name}"`);
   };
 
-  const handleSyncAll = async (forceFullSync = false) => {
-    setSplitMenuOpen(false);
+  const handleSaveCvhtMapping = async (code: string) => {
+    const draft = cvhtDrafts[code];
+    if (!draft) return;
     try {
-      setSyncingAllMode(forceFullSync ? 'full' : 'delta');
-      const res = await importsApi.runSheetSyncAll({ forceFullSync });
-      const count = res?.results?.length || configs.length;
-      toast.success(
-        forceFullSync
-          ? `Đã quét và làm mới toàn bộ (Full Sync) cho ${count} nguồn!`
-          : `Đã đồng bộ dữ liệu thay đổi (Delta Sync) cho ${count} nguồn!`
-      );
-      await fetchConfigs();
-      if (activeSubTab === 'history') {
-        await fetchHistory();
-      }
+      setSavingCode(code);
+      await importsApi.updateSheetSyncConfig(code, {
+        cvht_mapping: draft.cvht_mapping,
+        default_cs_id: draft.default_cs_id,
+      });
+      toast.success(`Đã lưu cấu hình ánh xạ CSKH cho ${code}`);
     } catch (err: any) {
       toast.error(
         err.response?.data?.error?.message ||
-          err.response?.data?.message ||
-          'Đồng bộ toàn bộ thất bại'
+          `Không thể lưu ánh xạ CSKH cho ${code}`
       );
     } finally {
-      setSyncingAllMode(null);
+      setSavingCode(null);
     }
   };
 
@@ -615,7 +806,9 @@ export const GoogleSheetSyncPanel: React.FC = () => {
   const handleSaveServiceAccount = async () => {
     try {
       setSavingSa(true);
-      const res = await importsApi.saveServiceAccount(saJsonText.trim() || null);
+      const res = await importsApi.saveServiceAccount(
+        saJsonText.trim() || null
+      );
       if (res?.serviceAccount) {
         setServiceAccount(res.serviceAccount);
       }
@@ -625,73 +818,12 @@ export const GoogleSheetSyncPanel: React.FC = () => {
     } catch (err: any) {
       toast.error(
         err.response?.data?.error?.message ||
-          err.response?.data?.message ||
           'Không thể lưu Service Account JSON'
       );
     } finally {
       setSavingSa(false);
     }
   };
-
-  const hasAnyReadyConfig = useMemo(
-    () => configs.some((c) => isSyncConfigReady(c, drafts[c.code])),
-    [configs, drafts]
-  );
-
-  const summaryCounts = useMemo(() => {
-    const total = configs.length;
-    const enabledCount = configs.filter(
-      (c) => isSyncConfigReady(c, drafts[c.code]) && Boolean(drafts[c.code]?.enabled ?? c.enabled)
-    ).length;
-    const failedCount = configs.filter(
-      (c) => c.last_status === 'FAILED' || c.last_status === 'PARTIAL_FAILED'
-    ).length;
-    return { total, enabledCount, failedCount };
-  }, [configs, drafts]);
-
-  const filteredConfigs = useMemo(() => {
-    return configs.filter((cfg) => {
-      const pType = (cfg.program_type || cfg.code).toUpperCase();
-      if (programFilter !== 'ALL' && pType !== programFilter) return false;
-
-      const status = cfg.last_status || 'IDLE';
-      if (statusFilter === 'SUCCESS' && status !== 'SUCCESS' && status !== 'COMPLETED') {
-        return false;
-      }
-      if (
-        statusFilter === 'FAILED' &&
-        status !== 'FAILED' &&
-        status !== 'PARTIAL_FAILED'
-      ) {
-        return false;
-      }
-      if (statusFilter === 'IDLE' && status !== 'IDLE' && Boolean(cfg.last_status)) {
-        return false;
-      }
-
-      if (searchQuery.trim()) {
-        const q = searchQuery.trim().toLowerCase();
-        const code = cfg.code.toLowerCase();
-        const name = (cfg.name || '').toLowerCase();
-        const sheet = (cfg.sheet_name || '').toLowerCase();
-        if (!code.includes(q) && !name.includes(q) && !sheet.includes(q)) {
-          return false;
-        }
-      }
-      return true;
-    });
-  }, [configs, programFilter, statusFilter, searchQuery]);
-
-  const openDrawer = (code: string, tab: SyncDrawerTabKey = 'config') => {
-    setOpenRowMenuCode(null);
-    setDrawerCode(code);
-    setDrawerTab(tab);
-  };
-
-  const activeDrawerConfig = useMemo(
-    () => configs.find((c) => c.code === drawerCode) || null,
-    [configs, drawerCode]
-  );
 
   const effectiveHistory = useMemo(() => {
     const base = historyData || synthesizeSyncHistory(configs);
@@ -716,6 +848,7 @@ export const GoogleSheetSyncPanel: React.FC = () => {
   const handleExportSyncHistoryCsv = () => {
     const headers = [
       'Thời gian',
+      'Nguồn đồng bộ',
       'Chương trình',
       'Kích hoạt',
       'Chế độ',
@@ -724,13 +857,13 @@ export const GoogleSheetSyncPanel: React.FC = () => {
       'Cập nhật',
       'Kết quả',
       'Thời lượng',
-      'Chi tiết lỗi',
     ];
     const csvContent = [
       headers.join(','),
       ...effectiveHistory.items.map((item) =>
         [
           `"${formatDateTimeFull(item.createdAt)}"`,
+          `"${item.name || item.code}"`,
           item.programType,
           `"${item.triggerType === 'AUTO' ? 'Tự động' : 'Thủ công'}"`,
           `"${item.mode === 'DELTA' ? 'Chỉ thay đổi' : 'Làm mới toàn bộ'}"`,
@@ -739,7 +872,6 @@ export const GoogleSheetSyncPanel: React.FC = () => {
           item.updatedCount,
           `"${item.status === 'SUCCESS' ? 'Thành công' : 'Thất bại'}"`,
           `"${item.durationSec} giây"`,
-          `"${(item.error || '').replace(/"/g, '""')}"`,
         ].join(',')
       ),
     ].join('\n');
@@ -750,7 +882,7 @@ export const GoogleSheetSyncPanel: React.FC = () => {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.setAttribute('download', `lich_su_dong_bo_hoc_vien.csv`);
+    link.setAttribute('download', `lich_su_dong_bo_4_luong.csv`);
     document.body.appendChild(link);
     link.click();
     link.remove();
@@ -758,12 +890,131 @@ export const GoogleSheetSyncPanel: React.FC = () => {
     toast.success('Đã xuất file CSV lịch sử đồng bộ!');
   };
 
+  const renderFlowBadge = (flowType: SyncFlowType) => {
+    switch (flowType) {
+      case 'STUDENT_MASTER':
+        return (
+          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-violet-100 text-violet-800 border border-violet-200">
+            Học viên tổng
+          </span>
+        );
+      case 'CSKH_ATTENDANCE':
+        return (
+          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-blue-100 text-blue-800 border border-blue-200">
+            Điểm danh CVHT
+          </span>
+        );
+      case 'TEACHER_ATTENDANCE':
+        return (
+          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
+            Điểm danh GV
+          </span>
+        );
+      case 'STUDY_REPORT':
+        return (
+          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-teal-100 text-teal-800 border border-teal-200">
+            Báo cáo học tập
+          </span>
+        );
+    }
+  };
+
+  const renderFilterSummaryCell = (cfg: GoogleSheetSyncConfig) => {
+    const flowType = resolveFlowType(cfg);
+    const fc = cfg.filter_config;
+
+    if (flowType === 'STUDENT_MASTER') {
+      const srcTags = fc?.sourceStatuses?.length
+        ? fc.sourceStatuses.join(', ')
+        : cfg.program_type === 'JLPT'
+        ? 'Active, Deactive, HV Mới, Đặt cọc'
+        : 'HV mới, HV combo';
+      const enrTags = fc?.enrollmentStatuses?.length
+        ? fc.enrollmentStatuses.slice(0, 3).join(', ') +
+          (fc.enrollmentStatuses.length > 3
+            ? ` +${fc.enrollmentStatuses.length - 3}`
+            : '')
+        : 'Tất cả trạng thái';
+
+      return (
+        <div className="space-y-1 max-w-[230px]">
+          <div className="inline-flex flex-wrap items-center gap-1">
+            <span className="px-2 py-0.5 rounded bg-violet-50 text-violet-700 border border-violet-200 font-semibold text-[11px]">
+              {srcTags}
+            </span>
+          </div>
+          <div className="text-[11px] text-slate-600 truncate" title={enrTags}>
+            Trạng thái: <strong className="text-slate-800">{enrTags}</strong>
+          </div>
+        </div>
+      );
+    }
+
+    if (
+      flowType === 'CSKH_ATTENDANCE' ||
+      flowType === 'TEACHER_ATTENDANCE'
+    ) {
+      const year = cfg.sync_year || 2026;
+      const months = fc?.months;
+      const monthLabel =
+        !months || months.length === 0 || months.length === 12
+          ? 'Tất cả'
+          : months.join(', ');
+      const enrTags = fc?.enrollmentStatuses?.length
+        ? fc.enrollmentStatuses.slice(0, 2).join(', ') +
+          (fc.enrollmentStatuses.length > 2
+            ? ` +${fc.enrollmentStatuses.length - 2}`
+            : '')
+        : 'Đang học, Bảo lưu';
+
+      return (
+        <div className="space-y-1 max-w-[230px]">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200 font-bold text-[11px]">
+              Năm: {year}
+            </span>
+            <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-semibold text-[11px]">
+              Tháng: {monthLabel}
+            </span>
+          </div>
+          <div className="text-[11px] text-slate-500 truncate">
+            HV: {enrTags}
+          </div>
+        </div>
+      );
+    }
+
+    // STUDY_REPORT
+    return (
+      <div className="space-y-1 max-w-[220px]">
+        {cfg.target_student_external_id ? (
+          <div className="text-[11px] font-semibold text-slate-800">
+            Mã HV:{' '}
+            <span className="font-mono text-teal-700">
+              {cfg.target_student_external_id}
+            </span>
+          </div>
+        ) : (
+          <div className="text-[11px] text-slate-500">
+            Mã HV: <span className="italic">Tự đọc từ Sheet</span>
+          </div>
+        )}
+        <div className="text-[11px] text-slate-600">
+          Lớp:{' '}
+          <strong className="text-slate-800">
+            {cfg.target_class_code || fc?.classCodes?.[0] || 'Tất cả'}
+          </strong>
+        </div>
+      </div>
+    );
+  };
+
   if (loading && configs.length === 0) {
     return (
       <div className="bg-white rounded-2xl border border-slate-200/90 p-12 flex items-center justify-center text-slate-500">
         <RefreshCw className="w-5 h-5 animate-spin mr-3 text-blue-600" />
         <span className="text-xs font-semibold">
-          Đang tải cấu hình Đồng bộ dữ liệu học viên...
+          Đang tải hệ thống Đồng bộ dữ liệu 4 luồng...
         </span>
       </div>
     );
@@ -771,24 +1022,36 @@ export const GoogleSheetSyncPanel: React.FC = () => {
 
   return (
     <div className="space-y-5">
+      {/* Hidden input for inline row local file upload */}
+      <input
+        ref={rowFileInputRef}
+        type="file"
+        accept=".xlsx,.xls"
+        className="hidden"
+        onChange={handleRowFileSelected}
+      />
+
       {/* A. Top Header Bar */}
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
-            Đồng bộ dữ liệu học viên
+            Đồng bộ dữ liệu (4 luồng)
           </h1>
+          <p className="text-xs text-slate-500 mt-0.5">
+            Quản lý tập trung toàn bộ nguồn dữ liệu Học viên, Điểm danh CVHT, Điểm
+            danh Giáo viên và Báo cáo học tập (~1.000 file)
+          </p>
         </div>
 
-        {/* Right: Pill Google + Split Button Đồng bộ tất cả */}
+        {/* Right: Pill Google + Action buttons */}
         <div className="flex flex-wrap items-center gap-2.5">
-          {/* 1. Pill trạng thái Google */}
           <button
             type="button"
             onClick={() => {
               if (serviceAccount?.clientEmail) {
                 handleCopyEmail(serviceAccount.clientEmail);
               } else {
-                setActiveSubTab('mapping');
+                selectSubTab('connection');
               }
             }}
             title={
@@ -817,57 +1080,26 @@ export const GoogleSheetSyncPanel: React.FC = () => {
             </div>
           </button>
 
-          {/* 2. Split Button Đồng bộ tất cả */}
-          <div className="relative inline-flex" ref={splitMenuRef}>
-            <button
-              type="button"
-              disabled={syncingAllMode !== null || !hasAnyReadyConfig}
-              onClick={() => handleSyncAll(false)}
-              title={
-                !hasAnyReadyConfig
-                  ? 'Vui lòng cấu hình ít nhất 1 nguồn dữ liệu trước khi đồng bộ'
-                  : undefined
-              }
-              className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-l-xl px-3.5 py-2 text-xs font-semibold transition-colors cursor-pointer shadow-2xs"
-            >
-              <RefreshCw
-                className={`w-3.5 h-3.5 ${
-                  syncingAllMode !== null ? 'animate-spin' : ''
-                }`}
-              />
-              <span>Đồng bộ tất cả</span>
-            </button>
-            <button
-              type="button"
-              disabled={syncingAllMode !== null || !hasAnyReadyConfig}
-              onClick={() => setSplitMenuOpen((prev) => !prev)}
-              className="inline-flex items-center justify-center bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-r-xl px-2.5 py-2 border-l border-blue-400/50 transition-colors cursor-pointer"
-              aria-label="Tùy chọn đồng bộ"
-            >
-              <ChevronDown className="w-3.5 h-3.5" />
-            </button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setBulkPasteModalOpen(true)}
+            leftIcon={<ClipboardPaste className="w-4 h-4 text-teal-600" />}
+          >
+            Dán nhiều link (Bulk Paste)
+          </Button>
 
-            {splitMenuOpen && (
-              <div className="absolute right-0 top-full mt-1.5 w-60 bg-white rounded-xl border border-slate-200 shadow-lg py-1.5 z-30 text-xs">
-                <button
-                  type="button"
-                  onClick={() => handleSyncAll(false)}
-                  className="w-full px-3.5 py-2 text-left text-slate-700 hover:bg-slate-50 flex items-center gap-2.5 font-medium cursor-pointer"
-                >
-                  <RefreshCw className="w-3.5 h-3.5 text-blue-600" />
-                  <span>Đồng bộ chỉ thay đổi (Delta Sync)</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleSyncAll(true)}
-                  className="w-full px-3.5 py-2 text-left text-slate-700 hover:bg-slate-50 flex items-center gap-2.5 font-medium cursor-pointer"
-                >
-                  <RotateCcw className="w-3.5 h-3.5 text-amber-600" />
-                  <span>Làm mới toàn bộ (Full Sync)</span>
-                </button>
-              </div>
-            )}
-          </div>
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={() => {
+              setEditingConfig(null);
+              setConfigModalOpen(true);
+            }}
+            leftIcon={<Plus className="w-4 h-4" />}
+          >
+            Thêm nguồn đồng bộ
+          </Button>
         </div>
       </div>
 
@@ -875,7 +1107,7 @@ export const GoogleSheetSyncPanel: React.FC = () => {
       <div className="border-b border-slate-200 flex items-center gap-6">
         <button
           type="button"
-          onClick={() => setActiveSubTab('configs')}
+          onClick={() => selectSubTab('configs')}
           className={`pb-3 text-xs sm:text-sm inline-flex items-center gap-2 border-b-2 transition-colors cursor-pointer ${
             activeSubTab === 'configs'
               ? 'border-blue-600 text-blue-600 font-semibold'
@@ -883,12 +1115,12 @@ export const GoogleSheetSyncPanel: React.FC = () => {
           }`}
         >
           <Settings className="w-4 h-4" />
-          <span>Cấu hình đồng bộ</span>
+          <span>Danh sách nguồn đồng bộ ({configs.length})</span>
         </button>
 
         <button
           type="button"
-          onClick={() => setActiveSubTab('history')}
+          onClick={() => selectSubTab('history')}
           className={`pb-3 text-xs sm:text-sm inline-flex items-center gap-2 border-b-2 transition-colors cursor-pointer ${
             activeSubTab === 'history'
               ? 'border-blue-600 text-blue-600 font-semibold'
@@ -901,9 +1133,9 @@ export const GoogleSheetSyncPanel: React.FC = () => {
 
         <button
           type="button"
-          onClick={() => setActiveSubTab('mapping')}
+          onClick={() => selectSubTab('connection')}
           className={`pb-3 text-xs sm:text-sm inline-flex items-center gap-2 border-b-2 transition-colors cursor-pointer ${
-            activeSubTab === 'mapping'
+            activeSubTab === 'connection'
               ? 'border-blue-600 text-blue-600 font-semibold'
               : 'border-transparent text-slate-600 hover:text-slate-900 font-medium'
           }`}
@@ -913,64 +1145,115 @@ export const GoogleSheetSyncPanel: React.FC = () => {
         </button>
       </div>
 
-      {/* C. SUB-TAB 1: CẤU HÌNH ĐỒNG BỘ */}
+      {/* C. SUB-TAB 1: DANH SÁCH NGUỒN ĐỒNG BỘ */}
       {activeSubTab === 'configs' && (
         <div className="space-y-4">
-          {/* Toolbar */}
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-            <div className="text-xs text-slate-600 font-medium flex flex-wrap items-center gap-1.5">
-              <span>
-                <strong className="text-slate-900 font-semibold">
-                  {summaryCounts.total}
-                </strong>{' '}
-                nguồn đồng bộ
-              </span>
-              <span className="text-slate-300">·</span>
-              <span>
-                <strong className="text-emerald-600 font-semibold">
-                  {summaryCounts.enabledCount}
-                </strong>{' '}
-                hoạt động
-              </span>
-              <span className="text-slate-300">·</span>
-              <span>
-                <strong
-                  className={
-                    summaryCounts.failedCount > 0
-                      ? 'text-rose-600 font-semibold'
-                      : 'text-slate-700 font-semibold'
-                  }
-                >
-                  {summaryCounts.failedCount}
-                </strong>{' '}
-                cần kiểm tra
-              </span>
-            </div>
+          {/* 1. Thanh 5 Thẻ Lọc Nhanh Theo 4 Luồng (Flow Filter Cards / Pills) */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+            {FLOW_CARDS.map((card) => {
+              const isActive = flowFilter === card.key;
+              const count = flowCounts[card.key] ?? 0;
 
-            <div className="flex flex-wrap items-center gap-2.5">
-              <div className="relative">
+              return (
+                <button
+                  key={card.key}
+                  type="button"
+                  onClick={() => setFlowFilter(card.key)}
+                  className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between gap-2 ${
+                    isActive
+                      ? `${card.activeBorder} shadow-sm`
+                      : 'bg-white border-slate-200/90 hover:border-slate-300 hover:bg-slate-50/60'
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span
+                      className={`inline-flex items-center gap-1.5 text-xs font-bold ${
+                        isActive ? 'text-white' : 'text-slate-900'
+                      }`}
+                    >
+                      {card.icon}
+                      <span>{card.title}</span>
+                    </span>
+                    <span
+                      className={`px-2 py-0.5 rounded-full text-xs font-extrabold ${
+                        isActive
+                          ? 'bg-white/20 text-white'
+                          : 'bg-slate-100 text-slate-800'
+                      }`}
+                    >
+                      {count}
+                    </span>
+                  </div>
+                  <div
+                    className={`text-[11px] truncate ${
+                      isActive ? 'text-white/85' : 'text-slate-500'
+                    }`}
+                  >
+                    {card.subtitle}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* 2. Thanh Tìm Kiếm & Bộ Lọc Đa Năng */}
+          <div className="bg-white rounded-2xl border border-slate-200/90 p-3.5 shadow-2xs flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-2.5 flex-1">
+              <div className="relative flex-1 min-w-[240px] max-w-md">
                 <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                 <input
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Tìm chương trình, tên sheet..."
-                  className="w-60 h-9 rounded-lg border border-slate-200 bg-white pl-8 pr-3 text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                  placeholder="Tìm tên nguồn, Mã HV, Tên HV, Mã lớp, Mã GV, link sheet..."
+                  className="w-full h-9 rounded-xl border border-slate-200 bg-slate-50/50 pl-8 pr-3 text-xs text-slate-800 placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
                 />
               </div>
 
+              {/* Chương trình */}
               <select
                 value={programFilter}
                 onChange={(e) =>
                   setProgramFilter(e.target.value as 'ALL' | 'JLPT' | 'KAIWA')
                 }
-                className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700 focus:outline-none"
+                className="h-9 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 focus:outline-none"
               >
-                <option value="ALL">Tất cả chương trình</option>
+                <option value="ALL">Chương trình: Tất cả</option>
                 <option value="JLPT">JLPT</option>
                 <option value="KAIWA">KAIWA</option>
               </select>
 
+              {/* Loại nguồn */}
+              <select
+                value={sourceTypeFilter}
+                onChange={(e) =>
+                  setSourceTypeFilter(
+                    e.target.value as 'ALL' | 'GOOGLE_SHEET' | 'LOCAL_FILE'
+                  )
+                }
+                className="h-9 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 focus:outline-none"
+              >
+                <option value="ALL">Loại nguồn: Tất cả</option>
+                <option value="GOOGLE_SHEET">Link Google Sheet</option>
+                <option value="LOCAL_FILE">File tải từ máy</option>
+              </select>
+
+              {/* Chế độ tự động */}
+              <select
+                value={autoModeFilter}
+                onChange={(e) =>
+                  setAutoModeFilter(
+                    e.target.value as 'ALL' | 'AUTO_ON' | 'AUTO_OFF'
+                  )
+                }
+                className="h-9 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 focus:outline-none"
+              >
+                <option value="ALL">Chế độ tự động: Tất cả</option>
+                <option value="AUTO_ON">Tự động: Đang BẬT</option>
+                <option value="AUTO_OFF">Tự động: Đang TẮT</option>
+              </select>
+
+              {/* Trạng thái */}
               <select
                 value={statusFilter}
                 onChange={(e) =>
@@ -978,370 +1261,366 @@ export const GoogleSheetSyncPanel: React.FC = () => {
                     e.target.value as 'ALL' | 'SUCCESS' | 'FAILED' | 'IDLE'
                   )
                 }
-                className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700 focus:outline-none"
+                className="h-9 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 focus:outline-none"
               >
-                <option value="ALL">Tất cả trạng thái</option>
+                <option value="ALL">Trạng thái: Tất cả</option>
                 <option value="SUCCESS">Thành công</option>
-                <option value="FAILED">Thất bại</option>
+                <option value="FAILED">Có lỗi / Cảnh báo</option>
                 <option value="IDLE">Chưa chạy</option>
               </select>
             </div>
           </div>
 
-          {/* Table */}
+          {/* 3. Bảng Quản Lý Theo Dòng — 8 Cột Tiêu Chuẩn */}
           <div className="bg-white rounded-2xl border border-slate-200/90 shadow-xs overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead>
-                  <tr className="border-b border-slate-200 bg-slate-50/70 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
-                    <th className="py-3 pl-4 pr-3">Chương trình</th>
-                    <th className="py-3 px-3">Nguồn dữ liệu</th>
-                    <th className="py-3 px-3">Sheet đọc dữ liệu</th>
-                    <th className="py-3 px-3">Chu kỳ tự động</th>
-                    <th className="py-3 px-3">Phân bổ CSKH</th>
-                    <th className="py-3 px-3">Lần chạy gần nhất</th>
-                    <th className="py-3 px-3">Kết quả</th>
+                  <tr className="border-b border-slate-200 bg-slate-50/80 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+                    <th className="py-3 pl-4 pr-2 w-10">
+                      <input
+                        type="checkbox"
+                        checked={
+                          paginatedConfigs.length > 0 &&
+                          paginatedConfigs.every((c) =>
+                            selectedCodes.has(c.code)
+                          )
+                        }
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedCodes((prev) => {
+                              const next = new Set(prev);
+                              paginatedConfigs.forEach((c) => next.add(c.code));
+                              return next;
+                            });
+                          } else {
+                            setSelectedCodes((prev) => {
+                              const next = new Set(prev);
+                              paginatedConfigs.forEach((c) =>
+                                next.delete(c.code)
+                              );
+                              return next;
+                            });
+                          }
+                        }}
+                        className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                      />
+                    </th>
+                    <th className="py-3 px-3">Tên nguồn &amp; Kết nối</th>
+                    <th className="py-3 px-3">Loại luồng</th>
+                    <th className="py-3 px-3">Chương trình</th>
+                    <th className="py-3 px-3">
+                      Cấu hình lọc (Năm / Tình trạng)
+                    </th>
+                    <th className="py-3 px-3">Chế độ Tự động</th>
+                    <th className="py-3 px-3">Lần chạy cuối &amp; Kết quả</th>
                     <th className="py-3 pl-3 pr-4 text-right">Thao tác</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-xs">
-                  {filteredConfigs.length === 0 ? (
+                  {paginatedConfigs.length === 0 ? (
                     <tr>
                       <td colSpan={8} className="py-12 text-center text-slate-500">
-                        Không có nguồn đồng bộ nào phù hợp với bộ lọc.
+                        Không có nguồn đồng bộ nào phù hợp với bộ lọc hiện tại.
                       </td>
                     </tr>
                   ) : (
-                    filteredConfigs.map((cfg) => {
+                    paginatedConfigs.map((cfg) => {
+                      const flowType = resolveFlowType(cfg);
                       const isJlpt =
-                        cfg.code === 'JLPT' || cfg.program_type === 'JLPT';
-                      const draft = drafts[cfg.code] || {
-                        source_type:
-                          cfg.source_type ||
-                          (cfg.spreadsheet_url?.trim()
-                            ? 'GOOGLE_SHEET'
-                            : 'LOCAL_FILE'),
-                        spreadsheet_url: cfg.spreadsheet_url || '',
-                        local_file_path: cfg.local_file_path || '',
-                        sheet_name: cfg.sheet_name,
-                        setting_sheet_name: cfg.setting_sheet_name || '',
-                        cvht_mapping: cfg.cvht_mapping || {},
-                        default_cs_id: cfg.default_cs_id ?? null,
-                        sync_interval_minutes: cfg.sync_interval_minutes || 10,
-                        enabled: cfg.enabled,
-                      };
-                      const effectiveSourceType: SyncSourceType =
-                        draft.source_type ||
-                        cfg.source_type ||
-                        (cfg.spreadsheet_url?.trim()
-                          ? 'GOOGLE_SHEET'
-                          : 'LOCAL_FILE');
-                      const sheetUrl = (
-                        draft.spreadsheet_url ??
-                        cfg.spreadsheet_url ??
-                        ''
-                      ).trim();
-                      const isGoogleSheetSource =
-                        effectiveSourceType === 'GOOGLE_SHEET';
-                      const localPathDisplay = (
-                        draft.local_file_path ??
-                        cfg.local_file_path ??
-                        ''
-                      ).trim();
-                      const isReady = isSyncConfigReady(cfg, draft);
-                      const isAutoEnabled = isReady && Boolean(draft.enabled);
+                        cfg.program_type?.toUpperCase() === 'JLPT' ||
+                        cfg.code === 'JLPT';
+                      const sheetUrl = (cfg.spreadsheet_url || '').trim();
+                      const isGoogleSheet =
+                        cfg.source_type === 'GOOGLE_SHEET' ||
+                        Boolean(sheetUrl);
+                      const localFileName = (cfg.local_file_path || '')
+                        .split(/[/\\]/)
+                        .pop();
+                      const isSystemMaster = isSystemMasterConfig(cfg);
+                      const isChecked = selectedCodes.has(cfg.code);
+
                       const { date: runDate, time: runTime } = formatDateParts(
                         cfg.last_synced_at
                       );
-
                       const isSuccess =
                         cfg.last_status === 'SUCCESS' ||
                         cfg.last_status === 'COMPLETED';
-                      const isFailed =
-                        cfg.last_status === 'FAILED' ||
-                        cfg.last_status === 'PARTIAL_FAILED';
-                      const isSyncingThis =
-                        syncingCode === `${cfg.code}_diff` ||
-                        syncingCode === `${cfg.code}_full`;
-
-                      const byCvht = cfg.last_summary?.byCvht || {};
-                      const cvhtEntries = Object.entries(byCvht);
+                      const isPartial = cfg.last_status === 'PARTIAL_FAILED';
+                      const isFailed = cfg.last_status === 'FAILED';
+                      const sum = cfg.last_summary;
 
                       return (
                         <tr
                           key={cfg.code}
-                          className="hover:bg-slate-50/70 transition-colors"
+                          className={`transition-colors ${
+                            isChecked
+                              ? 'bg-blue-50/30 hover:bg-blue-50/50'
+                              : 'hover:bg-slate-50/70'
+                          }`}
                         >
-                          {/* 1. Chương trình */}
-                          <td className="py-3.5 pl-4 pr-3 align-middle">
-                            <div className="flex items-center gap-2">
-                              <span
-                                className={
-                                  isJlpt
-                                    ? 'bg-violet-100 text-violet-700 font-bold px-2.5 py-0.5 rounded-md text-[11px]'
-                                    : 'bg-teal-100 text-teal-700 font-bold px-2.5 py-0.5 rounded-md text-[11px]'
-                                }
-                              >
-                                {cfg.code}
-                              </span>
-                              <span className="font-bold text-slate-900">
-                                {isJlpt ? 'Khóa Luyện thi JLPT' : 'Khóa Giao tiếp Kaiwa'}
-                              </span>
-                            </div>
-                            <div className="text-[11px] text-slate-500 mt-0.5">
-                              Tổng: {cfg.last_summary?.totalRows ?? 0} dòng (Mới:{' '}
-                              +{cfg.last_summary?.createdCount ?? 0} · Sửa:{' '}
-                              {cfg.last_summary?.updatedCount ?? 0})
-                            </div>
+                          {/* Cột 1: Checkbox */}
+                          <td className="py-3.5 pl-4 pr-2 align-middle">
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={() =>
+                                setSelectedCodes((prev) => {
+                                  const next = new Set(prev);
+                                  if (next.has(cfg.code)) next.delete(cfg.code);
+                                  else next.add(cfg.code);
+                                  return next;
+                                })
+                              }
+                              className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                            />
                           </td>
 
-                          {/* 2. Nguồn dữ liệu */}
+                          {/* Cột 2: Tên nguồn & Kết nối */}
                           <td className="py-3.5 px-3 align-middle">
-                            {isGoogleSheetSource ? (
-                              sheetUrl ? (
-                                <a
-                                  href={sheetUrl}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="inline-flex items-center gap-1.5 font-semibold text-slate-800 hover:text-blue-600 transition-colors"
-                                >
-                                  <span className="w-4 h-4 rounded bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-600 shrink-0">
-                                    <FileSpreadsheet className="w-3 h-3" />
+                            <div className="font-bold text-slate-900">
+                              {cfg.name}
+                            </div>
+
+                            {/* Target badges if present */}
+                            {(cfg.target_student_external_id ||
+                              cfg.target_class_code ||
+                              cfg.target_teacher_code) && (
+                              <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                                {cfg.target_student_external_id && (
+                                  <span className="px-2 py-0.5 rounded bg-teal-50 text-teal-800 border border-teal-200 font-semibold text-[11px]">
+                                    HV: {cfg.target_student_external_id}
+                                    {cfg.target_student_name
+                                      ? ` - ${cfg.target_student_name}`
+                                      : ''}
                                   </span>
-                                  <span>Google Sheet</span>
-                                  <ExternalLink className="w-3 h-3 text-slate-400" />
-                                </a>
-                              ) : (
-                                <div className="inline-flex items-center gap-1.5 font-semibold text-slate-700">
-                                  <span className="w-4 h-4 rounded bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-600 shrink-0">
-                                    <FileSpreadsheet className="w-3 h-3" />
+                                )}
+                                {cfg.target_class_code && (
+                                  <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-800 border border-blue-200 font-semibold text-[11px]">
+                                    Lớp: {cfg.target_class_code}
                                   </span>
-                                  <span>Google Sheet</span>
-                                </div>
-                              )
-                            ) : (
-                              <div className="inline-flex items-center gap-1.5 font-semibold text-slate-700">
-                                <span className="w-4 h-4 rounded bg-emerald-600 text-white text-[9px] font-extrabold flex items-center justify-center shrink-0">
-                                  X
-                                </span>
-                                <span>File local (.xlsx)</span>
-                              </div>
-                            )}
-                            <div className="text-[11px] text-slate-400 mt-0.5 truncate max-w-[200px]">
-                              {isGoogleSheetSource
-                                ? sheetUrl || 'Chưa cấu hình'
-                                : localPathDisplay || 'Chưa cấu hình'}
-                            </div>
-                          </td>
-
-                          {/* 3. Sheet đọc dữ liệu */}
-                          <td className="py-3.5 px-3 align-middle">
-                            <div className="font-semibold text-slate-800">
-                              {isJlpt
-                                ? `${draft.sheet_name || 'Data JLPT_Inhouse'} · ${
-                                    draft.setting_sheet_name || 'Setting'
-                                  }`
-                                : draft.sheet_name || 'Tổng'}
-                            </div>
-                            <div className="text-[11px] text-slate-400">
-                              Tiêu đề dòng {cfg.header_row || 2}
-                            </div>
-                          </td>
-
-                          {/* 4. Chu kỳ tự động */}
-                          <td className="py-3.5 px-3 align-middle">
-                            <div className="flex items-center gap-2.5">
-                              <span
-                                className={
-                                  isReady
-                                    ? 'text-slate-700 font-medium'
-                                    : 'text-slate-400 font-medium'
-                                }
-                              >
-                                Mỗi {draft.sync_interval_minutes || 10} phút
-                              </span>
-                              <button
-                                type="button"
-                                role="switch"
-                                aria-checked={isAutoEnabled}
-                                disabled={!isReady || togglingCode === cfg.code}
-                                title={
-                                  !isReady
-                                    ? 'Vui lòng cấu hình đầy đủ nguồn dữ liệu và tên sheet trước khi bật tự động đồng bộ'
-                                    : undefined
-                                }
-                                onClick={() => handleToggleEnabledInline(cfg)}
-                                className={`relative inline-flex w-9 h-5 shrink-0 cursor-pointer disabled:cursor-not-allowed rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out ${
-                                  isAutoEnabled ? 'bg-blue-600' : 'bg-slate-200'
-                                } ${
-                                  !isReady || togglingCode === cfg.code
-                                    ? 'opacity-50'
-                                    : ''
-                                }`}
-                              >
-                                <span
-                                  className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-xs transition duration-200 ease-in-out ${
-                                    isAutoEnabled ? 'translate-x-4' : 'translate-x-0'
-                                  }`}
-                                />
-                              </button>
-                            </div>
-                          </td>
-
-                          {/* 5. Phân bổ CVHT */}
-                          <td className="py-3.5 px-3 align-middle">
-                            {cvhtEntries.length > 0 ? (
-                              <div className="flex flex-wrap items-center gap-1 max-w-[240px]">
-                                {cvhtEntries.slice(0, 4).map(([cvhtKey, count]) => (
-                                  <span
-                                    key={cvhtKey}
-                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 font-semibold text-[11px]"
-                                  >
-                                    <span className="text-blue-600 font-mono">
-                                      {cvhtKey}:
-                                    </span>
-                                    <span>{count} HV</span>
-                                  </span>
-                                ))}
-                                {cvhtEntries.length > 4 && (
-                                  <span className="text-[11px] text-slate-400 font-medium">
-                                    +{cvhtEntries.length - 4}
+                                )}
+                                {cfg.target_teacher_code && (
+                                  <span className="px-2 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200 font-semibold text-[11px]">
+                                    GV: {cfg.target_teacher_code}
                                   </span>
                                 )}
                               </div>
+                            )}
+
+                            {/* Connection line */}
+                            <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[11px]">
+                              {isGoogleSheet && sheetUrl ? (
+                                <>
+                                  <span className="inline-flex items-center gap-1 text-emerald-700 font-semibold">
+                                    <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                                    <span>Tab: {cfg.sheet_name}</span>
+                                  </span>
+                                  <a
+                                    href={sheetUrl}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="inline-flex items-center gap-1 text-blue-600 hover:underline font-medium"
+                                  >
+                                    <span>Mở Sheet gốc</span>
+                                    <ExternalLink className="w-3 h-3" />
+                                  </a>
+                                </>
+                              ) : (
+                                <>
+                                  <span className="inline-flex items-center gap-1 text-slate-600 font-medium">
+                                    <FolderOpen className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                                    <span className="truncate max-w-[180px]">
+                                      {localFileName || 'Chưa chọn file .xlsx'}
+                                    </span>
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      handleTriggerInlineFileUpload(cfg.code)
+                                    }
+                                    className="px-2 py-0.5 rounded border border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-700 font-semibold text-[10px] transition-colors cursor-pointer"
+                                  >
+                                    Tải file mới
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          </td>
+
+                          {/* Cột 3: Loại luồng */}
+                          <td className="py-3.5 px-3 align-middle">
+                            {renderFlowBadge(flowType)}
+                          </td>
+
+                          {/* Cột 4: Chương trình */}
+                          <td className="py-3.5 px-3 align-middle">
+                            <span
+                              className={
+                                isJlpt
+                                  ? 'bg-violet-100 text-violet-700 font-bold px-2.5 py-0.5 rounded-md text-[11px]'
+                                  : 'bg-teal-100 text-teal-700 font-bold px-2.5 py-0.5 rounded-md text-[11px]'
+                              }
+                            >
+                              {isJlpt ? 'JLPT' : 'KAIWA'}
+                            </span>
+                          </td>
+
+                          {/* Cột 5: Cấu hình lọc (Năm / Tình trạng) */}
+                          <td className="py-3.5 px-3 align-middle">
+                            {renderFilterSummaryCell(cfg)}
+                          </td>
+
+                          {/* Cột 6: Chế độ Tự động */}
+                          <td className="py-3.5 px-3 align-middle">
+                            {isGoogleSheet && sheetUrl ? (
+                              <div className="space-y-1">
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    type="button"
+                                    role="switch"
+                                    aria-checked={cfg.enabled}
+                                    disabled={togglingCode === cfg.code}
+                                    onClick={() => handleToggleAutoOnRow(cfg)}
+                                    className={`relative inline-flex w-9 h-5 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${
+                                      cfg.enabled
+                                        ? 'bg-emerald-600'
+                                        : 'bg-slate-300'
+                                    }`}
+                                  >
+                                    <span
+                                      className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-xs transition ${
+                                        cfg.enabled
+                                          ? 'translate-x-4'
+                                          : 'translate-x-0'
+                                      }`}
+                                    />
+                                  </button>
+                                  <span className="font-semibold text-slate-800">
+                                    {cfg.enabled ? 'BẬT' : 'TẮT'} (Mỗi{' '}
+                                    {cfg.sync_interval_minutes || 30} phút)
+                                  </span>
+                                </div>
+                                <div className="text-[10px] text-slate-400">
+                                  Tự động ngầm (không qua Preview)
+                                </div>
+                              </div>
                             ) : (
-                              <span className="text-[11px] text-slate-400">
-                                Chưa có thống kê
-                              </span>
+                              <div
+                                title="File tải từ máy tính chỉ hỗ trợ chạy thủ công có Preview. Hãy gắn Link Google Sheet nếu muốn chạy tự động định kỳ"
+                                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100 border border-slate-200 text-slate-600 font-semibold text-[11px] cursor-help"
+                              >
+                                <Lock className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                                <span>Chỉ chạy thủ công</span>
+                              </div>
                             )}
                           </td>
 
-                          {/* 6. Lần chạy gần nhất */}
+                          {/* Cột 7: Lần chạy cuối & Kết quả */}
                           <td className="py-3.5 px-3 align-middle">
-                            <div className="text-slate-800 font-medium">{runDate}</div>
-                            <div className="text-[11px] text-slate-400">{runTime}</div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-slate-700 font-medium">
+                                {runDate === 'Chưa chạy'
+                                  ? 'Chưa chạy'
+                                  : `${runDate} ${runTime}`}
+                              </span>
+                              {isSuccess ? (
+                                <Badge variant="success" size="sm" dot>
+                                  Thành công
+                                </Badge>
+                              ) : isPartial ? (
+                                <Badge variant="warning" size="sm" dot>
+                                  Có cảnh báo
+                                </Badge>
+                              ) : isFailed ? (
+                                <Badge variant="danger" size="sm" dot>
+                                  Thất bại
+                                </Badge>
+                              ) : (
+                                <Badge variant="neutral" size="sm">
+                                  Chưa chạy
+                                </Badge>
+                              )}
+                            </div>
+                            <div className="text-[11px] text-slate-500 mt-1">
+                              <span className="text-emerald-600 font-semibold">
+                                +{sum?.createdCount ?? 0} mới
+                              </span>{' '}
+                              •{' '}
+                              <span className="text-blue-600 font-semibold">
+                                ~{sum?.updatedCount ?? 0} sửa
+                              </span>{' '}
+                              •{' '}
+                              <span
+                                className={
+                                  (sum?.failedCount ?? 0) > 0
+                                    ? 'text-rose-600 font-semibold'
+                                    : 'text-slate-500'
+                                }
+                              >
+                                {sum?.failedCount ?? 0} lỗi
+                              </span>
+                            </div>
                           </td>
 
-                          {/* 7. Kết quả */}
-                          <td className="py-3.5 px-3 align-middle">
-                            {isSuccess ? (
-                              <span className="text-emerald-600 font-semibold inline-flex items-center gap-1">
-                                <span>●</span>
-                                <span>Thành công</span>
-                              </span>
-                            ) : isFailed ? (
-                              <span className="text-rose-600 font-semibold inline-flex items-center gap-1">
-                                <span>●</span>
-                                <span>Thất bại</span>
-                              </span>
-                            ) : (
-                              <span className="text-slate-400 font-medium inline-flex items-center gap-1">
-                                <span>●</span>
-                                <span>Chưa chạy</span>
-                              </span>
-                            )}
-                          </td>
-
-                          {/* 8. Thao tác */}
+                          {/* Cột 8: Thao tác */}
                           <td className="py-3.5 pl-3 pr-4 align-middle text-right">
                             <div className="inline-flex items-center justify-end gap-1.5">
-                              {isFailed ? (
-                                <button
-                                  type="button"
-                                  disabled={!isReady || isSyncingThis}
-                                  title={
-                                    !isReady
-                                      ? 'Vui lòng cấu hình đầy đủ nguồn dữ liệu trước khi chạy'
-                                      : undefined
-                                  }
-                                  onClick={() => handleRunSync(cfg.code, false)}
-                                  className="border border-blue-200 bg-blue-50/50 text-blue-600 hover:bg-blue-100 rounded-lg px-3 py-1.5 text-xs font-semibold inline-flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                                >
-                                  <RotateCcw
-                                    className={`w-3 h-3 ${
-                                      isSyncingThis ? 'animate-spin' : ''
-                                    }`}
-                                  />
-                                  <span>Chạy lại</span>
-                                </button>
-                              ) : (
-                                <button
-                                  type="button"
-                                  disabled={!isReady || isSyncingThis}
-                                  title={
-                                    !isReady
-                                      ? 'Vui lòng cấu hình đầy đủ nguồn dữ liệu trước khi đồng bộ'
-                                      : undefined
-                                  }
-                                  onClick={() => handleRunSync(cfg.code, false)}
-                                  className="border border-blue-200 bg-white text-blue-600 hover:bg-blue-50 rounded-lg px-3 py-1.5 text-xs font-semibold inline-flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                                >
-                                  {isSyncingThis ? (
-                                    <RefreshCw className="w-3 h-3 animate-spin" />
-                                  ) : (
-                                    <Play className="w-3 h-3 fill-current" />
-                                  )}
-                                  <span>Đồng bộ</span>
-                                </button>
-                              )}
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  navigate(
+                                    `/data-sync/preview/${encodeURIComponent(
+                                      cfg.code
+                                    )}`
+                                  )
+                                }
+                                className="bg-blue-600 hover:bg-blue-700 text-white rounded-lg px-3 py-1.5 text-xs font-semibold inline-flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
+                              >
+                                <Eye className="w-3.5 h-3.5" />
+                                <span>Đồng bộ ngay</span>
+                              </button>
 
                               <button
                                 type="button"
-                                onClick={() => openDrawer(cfg.code, 'config')}
-                                title="Chỉnh sửa cấu hình"
-                                className="border border-slate-200 rounded-lg p-1.5 text-slate-600 hover:bg-slate-50 transition-colors cursor-pointer"
+                                onClick={() => {
+                                  setEditingConfig(cfg);
+                                  setConfigModalOpen(true);
+                                }}
+                                title="Cấu hình nguồn & bộ lọc"
+                                className="border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-semibold inline-flex items-center gap-1 transition-colors cursor-pointer"
                               >
-                                <Pencil className="w-3.5 h-3.5" />
+                                <Settings className="w-3.5 h-3.5 text-slate-500" />
+                                <span className="hidden xl:inline">
+                                  Cấu hình
+                                </span>
                               </button>
 
-                              <div className="relative" data-sync-row-menu>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  navigate(
+                                    `/data-sync/history/${
+                                      cfg.id
+                                    }?code=${encodeURIComponent(cfg.code)}`
+                                  )
+                                }
+                                title="Xem lịch sử đồng bộ của nguồn này"
+                                className="border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 rounded-lg p-1.5 transition-colors cursor-pointer"
+                              >
+                                <History className="w-3.5 h-3.5" />
+                              </button>
+
+                              {!isSystemMaster && (
                                 <button
                                   type="button"
-                                  onClick={() =>
-                                    setOpenRowMenuCode((prev) =>
-                                      prev === cfg.code ? null : cfg.code
-                                    )
-                                  }
-                                  title="Thêm thao tác"
-                                  className="border border-slate-200 rounded-lg p-1.5 text-slate-600 hover:bg-slate-50 transition-colors cursor-pointer"
+                                  onClick={() => handleDeleteConfig(cfg)}
+                                  title="Xóa nguồn đồng bộ"
+                                  className="border border-rose-200 bg-rose-50/40 hover:bg-rose-100 text-rose-600 rounded-lg p-1.5 transition-colors cursor-pointer"
                                 >
-                                  <MoreHorizontal className="w-3.5 h-3.5" />
+                                  <Trash2 className="w-3.5 h-3.5" />
                                 </button>
-
-                                {openRowMenuCode === cfg.code && (
-                                  <div className="absolute right-0 top-full mt-1 w-52 bg-white rounded-xl border border-slate-200 shadow-lg py-1.5 z-30 text-left text-xs">
-                                    <button
-                                      type="button"
-                                      onClick={() => openDrawer(cfg.code, 'overview')}
-                                      className="w-full px-3.5 py-2 text-slate-700 hover:bg-slate-50 flex items-center gap-2 font-medium cursor-pointer"
-                                    >
-                                      <Info className="w-3.5 h-3.5 text-blue-600" />
-                                      <span>Xem tổng quan &amp; phân bổ</span>
-                                    </button>
-                                    <button
-                                      type="button"
-                                      disabled={!isReady || isSyncingThis}
-                                      onClick={() => {
-                                        if (!isReady) return;
-                                        setOpenRowMenuCode(null);
-                                        handleRunSync(cfg.code, true);
-                                      }}
-                                      className="w-full px-3.5 py-2 text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 font-medium cursor-pointer"
-                                    >
-                                      <RotateCcw className="w-3.5 h-3.5 text-amber-600" />
-                                      <span>Làm mới toàn bộ (Full Sync)</span>
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => openDrawer(cfg.code, 'history')}
-                                      className="w-full px-3.5 py-2 text-slate-700 hover:bg-slate-50 flex items-center gap-2 font-medium cursor-pointer"
-                                    >
-                                      <History className="w-3.5 h-3.5 text-slate-500" />
-                                      <span>Xem lịch sử đồng bộ</span>
-                                    </button>
-                                  </div>
-                                )}
-                              </div>
+                              )}
                             </div>
                           </td>
                         </tr>
@@ -1352,37 +1631,60 @@ export const GoogleSheetSyncPanel: React.FC = () => {
               </table>
             </div>
 
-            <div className="px-4 py-3 border-t border-slate-100 bg-slate-50/40 flex items-center justify-between text-xs text-slate-500">
-              <span>
-                Hiển thị <strong className="text-slate-700">1–{filteredConfigs.length}</strong> /{' '}
-                <strong className="text-slate-700">{configs.length}</strong> nguồn đồng
-                bộ
-              </span>
+            {/* Pagination Footer (20 / 50 / 100 rows) */}
+            <div className="px-4 py-3 border-t border-slate-100 bg-slate-50/50 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-600">
+              <div className="flex items-center gap-3">
+                <span>
+                  Hiển thị{' '}
+                  <strong className="text-slate-800">
+                    {filteredConfigs.length === 0
+                      ? 0
+                      : (page - 1) * pageSize + 1}
+                    –{Math.min(page * pageSize, filteredConfigs.length)}
+                  </strong>{' '}
+                  / <strong className="text-slate-800">{filteredConfigs.length}</strong>{' '}
+                  nguồn
+                </span>
+
+                <div className="flex items-center gap-1.5">
+                  <span className="text-slate-500">Số dòng/trang:</span>
+                  <select
+                    value={pageSize}
+                    onChange={(e) =>
+                      setPageSize(Number(e.target.value) as 20 | 50 | 100)
+                    }
+                    className="h-7 rounded-lg border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-700"
+                  >
+                    <option value={20}>20 dòng</option>
+                    <option value={50}>50 dòng</option>
+                    <option value={100}>100 dòng</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  disabled={page <= 1}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  className="px-2.5 py-1 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-40 font-semibold cursor-pointer"
+                >
+                  Trước
+                </button>
+                <span className="px-2 font-semibold text-slate-700">
+                  Trang {page} / {totalPages}
+                </span>
+                <button
+                  type="button"
+                  disabled={page >= totalPages}
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  className="px-2.5 py-1 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-40 font-semibold cursor-pointer"
+                >
+                  Sau
+                </button>
+              </div>
             </div>
           </div>
-
-          {/* Warning Banner */}
-          {summaryCounts.failedCount > 0 && (
-            <div className="bg-amber-50/90 border border-amber-200/90 rounded-xl px-4 py-3 flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-2.5 text-xs text-amber-900 font-medium">
-                <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-                <span>
-                  <strong>{summaryCounts.failedCount} nguồn đồng bộ</strong> gặp lỗi kết
-                  nối hoặc đọc dữ liệu. Vui lòng kiểm tra quyền truy cập Google Sheet.
-                </span>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setActiveSubTab('history');
-                  setHistoryStatusFilter('FAILED');
-                }}
-                className="bg-white border border-amber-300 hover:bg-amber-100/50 text-amber-800 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors cursor-pointer"
-              >
-                Xem lỗi
-              </button>
-            </div>
-          )}
         </div>
       )}
 
@@ -1424,7 +1726,7 @@ export const GoogleSheetSyncPanel: React.FC = () => {
               className="bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-xl px-3.5 py-2 text-xs font-semibold inline-flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
             >
               <Download className="w-3.5 h-3.5 text-slate-500" />
-              <span>Xuất lịch sử</span>
+              <span>Xuất lịch sử CSV</span>
             </button>
           </div>
 
@@ -1486,155 +1788,96 @@ export const GoogleSheetSyncPanel: React.FC = () => {
                 <thead>
                   <tr className="border-b border-slate-200 bg-slate-50/70 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
                     <th className="py-3 pl-4 pr-3">Thời gian</th>
+                    <th className="py-3 px-3">Nguồn đồng bộ</th>
                     <th className="py-3 px-3">Chương trình</th>
                     <th className="py-3 px-3">Kích hoạt</th>
-                    <th className="py-3 px-3">Chế độ</th>
                     <th className="py-3 px-3">Tổng dòng</th>
                     <th className="py-3 px-3">Tạo mới</th>
                     <th className="py-3 px-3">Cập nhật</th>
                     <th className="py-3 px-3">Kết quả</th>
                     <th className="py-3 px-3">Thời lượng</th>
-                    <th className="py-3 pl-3 pr-4 text-right">Chi tiết</th>
+                    <th className="py-3 pl-3 pr-4 text-right">
+                      Chi tiết &amp; Hoàn tác
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-xs">
                   {effectiveHistory.items.length === 0 ? (
                     <tr>
                       <td colSpan={10} className="py-12 text-center text-slate-500">
-                        Chưa có lịch sử đồng bộ dữ liệu học viên nào.
+                        Chưa có phiên chạy đồng bộ nào. Hãy bấm{' '}
+                        <strong>[Đồng bộ ngay]</strong> trên một nguồn bất kỳ để
+                        kiểm tra Preview và lưu lịch sử.
                       </td>
                     </tr>
                   ) : (
                     effectiveHistory.items.map((item) => {
                       const isJlpt = item.programType.toUpperCase() === 'JLPT';
-                      const isFailed = item.status !== 'SUCCESS';
-                      const itemCode = (item.code || item.programType).toUpperCase();
-                      const matchedCfg = configs.find(
-                        (c) => c.code.toUpperCase() === itemCode
-                      );
-                      const isItemReady = isSyncConfigReady(
-                        matchedCfg || { code: itemCode },
-                        drafts[itemCode]
-                      );
+                      const isFailed = item.status === 'FAILED';
 
                       return (
-                        <React.Fragment key={item.id}>
-                          <tr className="hover:bg-slate-50/60 transition-colors">
-                            <td className="py-3.5 pl-4 pr-3 align-middle font-medium text-slate-800 whitespace-nowrap">
-                              {formatDateTimeFull(item.createdAt)}
-                            </td>
-                            <td className="py-3.5 px-3 align-middle">
-                              <span
-                                className={
-                                  isJlpt
-                                    ? 'bg-violet-100 text-violet-700 font-bold px-2.5 py-0.5 rounded-md text-[11px]'
-                                    : 'bg-teal-100 text-teal-700 font-bold px-2.5 py-0.5 rounded-md text-[11px]'
-                                }
-                              >
-                                {item.programType}
-                              </span>
-                            </td>
-                            <td className="py-3.5 px-3 align-middle text-slate-600">
-                              {item.triggerType === 'AUTO' ? 'Tự động' : 'Thủ công'}
-                            </td>
-                            <td className="py-3.5 px-3 align-middle text-slate-600">
-                              {item.mode === 'DELTA'
-                                ? 'Chỉ thay đổi'
-                                : 'Làm mới toàn bộ'}
-                            </td>
-                            <td className="py-3.5 px-3 align-middle font-semibold text-slate-800">
-                              {item.totalRows}
-                            </td>
-                            <td className="py-3.5 px-3 align-middle font-semibold text-emerald-600">
-                              +{item.createdCount}
-                            </td>
-                            <td className="py-3.5 px-3 align-middle font-semibold text-blue-600">
-                              {item.updatedCount}
-                            </td>
-                            <td className="py-3.5 px-3 align-middle">
-                              {isFailed ? (
-                                <span className="text-rose-600 font-semibold inline-flex items-center gap-1">
-                                  <span>●</span>
-                                  <span>Thất bại</span>
-                                </span>
-                              ) : (
-                                <span className="text-emerald-600 font-semibold inline-flex items-center gap-1">
-                                  <span>●</span>
-                                  <span>Thành công</span>
-                                </span>
-                              )}
-                            </td>
-                            <td className="py-3.5 px-3 align-middle text-slate-600">
-                              {item.durationSec} giây
-                            </td>
-                            <td className="py-3.5 pl-3 pr-4 align-middle text-right">
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  openDrawer(
-                                    item.code || item.programType,
-                                    isFailed ? 'config' : 'overview'
-                                  )
-                                }
-                                className={`font-semibold hover:underline cursor-pointer ${
-                                  isFailed ? 'text-rose-600' : 'text-blue-600'
-                                }`}
-                              >
-                                {isFailed ? 'Xem lỗi' : 'Xem chi tiết'}
-                              </button>
-                            </td>
-                          </tr>
-
-                          {isFailed && (
-                            <tr className="bg-white">
-                              <td colSpan={10} className="pl-8 pr-4 pb-3 pt-0.5">
-                                <div className="bg-rose-50 border border-rose-200 rounded-xl px-4 py-2.5 flex flex-wrap items-center justify-between gap-3">
-                                  <div className="flex items-center gap-2 text-xs text-rose-800 font-medium">
-                                    <XCircle className="w-4 h-4 text-rose-600 shrink-0" />
-                                    <span>
-                                      {item.error ||
-                                        'Không có quyền đọc Google Sheet nguồn.'}
-                                    </span>
-                                  </div>
-                                  <div className="flex items-center gap-2">
-                                    <button
-                                      type="button"
-                                      onClick={() =>
-                                        openDrawer(
-                                          item.code || item.programType,
-                                          'config'
-                                        )
-                                      }
-                                      className="bg-white border border-rose-200 hover:bg-rose-100/50 text-slate-700 rounded-lg px-2.5 py-1 text-xs font-semibold inline-flex items-center gap-1 transition-colors cursor-pointer"
-                                    >
-                                      <Settings className="w-3.5 h-3.5 text-slate-500" />
-                                      <span>Xem cấu hình</span>
-                                    </button>
-                                    <button
-                                      type="button"
-                                      disabled={!isItemReady || syncingCode !== null}
-                                      title={
-                                        !isItemReady
-                                          ? 'Vui lòng cấu hình đầy đủ nguồn dữ liệu trước khi chạy lại'
-                                          : undefined
-                                      }
-                                      onClick={() =>
-                                        handleRunSync(
-                                          item.code || item.programType,
-                                          false
-                                        )
-                                      }
-                                      className="bg-white border border-blue-200 hover:bg-blue-50 text-blue-600 rounded-lg px-2.5 py-1 text-xs font-semibold inline-flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                                    >
-                                      <RotateCcw className="w-3.5 h-3.5" />
-                                      <span>Chạy lại</span>
-                                    </button>
-                                  </div>
-                                </div>
-                              </td>
-                            </tr>
-                          )}
-                        </React.Fragment>
+                        <tr
+                          key={item.id}
+                          onClick={() =>
+                            navigate(
+                              `/data-sync/history/${
+                                item.id
+                              }?code=${encodeURIComponent(item.code)}`
+                            )
+                          }
+                          className="hover:bg-slate-50/80 transition-colors cursor-pointer"
+                        >
+                          <td className="py-3.5 pl-4 pr-3 align-middle font-medium text-slate-800 whitespace-nowrap">
+                            {formatDateTimeFull(item.createdAt)}
+                          </td>
+                          <td className="py-3.5 px-3 align-middle font-bold text-slate-900">
+                            {item.name || item.code}
+                          </td>
+                          <td className="py-3.5 px-3 align-middle">
+                            <span
+                              className={
+                                isJlpt
+                                  ? 'bg-violet-100 text-violet-700 font-bold px-2.5 py-0.5 rounded-md text-[11px]'
+                                  : 'bg-teal-100 text-teal-700 font-bold px-2.5 py-0.5 rounded-md text-[11px]'
+                              }
+                            >
+                              {item.programType}
+                            </span>
+                          </td>
+                          <td className="py-3.5 px-3 align-middle text-slate-600">
+                            {item.triggerType === 'AUTO'
+                              ? 'Tự động'
+                              : 'Thủ công'}
+                          </td>
+                          <td className="py-3.5 px-3 align-middle font-semibold text-slate-800">
+                            {item.totalRows}
+                          </td>
+                          <td className="py-3.5 px-3 align-middle font-semibold text-emerald-600">
+                            +{item.createdCount}
+                          </td>
+                          <td className="py-3.5 px-3 align-middle font-semibold text-blue-600">
+                            ~{item.updatedCount}
+                          </td>
+                          <td className="py-3.5 px-3 align-middle">
+                            {isFailed ? (
+                              <Badge variant="danger" size="sm" dot>
+                                Thất bại
+                              </Badge>
+                            ) : (
+                              <Badge variant="success" size="sm" dot>
+                                Thành công
+                              </Badge>
+                            )}
+                          </td>
+                          <td className="py-3.5 px-3 align-middle text-slate-600">
+                            {item.durationSec} giây
+                          </td>
+                          <td className="py-3.5 pl-3 pr-4 align-middle text-right">
+                            <span className="text-blue-600 font-semibold hover:underline">
+                              Xem chi tiết &amp; Hủy thay đổi →
+                            </span>
+                          </td>
+                        </tr>
                       );
                     })
                   )}
@@ -1645,10 +1888,10 @@ export const GoogleSheetSyncPanel: React.FC = () => {
         </div>
       )}
 
-      {/* E. SUB-TAB 3: ÁNH XẠ CVHT & KẾT NỐI */}
-      {activeSubTab === 'mapping' && (
+      {/* E. SUB-TAB 3: ÁNH XẠ CSKH & KẾT NỐI */}
+      {activeSubTab === 'connection' && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-          {/* Card 1: Ánh xạ CVHT cho từng chương trình */}
+          {/* Card 1: Ánh xạ CVHT cho 2 file tổng */}
           <div className="bg-white rounded-2xl border border-slate-200/90 p-5 shadow-xs space-y-5">
             <div>
               <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
@@ -1656,109 +1899,136 @@ export const GoogleSheetSyncPanel: React.FC = () => {
                 <span>Ánh xạ Mã CSKH trong Sheet ➔ Tài khoản CSKH</span>
               </h3>
               <p className="text-xs text-slate-500 mt-0.5">
-                Phân bổ tự động học viên về đúng nhân viên CSKH dựa trên cột CSKH trong
-                Google Sheet
+                Phân bổ tự động học viên về đúng nhân viên CSKH dựa trên cột
+                CVHT/CSKH trong File nguồn tổng JLPT &amp; Kaiwa
               </p>
             </div>
 
-            {configs.map((cfg) => {
-              const isJlpt = cfg.code === 'JLPT' || cfg.program_type === 'JLPT';
-              const draft = drafts[cfg.code] || {};
-              const cvhtCodes = deriveCvhtCodes(
-                csUsers,
-                cfg.cvht_mapping,
-                draft.cvht_mapping
-              );
+            {configs
+              .filter((c) => resolveFlowType(c) === 'STUDENT_MASTER')
+              .map((cfg) => {
+                const isJlpt =
+                  cfg.code === 'JLPT' || cfg.program_type === 'JLPT';
+                const draft = cvhtDrafts[cfg.code] || {
+                  cvht_mapping: cfg.cvht_mapping || {},
+                  default_cs_id: cfg.default_cs_id ?? null,
+                };
+                const cvhtCodes = deriveCvhtCodes(
+                  csUsers,
+                  cfg.cvht_mapping,
+                  draft.cvht_mapping
+                );
 
-              return (
-                <div
-                  key={cfg.code}
-                  className="rounded-xl border border-slate-200 p-4 space-y-3 bg-slate-50/50"
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span
-                        className={
-                          isJlpt
-                            ? 'bg-violet-100 text-violet-700 font-bold px-2.5 py-0.5 rounded-md text-[11px]'
-                            : 'bg-teal-100 text-teal-700 font-bold px-2.5 py-0.5 rounded-md text-[11px]'
-                        }
-                      >
-                        {cfg.code}
-                      </span>
-                      <span className="text-xs font-bold text-slate-800">
-                        {isJlpt ? 'Khóa Luyện thi JLPT' : 'Khóa Giao tiếp Kaiwa'}
-                      </span>
-                    </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      isLoading={savingCode === cfg.code}
-                      onClick={() => handleSaveConfig(cfg.code, false)}
-                      leftIcon={<Save className="w-3.5 h-3.5 text-slate-600" />}
-                    >
-                      Lưu ánh xạ {cfg.code}
-                    </Button>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
-                    {cvhtCodes.map((cvhtCode) => {
-                      const selectedId = draft.cvht_mapping?.[cvhtCode] || '';
-                      return (
-                        <div
-                          key={cvhtCode}
-                          className="flex items-center gap-2 bg-white p-2 rounded-lg border border-slate-200/90"
+                return (
+                  <div
+                    key={cfg.code}
+                    className="rounded-xl border border-slate-200 p-4 space-y-3 bg-slate-50/50"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={
+                            isJlpt
+                              ? 'bg-violet-100 text-violet-700 font-bold px-2.5 py-0.5 rounded-md text-[11px]'
+                              : 'bg-teal-100 text-teal-700 font-bold px-2.5 py-0.5 rounded-md text-[11px]'
+                          }
                         >
-                          <span className="px-2 py-1 rounded bg-blue-50 text-blue-700 border border-blue-200 font-mono font-bold text-[11px] shrink-0">
-                            {cvhtCode}
-                          </span>
-                          <select
-                            value={selectedId}
-                            onChange={(e) =>
-                              updateCvhtMapping(cfg.code, cvhtCode, e.target.value)
-                            }
-                            className="flex-1 h-8 px-2 border border-slate-200 rounded-lg text-xs font-medium bg-white text-slate-800 focus:outline-none"
-                          >
-                            <option value="">-- Tự động theo mã {cvhtCode} --</option>
-                            {csUsers.map((u) => (
-                              <option key={u.id} value={u.id}>
-                                {u.name || u.email}{' '}
-                                {u.staff_code ? `(${u.staff_code})` : ''}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                      );
-                    })}
-
-                    <div className="flex items-center gap-2 bg-white p-2 rounded-lg border border-dashed border-slate-300">
-                      <span className="px-2 py-1 rounded bg-slate-100 text-slate-700 font-semibold text-[11px] shrink-0">
-                        Mặc định (Trống)
-                      </span>
-                      <select
-                        value={draft.default_cs_id || ''}
-                        onChange={(e) =>
-                          updateDraft(cfg.code, {
-                            default_cs_id: e.target.value
-                              ? Number(e.target.value)
-                              : null,
-                          })
-                        }
-                        className="flex-1 h-8 px-2 border border-slate-200 rounded-lg text-xs font-medium bg-white text-slate-800 focus:outline-none"
+                          {cfg.program_type}
+                        </span>
+                        <span className="text-xs font-bold text-slate-800">
+                          {cfg.name}
+                        </span>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        isLoading={savingCode === cfg.code}
+                        onClick={() => handleSaveCvhtMapping(cfg.code)}
+                        leftIcon={<Save className="w-3.5 h-3.5 text-slate-600" />}
                       >
-                        <option value="">-- Chọn CSKH mặc định --</option>
-                        {csUsers.map((u) => (
-                          <option key={u.id} value={u.id}>
-                            {u.name || u.email}{' '}
-                            {u.staff_code ? `(${u.staff_code})` : ''}
-                          </option>
-                        ))}
-                      </select>
+                        Lưu ánh xạ
+                      </Button>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
+                      {cvhtCodes.map((cvhtCode) => {
+                        const selectedId = draft.cvht_mapping?.[cvhtCode] || '';
+                        return (
+                          <div
+                            key={cvhtCode}
+                            className="flex items-center gap-2 bg-white p-2 rounded-lg border border-slate-200/90"
+                          >
+                            <span className="px-2 py-1 rounded bg-blue-50 text-blue-700 border border-blue-200 font-mono font-bold text-[11px] shrink-0">
+                              {cvhtCode}
+                            </span>
+                            <select
+                              value={selectedId}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setCvhtDrafts((prev) => {
+                                  const cur = prev[cfg.code] || {
+                                    cvht_mapping: {},
+                                    default_cs_id: null,
+                                  };
+                                  const nextMap = { ...cur.cvht_mapping };
+                                  if (!val) delete nextMap[cvhtCode];
+                                  else nextMap[cvhtCode] = Number(val);
+                                  return {
+                                    ...prev,
+                                    [cfg.code]: {
+                                      ...cur,
+                                      cvht_mapping: nextMap,
+                                    },
+                                  };
+                                });
+                              }}
+                              className="flex-1 h-8 px-2 border border-slate-200 rounded-lg text-xs font-medium bg-white text-slate-800 focus:outline-none"
+                            >
+                              <option value="">
+                                -- Tự động theo mã {cvhtCode} --
+                              </option>
+                              {csUsers.map((u) => (
+                                <option key={u.id} value={u.id}>
+                                  {u.name || u.email}{' '}
+                                  {u.staff_code ? `(${u.staff_code})` : ''}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        );
+                      })}
+
+                      <div className="flex items-center gap-2 bg-white p-2 rounded-lg border border-dashed border-slate-300">
+                        <span className="px-2 py-1 rounded bg-slate-100 text-slate-700 font-semibold text-[11px] shrink-0">
+                          Mặc định (Trống)
+                        </span>
+                        <select
+                          value={draft.default_cs_id || ''}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setCvhtDrafts((prev) => ({
+                              ...prev,
+                              [cfg.code]: {
+                                ...(prev[cfg.code] || { cvht_mapping: {} }),
+                                default_cs_id: val ? Number(val) : null,
+                              },
+                            }));
+                          }}
+                          className="flex-1 h-8 px-2 border border-slate-200 rounded-lg text-xs font-medium bg-white text-slate-800 focus:outline-none"
+                        >
+                          <option value="">-- Chọn CSKH mặc định --</option>
+                          {csUsers.map((u) => (
+                            <option key={u.id} value={u.id}>
+                              {u.name || u.email}{' '}
+                              {u.staff_code ? `(${u.staff_code})` : ''}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
                     </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              })}
           </div>
 
           {/* Card 2: Google Service Account */}
@@ -1773,7 +2043,8 @@ export const GoogleSheetSyncPanel: React.FC = () => {
                     Google Service Account
                   </h3>
                   <p className="text-xs text-slate-500">
-                    Tài khoản kỹ thuật dùng để đọc dữ liệu học viên từ Google Sheet nguồn
+                    Tài khoản kỹ thuật dùng để đọc dữ liệu từ toàn bộ ~1.000
+                    Google Sheet nguồn
                   </p>
                 </div>
               </div>
@@ -1801,7 +2072,9 @@ export const GoogleSheetSyncPanel: React.FC = () => {
                     </code>
                     <button
                       type="button"
-                      onClick={() => handleCopyEmail(serviceAccount.clientEmail!)}
+                      onClick={() =>
+                        handleCopyEmail(serviceAccount.clientEmail!)
+                      }
                       className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-blue-50 hover:bg-blue-100 text-blue-600 font-semibold text-[11px] cursor-pointer"
                     >
                       <Copy className="w-3 h-3" />
@@ -1821,7 +2094,9 @@ export const GoogleSheetSyncPanel: React.FC = () => {
               </div>
 
               <div className="flex items-center justify-between gap-2">
-                <span className="text-slate-500 font-medium">Nguồn cấu hình:</span>
+                <span className="text-slate-500 font-medium">
+                  Nguồn cấu hình:
+                </span>
                 <span className="font-semibold text-slate-700">
                   {serviceAccount?.source || 'NONE'}
                 </span>
@@ -1831,13 +2106,17 @@ export const GoogleSheetSyncPanel: React.FC = () => {
             <div className="rounded-xl bg-blue-50/60 border border-blue-200/80 p-3.5 text-xs text-slate-700 space-y-1">
               <div className="font-semibold text-blue-900 flex items-center gap-1.5">
                 <Info className="w-4 h-4 text-blue-600 shrink-0" />
-                <span>Hướng dẫn cấp quyền Xem (Viewer) trên Google Sheet nguồn</span>
+                <span>
+                  Hướng dẫn cấp quyền Xem (Viewer) trên Google Sheet nguồn
+                </span>
               </div>
               <p className="text-[11px] text-slate-600 leading-relaxed">
-                Mở file Google Sheet tổng của khóa JLPT / Kaiwa → Bấm nút{' '}
+                Mở file Google Sheet (hoặc thư mục Google Drive chứa các file
+                Báo cáo học tập / Lịch dạy GV) → Bấm nút{' '}
                 <strong>Share (Chia sẻ)</strong> → Dán địa chỉ{' '}
                 <strong>Client Email</strong> ở trên vào và cấp quyền{' '}
-                <strong>Viewer (Người xem)</strong> để hệ thống tự động đồng bộ định kỳ.
+                <strong>Viewer (Người xem)</strong> để hệ thống tự động đồng bộ
+                định kỳ.
               </p>
             </div>
 
@@ -1896,564 +2175,35 @@ export const GoogleSheetSyncPanel: React.FC = () => {
         </div>
       )}
 
-      {/* F. SLIDE-OVER DRAWER BÊN PHẢI */}
-      {activeDrawerConfig &&
-        (() => {
-          const cfg = activeDrawerConfig;
-          const isJlpt = cfg.code === 'JLPT' || cfg.program_type === 'JLPT';
-          const draft = drafts[cfg.code] || {
-            source_type:
-              cfg.source_type ||
-              (cfg.spreadsheet_url?.trim() ? 'GOOGLE_SHEET' : 'LOCAL_FILE'),
-            spreadsheet_url: cfg.spreadsheet_url || '',
-            local_file_path: cfg.local_file_path || '',
-            sheet_name: cfg.sheet_name,
-            setting_sheet_name: cfg.setting_sheet_name || '',
-            cvht_mapping: cfg.cvht_mapping || {},
-            default_cs_id: cfg.default_cs_id ?? null,
-            sync_interval_minutes: cfg.sync_interval_minutes || 10,
-            enabled: cfg.enabled,
-          };
-          const selectedSourceType: SyncSourceType =
-            draft.source_type ||
-            cfg.source_type ||
-            (cfg.spreadsheet_url?.trim() ? 'GOOGLE_SHEET' : 'LOCAL_FILE');
-          const isDraftReady = isSyncConfigReady(cfg, draft);
-          const isDraftAutoEnabled = isDraftReady && Boolean(draft.enabled);
-          const summary = cfg.last_summary;
-          const byCvht = summary?.byCvht || {};
-          const cvhtCodes = deriveCvhtCodes(
-            csUsers,
-            cfg.cvht_mapping,
-            draft.cvht_mapping
-          );
-          const configHistoryItems = effectiveHistory.items.filter(
-            (i) =>
-              i.code === cfg.code ||
-              i.programType.toUpperCase() === cfg.code.toUpperCase()
-          );
+      {/* Modals */}
+      <SyncConfigModal
+        isOpen={configModalOpen}
+        onClose={() => {
+          setConfigModalOpen(false);
+          setEditingConfig(null);
+        }}
+        editingConfig={editingConfig}
+        onSaved={(saved) => {
+          setConfigs((prev) => {
+            const exists = prev.some((c) => c.code === saved.code);
+            if (exists) {
+              return prev.map((c) =>
+                c.code === saved.code ? { ...c, ...saved } : c
+              );
+            }
+            return [saved, ...prev];
+          });
+        }}
+      />
 
-          return createPortal(
-            <div className="fixed inset-0 z-50 h-screen bg-slate-900/25 backdrop-blur-[1px] flex justify-end">
-              <div
-                className="flex-1"
-                onClick={() => setDrawerCode(null)}
-                aria-hidden="true"
-              />
-              <div className="w-full max-w-lg bg-white h-full shadow-2xl flex flex-col justify-between animate-in slide-in-from-right duration-200">
-                {/* Drawer Header */}
-                <div>
-                  <div className="px-6 pt-5 pb-3 flex items-start justify-between gap-3">
-                    <div>
-                      <h2 className="text-lg font-bold text-slate-900">
-                        Cấu hình đồng bộ
-                      </h2>
-                      <div className="flex items-center gap-2 mt-1 text-xs text-slate-600">
-                        <span className="font-bold text-slate-800">
-                          {isJlpt ? 'Khóa Luyện thi JLPT' : 'Khóa Giao tiếp Kaiwa'}
-                        </span>
-                        <span>·</span>
-                        <span
-                          className={
-                            isJlpt
-                              ? 'bg-violet-100 text-violet-700 font-bold px-2.5 py-0.5 rounded-md text-[11px]'
-                              : 'bg-teal-100 text-teal-700 font-bold px-2.5 py-0.5 rounded-md text-[11px]'
-                          }
-                        >
-                          {cfg.code}
-                        </span>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setDrawerCode(null)}
-                      className="w-8 h-8 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 flex items-center justify-center transition-colors cursor-pointer"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  </div>
-
-                  {/* Drawer 3 Tabs */}
-                  <div className="px-6 border-b border-slate-200 flex items-center gap-6">
-                    <button
-                      type="button"
-                      onClick={() => setDrawerTab('overview')}
-                      className={`pb-2.5 text-xs inline-flex items-center gap-1.5 border-b-2 transition-colors cursor-pointer ${
-                        drawerTab === 'overview'
-                          ? 'border-blue-600 text-blue-600 font-semibold'
-                          : 'border-transparent text-slate-500 hover:text-slate-800 font-medium'
-                      }`}
-                    >
-                      <FileSpreadsheet className="w-3.5 h-3.5" />
-                      <span>Tổng quan</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setDrawerTab('config')}
-                      className={`pb-2.5 text-xs inline-flex items-center gap-1.5 border-b-2 transition-colors cursor-pointer ${
-                        drawerTab === 'config'
-                          ? 'border-blue-600 text-blue-600 font-semibold'
-                          : 'border-transparent text-slate-500 hover:text-slate-800 font-medium'
-                      }`}
-                    >
-                      <Settings className="w-3.5 h-3.5" />
-                      <span>Cấu hình</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setDrawerTab('history')}
-                      className={`pb-2.5 text-xs inline-flex items-center gap-1.5 border-b-2 transition-colors cursor-pointer ${
-                        drawerTab === 'history'
-                          ? 'border-blue-600 text-blue-600 font-semibold'
-                          : 'border-transparent text-slate-500 hover:text-slate-800 font-medium'
-                      }`}
-                    >
-                      <Clock className="w-3.5 h-3.5" />
-                      <span>Lịch sử</span>
-                    </button>
-                  </div>
-                </div>
-
-                {/* Drawer Body */}
-                <div className="flex-1 overflow-y-auto p-6 space-y-6 text-xs">
-                  {drawerTab === 'config' && (
-                    <>
-                      {/* 1. Nguồn dữ liệu */}
-                      <div className="space-y-3.5">
-                        <div className="flex items-center justify-between gap-3">
-                          <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
-                            Nguồn dữ liệu
-                          </h3>
-                          <select
-                            value={selectedSourceType}
-                            onChange={(e) =>
-                              updateDraft(cfg.code, {
-                                source_type: e.target.value as SyncSourceType,
-                              })
-                            }
-                            className="h-8 rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
-                          >
-                            <option value="LOCAL_FILE">File local (.xlsx)</option>
-                            <option value="GOOGLE_SHEET">Google Sheet</option>
-                          </select>
-                        </div>
-
-                        {selectedSourceType === 'GOOGLE_SHEET' ? (
-                          <div>
-                            <label className="block text-xs font-medium text-slate-700 mb-1.5">
-                              Link Google Sheet
-                            </label>
-                            <div className="flex items-center gap-2">
-                              <div className="flex-1">
-                                <Input
-                                  value={draft.spreadsheet_url ?? ''}
-                                  onChange={(e) =>
-                                    updateDraft(cfg.code, {
-                                      spreadsheet_url: e.target.value,
-                                    })
-                                  }
-                                  placeholder="https://docs.google.com/spreadsheets/d/..."
-                                />
-                              </div>
-                              <button
-                                type="button"
-                                disabled={!draft.spreadsheet_url?.trim()}
-                                onClick={() => {
-                                  const url = draft.spreadsheet_url?.trim();
-                                  if (url) window.open(url, '_blank', 'noopener,noreferrer');
-                                }}
-                                className="h-9 px-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-50 text-slate-700 font-semibold text-xs inline-flex items-center gap-1.5 shrink-0 cursor-pointer"
-                              >
-                                <ExternalLink className="w-3.5 h-3.5 text-slate-500" />
-                                <span>Mở Sheet</span>
-                              </button>
-                            </div>
-                          </div>
-                        ) : (
-                          <div>
-                            <label className="block text-xs font-medium text-slate-700 mb-1.5">
-                              Đường dẫn File local (.xlsx)
-                            </label>
-                            <div className="flex items-center gap-2">
-                              <div className="flex-1">
-                                <Input
-                                  value={draft.local_file_path ?? ''}
-                                  onChange={(e) =>
-                                    updateDraft(cfg.code, {
-                                      local_file_path: e.target.value,
-                                    })
-                                  }
-                                  placeholder="Nhập đường dẫn hoặc chọn file..."
-                                />
-                              </div>
-                              <input
-                                ref={localFileInputRef}
-                                type="file"
-                                accept=".xlsx,.xls"
-                                className="hidden"
-                                onChange={(e) => handleSelectLocalFile(cfg.code, e)}
-                              />
-                              <button
-                                type="button"
-                                disabled={uploadingLocalFileCode === cfg.code}
-                                onClick={() => localFileInputRef.current?.click()}
-                                className="h-9 px-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-50 text-slate-700 font-semibold text-xs inline-flex items-center gap-1.5 shrink-0 cursor-pointer"
-                              >
-                                {uploadingLocalFileCode === cfg.code ? (
-                                  <RefreshCw className="w-3.5 h-3.5 text-slate-500 animate-spin" />
-                                ) : (
-                                  <FolderOpen className="w-3.5 h-3.5 text-slate-500" />
-                                )}
-                                <span>Chọn file</span>
-                              </button>
-                            </div>
-                          </div>
-                        )}
-
-                        <div className="grid grid-cols-2 gap-3">
-                          <div>
-                            <label className="block text-xs font-medium text-slate-700 mb-1.5">
-                              Tên Sheet chính
-                            </label>
-                            <Input
-                              value={draft.sheet_name || ''}
-                              onChange={(e) =>
-                                updateDraft(cfg.code, { sheet_name: e.target.value })
-                              }
-                              placeholder={isJlpt ? 'Data JLPT_Inhouse' : 'Tổng'}
-                            />
-                          </div>
-
-                          {isJlpt ? (
-                            <div>
-                              <label className="block text-xs font-medium text-slate-700 mb-1.5">
-                                Sheet Setting (Số buổi)
-                              </label>
-                              <Input
-                                value={draft.setting_sheet_name || ''}
-                                onChange={(e) =>
-                                  updateDraft(cfg.code, {
-                                    setting_sheet_name: e.target.value,
-                                  })
-                                }
-                                placeholder="Setting"
-                              />
-                            </div>
-                          ) : (
-                            <div>
-                              <label className="block text-xs font-medium text-slate-700 mb-1.5">
-                                Dòng tiêu đề (Header)
-                              </label>
-                              <Input
-                                type="number"
-                                disabled
-                                value={cfg.header_row || 2}
-                              />
-                            </div>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="border-t border-slate-100" />
-
-                      {/* 2. Lịch đồng bộ tự động */}
-                      <div className="space-y-3.5">
-                        <div className="flex items-center justify-between">
-                          <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
-                            Chu kỳ tự động
-                          </h3>
-                          <button
-                            type="button"
-                            role="switch"
-                            aria-checked={isDraftAutoEnabled}
-                            disabled={!isDraftReady}
-                            title={
-                              !isDraftReady
-                                ? 'Vui lòng cấu hình đầy đủ nguồn dữ liệu và tên sheet trước khi bật tự động đồng bộ'
-                                : undefined
-                            }
-                            onClick={() =>
-                              isDraftReady &&
-                              updateDraft(cfg.code, { enabled: !draft.enabled })
-                            }
-                            className={`relative inline-flex w-10 h-5 shrink-0 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out ${
-                              isDraftAutoEnabled ? 'bg-blue-600' : 'bg-slate-200'
-                            }`}
-                          >
-                            <span
-                              className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-xs transition duration-200 ease-in-out ${
-                                isDraftAutoEnabled ? 'translate-x-5' : 'translate-x-0'
-                              }`}
-                            />
-                          </button>
-                        </div>
-
-                        <div>
-                          <label className="block text-xs font-medium text-slate-700 mb-1.5">
-                            Tần suất kiểm tra
-                          </label>
-                          <select
-                            value={draft.sync_interval_minutes || 10}
-                            disabled={!isDraftReady}
-                            onChange={(e) =>
-                              updateDraft(cfg.code, {
-                                sync_interval_minutes: Number(e.target.value),
-                              })
-                            }
-                            className="w-full h-9 rounded-xl border border-slate-200 bg-white disabled:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed px-3 text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-                          >
-                            <option value={5}>Mỗi 5 phút</option>
-                            <option value={10}>Mỗi 10 phút</option>
-                            <option value={15}>Mỗi 15 phút</option>
-                            <option value={30}>Mỗi 30 phút</option>
-                            <option value={60}>Mỗi 60 phút</option>
-                          </select>
-                        </div>
-                      </div>
-
-                      <div className="border-t border-slate-100" />
-
-                      {/* 3. Ánh xạ CSKH */}
-                      <div className="space-y-3">
-                        <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
-                          Ánh xạ Mã CSKH ➔ Tài khoản CSKH
-                        </h3>
-
-                        <div className="space-y-2">
-                          {cvhtCodes.map((cvhtCode) => {
-                            const selectedId = draft.cvht_mapping?.[cvhtCode] || '';
-                            return (
-                              <div
-                                key={cvhtCode}
-                                className="flex items-center gap-2 bg-slate-50 p-2 rounded-lg border border-slate-200"
-                              >
-                                <span className="px-2 py-1 rounded bg-blue-50 text-blue-700 border border-blue-200 font-mono font-bold text-[11px] shrink-0">
-                                  {cvhtCode}
-                                </span>
-                                <select
-                                  value={selectedId}
-                                  onChange={(e) =>
-                                    updateCvhtMapping(
-                                      cfg.code,
-                                      cvhtCode,
-                                      e.target.value
-                                    )
-                                  }
-                                  className="flex-1 h-8 px-2 border border-slate-200 rounded-lg text-xs font-medium bg-white text-slate-800 focus:outline-none"
-                                >
-                                  <option value="">
-                                    -- Tự động theo mã {cvhtCode} --
-                                  </option>
-                                  {csUsers.map((u) => (
-                                    <option key={u.id} value={u.id}>
-                                      {u.name || u.email}{' '}
-                                      {u.staff_code ? `(${u.staff_code})` : ''}
-                                    </option>
-                                  ))}
-                                </select>
-                              </div>
-                            );
-                          })}
-
-                          <div className="flex items-center gap-2 bg-slate-50 p-2 rounded-lg border border-dashed border-slate-300">
-                            <span className="px-2 py-1 rounded bg-white text-slate-700 font-semibold text-[11px] shrink-0 border border-slate-200">
-                              Mặc định (Trống)
-                            </span>
-                            <select
-                              value={draft.default_cs_id || ''}
-                              onChange={(e) =>
-                                updateDraft(cfg.code, {
-                                  default_cs_id: e.target.value
-                                    ? Number(e.target.value)
-                                    : null,
-                                })
-                              }
-                              className="flex-1 h-8 px-2 border border-slate-200 rounded-lg text-xs font-medium bg-white text-slate-800 focus:outline-none"
-                            >
-                              <option value="">-- Chọn CSKH mặc định --</option>
-                              {csUsers.map((u) => (
-                                <option key={u.id} value={u.id}>
-                                  {u.name || u.email}{' '}
-                                  {u.staff_code ? `(${u.staff_code})` : ''}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                        </div>
-                      </div>
-                    </>
-                  )}
-
-                  {drawerTab === 'overview' && (
-                    <div className="space-y-4">
-                      {cfg.last_error && (
-                        <div className="rounded-xl bg-rose-50 border border-rose-200 p-3 text-rose-800 text-xs">
-                          <strong>Lỗi lần chạy gần nhất:</strong> {cfg.last_error}
-                        </div>
-                      )}
-
-                      <div className="grid grid-cols-5 gap-2 text-center">
-                        <div className="bg-slate-50 rounded-xl border border-slate-200 p-2.5">
-                          <span className="block text-[10px] text-slate-500">
-                            Tổng dòng
-                          </span>
-                          <strong className="text-sm font-bold text-slate-900">
-                            {summary?.totalRows ?? 0}
-                          </strong>
-                        </div>
-                        <div className="bg-slate-50 rounded-xl border border-slate-200 p-2.5">
-                          <span className="block text-[10px] text-slate-500">
-                            Không đổi
-                          </span>
-                          <strong className="text-sm font-bold text-slate-700">
-                            {summary?.unchangedRows ?? 0}
-                          </strong>
-                        </div>
-                        <div className="bg-emerald-50/70 rounded-xl border border-emerald-200 p-2.5">
-                          <span className="block text-[10px] text-emerald-700">
-                            Tạo mới
-                          </span>
-                          <strong className="text-sm font-bold text-emerald-700">
-                            +{summary?.createdCount ?? 0}
-                          </strong>
-                        </div>
-                        <div className="bg-blue-50/70 rounded-xl border border-blue-200 p-2.5">
-                          <span className="block text-[10px] text-blue-700">
-                            Cập nhật
-                          </span>
-                          <strong className="text-sm font-bold text-blue-700">
-                            {summary?.updatedCount ?? 0}
-                          </strong>
-                        </div>
-                        <div className="bg-rose-50/70 rounded-xl border border-rose-200 p-2.5">
-                          <span className="block text-[10px] text-rose-700">Lỗi</span>
-                          <strong className="text-sm font-bold text-rose-700">
-                            {summary?.failedCount ?? 0}
-                          </strong>
-                        </div>
-                      </div>
-
-                      <div className="rounded-xl border border-slate-200 p-4 space-y-2.5">
-                        <div className="font-bold text-slate-900">
-                          Phân bổ học viên theo mã CSKH
-                        </div>
-                        {Object.keys(byCvht).length > 0 ? (
-                          <div className="flex flex-wrap gap-2">
-                            {Object.entries(byCvht).map(([key, count]) => (
-                              <span
-                                key={key}
-                                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-50 border border-slate-200 font-semibold text-xs"
-                              >
-                                <span className="text-blue-600 font-mono">{key}:</span>
-                                <span className="text-slate-800">{count} HV</span>
-                              </span>
-                            ))}
-                          </div>
-                        ) : (
-                          <p className="text-slate-400 italic">
-                            Chưa có dữ liệu phân bổ CSKH.
-                          </p>
-                        )}
-                      </div>
-
-                      <div className="pt-2 flex flex-wrap items-center gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          disabled={!isDraftReady || syncingCode !== null}
-                          onClick={() => handleRunSync(cfg.code, true)}
-                          isLoading={syncingCode === `${cfg.code}_full`}
-                          leftIcon={<RotateCcw className="w-3.5 h-3.5 text-amber-600" />}
-                        >
-                          Làm mới toàn bộ
-                        </Button>
-                        <Button
-                          variant="primary"
-                          size="sm"
-                          disabled={!isDraftReady || syncingCode !== null}
-                          onClick={() => handleRunSync(cfg.code, false)}
-                          isLoading={syncingCode === `${cfg.code}_diff`}
-                          leftIcon={<RefreshCw className="w-3.5 h-3.5" />}
-                        >
-                          Đồng bộ thay đổi
-                        </Button>
-                      </div>
-                    </div>
-                  )}
-
-                  {drawerTab === 'history' && (
-                    <div className="space-y-3">
-                      {configHistoryItems.length === 0 ? (
-                        <div className="py-10 text-center text-slate-400">
-                          Chưa có lịch sử đồng bộ cho nguồn {cfg.code}.
-                        </div>
-                      ) : (
-                        configHistoryItems.map((item) => (
-                          <div
-                            key={item.id}
-                            className="rounded-xl border border-slate-200 p-3.5 space-y-1.5"
-                          >
-                            <div className="flex items-center justify-between">
-                              <span className="font-semibold text-slate-800">
-                                {formatDateTimeFull(item.createdAt)}
-                              </span>
-                              {item.status === 'SUCCESS' ? (
-                                <span className="text-emerald-600 font-semibold inline-flex items-center gap-1">
-                                  <CheckCircle2 className="w-3.5 h-3.5" />
-                                  <span>Thành công</span>
-                                </span>
-                              ) : (
-                                <span className="text-rose-600 font-semibold inline-flex items-center gap-1">
-                                  <XCircle className="w-3.5 h-3.5" />
-                                  <span>Thất bại</span>
-                                </span>
-                              )}
-                            </div>
-                            <div className="text-[11px] text-slate-500 flex items-center gap-2">
-                              <span>Tổng: {item.totalRows} dòng</span>
-                              <span>·</span>
-                              <span>Tạo mới: +{item.createdCount}</span>
-                              <span>·</span>
-                              <span>Cập nhật: {item.updatedCount}</span>
-                            </div>
-                            {item.error && (
-                              <div className="text-[11px] text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-2.5 py-1.5 mt-1">
-                                {item.error}
-                              </div>
-                            )}
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                {/* Drawer Footer */}
-                <div className="px-6 py-4 border-t border-slate-200 bg-slate-50/60 flex items-center justify-between gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setDrawerCode(null)}
-                    className="px-4 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold transition-colors cursor-pointer"
-                  >
-                    Hủy
-                  </button>
-                  <button
-                    type="button"
-                    disabled={savingCode === cfg.code}
-                    onClick={() => handleSaveConfig(cfg.code, true)}
-                    className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white text-xs font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
-                  >
-                    {savingCode === cfg.code && (
-                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                    )}
-                    <span>Lưu cấu hình</span>
-                  </button>
-                </div>
-              </div>
-            </div>,
-            document.body
-          );
-        })()}
+      <BulkPasteLinksModal
+        isOpen={bulkPasteModalOpen}
+        onClose={() => setBulkPasteModalOpen(false)}
+        existingConfigs={configs}
+        onSavedBulk={(newConfigs) => {
+          setConfigs((prev) => [...newConfigs, ...prev]);
+        }}
+      />
     </div>
   );
 };

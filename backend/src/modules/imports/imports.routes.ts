@@ -21,13 +21,20 @@ router.get('/export/attendance', requireRoles(['ADMIN', 'MANAGE', 'CS', 'TEACHER
 // 2. Batches list & batch status
 router.get('/batches', requireRoles(['ADMIN', 'MANAGE', 'CS', 'TEACHER']), controller.listBatches);
 
-// 2b. Google Sheet Sync Configs & Execution (ADMIN, MANAGE)
+// 2b. Google Sheet Sync Configs, Preview/Commit, Bulk Paste, History & Rollback
 router.get('/sheet-sync/configs', requireRoles(['ADMIN', 'MANAGE', 'CS']), controller.getSheetSyncConfigs);
+router.post('/sheet-sync/configs', requireRoles(['ADMIN', 'MANAGE']), controller.createSheetSyncConfig);
+router.post('/sheet-sync/configs/bulk-links', requireRoles(['ADMIN', 'MANAGE']), controller.bulkPasteSheetSyncLinks);
 router.get('/sheet-sync/history', requireRoles(['ADMIN', 'MANAGE', 'CS']), controller.getSheetSyncHistory);
+router.get('/sheet-sync/history/:runId', requireRoles(['ADMIN', 'MANAGE', 'CS']), controller.getSheetSyncRunDetail);
+router.post('/sheet-sync/history/:runId/rollback', requireRoles(['ADMIN', 'MANAGE']), controller.rollbackSheetSyncRun);
 // Service Account JSON configuration is restricted to ADMIN only (configured in Admin Settings page)
 router.put('/sheet-sync/service-account', requireRoles(['ADMIN']), controller.saveServiceAccount);
 router.put('/sheet-sync/configs/:code', requireRoles(['ADMIN', 'MANAGE']), controller.updateSheetSyncConfig);
+router.delete('/sheet-sync/configs/:code', requireRoles(['ADMIN', 'MANAGE']), controller.deleteSheetSyncConfig);
 router.post('/sheet-sync/configs/:code/upload-file', requireRoles(['ADMIN', 'MANAGE']), upload.single('file'), controller.uploadSheetSyncLocalFile);
+router.post('/sheet-sync/configs/:code/preview', requireRoles(['ADMIN', 'MANAGE', 'CS']), controller.previewSheetSyncByCode);
+router.post('/sheet-sync/configs/:code/commit', requireRoles(['ADMIN', 'MANAGE']), controller.commitSheetSyncByCode);
 router.post('/sheet-sync/configs/:code/sync', requireRoles(['ADMIN', 'MANAGE']), controller.syncSheetByCode);
 router.post('/sheet-sync/sync-all', requireRoles(['ADMIN', 'MANAGE']), controller.syncAllSheets);
 

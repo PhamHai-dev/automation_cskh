@@ -288,9 +288,81 @@ export class ImportsController {
     }
   };
 
-  getSheetSyncConfigs = async (_req: Request, res: Response, next: NextFunction) => {
+  getSheetSyncConfigs = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const data = await this.sheetSyncService.getConfigs();
+      const data = await this.sheetSyncService.getConfigs({
+        search: req.query.search ? String(req.query.search) : undefined,
+        flowType: req.query.flowType ? String(req.query.flowType) : undefined,
+        programType: req.query.programType ? String(req.query.programType) : undefined,
+        sourceType: req.query.sourceType ? String(req.query.sourceType) : undefined,
+        enabled: req.query.enabled !== undefined ? String(req.query.enabled) : undefined,
+        status: req.query.status ? String(req.query.status) : undefined,
+        page: req.query.page ? parseInt(String(req.query.page), 10) : undefined,
+        pageSize: req.query.pageSize ? parseInt(String(req.query.pageSize), 10) : undefined,
+      });
+      res.status(200).json({ data, meta: null });
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  createSheetSyncConfig = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const user = (req as any).user;
+      const data = await this.sheetSyncService.createConfig(req.body || {}, user?.id);
+      res.status(201).json({ data, meta: null });
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  bulkPasteSheetSyncLinks = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const user = (req as any).user;
+      const data = await this.sheetSyncService.bulkPasteLinks(req.body || {}, user?.id);
+      res.status(200).json({ data, meta: null });
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  deleteSheetSyncConfig = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const code = req.params.code;
+      const data = await this.sheetSyncService.deleteConfig(code);
+      res.status(200).json({ data, meta: null });
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  previewSheetSyncByCode = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const code = req.params.code;
+      const data = await this.sheetSyncService.previewConfig(code, {
+        sync_year: req.body?.sync_year !== undefined ? (req.body.sync_year ? Number(req.body.sync_year) : null) : undefined,
+        filter_config: req.body?.filter_config,
+        limit: req.body?.limit ? Number(req.body.limit) : undefined,
+      });
+      res.status(200).json({ data, meta: null });
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  commitSheetSyncByCode = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const code = req.params.code;
+      const user = (req as any).user;
+      const data = await this.sheetSyncService.commitConfigSync(code, {
+        previewToken: req.body?.previewToken,
+        selectedItemKeys: req.body?.selectedItemKeys,
+        sync_year: req.body?.sync_year !== undefined ? (req.body.sync_year ? Number(req.body.sync_year) : null) : undefined,
+        filter_config: req.body?.filter_config,
+        actorId: user?.id,
+        triggerType: 'MANUAL',
+        limit: req.body?.limit ? Number(req.body.limit) : undefined,
+      });
       res.status(200).json({ data, meta: null });
     } catch (err) {
       next(err);
@@ -357,9 +429,11 @@ export class ImportsController {
       const user = (req as any).user;
       const forceFullSync = Boolean(req.body?.forceFullSync);
       const limit = req.body?.limit ? Number(req.body.limit) : undefined;
+      const flowType = req.body?.flowType ? String(req.body.flowType) : undefined;
       const data = await this.sheetSyncService.syncAll({
         forceFullSync,
         limit,
+        flowType,
         actorId: user?.id,
       });
       res.status(200).json({ data, meta: null });
@@ -493,19 +567,69 @@ export class ImportsController {
 
   getSheetSyncHistory = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const code = (req.query.code || req.query.programType)
-        ? String(req.query.code || req.query.programType)
-        : undefined;
+      const configId = req.query.configId ? parseInt(String(req.query.configId), 10) : undefined;
+      const code = req.query.code ? String(req.query.code) : undefined;
+      const flowType = req.query.flowType ? String(req.query.flowType) : undefined;
+      const programType = req.query.programType ? String(req.query.programType) : undefined;
+      const triggerType = req.query.triggerType ? String(req.query.triggerType) : undefined;
       const status = req.query.status ? String(req.query.status) : undefined;
       const fromDate = req.query.fromDate ? String(req.query.fromDate) : undefined;
       const toDate = req.query.toDate ? String(req.query.toDate) : undefined;
+      const search = req.query.search ? String(req.query.search) : undefined;
       const limit = req.query.limit ? parseInt(String(req.query.limit), 10) : 50;
+      const page = req.query.page ? parseInt(String(req.query.page), 10) : 1;
       const data = await this.sheetSyncService.getSyncHistory({
+        configId,
         code,
+        flowType,
+        programType,
+        triggerType,
         status,
         fromDate,
         toDate,
+        search,
         limit,
+        page,
+      });
+      res.status(200).json({ data, meta: null });
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  getSheetSyncRunDetail = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const runId = parseInt(req.params.runId, 10);
+      if (Number.isNaN(runId)) {
+        throw new AppError(400, 'runId không hợp lệ');
+      }
+      const data = await this.sheetSyncService.getSyncRunDetail(runId, {
+        action: req.query.action ? String(req.query.action) : undefined,
+        status: req.query.status ? String(req.query.status) : undefined,
+        search: req.query.search ? String(req.query.search) : undefined,
+      });
+      res.status(200).json({ data, meta: null });
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  rollbackSheetSyncRun = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const runId = parseInt(req.params.runId, 10);
+      if (Number.isNaN(runId)) {
+        throw new AppError(400, 'runId không hợp lệ');
+      }
+      const user = (req as any).user;
+      const rawIds = Array.isArray(req.body?.itemIds)
+        ? req.body.itemIds
+        : Array.isArray(req.body?.changeIds)
+        ? req.body.changeIds
+        : undefined;
+      const data = await this.sheetSyncService.rollbackSyncRun(runId, {
+        itemIds: rawIds,
+        forceOverwriteConflicts: Boolean(req.body?.forceOverwriteConflicts),
+        actorId: user?.id,
       });
       res.status(200).json({ data, meta: null });
     } catch (err) {
