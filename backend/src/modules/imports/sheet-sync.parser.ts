@@ -134,7 +134,12 @@ export interface NormalizedSheetRow {
   courseTeacherType: string | null;
   level: string | null;
   totalSessions: number;
+  totalAttended: number | null;
   remainingSessions: number | null;
+  endHoldWeek: number | null;
+  endHoldYear: number | null;
+  handoverMonth: number | null;
+  renewalDeadline: string | null;
   attendedPreviousYears: number;
   classModel: string | null;
   salesNote: string | null;
@@ -674,7 +679,8 @@ export function parseJlptAttendedSessions(workbook: ExcelJS.Workbook): Map<strin
       const colL = extractCellValue(row.getCell(12).value);
       if (colL !== null && colL !== undefined && colL !== '-') {
         const num = Number(colL);
-        if (!Number.isNaN(num) && num > 0 && num <= 150) {
+        if (!Number.isNaN(num) && num >= 0 && num <= 150) {
+          // Chấm buổi is the authoritative JLPT attendance source when present.
           attendedByExtId.set(extId, Math.round(num));
           continue;
         }
@@ -871,7 +877,12 @@ export function parseJlptSheetRows(
       courseTeacherType: null,
       level,
       totalSessions,
+      totalAttended: attendedSessions ?? null,
       remainingSessions,
+      endHoldWeek: null,
+      endHoldYear: null,
+      handoverMonth: null,
+      renewalDeadline: null,
       attendedPreviousYears: attendedSessions || 0,
       classModel,
       salesNote,
@@ -989,8 +1000,7 @@ export function parseKaiwaSheetRows(
 
     const startTime = extractStartTime(row.getCell(24).value);
     const sched1 = extractSchedulePattern(row.getCell(25).value);
-    const schedFallback = extractSchedulePattern(row.getCell(31).value);
-    const schedulePattern = sched1 || schedFallback || null;
+    const schedulePattern = sched1 || null;
 
     const rawDur = extractCellValue(row.getCell(26).value);
     let durationMinutes: number | null = null;
@@ -999,23 +1009,18 @@ export function parseKaiwaSheetRows(
       durationMinutes = durNum > 0 && durNum <= 5 ? Math.round(durNum * 60) : Math.round(durNum);
     }
 
-    // Secondary schedule (Ca học 2): Col 27 = Giờ học (2), Col 28 = Lịch học (2), Col 29 = Thời lượng buổi học (2), Col 30 = Vòng lặp
-    const startTime2 = extractStartTime(row.getCell(27).value);
-    const sched2 = extractSchedulePattern(row.getCell(28).value);
-    const rawDur2 = extractCellValue(row.getCell(29).value);
-    let durationMinutes2: number | null = null;
-    if (rawDur2 !== null && rawDur2 !== undefined && rawDur2 !== '' && !Number.isNaN(Number(rawDur2))) {
-      const durNum2 = Number(rawDur2);
-      durationMinutes2 = durNum2 > 0 && durNum2 <= 5 ? Math.round(durNum2 * 60) : Math.round(durNum2);
-    }
-    const loopType = cellText(row.getCell(30)) || null;
 
     const teacherName = cellText(row.getCell(32)) || null;
     const teacherCode = cellText(row.getCell(33)) || teacherName || null;
     const className = cleanClassIdentifier(cellText(row.getCell(34)));
     const status = mapEnrollmentStatus(rawStatus, Boolean(className));
 
-    const rawAttPrev = extractCellValue(row.getCell(isChamSocLayout ? 36 : 35).value);
+    // Kaiwa Tổng: col 36 (AJ) is total attended; preserve col 35 (AI) as prior-year attendance.
+    const rawAttended = extractCellValue(row.getCell(36).value);
+    const totalAttended = rawAttended !== null && rawAttended !== undefined && rawAttended !== '' && !Number.isNaN(Number(rawAttended))
+      ? Math.round(Number(rawAttended))
+      : null;
+    const rawAttPrev = extractCellValue(row.getCell(35).value);
     const attendedPreviousYears = rawAttPrev !== null && rawAttPrev !== undefined && rawAttPrev !== '' && !Number.isNaN(Number(rawAttPrev))
       ? Math.round(Number(rawAttPrev))
       : 0;
@@ -1074,6 +1079,13 @@ export function parseKaiwaSheetRows(
 
     const postCourseCare = cellText(row.getCell(isChamSocLayout ? 56 : 48)) || null;
     const handedOverAt = formatIsoDateOnly(parseSheetDate(row.getCell(isChamSocLayout ? 58 : 55).value));
+    const endHoldWeekRaw = extractCellValue(row.getCell(58).value);
+    const endHoldYearRaw = extractCellValue(row.getCell(59).value);
+    const endHoldWeek = endHoldWeekRaw !== null && Number.isFinite(Number(endHoldWeekRaw)) ? Math.round(Number(endHoldWeekRaw)) : null;
+    const endHoldYear = endHoldYearRaw !== null && Number.isFinite(Number(endHoldYearRaw)) ? Math.round(Number(endHoldYearRaw)) : null;
+    const renewalDeadline = formatIsoDateOnly(parseSheetDate(row.getCell(62).value));
+    const handoverMonthRaw = extractCellValue(row.getCell(77).value);
+    const handoverMonth = handoverMonthRaw !== null && Number.isFinite(Number(handoverMonthRaw)) ? Math.round(Number(handoverMonthRaw)) : null;
     const accountCreatedAt = isChamSocLayout
       ? formatIsoDateOnly(parseSheetDate(row.getCell(60).value))
       : null;
@@ -1081,16 +1093,6 @@ export function parseKaiwaSheetRows(
     const programMetadata: Record<string, any> = {};
     if (rawCourseContent !== null && rawCourseContent !== undefined && String(rawCourseContent).trim() !== '') {
       programMetadata.tuition_fee = rawCourseContent;
-    }
-    if (startTime2 || sched2 || durationMinutes2) {
-      programMetadata.second_schedule = {
-        start_time: startTime2,
-        schedule_pattern: sched2,
-        duration_minutes: durationMinutes2,
-      };
-    }
-    if (loopType) {
-      programMetadata.loop_type = loopType;
     }
 
     const baseKey = `KAIWA::${externalId}::${packageCode}::${className || paidAt || `r${r}`}`;
@@ -1119,7 +1121,12 @@ export function parseKaiwaSheetRows(
       courseTeacherType,
       level,
       totalSessions,
+      totalAttended,
       remainingSessions,
+      endHoldWeek,
+      endHoldYear,
+      handoverMonth,
+      renewalDeadline,
       attendedPreviousYears,
       classModel,
       salesNote,

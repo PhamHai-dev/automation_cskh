@@ -227,6 +227,7 @@ model Enrollment {
   course_teacher_type         String?
   level                       String?
   total_sessions              Int
+  total_attended              Int?
   class_model                 String?
   sales_note                  String?          @db.Text
   study_report_url            String?
@@ -236,6 +237,10 @@ model Enrollment {
   post_course_care            String?          @db.Text
   start_date                  DateTime?        @db.Date
   end_date                    DateTime?        @db.Date
+  end_hold_week               Int?
+  end_hold_year               Int?
+  handover_month              Int?
+  renewal_deadline            DateTime?        @db.Date
   status                      EnrollmentStatus @default(NOT_STARTED)
   auto_message_enabled        Boolean          @default(true)
   attended_previous_years     Int?             @default(0)

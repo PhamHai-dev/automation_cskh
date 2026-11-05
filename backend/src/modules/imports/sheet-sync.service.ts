@@ -2284,6 +2284,9 @@ export class SheetSyncService {
           ENROLLMENT_STATUS_VN_MAP[row.status] || row.status
         );
         addDiff('total_sessions', 'Tổng số buổi', existingEnrollment.total_sessions, row.totalSessions);
+        if (row.totalAttended !== null) {
+          addDiff('total_attended', 'Tổng số buổi đã học', (existingEnrollment as any).total_attended, row.totalAttended);
+        }
         if (row.remainingSessions !== null) {
           addDiff('external_remaining_sessions', 'Số buổi còn lại', existingEnrollment.external_remaining_sessions, row.remainingSessions);
         }
@@ -3319,6 +3322,7 @@ export class SheetSyncService {
       course_teacher_type: row.courseTeacherType,
       level: row.level,
       total_sessions: row.totalSessions,
+      total_attended: row.totalAttended,
       class_model: row.classModel,
       sales_note: row.salesNote,
       study_report_url: row.studyReportUrl || existingEnrollment?.study_report_url || null,
@@ -3328,6 +3332,10 @@ export class SheetSyncService {
       post_course_care: row.postCourseCare,
       start_date: startDateObj,
       end_date: endDateObj,
+      end_hold_week: row.endHoldWeek,
+      end_hold_year: row.endHoldYear,
+      handover_month: row.handoverMonth,
+      renewal_deadline: row.renewalDeadline ? new Date(row.renewalDeadline) : null,
       status: row.status,
       attended_previous_years: row.attendedPreviousYears,
       external_remaining_sessions: row.remainingSessions,
