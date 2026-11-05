@@ -425,6 +425,16 @@ export function normalizePhone(rawVal: any): string | null {
 /**
  * Normalize External ID (prevent scientific notation / float .0)
  */
+export function parseOptionalInteger(rawVal: any): number | null {
+  const val = extractCellValue(rawVal);
+  if (val === null || val === undefined || val === '' || val === '-') return null;
+  const num = Number(val);
+  return Number.isFinite(num) ? Math.round(num) : null;
+}
+
+/**
+ * Normalize External ID (prevent scientific notation / float .0)
+ */
 export function normalizeExternalId(rawVal: any): string {
   const val = extractCellValue(rawVal);
   if (val === null || val === undefined) return '';
@@ -1079,13 +1089,12 @@ export function parseKaiwaSheetRows(
 
     const postCourseCare = cellText(row.getCell(isChamSocLayout ? 56 : 48)) || null;
     const handedOverAt = formatIsoDateOnly(parseSheetDate(row.getCell(isChamSocLayout ? 58 : 55).value));
-    const endHoldWeekRaw = extractCellValue(row.getCell(58).value);
-    const endHoldYearRaw = extractCellValue(row.getCell(59).value);
-    const endHoldWeek = endHoldWeekRaw !== null && Number.isFinite(Number(endHoldWeekRaw)) ? Math.round(Number(endHoldWeekRaw)) : null;
-    const endHoldYear = endHoldYearRaw !== null && Number.isFinite(Number(endHoldYearRaw)) ? Math.round(Number(endHoldYearRaw)) : null;
+    // Approved Kaiwa Tổng mapping: BF/BG = end hold week/year, BJ = renewal deadline, BY = handover month.
+    // Do not infer these fields from the secondary schedule or other similarly named columns.
+    const endHoldWeek = parseOptionalInteger(row.getCell(58).value);
+    const endHoldYear = parseOptionalInteger(row.getCell(59).value);
     const renewalDeadline = formatIsoDateOnly(parseSheetDate(row.getCell(62).value));
-    const handoverMonthRaw = extractCellValue(row.getCell(77).value);
-    const handoverMonth = handoverMonthRaw !== null && Number.isFinite(Number(handoverMonthRaw)) ? Math.round(Number(handoverMonthRaw)) : null;
+    const handoverMonth = parseOptionalInteger(row.getCell(77).value);
     const accountCreatedAt = isChamSocLayout
       ? formatIsoDateOnly(parseSheetDate(row.getCell(60).value))
       : null;

@@ -1,5 +1,9 @@
 import ExcelJS from 'exceljs';
-import { parseKaiwaSheetRows, parseJlptAttendedSessions } from '../sheet-sync.parser';
+import {
+  parseKaiwaSheetRows,
+  parseJlptAttendedSessions,
+  parseJlptSheetRows,
+} from '../sheet-sync.parser';
 
 describe('approved workbook column mappings', () => {
   it('maps Kaiwa Tổng attendance and end/renewal fields without secondary schedule or Tháng', () => {
@@ -44,5 +48,18 @@ describe('approved workbook column mappings', () => {
     cb.getCell('B3').value = 'J001';
     cb.getCell('L3').value = 6;
     expect(parseJlptAttendedSessions(wb).get('J001')).toBe(6);
+
+    const master = wb.addWorksheet('Data JLPT_Inhouse');
+    master.getCell('A2').value = 'ID';
+    master.getCell('E2').value = 'Họ tên HV';
+    master.getCell('A3').value = 'J001';
+    master.getCell('E3').value = 'JLPT Student';
+    master.getRow(3).getCell(17).value = 'N4VIP16';
+    const [row] = parseJlptSheetRows(wb, 'Data JLPT_Inhouse', 'Setting', 2);
+    expect(row.totalAttended).toBe(6);
+    expect(row.endHoldWeek).toBeNull();
+    expect(row.endHoldYear).toBeNull();
+    expect(row.handoverMonth).toBeNull();
+    expect(row.renewalDeadline).toBeNull();
   });
 });

@@ -1917,7 +1917,7 @@ export class SheetSyncService {
 
     if (flowType === 'STUDENT_MASTER') {
       return programType === 'JLPT'
-        ? [sheetName || 'Data JLPT_Inhouse', config.setting_sheet_name || 'Setting', 'Điểm học tập']
+        ? [sheetName || 'Data JLPT_Inhouse', config.setting_sheet_name || 'Setting', 'Điểm học tập', 'Chấm buổi']
         : [sheetName || 'Tổng', '1.Chăm sóc'];
     }
     if (flowType === 'CSKH_ATTENDANCE') {
