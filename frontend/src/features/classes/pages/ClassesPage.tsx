@@ -175,6 +175,8 @@ interface EnrolledStudentItem {
   program_type?: string;
   sale_name?: string | null;
   cs_staff_code?: string | null;
+  cs_id?: number | null;
+  is_readonly_for_cs?: boolean;
   attendance_stats?: StudentRow['attendance_stats'];
 }
 
@@ -380,6 +382,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
     dateStr: string;
     caNumber: number;
     defaultEditing?: boolean;
+    isReadonlyForCs?: boolean;
   } | null>(null);
   const [savingKey, setSavingKey] = useState<string | null>(null);
   const inlineTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
@@ -722,6 +725,10 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
         true,
         `${enr?.class_model || ''} ${levelLabel}`
       );
+      const enrCsId = (enr as any)?.cs_user_id ?? enr?.cs_id ?? enr?.cs?.id ?? null;
+      const isReadonlyForCs = Boolean(
+        isCSOnly && user?.id && enrCsId && Number(enrCsId) !== Number(user.id)
+      );
       list.push({
         enrollment_class_id: ec.id,
         class_id: cls.id,
@@ -747,6 +754,8 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
         program_type: enr?.program_type || 'KAIWA',
         sale_name: enr?.sale_name || enr?.sale?.name || null,
         cs_staff_code: enr?.cs?.staff_code || null,
+        cs_id: enrCsId,
+        is_readonly_for_cs: isReadonlyForCs,
         attendance_stats: ec.attendance_stats,
       });
     });
@@ -1043,6 +1052,10 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
         const student = enr.student;
         if (!student) return;
         const pkg = enr.package;
+        const enrCsId = (enr as any)?.cs_user_id ?? enr?.cs_id ?? enr?.cs?.id ?? null;
+        const isReadonlyForCs = Boolean(
+          isCSOnly && user?.id && enrCsId && Number(enrCsId) !== Number(user.id)
+        );
 
         if (enr.enrollment_classes && enr.enrollment_classes.length > 0) {
           enr.enrollment_classes.forEach((ec) => {
@@ -1113,6 +1126,8 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
               sale_name: enr.sale_name || (enr as any).sale?.name || '—',
               program_type: enr.program_type || 'KAIWA',
               cs_staff_code: enr.cs?.staff_code || null,
+              cs_id: enrCsId,
+              is_readonly_for_cs: isReadonlyForCs,
               attendance_stats: ec.attendance_stats,
             });
           });
@@ -1157,6 +1172,8 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
             sale_name: enr.sale_name || (enr as any).sale?.name || '—',
             program_type: enr.program_type || 'KAIWA',
             cs_staff_code: enr.cs?.staff_code || null,
+            cs_id: enrCsId,
+            is_readonly_for_cs: isReadonlyForCs,
           });
         }
       });
@@ -1208,6 +1225,8 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
             sale_name: st.sale_name || '—',
             program_type: st.program_type || (cls.level?.toUpperCase().includes('N') ? 'JLPT' : 'KAIWA'),
             cs_staff_code: st.cs_staff_code || null,
+            cs_id: st.cs_id ?? null,
+            is_readonly_for_cs: st.is_readonly_for_cs,
             attendance_stats: st.attendance_stats,
           });
         });
@@ -1780,7 +1799,11 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
       : isCSOnly
       ? Boolean(att?.cs_status)
       : Boolean(getFinalizedStatus(att));
-    const shouldEdit = defaultEditing !== undefined ? defaultEditing : !hasSideStatus;
+    const shouldEdit = st.is_readonly_for_cs
+      ? false
+      : defaultEditing !== undefined
+      ? defaultEditing
+      : !hasSideStatus;
     setDrawerState({
       classId: cls.id,
       enrollmentClassId: st.enrollment_class_id,
@@ -1789,6 +1812,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
       dateStr,
       caNumber,
       defaultEditing: shouldEdit,
+      isReadonlyForCs: st.is_readonly_for_cs,
     });
   };
 
@@ -2842,7 +2866,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
   };
 
   // CSKH: 1 chạm "Khớp theo GV" ở chế độ Theo Lớp học — sao chép điểm danh GV sang cs_status
-  // cho mọi ca trong ngày đang chọn mà GV đã chấm nhưng CSKH chưa chấm.
+  // cho mọi ca trong ngày đang chọn mà GV đã chấm nhưng CSKH chưa chấm (bỏ qua học viên chỉ xem).
   const pendingMatchTeacherCountInClasses = useMemo(() => {
     if (!isCSOnly) return 0;
     let count = 0;
@@ -2851,6 +2875,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
       const students = getStudentsOfClass(cls);
       daySessions.forEach((sess) => {
         students.forEach((st) => {
+          if (st.is_readonly_for_cs) return;
           const att = attendanceByEcAndSession.get(`${st.enrollment_class_id}_session_${sess.id}`);
           if (att?.teacher_status && !att.cs_status) count++;
         });
@@ -2873,6 +2898,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
       const students = getStudentsOfClass(cls);
       daySessions.forEach((sess) => {
         students.forEach((st) => {
+          if (st.is_readonly_for_cs) return;
           const att = attendanceByEcAndSession.get(`${st.enrollment_class_id}_session_${sess.id}`);
           const tStatus = att?.teacher_status as AttendanceStatus | null | undefined;
           if (!tStatus || att?.cs_status) return;
@@ -3325,6 +3351,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
   ) => {
     const daySessions = getDaySessions(cls.id, dateStr);
     const totalCa = Math.max(1, daySessions.length);
+    const isReadonly = Boolean(st.is_readonly_for_cs);
 
     const persistCsNote = (caNo: number, session: ClassSession | undefined, rawVal: string) => {
       if (!session) return;
@@ -3368,8 +3395,9 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
               <input
                 type="text"
                 value={noteVal}
-                disabled={!session}
+                disabled={!session || isReadonly}
                 onChange={(e) => {
+                  if (isReadonly) return;
                   const val = e.target.value;
                   setCsNoteDrafts((prev) => ({ ...prev, [draftKey]: val }));
                   if (csNoteTimersRef.current[draftKey]) clearTimeout(csNoteTimersRef.current[draftKey]);
@@ -3597,13 +3625,16 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                   <>
                     <button
                       type="button"
-                      disabled={isSavingRow || isDeletingThisCa}
+                      disabled={isSavingRow || isDeletingThisCa || Boolean(st.is_readonly_for_cs)}
                       onClick={() => {
+                        if (st.is_readonly_for_cs) return;
                         setSelectedCa(cls.id, dateStr, caNo);
                         setActiveQuickPickerKey(pickerKey);
                       }}
                       title={
-                        cfg
+                        st.is_readonly_for_cs
+                          ? 'Chế độ Chỉ xem (không được điểm danh)'
+                          : cfg
                           ? `Ca ${caNo}: ${cfg.label} — bấm để đổi trạng thái`
                           : `Bấm để chọn trạng thái điểm danh Ca ${caNo} cho ${st.full_name}`
                       }
@@ -3611,7 +3642,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                         cfg
                           ? `${cfg.bg} ${cfg.text} ${cfg.border} shadow-2xs hover:ring-2 hover:ring-primary/40`
                           : 'min-w-9 border-border/80 bg-white text-slate-600 hover:border-primary/60 hover:bg-primary-soft/30 hover:text-primary'
-                      } disabled:opacity-50`}
+                      } disabled:opacity-50 disabled:cursor-not-allowed`}
                     >
                       {cfg ? (
                         <>
@@ -3635,10 +3666,17 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                     {isLastCa && (
                       <button
                         type="button"
-                        disabled={isAddingCa}
-                        onClick={() => handleAddCaForClass(cls, dateStr, st)}
-                        title={`Thêm Ca ${totalCa + 1} trong ngày này`}
-                        className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-dashed border-primary/50 bg-white text-xs font-extrabold text-primary transition hover:border-primary hover:bg-primary-soft disabled:opacity-50"
+                        disabled={isAddingCa || Boolean(st.is_readonly_for_cs)}
+                        onClick={() => {
+                          if (st.is_readonly_for_cs) return;
+                          handleAddCaForClass(cls, dateStr, st);
+                        }}
+                        title={
+                          st.is_readonly_for_cs
+                            ? 'Chế độ Chỉ xem (không được thêm ca)'
+                            : `Thêm Ca ${totalCa + 1} trong ngày này`
+                        }
+                        className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-dashed border-primary/50 bg-white text-xs font-extrabold text-primary transition hover:border-primary hover:bg-primary-soft disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         <Plus className="h-3.5 w-3.5" />
                       </button>
@@ -3647,14 +3685,19 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                     {sess && (
                       <button
                         type="button"
-                        disabled={isDeletingThisCa}
-                        onClick={() => requestDeleteCa(cls, dateStr, caNo)}
+                        disabled={isDeletingThisCa || Boolean(st.is_readonly_for_cs)}
+                        onClick={() => {
+                          if (st.is_readonly_for_cs) return;
+                          requestDeleteCa(cls, dateStr, caNo);
+                        }}
                         title={
-                          countMarkedInCa(cls, dateStr, caNo) === 0
+                          st.is_readonly_for_cs
+                            ? 'Chế độ Chỉ xem (không được xóa ca)'
+                            : countMarkedInCa(cls, dateStr, caNo) === 0
                             ? `Gỡ bỏ Ca ${caNo} (chưa chấm điểm danh)`
                             : `Xóa Ca ${caNo} của lớp`
                         }
-                        className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-transparent text-slate-400 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-50"
+                        className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-transparent text-slate-400 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
@@ -3737,7 +3780,10 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
         <MonthlyEmptyDateCell
           studentName={st.full_name}
           dateLabel={formattedDateLabel}
-          onClick={() => openDrawer(cls, st, dateStr, 1, true)}
+          onClick={() => {
+            if (st.is_readonly_for_cs) return;
+            openDrawer(cls, st, dateStr, 1, true);
+          }}
         />
       );
     }
@@ -3765,9 +3811,17 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
 
         <button
           type="button"
-          onClick={() => openDrawer(cls, st, dateStr, nextSessionNumber, true)}
-          title={`Thêm ca học mới (Ca ${nextSessionNumber})`}
-          className="inline-flex h-6 w-5 items-center justify-center rounded-md border border-dashed border-primary/50 text-xs font-extrabold text-primary opacity-0 group-hover/cell:opacity-100 focus:opacity-100 transition hover:bg-primary-soft"
+          disabled={Boolean(st.is_readonly_for_cs)}
+          onClick={() => {
+            if (st.is_readonly_for_cs) return;
+            openDrawer(cls, st, dateStr, nextSessionNumber, true);
+          }}
+          title={
+            st.is_readonly_for_cs
+              ? 'Chế độ Chỉ xem (không được thêm ca)'
+              : `Thêm ca học mới (Ca ${nextSessionNumber})`
+          }
+          className="inline-flex h-6 w-5 items-center justify-center rounded-md border border-dashed border-primary/50 text-xs font-extrabold text-primary opacity-0 group-hover/cell:opacity-100 focus:opacity-100 transition hover:bg-primary-soft disabled:opacity-40 disabled:cursor-not-allowed"
         >
           +
         </button>
@@ -6009,9 +6063,13 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
         side={activeSide}
         defaultEditing={drawerState?.defaultEditing}
         canEditTeacherFields={isTeacher}
-        canEditCsFields={isCSOnly}
-        canMarkStatus={isTeacher || isCSOnly || isAdminOrManage}
-        canDeleteSession
+        canEditCsFields={isCSOnly && !drawerState?.isReadonlyForCs}
+        canMarkStatus={
+          isTeacher ||
+          isAdminOrManage ||
+          (isCSOnly && !drawerState?.isReadonlyForCs)
+        }
+        canDeleteSession={!drawerState?.isReadonlyForCs}
         saving={!!savingKey}
         onSaveStatusAndNotes={async ({ session, sessionNumber, status, lesson_topic, teacher_note, cs_note }) => {
           if (!drawerState) return;

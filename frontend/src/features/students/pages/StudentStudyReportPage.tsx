@@ -8,7 +8,7 @@ import { Button } from '../../../components/ui/Button';
 import { Select } from '../../../components/ui/Select';
 import { useToast } from '../../../components/ui/Toast';
 import { useAuth } from '../../../contexts/AuthContext';
-import { ArrowLeft, Save, CheckCircle2, Printer, Plus, Trash2 } from 'lucide-react';
+import { ArrowLeft, Save, CheckCircle2, Printer, Plus, Trash2, Lock } from 'lucide-react';
 
 export interface StageBlockData {
   date_range: string;
@@ -174,6 +174,11 @@ export const StudentStudyReportPage: React.FC = () => {
       !user?.roles?.includes('MANAGE') &&
       !user?.roles?.includes('CS')
   );
+  const isCSOnly = Boolean(
+    user?.roles?.includes('CS') &&
+      !user?.roles?.includes('ADMIN') &&
+      !user?.roles?.includes('MANAGE')
+  );
   const fromPath = (location.state as { from?: string } | null)?.from;
   const backTarget =
     fromPath === '/teacher/student-info' || isTeacherOnly
@@ -231,6 +236,12 @@ export const StudentStudyReportPage: React.FC = () => {
     selectedEnrollmentId != null
       ? enrollments.find((e) => e.id === selectedEnrollmentId)
       : undefined;
+  const isReadonlyForCs = Boolean(
+    isCSOnly &&
+      user?.id &&
+      selectedEnrollment &&
+      selectedEnrollment.cs_id !== user.id
+  );
   const isDirty = JSON.stringify(report) !== hydratedSnapshot;
 
   const handleEnrollmentChange = (val: string) => {
@@ -830,12 +841,21 @@ export const StudentStudyReportPage: React.FC = () => {
           >
             In / Xuất PDF
           </Button>
+          {isReadonlyForCs && (
+            <span
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-50 text-amber-800 border border-amber-300 text-xs font-bold"
+              title="Học viên đã chuyển sang CVHT mới, bạn chỉ có quyền xem"
+            >
+              <Lock className="w-3.5 h-3.5" />
+              <span>Chế độ Chỉ xem</span>
+            </span>
+          )}
           <Button
             variant="primary"
             size="sm"
             onClick={handleSave}
             isLoading={saving}
-            disabled={enrollments.length > 1 && selectedEnrollmentId == null}
+            disabled={isReadonlyForCs || (enrollments.length > 1 && selectedEnrollmentId == null)}
             leftIcon={<Save className="w-4 h-4" />}
           >
             Lưu báo cáo
@@ -881,7 +901,10 @@ export const StudentStudyReportPage: React.FC = () => {
         </div>
       ) : templateMode === 'JLPT' ? (
         /* MẪU BÁO CÁO HỌC TẬP JLPT (Bảng 2 cột: Ngày / Buổi học | Nhận xét tổng hợp buổi học) */
-        <div className="max-w-5xl mx-auto bg-white rounded-xl border border-slate-400 shadow-soft overflow-hidden mb-10">
+        <fieldset
+          disabled={isReadonlyForCs}
+          className="max-w-5xl mx-auto bg-white rounded-xl border border-slate-400 shadow-soft overflow-hidden mb-10 disabled:opacity-90"
+        >
           {/* Header JLPT Info */}
           <div className="bg-[#D9E1F2] border-b border-slate-400 py-4 px-5 flex flex-wrap items-center justify-between gap-3">
             <div>
@@ -907,6 +930,7 @@ export const StudentStudyReportPage: React.FC = () => {
               <Button
                 variant="outline"
                 size="sm"
+                disabled={isReadonlyForCs}
                 onClick={handleAddJlptRow}
                 leftIcon={<Plus className="w-4 h-4 text-violet-600" />}
               >
@@ -915,6 +939,7 @@ export const StudentStudyReportPage: React.FC = () => {
               <Button
                 variant="primary"
                 size="sm"
+                disabled={isReadonlyForCs}
                 onClick={handleSave}
                 isLoading={saving}
                 leftIcon={<Save className="w-4 h-4" />}
@@ -1008,6 +1033,7 @@ export const StudentStudyReportPage: React.FC = () => {
             <Button
               variant="outline"
               size="sm"
+              disabled={isReadonlyForCs}
               onClick={handleAddJlptRow}
               leftIcon={<Plus className="w-4 h-4 text-violet-600" />}
             >
@@ -1017,6 +1043,7 @@ export const StudentStudyReportPage: React.FC = () => {
             <Button
               variant="primary"
               size="sm"
+              disabled={isReadonlyForCs}
               onClick={handleSave}
               isLoading={saving}
               leftIcon={<Save className="w-4 h-4" />}
@@ -1024,10 +1051,13 @@ export const StudentStudyReportPage: React.FC = () => {
               Lưu báo cáo
             </Button>
           </div>
-        </div>
+        </fieldset>
       ) : (
         /* MẪU BÁO CÁO HỌC TẬP KAIWA (Bảng 8 phần truyền thống) */
-        <div className="max-w-5xl mx-auto bg-white rounded-xl border border-slate-400 shadow-soft overflow-hidden mb-10">
+        <fieldset
+          disabled={isReadonlyForCs}
+          className="max-w-5xl mx-auto bg-white rounded-xl border border-slate-400 shadow-soft overflow-hidden mb-10 disabled:opacity-90"
+        >
           <table className="w-full border-collapse text-xs text-slate-900">
             <tbody>
               {/* Row 1: BÁO CÁO HỌC TẬP */}
@@ -1165,7 +1195,7 @@ export const StudentStudyReportPage: React.FC = () => {
               {renderExamSection('KẾT QUẢ CUỐI KHOÁ', 'final_exam')}
             </tbody>
           </table>
-        </div>
+        </fieldset>
       )}
     </PageContainer>
   );

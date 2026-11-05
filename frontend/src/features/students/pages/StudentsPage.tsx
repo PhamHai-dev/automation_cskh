@@ -1360,27 +1360,23 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
               <span>Đổi CVHT</span>
             </button>
           )}
-          {isReadonly ? (
-            <span
-              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200 text-[10px] font-semibold"
-              title="Chế độ Chỉ xem (không có quyền chỉnh sửa)"
-            >
-              <Lock className="w-2.5 h-2.5" />
-              <span>Chỉ xem</span>
-            </span>
-          ) : (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={(e) => {
-                e.stopPropagation();
-                openModal(item);
-              }}
-              title="Chỉnh sửa học viên"
-            >
-              <Edit className="w-4 h-4 text-slate-500 hover:text-blue-600" />
-            </Button>
-          )}
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={isReadonly}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (isReadonly) return;
+              openModal(item);
+            }}
+            title={
+              isReadonly
+                ? 'Chế độ Chỉ xem (không có quyền chỉnh sửa)'
+                : 'Chỉnh sửa học viên'
+            }
+          >
+            <Edit className="w-4 h-4 text-slate-500 hover:text-blue-600" />
+          </Button>
         </div>
       );
     },
@@ -2878,21 +2874,26 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
                     Chuyển CVHT
                   </Button>
                 )}
-                {!isStudentReadonlyForUser(viewingStudent) && (
-                  <Button
-                    type="button"
-                    variant="primary"
-                    size="sm"
-                    onClick={() => {
-                      const target = viewingStudent;
-                      setViewingStudent(null);
-                      openModal(target);
-                    }}
-                    leftIcon={<Edit className="w-4 h-4" />}
-                  >
-                    Chỉnh sửa hồ sơ
-                  </Button>
-                )}
+                <Button
+                  type="button"
+                  variant="primary"
+                  size="sm"
+                  disabled={isStudentReadonlyForUser(viewingStudent)}
+                  onClick={() => {
+                    if (isStudentReadonlyForUser(viewingStudent)) return;
+                    const target = viewingStudent;
+                    setViewingStudent(null);
+                    openModal(target);
+                  }}
+                  leftIcon={<Edit className="w-4 h-4" />}
+                  title={
+                    isStudentReadonlyForUser(viewingStudent)
+                      ? 'Chế độ Chỉ xem (không có quyền chỉnh sửa)'
+                      : 'Chỉnh sửa hồ sơ học viên'
+                  }
+                >
+                  Chỉnh sửa hồ sơ
+                </Button>
                 <Button
                   type="button"
                   variant="outline"

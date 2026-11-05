@@ -976,8 +976,8 @@ export const AttendanceSessionDrawer: React.FC<AttendanceSessionDrawerProps> = (
             </Button>
           )}
 
-          {canEditAnything &&
-            (isEditing ? (
+          {canEditAnything ? (
+            isEditing ? (
               <Button
                 variant="primary"
                 size="sm"
@@ -998,7 +998,19 @@ export const AttendanceSessionDrawer: React.FC<AttendanceSessionDrawerProps> = (
               >
                 Sửa thông tin
               </Button>
-            ))}
+            )
+          ) : (
+            <Button
+              variant="primary"
+              size="sm"
+              type="button"
+              disabled
+              leftIcon={<Edit3 className="h-3.5 w-3.5" />}
+              title="Chế độ Chỉ xem (không có quyền chỉnh sửa)"
+            >
+              Sửa thông tin
+            </Button>
+          )}
         </div>
       </div>
     </div>,

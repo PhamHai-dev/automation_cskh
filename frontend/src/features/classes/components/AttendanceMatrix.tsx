@@ -72,6 +72,8 @@ export interface StudentRow {
   sale_name?: string | null;        // Sale phụ trách
   program_type?: 'JLPT' | 'KAIWA' | string; // Khóa học (JLPT / KAIWA)
   cs_staff_code?: string | null;    // Mã CVHT phụ trách
+  cs_id?: number | null;            // ID CVHT phụ trách chính hiện tại
+  is_readonly_for_cs?: boolean;     // Học viên đã bàn giao, CSKH cũ chỉ xem (không được điểm danh/ghi chú)
   attendance_stats?: {
     ADMIN?: { totalAttended: number; totalAbsentA: number; totalAbsentC: number; totalTeacherD: number };
     TEACHER?: { totalAttended: number; totalAbsentA: number; totalAbsentC: number; totalTeacherD: number };
@@ -1010,7 +1012,9 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
 
   const validVisibleStudentIds = useMemo(() => {
     const source = activeTab === 'quick' ? quickVisibleStudents : students;
-    return source.filter((student) => student.enrollment_class_id > 0).map((student) => student.enrollment_class_id);
+    return source
+      .filter((student) => student.enrollment_class_id > 0 && !student.is_readonly_for_cs)
+      .map((student) => student.enrollment_class_id);
   }, [activeTab, quickVisibleStudents, students]);
   const selectedVisibleCount = validVisibleStudentIds.filter((id) => selectedStudents.has(id)).length;
   const allVisibleSelected = validVisibleStudentIds.length > 0 && selectedVisibleCount === validVisibleStudentIds.length;
@@ -1864,12 +1868,12 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
   };
 
   // CVHT: 1 chạm "Khớp theo GV" — sao chép điểm danh GV sang cs_status cho mọi ca trong ngày
-  // mà GV đã chấm nhưng CSKH chưa chấm.
+  // mà GV đã chấm nhưng CSKH chưa chấm (bỏ qua học viên ở chế độ chỉ xem).
   const pendingMatchTeacherCount = useMemo(() => {
     if (activeSide !== 'CS') return 0;
     let count = 0;
     students.forEach((st) => {
-      if (st.enrollment_class_id <= 0) return;
+      if (st.enrollment_class_id <= 0 || st.is_readonly_for_cs) return;
       getSessionsForCell(st.enrollment_class_id, quickDate).forEach((sess) => {
         const att = rawAttendanceMap.get(`${st.enrollment_class_id}_session_${sess.id}`);
         if (att?.teacher_status && !att.cs_status) count++;
@@ -1885,7 +1889,7 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
     }
     const groups = new Map<string, { classId: number; sessionId: number; items: { enrollment_class_id: number; status: AttendanceStatus }[] }>();
     students.forEach((st) => {
-      if (st.enrollment_class_id <= 0) return;
+      if (st.enrollment_class_id <= 0 || st.is_readonly_for_cs) return;
       const daySessions = getSessionsForCell(st.enrollment_class_id, quickDate);
       daySessions.forEach((sess) => {
         const att = rawAttendanceMap.get(`${st.enrollment_class_id}_session_${sess.id}`);
@@ -2005,7 +2009,11 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
         : activeSide === 'CS'
         ? Boolean(rawAtt?.cs_status)
         : isAttendanceFinalized(rawAtt);
-    const shouldEdit = defaultEditing !== undefined ? defaultEditing : !hasMyMark;
+    const shouldEdit = st.is_readonly_for_cs
+      ? false
+      : defaultEditing !== undefined
+      ? defaultEditing
+      : !hasMyMark;
     setDrawerState({ student: st, dateStr, caNumber, defaultEditing: shouldEdit });
   };
 
@@ -2035,7 +2043,10 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
           id={`attendance-cell-${st.enrollment_class_id}-${dateStr}`}
           studentName={st.full_name}
           dateLabel={formattedDateLabel}
-          onClick={() => openDrawer(st, dateStr, 1, true)}
+          onClick={() => {
+            if (st.is_readonly_for_cs) return;
+            openDrawer(st, dateStr, 1, true);
+          }}
         />
       );
     }
@@ -2068,10 +2079,18 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
         <button
           id={`attendance-add-session-${st.enrollment_class_id}-${dateStr}`}
           type="button"
-          onClick={() => openDrawer(st, dateStr, nextSessionNumber, true)}
+          disabled={Boolean(st.is_readonly_for_cs)}
+          onClick={() => {
+            if (st.is_readonly_for_cs) return;
+            openDrawer(st, dateStr, nextSessionNumber, true);
+          }}
           aria-label={`Thêm Ca ${nextSessionNumber} cho ${st.full_name} ngày ${formattedDateLabel}`}
-          title={`Thêm ca tiếp theo (Ca ${nextSessionNumber})`}
-          className="inline-flex h-6 w-5 items-center justify-center rounded-md border border-dashed border-primary/50 text-xs font-extrabold text-primary opacity-0 group-hover/cell:opacity-100 focus:opacity-100 transition hover:bg-primary-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+          title={
+            st.is_readonly_for_cs
+              ? 'Chế độ Chỉ xem (không được thêm ca)'
+              : `Thêm ca tiếp theo (Ca ${nextSessionNumber})`
+          }
+          className="inline-flex h-6 w-5 items-center justify-center rounded-md border border-dashed border-primary/50 text-xs font-extrabold text-primary opacity-0 group-hover/cell:opacity-100 focus:opacity-100 transition hover:bg-primary-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 disabled:opacity-40 disabled:cursor-not-allowed"
         >
           +
         </button>
@@ -2173,10 +2192,15 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
                   <>
                     <button
                       type="button"
-                      disabled={savingSessionId !== null || isDeletingThisCa}
-                      onClick={() => setActiveInlinePickerKey(pickerKey)}
+                      disabled={savingSessionId !== null || isDeletingThisCa || Boolean(st.is_readonly_for_cs)}
+                      onClick={() => {
+                        if (st.is_readonly_for_cs) return;
+                        setActiveInlinePickerKey(pickerKey);
+                      }}
                       title={
-                        cfg
+                        st.is_readonly_for_cs
+                          ? 'Chế độ Chỉ xem (không được điểm danh)'
+                          : cfg
                           ? `Ca ${caNo}: ${cfg.label} — bấm để đổi trạng thái`
                           : `Bấm để chọn trạng thái điểm danh Ca ${caNo} cho ${st.full_name}`
                       }
@@ -2184,7 +2208,7 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
                         cfg
                           ? `${cfg.bg} ${cfg.text} ${cfg.border} shadow-2xs hover:ring-2 hover:ring-primary/40`
                           : 'min-w-9 border-border/80 bg-white text-slate-600 hover:border-primary/60 hover:bg-primary-soft/30 hover:text-primary'
-                      } disabled:opacity-50`}
+                      } disabled:opacity-50 disabled:cursor-not-allowed`}
                     >
                       {cfg ? (
                         <>
@@ -2208,10 +2232,17 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
                     {caNo === totalCa && classId && (
                       <button
                         type="button"
-                        disabled={isAddingCa}
-                        onClick={() => handleAddCaForStudent(st, dateStr)}
-                        title={`Thêm Ca ${totalCa + 1} trong ngày này`}
-                        className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-dashed border-primary/50 bg-white text-xs font-extrabold text-primary transition hover:border-primary hover:bg-primary-soft disabled:opacity-50"
+                        disabled={isAddingCa || Boolean(st.is_readonly_for_cs)}
+                        onClick={() => {
+                          if (st.is_readonly_for_cs) return;
+                          handleAddCaForStudent(st, dateStr);
+                        }}
+                        title={
+                          st.is_readonly_for_cs
+                            ? 'Chế độ Chỉ xem (không được thêm ca)'
+                            : `Thêm Ca ${totalCa + 1} trong ngày này`
+                        }
+                        className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-dashed border-primary/50 bg-white text-xs font-extrabold text-primary transition hover:border-primary hover:bg-primary-soft disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         <Plus className="h-3.5 w-3.5" />
                       </button>
@@ -2220,14 +2251,19 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
                     {sess && classId && (
                       <button
                         type="button"
-                        disabled={isDeletingThisCa}
-                        onClick={() => requestDeleteCa(classId, st.class_name, dateStr, caNo)}
+                        disabled={isDeletingThisCa || Boolean(st.is_readonly_for_cs)}
+                        onClick={() => {
+                          if (st.is_readonly_for_cs) return;
+                          requestDeleteCa(classId, st.class_name, dateStr, caNo);
+                        }}
                         title={
-                          countMarkedInCa(sess) === 0
+                          st.is_readonly_for_cs
+                            ? 'Chế độ Chỉ xem (không được xóa ca)'
+                            : countMarkedInCa(sess) === 0
                             ? `Gỡ bỏ Ca ${caNo} (chưa chấm điểm danh)`
                             : `Xóa Ca ${caNo} của lớp`
                         }
-                        className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-transparent text-slate-400 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-50"
+                        className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-transparent text-slate-400 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
@@ -2362,7 +2398,7 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
   };
 
   // Cột "Ghi chú CSKH" (Tab 1): CS chấm trực tiếp theo từng Ca (autosave 600ms/blur/Enter);
-  // role khác xem chỉ đọc. Chỉ lưu khi ca đã tồn tại (tránh tạo "ca ma").
+  // role khác hoặc học viên chỉ xem (đã chuyển sang CVHT mới) thì chỉ đọc. Chỉ lưu khi ca đã tồn tại (tránh tạo "ca ma").
   const renderQuickCsNoteStack = (st: StudentRow, dateStr: string) => {
     if (st.enrollment_class_id <= 0) {
       return <span className="whitespace-nowrap rounded bg-slate-100/80 px-2 py-0.5 text-[10px] italic text-text-muted">Chưa xếp lớp</span>;
@@ -2370,6 +2406,7 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
     const daySessions = getSessionsForCell(st.enrollment_class_id, dateStr);
     const totalCa = Math.max(1, daySessions.length);
     const editable = activeSide === 'CS';
+    const isReadonlyForCs = Boolean(st.is_readonly_for_cs);
 
     const persist = (caNo: number, session: ClassSession | undefined, rawVal: string) => {
       const draftKey = `${st.enrollment_class_id}_${dateStr}_s${caNo}`;
@@ -2436,8 +2473,9 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
               <input
                 type="text"
                 value={noteVal}
-                disabled={!session}
+                disabled={!session || isReadonlyForCs}
                 onChange={(e) => {
+                  if (isReadonlyForCs) return;
                   const val = e.target.value;
                   csNoteDraftsRef.current[draftKey] = val;
                   setCsNoteDrafts((prev) => ({ ...prev, [draftKey]: val }));
@@ -3411,10 +3449,16 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
                         <input
                           type="checkbox"
                           checked={isSelected}
-                          disabled={st.enrollment_class_id <= 0}
+                          disabled={st.enrollment_class_id <= 0 || Boolean(st.is_readonly_for_cs)}
                           onChange={() => handleToggleSelectStudent(st.enrollment_class_id)}
                           className="w-3.5 h-3.5 rounded text-primary focus:ring-primary border-slate-300 cursor-pointer accent-primary disabled:opacity-40 disabled:cursor-not-allowed"
-                          title={st.enrollment_class_id <= 0 ? 'Học viên chưa được xếp lớp' : 'Chọn học viên'}
+                          title={
+                            st.is_readonly_for_cs
+                              ? 'Chế độ Chỉ xem (Không được điểm danh)'
+                              : st.enrollment_class_id <= 0
+                              ? 'Học viên chưa được xếp lớp'
+                              : 'Chọn học viên'
+                          }
                         />
                       </td>
 
@@ -3433,7 +3477,17 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
                       {/* Cột B: Họ tên */}
                       {isColVisible('full_name') && (
                       <td className="px-4 py-2.5 border-r border-border/60 font-bold text-text-primary whitespace-nowrap">
-                        {st.full_name}
+                        <div className="flex items-center gap-1.5">
+                          <span>{st.full_name}</span>
+                          {st.is_readonly_for_cs && (
+                            <span
+                              className="inline-flex items-center px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300 text-[10px] font-semibold"
+                              title="Học viên đã chuyển sang CVHT mới, bạn chỉ có quyền xem"
+                            >
+                              Chỉ xem
+                            </span>
+                          )}
+                        </div>
                       </td>
                       )}
 
@@ -3956,10 +4010,16 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
                         <input
                           type="checkbox"
                           checked={isSelected}
-                          disabled={st.enrollment_class_id <= 0}
+                          disabled={st.enrollment_class_id <= 0 || Boolean(st.is_readonly_for_cs)}
                           onChange={() => handleToggleSelectStudent(st.enrollment_class_id)}
                           className="w-3.5 h-3.5 rounded text-primary focus:ring-primary border-slate-300 cursor-pointer accent-primary disabled:opacity-40 disabled:cursor-not-allowed"
-                          title={st.enrollment_class_id <= 0 ? 'Học viên chưa được xếp lớp' : 'Chọn học viên'}
+                          title={
+                            st.is_readonly_for_cs
+                              ? 'Chế độ Chỉ xem (Không được điểm danh)'
+                              : st.enrollment_class_id <= 0
+                              ? 'Học viên chưa được xếp lớp'
+                              : 'Chọn học viên'
+                          }
                         />
                       </td>
                       {/* STT */}
@@ -3977,7 +4037,17 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
                       {/* Họ và tên (B) */}
                       {isColVisible('full_name') && (
                       <td className={`px-4 py-2.5 border-r-2 border-border/80 font-bold text-text-primary whitespace-nowrap bg-slate-100 z-10 w-[180px] min-w-[180px] max-w-[180px] overflow-hidden shadow-[4px_0_6px_-2px_rgba(0,0,0,0.06)] sticky ${isColVisible('external_id') ? 'left-[190px]' : 'left-[80px]'}`}>
-                        {st.full_name}
+                        <div className="flex items-center gap-1.5 overflow-hidden">
+                          <span className="truncate">{st.full_name}</span>
+                          {st.is_readonly_for_cs && (
+                            <span
+                              className="shrink-0 inline-flex items-center px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300 text-[9px] font-semibold"
+                              title="Học viên đã chuyển sang CVHT mới, bạn chỉ có quyền xem"
+                            >
+                              Chỉ xem
+                            </span>
+                          )}
+                        </div>
                       </td>
                       )}
 
@@ -4618,9 +4688,13 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
         side={activeSide}
         defaultEditing={drawerState?.defaultEditing}
         canEditTeacherFields={activeSide === 'TEACHER'}
-        canEditCsFields={activeSide === 'CS'}
-        canMarkStatus={activeSide === 'TEACHER' || activeSide === 'CS' || activeSide === 'ADMIN'}
-        canDeleteSession
+        canEditCsFields={activeSide === 'CS' && !drawerState?.student.is_readonly_for_cs}
+        canMarkStatus={
+          activeSide === 'TEACHER' ||
+          activeSide === 'ADMIN' ||
+          (activeSide === 'CS' && !drawerState?.student.is_readonly_for_cs)
+        }
+        canDeleteSession={!drawerState?.student.is_readonly_for_cs}
         saving={savingSessionId !== null}
         onSaveStatusAndNotes={async ({ session, sessionNumber, status, lesson_topic, teacher_note, cs_note }) => {
           if (!drawerState) return;
