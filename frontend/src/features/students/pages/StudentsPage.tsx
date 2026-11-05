@@ -203,7 +203,11 @@ const InlineEditableCell: React.FC<InlineEditableCellProps> = ({
   );
 };
 
-export const StudentsPage: React.FC = () => {
+export interface StudentsPageProps {
+  mode?: 'students' | 'care_reports';
+}
+
+export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
   const toast = useToast();
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -214,12 +218,11 @@ export const StudentsPage: React.FC = () => {
 
   const [searchParams, setSearchParams] = useSearchParams();
 
-  // Active tab state: 'students' (Tab 1) | 'care_reports' (Tab 2)
-  const [activeTab, setActiveTab] = useState<'students' | 'care_reports'>(() =>
-    searchParams.get('tab') === 'care_reports' ? 'care_reports' : 'students'
-  );
+  // Active mode: 'students' (Hồ sơ học viên) | 'care_reports' (Báo cáo học tập & chăm sóc)
+  const activeTab: 'students' | 'care_reports' =
+    mode ?? (searchParams.get('tab') === 'care_reports' ? 'care_reports' : 'students');
 
-  // Column visibility preference (per user, per tab)
+  // Column visibility preference (per user, per page)
   const { visible: visibleColumns } = useColumnVisibility(
     activeTab === 'students' ? 'students.tab1' : 'students.tab2',
   );
@@ -284,8 +287,7 @@ export const StudentsPage: React.FC = () => {
   // Sync filters and pagination to URL
   useEffect(() => {
     const next = new URLSearchParams(searchParams);
-    if (activeTab !== 'students') next.set('tab', activeTab);
-    else next.delete('tab');
+    next.delete('tab');
     if (searchTerm.trim()) next.set('search', searchTerm.trim());
     else next.delete('search');
     if (programFilter !== 'ALL') next.set('program', programFilter);
@@ -1625,7 +1627,9 @@ export const StudentsPage: React.FC = () => {
             type="button"
             onClick={(e) => {
               e.stopPropagation();
-              navigate(`/students/${item.id}/study-report`);
+              navigate(`/students/${item.id}/study-report`, {
+                state: { from: activeTab === 'care_reports' ? '/students/care-reports' : '/students' },
+              });
             }}
             className="inline-flex items-center gap-1 text-[11px] font-bold text-primary bg-primary-soft border border-primary/30 hover:bg-blue-100 px-2.5 py-1 rounded-lg transition-colors cursor-pointer"
             title={`Mở Báo cáo học tập của ${item.full_name}`}
@@ -1959,7 +1963,7 @@ export const StudentsPage: React.FC = () => {
     <PageContainer>
       {/* Page Header */}
       <PageHeader
-        title="Danh sách học viên"
+        title={activeTab === 'care_reports' ? 'Báo cáo học tập & Chăm sóc' : 'Hồ sơ học viên'}
         actions={
           <div className="flex items-center gap-2">
             {activeTab === 'care_reports' && (
@@ -1983,26 +1987,6 @@ export const StudentsPage: React.FC = () => {
             </Button>
           </div>
         }
-      />
-
-      <HorizontalTabs
-        ariaLabel="Nội dung danh sách học viên"
-        value={activeTab}
-        onChange={setActiveTab}
-        className="mb-4"
-        items={[
-          {
-            value: 'students',
-            label: 'Hồ sơ học viên',
-            icon: <Users />,
-            badge: `${totalStudents} HV`,
-          },
-          {
-            value: 'care_reports',
-            label: 'Báo cáo học tập & chăm sóc',
-            icon: <FileText />,
-          },
-        ]}
       />
 
       {/* Unified FilterBar */}

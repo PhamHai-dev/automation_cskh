@@ -36,7 +36,13 @@ export const LoginPage: React.FC = () => {
       const response = await apiClient.post('/auth/login', { email, password });
       login(response.data.accessToken, response.data.user);
       toast.success(`Chào mừng trở lại, ${response.data.user?.name || response.data.user?.email}!`);
-      navigate('/');
+      const roles: string[] = response.data.user?.roles || [];
+      const isTeacherOnly =
+        roles.includes('TEACHER') &&
+        !roles.includes('ADMIN') &&
+        !roles.includes('MANAGE') &&
+        !roles.includes('CS');
+      navigate(isTeacherOnly ? '/teacher/my-sessions' : '/dashboard');
     } catch (err: any) {
       const message = err.response?.data?.message || 'Đăng nhập không thành công. Vui lòng kiểm tra email hoặc mật khẩu.';
       setError(message);

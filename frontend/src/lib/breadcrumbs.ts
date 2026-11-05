@@ -16,8 +16,8 @@ interface RouteMap {
 
 const ROUTE_MAP: RouteMap[] = [
   // ── Tổng quan ────────────────────────────────────────────────────────────
-  { prefix: '/', group: 'Tổng quan', page: 'Trang chủ' },
-  { prefix: '/dashboard', group: 'Tổng quan', page: 'Báo cáo thống kê' },
+  { prefix: '/', group: 'Tổng quan', page: 'Dashboard thống kê' },
+  { prefix: '/dashboard', group: 'Tổng quan', page: 'Dashboard thống kê' },
 
   // ── Chăm sóc học viên ────────────────────────────────────────────────────
   { prefix: '/students', group: 'Chăm sóc học viên', page: 'Danh sách học viên' },

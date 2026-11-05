@@ -118,7 +118,7 @@ export const PreferencesPage: React.FC = () => {
         title="Cấu hình cá nhân"
         breadcrumbs={[{ label: 'Cá nhân', href: '/settings/preferences' }]}
         actions={
-          <Button variant="ghost" size="sm" onClick={() => navigate('/')}>
+          <Button variant="ghost" size="sm" onClick={() => navigate('/dashboard')}>
             Về trang chủ
           </Button>
         }

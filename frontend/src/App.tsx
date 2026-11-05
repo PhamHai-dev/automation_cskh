@@ -3,7 +3,6 @@ import { AuthProvider } from './contexts/AuthContext';
 import { ProtectedRoute } from './components/auth/ProtectedRoute';
 import { AppLayout } from './layouts/AppLayout';
 import { LoginPage } from './pages/auth/LoginPage';
-import { HomePage } from './pages/home/HomePage';
 import { UsersPage } from './pages/admin/UsersPage';
 import {
   AdminConfigPage,
@@ -52,8 +51,8 @@ function App() {
         {/* Protected App Routes */}
         <Route element={<ProtectedRoute />}>
           <Route element={<AppLayout />}>
-            {/* Command Center / Home */}
-            <Route path="/" element={<HomePage />} />
+            {/* Default Home Redirect */}
+            <Route path="/" element={<Navigate to="/dashboard" replace />} />
 
             {/* Admin Settings */}
             <Route element={<ProtectedRoute allowedRoles={['ADMIN']} />}>
@@ -158,7 +157,7 @@ function App() {
         </Route>
 
         {/* Catch-all */}
-        <Route path="*" element={<Navigate to="/" replace />} />
+        <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
       </ToastProvider>
     </AuthProvider>

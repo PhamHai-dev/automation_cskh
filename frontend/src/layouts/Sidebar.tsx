@@ -4,7 +4,6 @@ import { useAuth } from '../contexts/AuthContext';
 import { reconciliationApi } from '../features/attendance/api/reconciliation.api';
 import {
   Home,
-  LayoutDashboard,
   HeartHandshake,
   Users,
   GraduationCap,
@@ -89,15 +88,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
       title: 'TỔNG QUAN',
       items: [
         {
-          name: 'Trang chủ Điều phối',
-          path: '/',
-          icon: <Home className="w-5 h-5 shrink-0" />,
-          end: true,
-        },
-        {
-          name: 'Báo cáo Thống kê',
+          name: 'Dashboard thống kê',
           path: '/dashboard',
-          icon: <LayoutDashboard className="w-5 h-5 shrink-0" />,
+          icon: <Home className="w-5 h-5 shrink-0" />,
           allowedRoles: ['ADMIN', 'MANAGE', 'CS'],
         },
       ],
@@ -314,7 +307,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     <aside className="h-full w-64 bg-surface border-r border-border/80 flex flex-col select-none">
       {/* Brand Header */}
       <div className="h-16 flex items-center justify-between px-4 border-b border-border/80 shrink-0">
-        <NavLink to="/" className="flex items-center gap-3 overflow-hidden">
+        <NavLink to={isTeacherOnly ? '/teacher/my-sessions' : '/dashboard'} className="flex items-center gap-3 overflow-hidden">
           <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-primary to-accent flex items-center justify-center text-white shadow-md shadow-primary/20 shrink-0">
             <Sparkles className="w-5 h-5" />
           </div>
