@@ -800,12 +800,13 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
     }
   };
 
-  // Handler to update JLPT program_metadata directly via studentsApi.update
+  // Update metadata on the specific enrollment selected by the row. Never merge enrollments.
   const handleSaveProgramMetadata = async (
     student: Student,
-    patch: Record<string, any>
+    patch: Record<string, any>,
+    enrollmentId?: number
   ) => {
-    const enr = student.enrollments?.[0];
+    const enr = student.enrollments?.find((entry) => entry.id === enrollmentId) || student.enrollments?.[0];
     if (!enr) return;
     const nextMeta = {
       ...(enr.program_metadata || {}),
@@ -822,8 +823,8 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
           st.id === student.id
             ? {
                 ...st,
-                enrollments: st.enrollments?.map((e, idx) =>
-                  idx === 0 ? { ...e, program_metadata: nextMeta } : e
+                enrollments: st.enrollments?.map((e) =>
+                  e.id === enr.id ? { ...e, program_metadata: nextMeta } : e
                 ),
               }
             : st
@@ -1646,6 +1647,30 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
         );
       },
     },
+    ...(isJlptMode
+      ? [
+          {
+            key: 'first_class_exam',
+            header: 'Thi đầu vào',
+            cell: (item: Student) => <span className="text-slate-600 text-xs whitespace-nowrap">{item.enrollments?.[0]?.program_metadata?.first_class_exam ?? ''}</span>,
+          },
+          {
+            key: 'first_class_test',
+            header: 'Kiểm tra đầu vào',
+            cell: (item: Student) => <span className="text-slate-600 text-xs whitespace-nowrap">{item.enrollments?.[0]?.program_metadata?.first_class_test ?? ''}</span>,
+          },
+          {
+            key: 'first_class_special_support',
+            header: 'HT đặc biệt đầu vào',
+            cell: (item: Student) => <span className="text-slate-600 text-xs whitespace-nowrap">{item.enrollments?.[0]?.program_metadata?.first_class_special_support ?? ''}</span>,
+          },
+          {
+            key: 'first_class_renewal',
+            header: 'Tái tục đầu vào',
+            cell: (item: Student) => <span className="text-slate-600 text-xs whitespace-nowrap">{item.enrollments?.[0]?.program_metadata?.first_class_renewal ?? ''}</span>,
+          },
+        ]
+      : []),
     {
       key: 'start_time',
       header: 'Giờ học',
@@ -1839,24 +1864,28 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
     {
       key: 'study_report_url',
       header: 'Báo cáo học tập',
-      cell: (item: Student) => (
-        <div className="flex items-center justify-center whitespace-nowrap">
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              navigate(`/students/${item.id}/study-report`, {
-                state: { from: activeTab === 'care_reports' ? '/students/care-reports' : '/students' },
-              });
-            }}
-            className="inline-flex items-center gap-1 text-[11px] font-bold text-primary bg-primary-soft border border-primary/30 hover:bg-blue-100 px-2.5 py-1 rounded-lg transition-colors cursor-pointer"
-            title={`Mở Báo cáo học tập của ${item.full_name}`}
-          >
-            <FileText className="w-3.5 h-3.5 text-primary shrink-0" />
-            <span>Mở báo cáo</span>
-          </button>
-        </div>
-      ),
+      cell: (item: Student) => {
+        const reportUrl = item.enrollments?.[0]?.study_report_url;
+        if (!reportUrl) return <span className="text-slate-400 text-xs"> </span>;
+        return (
+          <div className="flex items-center justify-center whitespace-nowrap">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                navigate(`/students/${item.id}/study-report`, {
+                  state: { from: activeTab === 'care_reports' ? '/students/care-reports' : '/students' },
+                });
+              }}
+              className="inline-flex items-center gap-1 text-[11px] font-bold text-primary bg-primary-soft border border-primary/30 hover:bg-blue-100 px-2.5 py-1 rounded-lg transition-colors cursor-pointer"
+              title={`Mở Báo cáo học tập của ${item.full_name}`}
+            >
+              <FileText className="w-3.5 h-3.5 text-primary shrink-0" />
+              <span>Mở báo cáo</span>
+            </button>
+          </div>
+        );
+      },
     },
     {
       key: 'exchange_info',
@@ -2144,6 +2173,34 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
           </span>
         );
       },
+    },
+    {
+      key: 'handover_month',
+      header: 'Tháng bàn giao',
+      cell: (item) => <span className="text-slate-600 text-xs whitespace-nowrap">{item.enrollments?.[0]?.program_metadata?.handover_month ?? ''}</span>,
+    },
+    {
+      key: 'end_week_year',
+      header: 'Tuần/năm kết thúc',
+      cell: (item) => {
+        const meta = item.enrollments?.[0]?.program_metadata;
+        const value = [meta?.end_week, meta?.end_year].filter((v) => v !== null && v !== undefined && String(v) !== '').join('/');
+        return <span className="text-slate-600 text-xs whitespace-nowrap">{value}</span>;
+      },
+    },
+    {
+      key: 'hold_week_year',
+      header: 'Tuần/năm bảo lưu',
+      cell: (item) => {
+        const meta = item.enrollments?.[0]?.program_metadata;
+        const value = [meta?.hold_week, meta?.hold_year].filter((v) => v !== null && v !== undefined && String(v) !== '').join('/');
+        return <span className="text-slate-600 text-xs whitespace-nowrap">{value}</span>;
+      },
+    },
+    {
+      key: 'renewal_deadline',
+      header: 'Hạn tái tục',
+      cell: (item) => <span className="text-slate-600 text-xs whitespace-nowrap">{item.enrollments?.[0]?.program_metadata?.renewal_deadline ?? ''}</span>,
     },
     {
       key: 'handed_over_at',

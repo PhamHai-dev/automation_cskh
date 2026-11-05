@@ -123,12 +123,7 @@ const createInitialReportData = (raw?: Partial<StudyReportData> | null): StudyRe
         date: r?.date ?? r?.dateLabel ?? '',
         summary_note: r?.summary_note ?? r?.comment ?? '',
       }))
-    : [
-        {
-          date: 'Thứ sáu - 03/04',
-          summary_note: '',
-        },
-      ],
+    : [],
 });
 
 const hydrateReportFromEnrollment = (enr?: Enrollment): StudyReportData => {

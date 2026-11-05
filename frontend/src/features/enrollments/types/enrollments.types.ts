@@ -11,6 +11,16 @@ export interface ProgramMetadata {
   test_scores?: Record<string, string | number | null>;
   special_support?: Record<string, string | null>;
   renewal_note?: string | null;
+  handover_month?: string | null;
+  end_week?: string | number | null;
+  end_year?: string | number | null;
+  hold_week?: string | number | null;
+  hold_year?: string | number | null;
+  renewal_deadline?: string | null;
+  first_class_exam?: string | null;
+  first_class_test?: string | null;
+  first_class_special_support?: string | null;
+  first_class_renewal?: string | null;
   latest_class_code?: string | null;
   tuition_fee?: string | number | null;
   paid_month?: string | null;

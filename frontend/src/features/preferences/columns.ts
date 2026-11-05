@@ -144,12 +144,24 @@ export const STUDENT_TAB2_COLUMNS: ColumnMeta[] = [
   { key: 'test_scores_summary',    label: 'Kiểm tra (L1–L7)',       defaultVisible: true },
   { key: 'special_support',        label: 'HT Đặc biệt (L1–L3)',    defaultVisible: true },
   { key: 'renewal_note',           label: 'Tái tục',                defaultVisible: true },
+  { key: 'first_class_exam',       label: 'Thi đầu vào',             defaultVisible: true },
+  { key: 'first_class_test',       label: 'Kiểm tra đầu vào',         defaultVisible: true },
+  { key: 'first_class_special_support', label: 'HT đặc biệt đầu vào',  defaultVisible: true },
+  { key: 'first_class_renewal',    label: 'Tái tục đầu vào',          defaultVisible: true },
+  { key: 'handover_month',         label: 'Tháng bàn giao',           defaultVisible: true },
+  { key: 'end_week_year',          label: 'Tuần/năm kết thúc',         defaultVisible: true },
+  { key: 'hold_week_year',         label: 'Tuần/năm bảo lưu',          defaultVisible: true },
+  { key: 'renewal_deadline',       label: 'Hạn tái tục',              defaultVisible: true },
   // Dynamic care session columns are not configurable (milestone-driven)
   { key: 'post_course_care',       label: 'Chăm sóc sau kết thúc',  defaultVisible: true },
   { key: 'end_date',               label: 'Ngày kết thúc',          defaultVisible: false },
   { key: 'handed_over_at',         label: 'Ngày bàn giao',          defaultVisible: false },
   { key: 'paid_month',             label: 'Tháng nộp học phí',      defaultVisible: false },
   { key: 'account_created_at',     label: 'Ngày tạo tài khoản',     defaultVisible: false },
+  { key: 'handover_month',         label: 'Tháng bàn giao',           defaultVisible: true },
+  { key: 'end_week_year',          label: 'Tuần/năm kết thúc',         defaultVisible: true },
+  { key: 'hold_week_year',         label: 'Tuần/năm bảo lưu',          defaultVisible: true },
+  { key: 'renewal_deadline',       label: 'Hạn tái tục',              defaultVisible: true },
 ];
 
 export const HOME_QUICK_LINKS_COLUMNS: ColumnMeta[] = [
