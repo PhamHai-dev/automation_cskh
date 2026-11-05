@@ -216,7 +216,12 @@ describe('Query Validation & Security/Pagination across 5 modules', () => {
       const enrSome = callArgs.where.AND[0].enrollments.some;
       expect(enrSome.AND).toEqual(
         expect.arrayContaining([
-          { cs_id: { in: [10] } },
+          {
+            OR: [
+              { cs_id: { in: [10] } },
+              { cs_viewers: { some: { cs_id: { in: [10] } } } },
+            ],
+          },
           { program_type: 'KAIWA' },
           {
             OR: [
@@ -258,7 +263,13 @@ describe('Query Validation & Security/Pagination across 5 modules', () => {
         expect.objectContaining({
           where: {
             enrollments: {
-              some: { cs_id: { in: [10] }, program_type: 'JLPT' },
+              some: {
+                OR: [
+                  { cs_id: { in: [10] } },
+                  { cs_viewers: { some: { cs_id: { in: [10] } } } },
+                ],
+                program_type: 'JLPT',
+              },
             },
           },
         }),
@@ -370,7 +381,12 @@ describe('Query Validation & Security/Pagination across 5 modules', () => {
       });
 
       const findManyCall = mockPrisma.enrollment.findMany.mock.calls[0][0];
-      expect(findManyCall.where).toEqual({ cs_id: 10 });
+      expect(findManyCall.where).toEqual({
+        OR: [
+          { cs_id: 10 },
+          { cs_viewers: { some: { cs_id: 10 } } },
+        ],
+      });
       const classSessionsInclude =
         findManyCall.include.enrollment_classes.include.class.include.class_sessions;
       expect(classSessionsInclude.include).toBeUndefined();
@@ -520,7 +536,6 @@ describe('Query Validation & Security/Pagination across 5 modules', () => {
         expect.arrayContaining([
           { id: { in: [10, 20] } },
           { model_type: 'ONE_TO_ONE' },
-          { active: true },
           { class_teachers: { some: { teacher: { name: { contains: 'Tanaka' } } } } },
           { class_teachers: { some: { teacher: { code: { contains: 'GV_TNK' } } } } },
           { OR: [{ class_name: { contains: 'N3-01' } }, { class_code: { contains: 'N3-01' } }] },
@@ -537,7 +552,12 @@ describe('Query Validation & Security/Pagination across 5 modules', () => {
       });
       expect(enrWhereStudying.AND).toEqual(
         expect.arrayContaining([
-          { cs_id: 10 },
+          {
+            OR: [
+              { cs_id: 10 },
+              { cs_viewers: { some: { cs_id: 10 } } },
+            ],
+          },
           {
             OR: [
               { status: 'STUDYING' },
@@ -581,7 +601,12 @@ describe('Query Validation & Security/Pagination across 5 modules', () => {
       });
       expect(enrWhereWaiting.AND).toEqual(
         expect.arrayContaining([
-          { cs_id: 10 },
+          {
+            OR: [
+              { cs_id: 10 },
+              { cs_viewers: { some: { cs_id: 10 } } },
+            ],
+          },
           {
             status: { in: ['WAITING_CLASS', 'NOT_STARTED'] },
             enrollment_classes: { none: {} },

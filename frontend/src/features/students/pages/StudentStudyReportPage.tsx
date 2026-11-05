@@ -183,11 +183,15 @@ export const StudentStudyReportPage: React.FC = () => {
   const backTarget =
     fromPath === '/teacher/student-info' || isTeacherOnly
       ? '/teacher/student-info'
-      : '/students';
+      : fromPath === '/students'
+      ? '/students'
+      : '/students/care-reports';
   const backLabel =
     backTarget === '/teacher/student-info'
       ? 'Quay lại Thông tin HV & Buổi học'
-      : 'Quay lại Danh sách học viên';
+      : backTarget === '/students'
+      ? 'Quay lại Hồ sơ học viên'
+      : 'Quay lại Báo cáo học tập & chăm sóc';
 
   const [student, setStudent] = useState<Student | null>(null);
   const [loading, setLoading] = useState(true);

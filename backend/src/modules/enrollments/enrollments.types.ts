@@ -19,8 +19,24 @@ export interface UpdateEnrollmentDTO {
   status?: 'WAITING_CLASS' | 'STUDYING' | 'PAUSED' | 'FINISHED' | 'UPCOMING' | 'NOT_STARTED' | 'CANCELLED';
 }
 
-export interface ReassignCSDTO {
+export type ReassignCSMode = 'FULL_TRANSFER' | 'KEEP_READONLY';
+
+export interface ReassignCSOptions {
+  mode?: ReassignCSMode;
+  transfer_pending_tasks?: boolean;
+  note?: string;
+}
+
+export interface ReassignCSDTO extends ReassignCSOptions {
   cs_id: number;
+}
+
+export interface BulkReassignCSDTO {
+  enrollment_ids: number[];
+  target_cs_id: number;
+  mode?: ReassignCSMode;
+  transfer_pending_tasks?: boolean;
+  note?: string;
 }
 
 export interface TransferClassDTO {

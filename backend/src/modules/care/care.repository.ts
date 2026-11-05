@@ -251,6 +251,7 @@ export class CareRepository {
       where: { id },
       include: {
         cs: true,
+        cs_viewers: true,
         student: true,
       },
     });

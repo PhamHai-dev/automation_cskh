@@ -47,7 +47,14 @@ describe('student actor scope', () => {
     expect(mockPrisma.student.findUnique).toHaveBeenCalledWith(expect.objectContaining({
       where: { id: 42 },
       include: expect.objectContaining({
-        enrollments: expect.objectContaining({ where: { cs_id: 10 } }),
+        enrollments: expect.objectContaining({
+          where: {
+            OR: [
+              { cs_id: { in: [10] } },
+              { cs_viewers: { some: { cs_id: { in: [10] } } } },
+            ],
+          },
+        }),
       }),
     }));
   });

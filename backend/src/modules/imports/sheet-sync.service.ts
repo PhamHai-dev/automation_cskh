@@ -2101,17 +2101,29 @@ export class SheetSyncService {
             limit
           );
 
-    const [allPackages, allStudents, allEnrollments] = await Promise.all([
+    const [allPackages, allStudents, allEnrollments, defaultCvht] = await Promise.all([
       prisma.package.findMany(),
       prisma.student.findMany(),
       prisma.enrollment.findMany({
         include: {
           package: true,
+          cs: { select: { id: true, code: true, staff_code: true, name: true } },
           enrollment_classes: { include: { class: true } },
           care_logs: true,
         },
       }),
+      this.buildDefaultCvhtMapping(),
     ]);
+
+    const configuredMapping =
+      config.cvht_mapping && typeof config.cvht_mapping === 'object'
+        ? (config.cvht_mapping as Record<string, number>)
+        : {};
+    const cvhtToCsId: Record<string, number> = {
+      ...defaultCvht.mapping,
+      ...configuredMapping,
+    };
+    const effectiveDefaultCsId = config.default_cs_id || defaultCvht.defaultCsId;
 
     const pkgByCode = new Map(allPackages.map((p) => [p.code.toUpperCase(), p]));
     const studentByExtId = new Map<string, (typeof allStudents)[number]>();
@@ -2280,6 +2292,22 @@ export class SheetSyncService {
           addDiff('class_code', 'Mã lớp', existingClsCode, row.classCode);
         }
         const existingMeta = (existingEnrollment.program_metadata || {}) as Record<string, any>;
+        const targetCsId =
+          row.cvhtCode && cvhtToCsId[row.cvhtCode.toUpperCase()]
+            ? cvhtToCsId[row.cvhtCode.toUpperCase()]
+            : effectiveDefaultCsId;
+        if (existingMeta.cs_reassigned_on_web === true && targetCsId !== existingEnrollment.cs_id) {
+          rowWarnings.push(
+            'CVHT của học viên này đã được chuyển trên Web nên hệ thống ưu tiên giữ nguyên CVHT trên Web (không ghi đè theo Google Sheet)'
+          );
+        } else if (row.cvhtCode && targetCsId && targetCsId !== existingEnrollment.cs_id) {
+          const prevCvhtLabel =
+            (existingEnrollment as any).cs?.staff_code ||
+            (existingEnrollment as any).cs?.code ||
+            (existingEnrollment as any).cs?.name ||
+            `CS #${existingEnrollment.cs_id}`;
+          addDiff('cvht_code', 'CVHT', prevCvhtLabel, row.cvhtCode);
+        }
         if (row.activeState && existingMeta.active_state !== row.activeState) {
           addDiff('active_state', 'Tình trạng Active', existingMeta.active_state || null, row.activeState);
         }
@@ -3264,6 +3292,16 @@ export class SheetSyncService {
       ...row.programMetadata,
     };
 
+    // Web reassignment priority: if CS was reassigned on Web, do NOT overwrite cs_id back to old Sheet CVHT
+    const keepWebReassignedCs =
+      Boolean(existingEnrollment) &&
+      prevMeta.cs_reassigned_on_web === true &&
+      targetCsId !== existingEnrollment!.cs_id;
+    const effectiveCsId = keepWebReassignedCs ? existingEnrollment!.cs_id : targetCsId;
+    const effectiveHandedOverAt = keepWebReassignedCs
+      ? existingEnrollment!.handed_over_at ?? handedOverObj
+      : handedOverObj;
+
     const enrollmentPayload = {
       external_id: row.externalId,
       external_sync_key: row.syncKey,
@@ -3271,7 +3309,7 @@ export class SheetSyncService {
       program_metadata: mergedMeta as Prisma.InputJsonValue,
       student_id: student.id,
       package_id: pkg.id,
-      cs_id: targetCsId,
+      cs_id: effectiveCsId,
       paid_at: paidAtDate,
       sale_id: saleId,
       sale_name: row.saleName,
@@ -3293,7 +3331,7 @@ export class SheetSyncService {
       status: row.status,
       attended_previous_years: row.attendedPreviousYears,
       external_remaining_sessions: row.remainingSessions,
-      handed_over_at: handedOverObj,
+      handed_over_at: effectiveHandedOverAt,
       ...(accountCreatedObj ? { account_created_at: accountCreatedObj } : {}),
       external_synced_at: new Date(),
     };

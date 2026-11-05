@@ -22,6 +22,7 @@ import {
   Settings,
   Sliders,
   RefreshCw,
+  FileText,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -99,9 +100,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
       title: 'CHĂM SÓC KHÁCH HÀNG',
       items: [
         {
-          name: 'Danh sách Học viên',
+          name: 'Hồ sơ Học viên',
           path: '/students',
           icon: <Users className="w-5 h-5 shrink-0" />,
+          allowedRoles: ['ADMIN', 'MANAGE', 'CS'],
+          end: true,
+        },
+        {
+          name: 'Báo cáo & Chăm sóc HV',
+          path: '/students/care-reports',
+          icon: <FileText className="w-5 h-5 shrink-0" />,
           allowedRoles: ['ADMIN', 'MANAGE', 'CS'],
         },
         {

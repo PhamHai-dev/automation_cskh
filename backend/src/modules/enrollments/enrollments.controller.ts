@@ -4,6 +4,7 @@ import {
   createEnrollmentSchema,
   updateEnrollmentSchema,
   reassignCSSchema,
+  bulkReassignCSSchema,
   transferClassSchema,
 } from './enrollments.schema';
 import {
@@ -181,13 +182,52 @@ export class EnrollmentsController {
     try {
       const id = parseInt(req.params.id);
       const validated = reassignCSSchema.parse({ body: req.body });
-      const enrollment = await enrollmentsService.reassignCS(id, validated.body.cs_id, req.user!.id, req.user!.roles);
+      const enrollment = await enrollmentsService.reassignCS(
+        id,
+        validated.body.cs_id,
+        req.user!.id,
+        req.user!.roles,
+        {
+          mode: validated.body.mode,
+          transfer_pending_tasks: validated.body.transfer_pending_tasks,
+          note: validated.body.note,
+        },
+      );
       res.json({ data: enrollment, meta: null });
     } catch (error: any) {
       if (error.name === 'ZodError') {
         res.status(400).json({ error: { code: 'VALIDATION_ERROR', message: 'Invalid data', details: error.errors } });
         return;
       }
+      next(error);
+    }
+  }
+
+  async bulkReassign(req: Request, res: Response, next: NextFunction) {
+    try {
+      const validated = bulkReassignCSSchema.parse({ body: req.body });
+      const result = await enrollmentsService.bulkReassignCS(
+        validated.body,
+        req.user!.id,
+        req.user!.roles,
+      );
+      res.json({ data: result, meta: null });
+    } catch (error: any) {
+      if (error.name === 'ZodError') {
+        res.status(400).json({ error: { code: 'VALIDATION_ERROR', message: 'Invalid data', details: error.errors } });
+        return;
+      }
+      next(error);
+    }
+  }
+
+  async revokeCsViewer(req: Request, res: Response, next: NextFunction) {
+    try {
+      const id = parseInt(req.params.id);
+      const csId = parseInt(req.params.csId);
+      const result = await enrollmentsService.revokeCsViewer(id, csId, req.user!.id, req.user!.roles);
+      res.json({ data: result, meta: null });
+    } catch (error) {
       next(error);
     }
   }

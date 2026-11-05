@@ -58,6 +58,9 @@ model User {
   resolved_attendances             Attendance[]               @relation("AttendanceResolver")
   user_preferences                 UserPreference[]
   program_sheet_backup_configs     ProgramSheetBackupConfig[] @relation("UserProgramSheetBackup")
+  enrollment_cs_viewers            EnrollmentCsViewer[]       @relation("EnrollmentCsViewerUser")
+  enrollment_cs_transfers_received EnrollmentCsViewer[]       @relation("EnrollmentCsTransferredTo")
+  enrollment_cs_transfers_made     EnrollmentCsViewer[]       @relation("EnrollmentCsTransferredBy")
 
   @@map("users")
 }
@@ -253,12 +256,32 @@ model Enrollment {
   automation_enrollments AutomationEnrollment[]
   care_logs              CareLog[]
   care_tasks             CareTask[]
+  cs_viewers             EnrollmentCsViewer[]
 
   @@index([program_type, cs_id])
   @@index([cs_id, status, program_type, created_at])
   @@index([student_id])
   @@index([status])
   @@map("enrollments")
+}
+
+model EnrollmentCsViewer {
+  id                Int      @id @default(autoincrement())
+  enrollment_id     Int
+  cs_id             Int
+  transferred_to_id Int?
+  transferred_by_id Int?
+  note              String?  @db.Text
+  created_at        DateTime @default(now())
+
+  enrollment     Enrollment @relation(fields: [enrollment_id], references: [id], onDelete: Cascade)
+  cs             User       @relation("EnrollmentCsViewerUser", fields: [cs_id], references: [id], onDelete: Cascade)
+  transferred_to User?      @relation("EnrollmentCsTransferredTo", fields: [transferred_to_id], references: [id], onDelete: SetNull)
+  transferred_by User?      @relation("EnrollmentCsTransferredBy", fields: [transferred_by_id], references: [id], onDelete: SetNull)
+
+  @@unique([enrollment_id, cs_id])
+  @@index([cs_id])
+  @@map("enrollment_cs_viewers")
 }
 
 enum TeacherType {

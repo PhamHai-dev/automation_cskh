@@ -28,7 +28,20 @@ export const updateEnrollmentSchema = z.object({
 export const reassignCSSchema = z.object({
   body: z.object({
     cs_id: z.number().int().positive(),
+    mode: z.enum(['FULL_TRANSFER', 'KEEP_READONLY']).optional().default('FULL_TRANSFER'),
+    transfer_pending_tasks: z.boolean().optional().default(true),
+    note: z.string().optional(),
   })
+});
+
+export const bulkReassignCSSchema = z.object({
+  body: z.object({
+    enrollment_ids: z.array(z.number().int().positive()).min(1),
+    target_cs_id: z.number().int().positive(),
+    mode: z.enum(['FULL_TRANSFER', 'KEEP_READONLY']).default('FULL_TRANSFER'),
+    transfer_pending_tasks: z.boolean().optional().default(true),
+    note: z.string().optional(),
+  }),
 });
 
 export const transferClassSchema = z.object({

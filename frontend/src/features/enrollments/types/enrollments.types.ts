@@ -76,10 +76,12 @@ export interface Enrollment {
   }>;
   cs?: {
     id: number;
+    code?: string | null;
     name: string;
     email: string;
     staff_code?: string | null;
   };
+  cs_viewers?: EnrollmentCsViewer[];
   enrollment_classes?: Array<{
     id: number;
     class_id: number;
@@ -138,3 +140,38 @@ export interface UpdateEnrollmentDTO {
   end_date?: string;
   status?: 'NOT_STARTED' | 'STUDYING' | 'PAUSED' | 'FINISHED' | 'CANCELLED';
 }
+
+export interface EnrollmentCsViewer {
+  id: number;
+  enrollment_id: number;
+  cs_id: number;
+  transferred_to_id?: number | null;
+  transferred_by_id?: number | null;
+  note?: string | null;
+  created_at: string;
+  cs?: {
+    id: number;
+    code?: string | null;
+    name?: string | null;
+    email: string;
+    staff_code?: string | null;
+  };
+  transferred_to?: {
+    id: number;
+    code?: string | null;
+    name?: string | null;
+    email: string;
+    staff_code?: string | null;
+  };
+}
+
+export type ReassignCsMode = 'FULL_TRANSFER' | 'KEEP_READONLY';
+
+export interface BulkReassignCsDTO {
+  enrollment_ids: number[];
+  target_cs_id: number;
+  mode: ReassignCsMode;
+  transfer_pending_tasks?: boolean;
+  note?: string;
+}
+

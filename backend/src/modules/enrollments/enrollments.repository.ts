@@ -7,6 +7,7 @@ import {
   EnrollmentClassAttendanceStats,
   SideAttendanceCounts,
   EnrollmentListMeta,
+  ReassignCSMode,
 } from './enrollments.types';
 
 export const SAFE_USER_SELECT = {
@@ -15,6 +16,14 @@ export const SAFE_USER_SELECT = {
   email: true,
   active: true,
   last_login_at: true,
+} as const;
+
+export const CS_VIEWER_USER_SELECT = {
+  id: true,
+  code: true,
+  name: true,
+  email: true,
+  staff_code: true,
 } as const;
 
 function buildEnrollmentIncludes(sessionRange?: { fromDate?: Date; toDate?: Date }) {
@@ -29,9 +38,16 @@ function buildEnrollmentIncludes(sessionRange?: { fromDate?: Date; toDate?: Date
     cs: {
       select: {
         id: true,
+        code: true,
         name: true,
         email: true,
         staff_code: true,
+      },
+    },
+    cs_viewers: {
+      include: {
+        cs: { select: CS_VIEWER_USER_SELECT },
+        transferred_to: { select: CS_VIEWER_USER_SELECT },
       },
     },
     enrollment_classes: {
@@ -131,6 +147,8 @@ export class EnrollmentsRepository {
   /**
    * Build the Prisma `where` clause combining mandatory CS scope with optional filters.
    * Scope is ALWAYS enforced as an outer AND constraint so no filter can widen scope.
+   * When scoped by CS or MANAGE (`scopeCsIds` is defined), an enrollment is readable
+   * if its `cs_id` is in scope OR it has a `cs_viewers` entry in scope (`KEEP_READONLY`).
    */
   buildWhereClause(
     scopeCsIds: number[] | number | undefined,
@@ -143,21 +161,54 @@ export class EnrollmentsRepository {
 
     const andClauses: any[] = [];
 
-    // 1. Mandatory scope
+    // 1. Mandatory scope (owner cs_id OR readonly viewer in cs_viewers)
     if (typeof scopeCsIds === 'number') {
       if (filters?.csId !== undefined) {
-        andClauses.push({ cs_id: filters.csId === scopeCsIds ? scopeCsIds : { in: [] } });
+        if (filters.csId === scopeCsIds) {
+          andClauses.push({
+            OR: [
+              { cs_id: scopeCsIds },
+              { cs_viewers: { some: { cs_id: scopeCsIds } } },
+            ],
+          });
+        } else {
+          andClauses.push({ cs_id: { in: [] } });
+        }
       } else {
-        andClauses.push({ cs_id: scopeCsIds });
+        andClauses.push({
+          OR: [
+            { cs_id: scopeCsIds },
+            { cs_viewers: { some: { cs_id: scopeCsIds } } },
+          ],
+        });
       }
     } else if (Array.isArray(scopeCsIds)) {
       if (filters?.csId !== undefined) {
-        andClauses.push({ cs_id: scopeCsIds.includes(filters.csId) ? filters.csId : { in: [] } });
+        if (scopeCsIds.includes(filters.csId)) {
+          andClauses.push({
+            OR: [
+              { cs_id: filters.csId },
+              { cs_viewers: { some: { cs_id: filters.csId } } },
+            ],
+          });
+        } else {
+          andClauses.push({ cs_id: { in: [] } });
+        }
       } else {
-        andClauses.push({ cs_id: { in: scopeCsIds } });
+        andClauses.push({
+          OR: [
+            { cs_id: { in: scopeCsIds } },
+            { cs_viewers: { some: { cs_id: { in: scopeCsIds } } } },
+          ],
+        });
       }
     } else if (filters?.csId !== undefined) {
-      andClauses.push({ cs_id: filters.csId });
+      andClauses.push({
+        OR: [
+          { cs_id: filters.csId },
+          { cs_viewers: { some: { cs_id: filters.csId } } },
+        ],
+      });
     }
 
     // 2. Program type
@@ -577,7 +628,7 @@ export class EnrollmentsRepository {
   }
 
   async findAllByCS(csId: number, programTypeOrFilters?: string | EnrollmentListFilters) {
-    // B.5/D9: CS scope is enrollment.cs_id only. The former ?sale= identifier
+    // B.5/D9: CS scope is enrollment.cs_id (or cs_viewers) only. The former ?sale= identifier
     // (sale_name / cs.name / cs.email OR-match) could let a CS widen scope to
     // another CS's enrollments by guessing a name/email; name/email are plain
     // handover data and are never an access grant.
@@ -817,7 +868,36 @@ export class EnrollmentsRepository {
   async findById(id: number) {
     return prisma.enrollment.findUnique({
       where: { id },
-      include: { student: true, package: true, enrollment_classes: { include: { class: true } } }
+      include: {
+        student: true,
+        package: true,
+        cs: { select: CS_VIEWER_USER_SELECT },
+        cs_viewers: {
+          include: {
+            cs: { select: CS_VIEWER_USER_SELECT },
+            transferred_to: { select: CS_VIEWER_USER_SELECT },
+          },
+        },
+        enrollment_classes: { include: { class: true } },
+      },
+    });
+  }
+
+  async findManyByIds(ids: number[]) {
+    return prisma.enrollment.findMany({
+      where: { id: { in: ids } },
+      include: {
+        student: true,
+        package: true,
+        cs: { select: CS_VIEWER_USER_SELECT },
+        cs_viewers: {
+          include: {
+            cs: { select: CS_VIEWER_USER_SELECT },
+            transferred_to: { select: CS_VIEWER_USER_SELECT },
+          },
+        },
+        enrollment_classes: { include: { class: true } },
+      },
     });
   }
 
@@ -849,10 +929,156 @@ export class EnrollmentsRepository {
     });
   }
 
-  async reassignCS(id: number, csId: number) {
-    return prisma.enrollment.update({
-      where: { id },
-      data: { cs_id: csId }
+  async reassignCSBatch(params: {
+    enrollments: Array<{ id: number; cs_id: number; program_metadata?: any }>;
+    targetCsId: number;
+    actorUserId: number;
+    mode: ReassignCSMode;
+    transferPendingTasks: boolean;
+    note?: string;
+  }) {
+    const {
+      enrollments,
+      targetCsId,
+      actorUserId,
+      mode,
+      transferPendingTasks,
+      note,
+    } = params;
+
+    return prisma.$transaction(async (tx) => {
+      const updatedEnrollments: any[] = [];
+      const now = new Date();
+      const nowIso = now.toISOString();
+
+      for (const enrollment of enrollments) {
+        const enrollmentId = enrollment.id;
+        const oldCsId = enrollment.cs_id;
+        const prevMeta =
+          enrollment.program_metadata && typeof enrollment.program_metadata === 'object'
+            ? (enrollment.program_metadata as Record<string, any>)
+            : {};
+
+        const mergedMeta = {
+          ...prevMeta,
+          cs_reassigned_on_web: true,
+          cs_reassigned_at: nowIso,
+          previous_cs_id: oldCsId,
+        };
+
+        const updated = await tx.enrollment.update({
+          where: { id: enrollmentId },
+          data: {
+            cs_id: targetCsId,
+            handed_over_at: now,
+            program_metadata: mergedMeta as any,
+          },
+          include: {
+            student: true,
+            package: true,
+            cs: { select: CS_VIEWER_USER_SELECT },
+            cs_viewers: {
+              include: {
+                cs: { select: CS_VIEWER_USER_SELECT },
+                transferred_to: { select: CS_VIEWER_USER_SELECT },
+              },
+            },
+          },
+        });
+
+        // Target CS is now the main owner, so remove any existing viewer record for targetCsId
+        await tx.enrollmentCsViewer.deleteMany({
+          where: { enrollment_id: enrollmentId, cs_id: targetCsId },
+        });
+
+        if (oldCsId !== targetCsId) {
+          if (mode === 'FULL_TRANSFER') {
+            await tx.enrollmentCsViewer.deleteMany({
+              where: { enrollment_id: enrollmentId, cs_id: oldCsId },
+            });
+          } else if (mode === 'KEEP_READONLY') {
+            await tx.enrollmentCsViewer.upsert({
+              where: {
+                enrollment_id_cs_id: {
+                  enrollment_id: enrollmentId,
+                  cs_id: oldCsId,
+                },
+              },
+              update: {
+                transferred_to_id: targetCsId,
+                transferred_by_id: actorUserId,
+                note: note ?? null,
+              },
+              create: {
+                enrollment_id: enrollmentId,
+                cs_id: oldCsId,
+                transferred_to_id: targetCsId,
+                transferred_by_id: actorUserId,
+                note: note ?? null,
+              },
+            });
+          }
+        }
+
+        if (transferPendingTasks !== false) {
+          await tx.careTask.updateMany({
+            where: { enrollment_id: enrollmentId, status: 'PENDING' },
+            data: { assigned_to_id: targetCsId },
+          });
+        }
+
+        await tx.auditLog.create({
+          data: {
+            user_id: actorUserId,
+            action: 'REASSIGN_CS',
+            entity_type: 'Enrollment',
+            entity_id: String(enrollmentId),
+            before_data: { cs_id: oldCsId },
+            after_data: { cs_id: targetCsId, mode, note: note ?? null },
+          },
+        });
+
+        // Reload cs_viewers after viewer changes if needed
+        const refreshed = await tx.enrollment.findUnique({
+          where: { id: enrollmentId },
+          include: {
+            student: true,
+            package: true,
+            cs: { select: CS_VIEWER_USER_SELECT },
+            cs_viewers: {
+              include: {
+                cs: { select: CS_VIEWER_USER_SELECT },
+                transferred_to: { select: CS_VIEWER_USER_SELECT },
+              },
+            },
+          },
+        });
+
+        updatedEnrollments.push(refreshed || updated);
+      }
+
+      return updatedEnrollments;
+    });
+  }
+
+  async revokeCsViewer(enrollmentId: number, viewerCsId: number, actorUserId: number) {
+    return prisma.$transaction(async (tx) => {
+      const deleted = await tx.enrollmentCsViewer.deleteMany({
+        where: { enrollment_id: enrollmentId, cs_id: viewerCsId },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          user_id: actorUserId,
+          action: 'REVOKE_CS_VIEWER',
+          entity_type: 'Enrollment',
+          entity_id: String(enrollmentId),
+          before_data: { viewer_cs_id: viewerCsId },
+          after_data: { revoked: true, deleted_count: deleted.count },
+        },
+      });
+
+      return { enrollment_id: enrollmentId, cs_id: viewerCsId, revoked: true, deleted_count: deleted.count };
     });
   }
 

@@ -21,7 +21,7 @@ const ENROLLMENT_SCOPES: ScopeSection[] = [
 ];
 
 const STUDENT_SCOPES: ScopeSection[] = [
-  { key: 'students.tab1', label: 'Danh sách Học viên' },
+  { key: 'students.tab1', label: 'Hồ sơ Học viên' },
   { key: 'students.tab2', label: 'Báo cáo & Chăm sóc' },
 ];
 

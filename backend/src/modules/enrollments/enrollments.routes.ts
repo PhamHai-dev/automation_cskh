@@ -9,6 +9,7 @@ router.use(authenticate);
 
 // Standard CRUD
 router.get('/', requireRoles(['ADMIN', 'MANAGE', 'CS']), controller.list);
+router.post('/reassign-cs', requireRoles(['ADMIN', 'MANAGE']), controller.bulkReassign);
 router.get('/:id', requireRoles(['ADMIN', 'MANAGE', 'CS']), controller.get);
 router.post('/', requireRoles(['ADMIN', 'MANAGE', 'CS']), controller.create);
 router.patch('/:id', requireRoles(['ADMIN', 'MANAGE', 'CS']), controller.update);
@@ -16,6 +17,7 @@ router.put('/:id', requireRoles(['ADMIN', 'MANAGE', 'CS']), controller.update);
 
 // Specific Actions
 router.post('/:id/assign', requireRoles(['ADMIN', 'MANAGE']), controller.reassign);
+router.delete('/:id/cs-viewers/:csId', requireRoles(['ADMIN', 'MANAGE']), controller.revokeCsViewer);
 router.post('/:id/transfer-class', requireRoles(['ADMIN', 'MANAGE', 'CS']), controller.transferClass);
 
 export { router as enrollmentsRouter };

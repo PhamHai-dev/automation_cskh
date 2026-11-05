@@ -16,6 +16,7 @@ import {
   formatScheduleTimeDisplay,
 } from '../../classes/types/classes.types';
 import { CareSelectCell } from '../components/CareSelectCell';
+import { ReassignCsModal } from '../components/ReassignCsModal';
 import { PageContainer } from '../../../components/common/PageContainer';
 import { PageHeader } from '../../../components/common/PageHeader';
 import { FilterBar } from '../../../components/common/FilterBar';
@@ -51,6 +52,8 @@ import {
   Clock,
   ChevronLeft,
   ChevronRight,
+  ArrowRightLeft,
+  Lock,
 } from 'lucide-react';
 
 const GENDER_LABELS: Record<string, string> = {
@@ -90,6 +93,7 @@ interface InlineEditableCellProps {
   multiline?: boolean;
   className?: string;
   isUrgent?: boolean;
+  disabled?: boolean;
 }
 
 const InlineEditableCell: React.FC<InlineEditableCellProps> = ({
@@ -99,6 +103,7 @@ const InlineEditableCell: React.FC<InlineEditableCellProps> = ({
   multiline = false,
   className = '',
   isUrgent = false,
+  disabled = false,
 }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [draft, setDraft] = useState(value || '');
@@ -108,6 +113,25 @@ const InlineEditableCell: React.FC<InlineEditableCellProps> = ({
   useEffect(() => {
     setDraft(value || '');
   }, [value]);
+
+  if (disabled) {
+    return (
+      <div
+        className={`p-1.5 rounded-lg min-h-[28px] flex items-center justify-between gap-1 ${
+          isUrgent && value ? 'bg-rose-50 text-rose-900 border border-rose-200' : ''
+        } ${className}`}
+        title={value ? `${value} (Chỉ xem)` : 'Chỉ xem'}
+      >
+        <span
+          className={`text-xs block truncate max-w-[200px] ${
+            value ? 'text-slate-700 font-medium' : 'text-slate-400 italic'
+          }`}
+        >
+          {value || '—'}
+        </span>
+      </div>
+    );
+  }
 
   const handleCommit = async () => {
     setIsEditing(false);
@@ -337,6 +361,8 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
   const [viewingStudent, setViewingStudent] = useState<Student | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [reassignTargetStudents, setReassignTargetStudents] = useState<Student[] | null>(null);
+  const [selectedStudentIds, setSelectedStudentIds] = useState<number[]>([]);
 
   // Form states
   const initialFormData: CreateStudentDTO = {
@@ -515,6 +541,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
 
       if (userId && enrCsId === userId) return true;
       if (userStaffCode && enrCsCode && enrCsCode === userStaffCode) return true;
+      if (userId && enr?.cs_viewers?.some((v) => v.cs_id === userId)) return true;
       return false;
     });
 
@@ -528,12 +555,30 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
           enr?.cs?.id ||
           (enr as any)?.cs_staff_code ||
           enr?.cs?.staff_code ||
-          (enr?.cs as any)?.code,
+          (enr?.cs as any)?.code ||
+          (enr?.cs_viewers && enr.cs_viewers.length > 0),
       );
     });
 
     return anyRowHasCsIdentity ? matchedByExplicitOwner : students;
   }, [students, isCSOnly, user]);
+
+  // Kiểm tra học viên ở chế độ Chỉ xem (Read-only) đối với tài khoản CS đang đăng nhập
+  const isStudentReadonlyForUser = (student: Student): boolean => {
+    if (isAdminOrManage) return false;
+    if (isCSOnly) {
+      const enr = student.enrollments?.[0];
+      if (!enr) return false;
+      const enrCsId = (enr as any)?.cs_user_id ?? enr?.cs_id ?? enr?.cs?.id;
+      if (user?.id && enrCsId && enrCsId !== user.id) {
+        return true;
+      }
+      if (user?.id && enr.cs_viewers?.some((v) => v.cs_id === user.id) && enrCsId !== user.id) {
+        return true;
+      }
+    }
+    return false;
+  };
 
   // Counts by program_type
   const programCounts = useMemo(() => {
@@ -963,13 +1008,86 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
 
   const isJlptMode = programFilter === 'JLPT';
 
+  const currentPageIds = useMemo(
+    () => paginatedStudents.map((s) => s.id),
+    [paginatedStudents]
+  );
+  const isAllPageSelected =
+    currentPageIds.length > 0 &&
+    currentPageIds.every((id) => selectedStudentIds.includes(id));
+
+  const toggleSelectAllCurrentPage = () => {
+    if (isAllPageSelected) {
+      setSelectedStudentIds((prev) =>
+        prev.filter((id) => !currentPageIds.includes(id))
+      );
+    } else {
+      setSelectedStudentIds((prev) =>
+        Array.from(new Set([...prev, ...currentPageIds]))
+      );
+    }
+  };
+
+  const toggleSelectStudent = (studentId: number) => {
+    setSelectedStudentIds((prev) =>
+      prev.includes(studentId)
+        ? prev.filter((id) => id !== studentId)
+        : [...prev, studentId]
+    );
+  };
+
+  const selectedStudentObjects = useMemo(() => {
+    const map = new Map<number, Student>();
+    students.forEach((s) => map.set(s.id, s));
+    return selectedStudentIds
+      .map((id) => map.get(id))
+      .filter((s): s is Student => Boolean(s));
+  }, [students, selectedStudentIds]);
+
   // --- CỘT CHUNG (A ➔ I): CỐ ĐỊNH Ở CẢ 2 TAB ---
   const commonColumnsAtoI: Column<Student>[] = [
+    ...(isAdminOrManage
+      ? [
+          {
+            key: 'select',
+            header: (
+              <div className="flex items-center justify-center">
+                <input
+                  type="checkbox"
+                  checked={isAllPageSelected}
+                  onChange={toggleSelectAllCurrentPage}
+                  onClick={(e) => e.stopPropagation()}
+                  className="h-4 w-4 rounded border-slate-300 text-primary focus:ring-primary cursor-pointer"
+                  title="Chọn tất cả học viên trên trang này"
+                />
+              </div>
+            ),
+            width: '40px',
+            className:
+              'sticky left-0 z-20 w-[40px] min-w-[40px] max-w-[40px] text-center border-r border-border/60 overflow-hidden',
+            cell: (item: Student) => (
+              <div
+                className="flex items-center justify-center"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <input
+                  type="checkbox"
+                  checked={selectedStudentIds.includes(item.id)}
+                  onChange={() => toggleSelectStudent(item.id)}
+                  className="h-4 w-4 rounded border-slate-300 text-primary focus:ring-primary cursor-pointer"
+                />
+              </div>
+            ),
+          },
+        ]
+      : []),
     {
       key: 'stt',
       header: '#',
       width: '52px',
-      className: 'sticky left-0 z-20 w-[52px] min-w-[52px] max-w-[52px] text-center border-r border-border/60 overflow-hidden',
+      className: `${
+        isAdminOrManage ? 'sticky left-[40px]' : 'sticky left-0'
+      } z-20 w-[52px] min-w-[52px] max-w-[52px] text-center border-r border-border/60 overflow-hidden`,
       cell: (_item, rowIndex) => (
         <span className="font-bold text-slate-400 text-xs text-center block">
           {(page - 1) * pageSize + rowIndex + 1}
@@ -980,7 +1098,9 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
       key: 'external_id',
       header: 'Mã học viên',
       width: '132px',
-      className: 'sticky left-[52px] z-20 w-[132px] min-w-[132px] max-w-[132px] border-r border-border/60 overflow-hidden',
+      className: `${
+        isAdminOrManage ? 'sticky left-[92px]' : 'sticky left-[52px]'
+      } z-20 w-[132px] min-w-[132px] max-w-[132px] border-r border-border/60 overflow-hidden`,
       cell: (item) => (
         <span className="font-mono font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded text-[11px] whitespace-nowrap inline-block max-w-full truncate">
           {item.external_id || `HV_${item.id}`}
@@ -991,8 +1111,9 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
       key: 'full_name',
       header: 'Họ và tên',
       width: '210px',
-      className:
-        'sticky left-[184px] z-20 w-[210px] min-w-[210px] max-w-[210px] border-r-2 border-border/80 shadow-[4px_0_6px_-2px_rgba(0,0,0,0.06)] overflow-hidden',
+      className: `${
+        isAdminOrManage ? 'sticky left-[224px]' : 'sticky left-[184px]'
+      } z-20 w-[210px] min-w-[210px] max-w-[210px] border-r-2 border-border/80 shadow-[4px_0_6px_-2px_rgba(0,0,0,0.06)] overflow-hidden`,
       cell: (item) => (
         <div className="flex items-center space-x-2 whitespace-nowrap overflow-hidden">
           <div className="w-7 h-7 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-xs shrink-0">
@@ -1033,11 +1154,81 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
       header: 'CSKH',
       cell: (item) => {
         const enr = item.enrollments?.[0];
-        const code = enr?.cs?.staff_code || enr?.cs?.name || '—';
+        const code =
+          enr?.cs?.staff_code ||
+          (enr?.cs as any)?.code ||
+          enr?.cs?.name ||
+          '—';
+        const isReadonly = isStudentReadonlyForUser(item);
+        const viewers = enr?.cs_viewers || [];
+
         return (
-          <span className="inline-flex items-center px-2 py-0.5 rounded bg-blue-50 text-blue-800 border border-blue-200 font-mono font-bold text-[11px] whitespace-nowrap">
-            {code}
-          </span>
+          <div className="flex flex-col items-start gap-1 whitespace-nowrap">
+            <div className="flex items-center gap-1">
+              <span
+                onClick={
+                  isAdminOrManage
+                    ? (e) => {
+                        e.stopPropagation();
+                        setReassignTargetStudents([item]);
+                      }
+                    : undefined
+                }
+                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded bg-blue-50 text-blue-800 border border-blue-200 font-mono font-bold text-[11px] ${
+                  isAdminOrManage
+                    ? 'cursor-pointer hover:bg-blue-100 hover:border-blue-300 transition-colors'
+                    : ''
+                }`}
+                title={
+                  isAdminOrManage
+                    ? 'Bấm để chuyển CVHT phụ trách'
+                    : `CVHT chính: ${code}`
+                }
+              >
+                <span>{code}</span>
+                {isAdminOrManage && (
+                  <ArrowRightLeft className="w-2.5 h-2.5 text-blue-500 shrink-0" />
+                )}
+              </span>
+
+              {isReadonly && (
+                <span
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300 font-semibold text-[10px]"
+                  title="Học viên đã chuyển sang CVHT mới, bạn đang ở chế độ Chỉ xem"
+                >
+                  <Lock className="w-2.5 h-2.5 shrink-0" />
+                  <span>Chỉ xem (Đã chuyển)</span>
+                </span>
+              )}
+            </div>
+
+            {isAdminOrManage && viewers.length > 0 && (
+              <span
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setReassignTargetStudents([item]);
+                }}
+                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200 text-[10px] font-medium cursor-pointer hover:bg-amber-100"
+                title={`CVHT cũ giữ quyền xem: ${viewers
+                  .map(
+                    (v) =>
+                      v.cs?.staff_code || v.cs?.code || v.cs?.name || `#${v.cs_id}`
+                  )
+                  .join(', ')} (Bấm để quản lý/thu hồi)`}
+              >
+                <Eye className="w-2.5 h-2.5 text-amber-600 shrink-0" />
+                <span>
+                  +{viewers.length} xem:{' '}
+                  {viewers
+                    .map(
+                      (v) =>
+                        v.cs?.staff_code || v.cs?.code || v.cs?.name || `#${v.cs_id}`
+                    )
+                    .join(', ')}
+                </span>
+              </span>
+            )}
+          </div>
         );
       },
     },
@@ -1139,32 +1330,59 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
     key: 'action',
     header: 'Thao tác',
     className: 'text-right sticky right-0 z-20 border-l border-border/60 shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.06)]',
-    cell: (item) => (
-      <div className="flex justify-end gap-1 whitespace-nowrap">
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={(e) => {
-            e.stopPropagation();
-            setViewingStudent(item);
-          }}
-          title="Xem toàn bộ thông tin Sheet 1"
-        >
-          <Eye className="w-4 h-4 text-blue-600" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={(e) => {
-            e.stopPropagation();
-            openModal(item);
-          }}
-          title="Chỉnh sửa học viên"
-        >
-          <Edit className="w-4 h-4 text-slate-500 hover:text-blue-600" />
-        </Button>
-      </div>
-    ),
+    cell: (item) => {
+      const isReadonly = isStudentReadonlyForUser(item);
+      return (
+        <div className="flex items-center justify-end gap-1 whitespace-nowrap">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={(e) => {
+              e.stopPropagation();
+              setViewingStudent(item);
+            }}
+            title="Xem toàn bộ thông tin Sheet 1"
+          >
+            <Eye className="w-4 h-4 text-blue-600" />
+          </Button>
+          {isAdminOrManage && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setReassignTargetStudents([item]);
+              }}
+              className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 text-[11px] font-semibold transition-colors cursor-pointer"
+              title="Chuyển CVHT phụ trách"
+            >
+              <ArrowRightLeft className="w-3 h-3 shrink-0" />
+              <span>Đổi CVHT</span>
+            </button>
+          )}
+          {isReadonly ? (
+            <span
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200 text-[10px] font-semibold"
+              title="Chế độ Chỉ xem (không có quyền chỉnh sửa)"
+            >
+              <Lock className="w-2.5 h-2.5" />
+              <span>Chỉ xem</span>
+            </span>
+          ) : (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={(e) => {
+                e.stopPropagation();
+                openModal(item);
+              }}
+              title="Chỉnh sửa học viên"
+            >
+              <Edit className="w-4 h-4 text-slate-500 hover:text-blue-600" />
+            </Button>
+          )}
+        </div>
+      );
+    },
   };
 
   // --- TAB 1: CỘT HỌC VIÊN (A ➔ I + J ➔ AJ) ---
@@ -1650,6 +1868,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
           <InlineEditableCell
             value={enr.exchange_info}
             multiline
+            disabled={isStudentReadonlyForUser(item)}
             placeholder="Ghi chú trao đổi..."
             onSave={(newVal) => handleSaveEnrollmentCareField(enr.id, 'exchange_info', newVal)}
           />
@@ -1667,6 +1886,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
             <PhoneCall className="w-3.5 h-3.5 text-blue-500 shrink-0" />
             <InlineEditableCell
               value={enr.callback_note}
+              disabled={isStudentReadonlyForUser(item)}
               placeholder="Hẹn ngày/giờ gọi..."
               onSave={(newVal) => handleSaveEnrollmentCareField(enr.id, 'callback_note', newVal)}
             />
@@ -1686,6 +1906,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
             <InlineEditableCell
               value={enr.hot_issue_note}
               isUrgent={!!enr.hot_issue_note}
+              disabled={isStudentReadonlyForUser(item)}
               placeholder="Vấn đề khẩn cấp..."
               onSave={(newVal) => handleSaveEnrollmentCareField(enr.id, 'hot_issue_note', newVal)}
             />
@@ -1722,6 +1943,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
           return (
             <CareSelectCell
               value={log?.content}
+              disabled={isStudentReadonlyForUser(item)}
               placeholder="Chọn phản hồi..."
               onSave={(newVal) => handleSaveSessionCareLog(enr.id, sessionNum, newVal)}
             />
@@ -1742,6 +1964,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
               return (
                 <InlineEditableCell
                   value={enr.program_metadata?.satisfaction_score_b18 || ''}
+                  disabled={isStudentReadonlyForUser(item)}
                   placeholder="Điểm B18..."
                   onSave={(newVal) =>
                     handleSaveProgramMetadata(item, { satisfaction_score_b18: newVal })
@@ -1759,6 +1982,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
               return (
                 <InlineEditableCell
                   value={enr.program_metadata?.exam_registration || ''}
+                  disabled={isStudentReadonlyForUser(item)}
                   placeholder="VD: T7.2026"
                   onSave={(newVal) =>
                     handleSaveProgramMetadata(item, { exam_registration: newVal })
@@ -1777,6 +2001,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
               return (
                 <InlineEditableCell
                   value={rawVal !== undefined && rawVal !== null ? String(rawVal) : ''}
+                  disabled={isStudentReadonlyForUser(item)}
                   placeholder="Điểm thi..."
                   onSave={(newVal) => handleSaveProgramMetadata(item, { exam_score: newVal })}
                 />
@@ -1792,6 +2017,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
               return (
                 <InlineEditableCell
                   value={enr.program_metadata?.exam_result || ''}
+                  disabled={isStudentReadonlyForUser(item)}
                   placeholder="pass / not pass..."
                   onSave={(newVal) => handleSaveProgramMetadata(item, { exam_result: newVal })}
                 />
@@ -1812,6 +2038,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
               return (
                 <InlineEditableCell
                   value={summaryStr}
+                  disabled={isStudentReadonlyForUser(item)}
                   placeholder="L1: 80 | L2: 85..."
                   onSave={async (newVal) => {
                     const parsed: Record<string, string> = {
@@ -1847,6 +2074,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
                 <InlineEditableCell
                   value={summaryStr}
                   multiline
+                  disabled={isStudentReadonlyForUser(item)}
                   placeholder="L1: Hỗ trợ..."
                   onSave={async (newVal) => {
                     const parsed: Record<string, string | null> = {
@@ -1877,6 +2105,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
               return (
                 <InlineEditableCell
                   value={enr.program_metadata?.renewal_note || ''}
+                  disabled={isStudentReadonlyForUser(item)}
                   placeholder="Ghi chú tái tục..."
                   onSave={(newVal) => handleSaveProgramMetadata(item, { renewal_note: newVal })}
                 />
@@ -1897,6 +2126,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
           <InlineEditableCell
             value={enr.post_course_care}
             multiline
+            disabled={isStudentReadonlyForUser(item)}
             placeholder="Đánh giá/tái tục sau khóa..."
             onSave={(newVal) => handleSaveEnrollmentCareField(enr.id, 'post_course_care', newVal)}
           />
@@ -1966,6 +2196,27 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
         title={activeTab === 'care_reports' ? 'Báo cáo học tập & Chăm sóc' : 'Hồ sơ học viên'}
         actions={
           <div className="flex items-center gap-2">
+            {isAdminOrManage && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  if (selectedStudentObjects.length > 0) {
+                    setReassignTargetStudents(selectedStudentObjects);
+                  } else if (paginatedStudents.length > 0) {
+                    toast.info(
+                      'Hãy tích chọn học viên ở cột đầu bảng hoặc bấm nút "Đổi CVHT" trên dòng học viên cần chuyển.'
+                    );
+                  }
+                }}
+                leftIcon={<ArrowRightLeft className="w-4 h-4 text-indigo-600" />}
+                className="border-indigo-300 text-indigo-800 hover:bg-indigo-50 font-semibold"
+              >
+                {selectedStudentIds.length > 0
+                  ? `Chuyển CVHT (${selectedStudentIds.length})`
+                  : 'Chuyển CVHT'}
+              </Button>
+            )}
             {activeTab === 'care_reports' && (
               <Button
                 variant="outline"
@@ -2204,6 +2455,44 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
           scope={activeTab === 'students' ? 'students.tab1' : 'students.tab2'}
         />
       </div>
+
+      {/* Bulk Action Bar khi chọn học viên (dành cho Admin / Manage) */}
+      {isAdminOrManage && selectedStudentIds.length > 0 && (
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border-2 border-primary/40 bg-blue-50/90 px-4 py-2.5 shadow-soft animate-in fade-in duration-150">
+          <div className="flex items-center gap-2 text-xs font-bold text-slate-900">
+            <span className="inline-flex h-6 w-6 items-center justify-center rounded-lg bg-primary text-white text-xs font-extrabold">
+              {selectedStudentIds.length}
+            </span>
+            <span>
+              Đã chọn <strong className="text-primary">{selectedStudentIds.length} học viên</strong>
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => {
+                if (selectedStudentObjects.length > 0) {
+                  setReassignTargetStudents(selectedStudentObjects);
+                } else {
+                  toast.warning('Vui lòng chọn học viên trên trang hiện tại');
+                }
+              }}
+              leftIcon={<ArrowRightLeft className="w-3.5 h-3.5" />}
+            >
+              Chuyển CVHT phụ trách
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setSelectedStudentIds([])}
+              className="bg-white"
+            >
+              Bỏ chọn
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* Main Table View */}
       <div className={`bg-surface rounded-2xl border border-border/80 shadow-soft overflow-hidden transition-opacity ${isFetching && !loading ? 'opacity-90' : ''}`}>
@@ -2504,8 +2793,74 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
                 </div>
               </div>
             )}
+
+            {/* Footer actions inside Viewing Modal */}
+            <div className="flex items-center justify-between gap-2 pt-3 border-t border-slate-200">
+              <div className="flex items-center gap-2">
+                {isStudentReadonlyForUser(viewingStudent) && (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-100 text-amber-800 border border-amber-300 font-semibold text-xs">
+                    <Lock className="w-3.5 h-3.5" />
+                    <span>Chỉ xem (Đã chuyển sang CVHT mới)</span>
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                {isAdminOrManage && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      const target = viewingStudent;
+                      setViewingStudent(null);
+                      setReassignTargetStudents([target]);
+                    }}
+                    leftIcon={<UserCheck className="w-4 h-4 text-indigo-600" />}
+                    className="border-indigo-200 text-indigo-700 hover:bg-indigo-50"
+                  >
+                    Chuyển CVHT
+                  </Button>
+                )}
+                {!isStudentReadonlyForUser(viewingStudent) && (
+                  <Button
+                    type="button"
+                    variant="primary"
+                    size="sm"
+                    onClick={() => {
+                      const target = viewingStudent;
+                      setViewingStudent(null);
+                      openModal(target);
+                    }}
+                    leftIcon={<Edit className="w-4 h-4" />}
+                  >
+                    Chỉnh sửa hồ sơ
+                  </Button>
+                )}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setViewingStudent(null)}
+                >
+                  Đóng
+                </Button>
+              </div>
+            </div>
           </div>
         </Modal>
+      )}
+
+      {/* Modal Chuyển CVHT phụ trách (Lẻ hoặc Hàng loạt) */}
+      {reassignTargetStudents && reassignTargetStudents.length > 0 && (
+        <ReassignCsModal
+          isOpen={reassignTargetStudents.length > 0}
+          students={reassignTargetStudents}
+          onClose={() => setReassignTargetStudents(null)}
+          onSuccess={() => {
+            setSelectedStudentIds([]);
+            fetchStudents();
+          }}
+        />
       )}
 
       {/* Edit / Create Student Modal */}

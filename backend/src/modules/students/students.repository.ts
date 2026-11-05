@@ -142,12 +142,26 @@ export class StudentsRepository {
     if (!hasAdvanced) {
       const enrollmentFilter: any = {};
       if (allowedCsIds !== undefined) {
-        enrollmentFilter.cs_id = { in: allowedCsIds };
         if (options.csId) {
-          enrollmentFilter.cs_id = allowedCsIds.includes(options.csId) ? options.csId : { in: [] };
+          if (allowedCsIds.includes(options.csId)) {
+            enrollmentFilter.OR = [
+              { cs_id: options.csId },
+              { cs_viewers: { some: { cs_id: options.csId } } },
+            ];
+          } else {
+            enrollmentFilter.cs_id = { in: [] };
+          }
+        } else {
+          enrollmentFilter.OR = [
+            { cs_id: { in: allowedCsIds } },
+            { cs_viewers: { some: { cs_id: { in: allowedCsIds } } } },
+          ];
         }
       } else if (options.csId) {
-        enrollmentFilter.cs_id = options.csId;
+        enrollmentFilter.OR = [
+          { cs_id: options.csId },
+          { cs_viewers: { some: { cs_id: options.csId } } },
+        ];
       }
       if (normalizedProgram) {
         enrollmentFilter.program_type = normalizedProgram;
@@ -158,14 +172,31 @@ export class StudentsRepository {
     const andClauses: any[] = [];
     if (allowedCsIds !== undefined) {
       if (options.csId) {
-        andClauses.push({
-          cs_id: allowedCsIds.includes(options.csId) ? options.csId : { in: [] },
-        });
+        if (allowedCsIds.includes(options.csId)) {
+          andClauses.push({
+            OR: [
+              { cs_id: options.csId },
+              { cs_viewers: { some: { cs_id: options.csId } } },
+            ],
+          });
+        } else {
+          andClauses.push({ cs_id: { in: [] } });
+        }
       } else {
-        andClauses.push({ cs_id: { in: allowedCsIds } });
+        andClauses.push({
+          OR: [
+            { cs_id: { in: allowedCsIds } },
+            { cs_viewers: { some: { cs_id: { in: allowedCsIds } } } },
+          ],
+        });
       }
     } else if (options.csId) {
-      andClauses.push({ cs_id: options.csId });
+      andClauses.push({
+        OR: [
+          { cs_id: options.csId },
+          { cs_viewers: { some: { cs_id: options.csId } } },
+        ],
+      });
     }
 
     if (normalizedProgram) {
@@ -413,6 +444,12 @@ export class StudentsRepository {
                 staff_code: true,
               },
             },
+            cs_viewers: {
+              include: {
+                cs: { select: { id: true, code: true, name: true, email: true, staff_code: true } },
+                transferred_to: { select: { id: true, code: true, name: true, email: true, staff_code: true } },
+              },
+            },
             enrollment_classes: {
               include: {
                 class: {
@@ -655,7 +692,14 @@ export class StudentsRepository {
       include: {
         enrollments: {
           ...(allowedCsIds !== undefined
-            ? { where: { cs_id: allowedCsIds.length === 1 ? allowedCsIds[0] : { in: allowedCsIds } } }
+            ? {
+                where: {
+                  OR: [
+                    { cs_id: { in: allowedCsIds } },
+                    { cs_viewers: { some: { cs_id: { in: allowedCsIds } } } },
+                  ],
+                },
+              }
             : {}),
           include: {
             package: true,
@@ -663,9 +707,16 @@ export class StudentsRepository {
             cs: {
               select: {
                 id: true,
+                code: true,
                 name: true,
                 email: true,
                 staff_code: true,
+              },
+            },
+            cs_viewers: {
+              include: {
+                cs: { select: { id: true, code: true, name: true, email: true, staff_code: true } },
+                transferred_to: { select: { id: true, code: true, name: true, email: true, staff_code: true } },
               },
             },
             enrollment_classes: {
@@ -966,6 +1017,22 @@ export class StudentsRepository {
         },
       });
       if (!enrollment) {
+        if (allowedCsIds !== undefined && (tx.enrollment as any)?.findFirst) {
+          const readonlyEnrollment = await tx.enrollment.findFirst({
+            where: {
+              student_id: id,
+              ...(data.enrollment_id !== undefined ? { id: data.enrollment_id } : {}),
+              cs_viewers: { some: { cs_id: { in: allowedCsIds } } },
+            },
+            select: { id: true },
+          });
+          if (readonlyEnrollment) {
+            throw new AppError(
+              403,
+              'Học viên này đã được bàn giao sang CSKH khác, bạn chỉ có quyền xem và không được chỉnh sửa',
+            );
+          }
+        }
         throw new AppError(403, 'Bạn không phụ trách học viên hoặc ghi danh này');
       }
 

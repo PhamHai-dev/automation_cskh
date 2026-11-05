@@ -1,6 +1,11 @@
 import { apiClient } from '../../../api/client';
 import { PaginatedMeta, PaginatedResponse, normalizePaginatedResponse } from '../../../api/pagination.types';
-import { Enrollment, CreateEnrollmentDTO, UpdateEnrollmentDTO } from '../types/enrollments.types';
+import {
+  Enrollment,
+  CreateEnrollmentDTO,
+  UpdateEnrollmentDTO,
+  BulkReassignCsDTO,
+} from '../types/enrollments.types';
 
 export type { PaginatedMeta, PaginatedResponse };
 
@@ -74,5 +79,15 @@ export const enrollmentsApi = {
   update: async (id: number, data: UpdateEnrollmentDTO): Promise<Enrollment> => {
     const res = await apiClient.patch(`/enrollments/${id}`, data);
     return res.data.data;
+  },
+
+  reassignCs: async (data: BulkReassignCsDTO): Promise<any> => {
+    const res = await apiClient.post('/enrollments/reassign-cs', data);
+    return res.data.data ?? res.data;
+  },
+
+  revokeCsViewer: async (enrollmentId: number, csId: number): Promise<any> => {
+    const res = await apiClient.delete(`/enrollments/${enrollmentId}/cs-viewers/${csId}`);
+    return res.data.data ?? res.data;
   },
 };

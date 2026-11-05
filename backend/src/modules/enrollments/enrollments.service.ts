@@ -5,6 +5,8 @@ import {
   TransferClassDTO,
   EnrollmentListFilters,
   EnrollmentListResult,
+  ReassignCSOptions,
+  BulkReassignCSDTO,
 } from './enrollments.types';
 import { prisma } from '../../prisma/client';
 
@@ -81,7 +83,7 @@ export class EnrollmentsService {
         sale: saleIdentifier || filters?.sale,
       });
     } else {
-      // CS — B.5/D9: cs_id only; the sale identifier is never a scope grant for CS.
+      // CS — B.5/D9: cs_id (or cs_viewers) only; the sale identifier is never a scope grant for CS.
       // (ADMIN may still use ?sale= to narrow its own unrestricted view.)
       rows = await this.repository.findAllByCS(userId, filters);
     }
@@ -110,6 +112,10 @@ export class EnrollmentsService {
 
     if (roles.includes('ADMIN')) return enrollment;
 
+    const viewerIds: number[] = Array.isArray((enrollment as any).cs_viewers)
+      ? (enrollment as any).cs_viewers.map((v: any) => Number(v.cs_id))
+      : [];
+
     if (roles.includes('MANAGE')) {
       const assignments = await prisma.manageAssignment.findMany({
         where: { manage_user_id: userId },
@@ -119,14 +125,40 @@ export class EnrollmentsService {
       csIds.add(userId);
       assignments.forEach(a => a.cs_group.members.forEach(m => csIds.add(m.user_id)));
 
-      if (!csIds.has(enrollment.cs_id)) {
+      const hasOwnerInScope = csIds.has(enrollment.cs_id);
+      const hasViewerInScope = viewerIds.some(vid => csIds.has(vid));
+
+      if (!hasOwnerInScope && !hasViewerInScope) {
         throw new CustomError('Forbidden: Outside of your manage scope', 403);
       }
-    } else if (enrollment.cs_id !== userId) {
+    } else if (enrollment.cs_id !== userId && !viewerIds.includes(userId)) {
       throw new CustomError('Forbidden: Not assigned to you', 403);
     }
 
     return enrollment;
+  }
+
+  private async assertWriteOwnershipForEnrollment(enrollment: any, userId: number, roles: string[]) {
+    if (roles.includes('ADMIN')) return;
+
+    if (roles.includes('MANAGE')) {
+      const assignments = await prisma.manageAssignment.findMany({
+        where: { manage_user_id: userId },
+        include: { cs_group: { include: { members: true } } },
+      });
+      const csIds = new Set<number>();
+      csIds.add(userId);
+      assignments.forEach((a) => a.cs_group.members.forEach((m) => csIds.add(m.user_id)));
+
+      if (!csIds.has(enrollment.cs_id)) {
+        throw new CustomError('Học viên đã được bàn giao sang CSKH khác ngoài phạm vi quản lý, bạn chỉ có quyền xem', 403);
+      }
+      return;
+    }
+
+    if (enrollment.cs_id !== userId) {
+      throw new CustomError('Học viên đã được bàn giao sang CSKH khác, bạn chỉ có quyền xem', 403);
+    }
   }
 
   async createEnrollment(data: CreateEnrollmentDTO, userId: number, roles: string[]) {
@@ -141,27 +173,109 @@ export class EnrollmentsService {
   }
 
   async updateEnrollment(id: number, data: UpdateEnrollmentDTO, userId: number, roles: string[]) {
-    await this.getEnrollmentById(id, userId, roles); // Validates scope
+    const enrollment = await this.getEnrollmentById(id, userId, roles); // Validates read scope
+    await this.assertWriteOwnershipForEnrollment(enrollment, userId, roles);
     return this.repository.update(id, data);
   }
 
-  async reassignCS(id: number, newCsId: number, userId: number, roles: string[]) {
+  async reassignCS(
+    id: number,
+    newCsId: number,
+    userId: number,
+    roles: string[],
+    options?: ReassignCSOptions,
+  ) {
+    const results = await this.bulkReassignCS(
+      {
+        enrollment_ids: [id],
+        target_cs_id: newCsId,
+        mode: options?.mode ?? 'FULL_TRANSFER',
+        transfer_pending_tasks: options?.transfer_pending_tasks ?? true,
+        note: options?.note,
+      },
+      userId,
+      roles,
+    );
+    return results.items[0];
+  }
+
+  async bulkReassignCS(dto: BulkReassignCSDTO, userId: number, roles: string[]) {
     if (!roles.includes('ADMIN') && !roles.includes('MANAGE')) {
       throw new CustomError('Forbidden: Only Admin/Manage can reassign', 403);
     }
 
-    await this.getEnrollmentById(id, userId, roles); // Validates scope
-
-    const csUser = await prisma.user.findUnique({ where: { id: newCsId } });
-    if (!csUser || !(csUser.roles as string[]).includes('CS')) {
-      throw new CustomError('Invalid CS user', 400);
+    const uniqueIds = Array.from(new Set(dto.enrollment_ids.map(Number).filter((n) => n > 0)));
+    if (uniqueIds.length === 0) {
+      throw new CustomError('Danh sách ghi danh cần chuyển không hợp lệ', 400);
     }
 
-    return this.repository.reassignCS(id, newCsId);
+    const targetCsUser = await prisma.user.findUnique({ where: { id: dto.target_cs_id } });
+    const targetRoles =
+      targetCsUser && Array.isArray(targetCsUser.roles) ? (targetCsUser.roles as string[]) : [];
+    if (!targetCsUser || !targetCsUser.active || !targetRoles.includes('CS')) {
+      throw new CustomError('Tài khoản CSKH đích không hợp lệ hoặc đã ngừng hoạt động', 400);
+    }
+
+    const enrollments = await this.repository.findManyByIds(uniqueIds);
+    if (enrollments.length !== uniqueIds.length) {
+      throw new CustomError('Enrollment not found', 404);
+    }
+
+    if (!roles.includes('ADMIN') && roles.includes('MANAGE')) {
+      const allowedCsIds = (await this.resolveScopeCsIds(userId, roles)) as number[];
+      const allowedSet = new Set(allowedCsIds);
+
+      if (!allowedSet.has(dto.target_cs_id)) {
+        throw new CustomError('Forbidden: Target CS is outside of your manage scope', 403);
+      }
+
+      for (const enr of enrollments) {
+        if (!allowedSet.has(enr.cs_id)) {
+          throw new CustomError('Forbidden: Outside of your manage scope', 403);
+        }
+      }
+    }
+
+    const mode = dto.mode ?? 'FULL_TRANSFER';
+    const transferPendingTasks = dto.transfer_pending_tasks ?? true;
+
+    const updatedItems = await this.repository.reassignCSBatch({
+      enrollments,
+      targetCsId: dto.target_cs_id,
+      actorUserId: userId,
+      mode,
+      transferPendingTasks,
+      note: dto.note,
+    });
+
+    return {
+      updated_count: updatedItems.length,
+      target_cs_id: dto.target_cs_id,
+      mode,
+      items: updatedItems,
+    };
+  }
+
+  async revokeCsViewer(enrollmentId: number, viewerCsId: number, userId: number, roles: string[]) {
+    if (!roles.includes('ADMIN') && !roles.includes('MANAGE')) {
+      throw new CustomError('Forbidden: Only Admin/Manage can revoke viewer access', 403);
+    }
+
+    const enrollment = await this.getEnrollmentById(enrollmentId, userId, roles);
+    if (!roles.includes('ADMIN') && roles.includes('MANAGE')) {
+      const allowedCsIds = (await this.resolveScopeCsIds(userId, roles)) as number[];
+      const allowedSet = new Set(allowedCsIds);
+      if (!allowedSet.has(enrollment.cs_id) && !allowedSet.has(viewerCsId)) {
+        throw new CustomError('Forbidden: Outside of your manage scope', 403);
+      }
+    }
+
+    return this.repository.revokeCsViewer(enrollmentId, viewerCsId, userId);
   }
 
   async transferClass(enrollmentId: number, data: TransferClassDTO, userId: number, roles: string[]) {
-    await this.getEnrollmentById(enrollmentId, userId, roles); // Validates scope
+    const enrollment = await this.getEnrollmentById(enrollmentId, userId, roles); // Validates read scope
+    await this.assertWriteOwnershipForEnrollment(enrollment, userId, roles);
 
     const fromClass = await prisma.class.findUnique({ where: { id: data.from_class_id } });
     const toClass = await prisma.class.findUnique({ where: { id: data.to_class_id } });

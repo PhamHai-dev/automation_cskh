@@ -64,15 +64,37 @@ export class CareService {
     throw new AppError(403, 'Bạn không có quyền truy cập dữ liệu chăm sóc học viên');
   }
 
-  private async assertEnrollmentAccess(enrollmentId: number, userId: number, roles: string[]) {
+  private async assertEnrollmentAccess(
+    enrollmentId: number,
+    userId: number,
+    roles: string[],
+    mode: 'READ' | 'WRITE' = 'WRITE',
+  ) {
     const enrollment = await this.repo.findEnrollmentById(enrollmentId);
     if (!enrollment) {
       throw new AppError(404, 'Không tìm thấy thông tin gói học');
     }
 
     const accessibleCSIds = await this.getAccessibleCSIds(userId, roles);
-    if (accessibleCSIds !== null && !accessibleCSIds.includes(enrollment.cs_id)) {
-      throw new AppError(403, 'Bạn không có quyền truy cập gói học này');
+    if (accessibleCSIds !== null) {
+      const isOwnerInScope = accessibleCSIds.includes(enrollment.cs_id);
+      const viewerIds: number[] = Array.isArray((enrollment as any).cs_viewers)
+        ? (enrollment as any).cs_viewers.map((v: any) => Number(v.cs_id))
+        : [];
+      const isViewerInScope = viewerIds.some((vid) => accessibleCSIds.includes(vid));
+
+      if (mode === 'READ') {
+        if (!isOwnerInScope && !isViewerInScope) {
+          throw new AppError(403, 'Bạn không có quyền truy cập gói học này');
+        }
+      } else {
+        if (!isOwnerInScope) {
+          if (isViewerInScope) {
+            throw new AppError(403, 'Học viên đã bàn giao sang CSKH khác, bạn chỉ có quyền xem');
+          }
+          throw new AppError(403, 'Bạn không có quyền truy cập gói học này');
+        }
+      }
     }
 
     return enrollment;
@@ -81,12 +103,12 @@ export class CareService {
   // --- CareLog Methods ---
 
   async getCareLogs(enrollmentId: number, userId: number, roles: string[]) {
-    await this.assertEnrollmentAccess(enrollmentId, userId, roles);
+    await this.assertEnrollmentAccess(enrollmentId, userId, roles, 'READ');
     return this.repo.findCareLogsByEnrollmentId(enrollmentId);
   }
 
   async createCareLog(enrollmentId: number, dto: CreateCareLogDTO, userId: number, roles: string[]) {
-    const enrollment = await this.assertEnrollmentAccess(enrollmentId, userId, roles);
+    const enrollment = await this.assertEnrollmentAccess(enrollmentId, userId, roles, 'WRITE');
 
     return this.repo.createCareLog({
       enrollment_id: enrollmentId,
@@ -173,7 +195,7 @@ export class CareService {
   }
 
   async createCareTask(dto: CreateCareTaskDTO, userId: number, roles: string[]) {
-    const enrollment = await this.assertEnrollmentAccess(dto.enrollment_id, userId, roles);
+    const enrollment = await this.assertEnrollmentAccess(dto.enrollment_id, userId, roles, 'WRITE');
 
     const assignedToId = dto.assigned_to_id || enrollment.cs_id || userId;
     const dueAt = dto.due_at ? new Date(dto.due_at) : undefined;
@@ -241,7 +263,7 @@ export class CareService {
     userId: number,
     roles: string[]
   ) {
-    const enrollment = await this.assertEnrollmentAccess(enrollmentId, userId, roles);
+    const enrollment = await this.assertEnrollmentAccess(enrollmentId, userId, roles, 'WRITE');
     return this.repo.upsertCareLogBySession({
       enrollment_id: enrollmentId,
       after_session_number: sessionNumber,
@@ -260,7 +282,7 @@ export class CareService {
     userId: number,
     roles: string[]
   ) {
-    const enrollment = await this.assertEnrollmentAccess(enrollmentId, userId, roles);
+    const enrollment = await this.assertEnrollmentAccess(enrollmentId, userId, roles, 'WRITE');
 
     const updateData: any = {};
     if (dto.study_report_url !== undefined) updateData.study_report_url = dto.study_report_url;

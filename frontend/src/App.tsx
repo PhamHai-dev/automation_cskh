@@ -94,8 +94,10 @@ function App() {
               <Route path="/dashboard" element={<DashboardPage />} />
               <Route path="/tong-quan" element={<Navigate to="/dashboard" replace />} />
 
-              <Route path="/students" element={<StudentsPage />} />
+              <Route path="/students" element={<StudentsPage mode="students" />} />
+              <Route path="/students/care-reports" element={<StudentsPage mode="care_reports" />} />
               <Route path="/hoc-vien" element={<Navigate to="/students" replace />} />
+              <Route path="/hoc-vien/bao-cao-cham-soc" element={<Navigate to="/students/care-reports" replace />} />
 
               <Route path="/enrollments" element={<EnrollmentsPage />} />
               <Route path="/ghi-danh" element={<Navigate to="/enrollments" replace />} />

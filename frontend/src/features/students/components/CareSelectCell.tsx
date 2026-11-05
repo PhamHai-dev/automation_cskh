@@ -83,6 +83,7 @@ interface CareSelectCellProps {
   placeholder?: string;
   onSave: (newVal: string) => Promise<void>;
   className?: string;
+  disabled?: boolean;
 }
 
 export const CareSelectCell: React.FC<CareSelectCellProps> = ({
@@ -90,6 +91,7 @@ export const CareSelectCell: React.FC<CareSelectCellProps> = ({
   placeholder = 'Chọn phản hồi...',
   onSave,
   className = '',
+  disabled = false,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [customText, setCustomText] = useState(value || '');
@@ -242,6 +244,30 @@ export const CareSelectCell: React.FC<CareSelectCellProps> = ({
   const matchedOption = CARE_LOG_PRESET_OPTIONS.find(
     (opt) => opt.label.trim().toLowerCase() === value?.trim().toLowerCase()
   );
+
+  if (disabled) {
+    return (
+      <div className={`relative inline-block w-full max-w-[220px] ${className}`}>
+        <div
+          className={`flex items-center justify-between gap-1.5 px-2.5 py-1 rounded-full text-xs select-none border opacity-85 ${
+            value
+              ? matchedOption
+                ? `${matchedOption.bgClass} ${matchedOption.textClass} ${matchedOption.borderClass} font-medium`
+                : 'bg-slate-50 text-slate-700 border-slate-300 font-medium'
+              : 'bg-slate-100/50 text-slate-400 border-slate-200/60 italic'
+          }`}
+          title={value ? `${value} (Chỉ xem)` : 'Chỉ xem'}
+        >
+          <div className="flex items-center gap-1.5 truncate">
+            {matchedOption && (
+              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${matchedOption.dotClass}`} />
+            )}
+            <span className="truncate">{value || '—'}</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={`relative inline-block w-full max-w-[220px] ${className}`}>
