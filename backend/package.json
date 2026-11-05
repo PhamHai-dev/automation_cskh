@@ -13,7 +13,7 @@
     "test:coverage": "node ./node_modules/jest/bin/jest.js --coverage",
     "test:zalo": "node ./node_modules/jest/bin/jest.js tests/__tests__/zalo-pool-fixes.test.ts tests/__tests__/zalo-service-fixes.test.ts --no-coverage",
     "verify:zalo": "node ./node_modules/ts-node/dist/bin.js --transpile-only scripts/verify-zalo-sync.ts",
-    "postinstall": "node ./node_modules/prisma/build/index.js generate"
+    "postinstall": "node ./node_modules/prisma/build/index.js generate --schema=./prisma/schema.prisma"
   },
   "dependencies": {
     "@evex/linejs": "npm:@jsr/evex__linejs@^3.5.0",
