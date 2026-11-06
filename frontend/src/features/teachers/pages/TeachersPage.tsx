@@ -13,7 +13,8 @@ import { Select } from '../../../components/ui/Select';
 import { Modal } from '../../../components/ui/Modal';
 import { useToast } from '../../../components/ui/Toast';
 import { useDebouncedValue } from '../../../hooks/useDebouncedValue';
-import { useQuery, invalidateQueries } from '../../../hooks/useQuery';
+import { invalidateQueries } from '../../../hooks/useQuery';
+import { useTeachers } from '../hooks/useTeachers';
 import { Edit, Plus, Search, UserPlus, Key } from 'lucide-react';
 
 const TEACHER_TYPE_LABELS: Record<string, string> = {
@@ -84,18 +85,7 @@ export const TeachersPage: React.FC = () => {
     [page, pageSize, debouncedSearch, typeFilter, accountStatusFilter]
   );
 
-  const {
-    data: paginatedResult,
-    isLoading: loading,
-  } = useQuery({
-    queryKey: ['teachers', 'paginated', queryParams],
-    queryFn: (signal) => teachersApi.listPaginated(queryParams, signal),
-    staleTime: 5 * 60 * 1000,
-    keepPreviousData: true,
-    onError: (err: any) => {
-      toast.error(err.response?.data?.error?.message || 'Không thể tải danh sách giáo viên');
-    },
-  });
+  const { data: paginatedResult, isLoading: loading } = useTeachers(queryParams);
 
   const teachers = useMemo(() => paginatedResult?.data || [], [paginatedResult]);
   const meta = paginatedResult?.meta;
@@ -344,16 +334,13 @@ export const TeachersPage: React.FC = () => {
           <label className="block text-[11px] font-semibold text-text-secondary uppercase tracking-wider mb-1.5">
             Tìm theo Tên, Email hoặc Mã GV
           </label>
-          <div className="relative">
-            <input
-              type="text"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Nhập tên giáo viên..."
-              className="w-full h-9 pl-9 pr-3 border border-border rounded-xl text-sm bg-white text-text-primary focus:outline-none focus:ring-2 focus:ring-primary shadow-xs transition"
-            />
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
-          </div>
+          <Input
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            placeholder="Nhập tên giáo viên..."
+            leftIcon={<Search className="w-4 h-4" aria-hidden="true" />}
+            aria-label="Tìm theo tên, email hoặc mã giáo viên"
+          />
         </div>
 
         <div>
