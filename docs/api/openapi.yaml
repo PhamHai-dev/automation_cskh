@@ -13,6 +13,39 @@ security:
   - bearerAuth: []
 
 paths:
+  /api/v1/teachers:
+    get:
+      summary: List teachers with server-side search, filters, and pagination
+      tags: [Teachers]
+      parameters:
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 200, default: 20 } }
+        - { name: search, in: query, schema: { type: string, maxLength: 100 } }
+        - { name: active, in: query, schema: { type: boolean } }
+        - { name: teacher_type, in: query, schema: { type: string, enum: [VIETNAMESE, JAPANESE, OTHER] } }
+        - { name: account_status, in: query, schema: { type: string, enum: [HAS_ACCOUNT, NO_ACCOUNT, ACTIVE_ACCOUNT, LOCKED_ACCOUNT, PROVISIONED, UNPROVISIONED] } }
+      responses:
+        '200':
+          description: Paginated teacher list
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, meta]
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/Teacher' } }
+                  meta:
+                    type: object
+                    required: [page, pageSize, total, totalPages]
+                    properties:
+                      page: { type: integer }
+                      pageSize: { type: integer }
+                      total: { type: integer }
+                      totalPages: { type: integer }
+        '400': { description: Invalid query parameters }
+        '401': { description: Authentication required }
+        '403': { description: Role or data-scope restriction }
+
   /api/v1/settings/auto-attendance/run:
     post:
       summary: Run today's auto-attendance cycle and retry FAILED executions (ADMIN only)
@@ -1106,6 +1139,18 @@ components:
       scheme: bearer
       bearerFormat: JWT
   schemas:
+    Teacher:
+      type: object
+      properties:
+        id: { type: integer }
+        code: { type: string }
+        name: { type: string }
+        phone: { type: [string, 'null'] }
+        email: { type: [string, 'null'] }
+        teacher_type: { type: string, enum: [VIETNAMESE, JAPANESE, OTHER] }
+        active: { type: boolean }
+        user: { $ref: '#/components/schemas/User' }
+
     User:
       type: object
       properties:

@@ -23,16 +23,29 @@ export class TeachersController {
         typeof req.query.teacher_type === 'string' && req.query.teacher_type.trim()
           ? req.query.teacher_type.trim().toUpperCase()
           : undefined;
+      if (teacherType && !['VIETNAMESE', 'JAPANESE', 'OTHER'].includes(teacherType)) {
+        throw new AppError(400, 'Tham số teacher_type không hợp lệ');
+      }
 
       const accountStatus =
         typeof req.query.account_status === 'string' && req.query.account_status.trim()
           ? req.query.account_status.trim().toUpperCase()
           : undefined;
+      if (
+        accountStatus &&
+        !['HAS_ACCOUNT', 'NO_ACCOUNT', 'ACTIVE_ACCOUNT', 'LOCKED_ACCOUNT', 'PROVISIONED', 'UNPROVISIONED'].includes(
+          accountStatus,
+        )
+      ) {
+        throw new AppError(400, 'Tham số account_status không hợp lệ');
+      }
 
       const result = await teachersService.getTeachersWithMeta({
         page: pagination.page,
         pageSize: pagination.pageSize,
-        isPaginated: pagination.isPaginated,
+        // A list endpoint must not load the entire teacher table by default.
+        // The frontend always sends page/pageSize, but API consumers may not.
+        isPaginated: true,
         search,
         active,
         teacherType,
