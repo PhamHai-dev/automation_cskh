@@ -1928,8 +1928,11 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
       key: 'study_report_url',
       header: 'Báo cáo học tập',
       cell: (item: Student) => {
-        const reportUrl = item.enrollments?.[0]?.study_report_url;
-        if (!reportUrl) return <span className="text-slate-400 text-xs"> </span>;
+        const enr = item.enrollments?.[0];
+        const isJlpt = (enr?.program_type || '').toUpperCase() === 'JLPT';
+        const reportUrl = enr?.study_report_url;
+        if (!isJlpt && !reportUrl) return <span className="text-slate-400 text-xs"> </span>;
+
         return (
           <div className="flex items-center justify-center whitespace-nowrap">
             <button

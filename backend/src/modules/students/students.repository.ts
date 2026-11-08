@@ -1,8 +1,24 @@
 import { prisma } from '../../prisma/client';
-import { CreateStudentDTO, UpdateStudentDTO, StudentListQueryOptions, StudentListMeta } from './students.types';
+import {
+  CreateStudentDTO,
+  UpdateStudentDTO,
+  StudentListQueryOptions,
+  StudentListMeta,
+  JlptAttendanceReportQueryOptions,
+  UpdateJlptAttendanceReportDTO,
+} from './students.types';
 import { AuthUser } from '../../middlewares/auth.middleware';
 import { AppError } from '../../middlewares/error.middleware';
 import { getAccessibleClassIds } from '../classes/classes.scope';
+import {
+  buildJlptAttendanceReportRow,
+  computeJlptReportSummary,
+  DEFAULT_JLPT_ATTENDANCE_THRESHOLDS,
+  JLPT_COURSE_TRACK_LIST,
+  JLPT_EXAM_SCHEDULE_CONFIG,
+  JlptAttendanceReportRow,
+  matchesJlptWarningFilter,
+} from './jlpt-attendance-report.util';
 
 function isTeacherOnlyActor(actor: AuthUser): boolean {
   return (
@@ -1254,6 +1270,420 @@ export class StudentsRepository {
       }
 
       return student;
+    });
+  }
+
+  async getJlptAttendanceReport(options: JlptAttendanceReportQueryOptions) {
+    const actor = options.actor as AuthUser;
+    const isTeacherOnly = isTeacherOnlyActor(actor);
+
+    let enrollmentScopeFilter: any = { program_type: 'JLPT' };
+    let allowedCsIds: number[] | undefined = undefined;
+
+    if (isTeacherOnly) {
+      const accessibleClassIds = (await getAccessibleClassIds(actor)) ?? [];
+      if (accessibleClassIds.length === 0) {
+        return {
+          data: [],
+          meta: {
+            page: options.page || 1,
+            pageSize: options.pageSize || 50,
+            total: 0,
+            totalPages: 1,
+            summary: computeJlptReportSummary([]),
+            filterOptions: {
+              classList: [],
+              classCodes: [],
+              cvhtList: [],
+              courseTrackList: JLPT_COURSE_TRACK_LIST,
+              courseTracks: JLPT_COURSE_TRACK_LIST,
+            },
+            examScheduleConfig: JLPT_EXAM_SCHEDULE_CONFIG,
+            thresholds: DEFAULT_JLPT_ATTENDANCE_THRESHOLDS,
+          },
+        };
+      }
+      enrollmentScopeFilter = {
+        program_type: 'JLPT',
+        enrollment_classes: {
+          some: { class_id: { in: accessibleClassIds } },
+        },
+      };
+    } else {
+      allowedCsIds = await getStudentCsScope(actor);
+      if (allowedCsIds !== undefined) {
+        enrollmentScopeFilter = {
+          program_type: 'JLPT',
+          OR: [
+            { cs_id: { in: allowedCsIds } },
+            { cs_viewers: { some: { cs_id: { in: allowedCsIds } } } },
+          ],
+        };
+      }
+    }
+
+    const studentWhere: any = {
+      ...(options.student_id ? { id: Number(options.student_id) } : {}),
+      enrollments: {
+        some: enrollmentScopeFilter,
+      },
+    };
+
+    const students = await prisma.student.findMany({
+      where: studentWhere,
+      include: {
+        enrollments: {
+          where: enrollmentScopeFilter,
+          include: {
+            package: true,
+            cs: {
+              select: {
+                id: true,
+                code: true,
+                name: true,
+                email: true,
+                staff_code: true,
+              },
+            },
+            cs_viewers: {
+              select: {
+                cs_id: true,
+              },
+            },
+            enrollment_classes: {
+              include: {
+                class: {
+                  select: {
+                    id: true,
+                    class_code: true,
+                    class_name: true,
+                    level: true,
+                  },
+                },
+                attendance: {
+                  where: { deleted_at: null },
+                  select: {
+                    id: true,
+                    status: true,
+                    reconciliation_state: true,
+                    deleted_at: true,
+                    class_session: {
+                      select: {
+                        id: true,
+                        session_number: true,
+                        session_date: true,
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          orderBy: { created_at: 'desc' },
+        },
+      },
+      orderBy: [{ id: 'asc' }],
+    });
+
+    const allScopedRows: JlptAttendanceReportRow[] = [];
+    const classSet = new Set<string>();
+    const cvhtSet = new Set<string>();
+
+    for (const student of students) {
+      const enrollments = Array.isArray(student.enrollments) ? student.enrollments : [];
+      for (const enrollment of enrollments) {
+        if (String(enrollment.program_type || '').toUpperCase() !== 'JLPT') continue;
+
+        const isReadonly =
+          !isTeacherOnly &&
+          allowedCsIds !== undefined &&
+          !allowedCsIds.includes(Number(enrollment.cs_id));
+
+        const row = buildJlptAttendanceReportRow({
+          student,
+          enrollment,
+          isReadonly,
+          thresholds: DEFAULT_JLPT_ATTENDANCE_THRESHOLDS,
+        });
+
+        if (row.class_code) classSet.add(row.class_code);
+        if (row.cvht_code) cvhtSet.add(row.cvht_code.toUpperCase());
+
+        allScopedRows.push(row);
+      }
+    }
+
+    // Apply query filters over the computed rows
+    const searchLower = options.search ? options.search.trim().toLowerCase() : '';
+    const classCodeUpper =
+      options.class_code && options.class_code.trim().toUpperCase() !== 'ALL'
+        ? options.class_code.trim().toUpperCase()
+        : '';
+    const courseTrackFilter =
+      options.course_track && options.course_track.trim().toUpperCase() !== 'ALL'
+        ? options.course_track.trim()
+        : '';
+    const statusFilter =
+      options.status && options.status.trim().toUpperCase() !== 'ALL'
+        ? options.status.trim().toUpperCase()
+        : '';
+    const cvhtFilter =
+      options.cvht && options.cvht.trim().toUpperCase() !== 'ALL'
+        ? options.cvht.trim()
+        : '';
+
+    const filteredRows = allScopedRows.filter((row) => {
+      if (searchLower) {
+        const hitName = row.full_name.toLowerCase().includes(searchLower);
+        const hitExt = row.external_id.toLowerCase().includes(searchLower);
+        const hitClass = row.class_code.toLowerCase().includes(searchLower);
+        const hitId = String(row.student_id) === searchLower;
+        if (!hitName && !hitExt && !hitClass && !hitId) return false;
+      }
+
+      if (classCodeUpper && row.class_code.toUpperCase() !== classCodeUpper) {
+        return false;
+      }
+
+      if (
+        courseTrackFilter &&
+        row.course_track.toUpperCase() !== courseTrackFilter.toUpperCase()
+      ) {
+        return false;
+      }
+
+      if (statusFilter && row.status.toUpperCase() !== statusFilter) {
+        return false;
+      }
+
+      if (cvhtFilter) {
+        const rawCvhtUpper = cvhtFilter.toUpperCase();
+        if (rawCvhtUpper.startsWith('CODE:')) {
+          const targetCode = rawCvhtUpper.slice(5).trim();
+          if (!row.cvht_code.toUpperCase().includes(targetCode)) return false;
+        } else if (rawCvhtUpper.startsWith('ID:')) {
+          const targetId = parseInt(rawCvhtUpper.slice(3).trim(), 10);
+          if (!Number.isNaN(targetId) && row.cs_id !== targetId) return false;
+        } else {
+          const matchCode = row.cvht_code.toUpperCase().includes(rawCvhtUpper);
+          const matchName = row.cs_name.toUpperCase().includes(rawCvhtUpper);
+          if (!matchCode && !matchName) return false;
+        }
+      }
+
+      if (
+        !matchesJlptWarningFilter(
+          row,
+          options.warning_filter,
+          DEFAULT_JLPT_ATTENDANCE_THRESHOLDS,
+        )
+      ) {
+        return false;
+      }
+
+      return true;
+    });
+
+    const summary = computeJlptReportSummary(
+      filteredRows,
+      DEFAULT_JLPT_ATTENDANCE_THRESHOLDS,
+    );
+    const page = options.page && options.page >= 1 ? options.page : 1;
+    const pageSize =
+      options.pageSize && options.pageSize >= 1 ? Math.min(options.pageSize, 200) : 50;
+    const total = filteredRows.length;
+    const totalPages = Math.max(1, Math.ceil(total / pageSize));
+    const pagedData = filteredRows.slice((page - 1) * pageSize, page * pageSize);
+    const sortedClasses = Array.from(classSet).filter(Boolean).sort();
+    const sortedCvhts = Array.from(cvhtSet).filter(Boolean).sort();
+
+    return {
+      data: pagedData,
+      meta: {
+        page,
+        pageSize,
+        total,
+        totalPages,
+        summary,
+        filterOptions: {
+          classList: sortedClasses,
+          classCodes: sortedClasses,
+          cvhtList: sortedCvhts,
+          courseTrackList: JLPT_COURSE_TRACK_LIST,
+          courseTracks: JLPT_COURSE_TRACK_LIST,
+        },
+        examScheduleConfig: JLPT_EXAM_SCHEDULE_CONFIG,
+        thresholds: DEFAULT_JLPT_ATTENDANCE_THRESHOLDS,
+      },
+    };
+  }
+
+  async updateJlptAttendanceReport(
+    studentId: number,
+    data: UpdateJlptAttendanceReportDTO,
+    actor: AuthUser,
+  ): Promise<JlptAttendanceReportRow> {
+    const isTeacherOnly = isTeacherOnlyActor(actor);
+    let accessibleClassIds: number[] = [];
+    let allowedCsIds: number[] | undefined = undefined;
+
+    if (isTeacherOnly) {
+      accessibleClassIds = (await getAccessibleClassIds(actor)) ?? [];
+      if (accessibleClassIds.length === 0) {
+        throw new AppError(403, 'Bạn không phụ trách học viên này');
+      }
+    } else {
+      allowedCsIds = await getStudentCsScope(actor);
+    }
+
+    return prisma.$transaction(async (tx) => {
+      const student = await tx.student.findUnique({
+        where: { id: studentId },
+      });
+      if (!student) {
+        throw new AppError(404, 'Không tìm thấy học viên');
+      }
+
+      const enrollmentWhere: any = {
+        student_id: studentId,
+        program_type: 'JLPT',
+        ...(data.enrollment_id ? { id: data.enrollment_id } : {}),
+      };
+
+      if (isTeacherOnly) {
+        enrollmentWhere.enrollment_classes = {
+          some: { class_id: { in: accessibleClassIds } },
+        };
+      } else if (allowedCsIds !== undefined) {
+        enrollmentWhere.cs_id =
+          allowedCsIds.length === 1 ? allowedCsIds[0] : { in: allowedCsIds };
+      }
+
+      const enrollment = await tx.enrollment.findFirst({
+        where: enrollmentWhere,
+        orderBy: { id: 'desc' },
+      });
+
+      if (!enrollment) {
+        if (!isTeacherOnly && allowedCsIds !== undefined && (tx.enrollment as any)?.findFirst) {
+          const readonlyEnrollment = await tx.enrollment.findFirst({
+            where: {
+              student_id: studentId,
+              program_type: 'JLPT',
+              ...(data.enrollment_id ? { id: data.enrollment_id } : {}),
+              cs_viewers: { some: { cs_id: { in: allowedCsIds } } },
+            },
+            select: { id: true },
+          });
+          if (readonlyEnrollment) {
+            throw new AppError(403, 'Chế độ Chỉ xem, không có quyền chỉnh sửa');
+          }
+        }
+        throw new AppError(403, 'Bạn không phụ trách học viên hoặc ghi danh JLPT này');
+      }
+
+      const currentMeta =
+        enrollment.program_metadata && typeof enrollment.program_metadata === 'object'
+          ? { ...(enrollment.program_metadata as Record<string, any>) }
+          : {};
+
+      if (data.class_code !== undefined) {
+        currentMeta.latest_class_code = data.class_code.trim();
+      }
+
+      if (data.overrides !== undefined) {
+        const prevOverrides =
+          currentMeta.jlpt_chuyen_can_overrides &&
+          typeof currentMeta.jlpt_chuyen_can_overrides === 'object'
+            ? { ...currentMeta.jlpt_chuyen_can_overrides }
+            : {};
+        currentMeta.jlpt_chuyen_can_overrides = {
+          ...prevOverrides,
+          ...data.overrides,
+        };
+      }
+
+      if (data.test_scores !== undefined) {
+        const prevScores =
+          currentMeta.test_scores && typeof currentMeta.test_scores === 'object'
+            ? { ...currentMeta.test_scores }
+            : {};
+        for (const [k, v] of Object.entries(data.test_scores)) {
+          if (v === null || v === undefined || String(v).trim() === '') {
+            delete prevScores[k];
+          } else {
+            prevScores[k] = String(v).trim();
+          }
+        }
+        currentMeta.test_scores = prevScores;
+      }
+
+      if (data.nkht_sessions !== undefined) {
+        currentMeta.jlpt_nkht_sessions = data.nkht_sessions;
+      }
+
+      const enrollmentUpdate: any = {
+        program_metadata: currentMeta,
+      };
+
+      if (data.exchange_info !== undefined) {
+        enrollmentUpdate.exchange_info = data.exchange_info || null;
+      }
+      if (data.status !== undefined) {
+        enrollmentUpdate.status = data.status as any;
+      }
+
+      const updatedEnrollment = await tx.enrollment.update({
+        where: { id: enrollment.id },
+        data: enrollmentUpdate,
+        include: {
+          package: true,
+          cs: {
+            select: {
+              id: true,
+              code: true,
+              name: true,
+              email: true,
+              staff_code: true,
+            },
+          },
+          enrollment_classes: {
+            include: {
+              class: {
+                select: {
+                  id: true,
+                  class_code: true,
+                  class_name: true,
+                  level: true,
+                },
+              },
+              attendance: {
+                where: { deleted_at: null },
+                select: {
+                  id: true,
+                  status: true,
+                  reconciliation_state: true,
+                  deleted_at: true,
+                  class_session: {
+                    select: {
+                      id: true,
+                      session_number: true,
+                      session_date: true,
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      });
+
+      return buildJlptAttendanceReportRow({
+        student,
+        enrollment: updatedEnrollment,
+        isReadonly: false,
+        thresholds: DEFAULT_JLPT_ATTENDANCE_THRESHOLDS,
+      });
     });
   }
 }

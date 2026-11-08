@@ -13,6 +13,7 @@ import { StatusDonut, EnrollmentTrendArea, EnrollmentByCSBar } from '../componen
 import { CareOutcomeDonut, MilestoneCoverageChart } from '../components/CareCharts';
 import { AttendanceDonut, AttendanceTrendLine, AttendanceByClassBar } from '../components/AttendanceCharts';
 import { TasksByTypeBar, CSLeaderboard, CompletionBar } from '../components/PerformanceCharts';
+import { JlptAttendanceReportTabPanel } from '../../students/pages/JlptAttendanceReportPage';
 import { dashboardApi } from '../api/dashboard.api';
 import { downloadCSV } from '../utils/csv';
 import {
@@ -31,15 +32,17 @@ import {
   MessageSquareHeart,
   CalendarCheck,
   Trophy,
+  FileSpreadsheet,
 } from 'lucide-react';
 import { useAuth } from '../../../contexts/AuthContext';
 
-type TabKey = 'overview' | 'care' | 'attendance' | 'performance';
+type TabKey = 'overview' | 'care' | 'attendance' | 'jlpt_attendance' | 'performance';
 
 const TAB_ITEMS: HorizontalTabItem<TabKey>[] = [
   { value: 'overview', label: 'Tổng quan', icon: <LayoutDashboard /> },
   { value: 'care', label: 'Chăm sóc', icon: <MessageSquareHeart /> },
   { value: 'attendance', label: 'Chuyên cần', icon: <CalendarCheck /> },
+  { value: 'jlpt_attendance', label: 'Chuyên cần HV (JLPT)', icon: <FileSpreadsheet /> },
   { value: 'performance', label: 'Hiệu suất & Nhiệm vụ', icon: <Trophy /> },
 ];
 
@@ -94,8 +97,9 @@ const DashboardPage: React.FC = () => {
   const [attendance, setAttendance] = useState<AttendancePayload | null>(null);
   const [performance, setPerformance] = useState<PerformancePayload | null>(null);
 
-  // Sync filters + tab to URL
+  // Sync filters + tab to URL (skip overwriting when on jlpt_attendance tab as it manages its own query params)
   useEffect(() => {
+    if (activeTab === 'jlpt_attendance') return;
     const next = new URLSearchParams();
     next.set('tab', activeTab);
     if (filters.date_from) next.set('date_from', filters.date_from);
@@ -107,6 +111,7 @@ const DashboardPage: React.FC = () => {
 
   // Lazy-load the active tab's aggregate endpoint on tab/filter change
   const loadTab = useCallback(async () => {
+    if (activeTab === 'jlpt_attendance') return;
     setLoading(true);
     try {
       if (activeTab === 'overview') setOverview(await dashboardApi.getOverview(filters));
@@ -124,7 +129,17 @@ const DashboardPage: React.FC = () => {
     loadTab();
   }, [loadTab]);
 
-  const setTab = (tab: TabKey) => setSearchParams({ ...Object.fromEntries(searchParams), tab });
+  const setTab = (tab: TabKey) => {
+    const next = new URLSearchParams();
+    next.set('tab', tab);
+    if (tab !== 'jlpt_attendance') {
+      if (filters.date_from) next.set('date_from', filters.date_from);
+      if (filters.date_to) next.set('date_to', filters.date_to);
+      if (filters.status) next.set('status', filters.status);
+      if (filters.cs_id) next.set('cs_id', String(filters.cs_id));
+    }
+    setSearchParams(next);
+  };
 
   const activeFiltersCount = Object.values(filters).filter(Boolean).length;
   const canSeeLeaderboard = !!user?.roles?.some((r) => r === 'ADMIN' || r === 'MANAGE');
@@ -149,64 +164,71 @@ const DashboardPage: React.FC = () => {
         title="Báo cáo & Thống kê CSKH"
         description="Phân tích dữ liệu chăm sóc, chuyên cần và hiệu suất đội CS theo thời gian thực"
         actions={
-          <Button variant="outline" size="sm" onClick={loadTab} isLoading={loading} leftIcon={<RefreshCw className="w-3.5 h-3.5" />}>
-            Làm mới
-          </Button>
+          activeTab !== 'jlpt_attendance' ? (
+            <Button variant="outline" size="sm" onClick={loadTab} isLoading={loading} leftIcon={<RefreshCw className="w-3.5 h-3.5" />}>
+              Làm mới
+            </Button>
+          ) : undefined
         }
       />
 
-      {/* Filter bar + quick presets */}
-      <FilterBar
-        title="Bộ lọc dữ liệu"
-        activeCount={activeFiltersCount}
-        onClear={() => setFilters({})}
-        gridClassName="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 items-end"
-      >
-        <div className="sm:col-span-2 md:col-span-2">
-          <label className="block text-[11px] font-semibold text-text-secondary uppercase tracking-wider mb-1.5">
-            Khoảng thời gian
-          </label>
-          <div className="flex flex-wrap gap-1.5">
-            {PRESETS.map((p) => (
-              <button
-                key={p.key}
-                onClick={() => applyPreset(p.key)}
-                className={`px-3 h-9 text-xs font-semibold rounded-xl border transition ${
-                  currentPreset === p.key
-                    ? 'bg-primary text-white border-primary'
-                    : 'bg-white text-text-secondary border-border hover:bg-surface-muted'
-                }`}
-              >
-                {p.label}
-              </button>
-            ))}
+      {/* Filter bar + quick presets (ẩn khi đang ở tab Chuyên cần HV JLPT vì tab đó có bộ lọc riêng theo Lớp/Khóa/Cảnh báo) */}
+      {activeTab !== 'jlpt_attendance' && (
+        <FilterBar
+          title="Bộ lọc dữ liệu"
+          activeCount={activeFiltersCount}
+          onClear={() => setFilters({})}
+          gridClassName="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 items-end"
+        >
+          <div className="sm:col-span-2 md:col-span-2">
+            <label className="block text-[11px] font-semibold text-text-secondary uppercase tracking-wider mb-1.5">
+              Khoảng thời gian
+            </label>
+            <div className="flex flex-wrap gap-1.5">
+              {PRESETS.map((p) => (
+                <button
+                  key={p.key}
+                  onClick={() => applyPreset(p.key)}
+                  className={`px-3 h-9 text-xs font-semibold rounded-xl border transition ${
+                    currentPreset === p.key
+                      ? 'bg-primary text-white border-primary'
+                      : 'bg-white text-text-secondary border-border hover:bg-surface-muted'
+                  }`}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
 
-        <div>
-          <label className="block text-[11px] font-semibold text-text-secondary uppercase tracking-wider mb-1.5">Từ ngày</label>
-          <input
-            type="date"
-            value={filters.date_from || ''}
-            onChange={(e) => setFilters({ ...filters, date_from: e.target.value || undefined })}
-            className="w-full h-9 px-3 border border-border rounded-xl text-sm bg-white text-text-primary focus:outline-none focus:ring-2 focus:ring-primary"
-          />
-        </div>
-        <div>
-          <label className="block text-[11px] font-semibold text-text-secondary uppercase tracking-wider mb-1.5">Đến ngày</label>
-          <input
-            type="date"
-            value={filters.date_to || ''}
-            onChange={(e) => setFilters({ ...filters, date_to: e.target.value || undefined })}
-            className="w-full h-9 px-3 border border-border rounded-xl text-sm bg-white text-text-primary focus:outline-none focus:ring-2 focus:ring-primary"
-          />
-        </div>
-      </FilterBar>
+          <div>
+            <label className="block text-[11px] font-semibold text-text-secondary uppercase tracking-wider mb-1.5">Từ ngày</label>
+            <input
+              type="date"
+              value={filters.date_from || ''}
+              onChange={(e) => setFilters({ ...filters, date_from: e.target.value || undefined })}
+              className="w-full h-9 px-3 border border-border rounded-xl text-sm bg-white text-text-primary focus:outline-none focus:ring-2 focus:ring-primary"
+            />
+          </div>
+          <div>
+            <label className="block text-[11px] font-semibold text-text-secondary uppercase tracking-wider mb-1.5">Đến ngày</label>
+            <input
+              type="date"
+              value={filters.date_to || ''}
+              onChange={(e) => setFilters({ ...filters, date_to: e.target.value || undefined })}
+              className="w-full h-9 px-3 border border-border rounded-xl text-sm bg-white text-text-primary focus:outline-none focus:ring-2 focus:ring-primary"
+            />
+          </div>
+        </FilterBar>
+      )}
 
       {/* Tabs */}
       <div className="mb-6">
         <HorizontalTabs items={TAB_ITEMS} value={activeTab} onChange={setTab} ariaLabel="Dashboard tabs" />
       </div>
+
+      {/* ---- TAB JLPT ATTENDANCE (CHUYÊN CẦN HV) ---- */}
+      {activeTab === 'jlpt_attendance' && <JlptAttendanceReportTabPanel />}
 
       {/* ---- TAB 1: OVERVIEW ---- */}
       {activeTab === 'overview' && overview && (
@@ -343,7 +365,7 @@ const DashboardPage: React.FC = () => {
         </div>
       )}
 
-      {loading && !overview && !care && !attendance && !performance && (
+      {loading && activeTab !== 'jlpt_attendance' && !overview && !care && !attendance && !performance && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {[0, 1, 2, 3].map((i) => (
             <div key={i} className="h-64 bg-white rounded-2xl border border-border/80 animate-pulse" />

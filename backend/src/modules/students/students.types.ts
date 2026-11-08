@@ -141,3 +141,51 @@ export interface StudentListResult<T = any> {
   data: T[];
   meta: StudentListMeta;
 }
+
+export interface JlptAttendanceReportQueryOptions {
+  actor: { id: number; roles: string[]; email?: string | null };
+  page?: number;
+  pageSize?: number;
+  search?: string;
+  class_code?: string;
+  course_track?: string;
+  status?: string;
+  cvht?: string;
+  warning_filter?: string;
+  student_id?: number;
+}
+
+export interface UpdateJlptAttendanceReportDTO {
+  enrollment_id?: number;
+  exchange_info?: string;
+  status?:
+    | 'WAITING_CLASS'
+    | 'STUDYING'
+    | 'PAUSED'
+    | 'FINISHED'
+    | 'UPCOMING'
+    | 'NOT_STARTED'
+    | 'CANCELLED';
+  class_code?: string;
+  overrides?: {
+    attended_sessions?: number | null;
+    total_marked_sessions?: number | null;
+    average_exam_score?: number | null;
+    homework_completed_sessions?: number | null;
+    max_consecutive_absent?: number | null;
+    max_consecutive_no_homework?: number | null;
+  };
+  test_scores?: Record<string, string | number | null>;
+  nkht_sessions?: Array<{
+    session_number: number;
+    session_label?: string;
+    attendance?: 'O' | 'X' | '';
+    preparation?: string;
+    attitude?: string;
+    homework_status?: string;
+    homework_done?: boolean;
+    homework_score?: number | null;
+    exam_score?: number | string | null;
+    note?: string;
+  }>;
+}

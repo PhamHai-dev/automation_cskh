@@ -20,6 +20,7 @@ const ROUTE_MAP: RouteMap[] = [
   { prefix: '/dashboard', group: 'Tổng quan', page: 'Dashboard thống kê' },
 
   // ── Chăm sóc học viên ────────────────────────────────────────────────────
+  { prefix: '/students/jlpt-attendance-report', group: 'Chăm sóc học viên', page: 'Chuyên cần HV (JLPT)' },
   { prefix: '/students/care-reports', group: 'Chăm sóc học viên', page: 'Báo cáo học tập & chăm sóc' },
   { prefix: '/students', group: 'Chăm sóc học viên', page: 'Hồ sơ học viên' },
   { prefix: '/enrollments', group: 'Chăm sóc học viên', page: 'Quản lý ghi danh' },

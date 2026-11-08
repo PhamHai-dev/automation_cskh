@@ -108,3 +108,49 @@ export const updateStudentSchema = z.object({
     account_created_at: z.string().optional(),
   })
 });
+
+export const updateJlptAttendanceReportSchema = z.object({
+  body: z.object({
+    enrollment_id: z.number().int().positive().optional(),
+    exchange_info: z.string().optional(),
+    status: z
+      .enum([
+        'WAITING_CLASS',
+        'STUDYING',
+        'PAUSED',
+        'FINISHED',
+        'UPCOMING',
+        'NOT_STARTED',
+        'CANCELLED',
+      ])
+      .optional(),
+    class_code: z.string().optional(),
+    overrides: z
+      .object({
+        attended_sessions: z.number().nullable().optional(),
+        total_marked_sessions: z.number().nullable().optional(),
+        average_exam_score: z.number().nullable().optional(),
+        homework_completed_sessions: z.number().nullable().optional(),
+        max_consecutive_absent: z.number().nullable().optional(),
+        max_consecutive_no_homework: z.number().nullable().optional(),
+      })
+      .optional(),
+    test_scores: z.record(z.union([z.string(), z.number(), z.null()])).optional(),
+    nkht_sessions: z
+      .array(
+        z.object({
+          session_number: z.number().int().positive(),
+          session_label: z.string().optional(),
+          attendance: z.enum(['O', 'X', '']).optional(),
+          preparation: z.string().optional(),
+          attitude: z.string().optional(),
+          homework_status: z.string().optional(),
+          homework_done: z.boolean().optional(),
+          homework_score: z.number().nullable().optional(),
+          exam_score: z.union([z.number(), z.string(), z.null()]).optional(),
+          note: z.string().optional(),
+        }),
+      )
+      .optional(),
+  }),
+});

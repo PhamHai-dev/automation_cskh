@@ -142,6 +142,8 @@ function App() {
               <Route path="/care" element={<CarePage />} />
               <Route path="/cham-soc" element={<Navigate to="/care" replace />} />
 
+              <Route path="/students/jlpt-attendance-report" element={<Navigate to="/dashboard?tab=jlpt_attendance" replace />} />
+              <Route path="/hoc-vien/chuyen-can-jlpt" element={<Navigate to="/dashboard?tab=jlpt_attendance" replace />} />
               <Route path="/students/:id/study-report" element={<StudentStudyReportPage />} />
               <Route path="/hoc-vien/:id/bao-cao-hoc-tap" element={<StudentStudyReportPage />} />
 

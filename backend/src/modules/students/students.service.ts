@@ -4,6 +4,8 @@ import {
   UpdateStudentDTO,
   StudentListQueryOptions,
   StudentListResult,
+  JlptAttendanceReportQueryOptions,
+  UpdateJlptAttendanceReportDTO,
 } from './students.types';
 import { AuthUser } from '../../middlewares/auth.middleware';
 import { Prisma } from '@prisma/client';
@@ -171,6 +173,25 @@ export class StudentsService {
     } catch (error) {
       if (isAccessDenied(error)) {
         await recordAccessDenied(actor, id, 'UPDATE', error);
+      }
+      throw error;
+    }
+  }
+
+  async getJlptAttendanceReport(options: JlptAttendanceReportQueryOptions) {
+    return this.repository.getJlptAttendanceReport(options);
+  }
+
+  async updateJlptAttendanceReport(
+    studentId: number,
+    data: UpdateJlptAttendanceReportDTO,
+    actor: AuthUser,
+  ) {
+    try {
+      return await this.repository.updateJlptAttendanceReport(studentId, data, actor);
+    } catch (error) {
+      if (isAccessDenied(error)) {
+        await recordAccessDenied(actor, studentId, 'UPDATE', error);
       }
       throw error;
     }

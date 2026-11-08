@@ -1,14 +1,29 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { studentsApi } from '../api/students.api';
-import { Student } from '../types/students.types';
+import {
+  Student,
+  JlptAttendanceReportRow,
+  JlptNkhtSessionItem,
+  UpdateJlptAttendanceReportDTO,
+} from '../types/students.types';
 import { Enrollment } from '../../enrollments/types/enrollments.types';
 import { PageContainer } from '../../../components/common/PageContainer';
+import { PageHeader } from '../../../components/common/PageHeader';
 import { Button } from '../../../components/ui/Button';
 import { Select } from '../../../components/ui/Select';
 import { useToast } from '../../../components/ui/Toast';
 import { useAuth } from '../../../contexts/AuthContext';
-import { ArrowLeft, Save, CheckCircle2, Printer, Plus, Trash2, Lock } from 'lucide-react';
+import { JlptChuyenCanTable } from './JlptAttendanceReportPage';
+import {
+  ArrowLeft,
+  Save,
+  CheckCircle2,
+  Printer,
+  Plus,
+  Trash2,
+  Lock,
+} from 'lucide-react';
 
 export interface StageBlockData {
   date_range: string;
@@ -59,8 +74,6 @@ export interface StudyReportData {
 }
 
 type StudyReportTemplateMode = 'KAIWA' | 'JLPT';
-
-const DEFAULT_JLPT_NOTE_TEMPLATE = `Kính gửi các quý PHHS, GV xin phép gửi [Tổng hợp buổi học]\n- Nội dung bài học: ...\n- Tinh thần & thái độ học tập: ...\n- Bài tập về nhà & dặn dò: ...`;
 
 const emptyStageBlock = (): StageBlockData => ({
   date_range: '',
@@ -183,15 +196,19 @@ export const StudentStudyReportPage: React.FC = () => {
   const backTarget =
     fromPath === '/teacher/student-info' || isTeacherOnly
       ? '/teacher/student-info'
+      : fromPath?.startsWith('/dashboard')
+      ? fromPath
       : fromPath === '/students'
       ? '/students'
       : '/students/care-reports';
   const backLabel =
     backTarget === '/teacher/student-info'
       ? 'Quay lại Thông tin HV & Buổi học'
+      : backTarget.startsWith('/dashboard')
+      ? 'Quay lại Dashboard Chuyên cần HV'
       : backTarget === '/students'
       ? 'Quay lại Hồ sơ học viên'
-      : 'Quay lại Báo cáo học tập & chăm sóc';
+      : 'Quay lại Báo cáo & Chăm sóc HV';
 
   const [student, setStudent] = useState<Student | null>(null);
   const [loading, setLoading] = useState(true);
@@ -200,7 +217,32 @@ export const StudentStudyReportPage: React.FC = () => {
   const [report, setReport] = useState<StudyReportData>(() => createInitialReportData());
   const [selectedEnrollmentId, setSelectedEnrollmentId] = useState<number | null>(null);
   const [templateMode, setTemplateMode] = useState<StudyReportTemplateMode>('KAIWA');
-  const [hydratedSnapshot, setHydratedSnapshot] = useState<string>(() => JSON.stringify(createInitialReportData()));
+  const [hydratedSnapshot, setHydratedSnapshot] = useState<string>(() =>
+    JSON.stringify(createInitialReportData())
+  );
+
+  const [jlptReportRow, setJlptReportRow] = useState<JlptAttendanceReportRow | null>(null);
+  const [jlptNkhtSessions, setJlptNkhtSessions] = useState<JlptNkhtSessionItem[]>([]);
+
+  const fetchJlptReport = async (studentId: number, enrollmentId?: number | null) => {
+    try {
+      const res = await studentsApi.getJlptAttendanceReport({
+        student_id: studentId,
+        pageSize: 20,
+      });
+      const list = res.data || [];
+      const matched =
+        (enrollmentId ? list.find((r) => r.enrollment_id === enrollmentId) : null) ||
+        list[0] ||
+        null;
+      if (matched) {
+        setJlptReportRow(matched);
+        setJlptNkhtSessions(Array.isArray(matched.nkht_sessions) ? matched.nkht_sessions : []);
+      }
+    } catch {
+      // ignore if student has no JLPT enrollment
+    }
+  };
 
   useEffect(() => {
     const fetchDetail = async () => {
@@ -210,9 +252,14 @@ export const StudentStudyReportPage: React.FC = () => {
         const data = await studentsApi.get(Number(id));
         setStudent(data);
         const list = data.enrollments ?? [];
-        setSelectedEnrollmentId(list.length === 1 ? list[0].id : null);
+        const defaultEnrId = list.length === 1 ? list[0].id : null;
+        setSelectedEnrollmentId(defaultEnrId);
+        await fetchJlptReport(Number(id), defaultEnrId);
       } catch (err: any) {
-        toast.error(err.response?.data?.error?.message || 'Không thể tải báo cáo học tập của học viên');
+        toast.error(
+          err.response?.data?.error?.message ||
+            'Không thể tải báo cáo học tập của học viên'
+        );
       } finally {
         setLoading(false);
       }
@@ -220,15 +267,16 @@ export const StudentStudyReportPage: React.FC = () => {
     fetchDetail();
   }, [id]);
 
-  // Re-hydrate the form whenever the selected enrollment changes
   useEffect(() => {
     if (!student || selectedEnrollmentId == null) return;
     const enr = student.enrollments?.find((e) => e.id === selectedEnrollmentId);
     if (!enr) return;
     const next = hydrateReportFromEnrollment(enr);
     setReport(next);
-    setTemplateMode(detectTemplateMode(enr));
+    const mode = detectTemplateMode(enr);
+    setTemplateMode(mode);
     setHydratedSnapshot(JSON.stringify(next));
+    fetchJlptReport(student.id, enr.id);
   }, [student, selectedEnrollmentId]);
 
   const enrollments = student?.enrollments ?? [];
@@ -237,10 +285,11 @@ export const StudentStudyReportPage: React.FC = () => {
       ? enrollments.find((e) => e.id === selectedEnrollmentId)
       : undefined;
   const isReadonlyForCs = Boolean(
-    isCSOnly &&
-      user?.id &&
-      selectedEnrollment &&
-      selectedEnrollment.cs_id !== user.id
+    jlptReportRow?.is_readonly ||
+      (isCSOnly &&
+        user?.id &&
+        selectedEnrollment &&
+        selectedEnrollment.cs_id !== user.id)
   );
   const isDirty = JSON.stringify(report) !== hydratedSnapshot;
 
@@ -254,6 +303,23 @@ export const StudentStudyReportPage: React.FC = () => {
     setSavedAt(null);
   };
 
+  const handleInlineUpdateJlptRow = async (
+    row: JlptAttendanceReportRow,
+    payload: UpdateJlptAttendanceReportDTO
+  ) => {
+    const updated = await studentsApi.updateJlptAttendanceReport(row.student_id, {
+      enrollment_id: row.enrollment_id,
+      ...payload,
+    });
+    setJlptReportRow(updated);
+    setJlptNkhtSessions(updated.nkht_sessions || []);
+    if (payload.exchange_info !== undefined) {
+      setReport((prev) => ({ ...prev, exchange_with_student: payload.exchange_info || '' }));
+    }
+    setSavedAt(new Date().toLocaleTimeString('vi-VN'));
+    toast.success('Đã cập nhật');
+  };
+
   const handleSave = async () => {
     if (!student) return;
     const enr = selectedEnrollment;
@@ -263,17 +329,27 @@ export const StudentStudyReportPage: React.FC = () => {
     }
     try {
       setSaving(true);
-      const nextMeta = {
-        ...(enr.program_metadata || {}),
-        study_report: report,
-      };
-      await studentsApi.update(student.id, {
-        enrollment_id: enr.id,
-        program_type: (enr.program_type as any) || templateMode,
-        program_metadata: nextMeta,
-        exchange_info: report.exchange_with_student,
-        study_report_url: `/students/${student.id}/study-report`,
-      });
+      if (templateMode === 'JLPT') {
+        const updated = await studentsApi.updateJlptAttendanceReport(student.id, {
+          enrollment_id: enr.id,
+          nkht_sessions: jlptNkhtSessions,
+        });
+        setJlptReportRow(updated);
+        setJlptNkhtSessions(updated.nkht_sessions || []);
+      } else {
+        const nextMeta = {
+          ...(enr.program_metadata || {}),
+          study_report: report,
+        };
+        await studentsApi.update(student.id, {
+          enrollment_id: enr.id,
+          program_type: (enr.program_type as any) || templateMode,
+          program_metadata: nextMeta,
+          exchange_info: report.exchange_with_student,
+          study_report_url: `/students/${student.id}/study-report`,
+        });
+      }
+
       setSavedAt(new Date().toLocaleTimeString('vi-VN'));
       setHydratedSnapshot(JSON.stringify(report));
       toast.success('Đã lưu Báo cáo học tập thành công!');
@@ -312,44 +388,41 @@ export const StudentStudyReportPage: React.FC = () => {
     }));
   };
 
-  const jlptRows: JlptDailyReportItem[] = report.jlpt_daily_reports || [];
-
-  const handleAddJlptRow = () => {
-    setReport((prev) => ({
-      ...prev,
-      jlpt_daily_reports: [
-        ...(prev.jlpt_daily_reports || []),
+  const handleAddNkhtSession = () => {
+    setJlptNkhtSessions((prev) => {
+      const nextNum =
+        prev.length > 0
+          ? Math.max(...prev.map((s) => Number(s.session_number) || 0)) + 1
+          : 1;
+      return [
+        ...prev,
         {
-          date: '',
-          summary_note: DEFAULT_JLPT_NOTE_TEMPLATE,
+          session_number: nextNum,
+          session_label: `Buổi ${nextNum}`,
+          attendance: 'O',
+          preparation: 'A',
+          attitude: 'A',
+          homework_status: 'Có',
+          exam_score: null,
+          note: '',
         },
-      ],
-    }));
+      ];
+    });
   };
 
-  const handleUpdateJlptRow = (
+  const handleUpdateNkhtSession = (
     idx: number,
-    patch: Partial<JlptDailyReportItem>
+    patch: Partial<JlptNkhtSessionItem>
   ) => {
-    setReport((prev) => {
-      const list = [...(prev.jlpt_daily_reports || [])];
-      list[idx] = { ...list[idx], ...patch };
-      return {
-        ...prev,
-        jlpt_daily_reports: list,
-      };
+    setJlptNkhtSessions((prev) => {
+      const next = [...prev];
+      next[idx] = { ...next[idx], ...patch };
+      return next;
     });
   };
 
-  const handleRemoveJlptRow = (idx: number) => {
-    setReport((prev) => {
-      const list = [...(prev.jlpt_daily_reports || [])];
-      list.splice(idx, 1);
-      return {
-        ...prev,
-        jlpt_daily_reports: list,
-      };
-    });
+  const handleRemoveNkhtSession = (idx: number) => {
+    setJlptNkhtSessions((prev) => prev.filter((_, i) => i !== idx));
   };
 
   if (loading) {
@@ -388,6 +461,41 @@ export const StudentStudyReportPage: React.FC = () => {
     enr?.level ||
     '—';
   const studentCode = student.external_id || `HV_${student.id}`;
+
+  const fallbackJlptRow: JlptAttendanceReportRow = jlptReportRow || {
+    student_id: student.id,
+    enrollment_id: enr?.id || 0,
+    external_id: student.external_id || null,
+    is_readonly: isReadonlyForCs,
+    class_code: ec?.class?.class_code || ec?.class?.class_name || '',
+    full_name: student.full_name,
+    attended_sessions: 0,
+    total_marked_sessions: 0,
+    attendance_rate: null,
+    average_exam_score: null,
+    homework_completed_sessions: 0,
+    max_consecutive_absent: 0,
+    absent_warning: '',
+    max_consecutive_no_homework: 0,
+    no_homework_warning: '',
+    exchange_info: enr?.exchange_info || '',
+    status: enr?.status || 'STUDYING',
+    status_label: 'Đang học',
+    cvht_code: enr?.cs?.staff_code || '',
+    cs_id: enr?.cs_id || null,
+    cs_name: enr?.cs?.name || null,
+    course_track: courseCode,
+    last_exam_name: '',
+    last_exam_session: null,
+    sessions_since_last_exam: null,
+    next_exam_name: '',
+    next_exam_session: null,
+    sessions_until_next_exam: null,
+    exam_schedule_warning: '',
+    test_scores: {},
+    overrides: {},
+    nkht_sessions: jlptNkhtSessions,
+  };
 
   const renderShortSessionSection = (
     title: string,
@@ -505,7 +613,6 @@ export const StudentStudyReportPage: React.FC = () => {
           </td>
         </tr>
 
-        {/* Độ chuyên cần (gộp 3 dòng bên cột trái giống Excel A25:A27) */}
         <tr>
           <td
             rowSpan={3}
@@ -787,280 +894,315 @@ export const StudentStudyReportPage: React.FC = () => {
 
   return (
     <PageContainer>
-      {/* Top Action Bar */}
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3 print:hidden">
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => navigate(backTarget)}
-            leftIcon={<ArrowLeft className="w-4 h-4" />}
-          >
-            {backLabel}
-          </Button>
-          {savedAt && (
-            <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-lg">
-              <CheckCircle2 className="w-3.5 h-3.5" />
-              Đã lưu lúc {savedAt}
-            </span>
-          )}
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          {/* Template Mode Switcher: Báo cáo Kaiwa vs Báo cáo JLPT (Theo buổi) */}
-          <div className="inline-flex rounded-xl bg-slate-200/80 p-1">
-            <button
-              type="button"
-              onClick={() => setTemplateMode('KAIWA')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                templateMode === 'KAIWA'
-                  ? 'bg-white text-teal-700 shadow-2xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              Báo cáo Kaiwa
-            </button>
-            <button
-              type="button"
-              onClick={() => setTemplateMode('JLPT')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                templateMode === 'JLPT'
-                  ? 'bg-white text-violet-700 shadow-2xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              Báo cáo JLPT (Theo buổi)
-            </button>
-          </div>
-
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => window.print()}
-            leftIcon={<Printer className="w-4 h-4" />}
-          >
-            In / Xuất PDF
-          </Button>
-          {isReadonlyForCs && (
-            <span
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-50 text-amber-800 border border-amber-300 text-xs font-bold"
-              title="Học viên đã chuyển sang CVHT mới, bạn chỉ có quyền xem"
-            >
-              <Lock className="w-3.5 h-3.5" />
-              <span>Chế độ Chỉ xem</span>
-            </span>
-          )}
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={handleSave}
-            isLoading={saving}
-            disabled={isReadonlyForCs || (enrollments.length > 1 && selectedEnrollmentId == null)}
-            leftIcon={<Save className="w-4 h-4" />}
-          >
-            Lưu báo cáo
-          </Button>
-        </div>
-      </div>
-
-      {/* Explicit enrollment picker */}
-      {enrollments.length > 1 && (
-        <div className="mb-4 max-w-5xl mx-auto print:hidden">
-          <div className="flex items-end gap-3">
-            <div className="w-80 max-w-full">
-              <Select
-                label="Gói ghi danh"
-                value={selectedEnrollmentId ?? ''}
-                onChange={(e) => handleEnrollmentChange(e.target.value)}
-              >
-                <option value="">-- Vui lòng chọn gói ghi danh --</option>
-                {enrollments.map((e) => (
-                  <option key={e.id} value={e.id}>
-                    {enrollmentLabel(e)}
-                  </option>
-                ))}
-              </Select>
-            </div>
-            {selectedEnrollmentId == null && (
-              <span className="text-xs text-text-muted pb-2.5">
-                Học viên có nhiều gói ghi danh — hãy chọn gói cần điền phiếu báo cáo.
-              </span>
-            )}
-            {isDirty && selectedEnrollmentId != null && (
-              <span className="text-xs text-amber-600 font-medium pb-2.5">
-                Phiếu đang có thay đổi chưa lưu.
-              </span>
-            )}
-          </div>
-        </div>
-      )}
-
-      {enrollments.length > 1 && selectedEnrollmentId == null ? (
-        <div className="max-w-5xl mx-auto py-16 text-center text-sm text-text-muted bg-white rounded-xl border border-slate-400 shadow-soft mb-10">
-          Vui lòng chọn gói ghi danh
-        </div>
-      ) : templateMode === 'JLPT' ? (
-        /* MẪU BÁO CÁO HỌC TẬP JLPT (Bảng 2 cột: Ngày / Buổi học | Nhận xét tổng hợp buổi học) */
-        <fieldset
-          disabled={isReadonlyForCs}
-          className="max-w-5xl mx-auto bg-white rounded-xl border border-slate-400 shadow-soft overflow-hidden mb-10 disabled:opacity-90"
-        >
-          {/* Header JLPT Info */}
-          <div className="bg-[#D9E1F2] border-b border-slate-400 py-4 px-5 flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h2 className="font-extrabold text-base sm:text-lg text-slate-900 uppercase tracking-wide">
-                BÁO CÁO HỌC TẬP JLPT (THEO BUỔI HỌC)
-              </h2>
-              <div className="text-xs text-slate-700 mt-1 flex flex-wrap items-center gap-3">
-                <span>
-                  Học viên: <strong>{student.full_name}</strong> ({studentCode})
-                </span>
-                <span>•</span>
-                <span>
-                  Khóa học: <strong>{courseCode}</strong>
-                </span>
-                <span>•</span>
-                <span>
-                  Giáo viên: <strong>{teacher}</strong>
-                </span>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2 print:hidden">
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={isReadonlyForCs}
-                onClick={handleAddJlptRow}
-                leftIcon={<Plus className="w-4 h-4 text-violet-600" />}
-              >
-                Thêm buổi nhận xét
-              </Button>
-              <Button
-                variant="primary"
-                size="sm"
-                disabled={isReadonlyForCs}
-                onClick={handleSave}
-                isLoading={saving}
-                leftIcon={<Save className="w-4 h-4" />}
-              >
-                Lưu báo cáo
-              </Button>
-            </div>
-          </div>
-
-          <table className="w-full border-collapse text-xs text-slate-900">
-            <thead>
-              <tr className="bg-[#FFE599] font-extrabold text-slate-900 text-center">
-                <th className="border border-slate-400 px-3 py-2.5 w-44">
-                  Ngày / Buổi học
-                </th>
-                <th className="border border-slate-400 px-3 py-2.5 flex-1 text-left">
-                  Nhận xét tổng hợp buổi học
-                </th>
-                <th className="border border-slate-400 px-2 py-2.5 w-20 print:hidden">
-                  Thao tác
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {jlptRows.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan={3}
-                    className="border border-slate-400 py-10 text-center text-slate-500"
-                  >
-                    Chưa có buổi nhận xét nào. Bấm{' '}
-                    <strong>[+ Thêm buổi nhận xét]</strong> để thêm dòng mới.
-                  </td>
-                </tr>
-              ) : (
-                jlptRows.map((row, idx) => (
-                  <tr key={idx} className="hover:bg-amber-50/20">
-                    {/* Cột 1 (w-44): Ngày / Buổi học */}
-                    <td className="border border-slate-400 p-2 align-top w-44 bg-slate-50/50">
-                      <input
-                        type="text"
-                        value={row.date}
-                        onChange={(e) =>
-                          handleUpdateJlptRow(idx, { date: e.target.value })
-                        }
-                        placeholder="VD: Thứ sáu - 03/04"
-                        className="w-full border border-slate-300 bg-white rounded-lg px-2.5 py-1.5 text-xs font-bold text-slate-900 focus:outline-none focus:ring-1 focus:ring-violet-600"
-                      />
-                      <div className="text-[10px] text-slate-400 mt-1 px-0.5">
-                        Buổi #{idx + 1}
-                      </div>
-                    </td>
-
-                    {/* Cột 2 (flex-1): Nhận xét tổng hợp buổi học */}
-                    <td className="border border-slate-400 p-2 align-top">
-                      <textarea
-                        rows={5}
-                        value={row.summary_note}
-                        onChange={(e) =>
-                          handleUpdateJlptRow(idx, {
-                            summary_note: e.target.value,
-                          })
-                        }
-                        placeholder={
-                          'Kính gửi các quý PHHS, GV xin phép gửi [Tổng hợp buổi học]...'
-                        }
-                        className="w-full px-3 py-2 text-xs text-slate-800 bg-white border border-slate-200 rounded-lg focus:bg-amber-50/30 focus:outline-none focus:ring-1 focus:ring-violet-600 resize-y leading-relaxed"
-                      />
-                    </td>
-
-                    {/* Cột xóa dòng */}
-                    <td className="border border-slate-400 p-2 align-top text-center print:hidden">
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveJlptRow(idx)}
-                        title="Xóa dòng nhận xét này"
-                        className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg border border-rose-200 bg-rose-50/70 hover:bg-rose-100 text-rose-600 font-semibold text-[11px] transition-colors cursor-pointer"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                        <span>Xóa dòng</span>
-                      </button>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-
-          {/* Bottom Bar inside JLPT card */}
-          <div className="p-3.5 bg-slate-50 border-t border-slate-300 flex items-center justify-between print:hidden">
+      <PageHeader
+        title={`Báo cáo học tập — ${student.full_name}`}
+        description={`${studentCode} · Khóa ${courseCode} · Giáo viên: ${teacher}`}
+        actions={
+          <div className="flex flex-wrap items-center gap-2 print:hidden">
             <Button
               variant="outline"
               size="sm"
-              disabled={isReadonlyForCs}
-              onClick={handleAddJlptRow}
-              leftIcon={<Plus className="w-4 h-4 text-violet-600" />}
+              onClick={() => navigate(backTarget)}
+              leftIcon={<ArrowLeft className="w-4 h-4" />}
             >
-              Thêm buổi nhận xét
+              {backLabel}
             </Button>
+
+            {savedAt && (
+              <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-lg">
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                Đã lưu lúc {savedAt}
+              </span>
+            )}
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => window.print()}
+              leftIcon={<Printer className="w-4 h-4" />}
+            >
+              In / PDF
+            </Button>
+
+            {isReadonlyForCs && (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-50 text-amber-800 border border-amber-300 text-xs font-bold">
+                <Lock className="w-3.5 h-3.5" />
+                <span>Chỉ xem</span>
+              </span>
+            )}
 
             <Button
               variant="primary"
               size="sm"
-              disabled={isReadonlyForCs}
               onClick={handleSave}
               isLoading={saving}
+              disabled={isReadonlyForCs || (enrollments.length > 1 && selectedEnrollmentId == null)}
               leftIcon={<Save className="w-4 h-4" />}
             >
               Lưu báo cáo
             </Button>
           </div>
-        </fieldset>
+        }
+      />
+
+      {enrollments.length > 1 && (
+        <div className="mb-4 print:hidden">
+          <div className="w-80 max-w-full">
+            <Select
+              label="Gói ghi danh"
+              value={selectedEnrollmentId ?? ''}
+              onChange={(e) => handleEnrollmentChange(e.target.value)}
+            >
+              <option value="">-- Chọn gói ghi danh --</option>
+              {enrollments.map((e) => (
+                <option key={e.id} value={e.id}>
+                  {enrollmentLabel(e)}
+                </option>
+              ))}
+            </Select>
+          </div>
+        </div>
+      )}
+
+      {enrollments.length > 1 && selectedEnrollmentId == null ? (
+        <div className="py-16 text-center text-sm text-text-muted bg-surface rounded-2xl border border-border/80 shadow-soft">
+          Vui lòng chọn gói ghi danh
+        </div>
+      ) : templateMode === 'JLPT' ? (
+        <div className="space-y-6 mb-10">
+          {/* Bảng 1: Bảng Chuyên cần HV (22 cột chuẩn sheet Excel cho học viên này) */}
+          <div className="bg-surface rounded-2xl border border-border/80 shadow-soft overflow-hidden">
+            <div className="flex flex-wrap items-center justify-between gap-2.5 border-b border-border/80 bg-slate-50/60 p-3 sm:px-4 text-xs">
+              <span className="font-bold text-text-primary uppercase tracking-wider">
+                Chuyên cần HV
+              </span>
+            </div>
+
+            <JlptChuyenCanTable
+              rows={[fallbackJlptRow]}
+              onUpdateRow={handleInlineUpdateJlptRow}
+            />
+          </div>
+
+          {/* Bảng 2: Nhật ký từng buổi học (NKHT) */}
+          <div className="bg-surface rounded-2xl border border-border/80 shadow-soft overflow-hidden">
+            <div className="flex flex-wrap items-center justify-between gap-2.5 border-b border-border/80 bg-slate-50/60 p-3 sm:px-4 text-xs">
+              <span className="font-bold text-text-primary uppercase tracking-wider">
+                Nhật ký học tập theo buổi (NKHT)
+              </span>
+
+              <div className="flex items-center gap-2 print:hidden">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={isReadonlyForCs}
+                  onClick={handleAddNkhtSession}
+                  leftIcon={<Plus className="w-3.5 h-3.5" />}
+                >
+                  Thêm buổi
+                </Button>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  disabled={isReadonlyForCs}
+                  onClick={handleSave}
+                  isLoading={saving}
+                  leftIcon={<Save className="w-3.5 h-3.5" />}
+                >
+                  Lưu nhật ký
+                </Button>
+              </div>
+            </div>
+
+            <div className="w-full overflow-x-auto">
+              <table className="w-full text-xs text-left border-collapse">
+                <thead>
+                  <tr className="bg-surface-muted/90 text-text-secondary border-b border-border/80 text-[11px] font-bold text-center">
+                    <th className="px-3 py-3 border-r border-border/60 w-24">Buổi số</th>
+                    <th className="px-3 py-3 border-r border-border/60 w-36">Chuyên cần</th>
+                    <th className="px-3 py-3 border-r border-border/60 w-36">
+                      Chuẩn bị bài ở nhà
+                    </th>
+                    <th className="px-3 py-3 border-r border-border/60 w-40">
+                      Thái độ học tập trong lớp
+                    </th>
+                    <th className="px-3 py-3 border-r border-border/60 w-40">
+                      Điểm bài tập về nhà
+                    </th>
+                    <th className="px-3 py-3 border-r border-border/60 w-32">
+                      Điểm kiểm tra
+                    </th>
+                    <th className="px-3 py-3 border-r border-border/60 text-left">
+                      Ghi chú
+                    </th>
+                    <th className="px-2 py-3 w-16 print:hidden" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {jlptNkhtSessions.length === 0 ? (
+                    <tr>
+                      <td
+                        colSpan={8}
+                        className="py-10 text-center text-text-muted border-b border-border/60"
+                      >
+                        Chưa có dữ liệu buổi học.
+                      </td>
+                    </tr>
+                  ) : (
+                    jlptNkhtSessions.map((sess, idx) => (
+                      <tr
+                        key={idx}
+                        className={`border-b border-border/60 hover:bg-slate-50/80 transition-colors ${
+                          idx % 2 === 1 ? 'bg-slate-50/30' : 'bg-surface'
+                        }`}
+                      >
+                        <td className="px-2 py-2 border-r border-border/60 text-center">
+                          <input
+                            type="number"
+                            min={1}
+                            disabled={isReadonlyForCs}
+                            value={sess.session_number}
+                            onChange={(e) =>
+                              handleUpdateNkhtSession(idx, {
+                                session_number: Number(e.target.value) || idx + 1,
+                                session_label: `Buổi ${Number(e.target.value) || idx + 1}`,
+                              })
+                            }
+                            className="w-16 border border-border rounded-lg px-2 py-1 text-center font-bold bg-surface"
+                          />
+                        </td>
+                        <td className="px-2 py-2 border-r border-border/60 text-center">
+                          <select
+                            disabled={isReadonlyForCs}
+                            value={sess.attendance || ''}
+                            onChange={(e) =>
+                              handleUpdateNkhtSession(idx, {
+                                attendance: e.target.value as 'O' | 'X' | '',
+                              })
+                            }
+                            className={`border rounded-lg px-2.5 py-1 font-bold text-xs ${
+                              sess.attendance === 'O'
+                                ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                : sess.attendance === 'X'
+                                ? 'bg-rose-50 text-rose-800 border-rose-200'
+                                : 'bg-surface border-border'
+                            }`}
+                          >
+                            <option value="">—</option>
+                            <option value="O">O (Có mặt)</option>
+                            <option value="X">X (Vắng)</option>
+                          </select>
+                        </td>
+                        <td className="px-2 py-2 border-r border-border/60 text-center">
+                          <select
+                            disabled={isReadonlyForCs}
+                            value={sess.preparation || ''}
+                            onChange={(e) =>
+                              handleUpdateNkhtSession(idx, { preparation: e.target.value })
+                            }
+                            className="border border-border rounded-lg px-2.5 py-1 font-semibold bg-surface"
+                          >
+                            <option value="">—</option>
+                            <option value="A">A</option>
+                            <option value="B">B</option>
+                            <option value="C">C</option>
+                          </select>
+                        </td>
+                        <td className="px-2 py-2 border-r border-border/60 text-center">
+                          <select
+                            disabled={isReadonlyForCs}
+                            value={sess.attitude || ''}
+                            onChange={(e) =>
+                              handleUpdateNkhtSession(idx, { attitude: e.target.value })
+                            }
+                            className="border border-border rounded-lg px-2.5 py-1 font-semibold bg-surface"
+                          >
+                            <option value="">—</option>
+                            <option value="A">A</option>
+                            <option value="B">B</option>
+                            <option value="C">C</option>
+                          </select>
+                        </td>
+                        <td className="px-2 py-2 border-r border-border/60 text-center">
+                          <select
+                            disabled={isReadonlyForCs}
+                            value={sess.homework_status || ''}
+                            onChange={(e) =>
+                              handleUpdateNkhtSession(idx, {
+                                homework_status: e.target.value,
+                              })
+                            }
+                            className={`border rounded-lg px-2.5 py-1 font-semibold text-xs ${
+                              sess.homework_status === 'Không'
+                                ? 'bg-amber-50 text-amber-800 border-amber-200'
+                                : sess.homework_status === 'Có'
+                                ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                : 'bg-surface border-border'
+                            }`}
+                          >
+                            <option value="">—</option>
+                            <option value="Có">Có</option>
+                            <option value="Không">Không</option>
+                          </select>
+                        </td>
+                        <td className="px-2 py-2 border-r border-border/60 text-center">
+                          <input
+                            type="number"
+                            step="0.1"
+                            min={0}
+                            max={100}
+                            disabled={isReadonlyForCs}
+                            placeholder="—"
+                            value={sess.exam_score ?? ''}
+                            onChange={(e) =>
+                              handleUpdateNkhtSession(idx, {
+                                exam_score:
+                                  e.target.value === '' ? null : Number(e.target.value),
+                              })
+                            }
+                            className="w-20 border border-border rounded-lg px-2 py-1 text-center font-bold bg-surface"
+                          />
+                        </td>
+                        <td className="px-2.5 py-2 border-r border-border/60">
+                          <input
+                            type="text"
+                            disabled={isReadonlyForCs}
+                            placeholder="Nhập ghi chú..."
+                            value={sess.note || ''}
+                            onChange={(e) =>
+                              handleUpdateNkhtSession(idx, { note: e.target.value })
+                            }
+                            className="w-full border border-border rounded-lg px-2.5 py-1 bg-surface"
+                          />
+                        </td>
+                        <td className="px-2 py-2 text-center print:hidden">
+                          {!isReadonlyForCs && (
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveNkhtSession(idx)}
+                              className="inline-flex items-center justify-center p-1.5 rounded-lg text-rose-600 hover:bg-rose-50 cursor-pointer"
+                              title="Xóa buổi"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
       ) : (
-        /* MẪU BÁO CÁO HỌC TẬP KAIWA (Bảng 8 phần truyền thống) */
+        /* MẪU BÁO CÁO HỌC TẬP KAIWA (Giữ nguyên 100%) */
         <fieldset
           disabled={isReadonlyForCs}
           className="max-w-5xl mx-auto bg-white rounded-xl border border-slate-400 shadow-soft overflow-hidden mb-10 disabled:opacity-90"
         >
           <table className="w-full border-collapse text-xs text-slate-900">
             <tbody>
-              {/* Row 1: BÁO CÁO HỌC TẬP */}
               <tr>
                 <td
                   colSpan={2}
@@ -1070,12 +1212,10 @@ export const StudentStudyReportPage: React.FC = () => {
                 </td>
               </tr>
 
-              {/* Row 2: Spacer */}
               <tr className="h-3 bg-white">
                 <td colSpan={2} className="border-x border-slate-400" />
               </tr>
 
-              {/* Row 3-7: THÔNG TIN HỌC VIÊN (Điền sẵn) */}
               <tr>
                 <td
                   colSpan={2}
@@ -1117,7 +1257,6 @@ export const StudentStudyReportPage: React.FC = () => {
                 </td>
               </tr>
 
-              {/* Row 8: Thông tin trao đổi với HV */}
               <tr>
                 <td className="bg-[#C9DAF8] border border-slate-400 px-3 py-2.5 font-bold text-slate-900 align-middle w-[34%]">
                   Thông tin trao đổi với HV
@@ -1138,60 +1277,46 @@ export const StudentStudyReportPage: React.FC = () => {
                 </td>
               </tr>
 
-              {/* Spacer */}
               <tr className="h-3 bg-white">
                 <td colSpan={2} className="border-x border-slate-400" />
               </tr>
 
-              {/* Buổi 1 */}
               {renderShortSessionSection('Buổi 1', 'session_1')}
 
-              {/* Spacer */}
               <tr className="h-3 bg-white">
                 <td colSpan={2} className="border-x border-slate-400" />
               </tr>
 
-              {/* Buổi 3 */}
               {renderShortSessionSection('Buổi 3', 'session_3')}
 
-              {/* Spacer */}
               <tr className="h-3 bg-white">
                 <td colSpan={2} className="border-x border-slate-400" />
               </tr>
 
-              {/* Buổi 1-10 */}
               {renderTenSessionSection('Buổi 1-10', 'sessions_1_10')}
 
-              {/* Spacer */}
               <tr className="h-3 bg-white">
                 <td colSpan={2} className="border-x border-slate-400" />
               </tr>
 
-              {/* Buổi 11-20 */}
               {renderTenSessionSection('Buổi 11-20', 'sessions_11_20')}
 
-              {/* Spacer */}
               <tr className="h-3 bg-white">
                 <td colSpan={2} className="border-x border-slate-400" />
               </tr>
 
-              {/* Buổi 21-30 */}
               {renderTenSessionSection('Buổi 21-30', 'sessions_21_30')}
 
-              {/* Spacer */}
               <tr className="h-3 bg-white">
                 <td colSpan={2} className="border-x border-slate-400" />
               </tr>
 
-              {/* KẾT QUẢ GIỮA KỲ */}
               {renderExamSection('KẾT QUẢ GIỮA KỲ', 'midterm')}
 
-              {/* Spacer */}
               <tr className="h-3 bg-white">
                 <td colSpan={2} className="border-x border-slate-400" />
               </tr>
 
-              {/* KẾT QUẢ CUỐI KHOÁ */}
               {renderExamSection('KẾT QUẢ CUỐI KHOÁ', 'final_exam')}
             </tbody>
           </table>

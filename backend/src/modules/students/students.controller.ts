@@ -1,6 +1,10 @@
 import { Request, Response, NextFunction } from 'express';
 import { StudentsService } from './students.service';
-import { createStudentSchema, updateStudentSchema } from './students.schema';
+import {
+  createStudentSchema,
+  updateStudentSchema,
+  updateJlptAttendanceReportSchema,
+} from './students.schema';
 import {
   parsePaginationQuery,
   parseSearchQuery,
@@ -110,6 +114,84 @@ export class StudentsController {
     } catch (error: any) {
       if (error.name === 'ZodError') {
         res.status(400).json({ error: { code: 'VALIDATION_ERROR', message: 'Invalid data', details: error.errors } });
+        return;
+      }
+      next(error);
+    }
+  }
+
+  async getJlptAttendanceReport(req: Request, res: Response, next: NextFunction) {
+    try {
+      const user = (req as any).user;
+      const pagination = parsePaginationQuery(req.query as Record<string, any>, 50);
+      const search = parseSearchQuery(req.query.search, 100);
+      const class_code =
+        typeof req.query.class_code === 'string' && req.query.class_code.trim()
+          ? req.query.class_code.trim()
+          : undefined;
+      const course_track =
+        typeof req.query.course_track === 'string' && req.query.course_track.trim()
+          ? req.query.course_track.trim()
+          : undefined;
+      const status =
+        typeof req.query.status === 'string' && req.query.status.trim()
+          ? req.query.status.trim().toUpperCase()
+          : undefined;
+      const cvht =
+        typeof req.query.cvht === 'string' && req.query.cvht.trim()
+          ? req.query.cvht.trim()
+          : undefined;
+      const warning_filter =
+        typeof req.query.warning_filter === 'string' && req.query.warning_filter.trim()
+          ? req.query.warning_filter.trim().toUpperCase()
+          : undefined;
+      const student_id = parseOptionalIntParam(req.query.student_id, 'student_id');
+
+      const result = await studentsService.getJlptAttendanceReport({
+        actor: user,
+        page: pagination.page,
+        pageSize: pagination.pageSize,
+        search,
+        class_code,
+        course_track,
+        status,
+        cvht,
+        warning_filter,
+        student_id: student_id && student_id > 0 ? student_id : undefined,
+      });
+
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async updateJlptAttendanceReport(req: Request, res: Response, next: NextFunction) {
+    try {
+      const id = parseInt(req.params.id, 10);
+      if (Number.isNaN(id) || id <= 0) {
+        res.status(400).json({
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'student_id không hợp lệ',
+            details: [],
+          },
+        });
+        return;
+      }
+      const validated = updateJlptAttendanceReportSchema.parse({ body: req.body });
+      const user = (req as any).user;
+      const row = await studentsService.updateJlptAttendanceReport(id, validated.body, user);
+      res.json({ data: row, meta: null });
+    } catch (error: any) {
+      if (error.name === 'ZodError') {
+        res.status(400).json({
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'Invalid data',
+            details: error.errors,
+          },
+        });
         return;
       }
       next(error);
