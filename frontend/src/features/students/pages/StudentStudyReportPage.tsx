@@ -4,7 +4,6 @@ import { studentsApi } from '../api/students.api';
 import {
   Student,
   JlptAttendanceReportRow,
-  JlptNkhtSessionItem,
   UpdateJlptAttendanceReportDTO,
 } from '../types/students.types';
 import { Enrollment } from '../../enrollments/types/enrollments.types';
@@ -20,8 +19,6 @@ import {
   Save,
   CheckCircle2,
   Printer,
-  Plus,
-  Trash2,
   Lock,
 } from 'lucide-react';
 
@@ -222,7 +219,6 @@ export const StudentStudyReportPage: React.FC = () => {
   );
 
   const [jlptReportRow, setJlptReportRow] = useState<JlptAttendanceReportRow | null>(null);
-  const [jlptNkhtSessions, setJlptNkhtSessions] = useState<JlptNkhtSessionItem[]>([]);
 
   const fetchJlptReport = async (studentId: number, enrollmentId?: number | null) => {
     try {
@@ -237,7 +233,6 @@ export const StudentStudyReportPage: React.FC = () => {
         null;
       if (matched) {
         setJlptReportRow(matched);
-        setJlptNkhtSessions(Array.isArray(matched.nkht_sessions) ? matched.nkht_sessions : []);
       }
     } catch {
       // ignore if student has no JLPT enrollment
@@ -312,7 +307,6 @@ export const StudentStudyReportPage: React.FC = () => {
       ...payload,
     });
     setJlptReportRow(updated);
-    setJlptNkhtSessions(updated.nkht_sessions || []);
     if (payload.exchange_info !== undefined) {
       setReport((prev) => ({ ...prev, exchange_with_student: payload.exchange_info || '' }));
     }
@@ -329,26 +323,17 @@ export const StudentStudyReportPage: React.FC = () => {
     }
     try {
       setSaving(true);
-      if (templateMode === 'JLPT') {
-        const updated = await studentsApi.updateJlptAttendanceReport(student.id, {
-          enrollment_id: enr.id,
-          nkht_sessions: jlptNkhtSessions,
-        });
-        setJlptReportRow(updated);
-        setJlptNkhtSessions(updated.nkht_sessions || []);
-      } else {
-        const nextMeta = {
-          ...(enr.program_metadata || {}),
-          study_report: report,
-        };
-        await studentsApi.update(student.id, {
-          enrollment_id: enr.id,
-          program_type: (enr.program_type as any) || templateMode,
-          program_metadata: nextMeta,
-          exchange_info: report.exchange_with_student,
-          study_report_url: `/students/${student.id}/study-report`,
-        });
-      }
+      const nextMeta = {
+        ...(enr.program_metadata || {}),
+        study_report: report,
+      };
+      await studentsApi.update(student.id, {
+        enrollment_id: enr.id,
+        program_type: (enr.program_type as any) || templateMode,
+        program_metadata: nextMeta,
+        exchange_info: report.exchange_with_student,
+        study_report_url: `/students/${student.id}/study-report`,
+      });
 
       setSavedAt(new Date().toLocaleTimeString('vi-VN'));
       setHydratedSnapshot(JSON.stringify(report));
@@ -386,43 +371,6 @@ export const StudentStudyReportPage: React.FC = () => {
         [field]: val,
       },
     }));
-  };
-
-  const handleAddNkhtSession = () => {
-    setJlptNkhtSessions((prev) => {
-      const nextNum =
-        prev.length > 0
-          ? Math.max(...prev.map((s) => Number(s.session_number) || 0)) + 1
-          : 1;
-      return [
-        ...prev,
-        {
-          session_number: nextNum,
-          session_label: `Buổi ${nextNum}`,
-          attendance: 'O',
-          preparation: 'A',
-          attitude: 'A',
-          homework_status: 'Có',
-          exam_score: null,
-          note: '',
-        },
-      ];
-    });
-  };
-
-  const handleUpdateNkhtSession = (
-    idx: number,
-    patch: Partial<JlptNkhtSessionItem>
-  ) => {
-    setJlptNkhtSessions((prev) => {
-      const next = [...prev];
-      next[idx] = { ...next[idx], ...patch };
-      return next;
-    });
-  };
-
-  const handleRemoveNkhtSession = (idx: number) => {
-    setJlptNkhtSessions((prev) => prev.filter((_, i) => i !== idx));
   };
 
   if (loading) {
@@ -494,7 +442,7 @@ export const StudentStudyReportPage: React.FC = () => {
     exam_schedule_warning: '',
     test_scores: {},
     overrides: {},
-    nkht_sessions: jlptNkhtSessions,
+    nkht_sessions: [],
   };
 
   const renderShortSessionSection = (
@@ -931,16 +879,18 @@ export const StudentStudyReportPage: React.FC = () => {
               </span>
             )}
 
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={handleSave}
-              isLoading={saving}
-              disabled={isReadonlyForCs || (enrollments.length > 1 && selectedEnrollmentId == null)}
-              leftIcon={<Save className="w-4 h-4" />}
-            >
-              Lưu báo cáo
-            </Button>
+            {templateMode === 'KAIWA' && (
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={handleSave}
+                isLoading={saving}
+                disabled={isReadonlyForCs || (enrollments.length > 1 && selectedEnrollmentId == null)}
+                leftIcon={<Save className="w-4 h-4" />}
+              >
+                Lưu báo cáo
+              </Button>
+            )}
           </div>
         }
       />
@@ -969,231 +919,11 @@ export const StudentStudyReportPage: React.FC = () => {
           Vui lòng chọn gói ghi danh
         </div>
       ) : templateMode === 'JLPT' ? (
-        <div className="space-y-6 mb-10">
-          {/* Bảng 1: Bảng Chuyên cần HV (22 cột chuẩn sheet Excel cho học viên này) */}
-          <div className="bg-surface rounded-2xl border border-border/80 shadow-soft overflow-hidden">
-            <div className="flex flex-wrap items-center justify-between gap-2.5 border-b border-border/80 bg-slate-50/60 p-3 sm:px-4 text-xs">
-              <span className="font-bold text-text-primary uppercase tracking-wider">
-                Chuyên cần HV
-              </span>
-            </div>
-
-            <JlptChuyenCanTable
-              rows={[fallbackJlptRow]}
-              onUpdateRow={handleInlineUpdateJlptRow}
-            />
-          </div>
-
-          {/* Bảng 2: Nhật ký từng buổi học (NKHT) */}
-          <div className="bg-surface rounded-2xl border border-border/80 shadow-soft overflow-hidden">
-            <div className="flex flex-wrap items-center justify-between gap-2.5 border-b border-border/80 bg-slate-50/60 p-3 sm:px-4 text-xs">
-              <span className="font-bold text-text-primary uppercase tracking-wider">
-                Nhật ký học tập theo buổi (NKHT)
-              </span>
-
-              <div className="flex items-center gap-2 print:hidden">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={isReadonlyForCs}
-                  onClick={handleAddNkhtSession}
-                  leftIcon={<Plus className="w-3.5 h-3.5" />}
-                >
-                  Thêm buổi
-                </Button>
-                <Button
-                  variant="primary"
-                  size="sm"
-                  disabled={isReadonlyForCs}
-                  onClick={handleSave}
-                  isLoading={saving}
-                  leftIcon={<Save className="w-3.5 h-3.5" />}
-                >
-                  Lưu nhật ký
-                </Button>
-              </div>
-            </div>
-
-            <div className="w-full overflow-x-auto">
-              <table className="w-full text-xs text-left border-collapse">
-                <thead>
-                  <tr className="bg-surface-muted/90 text-text-secondary border-b border-border/80 text-[11px] font-bold text-center">
-                    <th className="px-3 py-3 border-r border-border/60 w-24">Buổi số</th>
-                    <th className="px-3 py-3 border-r border-border/60 w-36">Chuyên cần</th>
-                    <th className="px-3 py-3 border-r border-border/60 w-36">
-                      Chuẩn bị bài ở nhà
-                    </th>
-                    <th className="px-3 py-3 border-r border-border/60 w-40">
-                      Thái độ học tập trong lớp
-                    </th>
-                    <th className="px-3 py-3 border-r border-border/60 w-40">
-                      Điểm bài tập về nhà
-                    </th>
-                    <th className="px-3 py-3 border-r border-border/60 w-32">
-                      Điểm kiểm tra
-                    </th>
-                    <th className="px-3 py-3 border-r border-border/60 text-left">
-                      Ghi chú
-                    </th>
-                    <th className="px-2 py-3 w-16 print:hidden" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {jlptNkhtSessions.length === 0 ? (
-                    <tr>
-                      <td
-                        colSpan={8}
-                        className="py-10 text-center text-text-muted border-b border-border/60"
-                      >
-                        Chưa có dữ liệu buổi học.
-                      </td>
-                    </tr>
-                  ) : (
-                    jlptNkhtSessions.map((sess, idx) => (
-                      <tr
-                        key={idx}
-                        className={`border-b border-border/60 hover:bg-slate-50/80 transition-colors ${
-                          idx % 2 === 1 ? 'bg-slate-50/30' : 'bg-surface'
-                        }`}
-                      >
-                        <td className="px-2 py-2 border-r border-border/60 text-center">
-                          <input
-                            type="number"
-                            min={1}
-                            disabled={isReadonlyForCs}
-                            value={sess.session_number}
-                            onChange={(e) =>
-                              handleUpdateNkhtSession(idx, {
-                                session_number: Number(e.target.value) || idx + 1,
-                                session_label: `Buổi ${Number(e.target.value) || idx + 1}`,
-                              })
-                            }
-                            className="w-16 border border-border rounded-lg px-2 py-1 text-center font-bold bg-surface"
-                          />
-                        </td>
-                        <td className="px-2 py-2 border-r border-border/60 text-center">
-                          <select
-                            disabled={isReadonlyForCs}
-                            value={sess.attendance || ''}
-                            onChange={(e) =>
-                              handleUpdateNkhtSession(idx, {
-                                attendance: e.target.value as 'O' | 'X' | '',
-                              })
-                            }
-                            className={`border rounded-lg px-2.5 py-1 font-bold text-xs ${
-                              sess.attendance === 'O'
-                                ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                                : sess.attendance === 'X'
-                                ? 'bg-rose-50 text-rose-800 border-rose-200'
-                                : 'bg-surface border-border'
-                            }`}
-                          >
-                            <option value="">—</option>
-                            <option value="O">O (Có mặt)</option>
-                            <option value="X">X (Vắng)</option>
-                          </select>
-                        </td>
-                        <td className="px-2 py-2 border-r border-border/60 text-center">
-                          <select
-                            disabled={isReadonlyForCs}
-                            value={sess.preparation || ''}
-                            onChange={(e) =>
-                              handleUpdateNkhtSession(idx, { preparation: e.target.value })
-                            }
-                            className="border border-border rounded-lg px-2.5 py-1 font-semibold bg-surface"
-                          >
-                            <option value="">—</option>
-                            <option value="A">A</option>
-                            <option value="B">B</option>
-                            <option value="C">C</option>
-                          </select>
-                        </td>
-                        <td className="px-2 py-2 border-r border-border/60 text-center">
-                          <select
-                            disabled={isReadonlyForCs}
-                            value={sess.attitude || ''}
-                            onChange={(e) =>
-                              handleUpdateNkhtSession(idx, { attitude: e.target.value })
-                            }
-                            className="border border-border rounded-lg px-2.5 py-1 font-semibold bg-surface"
-                          >
-                            <option value="">—</option>
-                            <option value="A">A</option>
-                            <option value="B">B</option>
-                            <option value="C">C</option>
-                          </select>
-                        </td>
-                        <td className="px-2 py-2 border-r border-border/60 text-center">
-                          <select
-                            disabled={isReadonlyForCs}
-                            value={sess.homework_status || ''}
-                            onChange={(e) =>
-                              handleUpdateNkhtSession(idx, {
-                                homework_status: e.target.value,
-                              })
-                            }
-                            className={`border rounded-lg px-2.5 py-1 font-semibold text-xs ${
-                              sess.homework_status === 'Không'
-                                ? 'bg-amber-50 text-amber-800 border-amber-200'
-                                : sess.homework_status === 'Có'
-                                ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                                : 'bg-surface border-border'
-                            }`}
-                          >
-                            <option value="">—</option>
-                            <option value="Có">Có</option>
-                            <option value="Không">Không</option>
-                          </select>
-                        </td>
-                        <td className="px-2 py-2 border-r border-border/60 text-center">
-                          <input
-                            type="number"
-                            step="0.1"
-                            min={0}
-                            max={100}
-                            disabled={isReadonlyForCs}
-                            placeholder="—"
-                            value={sess.exam_score ?? ''}
-                            onChange={(e) =>
-                              handleUpdateNkhtSession(idx, {
-                                exam_score:
-                                  e.target.value === '' ? null : Number(e.target.value),
-                              })
-                            }
-                            className="w-20 border border-border rounded-lg px-2 py-1 text-center font-bold bg-surface"
-                          />
-                        </td>
-                        <td className="px-2.5 py-2 border-r border-border/60">
-                          <input
-                            type="text"
-                            disabled={isReadonlyForCs}
-                            placeholder="Nhập ghi chú..."
-                            value={sess.note || ''}
-                            onChange={(e) =>
-                              handleUpdateNkhtSession(idx, { note: e.target.value })
-                            }
-                            className="w-full border border-border rounded-lg px-2.5 py-1 bg-surface"
-                          />
-                        </td>
-                        <td className="px-2 py-2 text-center print:hidden">
-                          {!isReadonlyForCs && (
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveNkhtSession(idx)}
-                              className="inline-flex items-center justify-center p-1.5 rounded-lg text-rose-600 hover:bg-rose-50 cursor-pointer"
-                              title="Xóa buổi"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          )}
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
+        <div className="bg-surface rounded-2xl border border-border/80 shadow-soft overflow-hidden mb-10">
+          <JlptChuyenCanTable
+            rows={[fallbackJlptRow]}
+            onUpdateRow={handleInlineUpdateJlptRow}
+          />
         </div>
       ) : (
         /* MẪU BÁO CÁO HỌC TẬP KAIWA (Giữ nguyên 100%) */
