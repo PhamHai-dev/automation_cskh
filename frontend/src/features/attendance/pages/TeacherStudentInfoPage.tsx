@@ -135,7 +135,9 @@ export const TeacherStudentInfoPage: React.FC = () => {
   useEffect(() => {
     Promise.all([
       classesApi.list(),
-      isPrivileged ? teachersApi.list() : Promise.resolve([]),
+      isPrivileged
+        ? teachersApi.list({ page: 1, pageSize: 100, active: true, account_status: 'PROVISIONED' })
+        : Promise.resolve([]),
     ])
       .then(([classItems, teacherItems]) => {
         setClasses(classItems.filter((item) => item.active));

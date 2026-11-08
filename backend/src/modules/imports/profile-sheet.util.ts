@@ -752,7 +752,11 @@ export function resolveBackupFieldValue(
     case 'enr.callback_note': return okText(enr?.callback_note);
     case 'enr.hot_issue_note': return okText(enr?.hot_issue_note);
     case 'enr.post_course_care': return okText(enr?.post_course_care);
-    case 'enr.attended_previous_years': return ok(Number(enr?.attended_previous_years ?? 0));
+    case 'enr.attended_previous_years': {
+      const rawPrev = metaValue(enr, 'attended_previous_years_raw');
+      if (rawPrev !== null) return okText(rawPrev);
+      return ok(Number(enr?.attended_previous_years ?? 0));
+    }
 
     // --- package / class / schedule / teacher / cvht ---
     case 'pkg.code': return okText(pkg?.code);

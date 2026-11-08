@@ -2,6 +2,7 @@ import { Student } from '../../students/types/students.types';
 import { Package } from '../../packages/types/packages.types';
 
 export interface ProgramMetadata {
+  package_code?: string | null;
   expected_start_date?: string | null;
   active_state?: string | null;
   satisfaction_score_b18?: string | null;
@@ -25,6 +26,7 @@ export interface ProgramMetadata {
   tuition_fee?: string | number | null;
   paid_month?: string | null;
   end_course_care?: string | null;
+  attended_previous_years_raw?: string | number | null;
 }
 
 export interface Enrollment {
@@ -44,6 +46,7 @@ export interface Enrollment {
   course_teacher_type?: string | null;
   level?: string | null;
   total_sessions: number;
+  total_attended?: number | null;
   completed_sessions?: number;
   class_model?: string | null;
   sales_note?: string | null;

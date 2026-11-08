@@ -745,13 +745,12 @@ export function parseJlptSheetRows(
     const gender = cellText(row.getCell(6)) || null;
     const phone = normalizePhone(row.getCell(7).value);
     const email = cellText(row.getCell(8)) || null;
-    const classModel = cellText(row.getCell(9)) || null;
+    const sourcePackageCode = cellText(row.getCell(9)) || null;
+    const classModel = sourcePackageCode;
     const level = cellText(row.getCell(10)) || null;
 
     const rawTuition = extractCellValue(row.getCell(11).value);
-    const courseContent = rawTuition !== null && rawTuition !== undefined && String(rawTuition).trim() !== ''
-      ? String(rawTuition).trim()
-      : null;
+    const courseContent = null;
 
     const paymentStatus = cellText(row.getCell(12)) || null;
     const salesNote = cleanSheetNote(cellText(row.getCell(13)));
@@ -842,6 +841,7 @@ export function parseJlptSheetRows(
     const examResult = examResultCol29 || examResultCol52 || undefined;
 
     const programMetadata: Record<string, any> = {};
+    if (sourcePackageCode) programMetadata.package_code = sourcePackageCode;
     if (expectedStartDate) programMetadata.expected_start_date = expectedStartDate;
     if (activeState) programMetadata.active_state = activeState;
     if (satisfactionScoreB18) programMetadata.satisfaction_score_b18 = satisfactionScoreB18;
@@ -893,7 +893,7 @@ export function parseJlptSheetRows(
       endHoldYear: null,
       handoverMonth: null,
       renewalDeadline: null,
-      attendedPreviousYears: attendedSessions || 0,
+      attendedPreviousYears: 0,
       classModel,
       salesNote,
       cvhtCode,
@@ -979,8 +979,12 @@ export function parseKaiwaSheetRows(
     const email = cellText(row.getCell(8)) || null;
 
     const rawCourseContent = extractCellValue(row.getCell(9).value);
-    const courseContent = rawCourseContent !== null && rawCourseContent !== undefined && String(rawCourseContent).trim() !== ''
+    const rawCourseContentText = rawCourseContent !== null && rawCourseContent !== undefined
       ? String(rawCourseContent).trim()
+      : '';
+    const isNumericTuitionCell = /^\d+(?:\.\d+)?$/.test(rawCourseContentText);
+    const courseContent = rawCourseContentText && !isNumericTuitionCell
+      ? rawCourseContentText
       : null;
 
     const paymentStatus = cellText(row.getCell(10)) || null;
@@ -1010,7 +1014,8 @@ export function parseKaiwaSheetRows(
 
     const startTime = extractStartTime(row.getCell(24).value);
     const sched1 = extractSchedulePattern(row.getCell(25).value);
-    const schedulePattern = sched1 || null;
+    const schedFallback = !isChamSocLayout ? extractSchedulePattern(row.getCell(31).value) : null;
+    const schedulePattern = sched1 || schedFallback || null;
 
     const rawDur = extractCellValue(row.getCell(26).value);
     let durationMinutes: number | null = null;
@@ -1025,14 +1030,17 @@ export function parseKaiwaSheetRows(
     const className = cleanClassIdentifier(cellText(row.getCell(34)));
     const status = mapEnrollmentStatus(rawStatus, Boolean(className));
 
-    // Kaiwa Tổng: col 36 (AJ) is total attended; preserve col 35 (AI) as prior-year attendance.
+    // Kaiwa: col 36 (AJ) is always total attended; col 35 (AI) is preserved both as numeric prior-year count (when numeric) and raw text/value.
     const rawAttended = extractCellValue(row.getCell(36).value);
     const totalAttended = rawAttended !== null && rawAttended !== undefined && rawAttended !== '' && !Number.isNaN(Number(rawAttended))
       ? Math.round(Number(rawAttended))
       : null;
     const rawAttPrev = extractCellValue(row.getCell(35).value);
-    const attendedPreviousYears = rawAttPrev !== null && rawAttPrev !== undefined && rawAttPrev !== '' && !Number.isNaN(Number(rawAttPrev))
-      ? Math.round(Number(rawAttPrev))
+    const rawAttPrevText = rawAttPrev !== null && rawAttPrev !== undefined && String(rawAttPrev).trim() !== '' && String(rawAttPrev).trim() !== '-'
+      ? String(rawAttPrev).trim()
+      : null;
+    const attendedPreviousYears = rawAttPrevText !== null && !Number.isNaN(Number(rawAttPrevText))
+      ? Math.round(Number(rawAttPrevText))
       : 0;
 
     // In 'Tổng': Col 37 = Thông tin trao đổi với HV, Col 38 = Lịch hẹn gọi, Col 39 = Báo cáo học tập
@@ -1100,8 +1108,11 @@ export function parseKaiwaSheetRows(
       : null;
 
     const programMetadata: Record<string, any> = {};
-    if (rawCourseContent !== null && rawCourseContent !== undefined && String(rawCourseContent).trim() !== '') {
+    if (isNumericTuitionCell) {
       programMetadata.tuition_fee = rawCourseContent;
+    }
+    if (rawAttPrevText !== null) {
+      programMetadata.attended_previous_years_raw = rawAttPrevText;
     }
 
     const baseKey = `KAIWA::${externalId}::${packageCode}::${className || paidAt || `r${r}`}`;

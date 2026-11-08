@@ -1,18 +1,28 @@
+import fs from 'fs';
+import path from 'path';
 import { z } from 'zod';
 import dotenv from 'dotenv';
 
-// Load .env file (tự động tìm trong thư mục backend)
-// Khi chạy test (NODE_ENV=test), nạp .env.test trước để integration test dùng
-// database riêng, tránh ghi/xóa nhầm dữ liệu development.
-if (process.env.NODE_ENV === 'test') {
-  dotenv.config({ path: '.env.test' });
+// Resolve env files from the backend project, not from process.cwd().
+// This keeps `node backend/dist/server.js` and IDE launchers consistent with
+// `npm run dev` executed from backend/.
+const envFile = process.env.NODE_ENV === 'test' ? '.env.test' : '.env';
+const envCandidates = [
+  path.resolve(__dirname, '../..'), // src/config -> backend, or dist/config -> repository root
+  path.resolve(__dirname, '../../backend'), // compiled dist/config -> backend
+];
+const backendRoot = envCandidates.find((root) => fs.existsSync(path.join(root, envFile)));
+if (backendRoot) {
+  dotenv.config({ path: path.join(backendRoot, envFile) });
 }
-dotenv.config();
 
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   PORT: z.string().default('3000'),
-  DATABASE_URL: z.string(),
+  DATABASE_URL: z.string().refine(
+    (value) => value.startsWith('mysql://'),
+    'DATABASE_URL phải dùng protocol mysql:// vì datasource Prisma đang dùng MySQL',
+  ),
   REDIS_ENABLED: z.string().default('false'),
   REDIS_HOST: z.string().default('localhost'),
   REDIS_PORT: z.string().default('6379'),

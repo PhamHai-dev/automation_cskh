@@ -12,7 +12,6 @@ import {
   normalizeClassModel,
   CLASS_MODEL_BADGE_STYLES,
   resolveEffectiveEnrollmentStatus,
-  formatCourseContentDisplay,
   formatScheduleTimeDisplay,
 } from '../../classes/types/classes.types';
 import { CareSelectCell } from '../components/CareSelectCell';
@@ -246,15 +245,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
   const activeTab: 'students' | 'care_reports' =
     mode ?? (searchParams.get('tab') === 'care_reports' ? 'care_reports' : 'students');
 
-  // Column visibility preference (per user, per page)
-  const { visible: visibleColumns } = useColumnVisibility(
-    activeTab === 'students' ? 'students.tab1' : 'students.tab2',
-  );
-
-  // Helper: keep a column unless the user hid it (columns without key are always kept)
-  const keepColumn = (col: Column<Student>): boolean =>
-    !col.key || visibleColumns[col.key] !== false;
-
   // Care milestones state (mặc định các mốc chuẩn: 1, 3, 10, 15)
   const [configuredMilestones, setConfiguredMilestones] = useState<number[]>([1, 3, 10, 15]);
   const [isAddMilestoneModalOpen, setIsAddMilestoneModalOpen] = useState(false);
@@ -268,6 +258,16 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
     const p = (searchParams.get('program') || '').toUpperCase();
     return p === 'KAIWA' || p === 'JLPT' ? p : 'ALL';
   });
+
+  // Column visibility preference (per user, per page, auto-adjusted by programFilter)
+  const { visible: visibleColumns } = useColumnVisibility(
+    activeTab === 'students' ? 'students.tab1' : 'students.tab2',
+    programFilter,
+  );
+
+  // Helper: keep a column unless hidden by user/program filter (columns without key are always kept)
+  const keepColumn = (col: Column<Student>): boolean =>
+    !col.key || visibleColumns[col.key] !== false;
   const [statusFilter, setStatusFilter] = useState(() => searchParams.get('status') || '');
   const [modelFilter, setModelFilter] = useState(() => searchParams.get('model') || '');
   const [paymentFilter, setPaymentFilter] = useState(() => searchParams.get('payment') || '');
@@ -493,8 +493,10 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
   };
 
   const { data: teachersList = [] } = useQuery<Teacher[]>({
-    queryKey: ['teachers', 'list'],
-    queryFn: (signal) => teachersApi.list(undefined, signal),
+    queryKey: ['teachers', 'list', { page: 1, pageSize: 100 }],
+    // The teachers endpoint is server-paginated by default; request a bounded
+    // page explicitly instead of relying on the old unpaginated response.
+    queryFn: (signal) => teachersApi.list({ page: 1, pageSize: 100 }, signal),
     staleTime: 5 * 60 * 1000,
     keepPreviousData: true,
   });
@@ -708,32 +710,8 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
     setPage(1);
   };
 
-  // All active session milestones depending on programFilter (KAIWA vs JLPT vs ALL)
+  // All session milestones remain in the table registry; programFilter controls default visibility via useColumnVisibility
   const activeMilestones = useMemo(() => {
-    if (programFilter === 'KAIWA') {
-      const set = new Set<number>([1, 3, 10, 15, 20, 25, 27]);
-      filteredStudents.forEach((st) => {
-        st.enrollments?.forEach((enr) => {
-          enr.care_logs?.forEach((cl) => {
-            if (cl.after_session_number) set.add(cl.after_session_number);
-          });
-        });
-      });
-      return Array.from(set).sort((a, b) => a - b);
-    }
-
-    if (programFilter === 'JLPT') {
-      const set = new Set<number>([1, 15, 25, 30, 35, 40]);
-      filteredStudents.forEach((st) => {
-        st.enrollments?.forEach((enr) => {
-          enr.care_logs?.forEach((cl) => {
-            if (cl.after_session_number) set.add(cl.after_session_number);
-          });
-        });
-      });
-      return Array.from(set).sort((a, b) => a - b);
-    }
-
     const set = new Set<number>([...configuredMilestones, 1, 3, 10, 15, 20, 25, 27, 30, 35, 40]);
     filteredStudents.forEach((st) => {
       st.enrollments?.forEach((enr) => {
@@ -746,7 +724,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
     });
 
     return Array.from(set).sort((a, b) => a - b);
-  }, [configuredMilestones, filteredStudents, programFilter]);
+  }, [configuredMilestones, filteredStudents]);
 
   // Handle adding a new care milestone
   const handleAddMilestone = async () => {
@@ -1007,8 +985,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
     }
   };
 
-  const isJlptMode = programFilter === 'JLPT';
-
   const currentPageIds = useMemo(
     () => paginatedStudents.map((s) => s.id),
     [paginatedStudents]
@@ -1262,7 +1238,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
     },
     {
       key: 'student_source_status',
-      header: 'Trạng thái học viên',
+      header: 'Trạng thái HV',
       cell: (item) => {
         const enr = item.enrollments?.[0];
         const status = enr?.student_source_status || '—';
@@ -1302,21 +1278,37 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
     },
     {
       key: 'course_content',
-      header: isJlptMode ? 'Học phí thực nộp' : 'Nội dung khóa học',
+      header: 'Nội dung khóa',
       cell: (item) => {
         const enr = item.enrollments?.[0];
-        const val = isJlptMode
-          ? enr?.program_metadata?.tuition_fee || enr?.course_content || '—'
-          : formatCourseContentDisplay(
-              enr?.course_content,
-              enr?.program_type,
-              enr?.package?.name || enr?.package?.code,
-              enr?.level
-            );
+        const raw = cleanNoteText(enr?.course_content);
+        const isNumericTuition = /^\d+(?:\.\d+)?$/.test(raw);
         const displayVal =
-          isJlptMode && /^\d+(?:\.\d+)?$/.test(String(val).trim())
-            ? `${Number(val).toLocaleString('vi-VN')}đ`
-            : String(val);
+          (enr?.program_type || '').toUpperCase() === 'JLPT' || !raw || raw === '-' || isNumericTuition
+            ? '—'
+            : raw;
+        return (
+          <span className="text-slate-700 text-xs whitespace-nowrap max-w-[180px] truncate block">
+            {displayVal}
+          </span>
+        );
+      },
+    },
+    {
+      key: 'tuition_fee',
+      header: 'Học phí thực nộp',
+      cell: (item) => {
+        const enr = item.enrollments?.[0];
+        const rawCourse = cleanNoteText(enr?.course_content);
+        const rawVal =
+          enr?.program_metadata?.tuition_fee ??
+          (/^\d+(?:\.\d+)?$/.test(rawCourse) ? rawCourse : null);
+        const val = rawVal !== null && rawVal !== undefined ? String(rawVal).trim() : '';
+        const displayVal = !val || val === '-'
+          ? '—'
+          : /^\d+(?:\.\d+)?$/.test(val)
+          ? `${Number(val).toLocaleString('vi-VN')}đ`
+          : val;
         return (
           <span className="text-slate-700 text-xs whitespace-nowrap max-w-[180px] truncate block">
             {displayVal}
@@ -1402,24 +1394,56 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
     },
     {
       key: 'package_name',
-      header: isJlptMode ? 'Mã khóa học' : 'Gói học',
+      header: 'Gói học',
       cell: (item) => {
         const enr = item.enrollments?.[0];
+        const isJlpt = (enr?.program_type || '').toUpperCase() === 'JLPT';
+        const val = isJlpt
+          ? enr?.level || '—'
+          : enr?.package?.code || enr?.package?.name || '—';
         return (
           <span className="font-semibold text-slate-800 text-xs whitespace-nowrap">
-            {enr?.package?.code || enr?.package?.name || '—'}
+            {val}
+          </span>
+        );
+      },
+    },
+    {
+      key: 'jlpt_course_code',
+      header: 'Mã khóa học',
+      cell: (item) => {
+        const enr = item.enrollments?.[0];
+        const isJlpt = (enr?.program_type || '').toUpperCase() === 'JLPT';
+        const val = isJlpt ? enr?.package?.code || enr?.package?.name || '—' : '—';
+        return (
+          <span className="font-mono font-semibold text-slate-700 text-xs whitespace-nowrap">
+            {val}
+          </span>
+        );
+      },
+    },
+    {
+      key: 'course_teacher_type',
+      header: 'Khóa học',
+      cell: (item) => {
+        const enr = item.enrollments?.[0];
+        const isJlpt = (enr?.program_type || '').toUpperCase() === 'JLPT';
+        return (
+          <span className="text-slate-700 text-xs whitespace-nowrap">
+            {isJlpt ? '—' : enr?.course_teacher_type || '—'}
           </span>
         );
       },
     },
     {
       key: 'level',
-      header: isJlptMode ? 'Gói SP' : 'Trình độ (Kaiwa 1..4)',
+      header: 'Trình độ',
       cell: (item) => {
         const enr = item.enrollments?.[0];
+        const isJlpt = (enr?.program_type || '').toUpperCase() === 'JLPT';
         return (
           <span className="font-mono font-semibold text-slate-700 text-xs whitespace-nowrap">
-            {enr?.level || '—'}
+            {isJlpt ? '—' : enr?.level || '—'}
           </span>
         );
       },
@@ -1438,11 +1462,18 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
     },
     {
       key: 'class_model',
-      header: 'Mô hình',
+      header: 'Mô hình lớp',
       cell: (item) => {
         const enr = item.enrollments?.[0];
         const ec = enr?.enrollment_classes?.[0];
-        const mNorm = normalizeClassModel(enr?.class_model || ec?.class?.model_type);
+        const rawModel =
+          enr?.class_model ||
+          enr?.program_metadata?.package_code ||
+          ec?.class?.model_type;
+        if (!rawModel) {
+          return <span className="text-slate-400 text-xs">—</span>;
+        }
+        const mNorm = normalizeClassModel(rawModel);
         const mStyle = CLASS_MODEL_BADGE_STYLES[mNorm];
         return (
           <span
@@ -1557,8 +1588,18 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
 
         // Số buổi còn lại thực tế
         let rem: number;
+        const importedTotalAttended =
+          enr.total_attended !== null &&
+          enr.total_attended !== undefined &&
+          !Number.isNaN(Number(enr.total_attended))
+            ? Number(enr.total_attended)
+            : null;
         if (enr.total_sessions) {
-          rem = enr.total_sessions - attendedPrev - attendedThisYear;
+          if (attendedThisYear === 0 && attendedPrev === 0 && importedTotalAttended !== null) {
+            rem = enr.total_sessions - importedTotalAttended;
+          } else {
+            rem = enr.total_sessions - attendedPrev - attendedThisYear;
+          }
         } else if (
           enr.external_remaining_sessions !== null &&
           enr.external_remaining_sessions !== undefined
@@ -1625,15 +1666,34 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
       },
     },
     {
-      key: 'end_date',
-      header: isJlptMode ? 'Ngày KG dự kiến' : 'Ngày bảo lưu/kết thúc',
+      key: 'expected_start_date',
+      header: 'Ngày KG dự kiến',
       cell: (item) => {
         const enr = item.enrollments?.[0];
-        const displayDate = isJlptMode
-          ? enr?.program_metadata?.expected_start_date ||
-            (enr?.handed_over_at ? new Date(enr.handed_over_at).toLocaleDateString('vi-VN') : null) ||
-            (enr?.end_date ? new Date(enr.end_date).toLocaleDateString('vi-VN') : null)
-          : enr?.end_date
+        const isJlpt = (enr?.program_type || '').toUpperCase() === 'JLPT';
+        if (!isJlpt) return <span className="text-slate-400 text-xs">—</span>;
+        const raw = enr?.program_metadata?.expected_start_date;
+        const displayDate = raw
+          ? /^\d{4}-\d{2}-\d{2}/.test(String(raw))
+            ? new Date(String(raw)).toLocaleDateString('vi-VN')
+            : String(raw)
+          : enr?.handed_over_at
+          ? new Date(enr.handed_over_at).toLocaleDateString('vi-VN')
+          : null;
+        return (
+          <span className="text-slate-600 text-xs whitespace-nowrap">
+            {displayDate || '—'}
+          </span>
+        );
+      },
+    },
+    {
+      key: 'end_date',
+      header: 'Ngày bảo lưu/kết thúc',
+      cell: (item) => {
+        const enr = item.enrollments?.[0];
+        const isJlpt = (enr?.program_type || '').toUpperCase() === 'JLPT';
+        const displayDate = !isJlpt && enr?.end_date
           ? new Date(enr.end_date).toLocaleDateString('vi-VN')
           : null;
         return (
@@ -1643,30 +1703,16 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
         );
       },
     },
-    ...(isJlptMode
-      ? [
-          {
-            key: 'first_class_exam',
-            header: 'Thi đầu vào',
-            cell: (item: Student) => <span className="text-slate-600 text-xs whitespace-nowrap">{item.enrollments?.[0]?.program_metadata?.first_class_exam ?? ''}</span>,
-          },
-          {
-            key: 'first_class_test',
-            header: 'Kiểm tra đầu vào',
-            cell: (item: Student) => <span className="text-slate-600 text-xs whitespace-nowrap">{item.enrollments?.[0]?.program_metadata?.first_class_test ?? ''}</span>,
-          },
-          {
-            key: 'first_class_special_support',
-            header: 'HT đặc biệt đầu vào',
-            cell: (item: Student) => <span className="text-slate-600 text-xs whitespace-nowrap">{item.enrollments?.[0]?.program_metadata?.first_class_special_support ?? ''}</span>,
-          },
-          {
-            key: 'first_class_renewal',
-            header: 'Tái tục đầu vào',
-            cell: (item: Student) => <span className="text-slate-600 text-xs whitespace-nowrap">{item.enrollments?.[0]?.program_metadata?.first_class_renewal ?? ''}</span>,
-          },
-        ]
-      : []),
+    {
+      key: 'active_state',
+      header: 'Tình trạng',
+      cell: (item: Student) => <span className="text-slate-700 text-xs whitespace-nowrap">{item.enrollments?.[0]?.program_metadata?.active_state ?? '—'}</span>,
+    },
+    {
+      key: 'latest_class_code',
+      header: 'Mã lớp gần nhất',
+      cell: (item: Student) => <span className="text-slate-700 text-xs whitespace-nowrap">{item.enrollments?.[0]?.program_metadata?.latest_class_code ?? '—'}</span>,
+    },
     {
       key: 'start_time',
       header: 'Giờ học',
@@ -1766,8 +1812,21 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
       cell: (item) => {
         const enr = item.enrollments?.[0];
         const ec = enr?.enrollment_classes?.[0];
+        const rawText = enr?.program_metadata?.attended_previous_years_raw;
+        if (rawText !== undefined && rawText !== null && String(rawText).trim() !== '') {
+          const str = String(rawText).trim();
+          const isNumeric = !Number.isNaN(Number(str));
+          return (
+            <span
+              className="font-semibold text-slate-700 text-xs block whitespace-nowrap max-w-[180px] truncate"
+              title={str}
+            >
+              {isNumeric ? `${Math.round(Number(str))} buổi` : str}
+            </span>
+          );
+        }
 
-        // 1. Nếu có giá trị lưu từ Excel hoặc người dùng nhập
+        // 1. Nếu có giá trị số lưu từ Excel hoặc người dùng nhập
         if (enr?.attended_previous_years !== undefined && enr?.attended_previous_years !== null) {
           return (
             <span className="font-semibold text-slate-700 text-xs text-center block whitespace-nowrap">
@@ -1834,9 +1893,10 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
       key: 'attended_this_year',
       header: 'Đã học 2026',
       cell: (item) => {
-        const ec = item.enrollments?.[0]?.enrollment_classes?.[0];
+        const enr = item.enrollments?.[0];
+        const ec = enr?.enrollment_classes?.[0];
         const currentYear = new Date().getFullYear();
-        const attendedCount =
+        const attendedFromLogs =
           ec?.attendance?.filter((a: any) => {
             if (!isAttendedCountable(a)) return false;
             const sessionDate = a.class_session?.session_date
@@ -1844,6 +1904,13 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
               : null;
             return !sessionDate || sessionDate.getFullYear() === currentYear;
           }).length || 0;
+        const importedTotalAttended =
+          enr?.total_attended !== null &&
+          enr?.total_attended !== undefined &&
+          !Number.isNaN(Number(enr.total_attended))
+            ? Number(enr.total_attended)
+            : 0;
+        const attendedCount = attendedFromLogs > 0 ? attendedFromLogs : importedTotalAttended;
         return (
           <span className="font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded text-xs text-center block whitespace-nowrap">
             {attendedCount} buổi
@@ -1952,6 +2019,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
           : `Nội dung CS sau buổi ${sessionNum}`;
 
       return {
+        key: `care_session_${sessionNum}`,
         header: (
           <div
             key={`head-sess-${sessionNum}`}
@@ -1977,168 +2045,143 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
       };
     }),
 
-    // --- CÁC CỘT ĐẶC THÙ CỦA KHÓA JLPT (Đọc/Ghi trực tiếp program_metadata) ---
-    ...(programFilter === 'JLPT'
-      ? [
-          {
-            key: 'satisfaction_score_b18',
-            header: 'Điểm hài lòng (B18)',
-            cell: (item: Student) => {
-              const enr = item.enrollments?.[0];
-              if (!enr) return <span className="text-slate-400">—</span>;
-              return (
-                <InlineEditableCell
-                  value={enr.program_metadata?.satisfaction_score_b18 || ''}
-                  disabled={isStudentReadonlyForUser(item)}
-                  placeholder="Điểm B18..."
-                  onSave={(newVal) =>
-                    handleSaveProgramMetadata(item, { satisfaction_score_b18: newVal })
-                  }
-                />
-              );
-            },
-          },
-          {
-            key: 'exam_registration',
-            header: 'ĐK Thi',
-            cell: (item: Student) => {
-              const enr = item.enrollments?.[0];
-              if (!enr) return <span className="text-slate-400">—</span>;
-              return (
-                <InlineEditableCell
-                  value={enr.program_metadata?.exam_registration || ''}
-                  disabled={isStudentReadonlyForUser(item)}
-                  placeholder="VD: T7.2026"
-                  onSave={(newVal) =>
-                    handleSaveProgramMetadata(item, { exam_registration: newVal })
-                  }
-                />
-              );
-            },
-          },
-          {
-            key: 'exam_score',
-            header: 'Điểm thi thật',
-            cell: (item: Student) => {
-              const enr = item.enrollments?.[0];
-              if (!enr) return <span className="text-slate-400">—</span>;
-              const rawVal = enr.program_metadata?.exam_score;
-              return (
-                <InlineEditableCell
-                  value={rawVal !== undefined && rawVal !== null ? String(rawVal) : ''}
-                  disabled={isStudentReadonlyForUser(item)}
-                  placeholder="Điểm thi..."
-                  onSave={(newVal) => handleSaveProgramMetadata(item, { exam_score: newVal })}
-                />
-              );
-            },
-          },
-          {
-            key: 'exam_result',
-            header: 'Tình trạng thi',
-            cell: (item: Student) => {
-              const enr = item.enrollments?.[0];
-              if (!enr) return <span className="text-slate-400">—</span>;
-              return (
-                <InlineEditableCell
-                  value={enr.program_metadata?.exam_result || ''}
-                  disabled={isStudentReadonlyForUser(item)}
-                  placeholder="pass / not pass..."
-                  onSave={(newVal) => handleSaveProgramMetadata(item, { exam_result: newVal })}
-                />
-              );
-            },
-          },
-          {
-            key: 'test_scores_summary',
-            header: 'Kiểm tra (L1–L7)',
-            cell: (item: Student) => {
-              const enr = item.enrollments?.[0];
-              if (!enr) return <span className="text-slate-400">—</span>;
-              const scoresObj = enr.program_metadata?.test_scores || {};
-              const summaryStr = Object.entries(scoresObj)
-                .filter(([, v]) => v !== null && v !== undefined && String(v).trim() !== '')
-                .map(([k, v]) => `${k.toUpperCase()}: ${v}`)
-                .join(' | ');
-              return (
-                <InlineEditableCell
-                  value={summaryStr}
-                  disabled={isStudentReadonlyForUser(item)}
-                  placeholder="L1: 80 | L2: 85..."
-                  onSave={async (newVal) => {
-                    const parsed: Record<string, string> = {
-                      ...(enr.program_metadata?.test_scores as Record<string, string> | undefined),
-                    };
-                    newVal.split('|').forEach((part) => {
-                      const [k, ...rest] = part.split(':');
-                      if (k && rest.length > 0) {
-                        parsed[k.trim().toLowerCase()] = rest.join(':').trim();
-                      }
-                    });
-                    if (!newVal.includes(':') && newVal.trim()) {
-                      parsed.l1 = newVal.trim();
-                    }
-                    await handleSaveProgramMetadata(item, { test_scores: parsed });
-                  }}
-                />
-              );
-            },
-          },
-          {
-            key: 'special_support',
-            header: 'HT Đặc biệt (L1–L3)',
-            cell: (item: Student) => {
-              const enr = item.enrollments?.[0];
-              if (!enr) return <span className="text-slate-400">—</span>;
-              const supObj = enr.program_metadata?.special_support || {};
-              const summaryStr = Object.entries(supObj)
-                .filter(([, v]) => v !== null && v !== undefined && String(v).trim() !== '')
-                .map(([k, v]) => `${k.toUpperCase()}: ${v}`)
-                .join(' | ');
-              return (
-                <InlineEditableCell
-                  value={summaryStr}
-                  multiline
-                  disabled={isStudentReadonlyForUser(item)}
-                  placeholder="L1: Hỗ trợ..."
-                  onSave={async (newVal) => {
-                    const parsed: Record<string, string | null> = {
-                      ...(enr.program_metadata?.special_support || {}),
-                    };
-                    if (newVal.includes(':')) {
-                      newVal.split('|').forEach((part) => {
-                        const [k, ...rest] = part.split(':');
-                        if (k && rest.length > 0) {
-                          parsed[k.trim().toLowerCase()] = rest.join(':').trim();
-                        }
-                      });
-                    } else {
-                      parsed.l1 = newVal.trim();
-                    }
-                    await handleSaveProgramMetadata(item, { special_support: parsed });
-                  }}
-                />
-              );
-            },
-          },
-          {
-            key: 'renewal_note',
-            header: 'Tái tục',
-            cell: (item: Student) => {
-              const enr = item.enrollments?.[0];
-              if (!enr) return <span className="text-slate-400">—</span>;
-              return (
-                <InlineEditableCell
-                  value={enr.program_metadata?.renewal_note || ''}
-                  disabled={isStudentReadonlyForUser(item)}
-                  placeholder="Ghi chú tái tục..."
-                  onSave={(newVal) => handleSaveProgramMetadata(item, { renewal_note: newVal })}
-                />
-              );
-            },
-          },
-        ]
-      : []),
+    // --- CÁC CỘT ĐẶC THÙ CỦA KHÓA JLPT (Đọc/Ghi trực tiếp program_metadata; tự ẩn khi lọc Kaiwa nhưng vẫn bật lại được) ---
+    {
+      key: 'satisfaction_score_b18',
+      header: 'Điểm hài lòng (B18)',
+      cell: (item: Student) => {
+        const enr = item.enrollments?.[0];
+        if (!enr) return <span className="text-slate-400">—</span>;
+        return (
+          <InlineEditableCell
+            value={enr.program_metadata?.satisfaction_score_b18 || ''}
+            disabled={isStudentReadonlyForUser(item)}
+            placeholder="Điểm B18..."
+            onSave={(newVal) =>
+              handleSaveProgramMetadata(item, { satisfaction_score_b18: newVal })
+            }
+          />
+        );
+      },
+    },
+    {
+      key: 'exam_registration',
+      header: 'Tình trạng đăng ký thi',
+      cell: (item: Student) => {
+        const enr = item.enrollments?.[0];
+        if (!enr) return <span className="text-slate-400">—</span>;
+        return (
+          <InlineEditableCell
+            value={enr.program_metadata?.exam_registration || ''}
+            disabled={isStudentReadonlyForUser(item)}
+            placeholder="VD: T7.2026"
+            onSave={(newVal) =>
+              handleSaveProgramMetadata(item, { exam_registration: newVal })
+            }
+          />
+        );
+      },
+    },
+    {
+      key: 'exam_score',
+      header: 'Điểm thi thật',
+      cell: (item: Student) => {
+        const enr = item.enrollments?.[0];
+        if (!enr) return <span className="text-slate-400">—</span>;
+        const rawVal = enr.program_metadata?.exam_score;
+        return (
+          <InlineEditableCell
+            value={rawVal !== undefined && rawVal !== null ? String(rawVal) : ''}
+            disabled={isStudentReadonlyForUser(item)}
+            placeholder="Điểm thi..."
+            onSave={(newVal) => handleSaveProgramMetadata(item, { exam_score: newVal })}
+          />
+        );
+      },
+    },
+    {
+      key: 'exam_result',
+      header: 'Tình trạng thi',
+      cell: (item: Student) => {
+        const enr = item.enrollments?.[0];
+        if (!enr) return <span className="text-slate-400">—</span>;
+        return (
+          <InlineEditableCell
+            value={enr.program_metadata?.exam_result || ''}
+            disabled={isStudentReadonlyForUser(item)}
+            placeholder="pass / not pass..."
+            onSave={(newVal) => handleSaveProgramMetadata(item, { exam_result: newVal })}
+          />
+        );
+      },
+    },
+    ...Array.from({ length: 7 }, (_, index) => ({
+      key: `test_score_l${index + 1}`,
+      header: `Kiểm tra lần ${index + 1}`,
+      cell: (item: Student) => {
+        const enr = item.enrollments?.[0];
+        if (!enr) return <span className="text-slate-400">—</span>;
+        const key = `l${index + 1}`;
+        return <InlineEditableCell
+          value={String(enr.program_metadata?.test_scores?.[key] ?? '')}
+          disabled={isStudentReadonlyForUser(item)}
+          placeholder={`Lần ${index + 1}...`}
+          onSave={(value) => handleSaveProgramMetadata(item, {
+            test_scores: { ...(enr.program_metadata?.test_scores || {}), [key]: value },
+          })}
+        />;
+      },
+    })),
+    ...Array.from({ length: 3 }, (_, index) => ({
+      key: `special_support_l${index + 1}`,
+      header: `HT đặc biệt lần ${index + 1}`,
+      cell: (item: Student) => {
+        const enr = item.enrollments?.[0];
+        if (!enr) return <span className="text-slate-400">—</span>;
+        const key = `l${index + 1}`;
+        return <InlineEditableCell
+          value={enr.program_metadata?.special_support?.[key] ?? ''}
+          multiline
+          disabled={isStudentReadonlyForUser(item)}
+          placeholder={`Lần ${index + 1}...`}
+          onSave={(value) => handleSaveProgramMetadata(item, {
+            special_support: { ...(enr.program_metadata?.special_support || {}), [key]: value },
+          })}
+        />;
+      },
+    })),
+    {
+      key: 'renewal_note',
+      header: 'Tái tục',
+      cell: (item: Student) => {
+        const enr = item.enrollments?.[0];
+        if (!enr) return <span className="text-slate-400">—</span>;
+        return (
+          <InlineEditableCell
+            value={enr.program_metadata?.renewal_note || ''}
+            disabled={isStudentReadonlyForUser(item)}
+            placeholder="Ghi chú tái tục..."
+            onSave={(newVal) => handleSaveProgramMetadata(item, { renewal_note: newVal })}
+          />
+        );
+      },
+    },
+    {
+      key: 'latest_class_code',
+      header: 'Mã lớp gần nhất',
+      cell: (item: Student) => {
+        const enr = item.enrollments?.[0];
+        if (!enr) return <span className="text-slate-400">—</span>;
+        return (
+          <InlineEditableCell
+            value={enr.program_metadata?.latest_class_code || ''}
+            disabled={isStudentReadonlyForUser(item)}
+            placeholder="Mã lớp gần nhất..."
+            onSave={(newVal) => handleSaveProgramMetadata(item, { latest_class_code: newVal })}
+          />
+        );
+      },
+    },
 
     // --- CÁC CỘT CUỐI (BD ➔ BH) ---
     {
@@ -2159,46 +2202,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
       },
     },
     {
-      key: 'end_date',
-      header: 'Ngày kết thúc',
-      cell: (item) => {
-        const enr = item.enrollments?.[0];
-        return (
-          <span className="text-slate-600 text-xs whitespace-nowrap">
-            {enr?.end_date ? new Date(enr.end_date).toLocaleDateString('vi-VN') : '—'}
-          </span>
-        );
-      },
-    },
-    {
-      key: 'handover_month',
-      header: 'Tháng bàn giao',
-      cell: (item) => <span className="text-slate-600 text-xs whitespace-nowrap">{item.enrollments?.[0]?.program_metadata?.handover_month ?? ''}</span>,
-    },
-    {
-      key: 'end_week_year',
-      header: 'Tuần/năm kết thúc',
-      cell: (item) => {
-        const meta = item.enrollments?.[0]?.program_metadata;
-        const value = [meta?.end_week, meta?.end_year].filter((v) => v !== null && v !== undefined && String(v) !== '').join('/');
-        return <span className="text-slate-600 text-xs whitespace-nowrap">{value}</span>;
-      },
-    },
-    {
-      key: 'hold_week_year',
-      header: 'Tuần/năm bảo lưu',
-      cell: (item) => {
-        const meta = item.enrollments?.[0]?.program_metadata;
-        const value = [meta?.hold_week, meta?.hold_year].filter((v) => v !== null && v !== undefined && String(v) !== '').join('/');
-        return <span className="text-slate-600 text-xs whitespace-nowrap">{value}</span>;
-      },
-    },
-    {
-      key: 'renewal_deadline',
-      header: 'Hạn tái tục',
-      cell: (item) => <span className="text-slate-600 text-xs whitespace-nowrap">{item.enrollments?.[0]?.program_metadata?.renewal_deadline ?? ''}</span>,
-    },
-    {
       key: 'handed_over_at',
       header: 'Ngày bàn giao',
       cell: (item) => {
@@ -2215,12 +2218,21 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
       header: 'Tháng nộp học phí',
       cell: (item) => {
         const enr = item.enrollments?.[0];
+        const rawPaidMonth = enr?.program_metadata?.paid_month;
+        if (rawPaidMonth !== undefined && rawPaidMonth !== null && String(rawPaidMonth).trim() !== '') {
+          return (
+            <span className="text-slate-700 font-semibold text-xs whitespace-nowrap">
+              {String(rawPaidMonth).trim()}
+            </span>
+          );
+        }
         const date = enr?.paid_at || enr?.start_date;
         if (!date) return <span className="text-slate-400">—</span>;
         const d = new Date(date);
+        if (Number.isNaN(d.getTime())) return <span className="text-slate-400">—</span>;
         return (
           <span className="text-slate-700 font-semibold text-xs whitespace-nowrap">
-            Tháng {d.getMonth() + 1}/{d.getFullYear()}
+            {String(d.getMonth() + 1).padStart(2, '0')}/{d.getFullYear()}
           </span>
         );
       },
@@ -2506,6 +2518,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
         </div>
         <ColumnVisibilityDropdown
           scope={activeTab === 'students' ? 'students.tab1' : 'students.tab2'}
+          programFilter={programFilter}
         />
       </div>
 

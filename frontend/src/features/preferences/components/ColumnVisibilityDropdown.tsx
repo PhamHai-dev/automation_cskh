@@ -1,18 +1,22 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Columns3, RotateCcw, Check } from 'lucide-react';
-import { PreferenceScope } from '../columns';
+import { PreferenceScope, ProgramColumnFilter } from '../columns';
 import { useColumnVisibility } from '../hooks/useColumnVisibility';
 import { Button } from '../../../components/ui/Button';
 
 interface ColumnVisibilityDropdownProps {
   scope: PreferenceScope;
+  programFilter?: ProgramColumnFilter;
 }
 
-export const ColumnVisibilityDropdown: React.FC<ColumnVisibilityDropdownProps> = ({ scope }) => {
+export const ColumnVisibilityDropdown: React.FC<ColumnVisibilityDropdownProps> = ({
+  scope,
+  programFilter = 'ALL',
+}) => {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const { columns, draft, dirty, saving, setDraftValue, setAll, resetToDefault, save } =
-    useColumnVisibility(scope);
+    useColumnVisibility(scope, programFilter);
 
   useEffect(() => {
     if (!open) return;

@@ -10,11 +10,14 @@ export type PreferenceScope =
   | 'students.tab2'
   | 'home.quick_links';
 
+export type ProgramColumnFilter = 'ALL' | 'KAIWA' | 'JLPT';
+
 export interface ColumnMeta {
   key: string;
   label: string;
   defaultVisible: boolean;
   locked?: boolean; // cannot be toggled by user
+  program?: 'KAIWA' | 'JLPT'; // auto-hidden when filtering by the other program, still user-toggleable
 }
 
 // ─── Enrollments — Tab Nhanh (Quick) ─────────────────────────────────────────
@@ -90,27 +93,33 @@ export const STUDENT_TAB1_COLUMNS: ColumnMeta[] = [
   { key: 'gender',                label: 'Giới tính',                defaultVisible: false },
   { key: 'phone',                 label: 'Số điện thoại',            defaultVisible: true },
   { key: 'email',                 label: 'Email',                    defaultVisible: false },
-  { key: 'course_content',        label: 'Nội dung khóa học',        defaultVisible: false },
+  { key: 'course_content',        label: 'Nội dung khóa',            defaultVisible: true,  program: 'KAIWA' },
+  { key: 'tuition_fee',           label: 'Học phí thực nộp',         defaultVisible: true },
   { key: 'payment_status',        label: 'Trạng thái thanh toán',    defaultVisible: true },
-  { key: 'package_name',          label: 'Gói học / Mã khóa',        defaultVisible: true },
-  { key: 'level',                 label: 'Trình độ / Gói SP',        defaultVisible: true },
+  { key: 'package_name',          label: 'Gói học',                  defaultVisible: true },
+  { key: 'jlpt_course_code',      label: 'Mã khóa học',              defaultVisible: true,  program: 'JLPT' },
+  { key: 'course_teacher_type',   label: 'Khóa học',                 defaultVisible: true,  program: 'KAIWA' },
+  { key: 'level',                 label: 'Trình độ',                 defaultVisible: true,  program: 'KAIWA' },
   { key: 'total_sessions',        label: 'Tổng số buổi',             defaultVisible: false },
-  { key: 'class_model',           label: 'Mô hình lớp',              defaultVisible: false },
-  { key: 'class_code',            label: 'Mã lớp',                   defaultVisible: false },
+  { key: 'class_model',           label: 'Mô hình lớp',              defaultVisible: true },
+  { key: 'class_code',            label: 'Mã lớp',                   defaultVisible: false, program: 'JLPT' },
   { key: 'sales_note',            label: 'Ghi chú sale',             defaultVisible: false },
-  { key: 'date_of_birth',         label: 'Ngày sinh',                defaultVisible: false },
-  { key: 'occupation',            label: 'Nghề nghiệp',              defaultVisible: false },
+  { key: 'date_of_birth',         label: 'Ngày sinh',                defaultVisible: false, program: 'KAIWA' },
+  { key: 'occupation',            label: 'Nghề nghiệp',              defaultVisible: false, program: 'KAIWA' },
   { key: 'remaining_sessions',    label: 'Số buổi còn lại',          defaultVisible: true },
   { key: 'start_date',            label: 'Ngày bắt đầu học',         defaultVisible: false },
   { key: 'status',                label: 'Trạng thái',               defaultVisible: true },
-  { key: 'end_date',              label: 'Ngày kết thúc / bảo lưu',  defaultVisible: false },
+  { key: 'expected_start_date',   label: 'Ngày KG dự kiến',          defaultVisible: true,  program: 'JLPT' },
+  { key: 'end_date',              label: 'Ngày bảo lưu/kết thúc',    defaultVisible: false, program: 'KAIWA' },
+  { key: 'active_state',          label: 'Tình trạng',               defaultVisible: true,  program: 'JLPT' },
+  { key: 'latest_class_code',     label: 'Mã lớp gần nhất',          defaultVisible: true,  program: 'JLPT' },
   { key: 'start_time',            label: 'Giờ học',                  defaultVisible: false },
   { key: 'schedule_pattern',      label: 'Lịch học',                 defaultVisible: false },
-  { key: 'duration_minutes',      label: 'Thời lượng',               defaultVisible: false },
+  { key: 'duration_minutes',      label: 'Thời lượng',               defaultVisible: false, program: 'KAIWA' },
   { key: 'teacher_name',          label: 'Giáo viên',                defaultVisible: true },
-  { key: 'teacher_code',          label: 'Mã giáo viên',             defaultVisible: false },
+  { key: 'teacher_code',          label: 'Mã giáo viên',             defaultVisible: false, program: 'KAIWA' },
   { key: 'class_name',            label: 'Tên lớp',                  defaultVisible: true },
-  { key: 'attended_prev',         label: 'Đã học năm trước',         defaultVisible: false },
+  { key: 'attended_prev',         label: 'Đã học năm trước',         defaultVisible: false, program: 'KAIWA' },
   { key: 'attended_this_year',    label: 'Đã học 2026',              defaultVisible: false },
 ];
 
@@ -130,38 +139,42 @@ export const STUDENT_TAB2_COLUMNS: ColumnMeta[] = [
   { key: 'gender',                 label: 'Giới tính',              defaultVisible: false },
   { key: 'phone',                  label: 'Số điện thoại',          defaultVisible: false },
   { key: 'email',                  label: 'Email',                  defaultVisible: false },
-  { key: 'course_content',         label: 'Nội dung khóa học',      defaultVisible: false },
+  { key: 'course_content',         label: 'Nội dung khóa',          defaultVisible: false, program: 'KAIWA' },
+  { key: 'tuition_fee',            label: 'Học phí thực nộp',       defaultVisible: false },
   // Care & study report columns (visible by default)
-  { key: 'study_report_url',       label: 'Báo cáo học tập',        defaultVisible: true },
+  { key: 'study_report_url',       label: 'Báo cáo học tập',        defaultVisible: true,  program: 'KAIWA' },
   { key: 'exchange_info',          label: 'Trao đổi với học viên',  defaultVisible: true },
   { key: 'callback_note',          label: 'Lịch hẹn gọi',           defaultVisible: true },
   { key: 'hot_issue_note',         label: 'Điểm nóng',              defaultVisible: true },
+  // Care milestone columns: shared (1, 15, 25), Kaiwa-only (3, 10, 20, 27), JLPT-only (30, 35, 40)
+  { key: 'care_session_1',         label: 'Nội dung CS sau buổi 1', defaultVisible: true },
+  { key: 'care_session_3',         label: 'Nội dung CS sau buổi 3', defaultVisible: true,  program: 'KAIWA' },
+  { key: 'care_session_10',        label: 'Nội dung CS sau buổi 10', defaultVisible: true, program: 'KAIWA' },
+  { key: 'care_session_15',        label: 'Nội dung CS sau buổi 15', defaultVisible: true },
+  { key: 'care_session_20',        label: 'Nội dung CS sau buổi 20', defaultVisible: true, program: 'KAIWA' },
+  { key: 'care_session_25',        label: 'Nội dung CS sau buổi 25', defaultVisible: true },
+  { key: 'care_session_27',        label: 'Nội dung CS sau buổi 27-29', defaultVisible: true, program: 'KAIWA' },
+  { key: 'care_session_30',        label: 'Nội dung CS sau buổi 30', defaultVisible: true, program: 'JLPT' },
+  { key: 'care_session_35',        label: 'Nội dung CS sau buổi 35', defaultVisible: true, program: 'JLPT' },
+  { key: 'care_session_40',        label: 'Nội dung CS cuối khóa (B40)', defaultVisible: true, program: 'JLPT' },
   // JLPT specialized columns
-  { key: 'satisfaction_score_b18', label: 'Điểm hài lòng (B18)',    defaultVisible: true },
-  { key: 'exam_registration',      label: 'ĐK Thi',                 defaultVisible: true },
-  { key: 'exam_score',             label: 'Điểm thi thật',          defaultVisible: true },
-  { key: 'exam_result',            label: 'Tình trạng thi',         defaultVisible: true },
-  { key: 'test_scores_summary',    label: 'Kiểm tra (L1–L7)',       defaultVisible: true },
-  { key: 'special_support',        label: 'HT Đặc biệt (L1–L3)',    defaultVisible: true },
-  { key: 'renewal_note',           label: 'Tái tục',                defaultVisible: true },
-  { key: 'first_class_exam',       label: 'Thi đầu vào',             defaultVisible: true },
-  { key: 'first_class_test',       label: 'Kiểm tra đầu vào',         defaultVisible: true },
-  { key: 'first_class_special_support', label: 'HT đặc biệt đầu vào',  defaultVisible: true },
-  { key: 'first_class_renewal',    label: 'Tái tục đầu vào',          defaultVisible: true },
-  { key: 'handover_month',         label: 'Tháng bàn giao',           defaultVisible: true },
-  { key: 'end_week_year',          label: 'Tuần/năm kết thúc',         defaultVisible: true },
-  { key: 'hold_week_year',         label: 'Tuần/năm bảo lưu',          defaultVisible: true },
-  { key: 'renewal_deadline',       label: 'Hạn tái tục',              defaultVisible: true },
+  { key: 'satisfaction_score_b18', label: 'Điểm hài lòng (B18)',    defaultVisible: true,  program: 'JLPT' },
+  { key: 'exam_registration',      label: 'Tình trạng đăng ký thi', defaultVisible: true,  program: 'JLPT' },
+  { key: 'exam_score',             label: 'Điểm thi thật',          defaultVisible: true,  program: 'JLPT' },
+  { key: 'exam_result',            label: 'Tình trạng thi',         defaultVisible: true,  program: 'JLPT' },
+  ...Array.from({ length: 7 }, (_, index) => ({
+    key: `test_score_l${index + 1}`, label: `Kiểm tra lần ${index + 1}`, defaultVisible: true, program: 'JLPT' as const,
+  })),
+  ...Array.from({ length: 3 }, (_, index) => ({
+    key: `special_support_l${index + 1}`, label: `HT đặc biệt lần ${index + 1}`, defaultVisible: true, program: 'JLPT' as const,
+  })),
+  { key: 'renewal_note',           label: 'Tái tục',                defaultVisible: true,  program: 'JLPT' },
+  { key: 'latest_class_code',      label: 'Mã lớp gần nhất',        defaultVisible: true,  program: 'JLPT' },
   // Dynamic care session columns are not configurable (milestone-driven)
   { key: 'post_course_care',       label: 'Chăm sóc sau kết thúc',  defaultVisible: true },
-  { key: 'end_date',               label: 'Ngày kết thúc',          defaultVisible: false },
   { key: 'handed_over_at',         label: 'Ngày bàn giao',          defaultVisible: false },
-  { key: 'paid_month',             label: 'Tháng nộp học phí',      defaultVisible: false },
-  { key: 'account_created_at',     label: 'Ngày tạo tài khoản',     defaultVisible: false },
-  { key: 'handover_month',         label: 'Tháng bàn giao',           defaultVisible: true },
-  { key: 'end_week_year',          label: 'Tuần/năm kết thúc',         defaultVisible: true },
-  { key: 'hold_week_year',         label: 'Tuần/năm bảo lưu',          defaultVisible: true },
-  { key: 'renewal_deadline',       label: 'Hạn tái tục',              defaultVisible: true },
+  { key: 'paid_month',             label: 'Tháng nộp học phí',      defaultVisible: true,  program: 'JLPT' },
+  { key: 'account_created_at',     label: 'Ngày tạo tài khoản',     defaultVisible: false, program: 'KAIWA' },
 ];
 
 export const HOME_QUICK_LINKS_COLUMNS: ColumnMeta[] = [
@@ -188,21 +201,42 @@ export const COLUMNS_BY_SCOPE: Record<PreferenceScope, ColumnMeta[]> = {
   'home.quick_links':     HOME_QUICK_LINKS_COLUMNS,
 };
 
+export function isColumnInProgramScope(
+  col: ColumnMeta,
+  programFilter: ProgramColumnFilter = 'ALL'
+): boolean {
+  if (programFilter === 'ALL' || !col.program) return true;
+  return col.program === programFilter;
+}
+
+export function getEffectiveDefaultVisible(
+  col: ColumnMeta,
+  programFilter: ProgramColumnFilter = 'ALL'
+): boolean {
+  if (col.locked) return true;
+  if (!isColumnInProgramScope(col, programFilter)) return false;
+  return col.defaultVisible;
+}
+
 /**
  * Merge saved delta (only changed keys) with column defaults.
- * A column is visible if:
- *   - It has `locked: true` → always true
- *   - It is explicitly set in `saved` → use saved value
- *   - Otherwise → use `defaultVisible`
+ * When filtering by KAIWA/JLPT, columns outside the selected program are
+ * unchecked/hidden by default unless explicitly overridden in `overrides`.
  */
 export function mergeVisibility(
   columns: ColumnMeta[],
-  saved: Record<string, boolean>
+  saved: Record<string, boolean>,
+  programFilter: ProgramColumnFilter = 'ALL',
+  overrides: Record<string, boolean> = {}
 ): Record<string, boolean> {
   const result: Record<string, boolean> = {};
   for (const col of columns) {
     if (col.locked) {
       result[col.key] = true;
+    } else if (col.key in overrides) {
+      result[col.key] = overrides[col.key];
+    } else if (!isColumnInProgramScope(col, programFilter)) {
+      result[col.key] = false;
     } else if (col.key in saved) {
       result[col.key] = saved[col.key];
     } else {

@@ -58,7 +58,7 @@ export class TeachersRepository {
     const isPaginated = Boolean(filters?.isPaginated);
     const page = filters?.page && filters.page >= 1 ? filters.page : 1;
     const pageSize =
-      filters?.pageSize && filters.pageSize >= 1 ? Math.min(filters.pageSize, 100) : 20;
+      filters?.pageSize && filters.pageSize >= 1 ? Math.min(filters.pageSize, 200) : 20;
 
     return prisma.teacher.findMany({
       where,
@@ -87,7 +87,7 @@ export class TeachersRepository {
     }
 
     const effectivePageSize = isPaginated
-      ? (filters?.pageSize && filters.pageSize >= 1 ? Math.min(filters.pageSize, 100) : 20)
+      ? (filters?.pageSize && filters.pageSize >= 1 ? Math.min(filters.pageSize, 200) : 20)
       : Math.max(1, currentData.length);
     const totalPages = Math.max(1, Math.ceil(total / effectivePageSize));
 
