@@ -540,7 +540,7 @@ function buildAttendanceSheet(
   layout: 'KAIWA_CS' | 'JLPT_OR_FINAL' | 'TEACHER',
   year: number,
   programForData: 'KAIWA' | 'JLPT',
-  monthsToGenerate: number[] = [1, 2, 3]
+  monthsToGenerate: number[] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
 ): ExcelJS.Worksheet {
   const ws = wb.addWorksheet(sheetName, {
     views: [{ state: 'frozen', xSplit: layout === 'TEACHER' ? 3 : 3, ySplit: 2 }],
@@ -585,11 +585,11 @@ function buildAttendanceSheet(
       cursorCol++;
     }
 
-    // Các cột ngày trong tháng
+    // Các cột ngày trong tháng (dùng 12:00:00 để không bị trôi ngày theo UTC+7 khi ExcelJS đọc/ghi)
     const daysInMonth = new Date(year, m, 0).getDate();
     for (let d = 1; d <= daysInMonth; d++) {
       const cell = row2.getCell(cursorCol);
-      cell.value = new Date(year, m - 1, d);
+      cell.value = new Date(year, m - 1, d, 12, 0, 0);
       cell.numFmt = 'dd/mm/yyyy';
       ws.getColumn(cursorCol).width = 11;
 

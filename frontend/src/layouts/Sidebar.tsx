@@ -23,6 +23,7 @@ import {
   Sliders,
   RefreshCw,
   FileText,
+  History,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -219,6 +220,36 @@ export const Sidebar: React.FC<SidebarProps> = ({
     {
       title: 'DỮ LIỆU & HỆ THỐNG',
       items: [
+        {
+          name: 'Lịch sử hoạt động',
+          path: '/activity-logs',
+          activePaths: ['/activity-logs'],
+          icon: <History className="w-5 h-5 shrink-0" />,
+          allowedRoles: ['ADMIN', 'MANAGE', 'CS'],
+          end: true,
+          subItems: [
+            {
+              name: 'Thao tác trên Web',
+              tab: 'audit',
+              allowedRoles: ['ADMIN', 'MANAGE', 'CS'],
+            },
+            {
+              name: 'Lịch sử Đồng bộ',
+              tab: 'sync',
+              allowedRoles: ['ADMIN', 'MANAGE', 'CS'],
+            },
+            {
+              name: 'Lịch sử Backup',
+              tab: 'backup',
+              allowedRoles: ['ADMIN', 'MANAGE', 'CS'],
+            },
+            {
+              name: 'Lịch sử Đăng nhập',
+              tab: 'login',
+              allowedRoles: ['ADMIN', 'MANAGE'],
+            },
+          ],
+        },
         {
           name: 'Đồng bộ dữ liệu',
           path: '/data-sync',

@@ -24,6 +24,7 @@ import { lineRouter } from './modules/line/line.routes';
 import { automationRouter } from './modules/automation/automation.routes';
 import { autoAttendanceRouter } from './modules/auto-attendance/auto-attendance.routes';
 import { preferencesRouter } from './modules/preferences/preferences.routes';
+import { activityLogsRouter } from './modules/activity-logs/activity-logs.routes';
 
 const app: Express = express();
 const httpLog = createLogger('HTTP');
@@ -86,6 +87,7 @@ app.use('/api/v1/line', lineRouter);
 app.use('/api/v1/automation', automationRouter);
 app.use('/api/v1/settings/auto-attendance', autoAttendanceRouter);
 app.use('/api/v1/me/preferences', preferencesRouter);
+app.use('/api/v1/activity-logs', activityLogsRouter);
 app.use('/api/v1', careRouter);
 
 // Error handling

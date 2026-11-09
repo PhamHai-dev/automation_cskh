@@ -348,6 +348,20 @@ export const importsApi = {
     return res.data?.data || res.data;
   },
 
+  createSheetBackupConfig: async (
+    payload: UpdateCsSheetBackupConfigDTO & { cs_user_id?: number; program_type: string }
+  ): Promise<CsSheetBackupConfigItem> => {
+    const res = await apiClient.post('/imports/sheet-backup/configs', payload);
+    return res.data?.data || res.data;
+  },
+
+  deleteSheetBackupConfig: async (
+    configId: number
+  ): Promise<{ deleted: boolean; id: number }> => {
+    const res = await apiClient.delete(`/imports/sheet-backup/configs/${configId}`);
+    return res.data?.data || res.data;
+  },
+
   runSheetBackup: async (
     configId: number,
     options?: { forceFullRewrite?: boolean; year?: number | null }

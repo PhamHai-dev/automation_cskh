@@ -481,6 +481,10 @@ export function toGoogleSafeValue(val: unknown): GoogleSafeValue {
 const TEMPLATE_SOURCE_CANDIDATES = [
   'docs/data/hoc_vien/hoc_vien_jlpt.xlsx',
   '../docs/data/hoc_vien/hoc_vien_jlpt.xlsx',
+  'docs/data/import/cskh/backup_cskh_jlpt_CVHT01.xlsx',
+  '../docs/data/import/cskh/backup_cskh_jlpt_CVHT01.xlsx',
+  'docs/data/import_data/File nguồn tổng JLPT.xlsx',
+  '../docs/data/import_data/File nguồn tổng JLPT.xlsx',
 ];
 
 /** KAIWA layout lives in the shared Sổ CSKH workbook (1.Chăm sóc + 3.Chấm buổi). */
@@ -489,12 +493,20 @@ const KAIWA_TEMPLATE_SOURCE_CANDIDATES = [
   '../docs/data/cham_soc_hoc_vien.xlsx',
   'docs/data/cham_soc_hoc_vien_mock.xlsx',
   '../docs/data/cham_soc_hoc_vien_mock.xlsx',
+  'docs/data/import/cskh/backup_cskh_kaiwa_CVHT01.xlsx',
+  '../docs/data/import/cskh/backup_cskh_kaiwa_CVHT01.xlsx',
+  'docs/data/import_data/Sheet3_cham_buoi.xlsx',
+  '../docs/data/import_data/Sheet3_cham_buoi.xlsx',
 ];
 
 /** TEACHER layout lives in `docs/data/giao_vien.xlsx` (sheet `2026 スケジュール`). */
 const TEACHER_TEMPLATE_SOURCE_CANDIDATES = [
   'docs/data/giao_vien.xlsx',
   '../docs/data/giao_vien.xlsx',
+  'docs/data/import/giao_vien/diem_danh_gv_GV505.xlsx',
+  '../docs/data/import/giao_vien/diem_danh_gv_GV505.xlsx',
+  'docs/data/import_data/giao_vien_JLPT.xlsx',
+  '../docs/data/import_data/giao_vien_JLPT.xlsx',
 ];
 
 export function resolveProgramTemplateSource(programType: string): string {
@@ -892,16 +904,27 @@ export async function loadOrExtractProgramWorkbook(opts: {
   const outProfile = outWb.addWorksheet(profileSheetName, {
     views: [{ state: 'frozen', xSplit: 1, ySplit: profileHeaderRow }],
   });
-  const outAttendance = outWb.addWorksheet(attendanceSheetName, {
-    views: [{ state: 'frozen', xSplit: 12, ySplit: attendanceHeaderRow }],
-  });
-  const outFinal = outWb.addWorksheet(finalSheetName, {
-    views: [{ state: 'frozen', xSplit: 12, ySplit: finalHeaderRow }],
-  });
-
+  const outAttendance =
+    outWb.getWorksheet(attendanceSheetName) ||
+    outWb.addWorksheet(attendanceSheetName, {
+      views: [{ state: 'frozen', xSplit: 12, ySplit: attendanceHeaderRow }],
+    });
   const profileStruct = copyStructureRows(sourceProfile, outProfile, profileHeaderRow, 'formula');
-  const attendanceStruct = copyStructureRows(sourceAttendance, outAttendance, attendanceHeaderRow, 'full');
-  const finalStruct = copyStructureRows(sourceFinal, outFinal, finalHeaderRow, 'full');
+  const attendanceStruct =
+    outAttendance === outProfile
+      ? profileStruct
+      : copyStructureRows(sourceAttendance, outAttendance, attendanceHeaderRow, 'full');
+
+  let outFinal = outWb.getWorksheet(finalSheetName);
+  let finalStruct: { maxCol: number; formulaRowNumber: number };
+  if (outFinal) {
+    finalStruct = outFinal === outAttendance ? attendanceStruct : profileStruct;
+  } else {
+    outFinal = outWb.addWorksheet(finalSheetName, {
+      views: [{ state: 'frozen', xSplit: 12, ySplit: finalHeaderRow }],
+    });
+    finalStruct = copyStructureRows(sourceFinal, outFinal, finalHeaderRow, 'full');
+  }
 
   const dir = path.dirname(absPath);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });

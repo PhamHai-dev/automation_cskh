@@ -15,6 +15,7 @@ import {
   normalizeScheduleTime,
 } from '../../shared/schedule/schedule-pattern';
 import { runStudentCareGroupAutoSync } from '../zalo/student-care-group.contract';
+import { recordAuditLogSafe } from '../activity-logs/audit-helper';
 
 class CustomError extends Error {
   status: number;
@@ -141,6 +142,21 @@ export class StudentsService {
         refreshLiveGroups: false,
         studentIds: [created.id],
       }).catch(() => null);
+
+      if (actor?.id) {
+        await recordAuditLogSafe({
+          userId: actor.id,
+          action: 'STUDENT_CREATED',
+          entityType: 'Student',
+          entityId: created.id,
+          afterData: {
+            full_name: created.full_name,
+            phone: created.phone ?? null,
+            email: created.email ?? null,
+            external_id: created.external_id ?? null,
+          },
+        });
+      }
     }
     return created;
   }
@@ -169,6 +185,33 @@ export class StudentsService {
         refreshLiveGroups: false,
         studentIds: [id],
       }).catch(() => null);
+
+      if (actor?.id && updated) {
+        await recordAuditLogSafe({
+          userId: actor.id,
+          action: 'STUDENT_UPDATED',
+          entityType: 'Student',
+          entityId: id,
+          beforeData: {
+            full_name: existing.full_name,
+            phone: existing.phone ?? null,
+            email: existing.email ?? null,
+            external_id: existing.external_id ?? null,
+            gender: existing.gender ?? null,
+            occupation: existing.occupation ?? null,
+            note: existing.note ?? null,
+          },
+          afterData: {
+            full_name: updated.full_name ?? existing.full_name,
+            phone: updated.phone ?? existing.phone ?? null,
+            email: updated.email ?? existing.email ?? null,
+            external_id: updated.external_id ?? existing.external_id ?? null,
+            gender: updated.gender ?? existing.gender ?? null,
+            occupation: updated.occupation ?? existing.occupation ?? null,
+            note: updated.note ?? existing.note ?? null,
+          },
+        });
+      }
       return updated;
     } catch (error) {
       if (isAccessDenied(error)) {

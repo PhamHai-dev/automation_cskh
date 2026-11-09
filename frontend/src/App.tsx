@@ -37,6 +37,7 @@ import { MyTeachingSessionsPage } from './features/attendance/pages/MyTeachingSe
 import { TeacherAttendanceTrackingPage } from './features/attendance/pages/TeacherAttendanceTrackingPage';
 import { TeacherStudentInfoPage } from './features/attendance/pages/TeacherStudentInfoPage';
 import { PreferencesPage } from './features/preferences/pages/PreferencesPage';
+import { ActivityLogsPage } from './features/activity-logs/pages/ActivityLogsPage';
 import './styles/globals.css';
 import './styles/tokens.css';
 
@@ -86,6 +87,10 @@ function App() {
               <Route path="/data-sync" element={<DataSyncPage />} />
               <Route path="/data-sync/preview/:code" element={<SyncPreviewPage />} />
               <Route path="/data-sync/history/:runId" element={<SyncHistoryDetailPage />} />
+
+              {/* Lịch sử hoạt động */}
+              <Route path="/activity-logs" element={<ActivityLogsPage />} />
+              <Route path="/lich-su-hoat-dong" element={<Navigate to="/activity-logs" replace />} />
 
               {/* Xuất nhập Excel */}
               <Route path="/imports" element={<ImportsPage />} />

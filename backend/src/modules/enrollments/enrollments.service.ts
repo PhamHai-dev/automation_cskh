@@ -9,6 +9,7 @@ import {
   BulkReassignCSDTO,
 } from './enrollments.types';
 import { prisma } from '../../prisma/client';
+import { recordAuditLogSafe } from '../activity-logs/audit-helper';
 
 class CustomError extends Error {
   status: number;
@@ -169,13 +170,41 @@ export class EnrollmentsService {
     const student = await prisma.student.findUnique({ where: { id: data.student_id } });
     if (!student) throw new CustomError('Student not found', 404);
 
-    return this.repository.create(data);
+    const created = await this.repository.create(data);
+    if (created?.id && userId) {
+      await recordAuditLogSafe({
+        userId,
+        action: 'ENROLLMENT_CREATED',
+        entityType: 'Enrollment',
+        entityId: created.id,
+        afterData: {
+          student_id: created.student_id,
+          cs_id: created.cs_id,
+          program_type: created.program_type,
+          status: created.status,
+          total_sessions: created.total_sessions,
+          level: created.level ?? null,
+        },
+      });
+    }
+    return created;
   }
 
   async updateEnrollment(id: number, data: UpdateEnrollmentDTO, userId: number, roles: string[]) {
     const enrollment = await this.getEnrollmentById(id, userId, roles); // Validates read scope
     await this.assertWriteOwnershipForEnrollment(enrollment, userId, roles);
-    return this.repository.update(id, data);
+    const updated = await this.repository.update(id, data);
+    if (updated && userId) {
+      await recordAuditLogSafe({
+        userId,
+        action: 'ENROLLMENT_UPDATED',
+        entityType: 'Enrollment',
+        entityId: id,
+        beforeData: enrollment,
+        afterData: updated,
+      });
+    }
+    return updated;
   }
 
   async reassignCS(
@@ -282,6 +311,17 @@ export class EnrollmentsService {
 
     if (!fromClass || !toClass) throw new CustomError('Class not found', 404);
 
-    return this.repository.transferClass(enrollmentId, data);
+    const transferred = await this.repository.transferClass(enrollmentId, data);
+    if (transferred && userId) {
+      await recordAuditLogSafe({
+        userId,
+        action: 'TRANSFER_CLASS',
+        entityType: 'Enrollment',
+        entityId: enrollmentId,
+        beforeData: { from_class_id: data.from_class_id },
+        afterData: { to_class_id: data.to_class_id, start_date: data.start_date ?? null },
+      });
+    }
+    return transferred;
   }
 }

@@ -32,6 +32,7 @@ import {
 } from '../line/line-dispatcher.contract';
 import { getIo } from '../../shared/realtime/socket-singleton';
 import { createLogger } from '../../shared/logger/logger';
+import { recordAuditLogSafe } from '../activity-logs/audit-helper';
 
 const log = createLogger('BroadcastService');
 
@@ -848,6 +849,22 @@ export class BroadcastService {
       },
     });
 
+    if (campaign?.id && userId) {
+      await recordAuditLogSafe({
+        userId,
+        action: 'BROADCAST_CREATED',
+        entityType: 'BroadcastCampaign',
+        entityId: campaign.id,
+        afterData: {
+          name: campaign.name,
+          channel_mode: campaign.channel_mode,
+          schedule_type: campaign.schedule_type,
+          total_recipients: campaign.total_recipients,
+          status: campaign.status,
+        },
+      });
+    }
+
     if (scheduleType === 'IMMEDIATE') {
       if (input.awaitExecution || process.env.NODE_ENV === 'test') {
         const executed = await this.executeCampaign(campaign.id);
@@ -1454,7 +1471,7 @@ export class BroadcastService {
   /**
    * Cancel a scheduled or sending campaign.
    */
-  async cancelCampaign(campaignId: number) {
+  async cancelCampaign(campaignId: number, actorUserId?: number) {
     const campaign = await prisma.broadcastCampaign.findUnique({
       where: { id: campaignId },
     });
@@ -1485,6 +1502,21 @@ export class BroadcastService {
       },
       include: {
         recipients: { orderBy: { id: 'asc' } },
+      },
+    });
+
+    await recordAuditLogSafe({
+      userId: actorUserId ?? campaign.created_by_id ?? 1,
+      action: 'BROADCAST_CANCELLED',
+      entityType: 'BroadcastCampaign',
+      entityId: campaignId,
+      beforeData: {
+        name: campaign.name,
+        status: campaign.status,
+      },
+      afterData: {
+        name: updated.name,
+        status: updated.status,
       },
     });
 

@@ -14,6 +14,7 @@ import type {
   ListWorkflowsQuery,
 } from './automation.types';
 import { createLogger } from '../../shared/logger/logger';
+import { recordAuditLogSafe } from '../activity-logs/audit-helper';
 
 const log = createLogger('AutomationService');
 
@@ -190,6 +191,20 @@ export class AutomationService {
       await this.setWorkflowCsAssignments(created.id, [], ownerCsId);
     }
 
+    if (created?.id && ownerCsId) {
+      await recordAuditLogSafe({
+        userId: ownerCsId,
+        action: 'WORKFLOW_CREATED',
+        entityType: 'AutomationWorkflow',
+        entityId: created.id,
+        afterData: {
+          name: created.name,
+          description: created.description ?? null,
+          active: created.active ?? true,
+        },
+      });
+    }
+
     return this.getWorkflow(created.id, ownerCsId, 'ADMIN');
   }
 
@@ -303,7 +318,26 @@ export class AutomationService {
       await this.setWorkflowCsAssignments(id, assigned_cs_ids, userId);
     }
 
-    return this.getWorkflow(id, userId, role);
+    const updated = await this.getWorkflow(id, userId, role);
+    if (userId) {
+      await recordAuditLogSafe({
+        userId,
+        action: 'WORKFLOW_UPDATED',
+        entityType: 'AutomationWorkflow',
+        entityId: id,
+        beforeData: {
+          name: workflow.name,
+          description: workflow.description ?? null,
+          active: workflow.active,
+        },
+        afterData: {
+          name: updated.name,
+          description: updated.description ?? null,
+          active: updated.active,
+        },
+      });
+    }
+    return updated;
   }
 
   async deleteWorkflow(id: number, userId: number, role: string) {
@@ -315,7 +349,21 @@ export class AutomationService {
         { status: 403 },
       );
     }
-    return automationRepository.deleteWorkflow(id);
+    const deleted = await automationRepository.deleteWorkflow(id);
+    if (userId) {
+      await recordAuditLogSafe({
+        userId,
+        action: 'WORKFLOW_DELETED',
+        entityType: 'AutomationWorkflow',
+        entityId: id,
+        beforeData: {
+          name: workflow.name,
+          description: workflow.description ?? null,
+          active: workflow.active,
+        },
+      });
+    }
+    return deleted;
   }
 
   // ─── Steps ───────────────────────────────────────────────────────────

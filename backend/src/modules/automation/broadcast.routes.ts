@@ -259,7 +259,7 @@ router.post('/:id/cancel', async (req: Request, res: Response) => {
     if (isNaN(campaignId) || campaignId < 1) {
       return res.status(400).json({ success: false, message: 'ID chiến dịch không hợp lệ' });
     }
-    const campaign = await broadcastService.cancelCampaign(campaignId);
+    const campaign = await broadcastService.cancelCampaign(campaignId, req.user?.id);
     res.json({
       success: true,
       data: campaign,

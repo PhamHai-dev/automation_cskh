@@ -504,6 +504,38 @@ export class ImportsController {
     }
   };
 
+  createSheetBackupConfig = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const user = (req as any).user;
+      const actor = {
+        id: user?.id || 1,
+        roles: (user?.roles as string[]) || ['ADMIN'],
+      };
+      const data = await this.sheetBackupService.createConfig(req.body || {}, actor);
+      res.status(201).json({ data, meta: null });
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  deleteSheetBackupConfig = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const id = parseInt(req.params.id, 10);
+      if (isNaN(id)) {
+        throw new AppError(400, 'id không hợp lệ');
+      }
+      const user = (req as any).user;
+      const actor = {
+        id: user?.id || 1,
+        roles: (user?.roles as string[]) || ['ADMIN'],
+      };
+      const data = await this.sheetBackupService.deleteConfig(id, actor);
+      res.status(200).json({ data, meta: null });
+    } catch (err) {
+      next(err);
+    }
+  };
+
   bulkPasteSheetBackupLinks = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const user = (req as any).user;

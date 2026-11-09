@@ -39,7 +39,7 @@ export class UsersController {
     try {
       const id = parseInt(req.params.id);
       const validated = updateUserSchema.parse({ body: req.body });
-      const user = await usersService.updateUser(id, validated.body);
+      const user = await usersService.updateUser(id, validated.body, req.user?.id);
       res.json(user);
     } catch (error: any) {
       res.status(400).json({ message: error.message || 'Invalid request' });

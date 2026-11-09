@@ -217,6 +217,7 @@ export interface ProgramBackupConfigItem {
 }
 
 export interface UpdateProgramBackupConfigDTO {
+  name?: string;
   target_spreadsheet_url?: string | null;
   sheet_name?: string;
   header_row?: number;
@@ -231,6 +232,11 @@ export interface UpdateProgramBackupConfigDTO {
   enabled?: boolean;
   require_private_sheet?: boolean;
   mask_sensitive_data?: boolean;
+}
+
+export interface CreateProgramBackupConfigDTO extends UpdateProgramBackupConfigDTO {
+  cs_user_id?: number;
+  program_type: string;
 }
 
 /** Stats delta của RIÊNG một sheet trong workbook. */
@@ -1207,6 +1213,9 @@ export class SheetBackupService {
     const profilePatch: { profile_sheet_name?: string; profile_header_row?: number; profile_enabled?: boolean } = {};
     const finalPatch: FinalMetaEntry = {};
 
+    if (dto.name !== undefined && String(dto.name).trim()) {
+      data.name = String(dto.name).trim().slice(0, 255);
+    }
     if (dto.target_spreadsheet_url !== undefined) {
       const url = dto.target_spreadsheet_url === null ? null : String(dto.target_spreadsheet_url).trim() || null;
       data.target_spreadsheet_url = url;
@@ -1307,6 +1316,83 @@ export class SheetBackupService {
     );
   }
 
+  public async createConfig(
+    dto: CreateProgramBackupConfigDTO,
+    actor: { id: number; roles: string[] }
+  ): Promise<ProgramBackupConfigItem> {
+    const isAdminOrManage = actor.roles.includes('ADMIN') || actor.roles.includes('MANAGE');
+    const ownerUserId = isAdminOrManage && dto.cs_user_id ? Number(dto.cs_user_id) : actor.id;
+    let rawProgramType = normalizeProgramType(dto.program_type || 'KAIWA');
+
+    // Nếu đã tồn tại cặp (cs_user_id, program_type), tự động cập nhật config đó hoặc thêm hậu tố nếu là custom
+    const existingSame = await prisma.programSheetBackupConfig.findFirst({
+      where: { cs_user_id: ownerUserId, program_type: rawProgramType },
+    });
+    if (existingSame) {
+      return this.updateConfig(existingSame.id, dto, { actorId: actor.id, actorRoles: actor.roles });
+    }
+
+    const ownerUser = await prisma.user.findUnique({
+      where: { id: ownerUserId },
+      select: { id: true, name: true, email: true, staff_code: true },
+    });
+    const staffLabel = ownerUser?.staff_code || `CS${ownerUserId}`;
+    const url = dto.target_spreadsheet_url ? String(dto.target_spreadsheet_url).trim() || null : null;
+
+    const created = await prisma.programSheetBackupConfig.create({
+      data: {
+        cs_user_id: ownerUserId,
+        program_type: rawProgramType,
+        name: String(dto.name || `Backup ${rawProgramType} - ${staffLabel}`).trim().slice(0, 255),
+        target_spreadsheet_url: url,
+        target_spreadsheet_id: this.sheetSyncService.extractSpreadsheetId(url),
+        local_backup_path: this.relativeBackupPathFor(staffLabel, rawProgramType),
+        sheet_name: String(dto.sheet_name || '').trim() || this.defaultSheetNameFor(rawProgramType),
+        header_row: Number(dto.header_row) || 2,
+        schedule_times: (Array.isArray(dto.schedule_times) && dto.schedule_times.length > 0
+          ? dto.schedule_times
+          : DEFAULT_SCHEDULE_TIMES) as unknown as Prisma.InputJsonValue,
+        backup_year: dto.backup_year !== undefined ? dto.backup_year : null,
+        enabled: dto.enabled !== undefined ? Boolean(dto.enabled) : true,
+        require_private_sheet: dto.require_private_sheet !== undefined ? Boolean(dto.require_private_sheet) : true,
+        mask_sensitive_data: dto.mask_sensitive_data !== undefined ? Boolean(dto.mask_sensitive_data) : false,
+        last_status: 'IDLE',
+      },
+    });
+
+    await this.setProfileMetaRaw(created.id, {
+      profile_sheet_name: dto.profile_sheet_name || defaultProfileSheetFor(rawProgramType),
+      profile_header_row: Number(dto.profile_header_row) || defaultProfileHeaderRowFor(rawProgramType),
+      profile_enabled: dto.profile_enabled !== undefined ? Boolean(dto.profile_enabled) : !isTeacherProgramType(rawProgramType),
+    });
+
+    if (dto.final_sheet_name !== undefined || dto.final_header_row !== undefined || dto.final_enabled !== undefined) {
+      await this.saveFinalMetaPatch(created.id, {
+        final_sheet_name: dto.final_sheet_name || DEFAULT_FINAL_SHEET_NAME,
+        final_header_row: Number(dto.final_header_row) || DEFAULT_FINAL_HEADER_ROW,
+        final_enabled: dto.final_enabled !== undefined ? Boolean(dto.final_enabled) : true,
+      });
+    }
+
+    return this.updateConfig(created.id, {}, { actorId: actor.id, actorRoles: actor.roles });
+  }
+
+  public async deleteConfig(
+    id: number,
+    actor: { id: number; roles: string[] }
+  ): Promise<{ deleted: boolean; id: number }> {
+    const existing = await prisma.programSheetBackupConfig.findUnique({ where: { id } });
+    if (!existing) {
+      throw new AppError(404, `Không tìm thấy cấu hình backup #${id}`);
+    }
+    this.assertConfigScope(existing, actor.id, actor.roles);
+    if (isAdminProgramType(existing.program_type)) {
+      throw new AppError(400, 'Không thể xóa sổ tổng mặc định của hệ thống Admin');
+    }
+    await prisma.programSheetBackupConfig.delete({ where: { id } });
+    return { deleted: true, id };
+  }
+
   private async countsForConfig(csUserId: number, programType: string): Promise<{ total: number; attending: number }> {
     const norm = normalizeProgramType(programType);
     if (isTeacherProgramType(norm)) {
@@ -1387,7 +1473,9 @@ export class SheetBackupService {
     if (!att || att.deleted_at) return false;
     if (!mode) return true;
 
-    const hasDualFields = att.cs_status !== undefined || att.teacher_status !== undefined;
+    const hasDualFields =
+      (att.cs_status !== null && att.cs_status !== undefined) ||
+      (att.teacher_status !== null && att.teacher_status !== undefined);
 
     if (mode === 'CS') {
       if (hasDualFields) return att.cs_status !== null && att.cs_status !== undefined;
@@ -1408,7 +1496,9 @@ export class SheetBackupService {
 
   private effectiveStatusForMode(att: any, mode: AttendanceWriteMode): AttendanceStatus | null {
     if (!att) return null;
-    const hasDualFields = att.cs_status !== undefined || att.teacher_status !== undefined;
+    const hasDualFields =
+      (att.cs_status !== null && att.cs_status !== undefined) ||
+      (att.teacher_status !== null && att.teacher_status !== undefined);
     if (mode === 'CS') {
       return (hasDualFields ? att.cs_status : att.status) || null;
     }
@@ -2604,7 +2694,7 @@ export class SheetBackupService {
           (profileStats?.updatedCellsCount ?? 0) +
           (finalStats?.updatedCellsCount ?? 0),
         attendanceCellsWritten:
-          (attendanceStats.attendanceCellsWritten ?? 0) + (finalStats?.attendanceCellsWritten ?? 0),
+          attendanceStats.attendanceCellsWritten || (finalStats?.attendanceCellsWritten ?? 0),
         yearFilter,
         backedUpAt: new Date().toISOString(),
         profile: profileStats,

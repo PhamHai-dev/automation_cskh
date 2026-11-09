@@ -389,6 +389,7 @@ export interface CsSheetBackupConfigItem {
 }
 
 export interface UpdateCsSheetBackupConfigDTO {
+  name?: string;
   target_spreadsheet_url?: string | null;
   profile_sheet_name?: string;
   profile_header_row?: number;
@@ -396,12 +397,18 @@ export interface UpdateCsSheetBackupConfigDTO {
   sheet_name?: string;
   header_row?: number;
   final_sheet_name?: string;
+  final_header_row?: number;
   final_enabled?: boolean;
   schedule_times?: string[];
   backup_year?: number | null;
   enabled?: boolean;
   require_private_sheet?: boolean;
   mask_sensitive_data?: boolean;
+}
+
+export interface CreateCsSheetBackupConfigDTO extends UpdateCsSheetBackupConfigDTO {
+  cs_user_id?: number;
+  program_type: string;
 }
 
 export interface BackupHistoryItem {

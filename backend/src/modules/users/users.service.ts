@@ -1,5 +1,6 @@
 import { prisma } from '../../prisma/client';
 import bcrypt from 'bcrypt';
+import { recordAuditLogSafe } from '../activity-logs/audit-helper';
 
 /**
  * Normalize a CS code into `CVHT` + zero-padded 2+ digit number (e.g. "CVHT1" -> "CVHT01").
@@ -215,6 +216,24 @@ export class UsersService {
       },
     });
 
+    if (created?.id) {
+      await recordAuditLogSafe({
+        userId: createdById,
+        action: 'USER_CREATED',
+        entityType: 'User',
+        entityId: created.id,
+        afterData: {
+          code: created.code,
+          staff_code: created.staff_code,
+          email: created.email,
+          name: created.name,
+          phone: created.phone,
+          roles: created.roles,
+          active: created.active,
+        },
+      });
+    }
+
     return {
       ...created,
       display_label: roles.includes('CS')
@@ -223,7 +242,7 @@ export class UsersService {
     };
   }
 
-  async updateUser(id: number, data: any) {
+  async updateUser(id: number, data: any, actorUserId?: number) {
     const existing = await prisma.user.findUnique({ where: { id } });
     const roles: string[] = Array.isArray(data.roles)
       ? data.roles
@@ -286,6 +305,35 @@ export class UsersService {
         active: true,
       },
     });
+
+    if (updated?.id) {
+      await recordAuditLogSafe({
+        userId: actorUserId ?? existing?.created_by_id ?? 1,
+        action: 'USER_UPDATED',
+        entityType: 'User',
+        entityId: updated.id,
+        beforeData: existing
+          ? {
+              code: existing.code,
+              staff_code: existing.staff_code,
+              email: existing.email,
+              name: existing.name,
+              phone: existing.phone,
+              roles: existing.roles,
+              active: existing.active,
+            }
+          : null,
+        afterData: {
+          code: updated.code,
+          staff_code: updated.staff_code,
+          email: updated.email,
+          name: updated.name,
+          phone: updated.phone,
+          roles: updated.roles,
+          active: updated.active,
+        },
+      });
+    }
 
     return {
       ...updated,

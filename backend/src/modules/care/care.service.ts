@@ -13,6 +13,7 @@ import { CareTaskPriority, CareTaskStatus, CareLogOutcome, CareTaskType } from '
 import { AppError } from '../../middlewares/error.middleware';
 import { prisma } from '../../prisma/client';
 import { createHash } from 'crypto';
+import { recordAuditLogSafe } from '../activity-logs/audit-helper';
 
 /**
  * Deterministic, bounded dedupe key for note-driven auto tasks (C.6 idempotency).
@@ -110,7 +111,7 @@ export class CareService {
   async createCareLog(enrollmentId: number, dto: CreateCareLogDTO, userId: number, roles: string[]) {
     const enrollment = await this.assertEnrollmentAccess(enrollmentId, userId, roles, 'WRITE');
 
-    return this.repo.createCareLog({
+    const created = await this.repo.createCareLog({
       enrollment_id: enrollmentId,
       cs_id: enrollment.cs_id,
       after_session_number: dto.after_session_number,
@@ -118,6 +119,23 @@ export class CareService {
       content: dto.content,
       created_by_id: userId,
     });
+
+    if (created?.id && userId) {
+      await recordAuditLogSafe({
+        userId,
+        action: 'CARE_LOG_CREATED',
+        entityType: 'CareLog',
+        entityId: created.id,
+        afterData: {
+          enrollment_id: enrollmentId,
+          after_session_number: dto.after_session_number ?? null,
+          outcome: dto.outcome ?? null,
+          content: dto.content ?? null,
+        },
+      });
+    }
+
+    return created;
   }
 
   // --- CareTask Methods ---
@@ -200,7 +218,7 @@ export class CareService {
     const assignedToId = dto.assigned_to_id || enrollment.cs_id || userId;
     const dueAt = dto.due_at ? new Date(dto.due_at) : undefined;
 
-    return this.repo.createCareTask({
+    const created = await this.repo.createCareTask({
       enrollment_id: dto.enrollment_id,
       assigned_to_id: assignedToId,
       type: dto.type,
@@ -209,10 +227,29 @@ export class CareService {
       due_at: dueAt,
       priority: dto.priority || CareTaskPriority.NORMAL,
     });
+
+    if (created?.id && userId) {
+      await recordAuditLogSafe({
+        userId,
+        action: 'CARE_TASK_CREATED',
+        entityType: 'CareTask',
+        entityId: created.id,
+        afterData: {
+          enrollment_id: dto.enrollment_id,
+          assigned_to_id: assignedToId,
+          type: dto.type,
+          title: dto.title ?? null,
+          note: dto.note ?? null,
+          priority: dto.priority || CareTaskPriority.NORMAL,
+        },
+      });
+    }
+
+    return created;
   }
 
   async updateCareTask(id: number, dto: UpdateCareTaskDTO, userId: number, roles: string[]) {
-    await this.getCareTaskById(id, userId, roles);
+    const before = await this.getCareTaskById(id, userId, roles);
 
     const updateData: any = {};
     if (dto.assigned_to_id !== undefined) updateData.assigned_to_id = dto.assigned_to_id;
@@ -223,22 +260,55 @@ export class CareService {
     if (dto.priority !== undefined) updateData.priority = dto.priority;
     if (dto.status !== undefined) updateData.status = dto.status;
 
-    return this.repo.updateCareTask(id, updateData);
+    const updated = await this.repo.updateCareTask(id, updateData);
+    if (updated && userId) {
+      await recordAuditLogSafe({
+        userId,
+        action: 'CARE_TASK_UPDATED',
+        entityType: 'CareTask',
+        entityId: id,
+        beforeData: before,
+        afterData: updated,
+      });
+    }
+    return updated;
   }
 
   async completeCareTask(id: number, userId: number, roles: string[]) {
-    await this.getCareTaskById(id, userId, roles);
-    return this.repo.updateCareTask(id, {
+    const before = await this.getCareTaskById(id, userId, roles);
+    const updated = await this.repo.updateCareTask(id, {
       status: CareTaskStatus.DONE,
       completed_at: new Date(),
     });
+    if (updated && userId) {
+      await recordAuditLogSafe({
+        userId,
+        action: 'CARE_TASK_COMPLETED',
+        entityType: 'CareTask',
+        entityId: id,
+        beforeData: { status: before.status, enrollment_id: before.enrollment_id },
+        afterData: { status: CareTaskStatus.DONE, enrollment_id: before.enrollment_id },
+      });
+    }
+    return updated;
   }
 
   async cancelCareTask(id: number, userId: number, roles: string[]) {
-    await this.getCareTaskById(id, userId, roles);
-    return this.repo.updateCareTask(id, {
+    const before = await this.getCareTaskById(id, userId, roles);
+    const updated = await this.repo.updateCareTask(id, {
       status: CareTaskStatus.CANCELLED,
     });
+    if (updated && userId) {
+      await recordAuditLogSafe({
+        userId,
+        action: 'CARE_TASK_CANCELLED',
+        entityType: 'CareTask',
+        entityId: id,
+        beforeData: { status: before.status, enrollment_id: before.enrollment_id },
+        afterData: { status: CareTaskStatus.CANCELLED, enrollment_id: before.enrollment_id },
+      });
+    }
+    return updated;
   }
 
   // --- CareMilestoneConfig Methods ---
@@ -264,7 +334,7 @@ export class CareService {
     roles: string[]
   ) {
     const enrollment = await this.assertEnrollmentAccess(enrollmentId, userId, roles, 'WRITE');
-    return this.repo.upsertCareLogBySession({
+    const saved = await this.repo.upsertCareLogBySession({
       enrollment_id: enrollmentId,
       after_session_number: sessionNumber,
       content: dto.content,
@@ -272,6 +342,23 @@ export class CareService {
       userId,
       csId: enrollment.cs_id,
     });
+
+    if (saved?.id && userId) {
+      await recordAuditLogSafe({
+        userId,
+        action: 'CARE_LOG_UPSERTED',
+        entityType: 'CareLog',
+        entityId: saved.id,
+        afterData: {
+          enrollment_id: enrollmentId,
+          after_session_number: sessionNumber,
+          outcome: dto.outcome ?? null,
+          content: dto.content ?? null,
+        },
+      });
+    }
+
+    return saved;
   }
 
   // --- Update Enrollment Care Fields ---
@@ -327,7 +414,27 @@ export class CareService {
       }
     }
 
-    return this.repo.updateEnrollmentCareFields(enrollmentId, updateData);
+    const updated = await this.repo.updateEnrollmentCareFields(enrollmentId, updateData);
+    if (updated && userId) {
+      await recordAuditLogSafe({
+        userId,
+        action: 'ENROLLMENT_CARE_UPDATED',
+        entityType: 'Enrollment',
+        entityId: enrollmentId,
+        beforeData: {
+          study_report_url: enrollment.study_report_url ?? null,
+          exchange_info: enrollment.exchange_info ?? null,
+          callback_note: enrollment.callback_note ?? null,
+          hot_issue_note: enrollment.hot_issue_note ?? null,
+          post_course_care: enrollment.post_course_care ?? null,
+        },
+        afterData: {
+          ...updateData,
+          enrollment_id: enrollmentId,
+        },
+      });
+    }
+    return updated;
   }
 
   // --- Attendance Notification Methods ---
