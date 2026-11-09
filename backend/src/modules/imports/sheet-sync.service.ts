@@ -22,6 +22,7 @@ import { encrypt, decrypt } from '../../shared/crypto/aes-gcm';
 import { attendanceStatusLabel } from '../attendance/attendance.utils';
 import {
   DiscoveredStudyReportLink,
+  JlptChuyenCanReportRow,
   NormalizedSheetRow,
   ParsedStudentAttendanceRow,
   loadOptimizedWorkbook,
@@ -34,6 +35,7 @@ import {
   parseKaiwaStudyReportWorkbook,
   parseTeacherAttendanceSheet,
 } from './sheet-sync.parser';
+import { cleanJlptClassCode } from '../students/jlpt-attendance-report.util';
 
 const log = createLogger('SheetSyncService');
 
@@ -771,6 +773,24 @@ export class SheetSyncService {
         last_status: 'IDLE',
       },
       {
+        code: 'KAIWA_CARE',
+        name: 'Báo cáo & Chăm sóc Kaiwa (1.Chăm sóc)',
+        flow_type: 'STUDENT_MASTER',
+        source_type: 'LOCAL_FILE',
+        program_type: 'KAIWA',
+        local_file_path: 'docs/data/import_data/Sheet3_cham_buoi.xlsx',
+        sheet_name: '1.Chăm sóc',
+        setting_sheet_name: null,
+        header_row: 3,
+        sync_year: null,
+        filter_config: {},
+        cvht_mapping: mapping,
+        default_cs_id: defaultCsId,
+        sync_interval_minutes: 30,
+        enabled: false,
+        last_status: 'IDLE',
+      },
+      {
         code: 'JLPT_CSKH_ATTENDANCE',
         name: 'Điểm danh CVHT - JLPT',
         flow_type: 'CSKH_ATTENDANCE',
@@ -848,16 +868,16 @@ export class SheetSyncService {
       },
       {
         code: 'JLPT_STUDY_REPORT_SAMPLE',
-        name: 'Báo cáo học tập JLPT - Lê An Nhiên',
+        name: 'Báo cáo học tập JLPT - Chuyên cần HV',
         flow_type: 'STUDY_REPORT',
         source_type: 'LOCAL_FILE',
         program_type: 'JLPT',
         local_file_path: 'docs/data/import_data/Format báo cáo học tập JLPT.xlsx',
-        sheet_name: 'Trang tính1',
-        header_row: 1,
-        target_student_external_id: '427894753',
-        target_student_name: 'Lê An Nhiên',
-        target_class_code: 'BS8_3002',
+        sheet_name: 'Chuyên cần HV',
+        header_row: 4,
+        target_student_external_id: null,
+        target_student_name: null,
+        target_class_code: null,
         cvht_mapping: mapping,
         default_cs_id: defaultCsId,
         sync_interval_minutes: 30,
@@ -888,22 +908,42 @@ export class SheetSyncService {
       const existingCfg = byCode.get(def.code.toUpperCase());
       if (!existingCfg) {
         await prisma.googleSheetSyncConfig.create({ data: def }).catch(() => {});
-      } else if (
-        def.local_file_path &&
-        (!existingCfg.local_file_path ||
-          existingCfg.local_file_path.includes('hoc_vien/') ||
-          !this.doesLocalFileExist(existingCfg.local_file_path))
-      ) {
-        // Ensure sample local_file_path points to valid sample file in docs/data/import_data/
-        await prisma.googleSheetSyncConfig
-          .update({
-            where: { id: existingCfg.id },
-            data: {
-              local_file_path: def.local_file_path,
-              ...(!existingCfg.spreadsheet_url ? { source_type: 'LOCAL_FILE' } : {}),
-            },
-          })
-          .catch(() => {});
+      } else {
+        const needsLegacyJlptReportMigrate =
+          def.code.toUpperCase() === 'JLPT_STUDY_REPORT_SAMPLE' &&
+          existingCfg.sheet_name === 'Trang tính1';
+
+        const needsFilePathFix =
+          def.local_file_path &&
+          (!existingCfg.local_file_path ||
+            existingCfg.local_file_path.includes('hoc_vien/') ||
+            !this.doesLocalFileExist(existingCfg.local_file_path));
+
+        if (needsLegacyJlptReportMigrate || needsFilePathFix) {
+          await prisma.googleSheetSyncConfig
+            .update({
+              where: { id: existingCfg.id },
+              data: {
+                ...(needsFilePathFix
+                  ? {
+                      local_file_path: def.local_file_path,
+                      ...(!existingCfg.spreadsheet_url ? { source_type: 'LOCAL_FILE' } : {}),
+                    }
+                  : {}),
+                ...(needsLegacyJlptReportMigrate
+                  ? {
+                      name: 'Báo cáo học tập JLPT - Chuyên cần HV',
+                      sheet_name: 'Chuyên cần HV',
+                      header_row: 4,
+                      target_student_external_id: null,
+                      target_student_name: null,
+                      target_class_code: null,
+                    }
+                  : {}),
+              },
+            })
+            .catch(() => {});
+        }
       }
     }
   }
@@ -1040,7 +1080,8 @@ export class SheetSyncService {
     const gid = this.extractSheetGid(link.studyReportUrl);
 
     const code = `SR_${link.programType}_${link.externalId}`.toUpperCase();
-    const defaultSheetName = link.programType === 'JLPT' ? 'Trang tính1' : '会話 3 - 学習レポート';
+    const defaultSheetName = link.programType === 'JLPT' ? 'Chuyên cần HV' : '会話 3 - 学習レポート';
+    const defaultHeaderRow = link.programType === 'JLPT' ? 4 : 1;
     const name = `Báo cáo học tập ${link.programType} - ${link.studentName || link.externalId}`;
 
     try {
@@ -1082,7 +1123,7 @@ export class SheetSyncService {
             spreadsheet_id: sheetId,
             sheet_gid: gid,
             sheet_name: defaultSheetName,
-            header_row: 1,
+            header_row: defaultHeaderRow,
             target_student_external_id: link.externalId,
             target_student_name: link.studentName,
             target_class_code: link.classCode,
@@ -1249,7 +1290,7 @@ export class SheetSyncService {
     } else if (flowType === 'TEACHER_ATTENDANCE') {
       defaultSheetName = `${dto.sync_year || 2026} スケジュール`;
     } else if (flowType === 'STUDY_REPORT') {
-      defaultSheetName = programType === 'JLPT' ? 'Trang tính1' : '会話 3 - 学習レポート';
+      defaultSheetName = programType === 'JLPT' ? 'Chuyên cần HV' : '会話 3 - 学習レポート';
     }
 
     const sheetName = (dto.sheet_name || defaultSheetName).trim();
@@ -1266,6 +1307,15 @@ export class SheetSyncService {
         ? dto.sync_year || 2026
         : dto.sync_year ?? null;
 
+    const defaultHeaderRow =
+      flowType === 'STUDY_REPORT'
+        ? programType === 'JLPT'
+          ? 4
+          : 1
+        : sheetName === '1.Chăm sóc'
+          ? 3
+          : 2;
+
     const created = await prisma.googleSheetSyncConfig.create({
       data: {
         code: rawCode,
@@ -1279,7 +1329,7 @@ export class SheetSyncService {
         local_file_path: dto.local_file_path || null,
         sheet_name: sheetName,
         setting_sheet_name: dto.setting_sheet_name ?? (programType === 'JLPT' && flowType === 'STUDENT_MASTER' ? 'Setting' : null),
-        header_row: dto.header_row || (flowType === 'STUDY_REPORT' ? 1 : 2),
+        header_row: dto.header_row || defaultHeaderRow,
         sync_year: syncYear,
         filter_config: (dto.filter_config || {}) as Prisma.InputJsonValue,
         target_student_external_id: dto.target_student_external_id?.trim() || null,
@@ -1513,7 +1563,7 @@ export class SheetSyncService {
       const defaultSheet =
         flowType === 'STUDY_REPORT'
           ? programType === 'JLPT'
-            ? 'Trang tính1'
+            ? 'Chuyên cần HV'
             : '会話 3 - 学習レポート'
           : flowType === 'TEACHER_ATTENDANCE'
             ? `${dto.sync_year || 2026} スケジュール`
@@ -1556,7 +1606,7 @@ export class SheetSyncService {
             spreadsheet_id: item.spreadsheet_id,
             sheet_gid: item.sheet_gid,
             sheet_name: defaultSheet,
-            header_row: flowType === 'STUDY_REPORT' ? 1 : 2,
+            header_row: flowType === 'STUDY_REPORT' ? (programType === 'JLPT' ? 4 : 1) : 2,
             sync_year:
               flowType === 'CSKH_ATTENDANCE' || flowType === 'TEACHER_ATTENDANCE'
                 ? dto.sync_year || 2026
@@ -1926,6 +1976,9 @@ export class SheetSyncService {
     if (flowType === 'TEACHER_ATTENDANCE') {
       return [sheetName || '2026 スケジュール', 'Info', 'Infoー情報', 'Setting'];
     }
+    if (flowType === 'STUDY_REPORT' && programType === 'JLPT') {
+      return [sheetName || 'Chuyên cần HV'];
+    }
     // STUDY_REPORT: load all sheets or preferred sheet
     return sheetName ? [sheetName] : [];
   }
@@ -1970,7 +2023,9 @@ export class SheetSyncService {
     };
 
     const targetSheets =
-      flowType === 'STUDY_REPORT' ? undefined : this.getTargetSheetNamesForConfig(config);
+      flowType === 'STUDY_REPORT' && programType !== 'JLPT'
+        ? undefined
+        : this.getTargetSheetNamesForConfig(config);
     const workbook = await loadOptimizedWorkbook(buffer, targetSheets);
 
     let session: CachedPreviewSession;
@@ -2133,11 +2188,20 @@ export class SheetSyncService {
 
     const enrollmentBySyncKey = new Map<string, (typeof allEnrollments)[number]>();
     const enrollmentByStudentAndPkg = new Map<string, (typeof allEnrollments)[number]>();
+    const kaiwaEnrollmentsByStudentId = new Map<number, Array<(typeof allEnrollments)[number]>>();
     for (const e of allEnrollments) {
       if (e.external_sync_key) enrollmentBySyncKey.set(e.external_sync_key, e);
       if (e.student_id && e.package_id) {
         enrollmentByStudentAndPkg.set(`${e.student_id}::${e.package_id}`, e);
       }
+      if (e.student_id && e.program_type === 'KAIWA') {
+        const list = kaiwaEnrollmentsByStudentId.get(e.student_id) || [];
+        list.push(e);
+        kaiwaEnrollmentsByStudentId.set(e.student_id, list);
+      }
+    }
+    for (const list of kaiwaEnrollmentsByStudentId.values()) {
+      list.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
     }
 
     const allowedSourceStatuses =
@@ -2169,11 +2233,139 @@ export class SheetSyncService {
       const existingStudent = studentByExtId.get(row.externalId);
       const pkg = pkgByCode.get(row.packageCode.toUpperCase());
       let existingEnrollment = enrollmentBySyncKey.get(row.syncKey);
-      if (!existingEnrollment && existingStudent && pkg) {
+
+      if (row.isKaiwaCareOnly) {
+        if (existingStudent) {
+          const stuKaiwaEnrs = kaiwaEnrollmentsByStudentId.get(existingStudent.id) || [];
+          existingEnrollment =
+            (pkg ? stuKaiwaEnrs.find((e) => e.package_id === pkg.id) : undefined) ||
+            stuKaiwaEnrs.find((e) => e.package?.code?.toUpperCase() === row.packageCode.toUpperCase()) ||
+            stuKaiwaEnrs[0];
+        } else {
+          existingEnrollment = undefined;
+        }
+      } else if (!existingEnrollment && existingStudent && pkg) {
         const candidate = enrollmentByStudentAndPkg.get(`${existingStudent.id}::${pkg.id}`);
         if (candidate && (!candidate.external_sync_key || candidate.external_sync_key === row.syncKey)) {
           existingEnrollment = candidate;
         }
+      }
+
+      // Special rule for KAIWA_CARE (1.Chăm sóc): ONLY update when matching an existing Kaiwa student enrollment by externalId
+      if (row.isKaiwaCareOnly) {
+        if (!existingStudent || !existingEnrollment) {
+          items.push({
+            itemKey: row.syncKey,
+            rowNumber: row.rowNumber,
+            externalId: row.externalId,
+            studentName: row.fullName,
+            classCode: row.packageCode,
+            programType: row.programType,
+            entityType: 'StudentEnrollment',
+            action: 'INVALID',
+            defaultSelected: false,
+            summaryText: 'Học viên chưa có hồ sơ gốc trên Web (cấu hình 1.Chăm sóc chỉ cập nhật báo cáo & chăm sóc khi khớp ID)',
+            fieldDiffs: [],
+            warnings: [],
+            errors: ['Học viên chưa có hồ sơ gốc trên Web (cấu hình 1.Chăm sóc chỉ cập nhật báo cáo & chăm sóc khi khớp ID)'],
+            _payload: { row },
+          });
+          continue;
+        }
+
+        const diffs: SheetSyncFieldDiff[] = [];
+        const addCareDiff = (field: string, label: string, beforeVal: any, afterVal: any) => {
+          const bStr = beforeVal === null || beforeVal === undefined ? '' : String(beforeVal).trim();
+          const aStr = afterVal === null || afterVal === undefined ? '' : String(afterVal).trim();
+          if (bStr !== aStr && aStr !== '') {
+            diffs.push({ field, label, before: beforeVal ?? null, after: afterVal });
+          }
+        };
+
+        const existingMeta = (existingEnrollment.program_metadata || {}) as Record<string, any>;
+        const rawPrevYears = row.programMetadata?.attended_previous_years_raw ?? null;
+        if (rawPrevYears !== null) {
+          addCareDiff(
+            'attended_previous_years_raw',
+            'Tổng buổi năm trước (AI)',
+            existingMeta.attended_previous_years_raw ?? existingEnrollment.attended_previous_years ?? null,
+            rawPrevYears
+          );
+        }
+        if (row.totalAttended !== null) {
+          addCareDiff(
+            'total_attended',
+            'Tổng số buổi đã học (AJ)',
+            (existingEnrollment as any).total_attended,
+            row.totalAttended
+          );
+        }
+        addCareDiff('study_report_url', 'Link Báo cáo học tập', existingEnrollment.study_report_url, row.studyReportUrl);
+        addCareDiff('exchange_info', 'Thông tin trao đổi', existingEnrollment.exchange_info, row.exchangeInfo);
+        addCareDiff('callback_note', 'Lịch hẹn gọi', existingEnrollment.callback_note, row.callbackNote);
+        addCareDiff('hot_issue_note', 'Điểm nóng', existingEnrollment.hot_issue_note, row.hotIssueNote);
+        addCareDiff('post_course_care', 'Chăm sóc sau kết thúc', existingEnrollment.post_course_care, row.postCourseCare);
+        const existingHandedOverIso = existingEnrollment.handed_over_at
+          ? new Date(existingEnrollment.handed_over_at).toISOString().slice(0, 10)
+          : null;
+        addCareDiff('handed_over_at', 'Ngày bàn giao', existingHandedOverIso, row.handedOverAt);
+        const existingAccCreatedIso = (existingEnrollment as any).account_created_at
+          ? new Date((existingEnrollment as any).account_created_at).toISOString().slice(0, 10)
+          : null;
+        addCareDiff('account_created_at', 'Ngày tạo tài khoản', existingAccCreatedIso, row.accountCreatedAt);
+
+        if (row.careLogs.length > 0) {
+          const existingLogsBySession = new Map(
+            (existingEnrollment.care_logs || [])
+              .filter((cl) => cl.after_session_number !== null)
+              .map((cl) => [cl.after_session_number!, cl])
+          );
+          const changedSessions: string[] = [];
+          const prevSummaryParts: string[] = [];
+          for (const cl of row.careLogs) {
+            const prevLog = existingLogsBySession.get(cl.after_session_number);
+            if (!prevLog || (prevLog.content || '').trim() !== cl.content.trim()) {
+              changedSessions.push(`B.${cl.after_session_number}`);
+              if (prevLog) prevSummaryParts.push(`B.${cl.after_session_number}`);
+            }
+          }
+          if (changedSessions.length > 0) {
+            diffs.push({
+              field: 'care_logs',
+              label: 'Nội dung chăm sóc theo buổi',
+              before: prevSummaryParts.length > 0 ? `Đã có (${prevSummaryParts.join(', ')})` : null,
+              after: `Cập nhật ${changedSessions.length} mốc (${changedSessions.join(', ')})`,
+            });
+          }
+        }
+
+        if (diffs.length === 0) {
+          unchangedCount++;
+          continue;
+        }
+
+        const existingClsCode = existingEnrollment.enrollment_classes?.[0]?.class?.class_code || null;
+        items.push({
+          itemKey: row.syncKey,
+          rowNumber: row.rowNumber,
+          externalId: row.externalId,
+          studentName: existingStudent.full_name || row.fullName,
+          classCode: existingClsCode || existingEnrollment.package?.code || row.packageCode,
+          programType: row.programType,
+          entityType: 'StudentEnrollment',
+          action: 'UPDATE',
+          defaultSelected: true,
+          summaryText: `Cập nhật chăm sóc & báo cáo (${diffs.map((d) => d.label).join(', ')})`,
+          fieldDiffs: diffs,
+          warnings: [],
+          errors: [],
+          _payload: {
+            row,
+            existingEnrollmentId: existingEnrollment.id,
+            existingStudentId: existingStudent.id,
+          },
+        });
+        continue;
       }
 
       // Smart filter rule:
@@ -2284,7 +2476,7 @@ export class SheetSyncService {
           ENROLLMENT_STATUS_VN_MAP[row.status] || row.status
         );
         addDiff('total_sessions', 'Tổng số buổi', existingEnrollment.total_sessions, row.totalSessions);
-        if (row.totalAttended !== null) {
+        if (!row.isKaiwaMasterOnly && row.totalAttended !== null) {
           addDiff('total_attended', 'Tổng số buổi đã học', (existingEnrollment as any).total_attended, row.totalAttended);
         }
         if (row.remainingSessions !== null) {
@@ -2314,10 +2506,37 @@ export class SheetSyncService {
         if (row.activeState && existingMeta.active_state !== row.activeState) {
           addDiff('active_state', 'Tình trạng Active', existingMeta.active_state || null, row.activeState);
         }
-        addDiff('exchange_info', 'Thông tin trao đổi', existingEnrollment.exchange_info, row.exchangeInfo);
-        addDiff('callback_note', 'Lịch hẹn gọi', existingEnrollment.callback_note, row.callbackNote);
-        addDiff('hot_issue_note', 'Điểm nóng', existingEnrollment.hot_issue_note, row.hotIssueNote);
-        addDiff('study_report_url', 'Link Báo cáo học tập', existingEnrollment.study_report_url, row.studyReportUrl);
+        if (!row.isKaiwaMasterOnly) {
+          addDiff('exchange_info', 'Thông tin trao đổi', existingEnrollment.exchange_info, row.exchangeInfo);
+          addDiff('callback_note', 'Lịch hẹn gọi', existingEnrollment.callback_note, row.callbackNote);
+          addDiff('hot_issue_note', 'Điểm nóng', existingEnrollment.hot_issue_note, row.hotIssueNote);
+          addDiff('study_report_url', 'Link Báo cáo học tập', existingEnrollment.study_report_url, row.studyReportUrl);
+
+          if (row.careLogs.length > 0) {
+            const existingLogsBySession = new Map(
+              (existingEnrollment.care_logs || [])
+                .filter((cl) => cl.after_session_number !== null)
+                .map((cl) => [cl.after_session_number!, cl])
+            );
+            const changedSessions: string[] = [];
+            const prevSummaryParts: string[] = [];
+            for (const cl of row.careLogs) {
+              const prevLog = existingLogsBySession.get(cl.after_session_number);
+              if (!prevLog || (prevLog.content || '').trim() !== cl.content.trim()) {
+                changedSessions.push(`B.${cl.after_session_number}`);
+                if (prevLog) prevSummaryParts.push(`B.${cl.after_session_number}`);
+              }
+            }
+            if (changedSessions.length > 0) {
+              diffs.push({
+                field: 'care_logs',
+                label: 'Nội dung chăm sóc theo buổi',
+                before: prevSummaryParts.length > 0 ? `Đã có (${prevSummaryParts.join(', ')})` : null,
+                after: `Cập nhật ${changedSessions.length} mốc (${changedSessions.join(', ')})`,
+              });
+            }
+          }
+        }
 
         if (diffs.length === 0) {
           unchangedCount++;
@@ -2440,21 +2659,31 @@ export class SheetSyncService {
 
     // Also map classCode -> enrollments for Teacher JLPT class-level rows
     const enrollmentsByClassCode = new Map<string, Array<{ student: (typeof students)[number]; enrollment: any; ec: any }>>();
+    const addEnrollmentToClassMap = (key: string | undefined | null, entry: { student: (typeof students)[number]; enrollment: any; ec: any }) => {
+      if (!key) return;
+      const upper = key.trim().toUpperCase();
+      if (!upper) return;
+      const list = enrollmentsByClassCode.get(upper) || [];
+      if (!list.some((x) => x.enrollment.id === entry.enrollment.id)) {
+        list.push(entry);
+        enrollmentsByClassCode.set(upper, list);
+      }
+    };
+
     for (const s of students) {
       for (const enr of s.enrollments) {
+        const meta = (enr.program_metadata || {}) as Record<string, any>;
+        const cleanedMetaLatest = cleanJlptClassCode(meta.latest_class_code);
+        if (cleanedMetaLatest) {
+          addEnrollmentToClassMap(cleanedMetaLatest, { student: s, enrollment: enr, ec: enr.enrollment_classes?.[0] });
+        }
         for (const ec of enr.enrollment_classes) {
-          const cCode = ec.class?.class_code?.trim().toUpperCase();
-          const cName = ec.class?.class_name?.trim().toUpperCase();
-          if (cCode) {
-            const list = enrollmentsByClassCode.get(cCode) || [];
-            list.push({ student: s, enrollment: enr, ec });
-            enrollmentsByClassCode.set(cCode, list);
-          }
-          if (cName && cName !== cCode) {
-            const list = enrollmentsByClassCode.get(cName) || [];
-            list.push({ student: s, enrollment: enr, ec });
-            enrollmentsByClassCode.set(cName, list);
-          }
+          const cCode = ec.class?.class_code?.trim();
+          const cName = ec.class?.class_name?.trim();
+          addEnrollmentToClassMap(cCode, { student: s, enrollment: enr, ec });
+          addEnrollmentToClassMap(cName, { student: s, enrollment: enr, ec });
+          addEnrollmentToClassMap(cleanJlptClassCode(cCode), { student: s, enrollment: enr, ec });
+          addEnrollmentToClassMap(cleanJlptClassCode(cName), { student: s, enrollment: enr, ec });
         }
       }
     }
@@ -2463,7 +2692,11 @@ export class SheetSyncService {
     const expandedRows: ParsedStudentAttendanceRow[] = [];
     for (const r of parsedRows) {
       if (r.externalId.startsWith('CLASS::') && r.classCode) {
-        const dbMembers = enrollmentsByClassCode.get(r.classCode.toUpperCase()) || [];
+        const cleanedRowCls = cleanJlptClassCode(r.classCode).toUpperCase();
+        const dbMembers =
+          enrollmentsByClassCode.get(r.classCode.toUpperCase()) ||
+          (cleanedRowCls ? enrollmentsByClassCode.get(cleanedRowCls) : undefined) ||
+          [];
         if (dbMembers.length > 0) {
           for (const m of dbMembers) {
             expandedRows.push({
@@ -2513,13 +2746,25 @@ export class SheetSyncService {
       // Match best enrollment & enrollment_class
       let matchedEnr = student.enrollments[0];
       if (row.classCode) {
-        const byCls = student.enrollments.find((e) =>
-          e.enrollment_classes.some(
-            (ec) =>
-              ec.class?.class_code?.toUpperCase() === row.classCode?.toUpperCase() ||
-              ec.class?.class_name?.toUpperCase() === row.classCode?.toUpperCase()
-          )
-        );
+        const targetRawUpper = row.classCode.toUpperCase();
+        const targetCleanUpper = cleanJlptClassCode(row.classCode).toUpperCase();
+        const byCls = student.enrollments.find((e) => {
+          const metaLatestClean = cleanJlptClassCode((e.program_metadata as any)?.latest_class_code).toUpperCase();
+          if (metaLatestClean && (metaLatestClean === targetRawUpper || metaLatestClean === targetCleanUpper)) {
+            return true;
+          }
+          return e.enrollment_classes.some((ec) => {
+            const cCodeUpper = ec.class?.class_code?.toUpperCase() || '';
+            const cNameUpper = ec.class?.class_name?.toUpperCase() || '';
+            const cCodeClean = cleanJlptClassCode(ec.class?.class_code).toUpperCase();
+            const cNameClean = cleanJlptClassCode(ec.class?.class_name).toUpperCase();
+            return (
+              cCodeUpper === targetRawUpper ||
+              cNameUpper === targetRawUpper ||
+              (targetCleanUpper && (cCodeClean === targetCleanUpper || cNameClean === targetCleanUpper))
+            );
+          });
+        });
         if (byCls) matchedEnr = byCls;
       } else if (row.packageCode) {
         const byPkg = student.enrollments.find(
@@ -2530,11 +2775,19 @@ export class SheetSyncService {
 
       const ec =
         (row.classCode
-          ? matchedEnr.enrollment_classes.find(
-              (x) =>
-                x.class?.class_code?.toUpperCase() === row.classCode?.toUpperCase() ||
-                x.class?.class_name?.toUpperCase() === row.classCode?.toUpperCase()
-            )
+          ? matchedEnr.enrollment_classes.find((x) => {
+              const targetRawUpper = row.classCode!.toUpperCase();
+              const targetCleanUpper = cleanJlptClassCode(row.classCode).toUpperCase();
+              const cCodeUpper = x.class?.class_code?.toUpperCase() || '';
+              const cNameUpper = x.class?.class_name?.toUpperCase() || '';
+              const cCodeClean = cleanJlptClassCode(x.class?.class_code).toUpperCase();
+              const cNameClean = cleanJlptClassCode(x.class?.class_name).toUpperCase();
+              return (
+                cCodeUpper === targetRawUpper ||
+                cNameUpper === targetRawUpper ||
+                (targetCleanUpper && (cCodeClean === targetCleanUpper || cNameClean === targetCleanUpper))
+              );
+            })
           : undefined) || matchedEnr.enrollment_classes[0];
 
       // Validate startTime
@@ -2687,6 +2940,265 @@ export class SheetSyncService {
       programType === 'KAIWA'
         ? parseKaiwaStudyReportWorkbook(workbook, config.sheet_name)
         : parseJlptStudyReportWorkbook(workbook, config.sheet_name);
+
+    // Branch 1: JLPT multi-student 'Chuyên cần HV' sheet (22 columns A..V matched by (Mã lớp + Họ và tên))
+    if (programType === 'JLPT' && parsed.jlptChuyenCanRows && parsed.jlptChuyenCanRows.length > 0) {
+      const normalizePersonName = (name?: string | null) =>
+        String(name || '')
+          .trim()
+          .replace(/\s+/g, ' ')
+          .toLowerCase();
+
+      const targetClassFilter = config.target_class_code
+        ? cleanJlptClassCode(config.target_class_code).toUpperCase()
+        : '';
+      const targetStudentNameFilter = config.target_student_name
+        ? normalizePersonName(config.target_student_name)
+        : '';
+
+      const allJlptStudents = await prisma.student.findMany({
+        where: {
+          enrollments: {
+            some: { program_type: 'JLPT' },
+          },
+        },
+        include: {
+          enrollments: {
+            where: { program_type: 'JLPT' },
+            include: {
+              package: true,
+              enrollment_classes: { include: { class: true } },
+            },
+            orderBy: { created_at: 'desc' },
+          },
+        },
+      });
+
+      const items: SheetSyncPreviewItem[] = [];
+      let unchangedCount = 0;
+      let filteredOutCount = 0;
+
+      for (const row of parsed.jlptChuyenCanRows) {
+        const rowClassUpper = cleanJlptClassCode(row.classCode).toUpperCase();
+        const rowNameNorm = normalizePersonName(row.studentName);
+
+        if (targetClassFilter && rowClassUpper !== targetClassFilter) {
+          filteredOutCount++;
+          continue;
+        }
+        if (targetStudentNameFilter && rowNameNorm !== targetStudentNameFilter) {
+          filteredOutCount++;
+          continue;
+        }
+
+        // Match student + JLPT enrollment strictly by (Mã lớp + Họ và tên)
+        let matchedStudent: (typeof allJlptStudents)[number] | undefined;
+        let matchedEnrollment: (typeof allJlptStudents)[number]['enrollments'][number] | undefined;
+
+        for (const stu of allJlptStudents) {
+          if (normalizePersonName(stu.full_name) !== rowNameNorm) continue;
+          const enr = stu.enrollments.find((e) => {
+            const meta = (e.program_metadata || {}) as Record<string, any>;
+            const metaCls = cleanJlptClassCode(meta.latest_class_code).toUpperCase();
+            if (metaCls && metaCls === rowClassUpper) return true;
+            return e.enrollment_classes.some((ec) => {
+              const cCode = cleanJlptClassCode(ec.class?.class_code).toUpperCase();
+              const cName = cleanJlptClassCode(ec.class?.class_name).toUpperCase();
+              return cCode === rowClassUpper || cName === rowClassUpper;
+            });
+          });
+          if (enr) {
+            matchedStudent = stu;
+            matchedEnrollment = enr;
+            break;
+          }
+        }
+
+        const itemKey = `STUDY_REPORT::JLPT::${row.classCode}::${row.studentName}::r${row.rowNumber}`;
+
+        if (!matchedStudent || !matchedEnrollment) {
+          const errMsg = `Không tìm thấy học viên [${row.studentName}] thuộc lớp [${row.classCode}] trên Web`;
+          items.push({
+            itemKey,
+            rowNumber: row.rowNumber,
+            externalId: `JLPT_${row.classCode}_r${row.rowNumber}`,
+            studentName: row.studentName,
+            classCode: row.classCode,
+            programType: 'JLPT',
+            entityType: 'StudyReport',
+            action: 'INVALID',
+            defaultSelected: false,
+            summaryText: errMsg,
+            fieldDiffs: [],
+            warnings: [],
+            errors: [errMsg],
+            _payload: { jlptChuyenCanRow: row },
+          });
+          continue;
+        }
+
+        const existingMeta =
+          matchedEnrollment.program_metadata && typeof matchedEnrollment.program_metadata === 'object'
+            ? (matchedEnrollment.program_metadata as Record<string, any>)
+            : {};
+        const prevChuyenCan =
+          existingMeta.jlpt_chuyen_can && typeof existingMeta.jlpt_chuyen_can === 'object'
+            ? (existingMeta.jlpt_chuyen_can as Record<string, any>)
+            : null;
+        const prevOverrides =
+          existingMeta.jlpt_chuyen_can_overrides && typeof existingMeta.jlpt_chuyen_can_overrides === 'object'
+            ? (existingMeta.jlpt_chuyen_can_overrides as Record<string, any>)
+            : {};
+
+        const diffs: SheetSyncFieldDiff[] = [];
+        const addMetricDiff = (field: string, label: string, beforeVal: any, afterVal: any) => {
+          const bStr = beforeVal === null || beforeVal === undefined ? '' : String(beforeVal).trim();
+          const aStr = afterVal === null || afterVal === undefined ? '' : String(afterVal).trim();
+          if (bStr !== aStr && aStr !== '') {
+            diffs.push({ field, label, before: beforeVal ?? null, after: afterVal });
+          }
+        };
+
+        addMetricDiff(
+          'attended_sessions',
+          'Số buổi tham gia (C)',
+          prevOverrides.attended_sessions ?? prevChuyenCan?.attendedSessions ?? (matchedEnrollment as any).total_attended,
+          row.attendedSessions
+        );
+        addMetricDiff(
+          'total_marked_sessions',
+          'Tổng buổi đã điểm danh (D)',
+          prevOverrides.total_marked_sessions ?? prevChuyenCan?.totalMarkedSessions,
+          row.totalMarkedSessions
+        );
+        addMetricDiff(
+          'attendance_rate',
+          'Tỷ lệ tham gia (E)',
+          prevChuyenCan?.attendanceRate,
+          row.attendanceRate
+        );
+        addMetricDiff(
+          'average_exam_score',
+          'Điểm KT trung bình (F)',
+          prevOverrides.average_exam_score ?? prevChuyenCan?.averageExamScore,
+          row.averageExamScore
+        );
+        addMetricDiff(
+          'homework_completed_sessions',
+          'Số buổi đã làm bài (G)',
+          prevOverrides.homework_completed_sessions ?? prevChuyenCan?.homeworkCompletedSessions,
+          row.homeworkCompletedSessions
+        );
+        addMetricDiff(
+          'max_consecutive_absent',
+          'Chuỗi vắng liên tiếp tối đa (H)',
+          prevOverrides.max_consecutive_absent ?? prevChuyenCan?.maxConsecutiveAbsent,
+          row.maxConsecutiveAbsent
+        );
+        addMetricDiff(
+          'absent_warning',
+          'Cảnh báo vắng (I)',
+          prevChuyenCan?.absentWarning,
+          row.absentWarning
+        );
+        addMetricDiff(
+          'max_consecutive_no_homework',
+          'Chuỗi không làm bài tối đa (J)',
+          prevOverrides.max_consecutive_no_homework ?? prevChuyenCan?.maxConsecutiveNoHomework,
+          row.maxConsecutiveNoHomework
+        );
+        addMetricDiff(
+          'no_homework_warning',
+          'Cảnh báo không làm bài (K)',
+          prevChuyenCan?.noHomeworkWarning,
+          row.noHomeworkWarning
+        );
+        addMetricDiff(
+          'exchange_info',
+          'Thông tin trao đổi (L)',
+          matchedEnrollment.exchange_info ?? prevChuyenCan?.exchangeInfo,
+          row.exchangeInfo
+        );
+        addMetricDiff(
+          'course_track',
+          'Khoá (O)',
+          existingMeta.course_track ?? prevChuyenCan?.courseTrack,
+          row.courseTrack
+        );
+        addMetricDiff('last_exam_name', 'KT gần nhất (P)', prevChuyenCan?.lastExamName, row.lastExamName);
+        addMetricDiff('last_exam_session', 'Buổi KT gần nhất (Q)', prevChuyenCan?.lastExamSession, row.lastExamSession);
+        addMetricDiff(
+          'sessions_since_last_exam',
+          'Cách đây (buổi) (R)',
+          prevChuyenCan?.sessionsSinceLastExam,
+          row.sessionsSinceLastExam
+        );
+        addMetricDiff('next_exam_name', 'KT tiếp theo (S)', prevChuyenCan?.nextExamName, row.nextExamName);
+        addMetricDiff('next_exam_session', 'Buổi KT tiếp theo (T)', prevChuyenCan?.nextExamSession, row.nextExamSession);
+        addMetricDiff(
+          'sessions_until_next_exam',
+          'Còn (buổi) (U)',
+          prevChuyenCan?.sessionsUntilNextExam,
+          row.sessionsUntilNextExam
+        );
+        addMetricDiff(
+          'exam_schedule_warning',
+          'Cảnh báo lịch KT (V)',
+          prevChuyenCan?.examScheduleWarning,
+          row.examScheduleWarning
+        );
+
+        if (diffs.length === 0) {
+          unchangedCount++;
+          continue;
+        }
+
+        const isFirstSync = !prevChuyenCan;
+        items.push({
+          itemKey,
+          rowNumber: row.rowNumber,
+          externalId: matchedStudent.external_id || String(matchedStudent.id),
+          studentName: matchedStudent.full_name,
+          classCode: row.classCode,
+          programType: 'JLPT',
+          entityType: 'StudyReport',
+          action: isFirstSync ? 'CREATE' : 'UPDATE',
+          defaultSelected: true,
+          summaryText: `Đồng bộ Chuyên cần JLPT (${diffs.length} chỉ số: ${diffs
+            .slice(0, 4)
+            .map((d) => d.label)
+            .join(', ')}${diffs.length > 4 ? '...' : ''})`,
+          fieldDiffs: diffs,
+          warnings: [],
+          errors: [],
+          _payload: {
+            enrollmentId: matchedEnrollment.id,
+            studentId: matchedStudent.id,
+            jlptChuyenCanRow: row,
+            parsed,
+          },
+        });
+      }
+
+      const previewToken = crypto.randomBytes(16).toString('hex');
+      return {
+        previewToken,
+        configId: config.id,
+        configCode: config.code,
+        createdAtMs: Date.now(),
+        syncYear: null,
+        filterConfig,
+        sheetName: parsed.sheetName || config.sheet_name,
+        fileHash,
+        sourceLabel,
+        totalRowsScanned: parsed.jlptChuyenCanRows.length,
+        filteredOutCount,
+        unchangedCount,
+        warnings: parsed.warnings,
+        items,
+        discoveredReportLinks: [],
+      };
+    }
 
     const extId = config.target_student_external_id || parsed.detectedStudentExternalId || '';
     const stuName = config.target_student_name || parsed.detectedStudentName || `Học viên ${extId || config.code}`;
@@ -3179,6 +3691,188 @@ export class SheetSyncService {
         ? cvhtToCsId[row.cvhtCode.toUpperCase()]
         : effectiveDefaultCsId;
 
+    // Special branch: KAIWA_CARE (1.Chăm sóc) ONLY updates care & report fields (AI..BH) on an existing Kaiwa enrollment
+    if (row.isKaiwaCareOnly) {
+      const existingStudent = await prisma.student.findUnique({
+        where: { external_id: row.externalId },
+      });
+      if (!existingStudent) {
+        throw new AppError(
+          400,
+          'Học viên chưa có hồ sơ gốc trên Web (cấu hình 1.Chăm sóc chỉ cập nhật báo cáo & chăm sóc khi khớp ID)'
+        );
+      }
+
+      const stuKaiwaEnrs = await prisma.enrollment.findMany({
+        where: { student_id: existingStudent.id, program_type: 'KAIWA' },
+        include: { package: true, care_logs: true },
+        orderBy: { created_at: 'desc' },
+      });
+      const existingEnrollment =
+        (item._payload.existingEnrollmentId
+          ? stuKaiwaEnrs.find((e) => e.id === Number(item._payload.existingEnrollmentId))
+          : undefined) ||
+        stuKaiwaEnrs.find((e) => e.package?.code?.toUpperCase() === row.packageCode.toUpperCase()) ||
+        stuKaiwaEnrs[0];
+
+      if (!existingEnrollment) {
+        throw new AppError(
+          400,
+          'Học viên chưa có hồ sơ gốc trên Web (cấu hình 1.Chăm sóc chỉ cập nhật báo cáo & chăm sóc khi khớp ID)'
+        );
+      }
+
+      const beforeSnapshot = {
+        existed: true,
+        studentId: existingStudent.id,
+        studentExisted: true,
+        studentData: null,
+        enrollmentId: existingEnrollment.id,
+        enrollmentData: {
+          status: existingEnrollment.status,
+          total_sessions: existingEnrollment.total_sessions,
+          total_attended: (existingEnrollment as any).total_attended,
+          attended_previous_years: existingEnrollment.attended_previous_years,
+          external_remaining_sessions: existingEnrollment.external_remaining_sessions,
+          exchange_info: existingEnrollment.exchange_info,
+          callback_note: existingEnrollment.callback_note,
+          hot_issue_note: existingEnrollment.hot_issue_note,
+          post_course_care: existingEnrollment.post_course_care,
+          study_report_url: existingEnrollment.study_report_url,
+          handed_over_at: existingEnrollment.handed_over_at,
+          account_created_at: (existingEnrollment as any).account_created_at,
+          program_metadata: existingEnrollment.program_metadata,
+        },
+      };
+
+      const prevMeta =
+        existingEnrollment.program_metadata && typeof existingEnrollment.program_metadata === 'object'
+          ? (existingEnrollment.program_metadata as Record<string, any>)
+          : {};
+      const mergedMeta = {
+        ...prevMeta,
+        ...(row.programMetadata.attended_previous_years_raw !== undefined
+          ? { attended_previous_years_raw: row.programMetadata.attended_previous_years_raw }
+          : {}),
+      };
+
+      const rawPrevStr = row.programMetadata.attended_previous_years_raw;
+      const isNumericPrev =
+        rawPrevStr !== undefined &&
+        rawPrevStr !== null &&
+        String(rawPrevStr).trim() !== '' &&
+        !Number.isNaN(Number(rawPrevStr));
+      const nextAttendedPrevYears = isNumericPrev
+        ? Math.round(Number(rawPrevStr))
+        : existingEnrollment.attended_previous_years;
+
+      const handedOverObj = row.handedOverAt ? new Date(row.handedOverAt) : existingEnrollment.handed_over_at;
+      const accountCreatedObj = row.accountCreatedAt
+        ? new Date(row.accountCreatedAt)
+        : (existingEnrollment as any).account_created_at;
+
+      const savedEnrollment = await prisma.enrollment.update({
+        where: { id: existingEnrollment.id },
+        data: {
+          program_metadata: mergedMeta as Prisma.InputJsonValue,
+          attended_previous_years: nextAttendedPrevYears,
+          ...(row.totalAttended !== null ? { total_attended: row.totalAttended } : {}),
+          ...(row.studyReportUrl ? { study_report_url: row.studyReportUrl } : {}),
+          ...(row.exchangeInfo !== null ? { exchange_info: row.exchangeInfo } : {}),
+          ...(row.callbackNote !== null ? { callback_note: row.callbackNote } : {}),
+          ...(row.hotIssueNote !== null ? { hot_issue_note: row.hotIssueNote } : {}),
+          ...(row.postCourseCare !== null ? { post_course_care: row.postCourseCare } : {}),
+          ...(handedOverObj ? { handed_over_at: handedOverObj } : {}),
+          ...(accountCreatedObj ? { account_created_at: accountCreatedObj } : {}),
+          external_synced_at: new Date(),
+        },
+        include: { care_logs: true },
+      });
+
+      if (row.careLogs.length > 0) {
+        const existingLogsBySession = new Map(
+          savedEnrollment.care_logs
+            .filter((cl) => cl.after_session_number !== null)
+            .map((cl) => [cl.after_session_number!, cl])
+        );
+        const csForLog = savedEnrollment.cs_id || effectiveDefaultCsId;
+
+        for (const cl of row.careLogs) {
+          const found = existingLogsBySession.get(cl.after_session_number);
+          if (!found) {
+            await prisma.careLog.create({
+              data: {
+                enrollment_id: savedEnrollment.id,
+                cs_id: csForLog,
+                after_session_number: cl.after_session_number,
+                content: cl.content,
+                outcome: cl.outcome,
+                created_by_id: actorId || csForLog,
+              },
+            });
+          } else if (found.content !== cl.content || found.outcome !== cl.outcome) {
+            await prisma.careLog.update({
+              where: { id: found.id },
+              data: {
+                content: cl.content,
+                outcome: cl.outcome,
+              },
+            });
+          }
+        }
+      }
+
+      await prisma.googleSheetRowState.upsert({
+        where: {
+          config_id_sync_key: {
+            config_id: config.id,
+            sync_key: row.syncKey,
+          },
+        },
+        update: {
+          row_number: row.rowNumber,
+          row_hash: rowHash,
+          student_id: existingStudent.id,
+          enrollment_id: savedEnrollment.id,
+        },
+        create: {
+          config_id: config.id,
+          sync_key: row.syncKey,
+          row_number: row.rowNumber,
+          row_hash: rowHash,
+          student_id: existingStudent.id,
+          enrollment_id: savedEnrollment.id,
+        },
+      });
+
+      const afterSnapshot = {
+        studentId: existingStudent.id,
+        enrollmentId: savedEnrollment.id,
+        syncKey: row.syncKey,
+        enrollmentData: {
+          status: savedEnrollment.status,
+          total_sessions: savedEnrollment.total_sessions,
+          total_attended: (savedEnrollment as any).total_attended,
+          attended_previous_years: savedEnrollment.attended_previous_years,
+          external_remaining_sessions: savedEnrollment.external_remaining_sessions,
+          exchange_info: savedEnrollment.exchange_info,
+          callback_note: savedEnrollment.callback_note,
+          hot_issue_note: savedEnrollment.hot_issue_note,
+          post_course_care: savedEnrollment.post_course_care,
+          study_report_url: savedEnrollment.study_report_url,
+          handed_over_at: savedEnrollment.handed_over_at,
+          account_created_at: (savedEnrollment as any).account_created_at,
+          program_metadata: savedEnrollment.program_metadata,
+        },
+      };
+
+      return {
+        enrollmentId: savedEnrollment.id,
+        beforeSnapshot,
+        afterSnapshot,
+      };
+    }
+
     // 1. Package
     const pkg = await prisma.package.upsert({
       where: { code: row.packageCode },
@@ -3264,12 +3958,16 @@ export class SheetSyncService {
           enrollmentData: {
             status: existingEnrollment.status,
             total_sessions: existingEnrollment.total_sessions,
+            total_attended: (existingEnrollment as any).total_attended,
+            attended_previous_years: existingEnrollment.attended_previous_years,
             external_remaining_sessions: existingEnrollment.external_remaining_sessions,
             exchange_info: existingEnrollment.exchange_info,
             callback_note: existingEnrollment.callback_note,
             hot_issue_note: existingEnrollment.hot_issue_note,
             post_course_care: existingEnrollment.post_course_care,
             study_report_url: existingEnrollment.study_report_url,
+            handed_over_at: existingEnrollment.handed_over_at,
+            account_created_at: (existingEnrollment as any).account_created_at,
             program_metadata: existingEnrollment.program_metadata,
           },
         }
@@ -3301,9 +3999,14 @@ export class SheetSyncService {
       prevMeta.cs_reassigned_on_web === true &&
       targetCsId !== existingEnrollment!.cs_id;
     const effectiveCsId = keepWebReassignedCs ? existingEnrollment!.cs_id : targetCsId;
-    const effectiveHandedOverAt = keepWebReassignedCs
-      ? existingEnrollment!.handed_over_at ?? handedOverObj
-      : handedOverObj;
+    const effectiveHandedOverAt =
+      row.isKaiwaMasterOnly && existingEnrollment
+        ? existingEnrollment.handed_over_at
+        : keepWebReassignedCs
+          ? existingEnrollment!.handed_over_at ?? handedOverObj
+          : handedOverObj;
+
+    const preserveCareFields = Boolean(row.isKaiwaMasterOnly && existingEnrollment);
 
     const enrollmentPayload = {
       external_id: row.externalId,
@@ -3322,14 +4025,16 @@ export class SheetSyncService {
       course_teacher_type: row.courseTeacherType,
       level: row.level,
       total_sessions: row.totalSessions,
-      total_attended: row.totalAttended,
+      total_attended: preserveCareFields ? (existingEnrollment as any).total_attended : row.totalAttended,
       class_model: row.classModel,
       sales_note: row.salesNote,
-      study_report_url: row.studyReportUrl || existingEnrollment?.study_report_url || null,
-      exchange_info: row.exchangeInfo,
-      callback_note: row.callbackNote,
-      hot_issue_note: row.hotIssueNote,
-      post_course_care: row.postCourseCare,
+      study_report_url: preserveCareFields
+        ? existingEnrollment!.study_report_url
+        : row.studyReportUrl || existingEnrollment?.study_report_url || null,
+      exchange_info: preserveCareFields ? existingEnrollment!.exchange_info : row.exchangeInfo,
+      callback_note: preserveCareFields ? existingEnrollment!.callback_note : row.callbackNote,
+      hot_issue_note: preserveCareFields ? existingEnrollment!.hot_issue_note : row.hotIssueNote,
+      post_course_care: preserveCareFields ? existingEnrollment!.post_course_care : row.postCourseCare,
       start_date: startDateObj,
       end_date: endDateObj,
       end_hold_week: row.endHoldWeek,
@@ -3337,10 +4042,12 @@ export class SheetSyncService {
       handover_month: row.handoverMonth,
       renewal_deadline: row.renewalDeadline ? new Date(row.renewalDeadline) : null,
       status: row.status,
-      attended_previous_years: row.attendedPreviousYears,
+      attended_previous_years: preserveCareFields
+        ? existingEnrollment!.attended_previous_years
+        : row.attendedPreviousYears,
       external_remaining_sessions: row.remainingSessions,
       handed_over_at: effectiveHandedOverAt,
-      ...(accountCreatedObj ? { account_created_at: accountCreatedObj } : {}),
+      ...(!preserveCareFields && accountCreatedObj ? { account_created_at: accountCreatedObj } : {}),
       external_synced_at: new Date(),
     };
 
@@ -3507,12 +4214,17 @@ export class SheetSyncService {
       enrollmentData: {
         status: savedEnrollment.status,
         total_sessions: savedEnrollment.total_sessions,
+        total_attended: (savedEnrollment as any).total_attended,
+        attended_previous_years: savedEnrollment.attended_previous_years,
         external_remaining_sessions: savedEnrollment.external_remaining_sessions,
         exchange_info: savedEnrollment.exchange_info,
         callback_note: savedEnrollment.callback_note,
         hot_issue_note: savedEnrollment.hot_issue_note,
         post_course_care: savedEnrollment.post_course_care,
         study_report_url: savedEnrollment.study_report_url,
+        handed_over_at: savedEnrollment.handed_over_at,
+        account_created_at: (savedEnrollment as any).account_created_at,
+        program_metadata: savedEnrollment.program_metadata,
       },
     };
 
@@ -3785,6 +4497,7 @@ export class SheetSyncService {
     const payload = item._payload;
     const enrollmentId: number = payload.enrollmentId;
     const parsed = payload.parsed;
+    const jlptChuyenCanRow: JlptChuyenCanReportRow | undefined = payload.jlptChuyenCanRow;
 
     const enrollment = await prisma.enrollment.findUnique({
       where: { id: enrollmentId },
@@ -3802,7 +4515,63 @@ export class SheetSyncService {
       enrollmentId,
       exchange_info: enrollment.exchange_info,
       study_report: prevMeta.study_report ?? null,
+      jlpt_chuyen_can_overrides: prevMeta.jlpt_chuyen_can_overrides ?? null,
+      jlpt_chuyen_can: prevMeta.jlpt_chuyen_can ?? null,
+      course_track: prevMeta.course_track ?? null,
+      had_jlpt_chuyen_can: Boolean(prevMeta.jlpt_chuyen_can),
     };
+
+    if (jlptChuyenCanRow) {
+      const nextOverrides = {
+        attended_sessions: jlptChuyenCanRow.attendedSessions,
+        total_marked_sessions: jlptChuyenCanRow.totalMarkedSessions,
+        average_exam_score: jlptChuyenCanRow.averageExamScore,
+        homework_completed_sessions: jlptChuyenCanRow.homeworkCompletedSessions,
+        max_consecutive_absent: jlptChuyenCanRow.maxConsecutiveAbsent,
+        max_consecutive_no_homework: jlptChuyenCanRow.maxConsecutiveNoHomework,
+      };
+      const nextCourseTrack = jlptChuyenCanRow.courseTrack || prevMeta.course_track || undefined;
+      const nextStudyReport = {
+        ...(prevMeta.study_report && typeof prevMeta.study_report === 'object' ? prevMeta.study_report : {}),
+        jlpt_chuyen_can: jlptChuyenCanRow,
+      };
+      const nextExchangeInfo =
+        jlptChuyenCanRow.exchangeInfo && jlptChuyenCanRow.exchangeInfo.trim() !== ''
+          ? jlptChuyenCanRow.exchangeInfo.trim()
+          : enrollment.exchange_info;
+
+      const nextMeta = {
+        ...prevMeta,
+        jlpt_chuyen_can_overrides: nextOverrides,
+        ...(nextCourseTrack ? { course_track: nextCourseTrack } : {}),
+        jlpt_chuyen_can: jlptChuyenCanRow,
+        study_report: nextStudyReport,
+        study_report_synced_at: new Date().toISOString(),
+      };
+
+      await prisma.enrollment.update({
+        where: { id: enrollmentId },
+        data: {
+          program_metadata: nextMeta as unknown as Prisma.InputJsonValue,
+          exchange_info: nextExchangeInfo,
+        },
+      });
+
+      const afterSnapshot = {
+        enrollmentId,
+        exchange_info: nextExchangeInfo,
+        study_report: nextStudyReport,
+        jlpt_chuyen_can_overrides: nextOverrides,
+        jlpt_chuyen_can: jlptChuyenCanRow,
+        course_track: nextCourseTrack ?? null,
+      };
+
+      return {
+        enrollmentId,
+        beforeSnapshot,
+        afterSnapshot,
+      };
+    }
 
     const nextStudyReport =
       parsed.programType === 'KAIWA'
@@ -4000,6 +4769,22 @@ export class SheetSyncService {
             },
             effectiveDefaultCsId
           );
+        }
+
+        // For KAIWA_CARE (1.Chăm sóc), skip students who do not exist on Web DB or have no Kaiwa enrollment
+        if (row.isKaiwaCareOnly) {
+          const existingStu = await prisma.student.findUnique({
+            where: { external_id: row.externalId },
+            include: {
+              enrollments: {
+                where: { program_type: 'KAIWA' },
+                select: { id: true },
+              },
+            },
+          });
+          if (!existingStu || existingStu.enrollments.length === 0) {
+            continue;
+          }
         }
 
         const rowHash = this.sha256(JSON.stringify(row));
@@ -4733,6 +5518,27 @@ export class SheetSyncService {
             delete curMeta.study_report;
           } else {
             curMeta.study_report = before.study_report;
+          }
+          if ('jlpt_chuyen_can_overrides' in before) {
+            if (before.jlpt_chuyen_can_overrides === null || before.jlpt_chuyen_can_overrides === undefined) {
+              delete curMeta.jlpt_chuyen_can_overrides;
+            } else {
+              curMeta.jlpt_chuyen_can_overrides = before.jlpt_chuyen_can_overrides;
+            }
+          }
+          if ('jlpt_chuyen_can' in before) {
+            if (before.jlpt_chuyen_can === null || before.jlpt_chuyen_can === undefined) {
+              delete curMeta.jlpt_chuyen_can;
+            } else {
+              curMeta.jlpt_chuyen_can = before.jlpt_chuyen_can;
+            }
+          }
+          if ('course_track' in before) {
+            if (before.course_track === null || before.course_track === undefined) {
+              delete curMeta.course_track;
+            } else {
+              curMeta.course_track = before.course_track;
+            }
           }
           await prisma.enrollment.update({
             where: { id: enr.id },

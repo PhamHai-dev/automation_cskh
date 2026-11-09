@@ -259,6 +259,79 @@ describe('jlpt-attendance-report.util & RBAC scope', () => {
       expect(summary.noHomeworkWarningCount).toBe(1);
       expect(summary.lowAttendanceRedCount).toBe(1);
     });
+
+    it('prioritizes synced jlpt_chuyen_can values from sheet Chuyên cần HV when present in program_metadata', () => {
+      const student = {
+        id: 25,
+        external_id: 'JLPT_SYNC_01',
+        full_name: 'Đặng Tuấn Anh',
+      };
+      const enrollment = {
+        id: 99,
+        student_id: 25,
+        program_type: 'JLPT',
+        status: 'STUDYING',
+        cs_id: 3,
+        exchange_info: 'Đã trao đổi qua Zalo',
+        cs: { id: 3, staff_code: 'CVHT01', name: 'CSKH 1' },
+        package: { code: 'N3A' },
+        enrollment_classes: [{ class: { class_code: 'N3A110005', class_name: 'N3A110005' }, attendance: [] }],
+        program_metadata: {
+          course_track: 'N3-LuyenDe',
+          jlpt_chuyen_can_overrides: {
+            attended_sessions: 10,
+            total_marked_sessions: 10,
+            average_exam_score: 17.2,
+            homework_completed_sessions: 16,
+            max_consecutive_absent: 0,
+            max_consecutive_no_homework: 2,
+          },
+          jlpt_chuyen_can: {
+            rowNumber: 12,
+            classCode: 'N3A110005',
+            studentName: 'Đặng Tuấn Anh',
+            attendedSessions: 10,
+            totalMarkedSessions: 10,
+            attendanceRate: 1,
+            averageExamScore: 17.2,
+            homeworkCompletedSessions: 16,
+            maxConsecutiveAbsent: 0,
+            absentWarning: '',
+            maxConsecutiveNoHomework: 2,
+            noHomeworkWarning: '⚠ Không làm bài ≥2 buổi',
+            exchangeInfo: 'Đã trao đổi qua Zalo',
+            statusText: 'Đang học',
+            cvhtCode: 'CVHT01',
+            courseTrack: 'N3-LuyenDe',
+            lastExamName: 'KT1',
+            lastExamSession: 6,
+            sessionsSinceLastExam: 4,
+            nextExamName: 'KT2',
+            nextExamSession: 12,
+            sessionsUntilNextExam: 2,
+            examScheduleWarning: '🔔 Còn 2 buổi tới KT2 — nhắc HV chuẩn bị',
+          },
+        },
+      };
+
+      const row = buildJlptAttendanceReportRow({ student, enrollment });
+      expect(row.class_code).toBe('N3A110005');
+      expect(row.attended_sessions).toBe(10);
+      expect(row.total_marked_sessions).toBe(10);
+      expect(row.attendance_rate).toBe(1);
+      expect(row.average_exam_score).toBe(17.2);
+      expect(row.homework_completed_sessions).toBe(16);
+      expect(row.max_consecutive_no_homework).toBe(2);
+      expect(row.no_homework_warning).toBe('⚠ Không làm bài ≥2 buổi');
+      expect(row.course_track).toBe('N3-LuyenDe');
+      expect(row.last_exam_name).toBe('KT1');
+      expect(row.last_exam_session).toBe(6);
+      expect(row.sessions_since_last_exam).toBe(4);
+      expect(row.next_exam_name).toBe('KT2');
+      expect(row.next_exam_session).toBe(12);
+      expect(row.sessions_until_next_exam).toBe(2);
+      expect(row.exam_schedule_warning).toBe('🔔 Còn 2 buổi tới KT2 — nhắc HV chuẩn bị');
+    });
   });
 
   describe('RBAC scope on getJlptAttendanceReport & updateJlptAttendanceReport', () => {

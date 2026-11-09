@@ -67,16 +67,33 @@ import {
   resolveBackupFieldValue,
   saveGlobalBackupColumnConfig,
 } from './profile-sheet.util';
+import {
+  writeKaiwaStudyReportSheet,
+  writeJlptChuyenCanSheet,
+  writeJlptDailyReportSheet,
+  writeAdminReconciliationWorkbookSheets,
+} from './special-sheet-backup.util';
 
 const log = createLogger('SheetBackupService');
 
 export const PROGRAM_TYPES = ['JLPT', 'KAIWA'] as const;
-export type ProgramType = (typeof PROGRAM_TYPES)[number] | 'TEACHER';
+export const ADMIN_PROGRAM_TYPES = ['ADMIN_KAIWA', 'ADMIN_JLPT', 'ADMIN_RECONCILIATION'] as const;
+export const REPORT_PROGRAM_TYPES = ['REPORT_KAIWA', 'REPORT_JLPT'] as const;
+export type ProgramType =
+  | (typeof PROGRAM_TYPES)[number]
+  | 'TEACHER'
+  | (typeof ADMIN_PROGRAM_TYPES)[number]
+  | (typeof REPORT_PROGRAM_TYPES)[number];
 
 export const DEFAULT_SHEET_NAME_BY_PROGRAM: Record<string, string> = {
   JLPT: 'Chấm buổi',
   KAIWA: '3.Chấm buổi',
   TEACHER: '2026 スケジュール',
+  ADMIN_KAIWA: 'Điểm danh chốt 2026',
+  ADMIN_JLPT: 'Điểm danh chốt 2026',
+  ADMIN_RECONCILIATION: 'Tổng hợp Đối soát',
+  REPORT_KAIWA: 'Báo cáo học tập Kaiwa',
+  REPORT_JLPT: 'Chuyên cần HV',
 };
 
 /** Sheet HỒ SƠ mặc định theo chương trình (cùng workbook backup). */
@@ -84,12 +101,22 @@ export const DEFAULT_PROFILE_SHEET_NAME_BY_PROGRAM: Record<string, string> = {
   JLPT: 'Data JLPT_Inhouse',
   KAIWA: '1.Chăm sóc',
   TEACHER: '',
+  ADMIN_KAIWA: '1.Chăm sóc',
+  ADMIN_JLPT: 'Data JLPT_Inhouse',
+  ADMIN_RECONCILIATION: 'Tổng hợp Đối soát',
+  REPORT_KAIWA: 'Báo cáo học tập Kaiwa',
+  REPORT_JLPT: 'Chuyên cần HV',
 };
 
 export const DEFAULT_PROFILE_HEADER_ROW_BY_PROGRAM: Record<string, number> = {
   JLPT: 2,
   KAIWA: 3,
   TEACHER: 2,
+  ADMIN_KAIWA: 3,
+  ADMIN_JLPT: 2,
+  ADMIN_RECONCILIATION: 2,
+  REPORT_KAIWA: 2,
+  REPORT_JLPT: 2,
 };
 
 export const DEFAULT_FINAL_SHEET_NAME = 'Điểm danh chốt';
@@ -99,6 +126,16 @@ const FINAL_META_SETTING_KEY = 'SHEET_BACKUP_FINAL_META';
 export function isTeacherProgramType(programType?: string | null): boolean {
   const norm = String(programType || '').trim().toUpperCase();
   return norm === 'TEACHER' || norm.startsWith('GV:');
+}
+
+export function isAdminProgramType(programType?: string | null): boolean {
+  const norm = String(programType || '').trim().toUpperCase();
+  return norm === 'ADMIN_KAIWA' || norm === 'ADMIN_JLPT' || norm === 'ADMIN_RECONCILIATION';
+}
+
+export function isReportProgramType(programType?: string | null): boolean {
+  const norm = String(programType || '').trim().toUpperCase();
+  return norm === 'REPORT_KAIWA' || norm === 'REPORT_JLPT';
 }
 
 export function defaultProfileSheetFor(programType: string): string {
@@ -333,6 +370,37 @@ async function loadEnrollments(csUserId: number, programType: string) {
   });
 }
 
+async function loadAllProgramEnrollments(programType: 'KAIWA' | 'JLPT') {
+  return prisma.enrollment.findMany({
+    where: { program_type: programType },
+    include: {
+      student: true,
+      package: true,
+      cs: { select: { id: true, name: true, staff_code: true } },
+      care_logs: { orderBy: { created_at: 'asc' } },
+      enrollment_classes: {
+        include: {
+          class: {
+            include: {
+              class_teachers: {
+                include: { teacher: true },
+                orderBy: { id: 'asc' },
+              },
+              class_schedules: { orderBy: { id: 'asc' } },
+            },
+          },
+          attendance: {
+            where: { deleted_at: null },
+            include: { class_session: true },
+          },
+        },
+        orderBy: { sequence_no: 'asc' },
+      },
+    },
+    orderBy: { id: 'asc' },
+  });
+}
+
 async function loadTeacherEnrollments(teacherId: number) {
   return prisma.enrollment.findMany({
     where: {
@@ -424,13 +492,19 @@ export class SheetBackupService {
   }
 
   public relativeBackupPathFor(staffLabel: string, programType: string): string {
+    const norm = normalizeProgramType(programType);
+    if (norm === 'ADMIN_KAIWA') return 'backups/admin/backup_admin_kaiwa.xlsx';
+    if (norm === 'ADMIN_JLPT') return 'backups/admin/backup_admin_jlpt.xlsx';
+    if (norm === 'ADMIN_RECONCILIATION') return 'backups/admin/backup_admin_doi_soat.xlsx';
+    if (norm === 'REPORT_KAIWA') return 'backups/bao_cao_hoc_tap/backup_bao_cao_hoc_tap_kaiwa.xlsx';
+    if (norm === 'REPORT_JLPT') return 'backups/bao_cao_hoc_tap/backup_bao_cao_hoc_tap_jlpt.xlsx';
     if (isTeacherProgramType(programType)) {
       const code = programType.toUpperCase().startsWith('GV:')
         ? programType.slice(3).trim() || staffLabel
         : staffLabel;
       return `backups/giao_vien/diem_danh_gv_${code}.xlsx`;
     }
-    const slug = normalizeProgramType(programType).toLowerCase() || 'cham_buoi';
+    const slug = norm.toLowerCase() || 'cham_buoi';
     return `backups/cskh/hoc_vien_${slug}_${staffLabel}.xlsx`;
   }
 
@@ -438,6 +512,8 @@ export class SheetBackupService {
 
   /**
    * Đảm bảo:
+   *  - 3 config Admin Master (`ADMIN_KAIWA`, `ADMIN_JLPT`, `ADMIN_RECONCILIATION`).
+   *  - 2 config Báo cáo học tập (`REPORT_KAIWA`, `REPORT_JLPT`).
    *  - Mỗi CSKH đang hoạt động có đúng 2 config (JLPT + KAIWA).
    *  - Mỗi Giáo viên (Teacher.active = true) có 1 config backup điểm danh GV (`2026 スケジュール`).
    */
@@ -457,6 +533,93 @@ export class SheetBackupService {
       select: { id: true, cs_user_id: true, program_type: true, local_backup_path: true },
     });
     const seen = new Set(existing.map((c) => `${c.cs_user_id}::${normalizeProgramType(c.program_type)}`));
+    const seenProgramTypes = new Set(existing.map((c) => normalizeProgramType(c.program_type)));
+
+    // 1. Admin Master & Study Report system-wide configs (owned by fallbackOwner)
+    if (fallbackOwner) {
+      const systemEntries: Array<{
+        programType: string;
+        name: string;
+        localPath: string;
+        sheetName: string;
+        profileSheetName: string;
+        profileHeaderRow: number;
+      }> = [
+        {
+          programType: 'ADMIN_KAIWA',
+          name: 'Sổ Tổng Kaiwa (Hồ sơ + Báo cáo + Điểm danh chốt)',
+          localPath: 'backups/admin/backup_admin_kaiwa.xlsx',
+          sheetName: 'Điểm danh chốt 2026',
+          profileSheetName: '1.Chăm sóc',
+          profileHeaderRow: 3,
+        },
+        {
+          programType: 'ADMIN_JLPT',
+          name: 'Sổ Tổng JLPT (Hồ sơ + Chuyên cần + Điểm danh chốt)',
+          localPath: 'backups/admin/backup_admin_jlpt.xlsx',
+          sheetName: 'Điểm danh chốt 2026',
+          profileSheetName: 'Data JLPT_Inhouse',
+          profileHeaderRow: 2,
+        },
+        {
+          programType: 'ADMIN_RECONCILIATION',
+          name: 'Sổ Đối soát Điểm danh Tổng (CSKH vs GV)',
+          localPath: 'backups/admin/backup_admin_doi_soat.xlsx',
+          sheetName: 'Thống kê Lệch & Chờ duyệt',
+          profileSheetName: 'Tổng hợp Đối soát',
+          profileHeaderRow: 2,
+        },
+        {
+          programType: 'REPORT_KAIWA',
+          name: 'Báo cáo học tập Kaiwa (Bảng ngang 61 cột)',
+          localPath: 'backups/bao_cao_hoc_tap/backup_bao_cao_hoc_tap_kaiwa.xlsx',
+          sheetName: 'Báo cáo học tập Kaiwa',
+          profileSheetName: 'Báo cáo học tập Kaiwa',
+          profileHeaderRow: 2,
+        },
+        {
+          programType: 'REPORT_JLPT',
+          name: 'Báo cáo Chuyên cần & Nhật ký JLPT',
+          localPath: 'backups/bao_cao_hoc_tap/backup_bao_cao_hoc_tap_jlpt.xlsx',
+          sheetName: 'Nhật ký nhận xét buổi học',
+          profileSheetName: 'Chuyên cần HV',
+          profileHeaderRow: 2,
+        },
+      ];
+
+      for (const sys of systemEntries) {
+        if (seenProgramTypes.has(sys.programType)) continue;
+        const key = `${fallbackOwner.id}::${sys.programType}`;
+        if (seen.has(key)) continue;
+
+        await prisma.programSheetBackupConfig
+          .create({
+            data: {
+              cs_user_id: fallbackOwner.id,
+              program_type: sys.programType,
+              name: sys.name,
+              local_backup_path: sys.localPath,
+              sheet_name: sys.sheetName,
+              header_row: 2,
+              schedule_times: DEFAULT_SCHEDULE_TIMES as unknown as Prisma.InputJsonValue,
+              enabled: true,
+              require_private_sheet: true,
+              mask_sensitive_data: false,
+              last_status: 'IDLE',
+            },
+          })
+          .then(async (created) => {
+            await this.setProfileMetaRaw(created.id, {
+              profile_sheet_name: sys.profileSheetName,
+              profile_header_row: sys.profileHeaderRow,
+              profile_enabled: true,
+            });
+          })
+          .catch(() => {});
+        seen.add(key);
+        seenProgramTypes.add(sys.programType);
+      }
+    }
 
     for (const user of csUsers) {
       for (const program of PROGRAM_TYPES) {
@@ -833,25 +996,55 @@ export class SheetBackupService {
     const rawConfigs = rawConfigsAll.filter((c) => {
       if (isAdminOrManage) return true;
       const isT = isTeacherProgramType(c.program_type);
+      const isSys = isAdminProgramType(c.program_type) || isReportProgramType(c.program_type);
+      if (isSys) return false;
       if (isTeacherRole) return isT;
       if (isCsOnlyRole) return !isT;
       return true;
     });
 
-    // student_counts per (cs, program) + per teacher
-    const csUserIds = [...new Set(rawConfigs.filter((c) => !isTeacherProgramType(c.program_type)).map((c) => c.cs_user_id))];
+    // student_counts per (cs, program) + global program counts + per teacher
+    const csUserIds = [
+      ...new Set(
+        rawConfigs
+          .filter((c) => !isTeacherProgramType(c.program_type) && !isAdminProgramType(c.program_type) && !isReportProgramType(c.program_type))
+          .map((c) => c.cs_user_id)
+      ),
+    ];
     const programNames = ['JLPT', 'KAIWA'];
+    const allProgramEnrollments = await prisma.enrollment.findMany({
+      where: { program_type: { in: programNames } },
+      select: {
+        cs_id: true,
+        program_type: true,
+        status: true,
+        student: { select: { external_id: true, id: true } },
+      },
+    });
     const enrollments = csUserIds.length
-      ? await prisma.enrollment.findMany({
-          where: { cs_id: { in: csUserIds }, program_type: { in: programNames } },
-          select: {
-            cs_id: true,
-            program_type: true,
-            status: true,
-            student: { select: { external_id: true, id: true } },
-          },
-        })
+      ? allProgramEnrollments.filter((e) => csUserIds.includes(e.cs_id))
       : [];
+
+    const globalProgramCounts = new Map<string, { total: number; attending: number }>([
+      ['KAIWA', { total: 0, attending: 0 }],
+      ['JLPT', { total: 0, attending: 0 }],
+      ['ALL', { total: 0, attending: 0 }],
+    ]);
+    for (const enr of allProgramEnrollments) {
+      const pt = normalizeProgramType(enr.program_type);
+      const b = globalProgramCounts.get(pt);
+      const bAll = globalProgramCounts.get('ALL')!;
+      const isAtt =
+        enr.status === EnrollmentStatus.STUDYING ||
+        enr.status === EnrollmentStatus.WAITING_CLASS ||
+        enr.status === EnrollmentStatus.UPCOMING;
+      if (b) {
+        b.total++;
+        if (isAtt) b.attending++;
+      }
+      bAll.total++;
+      if (isAtt) bAll.attending++;
+    }
 
     const countsByScope = new Map<string, { total: number; attending: number }>();
     for (const uid of csUserIds) {
@@ -964,14 +1157,24 @@ export class SheetBackupService {
 
     return {
       configs: rawConfigs.map((cfg) => {
-        const isT = isTeacherProgramType(cfg.program_type);
+        const normPt = normalizeProgramType(cfg.program_type);
+        const isT = isTeacherProgramType(normPt);
         const teacher = isT ? this.resolveTeacherForConfig(cfg, teachersList) : null;
-        const counts = isT
-          ? (teacher && countsByTeacherId.get(teacher.id)) || { total: 0, attending: 0 }
-          : countsByScope.get(`${cfg.cs_user_id}::${normalizeProgramType(cfg.program_type)}`) || {
-              total: 0,
-              attending: 0,
-            };
+        let counts = { total: 0, attending: 0 };
+        if (isT) {
+          counts = (teacher && countsByTeacherId.get(teacher.id)) || { total: 0, attending: 0 };
+        } else if (normPt === 'ADMIN_KAIWA' || normPt === 'REPORT_KAIWA') {
+          counts = globalProgramCounts.get('KAIWA') || { total: 0, attending: 0 };
+        } else if (normPt === 'ADMIN_JLPT' || normPt === 'REPORT_JLPT') {
+          counts = globalProgramCounts.get('JLPT') || { total: 0, attending: 0 };
+        } else if (normPt === 'ADMIN_RECONCILIATION') {
+          counts = globalProgramCounts.get('ALL') || { total: 0, attending: 0 };
+        } else {
+          counts = countsByScope.get(`${cfg.cs_user_id}::${normPt}`) || {
+            total: 0,
+            attending: 0,
+          };
+        }
         return this.toConfigItem(
           cfg,
           counts,
@@ -989,7 +1192,8 @@ export class SheetBackupService {
 
   public async updateConfig(
     id: number,
-    dto: UpdateProgramBackupConfigDTO
+    dto: UpdateProgramBackupConfigDTO,
+    opts?: { actorId?: number; actorRoles?: string[] }
   ): Promise<ProgramBackupConfigItem> {
     await this.ensureConfigs();
 
@@ -997,6 +1201,7 @@ export class SheetBackupService {
     if (!existing) {
       throw new AppError(404, `Không tìm thấy cấu hình sao lưu điểm danh (ID=${id})`);
     }
+    this.assertConfigScope(existing, opts?.actorId, opts?.actorRoles);
 
     const data: Prisma.ProgramSheetBackupConfigUpdateInput = {};
     const profilePatch: { profile_sheet_name?: string; profile_header_row?: number; profile_enabled?: boolean } = {};
@@ -1103,15 +1308,40 @@ export class SheetBackupService {
   }
 
   private async countsForConfig(csUserId: number, programType: string): Promise<{ total: number; attending: number }> {
-    if (isTeacherProgramType(programType)) {
+    const norm = normalizeProgramType(programType);
+    if (isTeacherProgramType(norm)) {
       return { total: 0, attending: 0 };
     }
+    if (norm === 'ADMIN_KAIWA' || norm === 'REPORT_KAIWA' || norm === 'ADMIN_JLPT' || norm === 'REPORT_JLPT') {
+      const targetProgram = norm.includes('KAIWA') ? 'KAIWA' : 'JLPT';
+      const [total, attending] = await Promise.all([
+        prisma.enrollment.count({ where: { program_type: targetProgram } }),
+        prisma.enrollment.count({
+          where: {
+            program_type: targetProgram,
+            status: { in: [EnrollmentStatus.STUDYING, EnrollmentStatus.WAITING_CLASS, EnrollmentStatus.UPCOMING] },
+          },
+        }),
+      ]);
+      return { total, attending };
+    }
+    if (norm === 'ADMIN_RECONCILIATION') {
+      const [total, attending] = await Promise.all([
+        prisma.enrollment.count(),
+        prisma.enrollment.count({
+          where: {
+            status: { in: [EnrollmentStatus.STUDYING, EnrollmentStatus.WAITING_CLASS, EnrollmentStatus.UPCOMING] },
+          },
+        }),
+      ]);
+      return { total, attending };
+    }
     const [total, attending] = await Promise.all([
-      prisma.enrollment.count({ where: { cs_id: csUserId, program_type: normalizeProgramType(programType) } }),
+      prisma.enrollment.count({ where: { cs_id: csUserId, program_type: norm } }),
       prisma.enrollment.count({
         where: {
           cs_id: csUserId,
-          program_type: normalizeProgramType(programType),
+          program_type: norm,
           status: {
             in: [EnrollmentStatus.STUDYING, EnrollmentStatus.WAITING_CLASS, EnrollmentStatus.UPCOMING],
           },
@@ -1396,8 +1626,20 @@ export class SheetBackupService {
     return config;
   }
 
-  private assertConfigScope(config: { cs_user_id: number }, actorId?: number, actorRoles?: string[]): void {
-    const isAdminOrManage = Array.isArray(actorRoles) && (actorRoles.includes('ADMIN') || actorRoles.includes('MANAGE'));
+  private assertConfigScope(
+    config: { cs_user_id: number; program_type?: string | null },
+    actorId?: number,
+    actorRoles?: string[]
+  ): void {
+    if (actorId === undefined && (!actorRoles || actorRoles.length === 0)) return;
+    const isAdminOrManage =
+      Array.isArray(actorRoles) && (actorRoles.includes('ADMIN') || actorRoles.includes('MANAGE'));
+    if (
+      !isAdminOrManage &&
+      (isAdminProgramType(config.program_type) || isReportProgramType(config.program_type))
+    ) {
+      throw new AppError(403, 'Chỉ Quản trị viên hoặc Quản lý mới được phép thao tác trên sổ tổng hệ thống');
+    }
     if (!isAdminOrManage && actorId !== undefined && config.cs_user_id !== actorId) {
       throw new AppError(403, 'Bạn chỉ được phép sao lưu dữ liệu học viên thuộc tài khoản của mình');
     }
@@ -2084,6 +2326,150 @@ export class SheetBackupService {
         const dir = path.dirname(absPath);
         if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
         await wbLoaded.workbook.xlsx.writeFile(absPath);
+      } else if (programType === 'ADMIN_RECONCILIATION') {
+        // --- CHẾ ĐỘ ADMIN ĐỐI SOÁT: 2 sheets (`Tổng hợp Đối soát` + `Thống kê Lệch & Chờ duyệt`) ---
+        const wb = new ExcelJS.Workbook();
+        if (!forceFullRewrite && fs.existsSync(absPath)) {
+          try {
+            await wb.xlsx.readFile(absPath);
+          } catch {
+            /* tạo mới nếu file lỗi */
+          }
+        }
+        const recon = await writeAdminReconciliationWorkbookSheets(
+          wb,
+          yearFilter,
+          batchRanges,
+          headerRangesBySheet
+        );
+        profileStats = recon.allStats;
+        attendanceStats = {
+          ...recon.conflictStats,
+          attendanceCellsWritten: recon.conflictStats.updatedCellsCount,
+        };
+        totalStudents = recon.totalRecords;
+
+        const dir = path.dirname(absPath);
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        await wb.xlsx.writeFile(absPath);
+      } else if (programType === 'REPORT_KAIWA' || programType === 'REPORT_JLPT') {
+        // --- CHẾ ĐỘ BÁO CÁO HỌC TẬP RIÊNG (KAIWA 61 CỘT / JLPT CHUYÊN CẦN + NHẬT KÝ) ---
+        const wb = new ExcelJS.Workbook();
+        if (!forceFullRewrite && fs.existsSync(absPath)) {
+          try {
+            await wb.xlsx.readFile(absPath);
+          } catch {
+            /* tạo mới */
+          }
+        }
+        const targetProg = programType === 'REPORT_KAIWA' ? 'KAIWA' : 'JLPT';
+        const enrollments = await loadAllProgramEnrollments(targetProg);
+        totalStudents = enrollments.length;
+
+        if (targetProg === 'KAIWA') {
+          const repStats = writeKaiwaStudyReportSheet(wb, enrollments, batchRanges, headerRangesBySheet);
+          profileStats = repStats;
+          attendanceStats = { ...repStats, attendanceCellsWritten: 0 };
+        } else {
+          const ccStats = writeJlptChuyenCanSheet(wb, enrollments, batchRanges, headerRangesBySheet);
+          const dailyStats = writeJlptDailyReportSheet(wb, enrollments, batchRanges, headerRangesBySheet);
+          profileStats = ccStats;
+          attendanceStats = { ...dailyStats, attendanceCellsWritten: 0 };
+        }
+
+        const dir = path.dirname(absPath);
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        await wb.xlsx.writeFile(absPath);
+      } else if (programType === 'ADMIN_KAIWA' || programType === 'ADMIN_JLPT') {
+        // --- CHẾ ĐỘ ADMIN MASTER (KAIWA / JLPT): Hồ sơ + Báo cáo học tập + Điểm danh chốt <Năm> ---
+        const baseProgram: 'KAIWA' | 'JLPT' = programType === 'ADMIN_KAIWA' ? 'KAIWA' : 'JLPT';
+        const programCols: ProgramColumnMappingConfig =
+          baseProgram === 'KAIWA' ? columnConfigMap.KAIWA : columnConfigMap.JLPT;
+
+        const activeYear = yearFilter || new Date().getFullYear();
+        const finalSheetNameByYear = `Điểm danh chốt ${activeYear}`;
+        const finalHeaderRow = Number(finalMeta?.final_header_row) || DEFAULT_FINAL_HEADER_ROW;
+
+        const profileHeaderRow =
+          Number(profileMeta?.profile_header_row) ||
+          programCols.profile.headerRow ||
+          defaultProfileHeaderRowFor(baseProgram);
+        const profileSheetName =
+          profileMeta?.profile_sheet_name ||
+          programCols.profile.defaultSheetName ||
+          defaultProfileSheetFor(baseProgram);
+
+        const enrollments = await loadAllProgramEnrollments(baseProgram);
+        totalStudents = enrollments.length;
+
+        const wbLoaded = await loadOrExtractProgramWorkbook({
+          absPath,
+          programType: baseProgram,
+          profileSheetName,
+          profileHeaderRow,
+          attendanceSheetName: finalSheetNameByYear,
+          attendanceHeaderRow: finalHeaderRow,
+          finalSheetName: finalSheetNameByYear,
+          finalHeaderRow,
+          forceFresh: forceFullRewrite,
+        });
+
+        // 1. Sheet Hồ sơ tổng (1.Chăm sóc / Data JLPT_Inhouse)
+        if (wbLoaded.profileWorksheet) {
+          profileStats = this.runProfileSheetBackup(
+            wbLoaded.profileWorksheet,
+            profileHeaderRow,
+            wbLoaded.profileMaxCol,
+            programCols.profile,
+            enrollments,
+            config,
+            yearFilter,
+            batchRanges,
+            headerRangesBySheet
+          );
+        }
+
+        // 2. Sheet Báo cáo học tập (61 cột Kaiwa hoặc 24 cột Chuyên cần HV JLPT)
+        if (baseProgram === 'KAIWA') {
+          attendanceStats = writeKaiwaStudyReportSheet(
+            wbLoaded.workbook,
+            enrollments,
+            batchRanges,
+            headerRangesBySheet,
+            'Báo cáo học tập Kaiwa'
+          );
+        } else {
+          attendanceStats = writeJlptChuyenCanSheet(
+            wbLoaded.workbook,
+            enrollments,
+            batchRanges,
+            headerRangesBySheet,
+            'Chuyên cần HV'
+          );
+        }
+
+        // 3. Sheet Điểm danh chốt theo năm (`Điểm danh chốt <Năm>`)
+        const targetFinalWs = wbLoaded.finalWorksheet || wbLoaded.attendanceWorksheet;
+        if (targetFinalWs) {
+          const finalCols = getFinalAttendanceColumnMapping();
+          finalStats = await this.runAttendanceSheetBackup({
+            ws: targetFinalWs,
+            headerRow: finalHeaderRow,
+            initialMaxCol: wbLoaded.finalMaxCol || FIXED_LAST_COL,
+            sheetCfg: finalCols,
+            defaultFixedLastCol: FIXED_LAST_COL,
+            enrollments,
+            config,
+            yearFilter: activeYear,
+            mode: 'FINAL',
+            batchRanges,
+            headerRangesBySheet,
+          });
+        }
+
+        const dir = path.dirname(absPath);
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        await wbLoaded.workbook.xlsx.writeFile(absPath);
       } else {
         // --- CHẾ ĐỘ CSKH (KAIWA / JLPT): 3 sheets (Hồ sơ + Chấm buổi CS + Điểm danh chốt) ---
         const programCols: ProgramColumnMappingConfig =
@@ -2312,9 +2698,13 @@ export class SheetBackupService {
     });
 
     const configs = allConfigs.filter((c) => {
-      if (!program) return true;
-      if (program === 'TEACHER') return isTeacherProgramType(c.program_type);
-      return normalizeProgramType(c.program_type) === program;
+      if (!program || program === 'ALL') return true;
+      const norm = normalizeProgramType(c.program_type);
+      if (program === 'TEACHER') return isTeacherProgramType(norm);
+      if (program === 'ADMIN') return isAdminProgramType(norm);
+      if (program === 'REPORT') return isReportProgramType(norm);
+      if (program === 'CSKH') return norm === 'KAIWA' || norm === 'JLPT';
+      return norm === program;
     });
 
     const batchId = buildBatchId();
@@ -2387,6 +2777,78 @@ export class SheetBackupService {
       throw new AppError(404, `File backup chưa được tạo cho config #${configId}`);
     }
     return { absPath, fileName: path.basename(absPath) };
+  }
+
+  /**
+   * Dán hàng loạt Link Google Sheet cho các sổ Backup theo cú pháp:
+   *  - `CVHT01 | KAIWA | https://docs.google.com/spreadsheets/d/...`
+   *  - `GV505 | https://docs.google.com/spreadsheets/d/...`
+   *  - `ADMIN_KAIWA | https://docs.google.com/spreadsheets/d/...`
+   */
+  public async bulkPasteBackupLinks(
+    rawText: string,
+    actor: { id: number; roles: string[] }
+  ): Promise<{
+    updatedCount: number;
+    skippedCount: number;
+    items: Array<{ line: string; matchedConfigId: number | null; name: string | null; status: 'UPDATED' | 'NOT_FOUND' | 'INVALID_URL' }>;
+  }> {
+    const { configs } = await this.listConfigs(actor);
+    const lines = String(rawText || '')
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter(Boolean);
+
+    let updatedCount = 0;
+    let skippedCount = 0;
+    const items: Array<{
+      line: string;
+      matchedConfigId: number | null;
+      name: string | null;
+      status: 'UPDATED' | 'NOT_FOUND' | 'INVALID_URL';
+    }> = [];
+
+    for (const line of lines) {
+      const urlMatch = line.match(/https?:\/\/docs\.google\.com\/spreadsheets\/d\/[^\s|,;]+/i);
+      if (!urlMatch) {
+        skippedCount++;
+        items.push({ line, matchedConfigId: null, name: null, status: 'INVALID_URL' });
+        continue;
+      }
+      const url = urlMatch[0].trim();
+      const prefix = line
+        .replace(url, '')
+        .replace(/[|,;\t]+/g, ' ')
+        .trim()
+        .toUpperCase();
+
+      const matched = configs.find((c) => {
+        const pt = String(c.program_type || '').toUpperCase();
+        const staff = String(c.cs_user?.staff_code || '').toUpperCase();
+        if ((isAdminProgramType(pt) || isReportProgramType(pt)) && prefix.includes(pt)) return true;
+        if (prefix.includes(pt) && (!staff || prefix.includes(staff))) return true;
+        if (staff && prefix.includes(staff) && (pt === 'TEACHER' || prefix.includes(pt))) return true;
+        if (prefix === String(c.id)) return true;
+        return false;
+      });
+
+      if (!matched) {
+        skippedCount++;
+        items.push({ line, matchedConfigId: null, name: null, status: 'NOT_FOUND' });
+        continue;
+      }
+
+      await this.updateConfig(matched.id, { target_spreadsheet_url: url });
+      updatedCount++;
+      items.push({
+        line,
+        matchedConfigId: matched.id,
+        name: matched.name,
+        status: 'UPDATED',
+      });
+    }
+
+    return { updatedCount, skippedCount, items };
   }
 
   /* --------------------------- E. Backup History -------------------------- */

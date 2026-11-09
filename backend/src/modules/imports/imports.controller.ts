@@ -492,7 +492,27 @@ export class ImportsController {
       if (isNaN(id)) {
         throw new AppError(400, 'id không hợp lệ');
       }
-      const data = await this.sheetBackupService.updateConfig(id, req.body || {});
+      const user = (req as any).user;
+      const roles: string[] = Array.isArray(user?.roles) ? user.roles : [];
+      const data = await this.sheetBackupService.updateConfig(id, req.body || {}, {
+        actorId: user?.id,
+        actorRoles: roles,
+      });
+      res.status(200).json({ data, meta: null });
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  bulkPasteSheetBackupLinks = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const user = (req as any).user;
+      const actor = {
+        id: user?.id || 1,
+        roles: (user?.roles as string[]) || ['ADMIN'],
+      };
+      const rawText = String(req.body?.raw_text || '');
+      const data = await this.sheetBackupService.bulkPasteBackupLinks(rawText, actor);
       res.status(200).json({ data, meta: null });
     } catch (err) {
       next(err);

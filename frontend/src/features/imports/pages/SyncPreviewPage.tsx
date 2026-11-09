@@ -85,34 +85,56 @@ const buildFallbackPreview = (
   const resolvedProgram =
     cfg?.program_type || (code.toUpperCase().includes('KAIWA') ? 'KAIWA' : 'JLPT');
 
+  const isKaiwaCare = code === 'KAIWA_CARE' || cfg?.code === 'KAIWA_CARE';
+  const defaultSheetName =
+    resolvedFlow === 'STUDENT_MASTER'
+      ? isKaiwaCare
+        ? '1.Chăm sóc'
+        : resolvedProgram === 'JLPT'
+        ? 'Data JLPT_Inhouse'
+        : 'Tổng'
+      : resolvedFlow === 'CSKH_ATTENDANCE'
+      ? resolvedProgram === 'JLPT'
+        ? 'Chấm buổi'
+        : '3.Chấm buổi'
+      : resolvedFlow === 'TEACHER_ATTENDANCE'
+      ? '2026 スケジュール'
+      : resolvedProgram === 'JLPT'
+      ? 'Chuyên cần HV'
+      : '会話 3 - 学習レポート';
+
+  const defaultHeaderRow =
+    resolvedFlow === 'STUDY_REPORT'
+      ? resolvedProgram === 'JLPT'
+        ? 4
+        : 1
+      : isKaiwaCare
+      ? 3
+      : 2;
+
   const configObj: GoogleSheetSyncConfig = cfg || {
     id: 1,
     code,
-    name:
-      resolvedFlow === 'STUDENT_MASTER'
-        ? `File nguồn tổng ${resolvedProgram}`
-        : resolvedFlow === 'CSKH_ATTENDANCE'
-        ? `Điểm danh CVHT ${resolvedProgram}`
-        : resolvedFlow === 'TEACHER_ATTENDANCE'
-        ? `Điểm danh Giáo viên ${resolvedProgram}`
-        : `Báo cáo học tập ${resolvedProgram}`,
+    name: isKaiwaCare
+      ? 'Báo cáo & Chăm sóc Kaiwa (1.Chăm sóc)'
+      : resolvedFlow === 'STUDENT_MASTER'
+      ? `File nguồn tổng ${resolvedProgram}`
+      : resolvedFlow === 'CSKH_ATTENDANCE'
+      ? `Điểm danh CVHT ${resolvedProgram}`
+      : resolvedFlow === 'TEACHER_ATTENDANCE'
+      ? `Điểm danh Giáo viên ${resolvedProgram}`
+      : resolvedProgram === 'JLPT'
+      ? 'Báo cáo học tập JLPT - Chuyên cần HV'
+      : `Báo cáo học tập ${resolvedProgram}`,
     flow_type: resolvedFlow,
     program_type: resolvedProgram,
     source_type: 'GOOGLE_SHEET',
-    sheet_name:
-      resolvedFlow === 'STUDENT_MASTER'
-        ? resolvedProgram === 'JLPT'
-          ? 'Data JLPT_Inhouse'
-          : 'Tổng'
-        : resolvedFlow === 'CSKH_ATTENDANCE'
-        ? resolvedProgram === 'JLPT'
-          ? 'Chấm buổi'
-          : '3.Chấm buổi'
-        : resolvedFlow === 'TEACHER_ATTENDANCE'
-        ? '2026 スケジュール'
-        : 'Báo cáo học tập',
-    header_row: 2,
-    sync_year: syncYear || 2026,
+    sheet_name: defaultSheetName,
+    header_row: defaultHeaderRow,
+    sync_year:
+      resolvedFlow === 'CSKH_ATTENDANCE' || resolvedFlow === 'TEACHER_ATTENDANCE'
+        ? syncYear || 2026
+        : null,
     filter_config: filterConfig || null,
     sync_interval_minutes: 30,
     enabled: true,
@@ -463,7 +485,9 @@ export const SyncPreviewPage: React.FC = () => {
       if (searchQuery.trim()) {
         const q = searchQuery.trim().toLowerCase();
         const matchId = (item.externalId || '').toLowerCase().includes(q);
-        const matchName = (item.fullName || '').toLowerCase().includes(q);
+        const matchName = (item.fullName || item.studentName || '')
+          .toLowerCase()
+          .includes(q);
         const matchClass = (item.classCode || '').toLowerCase().includes(q);
         if (!matchId && !matchName && !matchClass) return false;
       }
@@ -600,6 +624,10 @@ export const SyncPreviewPage: React.FC = () => {
   const flowType: SyncFlowType = cfg.flow_type || 'STUDENT_MASTER';
   const flowMeta = FLOW_LABELS[flowType] || FLOW_LABELS.STUDENT_MASTER;
   const sum = previewData.summary;
+  const isCompactFilterMode =
+    flowType === 'STUDY_REPORT' ||
+    cfg.code === 'KAIWA_CARE' ||
+    (cfg.sheet_name || '').trim() === '1.Chăm sóc';
 
   return (
     <PageContainer>
@@ -640,12 +668,17 @@ export const SyncPreviewPage: React.FC = () => {
               <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500">
                 <span className="inline-flex items-center gap-1 font-medium text-slate-700">
                   <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
-                  Tab đọc: <strong>{cfg.sheet_name}</strong>
+                  Tab đọc: <strong>{cfg.sheet_name}</strong> (Tiêu đề dòng {cfg.header_row || 2})
                 </span>
                 <span>·</span>
                 <span>
                   Bộ lọc đang áp dụng:{' '}
-                  {flowType === 'STUDENT_MASTER' ? (
+                  {cfg.code === 'KAIWA_CARE' ||
+                  (cfg.sheet_name || '').trim() === '1.Chăm sóc' ? (
+                    <strong className="text-slate-800">
+                      Cập nhật Chăm sóc AI..BH theo ID HV khớp
+                    </strong>
+                  ) : flowType === 'STUDENT_MASTER' ? (
                     <strong className="text-slate-800">
                       Trạng thái ({enrollmentStatuses.join(', ') || 'Tất cả'})
                     </strong>
@@ -659,8 +692,10 @@ export const SyncPreviewPage: React.FC = () => {
                     </strong>
                   ) : (
                     <strong className="text-slate-800">
-                      HV: {cfg.target_student_external_id || 'Tự động'} • Lớp:{' '}
-                      {cfg.target_class_code || 'Tất cả'}
+                      {cfg.program_type === 'JLPT' &&
+                      !cfg.target_student_external_id
+                        ? `Khớp hàng loạt Lớp + Tên (${cfg.target_class_code || 'Tất cả lớp'})`
+                        : `HV: ${cfg.target_student_external_id || 'Tự động'} • Lớp: ${cfg.target_class_code || 'Tất cả'}`}
                     </strong>
                   )}
                 </span>
@@ -668,16 +703,18 @@ export const SyncPreviewPage: React.FC = () => {
             </div>
 
             <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setShowQuickFilterEditor((prev) => !prev)}
-                leftIcon={<Filter className="w-3.5 h-3.5 text-blue-600" />}
-              >
-                {showQuickFilterEditor
-                  ? 'Ẩn bộ lọc nhanh'
-                  : 'Chỉnh nhanh bộ lọc'}
-              </Button>
+              {!isCompactFilterMode && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowQuickFilterEditor((prev) => !prev)}
+                  leftIcon={<Filter className="w-3.5 h-3.5 text-blue-600" />}
+                >
+                  {showQuickFilterEditor
+                    ? 'Ẩn bộ lọc nhanh'
+                    : 'Chỉnh nhanh bộ lọc'}
+                </Button>
+              )}
               <Button
                 variant="outline"
                 size="sm"
@@ -690,7 +727,7 @@ export const SyncPreviewPage: React.FC = () => {
           </div>
 
           {/* Quick Filter Bar right on Preview Page */}
-          {showQuickFilterEditor && (
+          {!isCompactFilterMode && showQuickFilterEditor && (
             <div className="pt-3 border-t border-slate-200 bg-slate-50/70 rounded-xl p-3.5 space-y-3 text-xs">
               {(flowType === 'CSKH_ATTENDANCE' ||
                 flowType === 'TEACHER_ATTENDANCE') && (
@@ -979,9 +1016,10 @@ export const SyncPreviewPage: React.FC = () => {
                       className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
                     />
                   </th>
-                  <th className="py-3 px-3 w-24">Dòng Sheet</th>
-                  <th className="py-3 px-3 w-44">Mã HV / Mã Lớp</th>
-                  <th className="py-3 px-3 w-48">Họ tên</th>
+                  <th className="py-3 px-3 w-20">Dòng</th>
+                  <th className="py-3 px-3 w-32">Mã lớp</th>
+                  <th className="py-3 px-3 w-36">Mã HV</th>
+                  <th className="py-3 px-3 w-48">Họ và tên</th>
                   <th className="py-3 px-3 w-40">Phân loại</th>
                   <th className="py-3 pl-3 pr-4">
                     Chi tiết thay đổi (Trước → Sau) &amp; Cảnh báo Validate
@@ -991,7 +1029,7 @@ export const SyncPreviewPage: React.FC = () => {
               <tbody className="divide-y divide-slate-100">
                 {filteredItems.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="py-12 text-center text-slate-500">
+                    <td colSpan={7} className="py-12 text-center text-slate-500">
                       Không có dòng dữ liệu nào trong phân loại này.
                     </td>
                   </tr>
@@ -999,6 +1037,8 @@ export const SyncPreviewPage: React.FC = () => {
                   filteredItems.map((item) => {
                     const isInvalid = item.classification === 'INVALID';
                     const isChecked = selectedKeys.has(item.itemKey);
+                    const displayStudentName =
+                      item.fullName || item.studentName || '—';
 
                     return (
                       <tr
@@ -1021,24 +1061,30 @@ export const SyncPreviewPage: React.FC = () => {
                           />
                         </td>
                         <td className="py-3.5 px-3 align-top font-mono font-semibold text-slate-600">
-                          Dòng #{item.rowNumber}
+                          #{item.rowNumber}
+                        </td>
+                        <td className="py-3.5 px-3 align-top">
+                          {item.classCode ? (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-blue-50 text-blue-800 border border-blue-200 font-mono font-bold text-[11px]">
+                              {item.classCode}
+                            </span>
+                          ) : (
+                            <span className="text-slate-400">—</span>
+                          )}
                         </td>
                         <td className="py-3.5 px-3 align-top">
                           <div className="font-mono font-bold text-slate-900">
-                            {item.externalId}
+                            {item.externalId || '—'}
                           </div>
-                          {item.classCode && (
-                            <div className="text-[11px] text-slate-500 mt-0.5">
-                              Lớp:{' '}
-                              <span className="font-semibold text-slate-700">
-                                {item.classCode}
-                              </span>
+                          {item.packageCode && (
+                            <div className="text-[11px] text-slate-500 mt-0.5 font-mono">
+                              {item.packageCode}
                             </div>
                           )}
                         </td>
                         <td className="py-3.5 px-3 align-top">
                           <div className="font-bold text-slate-900">
-                            {item.fullName}
+                            {displayStudentName}
                           </div>
                           {(item.sourceStatus || item.enrollmentStatus) && (
                             <div className="text-[11px] text-slate-500 mt-0.5">

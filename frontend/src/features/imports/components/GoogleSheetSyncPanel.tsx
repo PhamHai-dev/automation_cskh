@@ -62,8 +62,8 @@ const FLOW_CARDS: Array<{
   },
   {
     key: 'STUDENT_MASTER',
-    title: '1. Dữ liệu học viên',
-    subtitle: 'File nguồn tổng JLPT & Kaiwa',
+    title: '1. Dữ liệu học viên & Chăm sóc',
+    subtitle: 'Nguồn tổng JLPT, Nguồn tổng Kaiwa & 1.Chăm sóc',
     badgeColor: 'bg-violet-50 text-violet-700 border-violet-200',
     activeBorder: 'border-violet-600 bg-violet-600 text-white',
     icon: <Users className="w-4 h-4" />,
@@ -87,7 +87,7 @@ const FLOW_CARDS: Array<{
   {
     key: 'STUDY_REPORT',
     title: '4. Báo cáo học tập',
-    subtitle: 'Báo cáo học tập JLPT & Kaiwa',
+    subtitle: 'Chuyên cần HV JLPT & Báo cáo học tập Kaiwa',
     badgeColor: 'bg-teal-50 text-teal-700 border-teal-200',
     activeBorder: 'border-teal-600 bg-teal-600 text-white',
     icon: <FileText className="w-4 h-4" />,
@@ -111,8 +111,57 @@ const resolveFlowType = (cfg: GoogleSheetSyncConfig): SyncFlowType => {
 
 const isSystemMasterConfig = (cfg: GoogleSheetSyncConfig): boolean => {
   return Boolean(
-    cfg.is_system_default || cfg.code === 'JLPT' || cfg.code === 'KAIWA'
+    cfg.is_system_default ||
+      cfg.code === 'JLPT' ||
+      cfg.code === 'KAIWA' ||
+      cfg.code === 'KAIWA_CARE'
   );
+};
+
+const renderColumnScopeBadge = (cfg: GoogleSheetSyncConfig): React.ReactNode => {
+  const codeUpper = (cfg.code || '').toUpperCase();
+  const sheetTrimmed = (cfg.sheet_name || '').trim();
+  const flow = resolveFlowType(cfg);
+
+  if (
+    codeUpper === 'KAIWA_CARE' ||
+    (flow === 'STUDENT_MASTER' && sheetTrimmed === '1.Chăm sóc')
+  ) {
+    return (
+      <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-fuchsia-50 text-fuchsia-800 border border-fuchsia-200 font-semibold text-[10px]">
+        Chăm sóc AI..BH • Khớp ID
+      </span>
+    );
+  }
+
+  if (
+    codeUpper === 'KAIWA' ||
+    (flow === 'STUDENT_MASTER' &&
+      (cfg.program_type || '').toUpperCase() === 'KAIWA' &&
+      sheetTrimmed === 'Tổng')
+  ) {
+    return (
+      <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-800 border border-indigo-200 font-semibold text-[10px]">
+        Hồ sơ A..AH + BF,BG,BJ,BY
+      </span>
+    );
+  }
+
+  if (
+    codeUpper.includes('JLPT_STUDY_REPORT') ||
+    codeUpper === 'STUDY_REPORT_JLPT_SAMPLE' ||
+    (flow === 'STUDY_REPORT' &&
+      ((cfg.program_type || '').toUpperCase() === 'JLPT' ||
+        sheetTrimmed === 'Chuyên cần HV'))
+  ) {
+    return (
+      <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-teal-50 text-teal-800 border border-teal-200 font-semibold text-[10px]">
+        Chuyên cần HV • Hàng loạt theo Lớp + Tên
+      </span>
+    );
+  }
+
+  return null;
 };
 
 const deriveCvhtCodes = (
@@ -184,8 +233,54 @@ const DEFAULT_CONFIGS: GoogleSheetSyncConfig[] = [
   },
   {
     id: 3,
-    code: 'CSKH_ATTENDANCE_KAIWA',
-    name: 'Điểm danh CVHT - 3.Chấm buổi Kaiwa',
+    code: 'KAIWA_CARE',
+    name: 'Báo cáo & Chăm sóc Kaiwa (1.Chăm sóc)',
+    flow_type: 'STUDENT_MASTER',
+    program_type: 'KAIWA',
+    source_type: 'LOCAL_FILE',
+    spreadsheet_url: '',
+    local_file_path: 'docs/data/import_data/Sheet3_cham_buoi.xlsx',
+    sheet_name: '1.Chăm sóc',
+    setting_sheet_name: null,
+    header_row: 3,
+    is_system_default: true,
+    filter_config: {
+      enrollmentStatuses: ['Đang học', 'Chờ lớp', 'Bảo lưu', 'Tạm nghỉ'],
+    },
+    cvht_mapping: {},
+    default_cs_id: null,
+    sync_interval_minutes: 30,
+    enabled: false,
+    last_status: null,
+    last_synced_at: null,
+    last_summary: null,
+  },
+  {
+    id: 4,
+    code: 'JLPT_CSKH_ATTENDANCE',
+    name: 'Điểm danh CVHT - JLPT',
+    flow_type: 'CSKH_ATTENDANCE',
+    program_type: 'JLPT',
+    source_type: 'LOCAL_FILE',
+    spreadsheet_url: '',
+    local_file_path: 'docs/data/import_data/File nguồn tổng JLPT.xlsx',
+    sheet_name: 'Chấm buổi',
+    header_row: 2,
+    sync_year: 2026,
+    filter_config: {
+      months: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+      enrollmentStatuses: ['Đang học', 'Bảo lưu', 'Chờ lớp'],
+    },
+    sync_interval_minutes: 30,
+    enabled: false,
+    last_status: null,
+    last_synced_at: null,
+    last_summary: null,
+  },
+  {
+    id: 5,
+    code: 'KAIWA_CSKH_ATTENDANCE',
+    name: 'Điểm danh CVHT - Kaiwa',
     flow_type: 'CSKH_ATTENDANCE',
     program_type: 'KAIWA',
     source_type: 'LOCAL_FILE',
@@ -205,9 +300,9 @@ const DEFAULT_CONFIGS: GoogleSheetSyncConfig[] = [
     last_summary: null,
   },
   {
-    id: 4,
-    code: 'TEACHER_ATTENDANCE_JLPT_GV505',
-    name: 'Lịch dạy & Điểm danh Giáo viên JLPT',
+    id: 6,
+    code: 'JLPT_TEACHER_ATTENDANCE',
+    name: 'Điểm danh Giáo viên - JLPT (GV505)',
     flow_type: 'TEACHER_ATTENDANCE',
     program_type: 'JLPT',
     source_type: 'LOCAL_FILE',
@@ -218,7 +313,7 @@ const DEFAULT_CONFIGS: GoogleSheetSyncConfig[] = [
     sync_year: 2026,
     target_teacher_code: 'GV505',
     filter_config: {
-      months: [10, 11, 12],
+      months: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
       enrollmentStatuses: ['Đang học'],
       teacherCodes: ['GV505'],
     },
@@ -229,19 +324,23 @@ const DEFAULT_CONFIGS: GoogleSheetSyncConfig[] = [
     last_summary: null,
   },
   {
-    id: 5,
-    code: 'STUDY_REPORT_KAIWA_SAMPLE',
-    name: 'Báo cáo học tập Kaiwa - Đỗ Phú Sĩ',
-    flow_type: 'STUDY_REPORT',
+    id: 7,
+    code: 'KAIWA_TEACHER_ATTENDANCE',
+    name: 'Điểm danh Giáo viên - Kaiwa (GV505)',
+    flow_type: 'TEACHER_ATTENDANCE',
     program_type: 'KAIWA',
     source_type: 'LOCAL_FILE',
     spreadsheet_url: '',
-    local_file_path: 'docs/data/import_data/Format báo cáo học tập kaiwa.xlsx',
-    sheet_name: 'Báo cáo học tập',
+    local_file_path: 'docs/data/import_data/giao_vien_kaiwa.xlsx',
+    sheet_name: '2026 スケジュール',
     header_row: 2,
-    target_student_external_id: '427901798',
-    target_student_name: 'Đỗ Phú Sĩ',
-    target_class_code: 'BS8_3002',
+    sync_year: 2026,
+    target_teacher_code: 'GV505',
+    filter_config: {
+      months: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+      enrollmentStatuses: ['Đang học'],
+      teacherCodes: ['GV505'],
+    },
     sync_interval_minutes: 30,
     enabled: false,
     last_status: null,
@@ -249,17 +348,36 @@ const DEFAULT_CONFIGS: GoogleSheetSyncConfig[] = [
     last_summary: null,
   },
   {
-    id: 6,
-    code: 'STUDY_REPORT_JLPT_SAMPLE',
-    name: 'Báo cáo học tập JLPT - Lớp N3',
+    id: 8,
+    code: 'JLPT_STUDY_REPORT_SAMPLE',
+    name: 'Báo cáo học tập JLPT - Chuyên cần HV',
     flow_type: 'STUDY_REPORT',
     program_type: 'JLPT',
     source_type: 'LOCAL_FILE',
     spreadsheet_url: '',
     local_file_path: 'docs/data/import_data/Format báo cáo học tập JLPT.xlsx',
-    sheet_name: 'Sheet1',
+    sheet_name: 'Chuyên cần HV',
+    header_row: 4,
+    sync_interval_minutes: 30,
+    enabled: false,
+    last_status: null,
+    last_synced_at: null,
+    last_summary: null,
+  },
+  {
+    id: 9,
+    code: 'KAIWA_STUDY_REPORT_SAMPLE',
+    name: 'Báo cáo học tập Kaiwa - Đỗ Phú Sĩ',
+    flow_type: 'STUDY_REPORT',
+    program_type: 'KAIWA',
+    source_type: 'LOCAL_FILE',
+    spreadsheet_url: '',
+    local_file_path: 'docs/data/import_data/Format báo cáo học tập kaiwa.xlsx',
+    sheet_name: '会話 3 - 学習レポート',
     header_row: 1,
-    target_class_code: 'BS8_3002',
+    target_student_external_id: '427901798',
+    target_student_name: 'Đỗ Phú Sĩ',
+    target_class_code: 'SKAI31030JP',
     sync_interval_minutes: 30,
     enabled: false,
     last_status: null,
@@ -464,7 +582,7 @@ export const GoogleSheetSyncPanel: React.FC = () => {
       let mergedConfigs: GoogleSheetSyncConfig[] =
         apiConfigs.length > 0 ? [...apiConfigs] : [...DEFAULT_CONFIGS];
 
-      if (apiConfigs.length > 0 && apiConfigs.length <= 2) {
+      if (apiConfigs.length > 0 && apiConfigs.length <= 3) {
         const existingCodes = new Set(apiConfigs.map((c) => c.code));
         DEFAULT_CONFIGS.forEach((def) => {
           if (!existingCodes.has(def.code)) {
@@ -761,7 +879,7 @@ export const GoogleSheetSyncPanel: React.FC = () => {
 
   const handleDeleteConfig = async (cfg: GoogleSheetSyncConfig) => {
     if (isSystemMasterConfig(cfg)) {
-      toast.error('Không thể xóa 2 nguồn tổng mặc định của hệ thống');
+      toast.error('Không thể xóa cấu hình nguồn mặc định của hệ thống');
       return;
     }
     try {
@@ -924,7 +1042,11 @@ export const GoogleSheetSyncPanel: React.FC = () => {
     const fc = cfg.filter_config;
 
     if (flowType === 'STUDENT_MASTER') {
-      const srcTags = fc?.sourceStatuses?.length
+      const isCareOnly =
+        cfg.code === 'KAIWA_CARE' || (cfg.sheet_name || '').trim() === '1.Chăm sóc';
+      const srcTags = isCareOnly
+        ? 'Chỉ cập nhật HV khớp ID'
+        : fc?.sourceStatuses?.length
         ? fc.sourceStatuses.join(', ')
         : cfg.program_type === 'JLPT'
         ? 'Active, Deactive, HV Mới, Đặt cọc'
@@ -1378,8 +1500,11 @@ export const GoogleSheetSyncPanel: React.FC = () => {
 
                           {/* Cột 2: Tên nguồn & Kết nối */}
                           <td className="py-3.5 px-3 align-middle">
-                            <div className="font-bold text-slate-900">
-                              {cfg.name}
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <span className="font-bold text-slate-900">
+                                {cfg.name}
+                              </span>
+                              {renderColumnScopeBadge(cfg)}
                             </div>
 
                             {/* Target badges if present */}

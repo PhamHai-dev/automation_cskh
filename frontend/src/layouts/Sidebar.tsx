@@ -245,18 +245,38 @@ export const Sidebar: React.FC<SidebarProps> = ({
           ],
         },
         {
-          name: 'Backup & Xuất nhập',
+          name: 'Backup dữ liệu',
           path: '/data-backup',
-          activePaths: ['/data-backup', '/imports'],
+          activePaths: ['/data-backup'],
           icon: <FileSpreadsheet className="w-5 h-5 shrink-0" />,
-          allowedRoles: ['ADMIN', 'MANAGE', 'CS'],
+          allowedRoles: ['ADMIN', 'MANAGE', 'CS', 'TEACHER'],
           end: true,
           subItems: [
             {
-              name: 'Backup sổ CSKH & GV',
-              tab: 'sheet-backup',
+              name: 'Danh sách nguồn Backup',
+              tab: 'configs',
+              allowedRoles: ['ADMIN', 'MANAGE', 'CS', 'TEACHER'],
+            },
+            {
+              name: 'Lịch sử Backup',
+              tab: 'history',
+              allowedRoles: ['ADMIN', 'MANAGE', 'CS', 'TEACHER'],
+            },
+            {
+              name: 'Cấu hình Cột & Kết nối',
+              tab: 'connection',
               allowedRoles: ['ADMIN', 'MANAGE', 'CS'],
             },
+          ],
+        },
+        {
+          name: 'Nhập / Xuất Excel',
+          path: '/imports',
+          activePaths: ['/imports'],
+          icon: <FileText className="w-5 h-5 shrink-0" />,
+          allowedRoles: ['ADMIN', 'MANAGE', 'CS'],
+          end: true,
+          subItems: [
             {
               name: 'Upload Hồ sơ',
               tab: 'wizard',

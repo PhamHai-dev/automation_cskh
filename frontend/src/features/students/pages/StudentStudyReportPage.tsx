@@ -13,13 +13,20 @@ import { Button } from '../../../components/ui/Button';
 import { Select } from '../../../components/ui/Select';
 import { useToast } from '../../../components/ui/Toast';
 import { useAuth } from '../../../contexts/AuthContext';
-import { JlptChuyenCanTable } from './JlptAttendanceReportPage';
 import {
+   JlptChuyenCanTable,
+  renderExamWarningBadge,
+} from './JlptAttendanceReportPage';
+import {
+  AlertTriangle,
   ArrowLeft,
-  Save,
+  Award,
+  CalendarCheck,
   CheckCircle2,
-  Printer,
+  ClipboardList,
   Lock,
+  Printer,
+  Save,
 } from 'lucide-react';
 
 export interface StageBlockData {
@@ -919,11 +926,286 @@ export const StudentStudyReportPage: React.FC = () => {
           Vui lòng chọn gói ghi danh
         </div>
       ) : templateMode === 'JLPT' ? (
-        <div className="bg-surface rounded-2xl border border-border/80 shadow-soft overflow-hidden mb-10">
-          <JlptChuyenCanTable
-            rows={[fallbackJlptRow]}
-            onUpdateRow={handleInlineUpdateJlptRow}
-          />
+        <div className="space-y-5 mb-10">
+          {/* Tổng quan Chuyên cần & Lộ trình Kiểm tra JLPT */}
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wider">
+                Tổng quan Chuyên cần &amp; Lộ trình Kiểm tra JLPT
+              </h2>
+              <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                {fallbackJlptRow.class_code && (
+                  <span className="px-2.5 py-0.5 rounded-md bg-blue-50 text-blue-800 border border-blue-200 font-mono font-bold">
+                    Lớp: {fallbackJlptRow.class_code}
+                  </span>
+                )}
+                {fallbackJlptRow.cvht_code && (
+                  <span className="px-2.5 py-0.5 rounded-md bg-violet-50 text-violet-800 border border-violet-200 font-semibold">
+                    CVHT: {fallbackJlptRow.cvht_code}
+                  </span>
+                )}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+              {/* Thẻ 1: A. CHUYÊN CẦN */}
+              {(() => {
+                const rawRate = fallbackJlptRow.attendance_rate;
+                const hasRate =
+                  rawRate !== null &&
+                  rawRate !== undefined &&
+                  !Number.isNaN(Number(rawRate));
+                const numRate = hasRate ? Number(rawRate) : 0;
+                const pct = hasRate
+                  ? Math.round(numRate <= 1 ? numRate * 100 : numRate)
+                  : null;
+                const clampedPct =
+                  pct !== null ? Math.min(100, Math.max(0, pct)) : 0;
+
+                const barColorClass =
+                  pct === null
+                    ? 'bg-slate-300'
+                    : pct >= 85
+                    ? 'bg-emerald-500'
+                    : pct >= 70
+                    ? 'bg-amber-500'
+                    : 'bg-rose-500';
+
+                const badgeColorClass =
+                  pct === null
+                    ? 'bg-slate-100 text-slate-600 border-slate-200'
+                    : pct >= 85
+                    ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                    : pct >= 70
+                    ? 'bg-amber-50 text-amber-800 border-amber-200'
+                    : 'bg-rose-50 text-rose-800 border-rose-200';
+
+                return (
+                  <div className="bg-white rounded-2xl border border-slate-200/90 p-4 shadow-xs flex flex-col justify-between gap-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-emerald-700">
+                        <CalendarCheck className="w-4 h-4 text-emerald-600" />
+                        <span>A. Chuyên cần</span>
+                      </span>
+                      <span
+                        className={`px-2 py-0.5 rounded-full text-xs font-extrabold border ${badgeColorClass}`}
+                      >
+                        {pct !== null ? `${pct}%` : '—'}
+                      </span>
+                    </div>
+
+                    <div>
+                      <div className="text-[11px] text-slate-500">
+                        Số buổi tham gia / Tổng đã điểm danh
+                      </div>
+                      <div className="text-xl font-extrabold text-slate-900 mt-0.5">
+                        {fallbackJlptRow.attended_sessions ?? 0}{' '}
+                        <span className="text-sm font-semibold text-slate-400">
+                          / {fallbackJlptRow.total_marked_sessions ?? 0} buổi
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="space-y-1">
+                      <div className="w-full h-2 rounded-full bg-slate-100 overflow-hidden">
+                        <div
+                          className={`h-full rounded-full transition-all duration-300 ${barColorClass}`}
+                          style={{ width: `${clampedPct}%` }}
+                        />
+                      </div>
+                      <div className="flex items-center justify-between text-[10px] text-slate-400">
+                        <span>Mốc chuẩn: ≥ 85%</span>
+                        <span>
+                          {pct === null
+                            ? 'Chưa chấm buổi'
+                            : pct >= 85
+                            ? 'Đạt yêu cầu'
+                            : pct >= 70
+                            ? 'Cần lưu ý'
+                            : 'Báo động chuyên cần'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Thẻ 2: B. BÀI TẬP VỀ NHÀ */}
+              <div className="bg-white rounded-2xl border border-slate-200/90 p-4 shadow-xs flex flex-col justify-between gap-3">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-blue-700">
+                    <ClipboardList className="w-4 h-4 text-blue-600" />
+                    <span>B. Bài tập về nhà</span>
+                  </span>
+                  <span className="px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 border border-blue-200 text-[11px] font-bold">
+                    BTVN &amp; Điểm KT
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3 pt-1">
+                  <div className="rounded-xl bg-slate-50 border border-slate-200/70 p-2.5">
+                    <div className="text-[11px] text-slate-500">
+                      Điểm KT trung bình
+                    </div>
+                    <div className="text-lg font-extrabold text-blue-700 mt-0.5">
+                      {fallbackJlptRow.average_exam_score !== null &&
+                      fallbackJlptRow.average_exam_score !== undefined
+                        ? fallbackJlptRow.average_exam_score
+                        : '—'}
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl bg-slate-50 border border-slate-200/70 p-2.5">
+                    <div className="text-[11px] text-slate-500">
+                      Số buổi đã làm bài
+                    </div>
+                    <div className="text-lg font-extrabold text-slate-900 mt-0.5">
+                      {fallbackJlptRow.homework_completed_sessions ?? 0}{' '}
+                      <span className="text-xs font-semibold text-slate-400">
+                        buổi
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="text-[11px] text-slate-500">
+                  Trạng thái học:{' '}
+                  <strong className="text-slate-800">
+                    {fallbackJlptRow.status_label || fallbackJlptRow.status || 'Đang học'}
+                  </strong>
+                </div>
+              </div>
+
+              {/* Thẻ 3: C. CẢNH BÁO LIÊN TIẾP */}
+              <div className="bg-white rounded-2xl border border-slate-200/90 p-4 shadow-xs flex flex-col justify-between gap-3">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-amber-700">
+                    <AlertTriangle className="w-4 h-4 text-amber-600" />
+                    <span>C. Cảnh báo liên tiếp</span>
+                  </span>
+                </div>
+
+                <div className="space-y-2.5 text-xs">
+                  <div className="rounded-xl bg-slate-50 border border-slate-200/70 p-2.5 space-y-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-slate-600">
+                        Vắng liên tiếp tối đa:
+                      </span>
+                      <strong className="text-sm font-extrabold text-slate-900">
+                        {fallbackJlptRow.max_consecutive_absent ?? 0} buổi
+                      </strong>
+                    </div>
+                    {fallbackJlptRow.absent_warning ? (
+                      <div className="inline-flex items-center px-2 py-0.5 rounded-md bg-rose-50 text-rose-800 border border-rose-200 text-[11px] font-semibold">
+                        {fallbackJlptRow.absent_warning}
+                      </div>
+                    ) : (
+                      <div className="text-[11px] text-emerald-700 font-medium">
+                        Ổn định (Không có cảnh báo vắng)
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="rounded-xl bg-slate-50 border border-slate-200/70 p-2.5 space-y-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-slate-600">
+                        Không BTVN liên tiếp:
+                      </span>
+                      <strong className="text-sm font-extrabold text-slate-900">
+                        {fallbackJlptRow.max_consecutive_no_homework ?? 0} buổi
+                      </strong>
+                    </div>
+                    {fallbackJlptRow.no_homework_warning ? (
+                      <div className="inline-flex items-center px-2 py-0.5 rounded-md bg-amber-50 text-amber-900 border border-amber-200 text-[11px] font-semibold">
+                        {fallbackJlptRow.no_homework_warning}
+                      </div>
+                    ) : (
+                      <div className="text-[11px] text-emerald-700 font-medium">
+                        Đầy đủ BTVN
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Thẻ 4: Lộ trình Kiểm tra (KT gần nhất & KT tiếp theo) */}
+              <div className="bg-white rounded-2xl border border-slate-200/90 p-4 shadow-xs flex flex-col justify-between gap-3">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-violet-700">
+                    <Award className="w-4 h-4 text-violet-600" />
+                    <span>Lộ trình Kiểm tra</span>
+                  </span>
+                  <span className="px-2 py-0.5 rounded-md bg-violet-50 text-violet-800 border border-violet-200 font-mono font-bold text-[11px]">
+                    Khóa: {fallbackJlptRow.course_track || '—'}
+                  </span>
+                </div>
+
+                <div className="space-y-2 text-xs">
+                  <div className="rounded-xl bg-slate-50 border border-slate-200/70 p-2">
+                    <div className="text-[11px] text-slate-500">KT gần nhất</div>
+                    {fallbackJlptRow.last_exam_name ? (
+                      <div className="font-bold text-slate-900 mt-0.5">
+                        {fallbackJlptRow.last_exam_name}
+                        {fallbackJlptRow.last_exam_session !== null &&
+                          fallbackJlptRow.last_exam_session !== undefined && (
+                            <span className="font-normal text-slate-600">
+                              {' '}
+                              • Buổi {fallbackJlptRow.last_exam_session}
+                            </span>
+                          )}
+                        {fallbackJlptRow.sessions_since_last_exam !== null &&
+                          fallbackJlptRow.sessions_since_last_exam !==
+                            undefined && (
+                            <span className="block text-[11px] font-normal text-slate-500">
+                              Cách đây {fallbackJlptRow.sessions_since_last_exam} buổi
+                            </span>
+                          )}
+                      </div>
+                    ) : (
+                      <div className="text-slate-400 mt-0.5">Chưa có bài KT</div>
+                    )}
+                  </div>
+
+                  <div className="rounded-xl bg-slate-50 border border-slate-200/70 p-2">
+                    <div className="text-[11px] text-slate-500">KT tiếp theo</div>
+                    {fallbackJlptRow.next_exam_name ? (
+                      <div className="font-bold text-slate-900 mt-0.5">
+                        {fallbackJlptRow.next_exam_name}
+                        {fallbackJlptRow.next_exam_session !== null &&
+                          fallbackJlptRow.next_exam_session !== undefined && (
+                            <span className="font-normal text-slate-600">
+                              {' '}
+                              • Buổi {fallbackJlptRow.next_exam_session}
+                            </span>
+                          )}
+                        {fallbackJlptRow.sessions_until_next_exam !== null &&
+                          fallbackJlptRow.sessions_until_next_exam !==
+                            undefined && (
+                            <span className="block text-[11px] font-semibold text-blue-700">
+                              Còn {fallbackJlptRow.sessions_until_next_exam} buổi nữa
+                            </span>
+                          )}
+                      </div>
+                    ) : (
+                      <div className="text-slate-400 mt-0.5">Đã hoàn tất lộ trình KT</div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="pt-0.5">
+                  {renderExamWarningBadge(fallbackJlptRow.exam_schedule_warning)}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Bảng Chuyên cần HV 22 cột để chỉnh sửa trực tiếp (inline edit) */}
+          <div className="bg-surface rounded-2xl border border-border/80 shadow-soft overflow-hidden">
+            <JlptChuyenCanTable
+              rows={[fallbackJlptRow]}
+              onUpdateRow={handleInlineUpdateJlptRow}
+            />
+          </div>
         </div>
       ) : (
         /* MẪU BÁO CÁO HỌC TẬP KAIWA (Giữ nguyên 100%) */

@@ -16,6 +16,8 @@ import {
   AlertTriangle,
   ArrowLeft,
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
   Clock,
   RefreshCw,
   RotateCcw,
@@ -225,6 +227,19 @@ export const SyncHistoryDetailPage: React.FC = () => {
   const [selectedChangeIds, setSelectedChangeIds] = useState<Set<number>>(
     new Set()
   );
+  const [expandedRowIds, setExpandedRowIds] = useState<Set<number>>(new Set());
+
+  const toggleExpandRow = (rowId: number) => {
+    setExpandedRowIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(rowId)) {
+        next.delete(rowId);
+      } else {
+        next.add(rowId);
+      }
+      return next;
+    });
+  };
 
   // Conflict Modal state when rolling back modified records
   const [conflictModalOpen, setConflictModalOpen] = useState(false);
@@ -456,6 +471,11 @@ export const SyncHistoryDetailPage: React.FC = () => {
 
   const { run, summary } = detail;
   const flowMeta = FLOW_LABELS[run.flowType] || FLOW_LABELS.STUDENT_MASTER;
+  const conflictCount =
+    summary.conflictCount ??
+    detail.items.filter(
+      (i) => i.action === 'CONFLICT' || i.status === 'CONFLICT_MODIFIED'
+    ).length;
 
   return (
     <PageContainer>
@@ -551,11 +571,11 @@ export const SyncHistoryDetailPage: React.FC = () => {
           </div>
         </div>
 
-        {/* 2. Khu vực Thống Kê (5 Summary Cards) */}
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+        {/* 2. Khu vực Thống Kê (6 KPI Summary Cards) */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
           <div className="bg-white rounded-2xl border border-slate-200 p-4">
             <div className="text-[11px] font-semibold text-slate-500">
-              Tổng số dòng quét
+              Tổng quét
             </div>
             <div className="text-xl font-extrabold text-slate-900 mt-1">
               {summary.totalRowsScanned}
@@ -564,7 +584,7 @@ export const SyncHistoryDetailPage: React.FC = () => {
 
           <div className="bg-emerald-50/70 rounded-2xl border border-emerald-200 p-4">
             <div className="text-[11px] font-semibold text-emerald-700">
-              Đã thêm mới
+              Thêm mới
             </div>
             <div className="text-xl font-extrabold text-emerald-800 mt-1">
               +{summary.createdCount}
@@ -573,7 +593,7 @@ export const SyncHistoryDetailPage: React.FC = () => {
 
           <div className="bg-blue-50/70 rounded-2xl border border-blue-200 p-4">
             <div className="text-[11px] font-semibold text-blue-700">
-              Đã cập nhật
+              Cập nhật
             </div>
             <div className="text-xl font-extrabold text-blue-800 mt-1">
               ~{summary.updatedCount}
@@ -582,16 +602,25 @@ export const SyncHistoryDetailPage: React.FC = () => {
 
           <div className="bg-amber-50/70 rounded-2xl border border-amber-200 p-4">
             <div className="text-[11px] font-semibold text-amber-700">
-              Lỗi / Bỏ qua
+              Xung đột
             </div>
             <div className="text-xl font-extrabold text-amber-800 mt-1">
+              {conflictCount}
+            </div>
+          </div>
+
+          <div className="bg-rose-50/70 rounded-2xl border border-rose-200 p-4">
+            <div className="text-[11px] font-semibold text-rose-700">
+              Lỗi / Bỏ qua
+            </div>
+            <div className="text-xl font-extrabold text-rose-800 mt-1">
               {summary.failedOrSkippedCount}
             </div>
           </div>
 
           <div className="bg-slate-100 rounded-2xl border border-slate-200 p-4">
             <div className="text-[11px] font-semibold text-slate-600">
-              Đã hủy thay đổi (Rolled back)
+              Đã hoàn tác
             </div>
             <div className="text-xl font-extrabold text-slate-800 mt-1">
               {summary.rolledBackCount}
@@ -702,6 +731,14 @@ export const SyncHistoryDetailPage: React.FC = () => {
                   filteredItems.map((item) => {
                     const isRolledBack = item.status === 'ROLLED_BACK';
                     const isChecked = selectedChangeIds.has(item.id);
+                    const isExpanded = expandedRowIds.has(item.id);
+                    const visibleDiffs = isExpanded
+                      ? item.fieldDiffs
+                      : item.fieldDiffs.slice(0, 2);
+                    const hiddenDiffCount = Math.max(
+                      0,
+                      item.fieldDiffs.length - visibleDiffs.length
+                    );
 
                     return (
                       <tr
@@ -755,7 +792,7 @@ export const SyncHistoryDetailPage: React.FC = () => {
                           )}
                         </td>
                         <td className="py-3.5 px-3 align-top space-y-1.5">
-                          {item.fieldDiffs.map((diff, idx) => (
+                          {visibleDiffs.map((diff, idx) => (
                             <div
                               key={idx}
                               className="flex flex-wrap items-center gap-1.5 text-xs"
@@ -776,6 +813,28 @@ export const SyncHistoryDetailPage: React.FC = () => {
                               </span>
                             </div>
                           ))}
+
+                          {item.fieldDiffs.length > 2 && (
+                            <button
+                              type="button"
+                              onClick={() => toggleExpandRow(item.id)}
+                              className="inline-flex items-center gap-1 text-[11px] font-semibold text-blue-600 hover:underline cursor-pointer"
+                            >
+                              {isExpanded ? (
+                                <>
+                                  <ChevronUp className="w-3.5 h-3.5" />
+                                  <span>Thu gọn chi tiết</span>
+                                </>
+                              ) : (
+                                <>
+                                  <ChevronDown className="w-3.5 h-3.5" />
+                                  <span>
+                                    Mở rộng xem thêm {hiddenDiffCount} trường thay đổi
+                                  </span>
+                                </>
+                              )}
+                            </button>
+                          )}
 
                           {item.conflictReason && (
                             <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-[11px] font-medium">

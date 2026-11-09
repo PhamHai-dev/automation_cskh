@@ -2,6 +2,7 @@ import ExcelJS from 'exceljs';
 import { AttendanceStatus, CareLogOutcome, ClassModelType, EnrollmentStatus } from '@prisma/client';
 import { classifyClassModel } from './model-mapper';
 import { detectJlptMonthBlocks } from './attendance-sheet.util';
+import { cleanJlptClassCode } from '../students/jlpt-attendance-report.util';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const JSZip = require('jszip');
@@ -163,6 +164,8 @@ export interface NormalizedSheetRow {
   accountCreatedAt?: string | null;
   careLogs: NormalizedCareLogItem[];
   programMetadata: Record<string, any>;
+  isKaiwaMasterOnly?: boolean;
+  isKaiwaCareOnly?: boolean;
 }
 
 /**
@@ -971,6 +974,139 @@ export function parseKaiwaSheetRows(
       externalId = `KAIWA_ROW_${r}`;
     }
 
+    const packageCode = (cellText(row.getCell(11)) || 'KAIWA_DEFAULT').trim();
+
+    if (isChamSocLayout) {
+      // '1.Chăm sóc': Read identification cols A(1), E(5), K(11) and care/report cols AI..BH (35..60)
+      const rawAttPrev = extractCellValue(row.getCell(35).value);
+      const rawAttPrevText =
+        rawAttPrev !== null &&
+        rawAttPrev !== undefined &&
+        String(rawAttPrev).trim() !== '' &&
+        String(rawAttPrev).trim() !== '-'
+          ? String(rawAttPrev).trim()
+          : null;
+      const attendedPreviousYears =
+        rawAttPrevText !== null && !Number.isNaN(Number(rawAttPrevText))
+          ? Math.round(Number(rawAttPrevText))
+          : 0;
+
+      const rawAttended = extractCellValue(row.getCell(36).value);
+      const totalAttended =
+        rawAttended !== null &&
+        rawAttended !== undefined &&
+        rawAttended !== '' &&
+        !Number.isNaN(Number(rawAttended))
+          ? Math.round(Number(rawAttended))
+          : null;
+
+      const studyReportUrl = extractCellHyperlink(row.getCell(37)) || null;
+      const exchangeInfo = cellText(row.getCell(38)) || null;
+      const callbackNote = cellText(row.getCell(39)) || null;
+      const hotIssueNote = cellText(row.getCell(40)) || null;
+
+      // Care logs: Col 41..55 -> 1, 3, 10, 15, 20, 25, 29, 30, 35, 45, 55, 59, 60, 89, 90
+      const careLogs: NormalizedCareLogItem[] = [];
+      const careColumns: Array<{ col: number; session: number }> = [
+        { col: 41, session: 1 },
+        { col: 42, session: 3 },
+        { col: 43, session: 10 },
+        { col: 44, session: 15 },
+        { col: 45, session: 20 },
+        { col: 46, session: 25 },
+        { col: 47, session: 29 },
+        { col: 48, session: 30 },
+        { col: 49, session: 35 },
+        { col: 50, session: 45 },
+        { col: 51, session: 55 },
+        { col: 52, session: 59 },
+        { col: 53, session: 60 },
+        { col: 54, session: 89 },
+        { col: 55, session: 90 },
+      ];
+      for (const cc of careColumns) {
+        const content = cellText(row.getCell(cc.col));
+        if (content && content !== '-') {
+          careLogs.push({
+            after_session_number: cc.session,
+            content,
+            outcome: inferCareLogOutcome(content),
+          });
+        }
+      }
+
+      const postCourseCare = cellText(row.getCell(56)) || null;
+      const handedOverAt = formatIsoDateOnly(parseSheetDate(row.getCell(58).value));
+      const accountCreatedAt = formatIsoDateOnly(parseSheetDate(row.getCell(60).value));
+
+      const programMetadata: Record<string, any> = {};
+      if (rawAttPrevText !== null) {
+        programMetadata.attended_previous_years_raw = rawAttPrevText;
+      }
+
+      const baseKey = `KAIWA_CARE::${externalId}::${packageCode}::r${r}`;
+      const prevCount = syncKeyCounter.get(baseKey) || 0;
+      syncKeyCounter.set(baseKey, prevCount + 1);
+      const syncKey = prevCount === 0 ? baseKey : `${baseKey}#${prevCount + 1}`;
+
+      results.push({
+        rowNumber: r,
+        syncKey,
+        programType: 'KAIWA',
+        externalId,
+        fullName: fullName || `Học viên ${externalId}`,
+        gender: null,
+        phone: null,
+        email: null,
+        dateOfBirth: null,
+        occupation: null,
+        saleName: null,
+        studentSourceStatus: null,
+        rawStatusText: null,
+        paidAt: null,
+        courseContent: null,
+        paymentStatus: null,
+        packageCode,
+        courseTeacherType: null,
+        level: null,
+        totalSessions: 30,
+        totalAttended,
+        remainingSessions: null,
+        endHoldWeek: null,
+        endHoldYear: null,
+        handoverMonth: null,
+        renewalDeadline: null,
+        attendedPreviousYears,
+        classModel: null,
+        salesNote: null,
+        cvhtCode: null,
+        startDate: null,
+        endDate: null,
+        status: EnrollmentStatus.STUDYING,
+        startTime: null,
+        schedulePattern: null,
+        durationMinutes: null,
+        teacherName: null,
+        teacherCode: null,
+        classCode: null,
+        className: null,
+        exchangeInfo,
+        callbackNote,
+        studyReportUrl,
+        hotIssueNote,
+        postCourseCare,
+        handedOverAt,
+        accountCreatedAt,
+        careLogs,
+        programMetadata,
+        isKaiwaMasterOnly: false,
+        isKaiwaCareOnly: true,
+      });
+      continue;
+    }
+
+    // 'Tổng' (isChamSocLayout === false): Only read cols A..AH (1..34) and BF(58), BG(59), BJ(62), BY(77)
+    // Do NOT read AI..BD (35..56)
     const paidAt = formatIsoDateOnly(parseSheetDate(row.getCell(2).value));
     const saleName = cellText(row.getCell(3)) || null;
     const studentSourceStatus = cellText(row.getCell(4)) || null;
@@ -988,7 +1124,6 @@ export function parseKaiwaSheetRows(
       : null;
 
     const paymentStatus = cellText(row.getCell(10)) || null;
-    const packageCode = (cellText(row.getCell(11)) || 'KAIWA_DEFAULT').trim();
     const courseTeacherType = cellText(row.getCell(12)) || null;
     const level = cellText(row.getCell(13)) || null;
 
@@ -1014,7 +1149,7 @@ export function parseKaiwaSheetRows(
 
     const startTime = extractStartTime(row.getCell(24).value);
     const sched1 = extractSchedulePattern(row.getCell(25).value);
-    const schedFallback = !isChamSocLayout ? extractSchedulePattern(row.getCell(31).value) : null;
+    const schedFallback = extractSchedulePattern(row.getCell(31).value);
     const schedulePattern = sched1 || schedFallback || null;
 
     const rawDur = extractCellValue(row.getCell(26).value);
@@ -1024,95 +1159,20 @@ export function parseKaiwaSheetRows(
       durationMinutes = durNum > 0 && durNum <= 5 ? Math.round(durNum * 60) : Math.round(durNum);
     }
 
-
     const teacherName = cellText(row.getCell(32)) || null;
     const teacherCode = cellText(row.getCell(33)) || teacherName || null;
     const className = cleanClassIdentifier(cellText(row.getCell(34)));
     const status = mapEnrollmentStatus(rawStatus, Boolean(className));
 
-    // Kaiwa: col 36 (AJ) is always total attended; col 35 (AI) is preserved both as numeric prior-year count (when numeric) and raw text/value.
-    const rawAttended = extractCellValue(row.getCell(36).value);
-    const totalAttended = rawAttended !== null && rawAttended !== undefined && rawAttended !== '' && !Number.isNaN(Number(rawAttended))
-      ? Math.round(Number(rawAttended))
-      : null;
-    const rawAttPrev = extractCellValue(row.getCell(35).value);
-    const rawAttPrevText = rawAttPrev !== null && rawAttPrev !== undefined && String(rawAttPrev).trim() !== '' && String(rawAttPrev).trim() !== '-'
-      ? String(rawAttPrev).trim()
-      : null;
-    const attendedPreviousYears = rawAttPrevText !== null && !Number.isNaN(Number(rawAttPrevText))
-      ? Math.round(Number(rawAttPrevText))
-      : 0;
-
-    // In 'Tổng': Col 37 = Thông tin trao đổi với HV, Col 38 = Lịch hẹn gọi, Col 39 = Báo cáo học tập
-    // In '1.Chăm sóc': Col 37 = Báo cáo học tập, Col 38 = Thông tin trao đổi với HV, Col 39 = Lịch hẹn gọi
-    const exchangeInfo = cellText(row.getCell(isChamSocLayout ? 38 : 37)) || null;
-    const callbackNote = cellText(row.getCell(isChamSocLayout ? 39 : 38)) || null;
-    const studyReportUrl =
-      extractCellHyperlink(row.getCell(isChamSocLayout ? 37 : 39)) ||
-      extractCellHyperlink(row.getCell(isChamSocLayout ? 39 : 37)) ||
-      null;
-    const hotIssueNote = cellText(row.getCell(40)) || null;
-
-    // Care logs:
-    // In 'Tổng': Col 41..47 -> 1, 3, 10, 15, 20, 25, 27
-    // In '1.Chăm sóc': Col 41..55 -> 1, 3, 10, 15, 20, 25, 29, 30, 35, 45, 55, 59, 60, 89, 90
-    const careLogs: NormalizedCareLogItem[] = [];
-    const careColumns: Array<{ col: number; session: number }> = isChamSocLayout
-      ? [
-          { col: 41, session: 1 },
-          { col: 42, session: 3 },
-          { col: 43, session: 10 },
-          { col: 44, session: 15 },
-          { col: 45, session: 20 },
-          { col: 46, session: 25 },
-          { col: 47, session: 29 },
-          { col: 48, session: 30 },
-          { col: 49, session: 35 },
-          { col: 50, session: 45 },
-          { col: 51, session: 55 },
-          { col: 52, session: 59 },
-          { col: 53, session: 60 },
-          { col: 54, session: 89 },
-          { col: 55, session: 90 },
-        ]
-      : [
-          { col: 41, session: 1 },
-          { col: 42, session: 3 },
-          { col: 43, session: 10 },
-          { col: 44, session: 15 },
-          { col: 45, session: 20 },
-          { col: 46, session: 25 },
-          { col: 47, session: 27 },
-        ];
-    for (const cc of careColumns) {
-      const content = cellText(row.getCell(cc.col));
-      if (content && content !== '-') {
-        careLogs.push({
-          after_session_number: cc.session,
-          content,
-          outcome: inferCareLogOutcome(content),
-        });
-      }
-    }
-
-    const postCourseCare = cellText(row.getCell(isChamSocLayout ? 56 : 48)) || null;
-    const handedOverAt = formatIsoDateOnly(parseSheetDate(row.getCell(isChamSocLayout ? 58 : 55).value));
     // Approved Kaiwa Tổng mapping: BF/BG = end hold week/year, BJ = renewal deadline, BY = handover month.
-    // Do not infer these fields from the secondary schedule or other similarly named columns.
     const endHoldWeek = parseOptionalInteger(row.getCell(58).value);
     const endHoldYear = parseOptionalInteger(row.getCell(59).value);
     const renewalDeadline = formatIsoDateOnly(parseSheetDate(row.getCell(62).value));
     const handoverMonth = parseOptionalInteger(row.getCell(77).value);
-    const accountCreatedAt = isChamSocLayout
-      ? formatIsoDateOnly(parseSheetDate(row.getCell(60).value))
-      : null;
 
     const programMetadata: Record<string, any> = {};
     if (isNumericTuitionCell) {
       programMetadata.tuition_fee = rawCourseContent;
-    }
-    if (rawAttPrevText !== null) {
-      programMetadata.attended_previous_years_raw = rawAttPrevText;
     }
 
     const baseKey = `KAIWA::${externalId}::${packageCode}::${className || paidAt || `r${r}`}`;
@@ -1141,13 +1201,13 @@ export function parseKaiwaSheetRows(
       courseTeacherType,
       level,
       totalSessions,
-      totalAttended,
+      totalAttended: null,
       remainingSessions,
       endHoldWeek,
       endHoldYear,
       handoverMonth,
       renewalDeadline,
-      attendedPreviousYears,
+      attendedPreviousYears: 0,
       classModel,
       salesNote,
       cvhtCode,
@@ -1161,15 +1221,17 @@ export function parseKaiwaSheetRows(
       teacherCode,
       classCode: className,
       className,
-      exchangeInfo,
-      callbackNote,
-      studyReportUrl,
-      hotIssueNote,
-      postCourseCare,
-      handedOverAt,
-      accountCreatedAt,
-      careLogs,
+      exchangeInfo: null,
+      callbackNote: null,
+      studyReportUrl: null,
+      hotIssueNote: null,
+      postCourseCare: null,
+      handedOverAt: null,
+      accountCreatedAt: null,
+      careLogs: [],
       programMetadata,
+      isKaiwaMasterOnly: true,
+      isKaiwaCareOnly: false,
     });
   }
 
@@ -1977,6 +2039,32 @@ export interface JlptDailyReportItem {
   isTemplateOnly?: boolean;
 }
 
+export interface JlptChuyenCanReportRow {
+  rowNumber: number;
+  classCode: string; // Col A - Mã lớp
+  studentName: string; // Col B - Họ và tên
+  attendedSessions: number | null; // Col C - Số buổi tham gia
+  totalMarkedSessions: number | null; // Col D - Tổng số buổi đã điểm danh
+  attendanceRate: number | null; // Col E - Tỷ lệ tham gia
+  averageExamScore: number | null; // Col F - Điểm KT trung bình
+  homeworkCompletedSessions: number | null; // Col G - Số buổi đã làm bài
+  maxConsecutiveAbsent: number | null; // Col H - Chuỗi vắng liên tiếp tối đa
+  absentWarning: string; // Col I - Cảnh báo vắng (≥2 buổi)
+  maxConsecutiveNoHomework: number | null; // Col J - Chuỗi không làm bài liên tiếp tối đa
+  noHomeworkWarning: string; // Col K - Cảnh báo không làm bài (≥2 buổi)
+  exchangeInfo: string; // Col L - Thông tin trao đổi với HV
+  statusText: string; // Col M - Trạng Thái
+  cvhtCode: string; // Col N - CVHT
+  courseTrack: string; // Col O - Khoá
+  lastExamName: string; // Col P - KT gần nhất (đã qua)
+  lastExamSession: number | null; // Col Q - Buổi KT gần nhất
+  sessionsSinceLastExam: number | null; // Col R - Cách đây (buổi)
+  nextExamName: string; // Col S - KT tiếp theo
+  nextExamSession: number | null; // Col T - Buổi KT tiếp theo
+  sessionsUntilNextExam: number | null; // Col U - Còn (buổi)
+  examScheduleWarning: string; // Col V - Cảnh báo lịch KT
+}
+
 export interface ParsedStudyReportResult {
   programType: 'JLPT' | 'KAIWA';
   sheetName: string;
@@ -1986,6 +2074,7 @@ export interface ParsedStudyReportResult {
   detectedTeacherName: string | null;
   kaiwaReport?: KaiwaStudyReportData;
   jlptDailyReports?: JlptDailyReportItem[];
+  jlptChuyenCanRows?: JlptChuyenCanReportRow[];
   warnings: string[];
 }
 
@@ -2152,15 +2241,41 @@ export function parseKaiwaStudyReportWorkbook(
   };
 }
 
+function parseOptionalFloat(rawVal: any): number | null {
+  const val = extractCellValue(rawVal);
+  if (val === null || val === undefined || val === '' || val === '-') return null;
+  if (typeof val === 'number') {
+    return Number.isFinite(val) ? Number(val.toFixed(6)) : null;
+  }
+  const str = String(val).trim().replace('%', '').replace(',', '.');
+  if (!str || str === '-' || str.startsWith('#')) return null;
+  const num = Number(str);
+  return Number.isFinite(num) ? Number(num.toFixed(6)) : null;
+}
+
 /**
- * Parse JLPT Study Report ('Format báo cáo học tập JLPT.xlsx' - Tab 1: Col A = Ngày, Col B = Nhận xét)
+ * Parse JLPT Study Report ('Format báo cáo học tập JLPT.xlsx' - sheet 'Chuyên cần HV' 22 cols A..V, or legacy 2-col daily report)
  */
 export function parseJlptStudyReportWorkbook(
   workbook: ExcelJS.Workbook,
   preferredSheetName?: string
 ): ParsedStudyReportResult {
-  const ws =
+  const isChuyenCanSheet = (sheet: ExcelJS.Worksheet): boolean => {
+    if (sheet.name.toLowerCase().includes('chuyên cần')) return true;
+    for (let r = 3; r <= Math.min(5, sheet.rowCount); r++) {
+      const cA = cellText(sheet.getRow(r).getCell(1)).toLowerCase();
+      const cB = cellText(sheet.getRow(r).getCell(2)).toLowerCase();
+      if (cA.includes('mã lớp') && (cB.includes('họ và tên') || cB.includes('họ tên'))) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  let ws =
     (preferredSheetName ? workbook.getWorksheet(preferredSheetName) : undefined) ||
+    workbook.getWorksheet('Chuyên cần HV') ||
+    workbook.worksheets.find((w) => isChuyenCanSheet(w)) ||
     workbook.worksheets[0];
 
   if (!ws) {
@@ -2172,7 +2287,138 @@ export function parseJlptStudyReportWorkbook(
       detectedPackageCode: null,
       detectedTeacherName: null,
       jlptDailyReports: [],
+      jlptChuyenCanRows: [],
       warnings: ['Không tìm thấy tab Báo cáo học tập JLPT'],
+    };
+  }
+
+  if (isChuyenCanSheet(ws)) {
+    let headerRow = 4;
+    for (let r = 1; r <= Math.min(6, ws.rowCount); r++) {
+      const cA = cellText(ws.getRow(r).getCell(1)).toLowerCase();
+      const cB = cellText(ws.getRow(r).getCell(2)).toLowerCase();
+      if (cA === 'mã lớp' && (cB === 'họ và tên' || cB === 'họ tên')) {
+        headerRow = r;
+        break;
+      }
+    }
+
+    const jlptChuyenCanRows: JlptChuyenCanReportRow[] = [];
+
+    for (let r = headerRow + 1; r <= ws.rowCount; r++) {
+      const row = ws.getRow(r);
+      const rawClassCode = cellText(row.getCell(1));
+      const rawStudentName = cellText(row.getCell(2));
+
+      if (!rawClassCode && !rawStudentName) continue;
+      if (
+        rawClassCode.toLowerCase() === 'mã lớp' ||
+        rawStudentName.toLowerCase() === 'họ và tên' ||
+        rawStudentName.toLowerCase() === 'họ tên' ||
+        rawClassCode.startsWith('#') ||
+        rawStudentName.startsWith('#')
+      ) {
+        continue;
+      }
+
+      const classCode = cleanJlptClassCode(rawClassCode);
+      const studentName = rawStudentName.trim();
+      if (!classCode || !studentName) continue;
+
+      const attendedSessions = parseOptionalInteger(row.getCell(3).value);
+      const totalMarkedSessions = parseOptionalInteger(row.getCell(4).value);
+
+      let attendanceRate = parseOptionalFloat(row.getCell(5).value);
+      if (attendanceRate !== null && attendanceRate > 1 && attendanceRate <= 100) {
+        attendanceRate = Number((attendanceRate / 100).toFixed(6));
+      } else if (
+        attendanceRate === null &&
+        attendedSessions !== null &&
+        totalMarkedSessions !== null &&
+        totalMarkedSessions > 0
+      ) {
+        attendanceRate = Number((attendedSessions / totalMarkedSessions).toFixed(6));
+      }
+
+      const averageExamScore = parseOptionalFloat(row.getCell(6).value);
+      const homeworkCompletedSessions = parseOptionalInteger(row.getCell(7).value);
+      const maxConsecutiveAbsent = parseOptionalInteger(row.getCell(8).value);
+
+      let absentWarning = cellText(row.getCell(9));
+      if (absentWarning.startsWith('#')) absentWarning = '';
+      if (!absentWarning && maxConsecutiveAbsent !== null && maxConsecutiveAbsent >= 2) {
+        absentWarning = '⚠ Vắng liên tiếp ≥2 buổi';
+      }
+
+      const maxConsecutiveNoHomework = parseOptionalInteger(row.getCell(10).value);
+      let noHomeworkWarning = cellText(row.getCell(11));
+      if (noHomeworkWarning.startsWith('#')) noHomeworkWarning = '';
+      if (!noHomeworkWarning && maxConsecutiveNoHomework !== null && maxConsecutiveNoHomework >= 2) {
+        noHomeworkWarning = '⚠ Không làm bài ≥2 buổi';
+      }
+
+      const rawExchange = cellText(row.getCell(12));
+      const exchangeInfo = rawExchange.startsWith('#') ? '' : rawExchange;
+
+      const rawStatus = cellText(row.getCell(13));
+      const statusText = rawStatus.startsWith('#') ? '' : rawStatus;
+
+      const rawCvht = extractCvhtCode(row.getCell(14).value) || cellText(row.getCell(14));
+      const cvhtCode = rawCvht && !rawCvht.startsWith('#') ? rawCvht : '';
+
+      const rawTrack = cellText(row.getCell(15));
+      const courseTrack = rawTrack.startsWith('#') ? '' : rawTrack;
+
+      const rawLastExam = cellText(row.getCell(16));
+      const lastExamName = rawLastExam.startsWith('#') ? '' : rawLastExam;
+      const lastExamSession = parseOptionalInteger(row.getCell(17).value);
+      const sessionsSinceLastExam = parseOptionalInteger(row.getCell(18).value);
+
+      const rawNextExam = cellText(row.getCell(19));
+      const nextExamName = rawNextExam.startsWith('#') ? '' : rawNextExam;
+      const nextExamSession = parseOptionalInteger(row.getCell(20).value);
+      const sessionsUntilNextExam = parseOptionalInteger(row.getCell(21).value);
+
+      const rawExamWarning = cellText(row.getCell(22));
+      const examScheduleWarning = rawExamWarning.startsWith('#') ? '' : rawExamWarning;
+
+      jlptChuyenCanRows.push({
+        rowNumber: r,
+        classCode,
+        studentName,
+        attendedSessions,
+        totalMarkedSessions,
+        attendanceRate,
+        averageExamScore,
+        homeworkCompletedSessions,
+        maxConsecutiveAbsent,
+        absentWarning,
+        maxConsecutiveNoHomework,
+        noHomeworkWarning,
+        exchangeInfo,
+        statusText,
+        cvhtCode,
+        courseTrack,
+        lastExamName,
+        lastExamSession,
+        sessionsSinceLastExam,
+        nextExamName,
+        nextExamSession,
+        sessionsUntilNextExam,
+        examScheduleWarning,
+      });
+    }
+
+    return {
+      programType: 'JLPT',
+      sheetName: ws.name,
+      detectedStudentExternalId: null,
+      detectedStudentName: null,
+      detectedPackageCode: null,
+      detectedTeacherName: null,
+      jlptChuyenCanRows,
+      jlptDailyReports: [],
+      warnings: [],
     };
   }
 
@@ -2223,6 +2469,7 @@ export function parseJlptStudyReportWorkbook(
     detectedPackageCode: null,
     detectedTeacherName: null,
     jlptDailyReports,
+    jlptChuyenCanRows: [],
     warnings: [],
   };
 }

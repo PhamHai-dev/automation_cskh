@@ -1808,20 +1808,19 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
     },
     {
       key: 'attended_prev',
-      header: 'Đã học năm trước',
+      header: 'Tổng số buổi đã học năm trước',
       cell: (item) => {
         const enr = item.enrollments?.[0];
         const ec = enr?.enrollment_classes?.[0];
-        const rawText = enr?.program_metadata?.attended_previous_years_raw;
+        const rawText = (enr?.program_metadata as any)?.attended_previous_years_raw;
         if (rawText !== undefined && rawText !== null && String(rawText).trim() !== '') {
           const str = String(rawText).trim();
-          const isNumeric = !Number.isNaN(Number(str));
           return (
             <span
-              className="font-semibold text-slate-700 text-xs block whitespace-nowrap max-w-[180px] truncate"
+              className="font-semibold text-slate-700 text-xs block max-w-[200px] truncate whitespace-nowrap"
               title={str}
             >
-              {isNumeric ? `${Math.round(Number(str))} buổi` : str}
+              {str}
             </span>
           );
         }
@@ -2758,6 +2757,36 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
                     </strong>
                   </div>
                   <div>
+                    <span className="text-slate-500 block">
+                      Tổng số buổi đã học năm trước:
+                    </span>
+                    {(() => {
+                      const rawPrev = (viewingStudent.enrollments[0].program_metadata as any)
+                        ?.attended_previous_years_raw;
+                      const hasRaw =
+                        rawPrev !== undefined &&
+                        rawPrev !== null &&
+                        String(rawPrev).trim() !== '';
+                      if (hasRaw) {
+                        const rawStr = String(rawPrev).trim();
+                        return (
+                          <strong
+                            className="text-slate-900 block whitespace-pre-line break-words"
+                            title={rawStr}
+                          >
+                            {rawStr}
+                          </strong>
+                        );
+                      }
+                      const numPrev = viewingStudent.enrollments[0].attended_previous_years;
+                      return (
+                        <strong className="text-slate-900">
+                          {numPrev !== undefined && numPrev !== null ? `${numPrev} buổi` : '—'}
+                        </strong>
+                      );
+                    })()}
+                  </div>
+                  <div>
                     <span className="text-slate-500 block">Trạng thái:</span>
                     <Badge
                       variant={
@@ -3212,7 +3241,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
                   </div>
                   <div>
                     <label className="block font-medium text-slate-700 mb-1">
-                      Đã học năm trước
+                      Tổng số buổi đã học năm trước
                     </label>
                     <Input
                       type="number"
@@ -3222,6 +3251,26 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
                         setFormData({ ...formData, attended_previous_years: e.target.value })
                       }
                     />
+                    {(() => {
+                      const rawPrev = (formData.program_metadata as any)
+                        ?.attended_previous_years_raw;
+                      if (
+                        rawPrev !== undefined &&
+                        rawPrev !== null &&
+                        String(rawPrev).trim() !== ''
+                      ) {
+                        const rawStr = String(rawPrev).trim();
+                        return (
+                          <div
+                            className="mt-1 text-[11px] text-slate-500 truncate"
+                            title={rawStr}
+                          >
+                            Nguyên bản Sheet (Cột AI): <strong className="text-slate-700">{rawStr}</strong>
+                          </div>
+                        );
+                      }
+                      return null;
+                    })()}
                   </div>
                   <div>
                     <label className="block font-medium text-slate-700 mb-1">Mô hình lớp</label>

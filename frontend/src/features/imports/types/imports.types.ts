@@ -246,6 +246,7 @@ export interface SyncPreviewRowItem {
   rowNumber: number;
   externalId: string;
   fullName: string;
+  studentName?: string | null;
   classCode?: string | null;
   packageCode?: string | null;
   teacherCode?: string | null;
@@ -406,16 +407,30 @@ export interface UpdateCsSheetBackupConfigDTO {
 export interface BackupHistoryItem {
   id: number;
   configId: number;
-  staffCode: string;
-  staffName: string;
+  configName?: string;
+  staffCode: string | null;
+  staffName: string | null;
   programType: string;
   triggerType: 'AUTO' | 'MANUAL';
   mode: 'DELTA' | 'FULL';
   status: 'SUCCESS' | 'FAILED';
+  syncedToGoogleSheet?: boolean;
+  localFilePath?: string;
+  totalStudents?: number;
+  unchangedRows?: number;
+  updatedRows?: number;
+  appendedRows?: number;
+  updatedCellsCount?: number;
+  attendanceCellsWritten?: number;
+  durationMs?: number;
   durationSec: number;
+  backedUpAt?: string;
   createdAt: string;
   error?: string | null;
   summary?: CsSheetBackupSummary | null;
+  profile?: SheetBackupSheetStats | null;
+  attendance?: SheetBackupSheetStats | null;
+  finalAttendance?: SheetBackupSheetStats | null;
 }
 
 export interface BackupHistoryBatch {
@@ -423,9 +438,16 @@ export interface BackupHistoryBatch {
   startedAt: string;
   triggerType: 'AUTO' | 'MANUAL';
   mode: 'DELTA' | 'FULL';
+  status?: 'SUCCESS' | 'PARTIAL' | 'FAILED';
   totalConfigs: number;
+  successConfigs?: number;
+  failedConfigs?: number;
   successCount: number;
   failedCount: number;
+  totalStudents?: number;
+  updatedCellsCount?: number;
+  attendanceCellsWritten?: number;
+  durationMs?: number;
   durationSec: number;
   items: BackupHistoryItem[];
 }
@@ -513,6 +535,7 @@ export interface SyncHistoryDetailResponse {
     totalRowsScanned: number;
     createdCount: number;
     updatedCount: number;
+    conflictCount?: number;
     failedOrSkippedCount: number;
     rolledBackCount: number;
     remainingAppliedCount: number;

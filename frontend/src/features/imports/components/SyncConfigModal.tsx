@@ -16,6 +16,7 @@ import {
   ExternalLink,
   FileSpreadsheet,
   FolderOpen,
+  Info,
   Lock,
 } from 'lucide-react';
 
@@ -33,8 +34,9 @@ const FLOW_OPTIONS: Array<{
 }> = [
   {
     value: 'STUDENT_MASTER',
-    label: '1. Dữ liệu học viên (File nguồn tổng)',
-    subtitle: 'Đồng bộ hồ sơ học viên, ghi danh & phân bổ CSKH từ file tổng JLPT / Kaiwa',
+    label: '1. Dữ liệu học viên & Chăm sóc',
+    subtitle:
+      'Đồng bộ hồ sơ học viên, lớp học & chăm sóc từ Nguồn tổng JLPT, Nguồn tổng Kaiwa hoặc 1.Chăm sóc',
   },
   {
     value: 'CSKH_ATTENDANCE',
@@ -49,7 +51,8 @@ const FLOW_OPTIONS: Array<{
   {
     value: 'STUDY_REPORT',
     label: '4. Báo cáo học tập (Theo HV / Lớp)',
-    subtitle: 'Đồng bộ nhận xét báo cáo học tập Kaiwa (Tab 1) hoặc JLPT (Ngày | Nhận xét)',
+    subtitle:
+      'Đồng bộ Chuyên cần HV JLPT (khớp hàng loạt Lớp + Tên) hoặc Báo cáo học tập Kaiwa',
   },
 ];
 
@@ -77,7 +80,20 @@ const getDefaultSheetName = (flowType: SyncFlowType, programType: string): strin
     case 'TEACHER_ATTENDANCE':
       return '2026 スケジュール';
     case 'STUDY_REPORT':
-      return isJlpt ? 'Sheet1' : 'Báo cáo học tập';
+      return isJlpt ? 'Chuyên cần HV' : '会話 3 - 学習レポート';
+  }
+};
+
+const getDefaultHeaderRow = (flowType: SyncFlowType, programType: string): number => {
+  const isJlpt = programType.toUpperCase() === 'JLPT';
+  switch (flowType) {
+    case 'STUDENT_MASTER':
+      return 2;
+    case 'CSKH_ATTENDANCE':
+    case 'TEACHER_ATTENDANCE':
+      return 2;
+    case 'STUDY_REPORT':
+      return isJlpt ? 4 : 1;
   }
 };
 
@@ -138,7 +154,9 @@ export const SyncConfigModal: React.FC<SyncConfigModalProps> = ({
     if (editingConfig) {
       const resolvedFlow: SyncFlowType =
         editingConfig.flow_type ||
-        (editingConfig.code === 'JLPT' || editingConfig.code === 'KAIWA'
+        (editingConfig.code === 'JLPT' ||
+        editingConfig.code === 'KAIWA' ||
+        editingConfig.code === 'KAIWA_CARE'
           ? 'STUDENT_MASTER'
           : 'STUDY_REPORT');
       const resolvedProgram: 'JLPT' | 'KAIWA' =
@@ -158,7 +176,9 @@ export const SyncConfigModal: React.FC<SyncConfigModalProps> = ({
         editingConfig.sheet_name || getDefaultSheetName(resolvedFlow, resolvedProgram)
       );
       setSettingSheetName(editingConfig.setting_sheet_name || 'Setting');
-      setHeaderRow(editingConfig.header_row || 2);
+      setHeaderRow(
+        editingConfig.header_row || getDefaultHeaderRow(resolvedFlow, resolvedProgram)
+      );
       setEnabled(resolvedSource === 'GOOGLE_SHEET' ? Boolean(editingConfig.enabled) : false);
       setSyncIntervalMinutes(editingConfig.sync_interval_minutes || 30);
 
@@ -189,20 +209,20 @@ export const SyncConfigModal: React.FC<SyncConfigModalProps> = ({
       );
     } else {
       setFlowType('STUDY_REPORT');
-      setProgramType('KAIWA');
+      setProgramType('JLPT');
       setName('');
       setSourceType('GOOGLE_SHEET');
       setSpreadsheetUrl('');
       setLocalFilePath('');
       setSelectedFile(null);
-      setSheetName(getDefaultSheetName('STUDY_REPORT', 'KAIWA'));
+      setSheetName(getDefaultSheetName('STUDY_REPORT', 'JLPT'));
       setSettingSheetName('Setting');
-      setHeaderRow(2);
+      setHeaderRow(getDefaultHeaderRow('STUDY_REPORT', 'JLPT'));
       setEnabled(true);
       setSyncIntervalMinutes(30);
       setSyncYear(2026);
       setSelectedMonths(ALL_MONTHS);
-      setSourceStatuses(KAIWA_SOURCE_STATUSES);
+      setSourceStatuses(JLPT_SOURCE_STATUSES);
       setEnrollmentStatuses(['Đang học', 'Chờ lớp', 'Bảo lưu', 'Tạm nghỉ', 'Sắp học']);
       setTargetTeacherCode('');
       setTargetStudentExternalId('');
@@ -217,8 +237,14 @@ export const SyncConfigModal: React.FC<SyncConfigModalProps> = ({
   ) => {
     setFlowType(nextFlow);
     setProgramType(nextProgram);
-    if (!editingConfig) {
+    if (nextFlow === 'STUDY_REPORT' && nextProgram === 'JLPT') {
+      setSheetName('Chuyên cần HV');
+      setHeaderRow(4);
+    } else if (!editingConfig) {
       setSheetName(getDefaultSheetName(nextFlow, nextProgram));
+      setHeaderRow(getDefaultHeaderRow(nextFlow, nextProgram));
+    }
+    if (!editingConfig) {
       setSourceStatuses(
         nextProgram === 'JLPT' ? JLPT_SOURCE_STATUSES : KAIWA_SOURCE_STATUSES
       );
@@ -250,7 +276,8 @@ export const SyncConfigModal: React.FC<SyncConfigModalProps> = ({
   const isSystemMaster =
     editingConfig?.is_system_default ||
     editingConfig?.code === 'JLPT' ||
-    editingConfig?.code === 'KAIWA';
+    editingConfig?.code === 'KAIWA' ||
+    editingConfig?.code === 'KAIWA_CARE';
 
   const urlValid =
     sourceType !== 'GOOGLE_SHEET' || isValidGoogleSheetUrl(spreadsheetUrl);
@@ -592,8 +619,8 @@ export const SyncConfigModal: React.FC<SyncConfigModalProps> = ({
                 )}
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div>
+              <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
+                <div className="sm:col-span-4">
                   <label className="block text-xs font-semibold text-slate-700 mb-1">
                     Tên Sheet / Tab đọc dữ liệu
                   </label>
@@ -604,7 +631,20 @@ export const SyncConfigModal: React.FC<SyncConfigModalProps> = ({
                   />
                 </div>
 
-                <div className="sm:col-span-2 flex items-end">
+                <div className="sm:col-span-2">
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Dòng tiêu đề
+                  </label>
+                  <Input
+                    type="number"
+                    min={1}
+                    max={20}
+                    value={headerRow}
+                    onChange={(e) => setHeaderRow(Math.max(1, Number(e.target.value) || 1))}
+                  />
+                </div>
+
+                <div className="sm:col-span-6 flex items-end">
                   <div className="w-full rounded-xl bg-white border border-slate-200 px-3.5 py-2 flex items-center justify-between gap-3">
                     <div>
                       <div className="font-bold text-slate-800">
@@ -660,8 +700,8 @@ export const SyncConfigModal: React.FC<SyncConfigModalProps> = ({
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div className="sm:col-span-2">
+              <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
+                <div className="sm:col-span-6">
                   <label className="block text-xs font-semibold text-slate-700 mb-1">
                     Chọn file Excel (.xlsx) từ máy tính
                   </label>
@@ -691,7 +731,7 @@ export const SyncConfigModal: React.FC<SyncConfigModalProps> = ({
                   </div>
                 </div>
 
-                <div>
+                <div className="sm:col-span-4">
                   <label className="block text-xs font-semibold text-slate-700 mb-1">
                     Tên Sheet / Tab đọc dữ liệu
                   </label>
@@ -701,6 +741,69 @@ export const SyncConfigModal: React.FC<SyncConfigModalProps> = ({
                     placeholder={getDefaultSheetName(flowType, programType)}
                   />
                 </div>
+
+                <div className="sm:col-span-2">
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Dòng tiêu đề
+                  </label>
+                  <Input
+                    type="number"
+                    min={1}
+                    max={20}
+                    value={headerRow}
+                    onChange={(e) => setHeaderRow(Math.max(1, Number(e.target.value) || 1))}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Nút chọn nhanh mẫu Sheet cho STUDENT_MASTER + KAIWA */}
+          {flowType === 'STUDENT_MASTER' && programType === 'KAIWA' && (
+            <div className="pt-2 border-t border-slate-200/80 space-y-2">
+              <div className="text-[11px] font-bold text-slate-700">
+                Chọn nhanh mẫu Sheet Kaiwa:
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSheetName('Tổng');
+                    setHeaderRow(2);
+                  }}
+                  className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
+                    sheetName.trim() === 'Tổng' && headerRow === 2
+                      ? 'bg-indigo-50 border-indigo-400 text-indigo-900 shadow-2xs'
+                      : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                  }`}
+                >
+                  <div className="font-bold text-xs">
+                    Sheet &quot;Tổng&quot; (Dòng tiêu đề 2 — Hồ sơ &amp; Lớp học A..AH + BF,BG,BJ,BY)
+                  </div>
+                  <div className="text-[11px] text-slate-500 mt-0.5">
+                    Đồng bộ mới &amp; cập nhật Hồ sơ học viên, Gói học, Lớp học
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSheetName('1.Chăm sóc');
+                    setHeaderRow(3);
+                  }}
+                  className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
+                    sheetName.trim() === '1.Chăm sóc' && headerRow === 3
+                      ? 'bg-fuchsia-50 border-fuchsia-400 text-fuchsia-900 shadow-2xs'
+                      : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                  }`}
+                >
+                  <div className="font-bold text-xs">
+                    Sheet &quot;1.Chăm sóc&quot; (Dòng tiêu đề 3 — Báo cáo &amp; Chăm sóc AI..BH theo ID)
+                  </div>
+                  <div className="text-[11px] text-slate-500 mt-0.5">
+                    Chỉ cập nhật cột Báo cáo &amp; Chăm sóc (AI..BH) khi khớp ID học viên
+                  </div>
+                </button>
               </div>
             </div>
           )}
@@ -957,39 +1060,52 @@ export const SyncConfigModal: React.FC<SyncConfigModalProps> = ({
 
           {/* LUỒNG 4: STUDY_REPORT */}
           {flowType === 'STUDY_REPORT' && (
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Mã học viên (Tùy chọn với Kaiwa)
-                </label>
-                <Input
-                  value={targetStudentExternalId}
-                  onChange={(e) => setTargetStudentExternalId(e.target.value)}
-                  placeholder="VD: 427901798"
-                />
-                <span className="text-[10px] text-slate-400">
-                  Kaiwa tự đọc được từ dòng 5 của sheet hoặc gắn cứng tại đây
-                </span>
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Tên học viên
-                </label>
-                <Input
-                  value={targetStudentName}
-                  onChange={(e) => setTargetStudentName(e.target.value)}
-                  placeholder="VD: Đỗ Phú Sĩ"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Mã lớp
-                </label>
-                <Input
-                  value={targetClassCode}
-                  onChange={(e) => setTargetClassCode(e.target.value)}
-                  placeholder="VD: BS8_3002"
-                />
+            <div className="space-y-3">
+              {programType === 'JLPT' && (
+                <div className="rounded-xl bg-teal-50/90 border border-teal-200 px-3.5 py-2.5 flex items-start gap-2.5 text-teal-900">
+                  <Info className="w-4 h-4 text-teal-600 shrink-0 mt-0.5" />
+                  <div className="text-[11px] leading-relaxed">
+                    Báo cáo học tập JLPT đọc từ sheet <strong>Chuyên cần HV</strong> và tự động khớp hàng loạt học viên theo cặp <strong>(Mã lớp cột A + Họ và tên cột B)</strong>. Để trống thông tin học viên mục tiêu nếu muốn đồng bộ toàn bộ danh sách trong sheet.
+                  </div>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Mã học viên (Tùy chọn)
+                  </label>
+                  <Input
+                    value={targetStudentExternalId}
+                    onChange={(e) => setTargetStudentExternalId(e.target.value)}
+                    placeholder={programType === 'JLPT' ? 'Để trống nếu đồng bộ cả lớp' : 'VD: 427901798'}
+                  />
+                  <span className="text-[10px] text-slate-400">
+                    {programType === 'JLPT'
+                      ? 'Để trống để khớp hàng loạt theo Mã lớp + Họ và tên'
+                      : 'Kaiwa tự đọc được từ dòng 5 của sheet hoặc gắn cứng tại đây'}
+                  </span>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Tên học viên
+                  </label>
+                  <Input
+                    value={targetStudentName}
+                    onChange={(e) => setTargetStudentName(e.target.value)}
+                    placeholder={programType === 'JLPT' ? 'Tùy chọn lọc 1 học viên' : 'VD: Đỗ Phú Sĩ'}
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Mã lớp
+                  </label>
+                  <Input
+                    value={targetClassCode}
+                    onChange={(e) => setTargetClassCode(e.target.value)}
+                    placeholder={programType === 'JLPT' ? 'VD: N3_2601 (hoặc để trống)' : 'VD: SKAI31030JP'}
+                  />
+                </div>
               </div>
             </div>
           )}

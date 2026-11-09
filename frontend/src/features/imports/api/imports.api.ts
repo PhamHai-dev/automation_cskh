@@ -398,4 +398,20 @@ export const importsApi = {
     link.remove();
     window.URL.revokeObjectURL(url);
   },
+
+  bulkPasteSheetBackupLinks: async (rawText: string): Promise<{
+    updatedCount: number;
+    skippedCount: number;
+    items: Array<{
+      line: string;
+      matchedConfigId: number | null;
+      name: string | null;
+      status: 'UPDATED' | 'NOT_FOUND' | 'INVALID_URL';
+    }>;
+  }> => {
+    const res = await apiClient.post('/imports/sheet-backup/configs/bulk-links', {
+      raw_text: rawText,
+    });
+    return res.data?.data || res.data;
+  },
 };

@@ -508,13 +508,18 @@ export function buildJlptAttendanceReportRow(params: {
       ? meta.jlpt_chuyen_can_overrides
       : {};
 
+  const syncedChuyenCan =
+    meta.jlpt_chuyen_can && typeof meta.jlpt_chuyen_can === 'object'
+      ? (meta.jlpt_chuyen_can as Record<string, any>)
+      : null;
+
   const overrides = {
-    attended_sessions: toNullableNumber(rawOverrides.attended_sessions),
-    total_marked_sessions: toNullableNumber(rawOverrides.total_marked_sessions),
-    average_exam_score: toNullableNumber(rawOverrides.average_exam_score),
-    homework_completed_sessions: toNullableNumber(rawOverrides.homework_completed_sessions),
-    max_consecutive_absent: toNullableNumber(rawOverrides.max_consecutive_absent),
-    max_consecutive_no_homework: toNullableNumber(rawOverrides.max_consecutive_no_homework),
+    attended_sessions: toNullableNumber(rawOverrides.attended_sessions ?? syncedChuyenCan?.attendedSessions ?? syncedChuyenCan?.attended_sessions),
+    total_marked_sessions: toNullableNumber(rawOverrides.total_marked_sessions ?? syncedChuyenCan?.totalMarkedSessions ?? syncedChuyenCan?.total_marked_sessions),
+    average_exam_score: toNullableNumber(rawOverrides.average_exam_score ?? syncedChuyenCan?.averageExamScore ?? syncedChuyenCan?.average_exam_score),
+    homework_completed_sessions: toNullableNumber(rawOverrides.homework_completed_sessions ?? syncedChuyenCan?.homeworkCompletedSessions ?? syncedChuyenCan?.homework_completed_sessions),
+    max_consecutive_absent: toNullableNumber(rawOverrides.max_consecutive_absent ?? syncedChuyenCan?.maxConsecutiveAbsent ?? syncedChuyenCan?.max_consecutive_absent),
+    max_consecutive_no_homework: toNullableNumber(rawOverrides.max_consecutive_no_homework ?? syncedChuyenCan?.maxConsecutiveNoHomework ?? syncedChuyenCan?.max_consecutive_no_homework),
   };
 
   const nkhtSessions: JlptNkhtSessionItem[] = Array.isArray(meta.jlpt_nkht_sessions)
@@ -658,12 +663,15 @@ export function buildJlptAttendanceReportRow(params: {
   }
 
   // Column E: attendance_rate (= IF(D > 0, C / D, null))
+  const syncedAttendanceRate = toNullableNumber(
+    syncedChuyenCan?.attendanceRate ?? syncedChuyenCan?.attendance_rate
+  );
   const attendanceRate =
     totalMarkedSessions !== null &&
     totalMarkedSessions > 0 &&
     attendedSessions !== null
       ? Number((attendedSessions / totalMarkedSessions).toFixed(10))
-      : null;
+      : syncedAttendanceRate;
 
   // Column F: average_exam_score
   let averageExamScore: number | null = null;
@@ -712,10 +720,14 @@ export function buildJlptAttendanceReportRow(params: {
   }
 
   // Column I: absent_warning
+  const syncedAbsentWarn = String(
+    syncedChuyenCan?.absentWarning ?? syncedChuyenCan?.absent_warning ?? ''
+  ).trim();
   const absentWarning =
-    maxConsecutiveAbsent !== null && maxConsecutiveAbsent >= 2
+    syncedAbsentWarn ||
+    (maxConsecutiveAbsent !== null && maxConsecutiveAbsent >= 2
       ? '⚠ Vắng liên tiếp ≥2 buổi'
-      : '';
+      : '');
 
   // Column J: max_consecutive_no_homework
   let maxConsecutiveNoHomework: number | null = null;
@@ -736,13 +748,22 @@ export function buildJlptAttendanceReportRow(params: {
   }
 
   // Column K: no_homework_warning
+  const syncedNoHwWarn = String(
+    syncedChuyenCan?.noHomeworkWarning ?? syncedChuyenCan?.no_homework_warning ?? ''
+  ).trim();
   const noHomeworkWarning =
-    maxConsecutiveNoHomework !== null && maxConsecutiveNoHomework >= 2
+    syncedNoHwWarn ||
+    (maxConsecutiveNoHomework !== null && maxConsecutiveNoHomework >= 2
       ? '⚠ Không làm bài ≥2 buổi'
-      : '';
+      : '');
 
   // Column L: exchange_info
-  const exchangeInfo = String(enrollment?.exchange_info || '').trim();
+  const exchangeInfo = String(
+    enrollment?.exchange_info ||
+      syncedChuyenCan?.exchangeInfo ||
+      syncedChuyenCan?.exchange_info ||
+      ''
+  ).trim();
 
   // Column M: status, status_label
   const hasAssignedClass = Boolean(
@@ -752,7 +773,12 @@ export function buildJlptAttendanceReportRow(params: {
 
   // Column N: cvht_code, cs_id, cs_name
   const cvhtCode = String(
-    enrollment?.cs?.staff_code || enrollment?.cs?.code || enrollment?.cs?.name || '',
+    enrollment?.cs?.staff_code ||
+      enrollment?.cs?.code ||
+      enrollment?.cs?.name ||
+      syncedChuyenCan?.cvhtCode ||
+      syncedChuyenCan?.cvht_code ||
+      '',
   ).trim();
   const csId = typeof enrollment?.cs_id === 'number' ? enrollment.cs_id : enrollment?.cs?.id ?? null;
   const csName = String(enrollment?.cs?.name || cvhtCode || '').trim();
@@ -762,11 +788,11 @@ export function buildJlptAttendanceReportRow(params: {
     classCode,
     enrollment?.package?.code,
     enrollment?.level,
-    meta.course_track,
+    meta.course_track || syncedChuyenCan?.courseTrack || syncedChuyenCan?.course_track,
   );
 
   // Columns P -> V
-  const examCols = computeJlptExamScheduleColumns({
+  const computedExamCols = computeJlptExamScheduleColumns({
     statusLabel: status_label,
     courseTrack,
     totalMarkedSessions,
@@ -774,6 +800,41 @@ export function buildJlptAttendanceReportRow(params: {
     nkhtSessions,
     thresholds,
   });
+
+  const syncedLastExamName = String(
+    syncedChuyenCan?.lastExamName ?? syncedChuyenCan?.last_exam_name ?? ''
+  ).trim();
+  const syncedLastExamSession = toNullableNumber(
+    syncedChuyenCan?.lastExamSession ?? syncedChuyenCan?.last_exam_session
+  );
+  const syncedSessionsSinceLastExam = toNullableNumber(
+    syncedChuyenCan?.sessionsSinceLastExam ?? syncedChuyenCan?.sessions_since_last_exam
+  );
+  const syncedNextExamName = String(
+    syncedChuyenCan?.nextExamName ?? syncedChuyenCan?.next_exam_name ?? ''
+  ).trim();
+  const syncedNextExamSession = toNullableNumber(
+    syncedChuyenCan?.nextExamSession ?? syncedChuyenCan?.next_exam_session
+  );
+  const syncedSessionsUntilNextExam = toNullableNumber(
+    syncedChuyenCan?.sessionsUntilNextExam ?? syncedChuyenCan?.sessions_until_next_exam
+  );
+  const syncedExamScheduleWarning = String(
+    syncedChuyenCan?.examScheduleWarning ?? syncedChuyenCan?.exam_schedule_warning ?? ''
+  ).trim();
+
+  const examCols = {
+    last_exam_name: syncedLastExamName || computedExamCols.last_exam_name,
+    last_exam_session: syncedLastExamSession ?? computedExamCols.last_exam_session,
+    sessions_since_last_exam:
+      syncedSessionsSinceLastExam ?? computedExamCols.sessions_since_last_exam,
+    next_exam_name: syncedNextExamName || computedExamCols.next_exam_name,
+    next_exam_session: syncedNextExamSession ?? computedExamCols.next_exam_session,
+    sessions_until_next_exam:
+      syncedSessionsUntilNextExam ?? computedExamCols.sessions_until_next_exam,
+    exam_schedule_warning:
+      syncedExamScheduleWarning || computedExamCols.exam_schedule_warning,
+  };
 
   return {
     student_id: Number(student?.id ?? enrollment?.student_id ?? 0),
