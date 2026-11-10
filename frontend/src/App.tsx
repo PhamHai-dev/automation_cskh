@@ -36,7 +36,6 @@ import { AttendanceReconciliationPage } from './features/attendance/pages/Attend
 import { MyTeachingSessionsPage } from './features/attendance/pages/MyTeachingSessionsPage';
 import { TeacherAttendanceTrackingPage } from './features/attendance/pages/TeacherAttendanceTrackingPage';
 import { TeacherStudentInfoPage } from './features/attendance/pages/TeacherStudentInfoPage';
-import { PreferencesPage } from './features/preferences/pages/PreferencesPage';
 import { ActivityLogsPage } from './features/activity-logs/pages/ActivityLogsPage';
 import './styles/globals.css';
 import './styles/tokens.css';
@@ -80,9 +79,6 @@ function App() {
 
             {/* Core Staff: Admin, Manage, CS */}
             <Route element={<ProtectedRoute allowedRoles={['ADMIN', 'MANAGE', 'CS']} />}>
-              <Route path="/settings/preferences" element={<PreferencesPage />} />
-              <Route path="/cai-dat/cau-hinh" element={<Navigate to="/settings/preferences" replace />} />
-
               {/* Đồng bộ dữ liệu (4 luồng) */}
               <Route path="/data-sync" element={<DataSyncPage />} />
               <Route path="/data-sync/preview/:code" element={<SyncPreviewPage />} />
@@ -145,6 +141,9 @@ function App() {
             {/* Classes, Attendance, Care, Backup: Admin, Manage, CS, Teacher */}
             <Route element={<ProtectedRoute allowedRoles={['ADMIN', 'MANAGE', 'CS', 'TEACHER']} />}>
               <Route path="/data-backup" element={<DataBackupPage />} />
+              <Route path="/data-backup/configs" element={<DataBackupPage initialTab="configs" />} />
+              <Route path="/data-backup/history" element={<DataBackupPage initialTab="history" />} />
+              <Route path="/data-backup/connection" element={<DataBackupPage initialTab="connection" />} />
               <Route path="/care" element={<CarePage />} />
               <Route path="/cham-soc" element={<Navigate to="/care" replace />} />
 

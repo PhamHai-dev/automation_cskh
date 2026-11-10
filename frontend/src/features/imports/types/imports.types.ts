@@ -366,6 +366,9 @@ export interface CsSheetBackupConfigItem {
   final_sheet_name?: string;    // mặc định 'Điểm danh chốt'
   final_header_row?: number;    // mặc định 2
   final_enabled?: boolean;      // mặc định true cho KAIWA/JLPT
+  local_enabled?: boolean;
+  keep_daily_snapshots?: boolean;
+  max_snapshots?: number;
   schedule_times?: string[] | null;
   backup_year?: number | null;
   enabled: boolean;
@@ -391,6 +394,10 @@ export interface CsSheetBackupConfigItem {
 export interface UpdateCsSheetBackupConfigDTO {
   name?: string;
   target_spreadsheet_url?: string | null;
+  local_backup_path?: string | null;
+  local_enabled?: boolean;
+  keep_daily_snapshots?: boolean;
+  max_snapshots?: number;
   profile_sheet_name?: string;
   profile_header_row?: number;
   profile_enabled?: boolean;

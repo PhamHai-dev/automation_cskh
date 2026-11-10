@@ -14,6 +14,8 @@ import {
   Clock,
   ExternalLink,
   FileSpreadsheet,
+  FolderLock,
+  HardDrive,
   Lock,
   ShieldCheck,
 } from 'lucide-react';
@@ -111,6 +113,58 @@ const PROGRAM_TYPE_OPTIONS: Array<{
   },
 ];
 
+const ALLOWED_SUBFOLDERS: Array<{ value: string; label: string }> = [
+  { value: 'admin', label: 'backups/admin/ (Sổ tổng Admin)' },
+  { value: 'cskh', label: 'backups/cskh/ (Sổ CSKH)' },
+  { value: 'giao_vien', label: 'backups/giao_vien/ (Điểm danh GV)' },
+  { value: 'bao_cao_hoc_tap', label: 'backups/bao_cao_hoc_tap/ (Báo cáo học tập)' },
+  { value: 'custom', label: 'backups/custom/ (Thư mục tùy chỉnh)' },
+];
+
+function defaultSubfolderByProgram(pt: string): string {
+  const norm = pt.toUpperCase();
+  if (norm.startsWith('ADMIN_')) return 'admin';
+  if (norm.startsWith('REPORT_')) return 'bao_cao_hoc_tap';
+  if (norm === 'TEACHER' || norm.startsWith('GV:')) return 'giao_vien';
+  return 'cskh';
+}
+
+function defaultFileBaseByProgram(pt: string, staffCode?: string | null): string {
+  const norm = pt.toUpperCase();
+  if (norm === 'ADMIN_KAIWA') return 'backup_admin_kaiwa';
+  if (norm === 'ADMIN_JLPT') return 'backup_admin_jlpt';
+  if (norm === 'ADMIN_RECONCILIATION') return 'backup_admin_doi_soat';
+  if (norm === 'REPORT_KAIWA') return 'backup_bao_cao_hoc_tap_kaiwa';
+  if (norm === 'REPORT_JLPT') return 'backup_bao_cao_hoc_tap_jlpt';
+  const staff = (staffCode || 'CVHT01').replace(/[^a-zA-Z0-9_-]/g, '_');
+  if (norm === 'TEACHER' || norm.startsWith('GV:')) return `diem_danh_gv_${staff}`;
+  return `hoc_vien_${norm.toLowerCase()}_${staff}`;
+}
+
+function parseRelativeBackupPath(
+  rawPath: string | null | undefined,
+  programType: string,
+  staffCode?: string | null
+): { subfolder: string; fileBaseName: string } {
+  const clean = String(rawPath || '')
+    .trim()
+    .replace(/\\/g, '/')
+    .replace(/^\/+/, '');
+  const withoutPrefix = clean.startsWith('backups/') ? clean.slice('backups/'.length) : clean;
+  const parts = withoutPrefix.split('/').filter(Boolean);
+  if (parts.length === 2) {
+    const sub = ALLOWED_SUBFOLDERS.some((s) => s.value === parts[0])
+      ? parts[0]
+      : defaultSubfolderByProgram(programType);
+    const base = parts[1].replace(/\.xlsx$/i, '');
+    return { subfolder: sub, fileBaseName: base || defaultFileBaseByProgram(programType, staffCode) };
+  }
+  return {
+    subfolder: defaultSubfolderByProgram(programType),
+    fileBaseName: defaultFileBaseByProgram(programType, staffCode),
+  };
+}
+
 const PRESET_SCHEDULE_SLOTS = ['08:00', '12:00', '17:30', '21:00', '23:00'];
 
 export const BackupConfigModal: React.FC<BackupConfigModalProps> = ({
@@ -128,7 +182,16 @@ export const BackupConfigModal: React.FC<BackupConfigModalProps> = ({
   const [programType, setProgramType] = useState<string>('KAIWA');
   const [csUserId, setCsUserId] = useState<number | ''>('');
   const [name, setName] = useState<string>('');
+  const [activeDestTab, setActiveDestTab] = useState<'GOOGLE_SHEET' | 'LOCAL_SERVER'>(
+    'GOOGLE_SHEET'
+  );
   const [targetUrl, setTargetUrl] = useState<string>('');
+
+  // Kênh 1: Lưu file Excel (.xlsx) vào thư mục sandbox trên Server
+  const [subfolder, setSubfolder] = useState<string>('cskh');
+  const [fileBaseName, setFileBaseName] = useState<string>('hoc_vien_kaiwa_CVHT01');
+  const [keepDailySnapshots, setKeepDailySnapshots] = useState<boolean>(false);
+  const [maxSnapshots, setMaxSnapshots] = useState<number>(7);
 
   // Sheets config
   const [profileEnabled, setProfileEnabled] = useState<boolean>(true);
@@ -159,7 +222,19 @@ export const BackupConfigModal: React.FC<BackupConfigModalProps> = ({
       setProgramType(pt);
       setCsUserId(editingConfig.cs_user_id || '');
       setName(editingConfig.name || '');
-      setTargetUrl(editingConfig.target_spreadsheet_url || '');
+      const url = editingConfig.target_spreadsheet_url || '';
+      setTargetUrl(url);
+      setActiveDestTab(url.trim() ? 'GOOGLE_SHEET' : 'LOCAL_SERVER');
+
+      const parsedPath = parseRelativeBackupPath(
+        editingConfig.local_backup_path,
+        pt,
+        editingConfig.cs_user?.staff_code
+      );
+      setSubfolder(parsedPath.subfolder);
+      setFileBaseName(parsedPath.fileBaseName);
+      setKeepDailySnapshots(Boolean(editingConfig.keep_daily_snapshots));
+      setMaxSnapshots(editingConfig.max_snapshots || 7);
 
       setProfileEnabled(editingConfig.profile_enabled ?? pt !== 'TEACHER');
       setProfileSheetName(
@@ -186,10 +261,16 @@ export const BackupConfigModal: React.FC<BackupConfigModalProps> = ({
       setMaskSensitiveData(Boolean(editingConfig.mask_sensitive_data));
     } else {
       const def = PROGRAM_TYPE_OPTIONS[0];
+      const defaultStaff = csUsers[0]?.staff_code || 'CVHT01';
       setProgramType(def.value);
       setCsUserId(csUsers[0]?.id || '');
       setName('Backup KAIWA - Sổ mới');
       setTargetUrl('');
+      setActiveDestTab('GOOGLE_SHEET');
+      setSubfolder(defaultSubfolderByProgram(def.value));
+      setFileBaseName(defaultFileBaseByProgram(def.value, defaultStaff));
+      setKeepDailySnapshots(false);
+      setMaxSnapshots(7);
       setProfileEnabled(true);
       setProfileSheetName(def.defaultProfileSheet);
       setProfileHeaderRow(def.defaultProfileHeader);
@@ -218,6 +299,10 @@ export const BackupConfigModal: React.FC<BackupConfigModalProps> = ({
     setFinalSheetName(meta.defaultFinalSheet || 'Điểm danh chốt');
     if (!isEditing) {
       setName(meta.label);
+      const selectedStaff =
+        csUsers.find((u) => u.id === Number(csUserId))?.staff_code || 'CVHT01';
+      setSubfolder(defaultSubfolderByProgram(nextPt));
+      setFileBaseName(defaultFileBaseByProgram(nextPt, selectedStaff));
     }
   };
 
@@ -241,10 +326,27 @@ export const BackupConfigModal: React.FC<BackupConfigModalProps> = ({
     setCustomTime('');
   };
 
+  const sanitizedBaseName =
+    fileBaseName
+      .trim()
+      .replace(/\.xlsx$/i, '')
+      .replace(/[^a-zA-Z0-9_-]/g, '_')
+      .replace(/_+/g, '_')
+      .slice(0, 100) || defaultFileBaseByProgram(programType, editingConfig?.cs_user?.staff_code);
+
+  const previewRelativePath = `backups/${subfolder}/${sanitizedBaseName}.xlsx`;
+
   const handleSubmit = async () => {
     const payload: UpdateCsSheetBackupConfigDTO = {
       name: name.trim() || undefined,
       target_spreadsheet_url: targetUrl.trim() || null,
+      ...(canManage
+        ? {
+            local_backup_path: previewRelativePath,
+            keep_daily_snapshots: keepDailySnapshots,
+            max_snapshots: Math.min(Math.max(Number(maxSnapshots) || 7, 1), 60),
+          }
+        : {}),
       profile_enabled: profileEnabled,
       profile_sheet_name: profileSheetName.trim() || undefined,
       profile_header_row: Number(profileHeaderRow) || 2,
@@ -366,34 +468,181 @@ export const BackupConfigModal: React.FC<BackupConfigModalProps> = ({
             )}
         </div>
 
-        {/* 2. Link Google Sheet đích */}
-        <div className="p-3.5 rounded-xl border border-slate-200 space-y-2">
-          <div className="flex items-center justify-between">
-            <label className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
-              <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
-              <span>Link Google Sheet đích (Tùy chọn)</span>
-            </label>
-            {targetUrl.trim() && (
-              <a
-                href={targetUrl.trim()}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center gap-1 text-[11px] font-semibold text-blue-600 hover:underline"
+        {/* 2. Đích kết nối dữ liệu Backup (2 Tabs giống cấu hình trang Đồng bộ) */}
+        <div className="rounded-2xl border border-slate-200 p-4 space-y-4 bg-slate-50/50">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+              Nguồn kết nối dữ liệu Backup
+            </span>
+            <div className="inline-flex rounded-xl bg-slate-200/70 p-1">
+              <button
+                type="button"
+                onClick={() => setActiveDestTab('GOOGLE_SHEET')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold inline-flex items-center gap-1.5 transition-all cursor-pointer ${
+                  activeDestTab === 'GOOGLE_SHEET'
+                    ? 'bg-white text-emerald-700 shadow-2xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
               >
-                <span>Mở Sheet kiểm tra</span>
-                <ExternalLink className="w-3 h-3" />
-              </a>
-            )}
+                <FileSpreadsheet className="w-3.5 h-3.5" />
+                <span>Dán Link Google Sheet</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveDestTab('LOCAL_SERVER')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold inline-flex items-center gap-1.5 transition-all cursor-pointer ${
+                  activeDestTab === 'LOCAL_SERVER'
+                    ? 'bg-white text-blue-700 shadow-2xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <HardDrive className="w-3.5 h-3.5" />
+                <span>Lưu File trên máy chủ (.xlsx)</span>
+              </button>
+            </div>
           </div>
-          <Input
-            value={targetUrl}
-            onChange={(e) => setTargetUrl(e.target.value)}
-            placeholder="https://docs.google.com/spreadsheets/d/1abc..."
-            className="h-9 text-xs font-mono"
-          />
-          <p className="text-[11px] text-slate-500">
-            Nếu để trống, hệ thống vẫn xuất sẵn file Excel chuẩn (<code className="font-mono">.xlsx</code>) trên server để tải về bất cứ lúc nào.
-          </p>
+
+          {activeDestTab === 'GOOGLE_SHEET' ? (
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Link Google Sheet đích
+                </label>
+                <div className="flex items-center gap-2">
+                  <div className="flex-1">
+                    <Input
+                      value={targetUrl}
+                      onChange={(e) => setTargetUrl(e.target.value)}
+                      placeholder="https://docs.google.com/spreadsheets/d/1abcXYZ.../edit"
+                      className="h-9 text-xs font-mono"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    disabled={!targetUrl.trim()}
+                    onClick={() =>
+                      window.open(
+                        targetUrl.trim(),
+                        '_blank',
+                        'noopener,noreferrer'
+                      )
+                    }
+                    className="h-9 px-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-50 text-slate-700 font-semibold text-xs inline-flex items-center gap-1.5 shrink-0 cursor-pointer"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    <span>Mở Sheet</span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="rounded-xl bg-white border border-slate-200 px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-600">
+                <span>
+                  Hệ thống tự động ghi file chuẩn{' '}
+                  <code className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-800 font-mono font-semibold">
+                    {previewRelativePath}
+                  </code>{' '}
+                  trước, sau đó đẩy các ô thay đổi (delta) lên Google Sheet.
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setActiveDestTab('LOCAL_SERVER')}
+                  className="text-blue-600 font-semibold hover:underline cursor-pointer shrink-0"
+                >
+                  Cấu hình thư mục .xlsx →
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="rounded-xl bg-emerald-50/80 border border-emerald-200 px-3.5 py-2 flex items-center justify-between gap-2 text-[11px] text-emerald-800">
+                <div className="flex items-center gap-2">
+                  <FolderLock className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>
+                    <strong>Sandbox bảo mật máy chủ:</strong> Chỉ cho phép lưu trong phân vùng{' '}
+                    <code className="font-mono font-bold">backups/*</code> (chặn tuyệt đối{' '}
+                    <code className="font-mono">../</code> &amp; symlink ngoài vùng).
+                  </span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
+                <div className="sm:col-span-5">
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Phân vùng thư mục con (Whitelist)
+                  </label>
+                  <select
+                    value={subfolder}
+                    disabled={!canManage}
+                    onChange={(e) => setSubfolder(e.target.value)}
+                    className="w-full h-9 px-3 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-800 disabled:bg-slate-100 disabled:text-slate-500"
+                  >
+                    {ALLOWED_SUBFOLDERS.map((sf) => (
+                      <option key={sf.value} value={sf.value}>
+                        {sf.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="sm:col-span-7">
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Tên file chuẩn trên máy chủ (chỉ nhận chữ, số, _, -)
+                  </label>
+                  <div className="flex items-center">
+                    <input
+                      type="text"
+                      value={fileBaseName}
+                      disabled={!canManage}
+                      onChange={(e) => setFileBaseName(e.target.value)}
+                      placeholder="hoc_vien_kaiwa_CVHT01"
+                      className="w-full h-9 px-3 rounded-l-xl border border-r-0 border-slate-200 bg-white text-xs font-mono text-slate-800 disabled:bg-slate-100 disabled:text-slate-500 focus:outline-none focus:border-blue-500"
+                    />
+                    <span className="h-9 px-3 inline-flex items-center rounded-r-xl border border-slate-200 bg-slate-100 text-xs font-mono font-bold text-slate-600">
+                      .xlsx
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-xl bg-white border border-slate-200 px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2 text-[11px]">
+                <div className="text-slate-600">
+                  Đường dẫn lưu chuẩn:{' '}
+                  <code className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-800 font-mono font-semibold">
+                    {previewRelativePath}
+                  </code>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <label className="inline-flex items-center gap-1.5 cursor-pointer font-semibold text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={keepDailySnapshots}
+                      disabled={!canManage}
+                      onChange={(e) => setKeepDailySnapshots(e.target.checked)}
+                      className="rounded border-slate-300 text-blue-600"
+                    />
+                    <span>Lưu thêm bản lịch sử theo ngày (_YYYY-MM-DD.xlsx)</span>
+                  </label>
+
+                  {keepDailySnapshots && (
+                    <div className="inline-flex items-center gap-1">
+                      <span className="text-slate-500">Giữ tối đa:</span>
+                      <select
+                        value={maxSnapshots}
+                        disabled={!canManage}
+                        onChange={(e) => setMaxSnapshots(Number(e.target.value))}
+                        className="h-7 px-2 rounded-lg border border-slate-200 bg-slate-50 text-[11px] font-bold text-slate-700"
+                      >
+                        <option value={7}>7 bản</option>
+                        <option value={14}>14 bản</option>
+                        <option value={30}>30 bản</option>
+                      </select>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* 3. Cấu hình các Sheet bên trong File */}

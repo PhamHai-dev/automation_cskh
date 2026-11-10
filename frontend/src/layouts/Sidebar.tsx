@@ -19,7 +19,6 @@ import {
   MessageSquare,
   CalendarCheck,
   ClipboardCheck,
-  Settings,
   Sliders,
   RefreshCw,
   FileText,
@@ -278,10 +277,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {
           name: 'Backup dữ liệu',
           path: '/data-backup',
-          activePaths: ['/data-backup'],
+          activePaths: [
+            '/data-backup',
+            '/data-backup/configs',
+            '/data-backup/history',
+            '/data-backup/connection',
+          ],
           icon: <FileSpreadsheet className="w-5 h-5 shrink-0" />,
           allowedRoles: ['ADMIN', 'MANAGE', 'CS', 'TEACHER'],
-          end: true,
+          end: false,
           subItems: [
             {
               name: 'Danh sách nguồn Backup',
@@ -294,38 +298,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
               allowedRoles: ['ADMIN', 'MANAGE', 'CS', 'TEACHER'],
             },
             {
-              name: 'Cấu hình Cột & Kết nối',
+              name: 'Cấu hình & Kết nối',
               tab: 'connection',
-              allowedRoles: ['ADMIN', 'MANAGE', 'CS'],
-            },
-          ],
-        },
-        {
-          name: 'Nhập / Xuất Excel',
-          path: '/imports',
-          activePaths: ['/imports'],
-          icon: <FileText className="w-5 h-5 shrink-0" />,
-          allowedRoles: ['ADMIN', 'MANAGE', 'CS'],
-          end: true,
-          subItems: [
-            {
-              name: 'Upload Hồ sơ',
-              tab: 'wizard',
-              allowedRoles: ['ADMIN', 'MANAGE', 'CS'],
-            },
-            {
-              name: 'Điểm danh CSKH / GV',
-              tab: 'attendance',
-              allowedRoles: ['ADMIN', 'MANAGE', 'CS'],
-            },
-            {
-              name: 'Phê duyệt nhập liệu',
-              tab: 'approval',
-              allowedRoles: ['ADMIN', 'MANAGE'],
-            },
-            {
-              name: 'Lịch sử nhập',
-              tab: 'history',
               allowedRoles: ['ADMIN', 'MANAGE', 'CS'],
             },
           ],
@@ -341,17 +315,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
           path: '/settings/config',
           icon: <Sliders className="w-5 h-5 shrink-0" />,
           allowedRoles: ['ADMIN'],
-        },
-      ],
-    },
-    {
-      title: 'CÁ NHÂN',
-      items: [
-        {
-          name: 'Cấu hình cá nhân',
-          path: '/settings/preferences',
-          icon: <Settings className="w-5 h-5 shrink-0" />,
-          allowedRoles: ['ADMIN', 'MANAGE', 'CS'],
         },
       ],
     },
@@ -426,7 +389,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     );
                   const isExpanded = isParentRouteActive || hoveredPath === item.path;
                   const searchParams = new URLSearchParams(location.search);
-                  const rawTab = searchParams.get('tab');
+                  const rawTab =
+                    searchParams.get('tab') ||
+                    (item.path === '/data-backup' && location.pathname.startsWith('/data-backup/')
+                      ? location.pathname.split('/')[2]
+                      : null);
                   const defaultTab = visibleSubItems[0]?.tab;
                   const activeSubTab =
                     rawTab && visibleSubItems.some((s) => s.tab === rawTab)
@@ -473,10 +440,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
                           {visibleSubItems.map((sub) => {
                             const isSubActive =
                               isParentRouteActive && activeSubTab === sub.tab;
+                            const subHref =
+                              item.path === '/data-backup'
+                                ? sub.tab === 'configs'
+                                  ? '/data-backup'
+                                  : `/data-backup/${sub.tab}`
+                                : `${item.path}?tab=${sub.tab}`;
                             return (
                               <NavLink
                                 key={sub.tab}
-                                to={`${item.path}?tab=${sub.tab}`}
+                                to={subHref}
                                 onClick={onMobileClose}
                                 className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs transition-colors ${
                                   isSubActive

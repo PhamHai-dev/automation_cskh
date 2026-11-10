@@ -2,10 +2,14 @@ import React from 'react';
 import { PageContainer } from '../../../components/common/PageContainer';
 import { CsSheetBackupPanel } from '../components/CsSheetBackupPanel';
 
-export const DataBackupPage: React.FC = () => {
+export interface DataBackupPageProps {
+  initialTab?: 'configs' | 'history' | 'connection';
+}
+
+export const DataBackupPage: React.FC<DataBackupPageProps> = ({ initialTab }) => {
   return (
     <PageContainer>
-      <CsSheetBackupPanel />
+      <CsSheetBackupPanel initialTab={initialTab} />
     </PageContainer>
   );
 };

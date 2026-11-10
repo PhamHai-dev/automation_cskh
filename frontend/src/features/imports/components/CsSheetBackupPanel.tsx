@@ -1,5 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { importsApi } from '../api/imports.api';
 import {
   BackupHistoryBatch,
@@ -19,6 +19,7 @@ import { BackupConfigModal } from './BackupConfigModal';
 import {
   CalendarCheck,
   CheckCircle2,
+  ChevronDown,
   ClipboardPaste,
   Download,
   ExternalLink,
@@ -26,6 +27,7 @@ import {
   FileText,
   FolderOpen,
   History,
+  MoreHorizontal,
   Play,
   Plus,
   RefreshCw,
@@ -39,47 +41,35 @@ import {
 type SubTabKey = 'configs' | 'history' | 'connection';
 type BackupFlowGroup = 'ALL' | 'ADMIN' | 'CSKH' | 'TEACHER' | 'REPORT';
 
-const FLOW_CARDS: Array<{
+const FLOW_TABS: Array<{
   key: BackupFlowGroup;
-  title: string;
-  subtitle: string;
-  activeBorder: string;
+  label: string;
   icon: React.ReactNode;
 }> = [
   {
     key: 'ALL',
-    title: 'Tất cả nguồn',
-    subtitle: 'Tổng hợp toàn bộ 4 luồng Backup',
-    activeBorder: 'border-slate-900 bg-slate-900 text-white',
-    icon: <FileSpreadsheet className="w-4 h-4" />,
+    label: 'Tất cả',
+    icon: <FileSpreadsheet className="w-4 h-4 shrink-0" />,
   },
   {
     key: 'ADMIN',
-    title: '1. Admin Master',
-    subtitle: 'Sổ tổng Kaiwa, JLPT & Đối soát',
-    activeBorder: 'border-violet-600 bg-violet-600 text-white',
-    icon: <ShieldCheck className="w-4 h-4" />,
+    label: 'Sổ tổng',
+    icon: <ShieldCheck className="w-4 h-4 shrink-0" />,
   },
   {
     key: 'CSKH',
-    title: '2. Sổ CSKH (CVHT)',
-    subtitle: 'Hồ sơ, Chấm buổi & Điểm danh chốt',
-    activeBorder: 'border-blue-600 bg-blue-600 text-white',
-    icon: <Users className="w-4 h-4" />,
+    label: 'Sổ CSKH',
+    icon: <Users className="w-4 h-4 shrink-0" />,
   },
   {
     key: 'TEACHER',
-    title: '3. Điểm danh Giáo viên',
-    subtitle: 'Lịch dạy 2026 スケジュール',
-    activeBorder: 'border-amber-600 bg-amber-600 text-white',
-    icon: <CalendarCheck className="w-4 h-4" />,
+    label: 'Điểm danh GV',
+    icon: <CalendarCheck className="w-4 h-4 shrink-0" />,
   },
   {
     key: 'REPORT',
-    title: '4. Báo cáo học tập',
-    subtitle: 'BC Kaiwa (61 cột) & Chuyên cần JLPT',
-    activeBorder: 'border-teal-600 bg-teal-600 text-white',
-    icon: <FileText className="w-4 h-4" />,
+    label: 'Báo cáo học tập',
+    icon: <FileText className="w-4 h-4 shrink-0" />,
   },
 ];
 
@@ -149,7 +139,7 @@ function renderFlowBadge(flow: Exclude<BackupFlowGroup, 'ALL'>) {
     case 'ADMIN':
       return (
         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-violet-100 text-violet-800 border border-violet-200">
-          Admin Master
+          Sổ tổng
         </span>
       );
     case 'CSKH':
@@ -237,41 +227,45 @@ const formatDateTimeFull = (iso?: string | null): string => {
   return `${date} ${time}`;
 };
 
-export const CsSheetBackupPanel: React.FC = () => {
+export interface CsSheetBackupPanelProps {
+  initialTab?: SubTabKey;
+}
+
+export const CsSheetBackupPanel: React.FC<CsSheetBackupPanelProps> = ({ initialTab }) => {
   const toast = useToast();
   const { user } = useAuth();
-  const [searchParams, setSearchParams] = useSearchParams();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
 
   const canManage = Boolean(user?.roles?.some((r) => r === 'ADMIN' || r === 'MANAGE'));
   const canViewConnection = Boolean(
     user?.roles?.some((r) => r === 'ADMIN' || r === 'MANAGE' || r === 'CS')
   );
 
-  const subTabParam = searchParams.get('sub') || searchParams.get('tab');
-  const [subTab, setSubTab] = useState<SubTabKey>(() => {
-    if (subTabParam === 'history' || subTabParam === 'connection') return subTabParam;
+  const resolveActiveView = useCallback((): SubTabKey => {
+    if (location.pathname.endsWith('/history')) return 'history';
+    if (location.pathname.endsWith('/connection')) {
+      return canViewConnection ? 'connection' : 'configs';
+    }
+    const raw = searchParams.get('sub') || searchParams.get('tab') || initialTab;
+    if (raw === 'history') return 'history';
+    if (raw === 'connection') return canViewConnection ? 'connection' : 'configs';
     return 'configs';
-  });
+  }, [location.pathname, searchParams, initialTab, canViewConnection]);
+
+  const [subTab, setSubTab] = useState<SubTabKey>(resolveActiveView);
 
   useEffect(() => {
-    const raw = searchParams.get('sub') || searchParams.get('tab');
-    if (raw === 'history' || raw === 'connection' || raw === 'configs') {
-      setSubTab(raw);
-    }
-  }, [searchParams]);
+    setSubTab(resolveActiveView());
+  }, [resolveActiveView]);
 
   const changeSubTab = (next: SubTabKey) => {
-    setSubTab(next);
-    setSearchParams(
-      (prev) => {
-        prev.set('tab', next);
-        return prev;
-      },
-      { replace: true }
-    );
+    const nextPath = next === 'configs' ? '/data-backup' : `/data-backup/${next}`;
+    navigate(nextPath, { replace: true });
   };
 
-  // Configs state & Multi-filters (identical structure to Sync page)
+  // Configs state & Multi-filters
   const [configs, setConfigs] = useState<CsSheetBackupConfigItem[]>([]);
   const [csUsers, setCsUsers] = useState<CsUserOption[]>([]);
   const [serviceAccount, setServiceAccount] = useState<ServiceAccountInfo | null>(null);
@@ -284,17 +278,34 @@ export const CsSheetBackupPanel: React.FC = () => {
   const [destTypeFilter, setDestTypeFilter] = useState<'ALL' | 'GOOGLE_SHEET' | 'LOCAL_ONLY'>('ALL');
   const [autoModeFilter, setAutoModeFilter] = useState<'ALL' | 'AUTO_ON' | 'AUTO_OFF'>('ALL');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'SUCCESS' | 'FAILED' | 'IDLE'>('ALL');
-  const [year, setYear] = useState<number | null>(new Date().getFullYear());
 
   // Pagination & Selection for Configs Tab (20 / 50 / 100 rows)
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<20 | 50 | 100>(20);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
 
-  // Action states
+  // Action states & Menus
   const [runningId, setRunningId] = useState<string | null>(null);
   const [togglingId, setTogglingId] = useState<number | null>(null);
   const [downloadingId, setDownloadingId] = useState<number | null>(null);
+  const [addMenuOpen, setAddMenuOpen] = useState(false);
+  const [openRowMenuId, setOpenRowMenuId] = useState<number | null>(null);
+  const addMenuRef = useRef<HTMLDivElement | null>(null);
+  const rowMenuRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const handleOutsideClick = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (addMenuRef.current && !addMenuRef.current.contains(target)) {
+        setAddMenuOpen(false);
+      }
+      if (rowMenuRef.current && !rowMenuRef.current.contains(target)) {
+        setOpenRowMenuId(null);
+      }
+    };
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, []);
 
   // Modals: BackupConfigModal & BulkPaste
   const [configModalOpen, setConfigModalOpen] = useState(false);
@@ -328,7 +339,6 @@ export const CsSheetBackupPanel: React.FC = () => {
       if (res.availableYears && res.availableYears.length > 0) {
         setAvailableYears(res.availableYears);
       }
-      // Build unique CS users list from configs
       const map = new Map<number, CsUserOption>();
       for (const c of list) {
         if (c.cs_user?.id && !map.has(c.cs_user.id)) {
@@ -337,7 +347,7 @@ export const CsSheetBackupPanel: React.FC = () => {
       }
       setCsUsers(Array.from(map.values()));
     } catch (err: any) {
-      toast.error(err?.response?.data?.error?.message || 'Không tải được cấu hình backup');
+      toast.error(err?.response?.data?.error?.message || 'Không tải được cấu hình Backup');
     } finally {
       setLoading(false);
     }
@@ -355,7 +365,7 @@ export const CsSheetBackupPanel: React.FC = () => {
       });
       setHistoryData(res);
     } catch (err: any) {
-      toast.error(err?.response?.data?.error?.message || 'Không tải được lịch sử backup');
+      toast.error(err?.response?.data?.error?.message || 'Không tải được lịch sử Backup');
     } finally {
       setHistoryLoading(false);
     }
@@ -369,7 +379,7 @@ export const CsSheetBackupPanel: React.FC = () => {
     if (subTab === 'history') void loadHistory();
   }, [subTab, loadHistory]);
 
-  // Flow counts
+  // Flow counts from actual data
   const flowCounts = useMemo(() => {
     const counts: Record<BackupFlowGroup, number> = {
       ALL: configs.length,
@@ -382,6 +392,34 @@ export const CsSheetBackupPanel: React.FC = () => {
       counts[classifyBackupFlow(c.program_type)]++;
     }
     return counts;
+  }, [configs]);
+
+  // Overview status metrics for the status overview line
+  const overviewMetrics = useMemo(() => {
+    let linkedCount = 0;
+    let autoOnCount = 0;
+    let successCount = 0;
+    let failedCount = 0;
+    let latestBackupAt: string | null = null;
+
+    for (const c of configs) {
+      if (c.target_spreadsheet_url && c.target_spreadsheet_url.trim()) linkedCount++;
+      if (c.enabled) autoOnCount++;
+      if (c.last_status === 'SUCCESS') successCount++;
+      if (c.last_status === 'FAILED') failedCount++;
+      if (c.last_backup_at && (!latestBackupAt || c.last_backup_at > latestBackupAt)) {
+        latestBackupAt = c.last_backup_at;
+      }
+    }
+
+    return {
+      total: configs.length,
+      linkedCount,
+      autoOnCount,
+      successCount,
+      failedCount,
+      latestTime: latestBackupAt ? formatDateParts(latestBackupAt).time : null,
+    };
   }, [configs]);
 
   // Filtered configs
@@ -455,7 +493,7 @@ export const CsSheetBackupPanel: React.FC = () => {
     return filteredConfigs.slice(start, start + pageSize);
   }, [filteredConfigs, page, pageSize]);
 
-  // Flatten history items from batches (like Sync page)
+  // Flatten history items from batches
   const flatHistoryItems = useMemo(() => {
     const batches: BackupHistoryBatch[] = historyData?.batches || [];
     const all: Array<BackupHistoryItem & { batchId: string }> = [];
@@ -473,7 +511,10 @@ export const CsSheetBackupPanel: React.FC = () => {
     return all.filter((it) => {
       const flow = classifyBackupFlow(it.programType);
       if (historyFlowFilter !== 'ALL' && flow !== historyFlowFilter) return false;
-      if (historyProgramFilter !== 'ALL' && !it.programType.toUpperCase().includes(historyProgramFilter)) {
+      if (
+        historyProgramFilter !== 'ALL' &&
+        !it.programType.toUpperCase().includes(historyProgramFilter)
+      ) {
         return false;
       }
       if (historyStatusFilter !== 'ALL' && it.status !== historyStatusFilter) {
@@ -507,7 +548,7 @@ export const CsSheetBackupPanel: React.FC = () => {
       setTogglingId(cfg.id);
       await importsApi.updateSheetBackupConfig(cfg.id, { enabled: nextEnabled });
       toast.success(
-        `${nextEnabled ? 'Đã BẬT' : 'Đã TẮT'} backup tự động cho "${cfg.name}"`
+        `${nextEnabled ? 'Đã BẬT' : 'Đã TẮT'} Backup tự động cho "${cfg.name}"`
       );
     } catch (err: any) {
       setConfigs((prev) =>
@@ -522,10 +563,12 @@ export const CsSheetBackupPanel: React.FC = () => {
   const handleRunOne = async (cfg: CsSheetBackupConfigItem) => {
     try {
       setRunningId(String(cfg.id));
-      const summary = await importsApi.runSheetBackup(cfg.id, { year });
+      const summary = await importsApi.runSheetBackup(cfg.id, {
+        year: cfg.backup_year ?? null,
+      });
       toast.success(
         summary.syncedToGoogleSheet
-          ? `Đã backup "${cfg.name}" ra Excel & đẩy lên Google Sheet!`
+          ? `Đã Backup "${cfg.name}" ra Excel & đẩy lên Google Sheet!`
           : `Đã xuất file Excel trên server cho "${cfg.name}"!`
       );
       await loadConfigs();
@@ -542,14 +585,14 @@ export const CsSheetBackupPanel: React.FC = () => {
       if (selectedIds.size > 0) {
         const targets = configs.filter((c) => selectedIds.has(c.id));
         for (const t of targets) {
-          await importsApi.runSheetBackup(t.id, { year });
+          await importsApi.runSheetBackup(t.id, { year: t.backup_year ?? null });
         }
-        toast.success(`Đã chạy backup cho ${targets.length} nguồn đã chọn!`);
+        toast.success(`Đã chạy Backup cho ${targets.length} nguồn đã chọn!`);
         setSelectedIds(new Set());
       } else {
         const programParam = flowFilter === 'ALL' ? null : flowFilter;
-        await importsApi.runSheetBackupAll({ year, programType: programParam });
-        toast.success('Đã chạy backup toàn bộ nguồn đang bật!');
+        await importsApi.runSheetBackupAll({ programType: programParam });
+        toast.success('Đã chạy Backup toàn bộ nguồn đang bật!');
       }
       await loadConfigs();
     } catch (err: any) {
@@ -584,9 +627,9 @@ export const CsSheetBackupPanel: React.FC = () => {
         next.delete(cfg.id);
         return next;
       });
-      toast.success(`Đã xóa nguồn backup "${cfg.name}"`);
+      toast.success(`Đã xóa nguồn Backup "${cfg.name}"`);
     } catch (err: any) {
-      toast.error(err?.response?.data?.error?.message || 'Không thể xóa nguồn backup');
+      toast.error(err?.response?.data?.error?.message || 'Không thể xóa nguồn Backup');
     }
   };
 
@@ -671,20 +714,34 @@ export const CsSheetBackupPanel: React.FC = () => {
       : null,
   };
 
+  const pageHeaderTitle =
+    subTab === 'history'
+      ? 'Lịch sử Backup'
+      : subTab === 'connection'
+      ? 'Cấu hình & Kết nối'
+      : 'Backup dữ liệu';
+
+  const pageHeaderDescription =
+    subTab === 'history'
+      ? 'Theo dõi lịch sử các phiên chạy Backup, số lượng dòng/ô cập nhật và tải file Excel (.xlsx)'
+      : subTab === 'connection'
+      ? 'Cấu hình Google Service Account JSON và ánh xạ cột dữ liệu Web → Sheet Backup'
+      : '';
+
   return (
-    <div className="space-y-5">
-      {/* A. TOP HEADER BAR (Đồng bộ bố cục với trang Đồng bộ dữ liệu) */}
+    <div className="space-y-4">
+      {/* 1. TIÊU ĐỀ TRANG VÀ CÁC NÚT HÀNH ĐỘNG (Không có thanh 3 tab lặp lại) */}
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
-            Backup dữ liệu (4 luồng)
+            {pageHeaderTitle}
           </h1>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Sao lưu tự động &amp; xuất file Excel chuẩn cho Sổ tổng Admin, Sổ CSKH, Lịch dạy Giáo viên và Báo cáo học tập
-          </p>
+          {pageHeaderDescription && (
+            <p className="text-xs text-slate-500 mt-0.5">{pageHeaderDescription}</p>
+          )}
         </div>
 
-        {/* Right: Pill Google + Năm + Action buttons */}
+        {/* Right: Pill Google + Action buttons */}
         <div className="flex flex-wrap items-center gap-2.5">
           <button
             type="button"
@@ -698,7 +755,7 @@ export const CsSheetBackupPanel: React.FC = () => {
             title={
               serviceAccount?.clientEmail
                 ? 'Bấm để sao chép email Service Account cấp quyền Editor'
-                : 'Bấm để mở tab Cấu hình Cột & Kết nối'
+                : 'Bấm để mở trang Cấu hình & Kết nối'
             }
             className="bg-white rounded-xl border border-slate-200 px-3.5 py-1.5 flex items-center gap-2.5 shadow-2xs hover:bg-slate-50 transition-colors text-left cursor-pointer"
           >
@@ -721,159 +778,181 @@ export const CsSheetBackupPanel: React.FC = () => {
             </div>
           </button>
 
-          {/* Chọn năm backup */}
-          <select
-            value={year === null ? 'ALL' : String(year)}
-            onChange={(e) => setYear(e.target.value === 'ALL' ? null : Number(e.target.value))}
-            className="h-9 px-3 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-700 focus:outline-none shadow-2xs"
-          >
-            <option value="ALL">Năm: Tất cả</option>
-            {availableYears.map((y) => (
-              <option key={y} value={y}>
-                Năm {y}
-              </option>
-            ))}
-          </select>
+          {subTab === 'configs' && (
+            <>
+              {canViewConnection && (
+                <div className="relative" ref={addMenuRef}>
+                  <button
+                    type="button"
+                    onClick={() => setAddMenuOpen((prev) => !prev)}
+                    className="h-9 px-3.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 inline-flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
+                  >
+                    <Plus className="w-4 h-4 text-blue-600" />
+                    <span>Thêm nguồn</span>
+                    <ChevronDown
+                      className={`w-3.5 h-3.5 text-slate-400 transition-transform ${
+                        addMenuOpen ? 'rotate-180' : ''
+                      }`}
+                    />
+                  </button>
 
-          {canManage && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setBulkOpen(true)}
-              leftIcon={<ClipboardPaste className="w-4 h-4 text-teal-600" />}
-            >
-              Dán nhiều link (Bulk Paste)
-            </Button>
-          )}
+                  {addMenuOpen && (
+                    <div className="absolute right-0 mt-1.5 w-48 rounded-xl border border-slate-200 bg-white p-1.5 shadow-lg z-30">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAddMenuOpen(false);
+                          setEditingConfig(null);
+                          setConfigModalOpen(true);
+                        }}
+                        className="w-full px-2.5 py-2 rounded-lg text-left text-xs font-semibold text-slate-700 hover:bg-slate-50 flex items-center gap-2 cursor-pointer"
+                      >
+                        <Plus className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                        <span>Thêm nguồn mới</span>
+                      </button>
 
-          {canViewConnection && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                setEditingConfig(null);
-                setConfigModalOpen(true);
-              }}
-              leftIcon={<Plus className="w-4 h-4 text-blue-600" />}
-            >
-              Thêm nguồn Backup
-            </Button>
-          )}
+                      {canManage && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAddMenuOpen(false);
+                            setBulkOpen(true);
+                          }}
+                          className="w-full px-2.5 py-2 rounded-lg text-left text-xs font-semibold text-slate-700 hover:bg-slate-50 flex items-center gap-2 cursor-pointer"
+                        >
+                          <ClipboardPaste className="w-3.5 h-3.5 text-teal-600 shrink-0" />
+                          <span>Dán nhiều link</span>
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
 
-          {canManage && (
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={handleRunBatchOrAll}
-              isLoading={runningId === 'ALL'}
-              leftIcon={<Play className="w-4 h-4" />}
-            >
-              {selectedIds.size > 0
-                ? `Backup đã chọn (${selectedIds.size})`
-                : 'Backup tất cả'}
-            </Button>
+              {canManage && (
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={handleRunBatchOrAll}
+                  isLoading={runningId === 'ALL'}
+                  leftIcon={<Play className="w-4 h-4" />}
+                >
+                  {selectedIds.size > 0
+                    ? `Backup đã chọn (${selectedIds.size})`
+                    : 'Backup tất cả'}
+                </Button>
+              )}
+            </>
           )}
         </div>
       </div>
 
-      {/* B. THANH 3 SUB-TAB (Underline Tabs giống trang Đồng bộ) */}
-      <div className="border-b border-slate-200 flex items-center gap-6">
-        <button
-          type="button"
-          onClick={() => changeSubTab('configs')}
-          className={`pb-3 text-xs sm:text-sm inline-flex items-center gap-2 border-b-2 transition-colors cursor-pointer ${
-            subTab === 'configs'
-              ? 'border-blue-600 text-blue-600 font-semibold'
-              : 'border-transparent text-slate-600 hover:text-slate-900 font-medium'
-          }`}
-        >
-          <Settings className="w-4 h-4" />
-          <span>Danh sách nguồn Backup ({configs.length})</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => changeSubTab('history')}
-          className={`pb-3 text-xs sm:text-sm inline-flex items-center gap-2 border-b-2 transition-colors cursor-pointer ${
-            subTab === 'history'
-              ? 'border-blue-600 text-blue-600 font-semibold'
-              : 'border-transparent text-slate-600 hover:text-slate-900 font-medium'
-          }`}
-        >
-          <History className="w-4 h-4" />
-          <span>Lịch sử Backup</span>
-        </button>
-
-        {canViewConnection && (
-          <button
-            type="button"
-            onClick={() => changeSubTab('connection')}
-            className={`pb-3 text-xs sm:text-sm inline-flex items-center gap-2 border-b-2 transition-colors cursor-pointer ${
-              subTab === 'connection'
-                ? 'border-blue-600 text-blue-600 font-semibold'
-                : 'border-transparent text-slate-600 hover:text-slate-900 font-medium'
-            }`}
-          >
-            <FileSpreadsheet className="w-4 h-4" />
-            <span>Cấu hình Cột &amp; Kết nối</span>
-          </button>
-        )}
-      </div>
-
-      {/* C. SUB-TAB 1: DANH SÁCH NGUỒN BACKUP */}
+      {/* ==========================================================================
+       * TRANG 1: DANH SÁCH NGUỒN BACKUP
+       * ========================================================================== */}
       {subTab === 'configs' && (
-        <div className="space-y-4">
-          {/* 1. Thanh 5 Thẻ Lọc Nhanh Theo 4 Luồng */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-            {FLOW_CARDS.filter(
-              (card) => canManage || (card.key !== 'ADMIN' && card.key !== 'REPORT')
-            ).map((card) => {
-              const isActive = flowFilter === card.key;
-              const count = flowCounts[card.key] ?? 0;
+        <div className="space-y-3.5">
+          {/* 2. Dòng tổng quan trạng thái */}
+          <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-600 font-medium px-0.5">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span>
+                Tổng nguồn:{' '}
+                <strong className="text-slate-900 font-bold">
+                  {overviewMetrics.total} nguồn Backup
+                </strong>
+              </span>
+              <span className="text-slate-300">·</span>
+              <span>
+                Đã gắn Link Sheet:{' '}
+                <strong className="text-blue-600 font-bold">
+                  {overviewMetrics.linkedCount}
+                </strong>
+              </span>
+              <span className="text-slate-300">·</span>
+              <span>
+                Tự động đang BẬT:{' '}
+                <strong className="text-emerald-600 font-bold">
+                  {overviewMetrics.autoOnCount}
+                </strong>
+              </span>
+              <span className="text-slate-300">·</span>
+              <span>
+                Đã chạy thành công:{' '}
+                <strong className="text-emerald-600 font-bold">
+                  {overviewMetrics.successCount}
+                </strong>
+              </span>
+              {overviewMetrics.failedCount > 0 && (
+                <>
+                  <span className="text-slate-300">·</span>
+                  <span>
+                    Có lỗi:{' '}
+                    <strong className="text-rose-600 font-bold">
+                      {overviewMetrics.failedCount}
+                    </strong>
+                  </span>
+                </>
+              )}
+              {overviewMetrics.latestTime && (
+                <>
+                  <span className="text-slate-300">·</span>
+                  <span>
+                    Cập nhật gần nhất:{' '}
+                    <strong className="text-slate-900 font-semibold">
+                      {overviewMetrics.latestTime}
+                    </strong>
+                  </span>
+                </>
+              )}
+            </div>
+          </div>
 
-              return (
-                <button
-                  key={card.key}
-                  type="button"
-                  onClick={() => setFlowFilter(card.key)}
-                  className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between gap-2 ${
-                    isActive
-                      ? `${card.activeBorder} shadow-sm`
-                      : 'bg-white border-slate-200/90 hover:border-slate-300 hover:bg-slate-50/60'
-                  }`}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <span
-                      className={`inline-flex items-center gap-1.5 text-xs font-bold ${
-                        isActive ? 'text-white' : 'text-slate-900'
-                      }`}
-                    >
-                      {card.icon}
-                      <span>{card.title}</span>
+          {/* 3. Thanh chọn 5 nhóm nằm ngang (Segmented Pill Bar bám sát ảnh 2) */}
+          <div className="max-w-full overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <div
+              role="tablist"
+              aria-label="Lọc nhóm nguồn Backup"
+              className="inline-flex min-w-max items-center gap-1 rounded-2xl border border-slate-200/80 bg-slate-100/80 p-1.5 shadow-2xs"
+            >
+              {FLOW_TABS.filter(
+                (tab) => canManage || (tab.key !== 'ADMIN' && tab.key !== 'REPORT')
+              ).map((tab) => {
+                const isActive = flowFilter === tab.key;
+                const count = flowCounts[tab.key] ?? 0;
+
+                return (
+                  <button
+                    key={tab.key}
+                    type="button"
+                    role="tab"
+                    aria-selected={isActive}
+                    onClick={() => setFlowFilter(tab.key)}
+                    className={`inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl border px-4 text-xs sm:text-sm font-semibold outline-none transition-all duration-150 cursor-pointer ${
+                      isActive
+                        ? 'border-slate-200/90 bg-white text-blue-600 shadow-xs'
+                        : 'border-transparent bg-transparent text-slate-600 hover:bg-white/60 hover:text-slate-900'
+                    }`}
+                  >
+                    <span className={isActive ? 'text-blue-600' : 'text-slate-500'}>
+                      {tab.icon}
                     </span>
+                    <span className="whitespace-nowrap">{tab.label}</span>
                     <span
-                      className={`px-2 py-0.5 rounded-full text-xs font-extrabold ${
+                      className={`inline-flex items-center justify-center rounded-full px-2 py-0.5 text-[11px] font-bold leading-none ${
                         isActive
-                          ? 'bg-white/20 text-white'
-                          : 'bg-slate-100 text-slate-800'
+                          ? 'bg-blue-50 text-blue-600'
+                          : 'bg-slate-200/75 text-slate-600'
                       }`}
                     >
                       {count}
                     </span>
-                  </div>
-                  <div
-                    className={`text-[11px] truncate ${
-                      isActive ? 'text-white/85' : 'text-slate-500'
-                    }`}
-                  >
-                    {card.subtitle}
-                  </div>
-                </button>
-              );
-            })}
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
-          {/* 2. Thanh Tìm Kiếm & Bộ Lọc Đa Năng */}
+          {/* 4. Thanh Tìm Kiếm & Bộ Lọc */}
           <div className="bg-white rounded-2xl border border-slate-200/90 p-3.5 shadow-2xs flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3">
             <div className="flex flex-wrap items-center gap-2.5 flex-1">
               <div className="relative flex-1 min-w-[240px] max-w-md">
@@ -882,7 +961,7 @@ export const CsSheetBackupPanel: React.FC = () => {
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Tìm tên sổ, Mã CVHT, Mã GV, tên sheet, link sheet..."
+                  placeholder="Tìm tên nguồn, Mã CVHT, Mã GV, tên sheet, link sheet..."
                   className="w-full h-9 rounded-xl border border-slate-200 bg-slate-50/50 pl-8 pr-3 text-xs text-slate-800 placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
                 />
               </div>
@@ -940,7 +1019,7 @@ export const CsSheetBackupPanel: React.FC = () => {
             </div>
           </div>
 
-          {/* 3. Bảng Quản Lý Theo Dòng — 8 Cột Tiêu Chuẩn Giống Trang Đồng Bộ */}
+          {/* 5. Bảng Nguồn Backup (8 Cột) & Phân trang */}
           <div className="bg-white rounded-2xl border border-slate-200/90 shadow-xs overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
@@ -997,7 +1076,7 @@ export const CsSheetBackupPanel: React.FC = () => {
                   ) : (
                     paginatedConfigs.map((cfg) => {
                       const flow = classifyBackupFlow(cfg.program_type);
-                      const sheets = getSheetsBadges(cfg, year);
+                      const sheets = getSheetsBadges(cfg, cfg.backup_year ?? null);
                       const sheetUrl = (cfg.target_spreadsheet_url || '').trim();
                       const localFileName =
                         (cfg.local_backup_path || '').split(/[/\\]/).pop() ||
@@ -1067,8 +1146,25 @@ export const CsSheetBackupPanel: React.FC = () => {
                               ))}
                             </div>
 
-                            {/* Connection line */}
+                            {/* Connection line: Kênh 1 (File .xlsx Server) + Kênh 3 (Google Sheet) */}
                             <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[11px]">
+                              <span
+                                title={`Đường dẫn sandbox trên server: ${cfg.local_backup_path || localFileName}`}
+                                className="inline-flex items-center gap-1 text-slate-600 font-medium"
+                              >
+                                <FolderOpen className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                                <span className="truncate max-w-[190px] font-mono text-[10px]">
+                                  {cfg.local_backup_path || localFileName}
+                                </span>
+                                {cfg.keep_daily_snapshots && (
+                                  <span className="px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200 text-[9px] font-semibold">
+                                    +Snapshot({cfg.max_snapshots || 7})
+                                  </span>
+                                )}
+                              </span>
+
+                              <span className="text-slate-300">·</span>
+
                               {sheetUrl ? (
                                 <>
                                   <span className="inline-flex items-center gap-1 text-emerald-700 font-semibold">
@@ -1081,29 +1177,21 @@ export const CsSheetBackupPanel: React.FC = () => {
                                     rel="noreferrer"
                                     className="inline-flex items-center gap-1 text-blue-600 hover:underline font-medium"
                                   >
-                                    <span>Mở Sheet đích</span>
+                                    <span>Mở Sheet</span>
                                     <ExternalLink className="w-3 h-3" />
                                   </a>
                                 </>
                               ) : (
-                                <>
-                                  <span className="inline-flex items-center gap-1 text-slate-600 font-medium">
-                                    <FolderOpen className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                                    <span className="truncate max-w-[190px] font-mono text-[10px]">
-                                      {localFileName}
-                                    </span>
-                                  </span>
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setEditingConfig(cfg);
-                                      setConfigModalOpen(true);
-                                    }}
-                                    className="px-2 py-0.5 rounded border border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-700 font-semibold text-[10px] transition-colors cursor-pointer"
-                                  >
-                                    + Gắn Link Sheet
-                                  </button>
-                                </>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEditingConfig(cfg);
+                                    setConfigModalOpen(true);
+                                  }}
+                                  className="px-2 py-0.5 rounded border border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-700 font-semibold text-[10px] transition-colors cursor-pointer"
+                                >
+                                  + Gắn Link Sheet
+                                </button>
                               )}
                             </div>
                           </td>
@@ -1121,7 +1209,7 @@ export const CsSheetBackupPanel: React.FC = () => {
                             <div className="space-y-1 max-w-[220px]">
                               <div className="flex flex-wrap items-center gap-1.5">
                                 <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200 font-bold text-[11px]">
-                                  Năm: {cfg.backup_year || year || 'Tất cả'}
+                                  Năm: {cfg.backup_year || 'Tất cả'}
                                 </span>
                                 <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-semibold text-[11px]">
                                   {cfg.student_counts?.total ?? 0} HV
@@ -1206,66 +1294,93 @@ export const CsSheetBackupPanel: React.FC = () => {
 
                           {/* Cột 8: Thao tác */}
                           <td className="py-3.5 pl-3 pr-4 align-middle text-right">
-                            <div className="inline-flex items-center justify-end gap-1.5">
-                              <button
-                                type="button"
-                                disabled={runningId === String(cfg.id)}
-                                onClick={() => handleRunOne(cfg)}
-                                className="bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white rounded-lg px-3 py-1.5 text-xs font-semibold inline-flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
-                              >
-                                {runningId === String(cfg.id) ? (
-                                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                                ) : (
-                                  <Play className="w-3.5 h-3.5" />
-                                )}
-                                <span>Backup ngay</span>
-                              </button>
-
+                            <div
+                              className="inline-flex items-center justify-end gap-1.5 relative"
+                              ref={openRowMenuId === cfg.id ? rowMenuRef : undefined}
+                            >
                               <button
                                 type="button"
                                 onClick={() => {
                                   setEditingConfig(cfg);
                                   setConfigModalOpen(true);
                                 }}
-                                title="Cấu hình nguồn Backup, Sheet & Lịch chạy"
-                                className="border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-semibold inline-flex items-center gap-1 transition-colors cursor-pointer"
+                                title="Cấu hình nguồn Backup, Năm, Sheet & Lịch chạy"
+                                className="border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer"
                               >
                                 <Settings className="w-3.5 h-3.5 text-slate-500" />
-                                <span className="hidden xl:inline">Cấu hình</span>
+                                <span>Cấu hình</span>
                               </button>
 
                               <button
                                 type="button"
-                                disabled={downloadingId === cfg.id}
-                                onClick={() => handleDownloadExcel(cfg)}
-                                title="Tải file Excel (.xlsx) từ server"
-                                className="border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 rounded-lg px-2 py-1.5 text-xs font-semibold inline-flex items-center gap-1 transition-colors cursor-pointer"
-                              >
-                                <Download className="w-3.5 h-3.5 text-emerald-600" />
-                                <span className="hidden 2xl:inline">.xlsx</span>
-                              </button>
-
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setHistorySearch(cfg.cs_user?.staff_code || cfg.name);
-                                  changeSubTab('history');
-                                }}
-                                title="Xem lịch sử Backup của nguồn này"
+                                onClick={() =>
+                                  setOpenRowMenuId((prev) => (prev === cfg.id ? null : cfg.id))
+                                }
+                                title="Thao tác khác"
                                 className="border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 rounded-lg p-1.5 transition-colors cursor-pointer"
                               >
-                                <History className="w-3.5 h-3.5" />
+                                <MoreHorizontal className="w-4 h-4" />
                               </button>
 
-                              {canManage && !isAdminSystem && (
-                                <button
-                                  type="button"
-                                  onClick={() => handleDeleteConfig(cfg)}
-                                  title="Xóa nguồn Backup"
-                                  className="border border-rose-200 bg-rose-50/40 hover:bg-rose-100 text-rose-600 rounded-lg p-1.5 transition-colors cursor-pointer"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
+                              {openRowMenuId === cfg.id && (
+                                <div className="absolute right-0 top-full mt-1 w-48 rounded-xl border border-slate-200 bg-white p-1.5 shadow-lg z-30 text-left">
+                                  <button
+                                    type="button"
+                                    disabled={runningId === String(cfg.id)}
+                                    onClick={() => {
+                                      setOpenRowMenuId(null);
+                                      void handleRunOne(cfg);
+                                    }}
+                                    className="w-full px-2.5 py-2 rounded-lg text-xs font-semibold text-blue-600 hover:bg-blue-50 flex items-center gap-2 disabled:opacity-60 cursor-pointer"
+                                  >
+                                    {runningId === String(cfg.id) ? (
+                                      <RefreshCw className="w-3.5 h-3.5 animate-spin shrink-0" />
+                                    ) : (
+                                      <Play className="w-3.5 h-3.5 shrink-0" />
+                                    )}
+                                    <span>Backup ngay</span>
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    disabled={downloadingId === cfg.id}
+                                    onClick={() => {
+                                      setOpenRowMenuId(null);
+                                      void handleDownloadExcel(cfg);
+                                    }}
+                                    className="w-full px-2.5 py-2 rounded-lg text-xs font-semibold text-slate-700 hover:bg-slate-50 flex items-center gap-2 disabled:opacity-60 cursor-pointer"
+                                  >
+                                    <Download className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                                    <span>Tải file Excel (.xlsx)</span>
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setOpenRowMenuId(null);
+                                      setHistorySearch(cfg.cs_user?.staff_code || cfg.name);
+                                      changeSubTab('history');
+                                    }}
+                                    className="w-full px-2.5 py-2 rounded-lg text-xs font-semibold text-slate-700 hover:bg-slate-50 flex items-center gap-2 cursor-pointer"
+                                  >
+                                    <History className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                                    <span>Xem lịch sử Backup</span>
+                                  </button>
+
+                                  {canManage && !isAdminSystem && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setOpenRowMenuId(null);
+                                        void handleDeleteConfig(cfg);
+                                      }}
+                                      className="w-full px-2.5 py-2 rounded-lg text-xs font-semibold text-rose-600 hover:bg-rose-50 flex items-center gap-2 cursor-pointer"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5 shrink-0" />
+                                      <span>Xóa nguồn Backup</span>
+                                    </button>
+                                  )}
+                                </div>
                               )}
                             </div>
                           </td>
@@ -1289,7 +1404,7 @@ export const CsSheetBackupPanel: React.FC = () => {
                     –{Math.min(page * pageSize, filteredConfigs.length)}
                   </strong>{' '}
                   / <strong className="text-slate-800">{filteredConfigs.length}</strong>{' '}
-                  nguồn
+                  nguồn Backup
                 </span>
 
                 <div className="flex items-center gap-1.5">
@@ -1334,7 +1449,9 @@ export const CsSheetBackupPanel: React.FC = () => {
         </div>
       )}
 
-      {/* D. SUB-TAB 2: LỊCH SỬ BACKUP (Giống trang Đồng bộ: KPI bar + Filter + Bảng phẳng + Modal chi tiết Sheet) */}
+      {/* ==========================================================================
+       * TRANG 2: LỊCH SỬ BACKUP
+       * ========================================================================== */}
       {subTab === 'history' && (
         <div className="space-y-4">
           {/* 1. KPI Summary Row + Xuất CSV */}
@@ -1343,7 +1460,7 @@ export const CsSheetBackupPanel: React.FC = () => {
               <span>
                 Hôm nay:{' '}
                 <strong className="text-blue-600 font-bold">
-                  {historyStats.todayTotal} lượt chạy
+                  {historyStats.todayTotal} lượt Backup
                 </strong>
               </span>
               <span className="text-slate-300">·</span>
@@ -1413,11 +1530,11 @@ export const CsSheetBackupPanel: React.FC = () => {
               onChange={(e) => setHistoryFlowFilter(e.target.value as BackupFlowGroup)}
               className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700 focus:outline-none"
             >
-              <option value="ALL">Tất cả luồng</option>
-              <option value="ADMIN">1. Admin Master</option>
-              <option value="CSKH">2. Sổ CSKH</option>
-              <option value="TEACHER">3. Điểm danh GV</option>
-              <option value="REPORT">4. Báo cáo học tập</option>
+              <option value="ALL">Tất cả nhóm</option>
+              <option value="ADMIN">Sổ tổng</option>
+              <option value="CSKH">Sổ CSKH</option>
+              <option value="TEACHER">Điểm danh GV</option>
+              <option value="REPORT">Báo cáo học tập</option>
             </select>
 
             <select
@@ -1451,7 +1568,7 @@ export const CsSheetBackupPanel: React.FC = () => {
             </button>
           </div>
 
-          {/* 3. Bảng phẳng Lịch sử Backup (10 cột giống trang Đồng bộ) */}
+          {/* 3. Bảng phẳng Lịch sử Backup (10 cột) */}
           <div className="bg-white rounded-2xl border border-slate-200/90 shadow-xs overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
@@ -1558,7 +1675,7 @@ export const CsSheetBackupPanel: React.FC = () => {
                     –{Math.min(historyPage * historyPageSize, flatHistoryItems.length)}
                   </strong>{' '}
                   / <strong className="text-slate-800">{flatHistoryItems.length}</strong>{' '}
-                  phiên chạy
+                  phiên Backup
                 </span>
 
                 <div className="flex items-center gap-1.5">
@@ -1605,7 +1722,9 @@ export const CsSheetBackupPanel: React.FC = () => {
         </div>
       )}
 
-      {/* E. SUB-TAB 3: CẤU HÌNH CỘT & KẾT NỐI */}
+      {/* ==========================================================================
+       * TRANG 3: CẤU HÌNH & KẾT NỐI
+       * ========================================================================== */}
       {subTab === 'connection' && <SheetBackupAdminConfigCard />}
 
       {/* MODAL 1: CẤU HÌNH / THÊM NGUỒN BACKUP */}
@@ -1663,7 +1782,7 @@ export const CsSheetBackupPanel: React.FC = () => {
                 <div className="text-[11px] text-slate-500">Đẩy Google Sheet</div>
                 <div className="font-bold text-slate-900 mt-0.5">
                   {selectedHistoryItem.syncedToGoogleSheet
-                    ? 'Đã đồng bộ lên Sheet'
+                    ? 'Đã đẩy lên Sheet'
                     : 'Lưu Excel Local'}
                 </div>
               </div>

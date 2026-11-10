@@ -2037,68 +2037,98 @@ export const ActivityLogsPage: React.FC = () => {
               <span>{selectedAuditItem.summary}</span>
             </div>
 
-            {/* Bảng đối chiếu Trường dữ liệu | Giá trị trước | Giá trị sau */}
+            {/* Bảng đối chiếu Trường dữ liệu | Giá trị trước | Giá trị sau (hoặc 2 cột nếu là sự kiện Tạo mới / Đồng bộ / Backup không có beforeData) */}
             {selectedAuditItem.changedFields &&
             selectedAuditItem.changedFields.length > 0 ? (
-              <div className="rounded-xl border border-slate-200 overflow-hidden">
-                <table className="w-full text-left border-collapse text-xs">
-                  <thead>
-                    <tr className="bg-slate-100/80 border-b border-slate-200 text-[11px] font-bold text-slate-600 uppercase">
-                      <th className="py-2.5 px-3 w-[30%]">Trường dữ liệu</th>
-                      <th className="py-2.5 px-3 w-[35%]">Giá trị trước</th>
-                      <th className="py-2.5 px-3 w-[35%]">Giá trị sau</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {selectedAuditItem.changedFields.map((diff, idx) => (
-                      <tr key={`${diff.field}-${idx}`} className="hover:bg-slate-50/60">
-                        <td className="py-2.5 px-3 align-top">
-                          <div className="font-bold text-slate-800">{diff.label}</div>
-                          <div className="font-mono text-[10px] text-slate-400">
-                            {diff.field}
-                          </div>
-                        </td>
-                        <td className="py-2.5 px-3 align-top bg-rose-50/40">
-                          <span className="inline-block px-2 py-0.5 rounded bg-rose-100/80 text-rose-800 line-through break-all">
-                            {formatDiffVal(diff.before)}
-                          </span>
-                        </td>
-                        <td className="py-2.5 px-3 align-top bg-emerald-50/40">
-                          <span className="inline-block px-2 py-0.5 rounded bg-emerald-100/90 text-emerald-900 font-bold break-all">
-                            {formatDiffVal(diff.after)}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : selectedAuditItem.beforeData || selectedAuditItem.afterData ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div className="rounded-xl border border-rose-200 bg-rose-50/30 p-3">
-                  <div className="font-bold text-rose-800 mb-1.5 text-[11px] uppercase">
-                    Dữ liệu trước (Before)
+              (() => {
+                const hasAnyBeforeValue =
+                  Boolean(selectedAuditItem.beforeData) &&
+                  selectedAuditItem.changedFields.some(
+                    (d) => d.before !== null && d.before !== undefined && d.before !== ''
+                  );
+
+                if (!hasAnyBeforeValue) {
+                  return (
+                    <div className="rounded-xl border border-slate-200 overflow-hidden">
+                      <table className="w-full text-left border-collapse text-xs">
+                        <thead>
+                          <tr className="bg-slate-100/80 border-b border-slate-200 text-[11px] font-bold text-slate-600 uppercase">
+                            <th className="py-2.5 px-3 w-[40%]">Trường thông tin</th>
+                            <th className="py-2.5 px-3 w-[60%]">Giá trị ghi nhận (Sau thao tác)</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {selectedAuditItem.changedFields.map((diff, idx) => (
+                            <tr key={`${diff.field}-${idx}`} className="hover:bg-slate-50/60">
+                              <td className="py-2.5 px-3 align-top">
+                                <div className="font-bold text-slate-800">{diff.label}</div>
+                                <div className="font-mono text-[10px] text-slate-400">
+                                  {diff.field}
+                                </div>
+                              </td>
+                              <td className="py-2.5 px-3 align-top bg-emerald-50/30">
+                                <span className="inline-block px-2 py-0.5 rounded bg-emerald-100/90 text-emerald-900 font-bold break-all">
+                                  {formatDiffVal(diff.after)}
+                                </span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="rounded-xl border border-slate-200 overflow-hidden">
+                    <table className="w-full text-left border-collapse text-xs">
+                      <thead>
+                        <tr className="bg-slate-100/80 border-b border-slate-200 text-[11px] font-bold text-slate-600 uppercase">
+                          <th className="py-2.5 px-3 w-[30%]">Trường dữ liệu</th>
+                          <th className="py-2.5 px-3 w-[35%]">Giá trị trước</th>
+                          <th className="py-2.5 px-3 w-[35%]">Giá trị sau</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {selectedAuditItem.changedFields.map((diff, idx) => (
+                          <tr key={`${diff.field}-${idx}`} className="hover:bg-slate-50/60">
+                            <td className="py-2.5 px-3 align-top">
+                              <div className="font-bold text-slate-800">{diff.label}</div>
+                              <div className="font-mono text-[10px] text-slate-400">
+                                {diff.field}
+                              </div>
+                            </td>
+                            <td className="py-2.5 px-3 align-top bg-rose-50/40">
+                              <span className="inline-block px-2 py-0.5 rounded bg-rose-100/80 text-rose-800 line-through break-all">
+                                {formatDiffVal(diff.before)}
+                              </span>
+                            </td>
+                            <td className="py-2.5 px-3 align-top bg-emerald-50/40">
+                              <span className="inline-block px-2 py-0.5 rounded bg-emerald-100/90 text-emerald-900 font-bold break-all">
+                                {formatDiffVal(diff.after)}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                );
+              })()
+            ) : (selectedAuditItem.beforeData || selectedAuditItem.afterData) ? (
+              <div className="grid grid-cols-1 gap-3">
+                <div className="rounded-xl border border-blue-200 bg-blue-50/30 p-3">
+                  <div className="font-bold text-blue-800 mb-1.5 text-[11px] uppercase">
+                    Thông tin chi tiết sự kiện
                   </div>
                   <pre className="text-[11px] font-mono text-slate-700 overflow-x-auto max-h-64 whitespace-pre-wrap">
-                    {selectedAuditItem.beforeData
-                      ? JSON.stringify(selectedAuditItem.beforeData, null, 2)
-                      : '(Không có dữ liệu trước)'}
-                  </pre>
-                </div>
-                <div className="rounded-xl border border-emerald-200 bg-emerald-50/30 p-3">
-                  <div className="font-bold text-emerald-800 mb-1.5 text-[11px] uppercase">
-                    Dữ liệu sau (After)
-                  </div>
-                  <pre className="text-[11px] font-mono text-slate-700 overflow-x-auto max-h-64 whitespace-pre-wrap">
-                    {selectedAuditItem.afterData
-                      ? JSON.stringify(selectedAuditItem.afterData, null, 2)
-                      : '(Không có dữ liệu sau)'}
+                    {JSON.stringify(selectedAuditItem.afterData || selectedAuditItem.beforeData, null, 2)}
                   </pre>
                 </div>
               </div>
             ) : (
               <div className="py-6 text-center text-slate-500 bg-slate-50 rounded-xl border border-slate-200/70">
-                Thao tác này không ghi nhận thay đổi cấp trường dữ liệu chi tiết.
+                Thao tác này không ghi nhận thay đổi chi tiết.
               </div>
             )}
 

@@ -50,15 +50,18 @@ const ROUTE_MAP: RouteMap[] = [
   { prefix: '/automation', group: 'Tự động hóa', page: 'Kịch bản & phát tin' },
 
   // ── Dữ liệu & Hệ thống ───────────────────────────────────────────────────
+  { prefix: '/data-backup/history', group: 'Backup dữ liệu', page: 'Lịch sử Backup' },
+  { prefix: '/data-backup/connection', group: 'Backup dữ liệu', page: 'Cấu hình & Kết nối' },
+  { prefix: '/data-backup/configs', group: 'Backup dữ liệu', page: 'Danh sách nguồn Backup' },
+  { prefix: '/data-backup', group: 'Backup dữ liệu', page: 'Danh sách nguồn Backup' },
+  { prefix: '/data-sync', group: 'Dữ liệu & Hệ thống', page: 'Đồng bộ dữ liệu' },
+  { prefix: '/activity-logs', group: 'Dữ liệu & Hệ thống', page: 'Lịch sử hoạt động' },
   { prefix: '/imports/approval-queue', group: 'Dữ liệu & Hệ thống', page: 'Hàng đợi phê duyệt' },
   { prefix: '/imports', group: 'Dữ liệu & Hệ thống', page: 'Nhập & xuất Excel' },
   { prefix: '/settings/users', group: 'Dữ liệu & Hệ thống', page: 'Người dùng & phân quyền' },
   { prefix: '/settings/config/auto-attendance', group: 'Dữ liệu & Hệ thống', page: 'Cấu hình điểm danh tự động' },
-  { prefix: '/settings/config/sheet-backup', group: 'Dữ liệu & Hệ thống', page: 'Cấu hình backup Sheet' },
+  { prefix: '/settings/config/sheet-backup', group: 'Dữ liệu & Hệ thống', page: 'Cấu hình Backup Sheet' },
   { prefix: '/settings/config', group: 'Dữ liệu & Hệ thống', page: 'Cấu hình hệ thống' },
-
-  // ── Cá nhân ──────────────────────────────────────────────────────────────
-  { prefix: '/settings/preferences', group: 'Cá nhân', page: 'Cấu hình cá nhân' },
 ];
 
 /** Sort by descending prefix length so the most specific route wins. */
@@ -69,8 +72,28 @@ const EXTRA_PAGE_LABELS: Array<{ match: RegExp; page: string }> = [
   { match: /^\/automation\/\d+$/, page: 'Chi tiết kịch bản' },
 ];
 
-export const getBreadcrumbs = (pathname: string): BreadcrumbSegment[] => {
+export const getBreadcrumbs = (pathname: string, search = ''): BreadcrumbSegment[] => {
   const normalized = pathname.replace(/\/+$/, '') || '/';
+
+  if (normalized === '/data-backup') {
+    const tab = new URLSearchParams(search).get('tab');
+    if (tab === 'history') {
+      return [
+        { label: 'Backup dữ liệu', to: '/data-backup' },
+        { label: 'Lịch sử Backup', to: '/data-backup/history' },
+      ];
+    }
+    if (tab === 'connection') {
+      return [
+        { label: 'Backup dữ liệu', to: '/data-backup' },
+        { label: 'Cấu hình & Kết nối', to: '/data-backup/connection' },
+      ];
+    }
+    return [
+      { label: 'Backup dữ liệu', to: '/data-backup' },
+      { label: 'Danh sách nguồn Backup', to: '/data-backup' },
+    ];
+  }
 
   const extra = EXTRA_PAGE_LABELS.find((entry) => entry.match.test(normalized));
   const route =

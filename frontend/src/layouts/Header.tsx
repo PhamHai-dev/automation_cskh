@@ -11,7 +11,6 @@ import {
   CheckCheck,
   Loader2,
   ArrowRight,
-  Settings,
   ChevronDown,
 } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
@@ -49,7 +48,10 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar, sidebarOpen }) 
   const navigate = useNavigate();
   const location = useLocation();
 
-  const breadcrumbs = useMemo(() => getBreadcrumbs(location.pathname), [location.pathname]);
+  const breadcrumbs = useMemo(
+    () => getBreadcrumbs(location.pathname, location.search),
+    [location.pathname, location.search]
+  );
 
   // ── Global Search state ─────────────────────────────────────────────────────
   const [searchQuery, setSearchQuery] = useState('');
@@ -74,9 +76,6 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar, sidebarOpen }) 
   const roleConfig = ROLE_DISPLAY_NAMES[primaryRole] || { label: primaryRole, variant: 'neutral' as const };
   const canSearch = Boolean(
     user?.roles?.some((r) => ['ADMIN', 'MANAGE', 'CS', 'TEACHER'].includes(r))
-  );
-  const canAccessPreferences = Boolean(
-    user?.roles?.some((r) => ['ADMIN', 'MANAGE', 'CS'].includes(r))
   );
 
   // Debounced 300ms global search
@@ -565,16 +564,6 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar, sidebarOpen }) 
                 </div>
 
                 <div className="p-1">
-                  {canAccessPreferences && (
-                    <Link
-                      to="/settings/preferences"
-                      onClick={() => setUserMenuOpen(false)}
-                      className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-text-secondary hover:text-text-primary hover:bg-surface-muted transition-colors"
-                    >
-                      <Settings className="w-4 h-4 text-text-muted" />
-                      <span>Cấu hình cá nhân</span>
-                    </Link>
-                  )}
                   <button
                     type="button"
                     onClick={handleLogout}

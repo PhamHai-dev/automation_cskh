@@ -55,6 +55,8 @@ export const ACTION_LABELS: Record<string, string> = {
   RESET_SIDE: 'Đặt lại điểm danh',
 
   // Import & Sync & Backup
+  GOOGLE_SHEET_SYNC: 'Đồng bộ dữ liệu Google Sheet',
+  GOOGLE_SHEET_SYNC_ROLLBACK: 'Hoàn tác đồng bộ Google Sheet',
   CS_PROGRAM_BACKUP: 'Chạy Backup sổ Google Sheet',
   IMPORT_REQUEST_APPROVED: 'Duyệt yêu cầu tạo mới từ Import',
   IMPORT_REQUEST_APPROVED_TRANSFER: 'Duyệt yêu cầu chuyển giao từ Import',
@@ -130,6 +132,30 @@ export const FIELD_LABELS: Record<string, string> = {
   channel_mode: 'Kênh gửi',
   schedule_type: 'Hình thức gửi',
   total_recipients: 'Tổng người nhận',
+  runId: 'Mã phiên đồng bộ',
+  flowType: 'Luồng đồng bộ',
+  programType: 'Chương trình học',
+  triggerType: 'Hình thức kích hoạt',
+  totalRows: 'Tổng số dòng quét',
+  createdCount: 'Số dòng tạo mới',
+  updatedCount: 'Số dòng cập nhật',
+  unchangedCount: 'Số dòng giữ nguyên',
+  conflictCount: 'Số dòng xung đột',
+  failedCount: 'Số dòng lỗi',
+  durationMs: 'Thời lượng chạy (ms)',
+  skipped: 'Bỏ qua (không đổi file)',
+  configId: 'Mã cấu hình',
+  configName: 'Tên sổ / Nguồn',
+  batchId: 'Mã đợt chạy (Batch)',
+  staffCode: 'Mã nhân viên',
+  totalStudents: 'Tổng học viên',
+  updatedRows: 'Số dòng cập nhật',
+  appendedRows: 'Số dòng thêm mới',
+  unchangedRows: 'Số dòng giữ nguyên',
+  updatedCellsCount: 'Tổng số ô cập nhật',
+  attendanceCellsWritten: 'Số ô điểm danh đã ghi',
+  syncedToGoogleSheet: 'Đã đẩy lên Google Sheet',
+  localFilePath: 'Đường dẫn file Excel',
 };
 
 const IGNORED_DIFF_KEYS = new Set([
@@ -588,8 +614,18 @@ export function enrichAuditLogItem(
     const uName = u?.displayLabel || afterObj.name || beforeObj.name || afterObj.email;
     entityLabel = uName ? `Tài khoản: ${uName}` : `Tài khoản #${row.entity_id}`;
   } else if (ent === 'ProgramSheetBackupConfig') {
-    const pType = afterObj.program_type || beforeObj.program_type || '';
-    entityLabel = pType ? `Backup Sheet ${pType} (#${row.entity_id})` : `Backup Sheet #${row.entity_id}`;
+    const pType = afterObj.program_type || afterObj.programType || beforeObj.program_type || '';
+    const cfgName = afterObj.configName || afterObj.name || '';
+    entityLabel = cfgName
+      ? `Sổ Backup: ${cfgName}`
+      : pType
+        ? `Backup Sheet ${pType} (#${row.entity_id})`
+        : `Backup Sheet #${row.entity_id}`;
+  } else if (ent === 'GoogleSheetSyncConfig') {
+    const cfgName = afterObj.name || beforeObj.name || '';
+    entityLabel = cfgName
+      ? `Nguồn đồng bộ: ${cfgName} (${row.entity_id})`
+      : `Nguồn đồng bộ #${row.entity_id}`;
   } else if (ent === 'ImportCreateRequest') {
     const ext = afterObj.external_id || beforeObj.external_id;
     const pkg = afterObj.package_code || beforeObj.package_code;
@@ -616,9 +652,16 @@ export function enrichAuditLogItem(
   } else if (row.action === 'CANCEL' && ent === 'ClassSession') {
     summary = afterObj.reason ? `Hủy buổi học (Lý do: ${afterObj.reason})` : 'Hủy buổi học';
   } else if (row.action === 'CS_PROGRAM_BACKUP') {
-    const pType = afterObj.program_type || '';
+    const pType = afterObj.program_type || afterObj.programType || '';
     const status = afterObj.status || 'SUCCESS';
-    summary = `Chạy backup sổ Google Sheet ${pType} (${status})`;
+    const cells = afterObj.updatedCellsCount ?? 0;
+    summary = `Chạy backup sổ ${afterObj.configName || pType} (${status} · ${cells} ô cập nhật)`;
+  } else if (row.action === 'GOOGLE_SHEET_SYNC') {
+    const srcName = afterObj.name || row.entity_id;
+    const created = afterObj.createdCount ?? 0;
+    const updated = afterObj.updatedCount ?? 0;
+    const failed = afterObj.failedCount ?? 0;
+    summary = `Đồng bộ nguồn "${srcName}": +${created} tạo mới, ${updated} cập nhật, ${failed} lỗi`;
   } else if (changedFields.length > 0) {
     const parts = changedFields.slice(0, 3).map((cf) => {
       if (cf.before !== null && cf.before !== undefined && cf.before !== '') {

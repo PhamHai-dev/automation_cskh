@@ -195,6 +195,9 @@ export interface ProgramBackupConfigItem {
   final_sheet_name: string;
   final_header_row: number;
   final_enabled: boolean;
+  local_enabled: boolean;
+  keep_daily_snapshots: boolean;
+  max_snapshots: number;
   schedule_times: string[];
   backup_year: number | null;
   enabled: boolean;
@@ -219,6 +222,10 @@ export interface ProgramBackupConfigItem {
 export interface UpdateProgramBackupConfigDTO {
   name?: string;
   target_spreadsheet_url?: string | null;
+  local_backup_path?: string | null;
+  local_enabled?: boolean;
+  keep_daily_snapshots?: boolean;
+  max_snapshots?: number;
   sheet_name?: string;
   header_row?: number;
   profile_sheet_name?: string;
@@ -263,6 +270,7 @@ export interface ProgramBackupSummary {
   status: 'SUCCESS' | 'FAILED';
   syncedToGoogleSheet: boolean;
   localFilePath: string;
+  snapshotFilePath?: string | null;
   totalStudents: number;
   unchangedRows: number;
   updatedRows: number;
@@ -473,7 +481,18 @@ interface FinalMetaEntry {
   final_sheet_name?: string;
   final_header_row?: number;
   final_enabled?: boolean;
+  local_enabled?: boolean;
+  keep_daily_snapshots?: boolean;
+  max_snapshots?: number;
 }
+
+const ALLOWED_BACKUP_SUBDIRS = new Set([
+  'admin',
+  'cskh',
+  'giao_vien',
+  'bao_cao_hoc_tap',
+  'custom',
+]);
 
 /* --------------------------------- Service -------------------------------- */
 
@@ -486,10 +505,164 @@ export class SheetBackupService {
     this.importsService = importsService || new ImportsService();
   }
 
-  /** Relative or absolute path -> absolute path (relative to process.cwd()). */
+  /** Thư mục gốc sandbox an toàn trên server (`<cwd>/backups` hoặc `BACKUP_STORAGE_ROOT`). */
+  public getBackupSandboxRoot(): string {
+    const envRoot = process.env.BACKUP_STORAGE_ROOT?.trim();
+    const root = envRoot ? path.resolve(envRoot) : path.resolve(process.cwd(), 'backups');
+    if (!fs.existsSync(root)) {
+      fs.mkdirSync(root, { recursive: true, mode: 0o700 });
+    }
+    return root;
+  }
+
+  /**
+   * Chuẩn hóa và kiểm tra bảo mật đường dẫn tương đối (`backups/<subdir>/<filename>.xlsx`).
+   * Chặn tuyệt đối:
+   *  - Path traversal (`..`, `\`, null byte, đường dẫn tuyệt đối ổ đĩa)
+   *  - Thư mục con ngoài danh sách whitelist (`admin`, `cskh`, `giao_vien`, `bao_cao_hoc_tap`, `custom`)
+   *  - Tên file chứa ký tự đặc biệt hoặc phần mở rộng khác `.xlsx`
+   */
+  public sanitizeRelativeBackupPath(
+    rawInput: string,
+    fallbackStaffLabel: string,
+    programType: string
+  ): string {
+    const trimmed = String(rawInput || '')
+      .trim()
+      .replace(/\\/g, '/')
+      .replace(/^\/+/, '');
+    if (!trimmed) {
+      return this.relativeBackupPathFor(fallbackStaffLabel, programType);
+    }
+    if (trimmed.includes('\0') || trimmed.includes('..') || path.isAbsolute(trimmed) || /^[a-zA-Z]:/.test(trimmed)) {
+      throw new AppError(400, 'Đường dẫn file Backup không hợp lệ (vi phạm chính sách bảo mật thư mục máy chủ)');
+    }
+
+    const withoutPrefix = trimmed.startsWith('backups/') ? trimmed.slice('backups/'.length) : trimmed;
+    const parts = withoutPrefix.split('/').filter(Boolean);
+
+    let subdir = 'custom';
+    let rawFileName = '';
+    if (parts.length === 1) {
+      const defaultPath = this.relativeBackupPathFor(fallbackStaffLabel, programType);
+      subdir = defaultPath.split('/')[1] || 'custom';
+      rawFileName = parts[0];
+    } else if (parts.length === 2) {
+      subdir = parts[0].toLowerCase();
+      rawFileName = parts[1];
+    } else {
+      throw new AppError(
+        400,
+        'Đường dẫn Backup chỉ cho phép cấu trúc: backups/<nhóm>/<tên_file>.xlsx'
+      );
+    }
+
+    if (!ALLOWED_BACKUP_SUBDIRS.has(subdir)) {
+      throw new AppError(
+        400,
+        `Thư mục con "${subdir}" không nằm trong danh sách cho phép (${Array.from(ALLOWED_BACKUP_SUBDIRS).join(', ')})`
+      );
+    }
+
+    const baseWithoutExt = rawFileName.replace(/\.xlsx$/i, '');
+    const safeBase = baseWithoutExt.replace(/[^a-zA-Z0-9_-]/g, '_').replace(/_+/g, '_').slice(0, 100);
+    if (!safeBase || safeBase === '_' || !/^[a-zA-Z0-9]/.test(safeBase)) {
+      throw new AppError(400, 'Tên file Excel (.xlsx) chỉ được chứa chữ cái không dấu, chữ số, dấu gạch dưới (_) hoặc gạch ngang (-)');
+    }
+
+    return `backups/${subdir}/${safeBase}.xlsx`;
+  }
+
+  /**
+   * Chuyển đường dẫn cấu hình về đường dẫn tuyệt đối ĐƯỢC KIỂM SOÁT trong sandbox `backups/`.
+   * Ngăn chặn hoàn toàn lỗ hổng đọc/ghi file tùy ý trên máy chủ (Arbitrary File Read/Write & Symlink Escape).
+   */
   public resolveLocalBackupPath(relativeOrAbsPath: string): string {
-    if (path.isAbsolute(relativeOrAbsPath)) return relativeOrAbsPath;
-    return path.resolve(process.cwd(), relativeOrAbsPath);
+    const sandboxRoot = this.getBackupSandboxRoot();
+    const cleaned = String(relativeOrAbsPath || '')
+      .trim()
+      .replace(/\\/g, '/');
+
+    const relInsideBackups = cleaned.startsWith('backups/')
+      ? cleaned.slice('backups/'.length)
+      : cleaned;
+
+    const candidate = path.resolve(sandboxRoot, relInsideBackups);
+    const relCheck = path.relative(sandboxRoot, candidate);
+
+    if (
+      relCheck.startsWith('..') ||
+      path.isAbsolute(relCheck) ||
+      path.extname(candidate).toLowerCase() !== '.xlsx'
+    ) {
+      throw new AppError(403, 'Truy cập đường dẫn ngoài vùng lưu trữ Backup an toàn bị từ chối');
+    }
+
+    const parentDir = path.dirname(candidate);
+    if (fs.existsSync(parentDir)) {
+      const realRoot = fs.realpathSync(sandboxRoot);
+      const realParent = fs.realpathSync(parentDir);
+      const realRel = path.relative(realRoot, realParent);
+      if (realRel.startsWith('..') || path.isAbsolute(realRel)) {
+        throw new AppError(403, 'Phát hiện liên kết tượng trưng (symlink) trỏ ra ngoài thư mục Backup an toàn');
+      }
+    }
+
+    return candidate;
+  }
+
+  /**
+   * Ghi bản lưu snapshot theo ngày (`<subdir>/snapshots/<base>_YYYY-MM-DD.xlsx`)
+   * và tự động dọn các bản cũ vượt quá `maxSnapshots` để bảo vệ dung lượng ổ cứng server.
+   */
+  private writeDailySnapshotAndRotate(absPath: string, maxSnapshots = 7): string | null {
+    try {
+      if (!fs.existsSync(absPath)) return null;
+      const parentDir = path.dirname(absPath);
+      const snapshotDir = path.join(parentDir, 'snapshots');
+      const sandboxRoot = this.getBackupSandboxRoot();
+      const relCheck = path.relative(sandboxRoot, snapshotDir);
+      if (relCheck.startsWith('..') || path.isAbsolute(relCheck)) return null;
+
+      if (!fs.existsSync(snapshotDir)) {
+        fs.mkdirSync(snapshotDir, { recursive: true, mode: 0o700 });
+      }
+
+      const ext = path.extname(absPath);
+      const baseName = path.basename(absPath, ext);
+      const today = new Date().toISOString().slice(0, 10);
+      const snapshotName = `${baseName}_${today}${ext}`;
+      const snapshotAbs = path.join(snapshotDir, snapshotName);
+
+      fs.copyFileSync(absPath, snapshotAbs);
+      try {
+        fs.chmodSync(snapshotAbs, 0o600);
+      } catch {
+        /* ignore on Windows */
+      }
+
+      // Xoay vòng (retention) theo số bản tối đa của cùng nguồn
+      const safeLimit = Math.min(Math.max(Number(maxSnapshots) || 7, 1), 60);
+      const prefix = `${baseName}_`;
+      const existingSnapshots = fs
+        .readdirSync(snapshotDir)
+        .filter((f) => f.startsWith(prefix) && f.toLowerCase().endsWith('.xlsx'))
+        .sort()
+        .reverse();
+
+      for (const oldFile of existingSnapshots.slice(safeLimit)) {
+        try {
+          fs.unlinkSync(path.join(snapshotDir, oldFile));
+        } catch {
+          /* ignore */
+        }
+      }
+
+      return path.relative(process.cwd(), snapshotAbs).replace(/\\/g, '/');
+    } catch (err: any) {
+      log.warn('writeDailySnapshotAndRotate warning', { absPath, error: err?.message });
+      return null;
+    }
   }
 
   public defaultSheetNameFor(programType: string): string {
@@ -811,6 +984,11 @@ export class SheetBackupService {
           ...(patch.final_sheet_name !== undefined ? { final_sheet_name: patch.final_sheet_name } : {}),
           ...(patch.final_header_row !== undefined ? { final_header_row: patch.final_header_row } : {}),
           ...(patch.final_enabled !== undefined ? { final_enabled: patch.final_enabled } : {}),
+          ...(patch.local_enabled !== undefined ? { local_enabled: patch.local_enabled } : {}),
+          ...(patch.keep_daily_snapshots !== undefined
+            ? { keep_daily_snapshots: patch.keep_daily_snapshots }
+            : {}),
+          ...(patch.max_snapshots !== undefined ? { max_snapshots: patch.max_snapshots } : {}),
         },
       };
       await prisma.appSetting?.upsert?.({
@@ -904,6 +1082,9 @@ export class SheetBackupService {
       final_sheet_name: finalMeta?.final_sheet_name || DEFAULT_FINAL_SHEET_NAME,
       final_header_row: Number(finalMeta?.final_header_row) || DEFAULT_FINAL_HEADER_ROW,
       final_enabled: finalEnabled,
+      local_enabled: finalMeta?.local_enabled === undefined ? true : Boolean(finalMeta.local_enabled),
+      keep_daily_snapshots: Boolean(finalMeta?.keep_daily_snapshots),
+      max_snapshots: Math.min(Math.max(Number(finalMeta?.max_snapshots) || 7, 1), 60),
       schedule_times: scheduleTimes,
       backup_year: cfg.backup_year ?? null,
       enabled: Boolean(cfg.enabled),
@@ -1213,8 +1394,39 @@ export class SheetBackupService {
     const profilePatch: { profile_sheet_name?: string; profile_header_row?: number; profile_enabled?: boolean } = {};
     const finalPatch: FinalMetaEntry = {};
 
+    const isAdminOrManage =
+      Array.isArray(opts?.actorRoles) &&
+      (opts!.actorRoles!.includes('ADMIN') || opts!.actorRoles!.includes('MANAGE'));
+
     if (dto.name !== undefined && String(dto.name).trim()) {
       data.name = String(dto.name).trim().slice(0, 255);
+    }
+    if (dto.local_backup_path !== undefined) {
+      if (opts?.actorRoles && !isAdminOrManage) {
+        throw new AppError(403, 'Chỉ Quản trị viên hoặc Quản lý mới được phép thay đổi đường dẫn thư mục trên máy chủ');
+      }
+      const staffFallback = `ID${existing.id}`;
+      data.local_backup_path = this.sanitizeRelativeBackupPath(
+        dto.local_backup_path || '',
+        staffFallback,
+        existing.program_type
+      );
+    }
+    if (dto.local_enabled !== undefined) {
+      finalPatch.local_enabled = Boolean(dto.local_enabled);
+    }
+    if (dto.keep_daily_snapshots !== undefined) {
+      if (opts?.actorRoles && !isAdminOrManage) {
+        throw new AppError(403, 'Chỉ Quản trị viên hoặc Quản lý mới được phép cấu hình lưu bản snapshot trên máy chủ');
+      }
+      finalPatch.keep_daily_snapshots = Boolean(dto.keep_daily_snapshots);
+    }
+    if (dto.max_snapshots !== undefined) {
+      const ms = Number(dto.max_snapshots);
+      if (!Number.isInteger(ms) || ms < 1 || ms > 60) {
+        throw new AppError(400, 'Số bản lưu snapshot tối đa phải từ 1 đến 60');
+      }
+      finalPatch.max_snapshots = ms;
     }
     if (dto.target_spreadsheet_url !== undefined) {
       const url = dto.target_spreadsheet_url === null ? null : String(dto.target_spreadsheet_url).trim() || null;
@@ -1339,6 +1551,11 @@ export class SheetBackupService {
     const staffLabel = ownerUser?.staff_code || `CS${ownerUserId}`;
     const url = dto.target_spreadsheet_url ? String(dto.target_spreadsheet_url).trim() || null : null;
 
+    const safeLocalPath =
+      isAdminOrManage && dto.local_backup_path
+        ? this.sanitizeRelativeBackupPath(dto.local_backup_path, staffLabel, rawProgramType)
+        : this.relativeBackupPathFor(staffLabel, rawProgramType);
+
     const created = await prisma.programSheetBackupConfig.create({
       data: {
         cs_user_id: ownerUserId,
@@ -1346,7 +1563,7 @@ export class SheetBackupService {
         name: String(dto.name || `Backup ${rawProgramType} - ${staffLabel}`).trim().slice(0, 255),
         target_spreadsheet_url: url,
         target_spreadsheet_id: this.sheetSyncService.extractSpreadsheetId(url),
-        local_backup_path: this.relativeBackupPathFor(staffLabel, rawProgramType),
+        local_backup_path: safeLocalPath,
         sheet_name: String(dto.sheet_name || '').trim() || this.defaultSheetNameFor(rawProgramType),
         header_row: Number(dto.header_row) || 2,
         schedule_times: (Array.isArray(dto.schedule_times) && dto.schedule_times.length > 0
@@ -1366,11 +1583,21 @@ export class SheetBackupService {
       profile_enabled: dto.profile_enabled !== undefined ? Boolean(dto.profile_enabled) : !isTeacherProgramType(rawProgramType),
     });
 
-    if (dto.final_sheet_name !== undefined || dto.final_header_row !== undefined || dto.final_enabled !== undefined) {
+    if (
+      dto.final_sheet_name !== undefined ||
+      dto.final_header_row !== undefined ||
+      dto.final_enabled !== undefined ||
+      dto.local_enabled !== undefined ||
+      dto.keep_daily_snapshots !== undefined ||
+      dto.max_snapshots !== undefined
+    ) {
       await this.saveFinalMetaPatch(created.id, {
         final_sheet_name: dto.final_sheet_name || DEFAULT_FINAL_SHEET_NAME,
         final_header_row: Number(dto.final_header_row) || DEFAULT_FINAL_HEADER_ROW,
         final_enabled: dto.final_enabled !== undefined ? Boolean(dto.final_enabled) : true,
+        local_enabled: dto.local_enabled !== undefined ? Boolean(dto.local_enabled) : true,
+        keep_daily_snapshots: Boolean(dto.keep_daily_snapshots),
+        max_snapshots: Math.min(Math.max(Number(dto.max_snapshots) || 7, 1), 60),
       });
     }
 
@@ -2654,6 +2881,21 @@ export class SheetBackupService {
         await wbLoaded.workbook.xlsx.writeFile(absPath);
       }
 
+      try {
+        fs.chmodSync(absPath, 0o600);
+      } catch {
+        /* ignore on Windows */
+      }
+
+      // Tạo bản lưu snapshot theo ngày (nếu cấu hình bật keep_daily_snapshots)
+      let snapshotFilePath: string | null = null;
+      if (finalMeta?.keep_daily_snapshots) {
+        snapshotFilePath = this.writeDailySnapshotAndRotate(
+          absPath,
+          finalMeta?.max_snapshots ?? 7
+        );
+      }
+
       // Đẩy delta lên Google Sheet (nếu có đích)
       let syncedToGoogleSheet = false;
       const targetId =
@@ -2685,6 +2927,7 @@ export class SheetBackupService {
         status: 'SUCCESS',
         syncedToGoogleSheet,
         localFilePath: path.relative(process.cwd(), absPath).replace(/\\/g, '/'),
+        snapshotFilePath,
         totalStudents,
         unchangedRows: attendanceStats.unchangedRows,
         updatedRows: attendanceStats.updatedRows,
