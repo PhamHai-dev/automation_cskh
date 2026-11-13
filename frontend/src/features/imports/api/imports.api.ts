@@ -318,13 +318,17 @@ export const importsApi = {
   },
 
   getSheetSyncHistory: async (params?: {
+    configId?: number;
     code?: string;
     flowType?: SyncFlowType | string;
     programType?: string;
+    triggerType?: string;
     status?: string;
+    search?: string;
     fromDate?: string;
     toDate?: string;
-    limit?: number;
+    page?: number;
+    pageSize?: number;
   }): Promise<SyncHistoryResponse> => {
     const res = await apiClient.get('/imports/sheet-sync/history', { params });
     return res.data?.data || res.data;
@@ -386,7 +390,8 @@ export const importsApi = {
     status?: string;
     fromDate?: string;
     toDate?: string;
-    limit?: number;
+    page?: number;
+    pageSize?: number;
   }): Promise<BackupHistoryResponse> => {
     const res = await apiClient.get('/imports/sheet-backup/history', { params });
     return res.data?.data || res.data;

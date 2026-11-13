@@ -59,8 +59,9 @@ export interface AuditLogListResponseDto {
   items: EnrichedAuditLogItemDto[];
   total: number;
   page: number;
-  limit: number;
+  pageSize: number;
   totalPages: number;
+  refreshedAt: string;
 }
 
 export interface AuditLogQueryParams {
@@ -71,7 +72,7 @@ export interface AuditLogQueryParams {
   fromDate?: string;
   toDate?: string;
   page?: number;
-  limit?: number;
+  pageSize?: number;
 }
 
 export type LoginAuditFilterStatus = 'ALL' | 'SUCCESS' | 'FAILED' | 'LOCKED' | 'DISABLED';
@@ -83,7 +84,7 @@ export interface LoginAuditQueryParams {
   fromDate?: string;
   toDate?: string;
   page?: number;
-  limit?: number;
+  pageSize?: number;
 }
 
 export interface LoginAuditStatsDto {
@@ -112,8 +113,22 @@ export interface LoginAuditListResponseDto {
   items: EnrichedLoginAuditItemDto[];
   total: number;
   page: number;
-  limit: number;
+  pageSize: number;
   totalPages: number;
+  refreshedAt: string;
+}
+
+export type ActivityExportView = 'audit' | 'sync' | 'backup' | 'login';
+
+export interface ActivityExportQueryParams {
+  view: ActivityExportView;
+  module?: ActivityModuleType;
+  status?: string;
+  actorId?: number;
+  search?: string;
+  programType?: string;
+  fromDate?: string;
+  toDate?: string;
 }
 
 export interface EnrichmentContext {

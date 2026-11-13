@@ -36,6 +36,8 @@ import {
   parseTeacherAttendanceSheet,
 } from './sheet-sync.parser';
 import { cleanJlptClassCode } from '../students/jlpt-attendance-report.util';
+import type { AuthUser } from '../../middlewares/auth.middleware';
+import { resolveActivityDateRange, vietnamTodayBounds } from '../activity-logs/activity-time';
 
 const log = createLogger('SheetSyncService');
 
@@ -4990,7 +4992,41 @@ export class SheetSyncService {
    * HISTORY, RUN DETAILS & ROLLBACK
    * ========================================================================== */
 
+  private async getAllowedHistoryConfigIds(actor: AuthUser): Promise<number[] | null> {
+    if (actor.roles?.includes('ADMIN')) return null;
+    const allowedCsIds = new Set<number>([actor.id]);
+    if (actor.roles?.includes('MANAGE')) {
+      const assignments = await prisma.manageAssignment.findMany({
+        where: { manage_user_id: actor.id },
+        include: { cs_group: { include: { members: true } } },
+      });
+      for (const assignment of assignments) {
+        for (const member of assignment.cs_group?.members || []) allowedCsIds.add(member.user_id);
+      }
+    }
+    const configs = await prisma.googleSheetSyncConfig.findMany({
+      select: { id: true, default_cs_id: true, cvht_mapping: true },
+    });
+    return configs
+      .filter((config) => {
+        if (config.default_cs_id && allowedCsIds.has(config.default_cs_id)) return true;
+        const mapping = config.cvht_mapping && typeof config.cvht_mapping === 'object'
+          ? (config.cvht_mapping as Record<string, unknown>)
+          : {};
+        return Object.values(mapping).some((value) => allowedCsIds.has(Number(value)));
+      })
+      .map((config) => config.id);
+  }
+
+  private async assertHistoryRunScope(actor: AuthUser, configId: number): Promise<void> {
+    const allowed = await this.getAllowedHistoryConfigIds(actor);
+    if (allowed && !allowed.includes(configId)) {
+      throw new AppError(403, 'Bạn không có quyền xem phiên đồng bộ này');
+    }
+  }
+
   public async getSyncHistory(
+    actor: AuthUser,
     query: {
       configId?: number;
       code?: string;
@@ -5001,131 +5037,108 @@ export class SheetSyncService {
       fromDate?: string;
       toDate?: string;
       search?: string;
-      limit?: number;
+      pageSize?: number;
       page?: number;
-    } = {}
+    } = {},
   ): Promise<{
-    stats: {
-      todayTotal: number;
-      todaySuccess: number;
-      todayFailed: number;
-      lastRunTime: string | null;
-    };
+    stats: { todayTotal: number; todaySuccess: number; todayFailed: number; lastRunTime: string | null };
     items: SheetSyncHistoryItem[];
     total: number;
+    page: number;
+    pageSize: number;
+    totalPages: number;
+    refreshedAt: string;
+    canRollback: boolean;
   }> {
     await this.ensureDefaultConfigs();
-
-    const limit = Math.min(Math.max(Number(query.limit) || 50, 1), 200);
-    const filterCode = query.code && query.code !== 'ALL' ? String(query.code).toUpperCase() : null;
-    const filterFlow = query.flowType && query.flowType !== 'ALL' ? String(query.flowType).toUpperCase() : null;
-    const filterProg = query.programType && query.programType !== 'ALL' ? String(query.programType).toUpperCase() : null;
-    const filterTrigger = query.triggerType && query.triggerType !== 'ALL' ? String(query.triggerType).toUpperCase() : null;
-    const filterStatus = query.status && query.status !== 'ALL' ? String(query.status).toUpperCase() : null;
-    const fromDateStr = query.fromDate ? String(query.fromDate).slice(0, 10) : null;
-    const toDateStr = query.toDate ? String(query.toDate).slice(0, 10) : null;
-    const searchLower = query.search ? query.search.trim().toLowerCase() : '';
-
-    const runs = await prisma.googleSheetSyncRun.findMany({
-      where: {
-        ...(query.configId ? { config_id: Number(query.configId) } : {}),
-      },
-      orderBy: { started_at: 'desc' },
-      take: 300,
-    });
-
-    const items: SheetSyncHistoryItem[] = [];
-    for (const r of runs) {
-      const syncedAt = (r.completed_at || r.started_at).toISOString();
-      const durationMs = r.duration_ms || 500;
-      const durationSec = Math.max(1, Math.round(durationMs / 1000));
-
-      items.push({
-        id: r.id,
-        runId: r.id,
-        configId: r.config_id,
-        code: r.config_code,
-        name: r.config_name,
-        flowType: r.flow_type || 'STUDENT_MASTER',
-        programType: r.program_type,
-        status: (r.status as any) || 'SUCCESS',
-        triggerType: r.trigger_type === 'AUTO' ? 'AUTO' : 'MANUAL',
+    const page = Math.max(1, Number(query.page) || 1);
+    const pageSize = Math.min(Math.max(Number(query.pageSize) || 25, 1), 100);
+    const range = resolveActivityDateRange(query.fromDate, query.toDate);
+    const allowedConfigIds = await this.getAllowedHistoryConfigIds(actor);
+    const and: any[] = [{ started_at: { gte: range.from, lte: range.to } }];
+    if (allowedConfigIds) and.push({ config_id: { in: allowedConfigIds } });
+    if (query.configId) and.push({ config_id: Number(query.configId) });
+    if (query.code && query.code !== 'ALL') and.push({ config_code: query.code.toUpperCase() });
+    if (query.flowType && query.flowType !== 'ALL') and.push({ flow_type: query.flowType.toUpperCase() });
+    if (query.programType && query.programType !== 'ALL') and.push({ program_type: query.programType.toUpperCase() });
+    if (query.triggerType && query.triggerType !== 'ALL') and.push({ trigger_type: query.triggerType.toUpperCase() });
+    if (query.status && query.status !== 'ALL') and.push({ status: query.status.toUpperCase() });
+    if (query.search?.trim()) {
+      and.push({ OR: [
+        { config_code: { contains: query.search.trim() } },
+        { config_name: { contains: query.search.trim() } },
+      ] });
+    }
+    const where = { AND: and };
+    const [runs, total] = await Promise.all([
+      prisma.googleSheetSyncRun.findMany({
+        where,
+        orderBy: [{ started_at: 'desc' }, { id: 'desc' }],
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      prisma.googleSheetSyncRun.count({ where }),
+    ]);
+    const items: SheetSyncHistoryItem[] = runs.map((run) => {
+      const durationMs = run.duration_ms || 0;
+      return {
+        id: run.id,
+        runId: run.id,
+        configId: run.config_id,
+        code: run.config_code,
+        name: run.config_name,
+        flowType: run.flow_type || 'STUDENT_MASTER',
+        programType: run.program_type,
+        status: run.status as SheetSyncHistoryItem['status'],
+        triggerType: run.trigger_type === 'AUTO' ? 'AUTO' : 'MANUAL',
         mode: 'DELTA',
-        syncYear: r.sync_year,
+        syncYear: run.sync_year,
         skipped: false,
         reason: null,
-        totalRows: r.total_rows,
-        unchangedRows: r.unchanged_count,
-        createdCount: r.created_count,
-        updatedCount: r.updated_count,
-        conflictCount: r.conflict_count,
-        failedCount: r.failed_count,
-        rolledBackCount: r.rolled_back_count,
+        totalRows: run.total_rows,
+        unchangedRows: run.unchanged_count,
+        createdCount: run.created_count,
+        updatedCount: run.updated_count,
+        conflictCount: run.conflict_count,
+        failedCount: run.failed_count,
+        rolledBackCount: run.rolled_back_count,
         byCvht: {},
         durationMs,
-        durationSec,
-        syncedAt,
-        createdAt: r.started_at.toISOString(),
-        completedAt: r.completed_at ? r.completed_at.toISOString() : null,
-        rolledBackAt: r.rolled_back_at ? r.rolled_back_at.toISOString() : null,
-        error: r.error_message || null,
-      });
-    }
-
-    const now = new Date();
-    const todayPrefix = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-    let todayTotal = 0;
-    let todaySuccess = 0;
-    let todayFailed = 0;
-    let latestIso: string | null = null;
-
-    for (const it of items) {
-      if (!latestIso || it.syncedAt > latestIso) latestIso = it.syncedAt;
-      const d = new Date(it.syncedAt);
-      const dayStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-      if (dayStr === todayPrefix) {
-        todayTotal++;
-        if (it.status === 'FAILED') todayFailed++;
-        else todaySuccess++;
-      }
-    }
-
-    let lastRunTime: string | null = null;
-    if (latestIso) {
-      const ld = new Date(latestIso);
-      lastRunTime = Number.isNaN(ld.getTime())
-        ? latestIso
-        : `${String(ld.getHours()).padStart(2, '0')}:${String(ld.getMinutes()).padStart(2, '0')}`;
-    }
-
-    const filtered = items.filter((it) => {
-      if (filterCode && it.code.toUpperCase() !== filterCode && it.programType.toUpperCase() !== filterCode) return false;
-      if (filterFlow && it.flowType.toUpperCase() !== filterFlow) return false;
-      if (filterProg && it.programType.toUpperCase() !== filterProg) return false;
-      if (filterTrigger && it.triggerType.toUpperCase() !== filterTrigger) return false;
-      if (filterStatus && it.status.toUpperCase() !== filterStatus) return false;
-      if (fromDateStr || toDateStr) {
-        const d = new Date(it.syncedAt);
-        const dayKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-        if (fromDateStr && dayKey < fromDateStr) return false;
-        if (toDateStr && dayKey > toDateStr) return false;
-      }
-      if (searchLower) {
-        const hay = `${it.code} ${it.name} ${it.flowType} ${it.programType}`.toLowerCase();
-        if (!hay.includes(searchLower)) return false;
-      }
-      return true;
+        durationSec: Math.max(0, Math.round(durationMs / 1000)),
+        syncedAt: (run.completed_at || run.started_at).toISOString(),
+        createdAt: run.started_at.toISOString(),
+        completedAt: run.completed_at?.toISOString() || null,
+        rolledBackAt: run.rolled_back_at?.toISOString() || null,
+        error: run.error_message || null,
+      };
     });
-
+    const today = vietnamTodayBounds();
+    const statsScope: any = { started_at: { gte: today.from, lte: today.to } };
+    if (allowedConfigIds) statsScope.config_id = { in: allowedConfigIds };
+    const [todayTotal, todayFailed, last] = await Promise.all([
+      prisma.googleSheetSyncRun.count({ where: statsScope }),
+      prisma.googleSheetSyncRun.count({ where: { ...statsScope, status: 'FAILED' } }),
+      prisma.googleSheetSyncRun.findFirst({
+        where: allowedConfigIds ? { config_id: { in: allowedConfigIds } } : undefined,
+        orderBy: { started_at: 'desc' },
+        select: { completed_at: true, started_at: true },
+      }),
+    ]);
+    const latest = last ? last.completed_at || last.started_at : null;
     return {
       stats: {
-        todayTotal: todayTotal || items.length,
-        todaySuccess: todayTotal ? todaySuccess : items.filter((i) => i.status !== 'FAILED').length,
-        todayFailed: todayTotal ? todayFailed : items.filter((i) => i.status === 'FAILED').length,
-        lastRunTime,
+        todayTotal,
+        todaySuccess: todayTotal - todayFailed,
+        todayFailed,
+        lastRunTime: latest?.toISOString() || null,
       },
-      items: filtered.slice(0, limit),
-      total: filtered.length,
+      items,
+      total,
+      page,
+      pageSize,
+      totalPages: Math.max(1, Math.ceil(total / pageSize)),
+      refreshedAt: new Date().toISOString(),
+      canRollback: actor.roles?.some((role) => role === 'ADMIN' || role === 'MANAGE') || false,
     };
   }
 
@@ -5134,7 +5147,8 @@ export class SheetSyncService {
    */
   public async getSyncRunDetail(
     runId: number,
-    query?: { action?: string; status?: string; search?: string }
+    actor: AuthUser,
+    query?: { action?: string; status?: string; search?: string },
   ) {
     await this.ensureSchema();
     const run = await prisma.googleSheetSyncRun.findUnique({
@@ -5148,6 +5162,7 @@ export class SheetSyncService {
     if (!run) {
       throw new AppError(404, `Không tìm thấy phiên đồng bộ #${runId}`);
     }
+    await this.assertHistoryRunScope(actor, run.config_id);
 
     const statsByEntity: Record<string, { created: number; updated: number; failed: number; rolledBack: number }> = {};
 
@@ -5343,6 +5358,19 @@ export class SheetSyncService {
     if (!run) {
       throw new AppError(404, `Không tìm thấy phiên đồng bộ #${runId}`);
     }
+    if (!options?.actorId) throw new AppError(401, 'Không xác định được người thực hiện');
+    const rollbackActor = await prisma.user.findUnique({
+      where: { id: options.actorId },
+      select: { id: true, roles: true },
+    });
+    if (!rollbackActor) throw new AppError(401, 'Người thực hiện không còn tồn tại');
+    await this.assertHistoryRunScope(
+      {
+        id: rollbackActor.id,
+        roles: Array.isArray(rollbackActor.roles) ? rollbackActor.roles.map(String) : [],
+      },
+      run.config_id,
+    );
 
     const wantedIds =
       Array.isArray(options?.itemIds) && options!.itemIds.length > 0

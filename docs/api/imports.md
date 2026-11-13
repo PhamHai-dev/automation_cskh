@@ -136,6 +136,30 @@ Tải file Excel mẫu chuẩn:
 ### 2.10. `GET /api/v1/imports/export/students` & `attendance`
 Xuất file Excel dữ liệu thực tế đang có trong hệ thống để đối soát.
 
+### 2.11. Lịch sử Đồng bộ Google Sheet
+
+`GET /api/v1/imports/sheet-sync/history`
+
+- Quyền: `ADMIN`, `MANAGE`, `CS`; không cho `TEACHER`.
+- Data scope: ADMIN toàn bộ; MANAGE theo nhóm CS được phân công; CS theo nguồn/cấu hình thuộc trách nhiệm của mình.
+- Query: `page`, `pageSize` (tối đa 100), `configId`, `code`, `flowType`, `programType`, `triggerType`, `status`, `search`, `fromDate`, `toDate`.
+- Mặc định 7 ngày, giới hạn retention 30 ngày, thống kê “hôm nay” theo `Asia/Ho_Chi_Minh`.
+- Response có `items`, `total`, `page`, `pageSize`, `totalPages`, `refreshedAt` và `canRollback`.
+
+`GET /api/v1/imports/sheet-sync/history/:runId` áp dụng cùng data scope khi xem chi tiết.
+
+`POST /api/v1/imports/sheet-sync/history/:runId/rollback` chỉ dành cho `ADMIN`/`MANAGE` và vẫn kiểm tra nguồn thuộc scope trước khi hoàn tác.
+
+### 2.12. Lịch sử Sao lưu Sheet/Excel
+
+`GET /api/v1/imports/sheet-backup/history`
+
+- Quyền: `ADMIN`, `MANAGE`, `CS`; không cho `TEACHER` trong trung tâm lịch sử.
+- Trả một dòng cho mỗi đợt sao lưu; `items` của batch chứa các sổ và thống kê 3 sheet.
+- Query: `page`, `pageSize` (tối đa 100), `programType`, `status`, `fromDate`, `toDate`.
+- Response có `batches`, tổng batch chính xác, metadata phân trang và `refreshedAt`.
+- Retention chỉ xóa lịch sử; file Excel sao lưu vật lý không bị xóa.
+
 ## 3. Quy tắc nghiệp vụ bắt buộc
 - **Không silent-fix:** Mọi giá trị sai format, lạ hoặc xung đột phải được báo cáo và lưu lại trạng thái `FAILED`.
 - **Sheet 1 (`STUDENT_ENROLLMENT`):** Cột ID map vào `Student.external_id`. Tạo hoặc update `Student`, `Enrollment`, `EnrollmentClass`.

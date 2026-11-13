@@ -18,6 +18,18 @@ AI không được tự quyết các mục `WAITING_USER` nếu quyết định 
 | Q-012 | RESOLVED | Bảng Học viên Sheet 1 | Chuẩn hóa 28 cột theo cấu trúc Sheet 1, highlight badge đỏ cảnh báo nợ buổi âm, tự động lọc học viên theo Sale phụ trách nếu role là `CS`. | 3, frontend |
 | Q-013 | RESOLVED | Nhập/Xuất Excel Tất cả Vai trò | Mở quyền import cho ADMIN, MANAGE, CS, TEACHER theo endpoint phù hợp. Attendance import luôn preview/commit, chỉ ghi ClassSession đã tồn tại trong scope; dòng không match hoặc ngoài scope được báo lỗi và bỏ qua. | 4, 5, frontend |
 
+## Q-014 — Điều hướng Đồng bộ dữ liệu / Sao lưu dữ liệu
+
+- Trạng thái: `RESOLVED`.
+- Chốt ngày 2026-11-10 qua phỏng vấn UI và yêu cầu triển khai trực tiếp.
+- Sidebar/submenu là điều hướng chính; bỏ thanh tab ngang trùng lặp trong nội dung trang Đồng bộ.
+- Hướng thiết kế ưu tiên laptop 13–14 inch: header xanh nhạt, bốn KPI pastel có icon, nhóm dữ liệu dạng thanh chọn có số lượng.
+- Màu nhận diện luồng chỉ dùng ở icon, badge và filter; không dùng viền dọc màu hoặc tô toàn bộ dòng.
+- Bảng phẳng hiển thị trực tiếp các cột Kết nối/Nơi lưu, Phạm vi, Tự động, Kết quả và Thao tác; không có dropdown chi tiết theo hàng.
+- Cột Tự động chỉ hiển thị công tắc; lịch chạy nằm trong tooltip. Cấu hình, lịch sử, tải Excel và xóa đặt trong menu phụ theo điều kiện/quyền hiện có.
+- Tìm kiếm/chương trình/trạng thái luôn hiện; bộ lọc phụ thu gọn. Form một trang có nhóm nâng cao và footer lưu/hủy; lịch sử gom số liệu thành tóm tắt.
+- Áp dụng cả Đồng bộ và Sao lưu; không đổi API, dữ liệu, phạm vi tác vụ hay quy trình xem trước/xác nhận.
+
 ## Cách đóng câu hỏi
 
 Khi người dùng xác nhận:

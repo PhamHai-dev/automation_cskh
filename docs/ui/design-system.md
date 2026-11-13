@@ -422,3 +422,13 @@ Mỗi page/data feature phải xử lý khi phù hợp:
 - Hàng tiêu đề cố định `sticky top-0 bg-slate-100 z-10`.
 - Hỗ trợ nút xem Modal chi tiết với bố cục chia nhóm thông tin khoa học (Hành chính, Gói học & Lịch học, Quá trình học & Điểm danh, Ghi chú Sale).
 
+
+
+## Trang quản trị dữ liệu — cập nhật 2026-11-10
+
+- Đồng bộ/Sao lưu dùng header xanh nhạt và bốn KPI pastel có icon; sidebar/submenu là điều hướng chính, không lặp tab ngang trong nội dung.
+- Màu luồng tập trung trong `data-management.css`, dùng ở badge/icon/trạng thái chọn; không dùng viền dọc màu hoặc phủ màu toàn dòng.
+- Bảng nguồn là bảng phẳng: đưa Kết nối/Nơi lưu và Phạm vi thành cột riêng, không dùng dòng dropdown. Cột Tự động chỉ hiển thị công tắc; diễn giải lịch chạy đặt trong tooltip.
+- Dùng `DataGroups`, `DataFilters`, `DataRowMenu` trong feature imports, không tạo primitive UI mới thay Button/PageHeader.
+- Styles giới hạn trong `data-management.css`; không thay theme toàn ứng dụng. Bộ lọc phụ giữ state khi thu gọn; menu portal tránh clipping trong bảng cuộn ngang và hỗ trợ bàn phím.
+- Cấu hình nâng cao dùng details/summary; không unmount field khi đóng. Footer modal nằm ngoài vùng cuộn.

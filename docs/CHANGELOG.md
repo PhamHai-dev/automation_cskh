@@ -1,5 +1,30 @@
 # Project Changelog
 
+## 2026-11-13 — Tái thiết kế và hardening Trung tâm Lịch sử hoạt động
+
+- Tái cấu trúc trang `/activity-logs` từ một file 2.291 dòng thành trang điều phối gọn hơn cùng component KPI, điều khiển ngày và hook debounce chuyên biệt.
+- Bổ sung giao diện light-theme hiện đại theo token primary blue: bốn KPI, module chips, filter chips, refresh timestamp, bảng desktop 7 cột, card mobile và modal responsive.
+- Lưu tab/page/pageSize/từ khóa/filter/ngày trong URL; tìm kiếm debounce 400ms; mặc định 7 ngày và hỗ trợ Hôm nay/7/30 ngày/tùy chỉnh.
+- Đồng bộ contract phân trang server cho audit/login/sync/backup; backup hiển thị một dòng mỗi batch; sync detail có retry và rollback theo quyền.
+- Thêm CSV export server-side cho toàn bộ dữ liệu đã lọc của từng view, data scope theo role và timestamp UTC+7.
+- Thêm schema Zod, data scope ADMIN/MANAGE/CS, login audit ADMIN/MANAGE, chặn TEACHER, thống kê hôm nay theo `Asia/Ho_Chi_Minh`.
+- Thêm retention 30 ngày chạy 02:30 hằng ngày, system actor dành riêng và một audit tổng hợp; file sao lưu vật lý được giữ nguyên.
+- Thêm Prisma indexes/migration cho audit/login/sync history; migration chưa được chạy trên database.
+- Cập nhật OpenAPI và tài liệu API cho activity logs cùng sync/backup history.
+- Xác minh thành công: backend typecheck; 14/14 backend tests; frontend production build; 14/14 frontend feature tests; browser desktop/tablet/mobile. Frontend lint bị chặn vì repository chưa có ESLint config.
+
+## 2026-11-10 — Đổi nhãn Backup thành Sao lưu
+
+- Việt hóa nhãn hiển thị liên quan đến sao lưu Sheet/Excel trong menu, breadcrumb, trang sao lưu, cấu hình, modal và lịch sử hoạt động.
+- Giữ nguyên URL, API, identifier kỹ thuật, dữ liệu, quyền, lịch chạy và tên file xuất hiện tại.
+- Đã triển khai bố cục được duyệt: thống kê gọn, nhóm có số lượng, bộ lọc phụ thu gọn, bảng 6 cột và dòng mở rộng.
+- Tái sử dụng PageHeader/Button; bổ sung điều khiển feature dùng chung, menu portal có phím Escape/mũi tên và trả focus; giữ nguyên callback và điều kiện quyền.
+- Lịch sử gom số liệu, form nhóm nâng cao thu gọn, footer sao lưu cố định; phần kết nối giảm màu và hỗ trợ xuống dòng.
+- Không chạy tác vụ đồng bộ/sao lưu thực tế. Kiểm thử trình duyệt bị chặn do kết nối CDP timeout; chưa xác minh responsive trực tiếp.
+- Nâng cấp diện mạo thành “Trung tâm vận hành dữ liệu”: header navy/indigo, bốn KPI pastel, màu nhận diện theo luồng và viền trái từng dòng; vùng chi tiết luôn xếp một cột.
+- Bỏ tab ngang Đồng bộ bị trùng với submenu sidebar. 9/9 kiểm thử UI hồi quy và frontend production build đạt; build còn cảnh báo chunk lớn hiện hữu.
+- Theo phản hồi tiếp theo, bỏ viền dọc màu và dòng chi tiết xổ xuống; đưa Kết nối/Nơi lưu và Phạm vi thành cột riêng, rút cột Tự động còn công tắc và đổi header sang xanh nhạt.
+
 ## 2026-10-11 — Đối soát điểm danh: giáo viên phụ trách và hàng chờ chính xác
 
 - Trang **Đối soát điểm danh** bổ sung cột **Giáo viên**, lấy từ danh sách `ClassTeacher` đang active của lớp; không dùng tài khoản đã thao tác điểm danh để tránh nhầm khi Admin/Manage hỗ trợ nhập thay.

@@ -23,8 +23,8 @@ const TAB_META: Record<ImportTabValue, { label: string; subtitle: string }> = {
     subtitle: 'Quản lý đồng bộ dữ liệu 4 luồng từ Google Sheet & File Excel',
   },
   'sheet-backup': {
-    label: 'Backup sổ CSKH & GV',
-    subtitle: 'Quản lý Backup dữ liệu học viên, điểm danh CSKH và lịch dạy Giáo viên',
+    label: 'Sao lưu sổ CSKH & GV',
+    subtitle: 'Quản lý sao lưu dữ liệu học viên, điểm danh CSKH và lịch dạy Giáo viên',
   },
   wizard: {
     label: 'Upload Hồ sơ',

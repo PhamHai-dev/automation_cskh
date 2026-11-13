@@ -27,4 +27,11 @@ router.get(
   (req, res, next) => activityLogsController.listActors(req, res, next),
 );
 
+// E. GET /api/v1/activity-logs/export — view-specific role enforcement is applied by the service
+router.get(
+  '/export',
+  requireRoles(['ADMIN', 'MANAGE', 'CS']),
+  (req, res, next) => activityLogsController.exportCsv(req, res, next),
+);
+
 export const activityLogsRouter = router;

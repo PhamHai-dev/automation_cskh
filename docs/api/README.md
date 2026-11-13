@@ -36,6 +36,7 @@ Với endpoint mới hoặc thay đổi endpoint:
 - `attendance.md` — ClassSession + Attendance.
 - `care.md` — CareLog + CareTask.
 - `imports.md` — upload/preview/map/validate/confirm/import/export.
+- `activity-logs.md` — audit/sync/backup/login history, data scope, CSV export và retention 30 ngày.
 - `dashboard.md` — aggregate/filter theo scope.
 - `zalo.md` — Zalo account/rule/delivery; chỉ production sau spike.
 

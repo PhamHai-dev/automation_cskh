@@ -10,6 +10,8 @@ import {
   ServiceAccountInfo,
 } from '../types/imports.types';
 import { useAuth } from '../../../contexts/AuthContext';
+import { DataGroups, DataFilters, DataRowMenu } from './DataManagementControls';
+import { PageHeader } from '../../../components/common/PageHeader';
 import { Button } from '../../../components/ui/Button';
 import { Badge } from '../../../components/ui/Badge';
 import { Modal } from '../../../components/ui/Modal';
@@ -17,23 +19,24 @@ import { useToast } from '../../../components/ui/Toast';
 import { SheetBackupAdminConfigCard } from '../../../pages/admin/components/SheetBackupAdminConfigCard';
 import { BackupConfigModal } from './BackupConfigModal';
 import {
+  AlertTriangle,
   CalendarCheck,
   CheckCircle2,
   ChevronDown,
   ClipboardPaste,
+  Database,
   Download,
   ExternalLink,
   FileSpreadsheet,
   FileText,
-  FolderOpen,
   History,
-  MoreHorizontal,
   Play,
   Plus,
   RefreshCw,
   Search,
   Settings,
   ShieldCheck,
+  Sparkles,
   Trash2,
   Users,
 } from 'lucide-react';
@@ -271,6 +274,8 @@ export const CsSheetBackupPanel: React.FC<CsSheetBackupPanelProps> = ({ initialT
   const [serviceAccount, setServiceAccount] = useState<ServiceAccountInfo | null>(null);
   const [availableYears, setAvailableYears] = useState<number[]>([2025, 2026]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+  const [historyError, setHistoryError] = useState(false);
 
   const [flowFilter, setFlowFilter] = useState<BackupFlowGroup>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
@@ -289,18 +294,13 @@ export const CsSheetBackupPanel: React.FC<CsSheetBackupPanelProps> = ({ initialT
   const [togglingId, setTogglingId] = useState<number | null>(null);
   const [downloadingId, setDownloadingId] = useState<number | null>(null);
   const [addMenuOpen, setAddMenuOpen] = useState(false);
-  const [openRowMenuId, setOpenRowMenuId] = useState<number | null>(null);
   const addMenuRef = useRef<HTMLDivElement | null>(null);
-  const rowMenuRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     const handleOutsideClick = (event: MouseEvent) => {
       const target = event.target as Node;
       if (addMenuRef.current && !addMenuRef.current.contains(target)) {
         setAddMenuOpen(false);
-      }
-      if (rowMenuRef.current && !rowMenuRef.current.contains(target)) {
-        setOpenRowMenuId(null);
       }
     };
     document.addEventListener('mousedown', handleOutsideClick);
@@ -332,6 +332,7 @@ export const CsSheetBackupPanel: React.FC<CsSheetBackupPanelProps> = ({ initialT
   const loadConfigs = useCallback(async () => {
     try {
       setLoading(true);
+      setLoadError(false);
       const res = await importsApi.getSheetBackupConfigs();
       const list = res.configs || [];
       setConfigs(list);
@@ -347,7 +348,8 @@ export const CsSheetBackupPanel: React.FC<CsSheetBackupPanelProps> = ({ initialT
       }
       setCsUsers(Array.from(map.values()));
     } catch (err: any) {
-      toast.error(err?.response?.data?.error?.message || 'Không tải được cấu hình Backup');
+      setLoadError(true);
+      toast.error(err?.response?.data?.error?.message || 'Không tải được cấu hình sao lưu');
     } finally {
       setLoading(false);
     }
@@ -356,16 +358,19 @@ export const CsSheetBackupPanel: React.FC<CsSheetBackupPanelProps> = ({ initialT
   const loadHistory = useCallback(async () => {
     try {
       setHistoryLoading(true);
+      setHistoryError(false);
       const res = await importsApi.getSheetBackupHistory({
         programType: historyProgramFilter === 'ALL' ? undefined : historyProgramFilter,
         status: historyStatusFilter === 'ALL' ? undefined : historyStatusFilter,
         fromDate: historyFromDate || undefined,
         toDate: historyToDate || undefined,
-        limit: 150,
+        page: 1,
+        pageSize: 100,
       });
       setHistoryData(res);
     } catch (err: any) {
-      toast.error(err?.response?.data?.error?.message || 'Không tải được lịch sử Backup');
+      setHistoryError(true);
+      toast.error(err?.response?.data?.error?.message || 'Không tải được lịch sử sao lưu');
     } finally {
       setHistoryLoading(false);
     }
@@ -548,7 +553,7 @@ export const CsSheetBackupPanel: React.FC<CsSheetBackupPanelProps> = ({ initialT
       setTogglingId(cfg.id);
       await importsApi.updateSheetBackupConfig(cfg.id, { enabled: nextEnabled });
       toast.success(
-        `${nextEnabled ? 'Đã BẬT' : 'Đã TẮT'} Backup tự động cho "${cfg.name}"`
+        `${nextEnabled ? 'Đã BẬT' : 'Đã TẮT'} Sao lưu tự động cho "${cfg.name}"`
       );
     } catch (err: any) {
       setConfigs((prev) =>
@@ -568,12 +573,12 @@ export const CsSheetBackupPanel: React.FC<CsSheetBackupPanelProps> = ({ initialT
       });
       toast.success(
         summary.syncedToGoogleSheet
-          ? `Đã Backup "${cfg.name}" ra Excel & đẩy lên Google Sheet!`
+          ? `Đã Sao lưu "${cfg.name}" ra Excel & đẩy lên Google Sheet!`
           : `Đã xuất file Excel trên server cho "${cfg.name}"!`
       );
       await loadConfigs();
     } catch (err: any) {
-      toast.error(err?.response?.data?.error?.message || 'Backup thất bại');
+      toast.error(err?.response?.data?.error?.message || 'Sao lưu thất bại');
     } finally {
       setRunningId(null);
     }
@@ -587,16 +592,16 @@ export const CsSheetBackupPanel: React.FC<CsSheetBackupPanelProps> = ({ initialT
         for (const t of targets) {
           await importsApi.runSheetBackup(t.id, { year: t.backup_year ?? null });
         }
-        toast.success(`Đã chạy Backup cho ${targets.length} nguồn đã chọn!`);
+        toast.success(`Đã chạy sao lưu cho ${targets.length} nguồn đã chọn!`);
         setSelectedIds(new Set());
       } else {
         const programParam = flowFilter === 'ALL' ? null : flowFilter;
         await importsApi.runSheetBackupAll({ programType: programParam });
-        toast.success('Đã chạy Backup toàn bộ nguồn đang bật!');
+        toast.success('Đã chạy sao lưu toàn bộ nguồn đang bật!');
       }
       await loadConfigs();
     } catch (err: any) {
-      toast.error(err?.response?.data?.error?.message || 'Backup hàng loạt thất bại');
+      toast.error(err?.response?.data?.error?.message || 'Sao lưu hàng loạt thất bại');
     } finally {
       setRunningId(null);
     }
@@ -627,9 +632,9 @@ export const CsSheetBackupPanel: React.FC<CsSheetBackupPanelProps> = ({ initialT
         next.delete(cfg.id);
         return next;
       });
-      toast.success(`Đã xóa nguồn Backup "${cfg.name}"`);
+      toast.success(`Đã xóa nguồn sao lưu "${cfg.name}"`);
     } catch (err: any) {
-      toast.error(err?.response?.data?.error?.message || 'Không thể xóa nguồn Backup');
+      toast.error(err?.response?.data?.error?.message || 'Không thể xóa nguồn sao lưu');
     }
   };
 
@@ -662,7 +667,7 @@ export const CsSheetBackupPanel: React.FC<CsSheetBackupPanelProps> = ({ initialT
     const headers = [
       'Thời gian',
       'Mã đợt (Batch)',
-      'Nguồn Backup',
+      'Nguồn sao lưu',
       'Nhân sự',
       'Chương trình',
       'Kích hoạt',
@@ -702,7 +707,7 @@ export const CsSheetBackupPanel: React.FC<CsSheetBackupPanelProps> = ({ initialT
     link.click();
     link.remove();
     URL.revokeObjectURL(url);
-    toast.success('Đã xuất file CSV lịch sử Backup!');
+    toast.success('Đã xuất file CSV lịch sử sao lưu!');
   };
 
   const historyStats = historyData?.stats || {
@@ -716,32 +721,27 @@ export const CsSheetBackupPanel: React.FC<CsSheetBackupPanelProps> = ({ initialT
 
   const pageHeaderTitle =
     subTab === 'history'
-      ? 'Lịch sử Backup'
+      ? 'Lịch sử sao lưu'
       : subTab === 'connection'
       ? 'Cấu hình & Kết nối'
-      : 'Backup dữ liệu';
+      : 'Sao lưu dữ liệu';
 
   const pageHeaderDescription =
     subTab === 'history'
-      ? 'Theo dõi lịch sử các phiên chạy Backup, số lượng dòng/ô cập nhật và tải file Excel (.xlsx)'
+      ? 'Theo dõi lịch sử các phiên chạy sao lưu, số lượng dòng/ô cập nhật và tải file Excel (.xlsx)'
       : subTab === 'connection'
-      ? 'Cấu hình Google Service Account JSON và ánh xạ cột dữ liệu Web → Sheet Backup'
+      ? 'Cấu hình Google Service Account JSON và ánh xạ cột dữ liệu Web → Sheet sao lưu'
       : '';
 
   return (
-    <div className="space-y-4">
-      {/* 1. TIÊU ĐỀ TRANG VÀ CÁC NÚT HÀNH ĐỘNG (Không có thanh 3 tab lặp lại) */}
-      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
-            {pageHeaderTitle}
-          </h1>
-          {pageHeaderDescription && (
-            <p className="text-xs text-slate-500 mt-0.5">{pageHeaderDescription}</p>
-          )}
-        </div>
+    <div className="data-workspace space-y-4">
+      {loadError && <div className="data-error" role="alert"><span>Không tải được cấu hình mới nhất. Dữ liệu đang hiển thị có thể chưa cập nhật.</span><Button size="sm" variant="outline" onClick={() => { void loadConfigs(); }}>Thử lại</Button></div>}
+      {subTab === 'history' && historyError && <div className="data-error" role="alert"><span>Không tải được lịch sử mới nhất.</span><Button size="sm" variant="outline" onClick={() => { void loadHistory(); }}>Thử lại</Button></div>}
+      {subTab === 'history' && historyLoading && <div role="status" className="text-sm text-text-muted">Đang tải lịch sử...</div>}
 
-        {/* Right: Pill Google + Action buttons */}
+      {/* 1. TIÊU ĐỀ TRANG VÀ CÁC NÚT HÀNH ĐỘNG (Không có thanh 3 tab lặp lại) */}
+      <div className="data-heading">
+        <PageHeader title={pageHeaderTitle} actions={
         <div className="flex flex-wrap items-center gap-2.5">
           <button
             type="button"
@@ -838,13 +838,15 @@ export const CsSheetBackupPanel: React.FC<CsSheetBackupPanelProps> = ({ initialT
                   leftIcon={<Play className="w-4 h-4" />}
                 >
                   {selectedIds.size > 0
-                    ? `Backup đã chọn (${selectedIds.size})`
-                    : 'Backup tất cả'}
+                    ? `Sao lưu đã chọn (${selectedIds.size})`
+                    : 'Sao lưu tất cả'}
                 </Button>
               )}
             </>
           )}
         </div>
+        } />
+        <p className="data-description">{pageHeaderDescription || 'Hệ thống → Google Sheet / Excel · Quản lý nơi lưu và lịch sao lưu.'}</p>
       </div>
 
       {/* ==========================================================================
@@ -853,181 +855,46 @@ export const CsSheetBackupPanel: React.FC<CsSheetBackupPanelProps> = ({ initialT
       {subTab === 'configs' && (
         <div className="space-y-3.5">
           {/* 2. Dòng tổng quan trạng thái */}
-          <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-600 font-medium px-0.5">
-            <div className="flex flex-wrap items-center gap-1.5">
-              <span>
-                Tổng nguồn:{' '}
-                <strong className="text-slate-900 font-bold">
-                  {overviewMetrics.total} nguồn Backup
-                </strong>
-              </span>
-              <span className="text-slate-300">·</span>
-              <span>
-                Đã gắn Link Sheet:{' '}
-                <strong className="text-blue-600 font-bold">
-                  {overviewMetrics.linkedCount}
-                </strong>
-              </span>
-              <span className="text-slate-300">·</span>
-              <span>
-                Tự động đang BẬT:{' '}
-                <strong className="text-emerald-600 font-bold">
-                  {overviewMetrics.autoOnCount}
-                </strong>
-              </span>
-              <span className="text-slate-300">·</span>
-              <span>
-                Đã chạy thành công:{' '}
-                <strong className="text-emerald-600 font-bold">
-                  {overviewMetrics.successCount}
-                </strong>
-              </span>
-              {overviewMetrics.failedCount > 0 && (
-                <>
-                  <span className="text-slate-300">·</span>
-                  <span>
-                    Có lỗi:{' '}
-                    <strong className="text-rose-600 font-bold">
-                      {overviewMetrics.failedCount}
-                    </strong>
-                  </span>
-                </>
-              )}
-              {overviewMetrics.latestTime && (
-                <>
-                  <span className="text-slate-300">·</span>
-                  <span>
-                    Cập nhật gần nhất:{' '}
-                    <strong className="text-slate-900 font-semibold">
-                      {overviewMetrics.latestTime}
-                    </strong>
-                  </span>
-                </>
-              )}
-            </div>
+          <div className="data-summary" aria-label="Tổng quan sao lưu">
+            <span className="data-summary-card is-total"><i><Database /></i><span>Tổng nguồn<strong>{overviewMetrics.total}</strong></span></span>
+            <span className="data-summary-card is-auto"><i><Sparkles /></i><span>Tự động bật<strong>{overviewMetrics.autoOnCount}</strong></span></span>
+            <span className="data-summary-card is-success"><i><CheckCircle2 /></i><span>Thành công<strong>{overviewMetrics.successCount}</strong></span></span>
+            <span className="data-summary-card is-warning"><i><AlertTriangle /></i><span>Có lỗi<strong>{overviewMetrics.failedCount}</strong></span></span>
           </div>
-
-          {/* 3. Thanh chọn 5 nhóm nằm ngang (Segmented Pill Bar bám sát ảnh 2) */}
-          <div className="max-w-full overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            <div
-              role="tablist"
-              aria-label="Lọc nhóm nguồn Backup"
-              className="inline-flex min-w-max items-center gap-1 rounded-2xl border border-slate-200/80 bg-slate-100/80 p-1.5 shadow-2xs"
-            >
-              {FLOW_TABS.filter(
-                (tab) => canManage || (tab.key !== 'ADMIN' && tab.key !== 'REPORT')
-              ).map((tab) => {
-                const isActive = flowFilter === tab.key;
-                const count = flowCounts[tab.key] ?? 0;
-
-                return (
-                  <button
-                    key={tab.key}
-                    type="button"
-                    role="tab"
-                    aria-selected={isActive}
-                    onClick={() => setFlowFilter(tab.key)}
-                    className={`inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl border px-4 text-xs sm:text-sm font-semibold outline-none transition-all duration-150 cursor-pointer ${
-                      isActive
-                        ? 'border-slate-200/90 bg-white text-blue-600 shadow-xs'
-                        : 'border-transparent bg-transparent text-slate-600 hover:bg-white/60 hover:text-slate-900'
-                    }`}
-                  >
-                    <span className={isActive ? 'text-blue-600' : 'text-slate-500'}>
-                      {tab.icon}
-                    </span>
-                    <span className="whitespace-nowrap">{tab.label}</span>
-                    <span
-                      className={`inline-flex items-center justify-center rounded-full px-2 py-0.5 text-[11px] font-bold leading-none ${
-                        isActive
-                          ? 'bg-blue-50 text-blue-600'
-                          : 'bg-slate-200/75 text-slate-600'
-                      }`}
-                    >
-                      {count}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
+          <div className="data-summary-meta" aria-label="Thông tin sao lưu bổ sung">
+            <span>Đã gắn Google Sheet: <strong>{overviewMetrics.linkedCount}</strong></span>
+            {overviewMetrics.latestTime && <span>Lần sao lưu gần nhất: <strong>{overviewMetrics.latestTime}</strong></span>}
           </div>
+          <DataGroups label="Lọc nhóm sao lưu" value={flowFilter} onChange={setFlowFilter}
+            items={FLOW_TABS.filter(tab => canManage || (tab.key !== 'ADMIN' && tab.key !== 'REPORT')).map(tab => ({ value: tab.key, label: tab.label, icon: tab.icon, count: flowCounts[tab.key] ?? 0, tone: tab.key.toLowerCase() }))} />
 
           {/* 4. Thanh Tìm Kiếm & Bộ Lọc */}
-          <div className="bg-white rounded-2xl border border-slate-200/90 p-3.5 shadow-2xs flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3">
-            <div className="flex flex-wrap items-center gap-2.5 flex-1">
-              <div className="relative flex-1 min-w-[240px] max-w-md">
-                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Tìm tên nguồn, Mã CVHT, Mã GV, tên sheet, link sheet..."
-                  className="w-full h-9 rounded-xl border border-slate-200 bg-slate-50/50 pl-8 pr-3 text-xs text-slate-800 placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
-                />
-              </div>
-
-              {/* Chương trình */}
-              <select
-                value={programFilter}
-                onChange={(e) => setProgramFilter(e.target.value as 'ALL' | 'JLPT' | 'KAIWA')}
-                className="h-9 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 focus:outline-none"
-              >
-                <option value="ALL">Chương trình: Tất cả</option>
-                <option value="JLPT">JLPT</option>
-                <option value="KAIWA">KAIWA</option>
+          <DataFilters search={searchQuery} onSearch={setSearchQuery} placeholder="Tìm tên nguồn, mã học viên, lớp hoặc liên kết..."
+            program={programFilter} onProgram={v => setProgramFilter(v as typeof programFilter)}
+            status={statusFilter} onStatus={v => setStatusFilter(v as typeof statusFilter)}
+            activeCount={Number(destTypeFilter !== 'ALL') + Number(autoModeFilter !== 'ALL')}
+            onReset={() => { setSearchQuery(''); setProgramFilter('ALL'); setStatusFilter('ALL'); setDestTypeFilter('ALL'); setAutoModeFilter('ALL'); }}>
+            <label className="text-xs text-text-secondary">Nơi lưu
+              <select aria-label="Nơi lưu" value={destTypeFilter} onChange={e => setDestTypeFilter(e.target.value as typeof destTypeFilter)}>
+                <option value="ALL">Tất cả</option><option value="GOOGLE_SHEET">Google Sheet</option><option value="LOCAL_ONLY">Chỉ lưu Excel trên máy chủ</option>
               </select>
-
-              {/* Đích lưu trữ */}
-              <select
-                value={destTypeFilter}
-                onChange={(e) =>
-                  setDestTypeFilter(e.target.value as 'ALL' | 'GOOGLE_SHEET' | 'LOCAL_ONLY')
-                }
-                className="h-9 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 focus:outline-none"
-              >
-                <option value="ALL">Đích lưu: Tất cả</option>
-                <option value="GOOGLE_SHEET">Đã gắn Link Google Sheet</option>
-                <option value="LOCAL_ONLY">Chỉ lưu File .xlsx Server</option>
+            </label>
+            <label className="text-xs text-text-secondary">Chế độ tự động
+              <select aria-label="Chế độ tự động" value={autoModeFilter} onChange={e => setAutoModeFilter(e.target.value as typeof autoModeFilter)}>
+                <option value="ALL">Tất cả</option><option value="AUTO_ON">Đang bật</option><option value="AUTO_OFF">Đang tắt</option>
               </select>
+            </label>
+          </DataFilters>
 
-              {/* Chế độ tự động */}
-              <select
-                value={autoModeFilter}
-                onChange={(e) =>
-                  setAutoModeFilter(e.target.value as 'ALL' | 'AUTO_ON' | 'AUTO_OFF')
-                }
-                className="h-9 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 focus:outline-none"
-              >
-                <option value="ALL">Chế độ tự động: Tất cả</option>
-                <option value="AUTO_ON">Tự động: Đang BẬT</option>
-                <option value="AUTO_OFF">Tự động: Đang TẮT</option>
-              </select>
-
-              {/* Trạng thái */}
-              <select
-                value={statusFilter}
-                onChange={(e) =>
-                  setStatusFilter(e.target.value as 'ALL' | 'SUCCESS' | 'FAILED' | 'IDLE')
-                }
-                className="h-9 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 focus:outline-none"
-              >
-                <option value="ALL">Trạng thái: Tất cả</option>
-                <option value="SUCCESS">Thành công</option>
-                <option value="FAILED">Có lỗi</option>
-                <option value="IDLE">Chưa chạy</option>
-              </select>
-            </div>
-          </div>
-
-          {/* 5. Bảng Nguồn Backup (8 Cột) & Phân trang */}
+          {/* 5. Bảng Nguồn sao lưu (8 Cột) & Phân trang */}
           <div className="bg-white rounded-2xl border border-slate-200/90 shadow-xs overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
+            <div className="data-table-scroll">
+              <table className="data-source-table">
                 <thead>
                   <tr className="border-b border-slate-200 bg-slate-50/80 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
                     <th className="py-3 pl-4 pr-2 w-10">
                       <input
-                        type="checkbox"
+                        type="checkbox" aria-label="Chọn tất cả nguồn trên trang"
                         checked={
                           paginatedConfigs.length > 0 &&
                           paginatedConfigs.every((c) => selectedIds.has(c.id))
@@ -1050,13 +917,7 @@ export const CsSheetBackupPanel: React.FC<CsSheetBackupPanelProps> = ({ initialT
                         className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
                       />
                     </th>
-                    <th className="py-3 px-3">Tên nguồn &amp; Kết nối</th>
-                    <th className="py-3 px-3">Loại luồng</th>
-                    <th className="py-3 px-3">Chương trình</th>
-                    <th className="py-3 px-3">Cấu hình Sheet &amp; Phạm vi</th>
-                    <th className="py-3 px-3">Chế độ Tự động</th>
-                    <th className="py-3 px-3">Lần chạy cuối &amp; Kết quả</th>
-                    <th className="py-3 pl-3 pr-4 text-right">Thao tác</th>
+                    <th>Tên nguồn</th><th>Phân loại</th><th>Nơi lưu</th><th>Phạm vi</th><th>Tự động</th><th>Kết quả gần nhất</th><th>Thao tác</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-xs">
@@ -1064,13 +925,13 @@ export const CsSheetBackupPanel: React.FC<CsSheetBackupPanelProps> = ({ initialT
                     <tr>
                       <td colSpan={8} className="py-12 text-center text-slate-500">
                         <RefreshCw className="w-4 h-4 animate-spin inline mr-2 text-blue-600" />
-                        Đang tải danh sách nguồn Backup...
+                        Đang tải danh sách nguồn sao lưu...
                       </td>
                     </tr>
                   ) : paginatedConfigs.length === 0 ? (
                     <tr>
                       <td colSpan={8} className="py-12 text-center text-slate-500">
-                        Không có nguồn Backup nào phù hợp với bộ lọc hiện tại.
+                        Không có nguồn sao lưu nào phù hợp với bộ lọc hiện tại.
                       </td>
                     </tr>
                   ) : (
@@ -1078,9 +939,6 @@ export const CsSheetBackupPanel: React.FC<CsSheetBackupPanelProps> = ({ initialT
                       const flow = classifyBackupFlow(cfg.program_type);
                       const sheets = getSheetsBadges(cfg, cfg.backup_year ?? null);
                       const sheetUrl = (cfg.target_spreadsheet_url || '').trim();
-                      const localFileName =
-                        (cfg.local_backup_path || '').split(/[/\\]/).pop() ||
-                        getDownloadFilename(cfg);
                       const isChecked = selectedIds.has(cfg.id);
                       const isAdminSystem = String(cfg.program_type || '')
                         .toUpperCase()
@@ -1098,18 +956,11 @@ export const CsSheetBackupPanel: React.FC<CsSheetBackupPanelProps> = ({ initialT
                           : '12:00, 21:00';
 
                       return (
-                        <tr
-                          key={cfg.id}
-                          className={`transition-colors ${
-                            isChecked
-                              ? 'bg-blue-50/30 hover:bg-blue-50/50'
-                              : 'hover:bg-slate-50/70'
-                          }`}
-                        >
-                          {/* Cột 1: Checkbox */}
-                          <td className="py-3.5 pl-4 pr-2 align-middle">
+                        <React.Fragment key={String(cfg.id)}>
+                          <tr data-flow={flow.toLowerCase()} className={`data-source-row ${isChecked ? 'is-selected' : ''}`}>
+                            <td>
                             <input
-                              type="checkbox"
+                              type="checkbox" aria-label={`Chọn ${cfg.name}`}
                               checked={isChecked}
                               onChange={() =>
                                 setSelectedIds((prev) => {
@@ -1122,143 +973,31 @@ export const CsSheetBackupPanel: React.FC<CsSheetBackupPanelProps> = ({ initialT
                               className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
                             />
                           </td>
-
-                          {/* Cột 2: Tên nguồn & Kết nối */}
-                          <td className="py-3.5 px-3 align-middle">
-                            <div className="flex flex-wrap items-center gap-1.5">
-                              <span className="font-bold text-slate-900">{cfg.name}</span>
-                              {cfg.cs_user?.staff_code && (
-                                <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-mono font-bold text-[10px]">
-                                  {cfg.cs_user.staff_code}
-                                </span>
-                              )}
-                            </div>
-
-                            {/* Chips các Sheet bên trong */}
-                            <div className="flex flex-wrap items-center gap-1 mt-1">
-                              {sheets.map((s) => (
-                                <span
-                                  key={s}
-                                  className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200 font-medium text-[10px]"
-                                >
-                                  {s}
-                                </span>
-                              ))}
-                            </div>
-
-                            {/* Connection line: Kênh 1 (File .xlsx Server) + Kênh 3 (Google Sheet) */}
-                            <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[11px]">
-                              <span
-                                title={`Đường dẫn sandbox trên server: ${cfg.local_backup_path || localFileName}`}
-                                className="inline-flex items-center gap-1 text-slate-600 font-medium"
-                              >
-                                <FolderOpen className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                                <span className="truncate max-w-[190px] font-mono text-[10px]">
-                                  {cfg.local_backup_path || localFileName}
-                                </span>
-                                {cfg.keep_daily_snapshots && (
-                                  <span className="px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200 text-[9px] font-semibold">
-                                    +Snapshot({cfg.max_snapshots || 7})
-                                  </span>
-                                )}
-                              </span>
-
-                              <span className="text-slate-300">·</span>
-
-                              {sheetUrl ? (
-                                <>
-                                  <span className="inline-flex items-center gap-1 text-emerald-700 font-semibold">
-                                    <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                                    <span>Đã gắn Google Sheet</span>
-                                  </span>
-                                  <a
-                                    href={sheetUrl}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="inline-flex items-center gap-1 text-blue-600 hover:underline font-medium"
-                                  >
-                                    <span>Mở Sheet</span>
-                                    <ExternalLink className="w-3 h-3" />
-                                  </a>
-                                </>
-                              ) : (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setEditingConfig(cfg);
-                                    setConfigModalOpen(true);
-                                  }}
-                                  className="px-2 py-0.5 rounded border border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-700 font-semibold text-[10px] transition-colors cursor-pointer"
-                                >
-                                  + Gắn Link Sheet
-                                </button>
-                              )}
-                            </div>
-                          </td>
-
-                          {/* Cột 3: Loại luồng */}
-                          <td className="py-3.5 px-3 align-middle">{renderFlowBadge(flow)}</td>
-
-                          {/* Cột 4: Chương trình */}
-                          <td className="py-3.5 px-3 align-middle">
+                            <td><div className="data-source-name"><span>{cfg.name}</span></div></td>
+                            <td><div className="data-classification">{renderFlowBadge(flow)}
                             {renderProgramBadge(cfg.program_type)}
+                          </div></td>
+                            <td><div className="data-table-cell">
+                              <div className="data-cell-primary">{sheetUrl ? 'Google Sheet + Excel' : 'Excel trên máy chủ'}</div>
+                              <div className="data-cell-secondary">{sheets.slice(0, 2).join(' · ')}{sheets.length > 2 ? ` +${sheets.length - 2}` : ''}</div>
+                              <div className="data-cell-actions">{sheetUrl ? <a href={sheetUrl} target="_blank" rel="noreferrer">Mở Sheet <ExternalLink className="w-3 h-3" /></a> : <button type="button" onClick={() => { setEditingConfig(cfg); setConfigModalOpen(true); }}>Gắn Sheet</button>}</div>
+                            </div></td>
+                            <td><div className="data-table-cell"><div className="data-cell-primary">Năm {cfg.backup_year || 'Tất cả'} · {cfg.student_counts?.total ?? 0} HV</div><div className="data-cell-secondary">Đang học: {cfg.student_counts?.attending ?? 0}{cfg.mask_sensitive_data ? ' · Đã che SĐT' : ''}</div></div></td>
+                            <td className="data-auto-cell">
+                            <button
+                              type="button"
+                              role="switch"
+                              aria-label={`Tự động: ${cfg.name}`}
+                              aria-checked={cfg.enabled}
+                              disabled={togglingId === cfg.id}
+                              title={`${cfg.enabled ? 'Đang bật' : 'Đang tắt'} · Khung giờ ${times}`}
+                              onClick={() => handleToggleAutoOnRow(cfg)}
+                              className={`data-auto-switch ${cfg.enabled ? 'is-on' : ''}`}
+                            ><span /></button>
                           </td>
-
-                          {/* Cột 5: Cấu hình Sheet & Phạm vi */}
-                          <td className="py-3.5 px-3 align-middle">
-                            <div className="space-y-1 max-w-[220px]">
-                              <div className="flex flex-wrap items-center gap-1.5">
-                                <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200 font-bold text-[11px]">
-                                  Năm: {cfg.backup_year || 'Tất cả'}
-                                </span>
-                                <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-semibold text-[11px]">
-                                  {cfg.student_counts?.total ?? 0} HV
-                                </span>
-                              </div>
-                              <div className="text-[11px] text-slate-500 truncate">
-                                Đang học:{' '}
-                                <strong className="text-slate-800">
-                                  {cfg.student_counts?.attending ?? 0}
-                                </strong>
-                                {cfg.mask_sensitive_data && ' · Đã che SĐT'}
-                              </div>
-                            </div>
-                          </td>
-
-                          {/* Cột 6: Chế độ Tự động */}
-                          <td className="py-3.5 px-3 align-middle">
-                            <div className="space-y-1">
-                              <div className="flex items-center gap-2">
-                                <button
-                                  type="button"
-                                  role="switch"
-                                  aria-checked={cfg.enabled}
-                                  disabled={togglingId === cfg.id}
-                                  onClick={() => handleToggleAutoOnRow(cfg)}
-                                  className={`relative inline-flex w-9 h-5 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${
-                                    cfg.enabled ? 'bg-emerald-600' : 'bg-slate-300'
-                                  }`}
-                                >
-                                  <span
-                                    className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-xs transition ${
-                                      cfg.enabled ? 'translate-x-4' : 'translate-x-0'
-                                    }`}
-                                  />
-                                </button>
-                                <span className="font-semibold text-slate-800">
-                                  {cfg.enabled ? 'BẬT' : 'TẮT'}
-                                </span>
-                              </div>
-                              <div className="text-[10px] text-slate-500 font-mono">
-                                Khung giờ: {times}
-                              </div>
-                            </div>
-                          </td>
-
-                          {/* Cột 7: Lần chạy cuối & Kết quả */}
-                          <td className="py-3.5 px-3 align-middle">
-                            <div className="flex items-center gap-2">
-                              <span className="text-slate-700 font-medium">
+                            <td>
+                            <div className="flex flex-col items-start gap-1">
+                              <span className="text-text-muted text-xs">
                                 {runDate === 'Chưa chạy'
                                   ? 'Chưa chạy'
                                   : `${runDate} ${runTime}`}
@@ -1291,100 +1030,15 @@ export const CsSheetBackupPanel: React.FC<CsSheetBackupPanelProps> = ({ initialT
                               </span>
                             </div>
                           </td>
+                            <td><div className="data-row-actions"><Button size="sm" variant="outline" isLoading={runningId === String(cfg.id)} onClick={() => { void handleRunOne(cfg); }} leftIcon={<Play className="w-4 h-4" />}>Sao lưu ngay</Button><DataRowMenu label={cfg.name} actions={[
+    { label: 'Cấu hình', icon: <Settings className="w-4 h-4" />, onClick: () => { setEditingConfig(cfg); setConfigModalOpen(true); } },
+    { label: 'Tải file Excel', icon: <Download className="w-4 h-4" />, disabled: downloadingId === cfg.id, onClick: () => { void handleDownloadExcel(cfg); } },
+    { label: 'Xem lịch sử', icon: <History className="w-4 h-4" />, onClick: () => { setHistorySearch(cfg.cs_user?.staff_code || cfg.name); changeSubTab('history'); } },
+    ...(canManage && !isAdminSystem ? [{ label: 'Xóa nguồn', icon: <Trash2 className="w-4 h-4" />, danger: true, onClick: () => { void handleDeleteConfig(cfg); } }] : []),
+  ]} /></div></td>
+                          </tr>
 
-                          {/* Cột 8: Thao tác */}
-                          <td className="py-3.5 pl-3 pr-4 align-middle text-right">
-                            <div
-                              className="inline-flex items-center justify-end gap-1.5 relative"
-                              ref={openRowMenuId === cfg.id ? rowMenuRef : undefined}
-                            >
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setEditingConfig(cfg);
-                                  setConfigModalOpen(true);
-                                }}
-                                title="Cấu hình nguồn Backup, Năm, Sheet & Lịch chạy"
-                                className="border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer"
-                              >
-                                <Settings className="w-3.5 h-3.5 text-slate-500" />
-                                <span>Cấu hình</span>
-                              </button>
-
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  setOpenRowMenuId((prev) => (prev === cfg.id ? null : cfg.id))
-                                }
-                                title="Thao tác khác"
-                                className="border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 rounded-lg p-1.5 transition-colors cursor-pointer"
-                              >
-                                <MoreHorizontal className="w-4 h-4" />
-                              </button>
-
-                              {openRowMenuId === cfg.id && (
-                                <div className="absolute right-0 top-full mt-1 w-48 rounded-xl border border-slate-200 bg-white p-1.5 shadow-lg z-30 text-left">
-                                  <button
-                                    type="button"
-                                    disabled={runningId === String(cfg.id)}
-                                    onClick={() => {
-                                      setOpenRowMenuId(null);
-                                      void handleRunOne(cfg);
-                                    }}
-                                    className="w-full px-2.5 py-2 rounded-lg text-xs font-semibold text-blue-600 hover:bg-blue-50 flex items-center gap-2 disabled:opacity-60 cursor-pointer"
-                                  >
-                                    {runningId === String(cfg.id) ? (
-                                      <RefreshCw className="w-3.5 h-3.5 animate-spin shrink-0" />
-                                    ) : (
-                                      <Play className="w-3.5 h-3.5 shrink-0" />
-                                    )}
-                                    <span>Backup ngay</span>
-                                  </button>
-
-                                  <button
-                                    type="button"
-                                    disabled={downloadingId === cfg.id}
-                                    onClick={() => {
-                                      setOpenRowMenuId(null);
-                                      void handleDownloadExcel(cfg);
-                                    }}
-                                    className="w-full px-2.5 py-2 rounded-lg text-xs font-semibold text-slate-700 hover:bg-slate-50 flex items-center gap-2 disabled:opacity-60 cursor-pointer"
-                                  >
-                                    <Download className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                                    <span>Tải file Excel (.xlsx)</span>
-                                  </button>
-
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setOpenRowMenuId(null);
-                                      setHistorySearch(cfg.cs_user?.staff_code || cfg.name);
-                                      changeSubTab('history');
-                                    }}
-                                    className="w-full px-2.5 py-2 rounded-lg text-xs font-semibold text-slate-700 hover:bg-slate-50 flex items-center gap-2 cursor-pointer"
-                                  >
-                                    <History className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-                                    <span>Xem lịch sử Backup</span>
-                                  </button>
-
-                                  {canManage && !isAdminSystem && (
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        setOpenRowMenuId(null);
-                                        void handleDeleteConfig(cfg);
-                                      }}
-                                      className="w-full px-2.5 py-2 rounded-lg text-xs font-semibold text-rose-600 hover:bg-rose-50 flex items-center gap-2 cursor-pointer"
-                                    >
-                                      <Trash2 className="w-3.5 h-3.5 shrink-0" />
-                                      <span>Xóa nguồn Backup</span>
-                                    </button>
-                                  )}
-                                </div>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
+                        </React.Fragment>
                       );
                     })
                   )}
@@ -1404,7 +1058,7 @@ export const CsSheetBackupPanel: React.FC<CsSheetBackupPanelProps> = ({ initialT
                     –{Math.min(page * pageSize, filteredConfigs.length)}
                   </strong>{' '}
                   / <strong className="text-slate-800">{filteredConfigs.length}</strong>{' '}
-                  nguồn Backup
+                  nguồn sao lưu
                 </span>
 
                 <div className="flex items-center gap-1.5">
@@ -1460,7 +1114,7 @@ export const CsSheetBackupPanel: React.FC<CsSheetBackupPanelProps> = ({ initialT
               <span>
                 Hôm nay:{' '}
                 <strong className="text-blue-600 font-bold">
-                  {historyStats.todayTotal} lượt Backup
+                  {historyStats.todayTotal} lượt sao lưu
                 </strong>
               </span>
               <span className="text-slate-300">·</span>
@@ -1568,19 +1222,17 @@ export const CsSheetBackupPanel: React.FC<CsSheetBackupPanelProps> = ({ initialT
             </button>
           </div>
 
-          {/* 3. Bảng phẳng Lịch sử Backup (10 cột) */}
+          {/* 3. Bảng phẳng Lịch sử sao lưu (10 cột) */}
           <div className="bg-white rounded-2xl border border-slate-200/90 shadow-xs overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
+            <div className="data-table-scroll">
+              <table className="data-history-table w-full text-left border-collapse">
                 <thead>
                   <tr className="border-b border-slate-200 bg-slate-50/70 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
                     <th className="py-3 pl-4 pr-3">Thời gian</th>
-                    <th className="py-3 px-3">Nguồn Backup</th>
+                    <th className="py-3 px-3">Nguồn sao lưu</th>
                     <th className="py-3 px-3">Chương trình</th>
                     <th className="py-3 px-3">Kích hoạt</th>
-                    <th className="py-3 px-3">Tổng HV</th>
-                    <th className="py-3 px-3">Dòng mới</th>
-                    <th className="py-3 px-3">Ô cập nhật</th>
+                    <th className="py-3 px-3">Kết quả xử lý</th>
                     <th className="py-3 px-3">Kết quả</th>
                     <th className="py-3 px-3">Thời lượng</th>
                     <th className="py-3 pl-3 pr-4 text-right">Chi tiết &amp; File .xlsx</th>
@@ -1589,9 +1241,9 @@ export const CsSheetBackupPanel: React.FC<CsSheetBackupPanelProps> = ({ initialT
                 <tbody className="divide-y divide-slate-100 text-xs">
                   {paginatedHistoryItems.length === 0 ? (
                     <tr>
-                      <td colSpan={10} className="py-12 text-center text-slate-500">
-                        Chưa có phiên chạy Backup nào khớp bộ lọc. Hãy bấm{' '}
-                        <strong>[Backup ngay]</strong> trên một nguồn bất kỳ để tạo lịch sử.
+                      <td colSpan={8} className="py-12 text-center text-slate-500">
+                        Chưa có phiên chạy sao lưu nào khớp bộ lọc. Hãy bấm{' '}
+                        <strong>[Sao lưu ngay]</strong> trên một nguồn bất kỳ để tạo lịch sử.
                       </td>
                     </tr>
                   ) : (
@@ -1627,15 +1279,7 @@ export const CsSheetBackupPanel: React.FC<CsSheetBackupPanelProps> = ({ initialT
                           <td className="py-3.5 px-3 align-middle text-slate-600">
                             {item.triggerType === 'AUTO' ? 'Tự động' : 'Thủ công'}
                           </td>
-                          <td className="py-3.5 px-3 align-middle font-semibold text-slate-800">
-                            {item.totalStudents ?? 0}
-                          </td>
-                          <td className="py-3.5 px-3 align-middle font-semibold text-emerald-600">
-                            +{item.appendedRows ?? 0}
-                          </td>
-                          <td className="py-3.5 px-3 align-middle font-semibold text-blue-600">
-                            ~{item.updatedCellsCount ?? 0} ô
-                          </td>
+                          <td className="py-3.5 px-3"><div className="data-history-result"><span>{item.totalStudents ?? 0} học viên</span><span>+{item.appendedRows ?? 0} dòng mới</span><span>{item.updatedCellsCount ?? 0} ô cập nhật</span></div></td>
                           <td className="py-3.5 px-3 align-middle">
                             {isFailed ? (
                               <Badge variant="danger" size="sm" dot>
@@ -1651,9 +1295,7 @@ export const CsSheetBackupPanel: React.FC<CsSheetBackupPanelProps> = ({ initialT
                             {item.durationSec} giây
                           </td>
                           <td className="py-3.5 pl-3 pr-4 align-middle text-right">
-                            <span className="text-blue-600 font-semibold hover:underline">
-                              Xem chi tiết Sheet →
-                            </span>
+                            <Button size="sm" variant="ghost" onClick={event => { event.stopPropagation(); setSelectedHistoryItem(item); }}>Xem chi tiết →</Button>
                           </td>
                         </tr>
                       );
@@ -1675,7 +1317,7 @@ export const CsSheetBackupPanel: React.FC<CsSheetBackupPanelProps> = ({ initialT
                     –{Math.min(historyPage * historyPageSize, flatHistoryItems.length)}
                   </strong>{' '}
                   / <strong className="text-slate-800">{flatHistoryItems.length}</strong>{' '}
-                  phiên Backup
+                  phiên sao lưu
                 </span>
 
                 <div className="flex items-center gap-1.5">
@@ -1746,8 +1388,8 @@ export const CsSheetBackupPanel: React.FC<CsSheetBackupPanelProps> = ({ initialT
         onClose={() => setSelectedHistoryItem(null)}
         title={
           selectedHistoryItem
-            ? `Chi tiết phiên Backup: ${selectedHistoryItem.configName || `#${selectedHistoryItem.configId}`}`
-            : 'Chi tiết phiên Backup'
+            ? `Chi tiết phiên sao lưu: ${selectedHistoryItem.configName || `#${selectedHistoryItem.configId}`}`
+            : 'Chi tiết phiên sao lưu'
         }
         size="lg"
       >
@@ -1893,7 +1535,7 @@ export const CsSheetBackupPanel: React.FC<CsSheetBackupPanelProps> = ({ initialT
       <Modal
         isOpen={bulkOpen}
         onClose={() => setBulkOpen(false)}
-        title="Dán hàng loạt Link Google Sheet Backup"
+        title="Dán hàng loạt Link Google Sheet sao lưu"
       >
         <div className="space-y-3 text-xs">
           <p className="text-slate-600">

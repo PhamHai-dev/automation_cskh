@@ -8,6 +8,7 @@ export type AuditModuleKey =
   | 'SYSTEM';
 
 export type ActivityLogTabKey = 'audit' | 'sync' | 'backup' | 'login';
+export type ActivityExportView = ActivityLogTabKey;
 
 export type LoginAuditStatus =
   | 'ALL'
@@ -19,15 +20,16 @@ export type LoginAuditStatus =
 export interface AuditChangedField {
   field: string;
   label: string;
-  before: any;
-  after: any;
+  before: unknown;
+  after: unknown;
 }
 
 export interface AuditLogActor {
-  id: number;
+  id: number | null;
   name: string | null;
   code: string | null;
-  email: string;
+  staff_code?: string | null;
+  email: string | null;
   roles: string[];
   displayLabel: string;
 }
@@ -45,8 +47,8 @@ export interface AuditLogItem {
   entityLabel: string;
   summary: string;
   changedFields: AuditChangedField[];
-  beforeData?: Record<string, any> | null;
-  afterData?: Record<string, any> | null;
+  beforeData?: Record<string, unknown> | null;
+  afterData?: Record<string, unknown> | null;
   ipAddress?: string | null;
 }
 
@@ -61,8 +63,9 @@ export interface AuditLogListResponse {
   items: AuditLogItem[];
   total: number;
   page: number;
-  limit: number;
+  pageSize: number;
   totalPages: number;
+  refreshedAt: string;
 }
 
 export interface LoginAuditItem {
@@ -70,6 +73,7 @@ export interface LoginAuditItem {
   createdAt: string;
   emailAttempted: string;
   status: 'SUCCESS' | 'FAILED' | 'LOCKED' | 'DISABLED';
+  statusLabel?: string;
   reason: string | null;
   ipAddress: string | null;
   userAgent: string | null;
@@ -88,18 +92,20 @@ export interface LoginAuditListResponse {
   items: LoginAuditItem[];
   total: number;
   page: number;
-  limit: number;
+  pageSize: number;
   totalPages: number;
+  refreshedAt: string;
 }
 
 export interface AuditLogQueryParams {
   module?: AuditModuleKey;
+  action?: string;
   actorId?: number | string;
   search?: string;
   fromDate?: string;
   toDate?: string;
   page?: number;
-  limit?: number;
+  pageSize?: number;
 }
 
 export interface LoginAuditQueryParams {
@@ -109,7 +115,18 @@ export interface LoginAuditQueryParams {
   fromDate?: string;
   toDate?: string;
   page?: number;
-  limit?: number;
+  pageSize?: number;
+}
+
+export interface ActivityExportQueryParams {
+  view: ActivityExportView;
+  module?: AuditModuleKey;
+  status?: string;
+  actorId?: number | string;
+  search?: string;
+  programType?: string;
+  fromDate?: string;
+  toDate?: string;
 }
 
 export interface ActivityActorsResponse {

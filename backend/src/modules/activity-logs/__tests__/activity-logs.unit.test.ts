@@ -4,24 +4,26 @@ jest.mock('../../../prisma/client', () => ({
       findMany: jest.fn(),
       findUnique: jest.fn(),
     },
-    manageAssignment: {
-      findMany: jest.fn(),
-    },
-    enrollment: {
-      findMany: jest.fn(),
-    },
-    student: {
-      findMany: jest.fn(),
-    },
-    class: {
-      findMany: jest.fn(),
-    },
+    manageAssignment: { findMany: jest.fn() },
+    enrollment: { findMany: jest.fn() },
+    enrollmentClass: { findMany: jest.fn() },
+    attendance: { findMany: jest.fn() },
+    careLog: { findMany: jest.fn() },
+    careTask: { findMany: jest.fn() },
+    classSession: { findMany: jest.fn() },
+    programSheetBackupConfig: { findMany: jest.fn() },
+    googleSheetSyncConfig: { findMany: jest.fn() },
+    googleSheetSyncRunItem: { findMany: jest.fn() },
+    student: { findMany: jest.fn() },
+    class: { findMany: jest.fn() },
     auditLog: {
       findMany: jest.fn(),
       create: jest.fn(),
     },
     loginAudit: {
       findMany: jest.fn(),
+      findFirst: jest.fn(),
+      count: jest.fn(),
     },
   },
 }));
@@ -187,8 +189,18 @@ describe('activity-logs module unit tests', () => {
         { id: 5, name: 'Quản lý A', code: null, staff_code: null, email: 'manage@test.com', roles: ['MANAGE'] },
       ]);
       mockPrisma.enrollment.findMany.mockResolvedValue([]);
+      mockPrisma.enrollmentClass.findMany.mockResolvedValue([]);
+      mockPrisma.attendance.findMany.mockResolvedValue([]);
+      mockPrisma.careLog.findMany.mockResolvedValue([]);
+      mockPrisma.careTask.findMany.mockResolvedValue([]);
+      mockPrisma.classSession.findMany.mockResolvedValue([]);
+      mockPrisma.programSheetBackupConfig.findMany.mockResolvedValue([]);
+      mockPrisma.googleSheetSyncConfig.findMany.mockResolvedValue([]);
+      mockPrisma.googleSheetSyncRunItem.findMany.mockResolvedValue([]);
       mockPrisma.student.findMany.mockResolvedValue([]);
       mockPrisma.class.findMany.mockResolvedValue([]);
+      mockPrisma.loginAudit.count.mockResolvedValue(0);
+      mockPrisma.loginAudit.findFirst.mockResolvedValue(null);
     });
 
     it('ADMIN sees all AuditLogs without user_id restriction and gets stats + moduleCounts', async () => {
@@ -220,12 +232,14 @@ describe('activity-logs module unit tests', () => {
 
       const res = await service.listAuditLogs(
         { id: 1, roles: ['ADMIN'] },
-        { module: 'ALL', page: 1, limit: 50 },
+        { module: 'ALL', page: 1, pageSize: 50 },
       );
 
       expect(mockPrisma.auditLog.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: {},
+          where: expect.objectContaining({
+            created_at: expect.objectContaining({ gte: expect.any(Date), lte: expect.any(Date) }),
+          }),
         }),
       );
       expect(res.success).toBe(true);
@@ -246,29 +260,32 @@ describe('activity-logs module unit tests', () => {
 
       await service.listAuditLogs({ id: 5, roles: ['MANAGE'] }, {});
 
-      expect(mockPrisma.auditLog.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: { user_id: { in: [5, 2, 3] } },
-        }),
+      expect(mockPrisma.manageAssignment.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { manage_user_id: 5 } }),
       );
     });
 
-    it('CS only sees AuditLogs where user_id = csId OR entity is an Enrollment assigned to csId', async () => {
-      mockPrisma.enrollment.findMany.mockResolvedValueOnce([{ id: 45 }, { id: 46 }]);
-      mockPrisma.auditLog.findMany.mockResolvedValue([]);
+    it('CS includes assigned Enrollment events and excludes ambiguous legacy actor-only events', async () => {
+      mockPrisma.enrollment.findMany.mockResolvedValueOnce([
+        { id: 45, student_id: 100 },
+        { id: 46, student_id: 101 },
+      ]);
+      mockPrisma.auditLog.findMany.mockResolvedValue([
+        {
+          id: 1, user_id: 99, action: 'ENROLLMENT_UPDATED', entity_type: 'Enrollment', entity_id: '45',
+          before_data: null, after_data: { status: 'STUDYING' }, ip_address: null, created_at: new Date(),
+        },
+        {
+          id: 2, user_id: 2, action: 'USER_UPDATED', entity_type: 'User', entity_id: '2',
+          before_data: null, after_data: { name: 'CS' }, ip_address: null, created_at: new Date(),
+        },
+      ]);
 
-      await service.listAuditLogs({ id: 2, roles: ['CS'] }, {});
+      const result = await service.listAuditLogs({ id: 2, roles: ['CS'] }, {});
 
-      expect(mockPrisma.auditLog.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: {
-            OR: [
-              { user_id: 2 },
-              { entity_type: 'Enrollment', entity_id: { in: ['45', '46'] } },
-            ],
-          },
-        }),
-      );
+      expect(result.items.map((item) => item.id)).toEqual([1]);
+      expect(result.items[0].beforeData).toBeNull();
+      expect(result.items[0].afterData).toBeNull();
     });
 
     it('listLoginAudits enforces MANAGE scope and computes login stats', async () => {
@@ -301,11 +318,19 @@ describe('activity-logs module unit tests', () => {
         },
       ]);
 
+      mockPrisma.loginAudit.count
+        .mockResolvedValueOnce(2)
+        .mockResolvedValueOnce(2)
+        .mockResolvedValueOnce(1);
+      mockPrisma.loginAudit.findFirst.mockResolvedValue({ created_at: now });
+
       const res = await service.listLoginAudits({ id: 5, roles: ['MANAGE'] }, { status: 'ALL' });
 
       expect(mockPrisma.loginAudit.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { user_id: { in: [5, 2] } },
+          where: expect.objectContaining({
+            AND: expect.arrayContaining([{ user_id: { in: [5, 2] } }]),
+          }),
         }),
       );
       expect(res.stats.todayTotal).toBe(2);

@@ -1,3 +1,4 @@
+import '../styles/data-management.css';
 import React, { useEffect, useRef, useState } from 'react';
 import { Modal } from '../../../components/ui/Modal';
 import { Button } from '../../../components/ui/Button';
@@ -468,7 +469,7 @@ export const SyncConfigModal: React.FC<SyncConfigModalProps> = ({
         </>
       }
     >
-      <div className="space-y-6 text-xs">
+      <div className="data-form space-y-5">
         {/* 1. Chọn Loại luồng & Chương trình */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="md:col-span-2">
@@ -513,8 +514,8 @@ export const SyncConfigModal: React.FC<SyncConfigModalProps> = ({
                     className={`h-9 rounded-xl border font-bold text-xs transition-all cursor-pointer disabled:opacity-60 ${
                       active
                         ? prog === 'JLPT'
-                          ? 'bg-violet-600 text-white border-violet-600 shadow-xs'
-                          : 'bg-teal-600 text-white border-teal-600 shadow-xs'
+                          ? 'bg-primary text-white border-primary shadow-xs'
+                          : 'bg-primary text-white border-primary shadow-xs'
                         : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
                     }`}
                   >
@@ -809,6 +810,9 @@ export const SyncConfigModal: React.FC<SyncConfigModalProps> = ({
           )}
         </div>
 
+        <details className="data-advanced">
+          <summary>Phạm vi dữ liệu & tùy chọn nâng cao</summary>
+          <div>
         {/* 3. Khối Cấu Hình Lọc Trước Khi Đồng Bộ (Dynamic Filter Section) */}
         <div className="rounded-2xl border border-slate-200 p-4 space-y-4">
           <div className="flex items-center justify-between">
@@ -1110,6 +1114,8 @@ export const SyncConfigModal: React.FC<SyncConfigModalProps> = ({
             </div>
           )}
         </div>
+          </div>
+        </details>
       </div>
     </Modal>
   );

@@ -475,6 +475,10 @@ export interface BackupHistoryResponse {
   };
   batches: BackupHistoryBatch[];
   total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+  refreshedAt: string;
 }
 
 export interface SyncHistoryItem {
@@ -506,6 +510,11 @@ export interface SyncHistoryResponse {
   };
   items: SyncHistoryItem[];
   total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+  refreshedAt: string;
+  canRollback: boolean;
 }
 
 export type SyncHistoryChangeStatus =

@@ -39,7 +39,7 @@ export const AdminConfigPage: React.FC = () => {
     },
     {
       key: 'sheet-backup',
-      title: 'Cấu hình Backup dữ liệu',
+      title: 'Cấu hình sao lưu dữ liệu',
       description:
         'Cấu hình Google Service Account JSON và chọn cột được đổ data ra Sheet cho học viên Kaiwa (1.Chăm sóc & 3.Chấm buổi) và JLPT (Data JLPT_Inhouse & Chấm buổi).',
       path: '/settings/config/sheet-backup',
@@ -114,7 +114,7 @@ export const SheetBackupAdminConfigPage: React.FC = () => {
   return (
     <PageContainer>
       <PageHeader
-        title="Cấu hình Backup dữ liệu"
+        title="Cấu hình sao lưu dữ liệu"
         actions={
           <Button
             variant="outline"

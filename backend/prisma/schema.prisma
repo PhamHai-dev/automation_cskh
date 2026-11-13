@@ -114,6 +114,9 @@ model LoginAudit {
 
   user User? @relation(fields: [user_id], references: [id])
 
+  @@index([created_at])
+  @@index([user_id, created_at])
+  @@index([status, created_at])
   @@map("login_audits")
 }
 
@@ -1154,7 +1157,7 @@ model GoogleSheetSyncRun {
 
   @@index([config_id, started_at])
   @@index([flow_type, program_type, started_at])
-  @@index([status])
+  @@index([status, started_at])
   @@map("google_sheet_sync_runs")
 }
 
@@ -1266,6 +1269,10 @@ model AuditLog {
 
   user User @relation("AuditLogUser", fields: [user_id], references: [id])
 
+  @@index([created_at])
+  @@index([user_id, created_at])
+  @@index([action, created_at])
+  @@index([entity_type, entity_id])
   @@map("audit_logs")
 }
 

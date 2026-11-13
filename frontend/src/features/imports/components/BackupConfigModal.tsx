@@ -1,3 +1,4 @@
+import '../styles/data-management.css';
 import React, { useEffect, useState } from 'react';
 import { Modal } from '../../../components/ui/Modal';
 import { Button } from '../../../components/ui/Button';
@@ -264,7 +265,7 @@ export const BackupConfigModal: React.FC<BackupConfigModalProps> = ({
       const defaultStaff = csUsers[0]?.staff_code || 'CVHT01';
       setProgramType(def.value);
       setCsUserId(csUsers[0]?.id || '');
-      setName('Backup KAIWA - Sổ mới');
+      setName('Sao lưu KAIWA - Sổ mới');
       setTargetUrl('');
       setActiveDestTab('GOOGLE_SHEET');
       setSubfolder(defaultSubfolderByProgram(def.value));
@@ -406,12 +407,30 @@ export const BackupConfigModal: React.FC<BackupConfigModalProps> = ({
       onClose={onClose}
       title={
         isEditing
-          ? `Cấu hình nguồn Backup: ${editingConfig?.name || ''}`
-          : 'Thêm / Cấu hình nguồn Backup mới'
+          ? `Cấu hình nguồn sao lưu: ${editingConfig?.name || ''}`
+          : 'Thêm / Cấu hình nguồn sao lưu mới'
       }
-      size="lg"
+      size="xl"
+      description="Thiết lập nơi lưu, phạm vi dữ liệu và lịch sao lưu."
+      footer={
+        <div className="flex items-center justify-end gap-2">
+          {/* Footer actions */}
+          <Button variant="outline" size="sm" onClick={onClose}>
+            Hủy
+          </Button>
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={handleSubmit}
+            isLoading={saving}
+            leftIcon={<Check className="w-3.5 h-3.5" />}
+          >
+            {isEditing ? 'Lưu cấu hình' : 'Tạo nguồn sao lưu'}
+          </Button>
+        </div>
+      }
     >
-      <div className="space-y-4 text-xs max-h-[75vh] overflow-y-auto pr-1">
+      <div className="data-form space-y-5">
         {/* 1. Loại nguồn & Tên sổ */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3.5 rounded-xl bg-slate-50 border border-slate-200/80">
           <div>
@@ -434,12 +453,12 @@ export const BackupConfigModal: React.FC<BackupConfigModalProps> = ({
 
           <div>
             <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1">
-              Tên hiển thị sổ Backup
+              Tên hiển thị sổ sao lưu
             </label>
             <Input
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="VD: Backup KAIWA - CVHT01"
+              placeholder="VD: Sao lưu KAIWA - CVHT01"
               className="h-9 text-xs"
             />
           </div>
@@ -468,11 +487,11 @@ export const BackupConfigModal: React.FC<BackupConfigModalProps> = ({
             )}
         </div>
 
-        {/* 2. Đích kết nối dữ liệu Backup (2 Tabs giống cấu hình trang Đồng bộ) */}
+        {/* 2. Đích kết nối dữ liệu sao lưu (2 Tabs giống cấu hình trang Đồng bộ) */}
         <div className="rounded-2xl border border-slate-200 p-4 space-y-4 bg-slate-50/50">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <span className="text-xs font-bold text-slate-900 uppercase tracking-wider">
-              Nguồn kết nối dữ liệu Backup
+              Nguồn kết nối dữ liệu sao lưu
             </span>
             <div className="inline-flex rounded-xl bg-slate-200/70 p-1">
               <button
@@ -645,6 +664,9 @@ export const BackupConfigModal: React.FC<BackupConfigModalProps> = ({
           )}
         </div>
 
+        <details className="data-advanced">
+          <summary>Cấu hình nâng cao · Các Sheet trong tệp</summary>
+          <div>
         {/* 3. Cấu hình các Sheet bên trong File */}
         <div className="p-3.5 rounded-xl border border-slate-200 space-y-3">
           <div className="font-bold text-slate-900">
@@ -760,7 +782,10 @@ export const BackupConfigModal: React.FC<BackupConfigModalProps> = ({
           )}
         </div>
 
-        {/* 4. Năm Backup & Lịch chạy tự động */}
+          </div>
+        </details>
+
+        {/* 4. Năm sao lưu & Lịch chạy tự động */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div className="p-3.5 rounded-xl border border-slate-200 space-y-2">
             <label className="block font-bold text-slate-900">
@@ -789,7 +814,7 @@ export const BackupConfigModal: React.FC<BackupConfigModalProps> = ({
             <div className="flex items-center justify-between">
               <span className="font-bold text-slate-900 flex items-center gap-1.5">
                 <Clock className="w-3.5 h-3.5 text-blue-600" />
-                <span>Chạy Backup Tự động</span>
+                <span>Chạy sao lưu tự động</span>
               </span>
               <label className="inline-flex items-center gap-1.5 cursor-pointer font-semibold text-slate-700">
                 <input
@@ -873,21 +898,7 @@ export const BackupConfigModal: React.FC<BackupConfigModalProps> = ({
           </label>
         </div>
 
-        {/* Footer actions */}
-        <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200">
-          <Button variant="outline" size="sm" onClick={onClose}>
-            Hủy
-          </Button>
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={handleSubmit}
-            isLoading={saving}
-            leftIcon={<Check className="w-3.5 h-3.5" />}
-          >
-            {isEditing ? 'Lưu cấu hình' : 'Tạo nguồn Backup'}
-          </Button>
-        </div>
+
       </div>
     </Modal>
   );

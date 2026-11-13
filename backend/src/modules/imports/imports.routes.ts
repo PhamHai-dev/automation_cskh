@@ -45,7 +45,7 @@ router.post('/sheet-backup/column-config/reset', requireRoles(['ADMIN']), contro
 router.get('/sheet-backup/configs', requireRoles(['ADMIN', 'MANAGE', 'CS', 'TEACHER']), controller.getSheetBackupConfigs);
 router.post('/sheet-backup/configs', requireRoles(['ADMIN', 'MANAGE', 'CS']), controller.createSheetBackupConfig);
 router.post('/sheet-backup/configs/bulk-links', requireRoles(['ADMIN', 'MANAGE']), controller.bulkPasteSheetBackupLinks);
-router.get('/sheet-backup/history', requireRoles(['ADMIN', 'MANAGE', 'CS', 'TEACHER']), controller.getSheetBackupHistory);
+router.get('/sheet-backup/history', requireRoles(['ADMIN', 'MANAGE', 'CS']), controller.getSheetBackupHistory);
 router.put('/sheet-backup/configs/:id', requireRoles(['ADMIN', 'MANAGE', 'CS', 'TEACHER']), controller.updateSheetBackupConfig);
 router.delete('/sheet-backup/configs/:id', requireRoles(['ADMIN', 'MANAGE']), controller.deleteSheetBackupConfig);
 router.post('/sheet-backup/configs/:id/run', requireRoles(['ADMIN', 'MANAGE', 'CS', 'TEACHER']), controller.runSheetBackupForConfig);

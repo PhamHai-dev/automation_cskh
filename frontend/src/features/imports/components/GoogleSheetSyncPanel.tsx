@@ -12,31 +12,34 @@ import {
   SyncSourceType,
 } from '../types/imports.types';
 import { useAuth } from '../../../contexts/AuthContext';
+import { DataGroups, DataFilters, DataRowMenu } from './DataManagementControls';
+import { PageHeader } from '../../../components/common/PageHeader';
 import { Button } from '../../../components/ui/Button';
 import { Badge } from '../../../components/ui/Badge';
 import { useToast } from '../../../components/ui/Toast';
 import { SyncConfigModal } from './SyncConfigModal';
 import { BulkPasteLinksModal } from './BulkPasteLinksModal';
 import {
+  AlertTriangle,
   CalendarCheck,
+  CheckCircle2,
   ClipboardCheck,
   ClipboardPaste,
   Copy,
+  Database,
   Download,
   ExternalLink,
   Eye,
   FileSpreadsheet,
   FileText,
-  FolderOpen,
   History,
   Info,
-  Lock,
   Plus,
   RefreshCw,
   Save,
-  Search,
   Settings,
   ShieldCheck,
+  Sparkles,
   Trash2,
   Users,
 } from 'lucide-react';
@@ -474,6 +477,11 @@ const synthesizeSyncHistory = (
     },
     items,
     total: items.length,
+    page: 1,
+    pageSize: Math.max(items.length, 25),
+    totalPages: 1,
+    refreshedAt: new Date().toISOString(),
+    canRollback: false,
   };
 };
 
@@ -518,6 +526,8 @@ export const GoogleSheetSyncPanel: React.FC = () => {
   const [serverFlowCounts, setServerFlowCounts] =
     useState<SyncFlowCounts | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+  const [historyError, setHistoryError] = useState(false);
 
   const [togglingCode, setTogglingCode] = useState<string | null>(null);
   const [savingCode, setSavingCode] = useState<string | null>(null);
@@ -575,6 +585,7 @@ export const GoogleSheetSyncPanel: React.FC = () => {
   const fetchConfigs = useCallback(async () => {
     try {
       setLoading(true);
+      setLoadError(false);
       const data = await importsApi.getSheetSyncConfigs();
       const apiConfigs = data?.configs || [];
 
@@ -637,6 +648,7 @@ export const GoogleSheetSyncPanel: React.FC = () => {
         });
       setCvhtDrafts(nextCvhtDrafts);
     } catch {
+      setLoadError(true);
       setConfigs(DEFAULT_CONFIGS);
     } finally {
       setLoading(false);
@@ -646,6 +658,7 @@ export const GoogleSheetSyncPanel: React.FC = () => {
   const fetchHistory = useCallback(async () => {
     try {
       setHistoryLoading(true);
+      setHistoryError(false);
       const res = await importsApi.getSheetSyncHistory({
         programType:
           historyProgramFilter === 'ALL' ? undefined : historyProgramFilter,
@@ -659,6 +672,7 @@ export const GoogleSheetSyncPanel: React.FC = () => {
         setHistoryData(synthesizeSyncHistory(configs));
       }
     } catch {
+      setHistoryError(true);
       setHistoryData(synthesizeSyncHistory(configs));
     } finally {
       setHistoryLoading(false);
@@ -1143,7 +1157,11 @@ export const GoogleSheetSyncPanel: React.FC = () => {
   }
 
   return (
-    <div className="space-y-5">
+    <div className="data-workspace space-y-4">
+      {loadError && <div className="data-error" role="alert"><span>Không tải được cấu hình mới nhất. Dữ liệu đang hiển thị có thể chưa cập nhật.</span><Button size="sm" variant="outline" onClick={() => { void fetchConfigs(); }}>Thử lại</Button></div>}
+      {activeSubTab === 'history' && historyError && <div className="data-error" role="alert"><span>Không tải được lịch sử mới nhất.</span><Button size="sm" variant="outline" onClick={() => { void fetchHistory(); }}>Thử lại</Button></div>}
+      {activeSubTab === 'history' && historyLoading && <div role="status" className="text-sm text-text-muted">Đang tải lịch sử...</div>}
+
       {/* Hidden input for inline row local file upload */}
       <input
         ref={rowFileInputRef}
@@ -1154,18 +1172,8 @@ export const GoogleSheetSyncPanel: React.FC = () => {
       />
 
       {/* A. Top Header Bar */}
-      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
-            Đồng bộ dữ liệu (4 luồng)
-          </h1>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Quản lý tập trung toàn bộ nguồn dữ liệu Học viên, Điểm danh CVHT, Điểm
-            danh Giáo viên và Báo cáo học tập (~1.000 file)
-          </p>
-        </div>
-
-        {/* Right: Pill Google + Action buttons */}
+      <div className="data-heading">
+        <PageHeader title="Đồng bộ dữ liệu" actions={
         <div className="flex flex-wrap items-center gap-2.5">
           <button
             type="button"
@@ -1179,7 +1187,7 @@ export const GoogleSheetSyncPanel: React.FC = () => {
             title={
               serviceAccount?.clientEmail
                 ? 'Bấm để sao chép email Service Account'
-                : 'Bấm để mở tab Ánh xạ CSKH & Kết nối'
+                : 'Bấm để mở trang Ánh xạ CSKH & Kết nối'
             }
             className="bg-white rounded-xl border border-slate-200 px-3.5 py-1.5 flex items-center gap-2.5 shadow-2xs hover:bg-slate-50 transition-colors text-left cursor-pointer"
           >
@@ -1208,7 +1216,7 @@ export const GoogleSheetSyncPanel: React.FC = () => {
             onClick={() => setBulkPasteModalOpen(true)}
             leftIcon={<ClipboardPaste className="w-4 h-4 text-teal-600" />}
           >
-            Dán nhiều link (Bulk Paste)
+            Dán nhiều liên kết
           </Button>
 
           <Button
@@ -1223,185 +1231,52 @@ export const GoogleSheetSyncPanel: React.FC = () => {
             Thêm nguồn đồng bộ
           </Button>
         </div>
+        } />
+        <p className="data-description">Google Sheet / Excel → Hệ thống · Nhập và cập nhật dữ liệu từ nguồn.</p>
       </div>
 
-      {/* B. Thanh 3 Sub-tab (Underline Tabs) */}
-      <div className="border-b border-slate-200 flex items-center gap-6">
-        <button
-          type="button"
-          onClick={() => selectSubTab('configs')}
-          className={`pb-3 text-xs sm:text-sm inline-flex items-center gap-2 border-b-2 transition-colors cursor-pointer ${
-            activeSubTab === 'configs'
-              ? 'border-blue-600 text-blue-600 font-semibold'
-              : 'border-transparent text-slate-600 hover:text-slate-900 font-medium'
-          }`}
-        >
-          <Settings className="w-4 h-4" />
-          <span>Danh sách nguồn đồng bộ ({configs.length})</span>
-        </button>
 
-        <button
-          type="button"
-          onClick={() => selectSubTab('history')}
-          className={`pb-3 text-xs sm:text-sm inline-flex items-center gap-2 border-b-2 transition-colors cursor-pointer ${
-            activeSubTab === 'history'
-              ? 'border-blue-600 text-blue-600 font-semibold'
-              : 'border-transparent text-slate-600 hover:text-slate-900 font-medium'
-          }`}
-        >
-          <History className="w-4 h-4" />
-          <span>Lịch sử đồng bộ</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => selectSubTab('connection')}
-          className={`pb-3 text-xs sm:text-sm inline-flex items-center gap-2 border-b-2 transition-colors cursor-pointer ${
-            activeSubTab === 'connection'
-              ? 'border-blue-600 text-blue-600 font-semibold'
-              : 'border-transparent text-slate-600 hover:text-slate-900 font-medium'
-          }`}
-        >
-          <Users className="w-4 h-4" />
-          <span>Ánh xạ CSKH &amp; Kết nối</span>
-        </button>
-      </div>
 
       {/* C. SUB-TAB 1: DANH SÁCH NGUỒN ĐỒNG BỘ */}
       {activeSubTab === 'configs' && (
         <div className="space-y-4">
           {/* 1. Thanh 5 Thẻ Lọc Nhanh Theo 4 Luồng (Flow Filter Cards / Pills) */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-            {FLOW_CARDS.map((card) => {
-              const isActive = flowFilter === card.key;
-              const count = flowCounts[card.key] ?? 0;
-
-              return (
-                <button
-                  key={card.key}
-                  type="button"
-                  onClick={() => setFlowFilter(card.key)}
-                  className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between gap-2 ${
-                    isActive
-                      ? `${card.activeBorder} shadow-sm`
-                      : 'bg-white border-slate-200/90 hover:border-slate-300 hover:bg-slate-50/60'
-                  }`}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <span
-                      className={`inline-flex items-center gap-1.5 text-xs font-bold ${
-                        isActive ? 'text-white' : 'text-slate-900'
-                      }`}
-                    >
-                      {card.icon}
-                      <span>{card.title}</span>
-                    </span>
-                    <span
-                      className={`px-2 py-0.5 rounded-full text-xs font-extrabold ${
-                        isActive
-                          ? 'bg-white/20 text-white'
-                          : 'bg-slate-100 text-slate-800'
-                      }`}
-                    >
-                      {count}
-                    </span>
-                  </div>
-                  <div
-                    className={`text-[11px] truncate ${
-                      isActive ? 'text-white/85' : 'text-slate-500'
-                    }`}
-                  >
-                    {card.subtitle}
-                  </div>
-                </button>
-              );
-            })}
+          <div className="data-summary" aria-label="Tổng quan nguồn đồng bộ">
+            <span className="data-summary-card is-total"><i><Database /></i><span>Tổng nguồn<strong>{configs.length}</strong></span></span>
+            <span className="data-summary-card is-auto"><i><Sparkles /></i><span>Tự động bật<strong>{configs.filter(c => c.enabled).length}</strong></span></span>
+            <span className="data-summary-card is-success"><i><CheckCircle2 /></i><span>Thành công<strong>{configs.filter(c => ['SUCCESS', 'COMPLETED'].includes(c.last_status || '')).length}</strong></span></span>
+            <span className="data-summary-card is-warning"><i><AlertTriangle /></i><span>Lỗi / Cảnh báo<strong>{configs.filter(c => ['FAILED', 'PARTIAL_FAILED'].includes(c.last_status || '')).length}</strong></span></span>
           </div>
+          <DataGroups label="Lọc luồng đồng bộ" value={flowFilter} onChange={setFlowFilter}
+            items={FLOW_CARDS.map(card => ({ value: card.key, label: card.title.replace(/^\d+\. /, ''), icon: card.icon, count: flowCounts[card.key] ?? 0, tone: card.key.toLowerCase().replace(/_/g, '-') }))} />
 
           {/* 2. Thanh Tìm Kiếm & Bộ Lọc Đa Năng */}
-          <div className="bg-white rounded-2xl border border-slate-200/90 p-3.5 shadow-2xs flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3">
-            <div className="flex flex-wrap items-center gap-2.5 flex-1">
-              <div className="relative flex-1 min-w-[240px] max-w-md">
-                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Tìm tên nguồn, Mã HV, Tên HV, Mã lớp, Mã GV, link sheet..."
-                  className="w-full h-9 rounded-xl border border-slate-200 bg-slate-50/50 pl-8 pr-3 text-xs text-slate-800 placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
-                />
-              </div>
-
-              {/* Chương trình */}
-              <select
-                value={programFilter}
-                onChange={(e) =>
-                  setProgramFilter(e.target.value as 'ALL' | 'JLPT' | 'KAIWA')
-                }
-                className="h-9 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 focus:outline-none"
-              >
-                <option value="ALL">Chương trình: Tất cả</option>
-                <option value="JLPT">JLPT</option>
-                <option value="KAIWA">KAIWA</option>
+          <DataFilters search={searchQuery} onSearch={setSearchQuery} placeholder="Tìm tên nguồn, mã học viên, lớp hoặc liên kết..."
+            program={programFilter} onProgram={v => setProgramFilter(v as typeof programFilter)}
+            status={statusFilter} onStatus={v => setStatusFilter(v as typeof statusFilter)}
+            activeCount={Number(sourceTypeFilter !== 'ALL') + Number(autoModeFilter !== 'ALL')}
+            onReset={() => { setSearchQuery(''); setProgramFilter('ALL'); setStatusFilter('ALL'); setSourceTypeFilter('ALL'); setAutoModeFilter('ALL'); }}>
+            <label className="text-xs text-text-secondary">Loại nguồn
+              <select aria-label="Loại nguồn" value={sourceTypeFilter} onChange={e => setSourceTypeFilter(e.target.value as typeof sourceTypeFilter)}>
+                <option value="ALL">Tất cả</option><option value="GOOGLE_SHEET">Google Sheet</option><option value="LOCAL_FILE">File tải từ máy</option>
               </select>
-
-              {/* Loại nguồn */}
-              <select
-                value={sourceTypeFilter}
-                onChange={(e) =>
-                  setSourceTypeFilter(
-                    e.target.value as 'ALL' | 'GOOGLE_SHEET' | 'LOCAL_FILE'
-                  )
-                }
-                className="h-9 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 focus:outline-none"
-              >
-                <option value="ALL">Loại nguồn: Tất cả</option>
-                <option value="GOOGLE_SHEET">Link Google Sheet</option>
-                <option value="LOCAL_FILE">File tải từ máy</option>
+            </label>
+            <label className="text-xs text-text-secondary">Chế độ tự động
+              <select aria-label="Chế độ tự động" value={autoModeFilter} onChange={e => setAutoModeFilter(e.target.value as typeof autoModeFilter)}>
+                <option value="ALL">Tất cả</option><option value="AUTO_ON">Đang bật</option><option value="AUTO_OFF">Đang tắt</option>
               </select>
-
-              {/* Chế độ tự động */}
-              <select
-                value={autoModeFilter}
-                onChange={(e) =>
-                  setAutoModeFilter(
-                    e.target.value as 'ALL' | 'AUTO_ON' | 'AUTO_OFF'
-                  )
-                }
-                className="h-9 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 focus:outline-none"
-              >
-                <option value="ALL">Chế độ tự động: Tất cả</option>
-                <option value="AUTO_ON">Tự động: Đang BẬT</option>
-                <option value="AUTO_OFF">Tự động: Đang TẮT</option>
-              </select>
-
-              {/* Trạng thái */}
-              <select
-                value={statusFilter}
-                onChange={(e) =>
-                  setStatusFilter(
-                    e.target.value as 'ALL' | 'SUCCESS' | 'FAILED' | 'IDLE'
-                  )
-                }
-                className="h-9 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 focus:outline-none"
-              >
-                <option value="ALL">Trạng thái: Tất cả</option>
-                <option value="SUCCESS">Thành công</option>
-                <option value="FAILED">Có lỗi / Cảnh báo</option>
-                <option value="IDLE">Chưa chạy</option>
-              </select>
-            </div>
-          </div>
+            </label>
+          </DataFilters>
 
           {/* 3. Bảng Quản Lý Theo Dòng — 8 Cột Tiêu Chuẩn */}
           <div className="bg-white rounded-2xl border border-slate-200/90 shadow-xs overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
+            <div className="data-table-scroll">
+              <table className="data-source-table">
                 <thead>
                   <tr className="border-b border-slate-200 bg-slate-50/80 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
                     <th className="py-3 pl-4 pr-2 w-10">
                       <input
-                        type="checkbox"
+                        type="checkbox" aria-label="Chọn tất cả nguồn trên trang"
                         checked={
                           paginatedConfigs.length > 0 &&
                           paginatedConfigs.every((c) =>
@@ -1428,15 +1303,7 @@ export const GoogleSheetSyncPanel: React.FC = () => {
                         className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
                       />
                     </th>
-                    <th className="py-3 px-3">Tên nguồn &amp; Kết nối</th>
-                    <th className="py-3 px-3">Loại luồng</th>
-                    <th className="py-3 px-3">Chương trình</th>
-                    <th className="py-3 px-3">
-                      Cấu hình lọc (Năm / Tình trạng)
-                    </th>
-                    <th className="py-3 px-3">Chế độ Tự động</th>
-                    <th className="py-3 px-3">Lần chạy cuối &amp; Kết quả</th>
-                    <th className="py-3 pl-3 pr-4 text-right">Thao tác</th>
+                    <th>Tên nguồn</th><th>Phân loại</th><th>Kết nối</th><th>Phạm vi</th><th>Tự động</th><th>Kết quả gần nhất</th><th>Thao tác</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-xs">
@@ -1473,18 +1340,11 @@ export const GoogleSheetSyncPanel: React.FC = () => {
                       const sum = cfg.last_summary;
 
                       return (
-                        <tr
-                          key={cfg.code}
-                          className={`transition-colors ${
-                            isChecked
-                              ? 'bg-blue-50/30 hover:bg-blue-50/50'
-                              : 'hover:bg-slate-50/70'
-                          }`}
-                        >
-                          {/* Cột 1: Checkbox */}
-                          <td className="py-3.5 pl-4 pr-2 align-middle">
+                        <React.Fragment key={cfg.code}>
+                          <tr data-flow={flowType.toLowerCase().replace(/_/g, '-')} className={`data-source-row ${isChecked ? 'is-selected' : ''}`}>
+                            <td>
                             <input
-                              type="checkbox"
+                              type="checkbox" aria-label={`Chọn ${cfg.name}`}
                               checked={isChecked}
                               onChange={() =>
                                 setSelectedCodes((prev) => {
@@ -1497,89 +1357,10 @@ export const GoogleSheetSyncPanel: React.FC = () => {
                               className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
                             />
                           </td>
-
-                          {/* Cột 2: Tên nguồn & Kết nối */}
-                          <td className="py-3.5 px-3 align-middle">
-                            <div className="flex flex-wrap items-center gap-1.5">
-                              <span className="font-bold text-slate-900">
-                                {cfg.name}
-                              </span>
-                              {renderColumnScopeBadge(cfg)}
-                            </div>
-
-                            {/* Target badges if present */}
-                            {(cfg.target_student_external_id ||
-                              cfg.target_class_code ||
-                              cfg.target_teacher_code) && (
-                              <div className="flex flex-wrap items-center gap-1.5 mt-1">
-                                {cfg.target_student_external_id && (
-                                  <span className="px-2 py-0.5 rounded bg-teal-50 text-teal-800 border border-teal-200 font-semibold text-[11px]">
-                                    HV: {cfg.target_student_external_id}
-                                    {cfg.target_student_name
-                                      ? ` - ${cfg.target_student_name}`
-                                      : ''}
-                                  </span>
-                                )}
-                                {cfg.target_class_code && (
-                                  <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-800 border border-blue-200 font-semibold text-[11px]">
-                                    Lớp: {cfg.target_class_code}
-                                  </span>
-                                )}
-                                {cfg.target_teacher_code && (
-                                  <span className="px-2 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200 font-semibold text-[11px]">
-                                    GV: {cfg.target_teacher_code}
-                                  </span>
-                                )}
-                              </div>
-                            )}
-
-                            {/* Connection line */}
-                            <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[11px]">
-                              {isGoogleSheet && sheetUrl ? (
-                                <>
-                                  <span className="inline-flex items-center gap-1 text-emerald-700 font-semibold">
-                                    <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                                    <span>Tab: {cfg.sheet_name}</span>
-                                  </span>
-                                  <a
-                                    href={sheetUrl}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="inline-flex items-center gap-1 text-blue-600 hover:underline font-medium"
-                                  >
-                                    <span>Mở Sheet gốc</span>
-                                    <ExternalLink className="w-3 h-3" />
-                                  </a>
-                                </>
-                              ) : (
-                                <>
-                                  <span className="inline-flex items-center gap-1 text-slate-600 font-medium">
-                                    <FolderOpen className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                                    <span className="truncate max-w-[180px]">
-                                      {localFileName || 'Chưa chọn file .xlsx'}
-                                    </span>
-                                  </span>
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      handleTriggerInlineFileUpload(cfg.code)
-                                    }
-                                    className="px-2 py-0.5 rounded border border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-700 font-semibold text-[10px] transition-colors cursor-pointer"
-                                  >
-                                    Tải file mới
-                                  </button>
-                                </>
-                              )}
-                            </div>
-                          </td>
-
-                          {/* Cột 3: Loại luồng */}
-                          <td className="py-3.5 px-3 align-middle">
+                            <td><div className="data-source-name"><span>{cfg.name}</span></div></td>
+                            <td><div className="data-classification">
                             {renderFlowBadge(flowType)}
-                          </td>
 
-                          {/* Cột 4: Chương trình */}
-                          <td className="py-3.5 px-3 align-middle">
                             <span
                               className={
                                 isJlpt
@@ -1589,62 +1370,30 @@ export const GoogleSheetSyncPanel: React.FC = () => {
                             >
                               {isJlpt ? 'JLPT' : 'KAIWA'}
                             </span>
-                          </td>
-
-                          {/* Cột 5: Cấu hình lọc (Năm / Tình trạng) */}
-                          <td className="py-3.5 px-3 align-middle">
-                            {renderFilterSummaryCell(cfg)}
-                          </td>
-
-                          {/* Cột 6: Chế độ Tự động */}
-                          <td className="py-3.5 px-3 align-middle">
-                            {isGoogleSheet && sheetUrl ? (
-                              <div className="space-y-1">
-                                <div className="flex items-center gap-2">
-                                  <button
-                                    type="button"
-                                    role="switch"
-                                    aria-checked={cfg.enabled}
-                                    disabled={togglingCode === cfg.code}
-                                    onClick={() => handleToggleAutoOnRow(cfg)}
-                                    className={`relative inline-flex w-9 h-5 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${
-                                      cfg.enabled
-                                        ? 'bg-emerald-600'
-                                        : 'bg-slate-300'
-                                    }`}
-                                  >
-                                    <span
-                                      className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-xs transition ${
-                                        cfg.enabled
-                                          ? 'translate-x-4'
-                                          : 'translate-x-0'
-                                      }`}
-                                    />
-                                  </button>
-                                  <span className="font-semibold text-slate-800">
-                                    {cfg.enabled ? 'BẬT' : 'TẮT'} (Mỗi{' '}
-                                    {cfg.sync_interval_minutes || 30} phút)
-                                  </span>
-                                </div>
-                                <div className="text-[10px] text-slate-400">
-                                  Tự động ngầm (không qua Preview)
-                                </div>
+                          </div></td>
+                            <td><div className="data-table-cell">
+                              <div className="data-cell-primary">{isGoogleSheet && sheetUrl ? `Tab: ${cfg.sheet_name || 'Chưa chọn'}` : localFileName || 'Chưa chọn file'}</div>
+                              <div className="data-cell-actions">
+                                {renderColumnScopeBadge(cfg)}
+                                {isGoogleSheet && sheetUrl ? <a href={sheetUrl} target="_blank" rel="noreferrer">Mở Sheet <ExternalLink className="w-3 h-3" /></a> : <button type="button" onClick={() => handleTriggerInlineFileUpload(cfg.code)}>Thay file</button>}
                               </div>
-                            ) : (
-                              <div
-                                title="File tải từ máy tính chỉ hỗ trợ chạy thủ công có Preview. Hãy gắn Link Google Sheet nếu muốn chạy tự động định kỳ"
-                                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100 border border-slate-200 text-slate-600 font-semibold text-[11px] cursor-help"
-                              >
-                                <Lock className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-                                <span>Chỉ chạy thủ công</span>
-                              </div>
-                            )}
+                            </div></td>
+                            <td>{renderFilterSummaryCell(cfg)}</td>
+                            <td className="data-auto-cell">
+                            <button
+                              type="button"
+                              role="switch"
+                              aria-label={`Tự động: ${cfg.name}`}
+                              aria-checked={Boolean(isGoogleSheet && sheetUrl && cfg.enabled)}
+                              disabled={!isGoogleSheet || !sheetUrl || togglingCode === cfg.code}
+                              title={isGoogleSheet && sheetUrl ? `${cfg.enabled ? 'Đang bật' : 'Đang tắt'} · Mỗi ${cfg.sync_interval_minutes || 30} phút` : 'File tải từ máy chỉ chạy thủ công'}
+                              onClick={() => handleToggleAutoOnRow(cfg)}
+                              className={`data-auto-switch ${cfg.enabled && isGoogleSheet && sheetUrl ? 'is-on' : ''}`}
+                            ><span /></button>
                           </td>
-
-                          {/* Cột 7: Lần chạy cuối & Kết quả */}
-                          <td className="py-3.5 px-3 align-middle">
-                            <div className="flex items-center gap-2">
-                              <span className="text-slate-700 font-medium">
+                            <td>
+                            <div className="flex flex-col items-start gap-1">
+                              <span className="text-text-muted text-xs">
                                 {runDate === 'Chưa chạy'
                                   ? 'Chưa chạy'
                                   : `${runDate} ${runTime}`}
@@ -1687,68 +1436,14 @@ export const GoogleSheetSyncPanel: React.FC = () => {
                               </span>
                             </div>
                           </td>
+                            <td><div className="data-row-actions"><Button size="sm" variant="outline" onClick={() => navigate(`/data-sync/preview/${encodeURIComponent(cfg.code)}`)} leftIcon={<Eye className="w-4 h-4" />}>Đồng bộ ngay</Button><DataRowMenu label={cfg.name} actions={[
+    { label: 'Cấu hình', icon: <Settings className="w-4 h-4" />, onClick: () => { setEditingConfig(cfg); setConfigModalOpen(true); } },
+    { label: 'Xem lịch sử', icon: <History className="w-4 h-4" />, onClick: () => navigate(`/data-sync/history/${cfg.id}?code=${encodeURIComponent(cfg.code)}`) },
+    ...(!isSystemMaster ? [{ label: 'Xóa nguồn', icon: <Trash2 className="w-4 h-4" />, danger: true, onClick: () => { void handleDeleteConfig(cfg); } }] : []),
+  ]} /></div></td>
+                          </tr>
 
-                          {/* Cột 8: Thao tác */}
-                          <td className="py-3.5 pl-3 pr-4 align-middle text-right">
-                            <div className="inline-flex items-center justify-end gap-1.5">
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  navigate(
-                                    `/data-sync/preview/${encodeURIComponent(
-                                      cfg.code
-                                    )}`
-                                  )
-                                }
-                                className="bg-blue-600 hover:bg-blue-700 text-white rounded-lg px-3 py-1.5 text-xs font-semibold inline-flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
-                              >
-                                <Eye className="w-3.5 h-3.5" />
-                                <span>Đồng bộ ngay</span>
-                              </button>
-
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setEditingConfig(cfg);
-                                  setConfigModalOpen(true);
-                                }}
-                                title="Cấu hình nguồn & bộ lọc"
-                                className="border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-semibold inline-flex items-center gap-1 transition-colors cursor-pointer"
-                              >
-                                <Settings className="w-3.5 h-3.5 text-slate-500" />
-                                <span className="hidden xl:inline">
-                                  Cấu hình
-                                </span>
-                              </button>
-
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  navigate(
-                                    `/data-sync/history/${
-                                      cfg.id
-                                    }?code=${encodeURIComponent(cfg.code)}`
-                                  )
-                                }
-                                title="Xem lịch sử đồng bộ của nguồn này"
-                                className="border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 rounded-lg p-1.5 transition-colors cursor-pointer"
-                              >
-                                <History className="w-3.5 h-3.5" />
-                              </button>
-
-                              {!isSystemMaster && (
-                                <button
-                                  type="button"
-                                  onClick={() => handleDeleteConfig(cfg)}
-                                  title="Xóa nguồn đồng bộ"
-                                  className="border border-rose-200 bg-rose-50/40 hover:bg-rose-100 text-rose-600 rounded-lg p-1.5 transition-colors cursor-pointer"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
+                        </React.Fragment>
                       );
                     })
                   )}
@@ -1908,17 +1603,15 @@ export const GoogleSheetSyncPanel: React.FC = () => {
           </div>
 
           <div className="bg-white rounded-2xl border border-slate-200/90 shadow-xs overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
+            <div className="data-table-scroll">
+              <table className="data-history-table w-full text-left border-collapse">
                 <thead>
                   <tr className="border-b border-slate-200 bg-slate-50/70 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
                     <th className="py-3 pl-4 pr-3">Thời gian</th>
                     <th className="py-3 px-3">Nguồn đồng bộ</th>
                     <th className="py-3 px-3">Chương trình</th>
                     <th className="py-3 px-3">Kích hoạt</th>
-                    <th className="py-3 px-3">Tổng dòng</th>
-                    <th className="py-3 px-3">Tạo mới</th>
-                    <th className="py-3 px-3">Cập nhật</th>
+                    <th className="py-3 px-3">Kết quả xử lý</th>
                     <th className="py-3 px-3">Kết quả</th>
                     <th className="py-3 px-3">Thời lượng</th>
                     <th className="py-3 pl-3 pr-4 text-right">
@@ -1929,7 +1622,7 @@ export const GoogleSheetSyncPanel: React.FC = () => {
                 <tbody className="divide-y divide-slate-100 text-xs">
                   {effectiveHistory.items.length === 0 ? (
                     <tr>
-                      <td colSpan={10} className="py-12 text-center text-slate-500">
+                      <td colSpan={8} className="py-12 text-center text-slate-500">
                         Chưa có phiên chạy đồng bộ nào. Hãy bấm{' '}
                         <strong>[Đồng bộ ngay]</strong> trên một nguồn bất kỳ để
                         kiểm tra Preview và lưu lịch sử.
@@ -1974,15 +1667,7 @@ export const GoogleSheetSyncPanel: React.FC = () => {
                               ? 'Tự động'
                               : 'Thủ công'}
                           </td>
-                          <td className="py-3.5 px-3 align-middle font-semibold text-slate-800">
-                            {item.totalRows}
-                          </td>
-                          <td className="py-3.5 px-3 align-middle font-semibold text-emerald-600">
-                            +{item.createdCount}
-                          </td>
-                          <td className="py-3.5 px-3 align-middle font-semibold text-blue-600">
-                            ~{item.updatedCount}
-                          </td>
+                          <td className="py-3.5 px-3"><div className="data-history-result"><span>{item.totalRows} dòng</span><span>+{item.createdCount} mới</span><span>{item.updatedCount} cập nhật</span><small>{item.failedCount ?? 0} lỗi · {item.unchangedRows ?? 0} không đổi</small></div></td>
                           <td className="py-3.5 px-3 align-middle">
                             {isFailed ? (
                               <Badge variant="danger" size="sm" dot>
@@ -1998,9 +1683,7 @@ export const GoogleSheetSyncPanel: React.FC = () => {
                             {item.durationSec} giây
                           </td>
                           <td className="py-3.5 pl-3 pr-4 align-middle text-right">
-                            <span className="text-blue-600 font-semibold hover:underline">
-                              Xem chi tiết &amp; Hủy thay đổi →
-                            </span>
+                            <Button size="sm" variant="ghost" onClick={event => { event.stopPropagation(); navigate(`/data-sync/history/${item.id}?code=${encodeURIComponent(item.code)}`); }}>Xem chi tiết →</Button>
                           </td>
                         </tr>
                       );
@@ -2015,7 +1698,7 @@ export const GoogleSheetSyncPanel: React.FC = () => {
 
       {/* E. SUB-TAB 3: ÁNH XẠ CSKH & KẾT NỐI */}
       {activeSubTab === 'connection' && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        <div className="data-connection grid grid-cols-1 xl:grid-cols-2 gap-5">
           {/* Card 1: Ánh xạ CVHT cho 2 file tổng */}
           <div className="bg-white rounded-2xl border border-slate-200/90 p-5 shadow-xs space-y-5">
             <div>
@@ -2168,8 +1851,7 @@ export const GoogleSheetSyncPanel: React.FC = () => {
                     Google Service Account
                   </h3>
                   <p className="text-xs text-slate-500">
-                    Tài khoản kỹ thuật dùng để đọc dữ liệu từ toàn bộ ~1.000
-                    Google Sheet nguồn
+                    Tài khoản kỹ thuật dùng để đọc dữ liệu từ các Google Sheet nguồn
                   </p>
                 </div>
               </div>

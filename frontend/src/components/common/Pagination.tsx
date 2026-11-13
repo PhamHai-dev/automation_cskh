@@ -16,6 +16,7 @@ interface PaginationFooterProps {
   totalPages: number;
   onPageChange: (page: number) => void;
   onPageSizeChange?: (pageSize: number) => void;
+  pageSizeOptions?: number[];
   recordLabel?: string;
 }
 
@@ -32,6 +33,7 @@ export const PaginationFooter: React.FC<PaginationFooterProps> = ({
   totalPages,
   onPageChange,
   onPageSizeChange,
+  pageSizeOptions = PAGE_SIZE_OPTIONS,
   recordLabel = 'bản ghi',
 }) => {
   if (totalCount === 0) return null;
@@ -53,10 +55,10 @@ export const PaginationFooter: React.FC<PaginationFooterProps> = ({
               onChange={(e) => onPageSizeChange(Number(e.target.value))}
               className="bg-surface border border-border rounded-lg px-2 py-1 text-xs text-text-primary focus:outline-none focus:ring-1 focus:ring-primary"
             >
-              {!PAGE_SIZE_OPTIONS.includes(pageSize) && (
+              {!pageSizeOptions.includes(pageSize) && (
                 <option value={pageSize}>{pageSize}</option>
               )}
-              {PAGE_SIZE_OPTIONS.map((size) => (
+              {pageSizeOptions.map((size) => (
                 <option key={size} value={size}>
                   {size}
                 </option>

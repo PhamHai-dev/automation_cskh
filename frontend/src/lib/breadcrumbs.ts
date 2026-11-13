@@ -50,17 +50,17 @@ const ROUTE_MAP: RouteMap[] = [
   { prefix: '/automation', group: 'Tự động hóa', page: 'Kịch bản & phát tin' },
 
   // ── Dữ liệu & Hệ thống ───────────────────────────────────────────────────
-  { prefix: '/data-backup/history', group: 'Backup dữ liệu', page: 'Lịch sử Backup' },
-  { prefix: '/data-backup/connection', group: 'Backup dữ liệu', page: 'Cấu hình & Kết nối' },
-  { prefix: '/data-backup/configs', group: 'Backup dữ liệu', page: 'Danh sách nguồn Backup' },
-  { prefix: '/data-backup', group: 'Backup dữ liệu', page: 'Danh sách nguồn Backup' },
+  { prefix: '/data-backup/history', group: 'Sao lưu dữ liệu', page: 'Lịch sử sao lưu' },
+  { prefix: '/data-backup/connection', group: 'Sao lưu dữ liệu', page: 'Cấu hình & Kết nối' },
+  { prefix: '/data-backup/configs', group: 'Sao lưu dữ liệu', page: 'Danh sách nguồn sao lưu' },
+  { prefix: '/data-backup', group: 'Sao lưu dữ liệu', page: 'Danh sách nguồn sao lưu' },
   { prefix: '/data-sync', group: 'Dữ liệu & Hệ thống', page: 'Đồng bộ dữ liệu' },
   { prefix: '/activity-logs', group: 'Dữ liệu & Hệ thống', page: 'Lịch sử hoạt động' },
   { prefix: '/imports/approval-queue', group: 'Dữ liệu & Hệ thống', page: 'Hàng đợi phê duyệt' },
   { prefix: '/imports', group: 'Dữ liệu & Hệ thống', page: 'Nhập & xuất Excel' },
   { prefix: '/settings/users', group: 'Dữ liệu & Hệ thống', page: 'Người dùng & phân quyền' },
   { prefix: '/settings/config/auto-attendance', group: 'Dữ liệu & Hệ thống', page: 'Cấu hình điểm danh tự động' },
-  { prefix: '/settings/config/sheet-backup', group: 'Dữ liệu & Hệ thống', page: 'Cấu hình Backup Sheet' },
+  { prefix: '/settings/config/sheet-backup', group: 'Dữ liệu & Hệ thống', page: 'Cấu hình sao lưu Sheet' },
   { prefix: '/settings/config', group: 'Dữ liệu & Hệ thống', page: 'Cấu hình hệ thống' },
 ];
 
@@ -79,19 +79,19 @@ export const getBreadcrumbs = (pathname: string, search = ''): BreadcrumbSegment
     const tab = new URLSearchParams(search).get('tab');
     if (tab === 'history') {
       return [
-        { label: 'Backup dữ liệu', to: '/data-backup' },
-        { label: 'Lịch sử Backup', to: '/data-backup/history' },
+        { label: 'Sao lưu dữ liệu', to: '/data-backup' },
+        { label: 'Lịch sử sao lưu', to: '/data-backup/history' },
       ];
     }
     if (tab === 'connection') {
       return [
-        { label: 'Backup dữ liệu', to: '/data-backup' },
+        { label: 'Sao lưu dữ liệu', to: '/data-backup' },
         { label: 'Cấu hình & Kết nối', to: '/data-backup/connection' },
       ];
     }
     return [
-      { label: 'Backup dữ liệu', to: '/data-backup' },
-      { label: 'Danh sách nguồn Backup', to: '/data-backup' },
+      { label: 'Sao lưu dữ liệu', to: '/data-backup' },
+      { label: 'Danh sách nguồn sao lưu', to: '/data-backup' },
     ];
   }
 

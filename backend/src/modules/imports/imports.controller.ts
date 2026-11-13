@@ -603,13 +603,15 @@ export class ImportsController {
       const status = req.query.status ? String(req.query.status) : undefined;
       const fromDate = req.query.fromDate ? String(req.query.fromDate) : undefined;
       const toDate = req.query.toDate ? String(req.query.toDate) : undefined;
-      const limit = req.query.limit ? parseInt(String(req.query.limit), 10) : 50;
+      const pageSize = req.query.pageSize ? parseInt(String(req.query.pageSize), 10) : 25;
+      const page = req.query.page ? parseInt(String(req.query.page), 10) : 1;
       const data = await this.sheetBackupService.getBackupHistory(actor, {
         programType,
         status,
         fromDate,
         toDate,
-        limit,
+        pageSize,
+        page,
       });
       res.status(200).json({ data, meta: null });
     } catch (err) {
@@ -628,9 +630,10 @@ export class ImportsController {
       const fromDate = req.query.fromDate ? String(req.query.fromDate) : undefined;
       const toDate = req.query.toDate ? String(req.query.toDate) : undefined;
       const search = req.query.search ? String(req.query.search) : undefined;
-      const limit = req.query.limit ? parseInt(String(req.query.limit), 10) : 50;
+      const pageSize = req.query.pageSize ? parseInt(String(req.query.pageSize), 10) : 25;
       const page = req.query.page ? parseInt(String(req.query.page), 10) : 1;
-      const data = await this.sheetSyncService.getSyncHistory({
+      const user = req.user!;
+      const data = await this.sheetSyncService.getSyncHistory(user, {
         configId,
         code,
         flowType,
@@ -640,7 +643,7 @@ export class ImportsController {
         fromDate,
         toDate,
         search,
-        limit,
+        pageSize,
         page,
       });
       res.status(200).json({ data, meta: null });
@@ -655,11 +658,15 @@ export class ImportsController {
       if (Number.isNaN(runId)) {
         throw new AppError(400, 'runId không hợp lệ');
       }
-      const data = await this.sheetSyncService.getSyncRunDetail(runId, {
-        action: req.query.action ? String(req.query.action) : undefined,
-        status: req.query.status ? String(req.query.status) : undefined,
-        search: req.query.search ? String(req.query.search) : undefined,
-      });
+      const data = await this.sheetSyncService.getSyncRunDetail(
+        runId,
+        req.user!,
+        {
+          action: req.query.action ? String(req.query.action) : undefined,
+          status: req.query.status ? String(req.query.status) : undefined,
+          search: req.query.search ? String(req.query.search) : undefined,
+        },
+      );
       res.status(200).json({ data, meta: null });
     } catch (err) {
       next(err);

@@ -463,6 +463,156 @@ paths:
         '200':
           description: Excel file
 
+  /api/v1/imports/sheet-sync/history:
+    get:
+      summary: List scoped Google Sheet synchronization runs
+      description: ADMIN sees all runs; MANAGE and CS only see runs whose source configuration is in their managed or own scope. The default range is the latest 7 days and the retained window is 30 days.
+      tags: [Imports]
+      parameters:
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 25 } }
+        - { name: configId, in: query, schema: { type: integer, minimum: 1 } }
+        - { name: code, in: query, schema: { type: string } }
+        - { name: flowType, in: query, schema: { type: string } }
+        - { name: programType, in: query, schema: { type: string } }
+        - { name: triggerType, in: query, schema: { type: string, enum: [ALL, AUTO, MANUAL] } }
+        - { name: status, in: query, schema: { type: string, enum: [ALL, SUCCESS, PARTIAL_FAILED, FAILED, ROLLED_BACK] } }
+        - { name: search, in: query, schema: { type: string } }
+        - { name: fromDate, in: query, schema: { type: string, format: date } }
+        - { name: toDate, in: query, schema: { type: string, format: date } }
+      responses:
+        '200':
+          description: Exact scoped synchronization page and Vietnam-today statistics
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SheetSyncHistoryResponse' }
+        '401': { description: Authentication required }
+        '403': { description: ADMIN, MANAGE or CS role required }
+
+  /api/v1/imports/sheet-sync/history/{runId}:
+    get:
+      summary: Get one scoped synchronization run and change details
+      tags: [Imports]
+      parameters:
+        - { name: runId, in: path, required: true, schema: { type: integer, minimum: 1 } }
+      responses:
+        '200': { description: Synchronization run detail }
+        '403': { description: Run is outside the user's data scope }
+        '404': { description: Run not found }
+
+  /api/v1/imports/sheet-sync/history/{runId}/rollback:
+    post:
+      summary: Roll back scoped synchronization changes
+      description: Restricted to ADMIN and MANAGE. The same managed-source scope is enforced before rollback.
+      tags: [Imports]
+      parameters:
+        - { name: runId, in: path, required: true, schema: { type: integer, minimum: 1 } }
+      responses:
+        '200': { description: Rollback result and conflicts }
+        '403': { description: ADMIN or MANAGE role and matching scope required }
+        '404': { description: Run not found }
+
+  /api/v1/imports/sheet-backup/history:
+    get:
+      summary: List scoped Sheet/Excel backup batches
+      description: Returns one row per backup batch. ADMIN sees all batches; MANAGE sees managed-CS configurations; CS sees own configurations. TEACHER cannot access this history center.
+      tags: [Imports]
+      parameters:
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 25 } }
+        - { name: programType, in: query, schema: { type: string } }
+        - { name: status, in: query, schema: { type: string, enum: [ALL, SUCCESS, FAILED] } }
+        - { name: fromDate, in: query, schema: { type: string, format: date } }
+        - { name: toDate, in: query, schema: { type: string, format: date } }
+      responses:
+        '200':
+          description: Exact scoped batch page and Vietnam-today statistics
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SheetBackupHistoryResponse' }
+        '401': { description: Authentication required }
+        '403': { description: ADMIN, MANAGE or CS role required }
+
+  /api/v1/activity-logs/audit:
+    get:
+      summary: List scoped Web activity audit records
+      description: Returns only records within the latest 30 days. ADMIN sees all records; MANAGE sees the union of managed actors and managed-CS enrollment data; CS sees records provably related to assigned students/enrollments. Ambiguous legacy records are excluded from CS scope. Times are ISO-8601 UTC and displayed as Asia/Ho_Chi_Minh by clients.
+      tags: [Activity Logs]
+      parameters:
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: pageSize, in: query, schema: { type: integer, enum: [25, 50, 100], default: 25 } }
+        - { name: module, in: query, schema: { type: string, enum: [ALL, ENROLLMENT, ATTENDANCE, CARE, MESSAGING, IMPORT_SYNC, SYSTEM], default: ALL } }
+        - { name: action, in: query, schema: { type: string, maxLength: 100 } }
+        - { name: actorId, in: query, schema: { type: integer, minimum: 1 } }
+        - { name: search, in: query, schema: { type: string, maxLength: 200 } }
+        - { name: fromDate, in: query, description: Date in Asia/Ho_Chi_Minh, schema: { type: string, format: date } }
+        - { name: toDate, in: query, description: Date in Asia/Ho_Chi_Minh; range is limited to 30 calendar days, schema: { type: string, format: date } }
+      responses:
+        '200':
+          description: Exact scoped page and summary statistics
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ActivityAuditListResponse' }
+        '400': { description: Invalid query or date range }
+        '401': { description: Authentication required }
+        '403': { description: ADMIN, MANAGE or CS role required }
+
+  /api/v1/activity-logs/logins:
+    get:
+      summary: List scoped login audit records
+      description: ADMIN sees all records. MANAGE sees self and users in assigned CS groups. CS and TEACHER cannot access login audit history.
+      tags: [Activity Logs]
+      parameters:
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: pageSize, in: query, schema: { type: integer, enum: [25, 50, 100], default: 25 } }
+        - { name: status, in: query, schema: { type: string, enum: [ALL, SUCCESS, FAILED, LOCKED, DISABLED], default: ALL } }
+        - { name: actorId, in: query, schema: { type: integer, minimum: 1 } }
+        - { name: search, in: query, schema: { type: string, maxLength: 200 } }
+        - { name: fromDate, in: query, schema: { type: string, format: date } }
+        - { name: toDate, in: query, schema: { type: string, format: date } }
+      responses:
+        '200':
+          description: Exact scoped page and login statistics
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LoginAuditListResponse' }
+        '400': { description: Invalid query or date range }
+        '401': { description: Authentication required }
+        '403': { description: ADMIN or MANAGE role required }
+
+  /api/v1/activity-logs/actors:
+    get:
+      summary: List actors available to the current user's activity filters
+      tags: [Activity Logs]
+      responses:
+        '200': { description: Scoped actor options }
+        '401': { description: Authentication required }
+        '403': { description: ADMIN, MANAGE or CS role required }
+
+  /api/v1/activity-logs/export:
+    get:
+      summary: Export all scoped and filtered records for one activity view as CSV
+      description: Streams a UTF-8 BOM CSV for the current view and filters, never only the visible page. Export is limited to the retained 30-day window. CSV timestamps are explicitly formatted in UTC+7. The login view is restricted to ADMIN and MANAGE.
+      tags: [Activity Logs]
+      parameters:
+        - { name: view, in: query, required: true, schema: { type: string, enum: [audit, sync, backup, login] } }
+        - { name: module, in: query, schema: { type: string, enum: [ALL, ENROLLMENT, ATTENDANCE, CARE, MESSAGING, IMPORT_SYNC, SYSTEM] } }
+        - { name: status, in: query, schema: { type: string, maxLength: 50 } }
+        - { name: actorId, in: query, schema: { type: integer, minimum: 1 } }
+        - { name: search, in: query, schema: { type: string, maxLength: 200 } }
+        - { name: programType, in: query, schema: { type: string, maxLength: 50 } }
+        - { name: fromDate, in: query, schema: { type: string, format: date } }
+        - { name: toDate, in: query, schema: { type: string, format: date } }
+      responses:
+        '200':
+          description: Streamed CSV export
+          content:
+            text/csv:
+              schema: { type: string, format: binary }
+        '400': { description: Invalid view or date range }
+        '401': { description: Authentication required }
+        '403': { description: View is outside the user's role or data scope }
+
   /api/v1/enrollments/{enrollmentId}/care-logs:
     get:
       summary: Get care log history for an enrollment
@@ -1139,6 +1289,106 @@ components:
       scheme: bearer
       bearerFormat: JWT
   schemas:
+    ActivityActor:
+      type: object
+      required: [id, name, code, email, roles, displayLabel]
+      properties:
+        id: { type: [integer, 'null'] }
+        name: { type: [string, 'null'] }
+        code: { type: [string, 'null'] }
+        email: { type: [string, 'null'] }
+        roles: { type: array, items: { type: string } }
+        displayLabel: { type: string }
+
+    ActivityAuditItem:
+      type: object
+      required: [id, createdAt, actor, module, action, entityType, entityId, summary, changedFields]
+      properties:
+        id: { type: integer }
+        createdAt: { type: string, format: date-time }
+        actor: { $ref: '#/components/schemas/ActivityActor' }
+        module: { type: string, enum: [ENROLLMENT, ATTENDANCE, CARE, MESSAGING, IMPORT_SYNC, SYSTEM] }
+        moduleLabel: { type: string }
+        action: { type: string }
+        actionLabel: { type: string }
+        entityType: { type: string }
+        entityId: { type: string }
+        entityLabel: { type: string }
+        summary: { type: string }
+        changedFields: { type: array, items: { type: object } }
+        beforeData: { type: [object, 'null'], description: Omitted/null for CS users }
+        afterData: { type: [object, 'null'], description: Omitted/null for CS users }
+        ipAddress: { type: [string, 'null'] }
+
+    ActivityAuditListResponse:
+      type: object
+      required: [success, stats, moduleCounts, items, total, page, pageSize, totalPages, refreshedAt]
+      properties:
+        success: { type: boolean }
+        stats: { type: object }
+        moduleCounts: { type: object, additionalProperties: { type: integer } }
+        items: { type: array, items: { $ref: '#/components/schemas/ActivityAuditItem' } }
+        total: { type: integer }
+        page: { type: integer }
+        pageSize: { type: integer }
+        totalPages: { type: integer }
+        refreshedAt: { type: string, format: date-time }
+
+    LoginAuditListResponse:
+      type: object
+      required: [success, stats, items, total, page, pageSize, totalPages, refreshedAt]
+      properties:
+        success: { type: boolean }
+        stats: { type: object }
+        items: { type: array, items: { type: object } }
+        total: { type: integer }
+        page: { type: integer }
+        pageSize: { type: integer }
+        totalPages: { type: integer }
+        refreshedAt: { type: string, format: date-time }
+
+    SheetSyncHistoryResponse:
+      type: object
+      required: [stats, items, total, page, pageSize, totalPages, refreshedAt, canRollback]
+      properties:
+        stats:
+          type: object
+          required: [todayTotal, todaySuccess, todayFailed, lastRunTime]
+          properties:
+            todayTotal: { type: integer }
+            todaySuccess: { type: integer }
+            todayFailed: { type: integer }
+            lastRunTime: { type: [string, 'null'], format: date-time }
+        items: { type: array, items: { type: object } }
+        total: { type: integer }
+        page: { type: integer }
+        pageSize: { type: integer }
+        totalPages: { type: integer }
+        refreshedAt: { type: string, format: date-time }
+        canRollback: { type: boolean, description: True only for ADMIN or MANAGE }
+
+    SheetBackupHistoryResponse:
+      type: object
+      required: [stats, batches, total, page, pageSize, totalPages, refreshedAt]
+      properties:
+        stats:
+          type: object
+          required: [todayTotal, todaySuccess, todayFailed, lastRunTime]
+          properties:
+            todayTotal: { type: integer }
+            todaySuccess: { type: integer }
+            todayFailed: { type: integer }
+            lastRunTime: { type: [string, 'null'] }
+        batches:
+          type: array
+          description: One item per backup batch; each batch contains its scoped backup books in items.
+          items: { type: object }
+        total: { type: integer }
+        page: { type: integer }
+        pageSize: { type: integer }
+        totalPages: { type: integer }
+        refreshedAt: { type: string, format: date-time }
+
     Teacher:
       type: object
       properties:

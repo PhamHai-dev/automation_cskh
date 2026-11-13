@@ -1,3 +1,4 @@
+import '../../../features/imports/styles/data-management.css';
 import React, { useEffect, useMemo, useState } from 'react';
 import { apiClient } from '../../../api/client';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../../../components/ui/Card';
@@ -476,7 +477,7 @@ export const SheetBackupAdminConfigCard: React.FC = () => {
         setUpdatedAt((data.columnConfig as any)?.updatedAt ?? new Date().toISOString());
       }
       if (data?.serviceAccount) setServiceAccount(data.serviceAccount);
-      toast.success('Đã lưu cấu hình cột Web → Sheet Backup cho cả 2 chương trình!');
+      toast.success('Đã lưu cấu hình cột Web → Sheet sao lưu cho cả 2 chương trình!');
     } catch (err: any) {
       toast.error(
         err.response?.data?.error?.message ||
@@ -517,13 +518,13 @@ export const SheetBackupAdminConfigCard: React.FC = () => {
   const saReady = Boolean(serviceAccount?.configured);
 
   return (
-    <div className="space-y-6 max-w-6xl">
+    <div className="data-workspace data-connection space-y-5">
       {/* ============================ KHỐI 1: SERVICE ACCOUNT ============================ */}
-      <Card className="border-border/80 bg-surface shadow-soft">
+      <Card className="border-border bg-surface shadow-none">
         <CardHeader className="border-b border-border/60 pb-5">
           <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0 border border-indigo-100 shadow-sm">
+              <div className="w-10 h-10 rounded-xl bg-surface-muted text-text-secondary flex items-center justify-center shrink-0 border border-border">
                 <KeyRound className="w-5 h-5" />
               </div>
               <div>
@@ -539,7 +540,7 @@ export const SheetBackupAdminConfigCard: React.FC = () => {
                   )}
                 </CardTitle>
                 <CardDescription className="text-xs sm:text-sm mt-0.5">
-                  Key dùng chung cho <strong>Đồng bộ Google Sheet → Web</strong> và <strong>Backup Web → Sheet</strong>.
+                  Key dùng chung cho <strong>Đồng bộ Google Sheet → Web</strong> và <strong>Sao lưu Web → Sheet</strong>.
                   Chỉ tài khoản <strong>ADMIN</strong> được cấu hình tại trang này.
                 </CardDescription>
               </div>
@@ -567,17 +568,17 @@ export const SheetBackupAdminConfigCard: React.FC = () => {
               {saReady && serviceAccount?.clientEmail ? (
                 <>
                   <span className="text-text-muted font-semibold">Client Email:</span>
-                  <code className="px-2 py-0.5 bg-white border border-slate-200 rounded font-mono text-[11px] font-bold text-indigo-700">
+                  <code className="px-2 py-0.5 bg-white border border-slate-200 rounded font-mono text-[11px] font-bold text-text-secondary">
                     {serviceAccount.clientEmail}
                   </code>
                   <button
                     type="button"
                     onClick={handleCopyEmail}
-                    className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-indigo-100 hover:bg-indigo-200 text-indigo-800 font-semibold text-[11px] transition-colors cursor-pointer"
-                    title="Copy Email để cấp quyền Editor (Người chỉnh sửa) trên Google Sheet đích"
+                    className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-primary-soft hover:bg-surface-muted text-primary font-semibold text-[11px] transition-colors cursor-pointer"
+                    title="Sao chép email để cấp quyền chỉnh sửa trên Google Sheet đích"
                   >
                     <Copy className="w-3 h-3" />
-                    Copy Email để cấp quyền Editor (Người chỉnh sửa)
+                    Sao chép email để cấp quyền chỉnh sửa
                   </button>
                 </>
               ) : (
@@ -657,16 +658,16 @@ export const SheetBackupAdminConfigCard: React.FC = () => {
       </Card>
 
       {/* ============================ KHỐI 2: CỘT WEB → SHEET ============================ */}
-      <Card className="border-border/80 bg-surface shadow-soft">
+      <Card className="border-border bg-surface shadow-none">
         <CardHeader className="border-b border-border/60 pb-5">
           <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0 border border-emerald-100 shadow-sm">
+              <div className="w-10 h-10 rounded-xl bg-surface-muted text-text-secondary flex items-center justify-center shrink-0 border border-border">
                 <FileSpreadsheet className="w-5 h-5" />
               </div>
               <div>
                 <CardTitle className="text-base sm:text-lg flex flex-wrap items-center gap-2">
-                  Cấu hình Cột trước khi đổ data (Web → Sheet Backup)
+                  Ánh xạ cột · Hệ thống → Sheet sao lưu
                   {updatedAt && (
                     <Badge variant="neutral" size="sm">
                       Cập nhật: {new Date(updatedAt).toLocaleString('vi-VN')}
@@ -680,7 +681,7 @@ export const SheetBackupAdminConfigCard: React.FC = () => {
               </div>
             </div>
 
-            <div className="flex items-center gap-2 shrink-0">
+            <div className="flex flex-wrap items-center gap-2">
               {loading && <RefreshCw className="w-4 h-4 animate-spin text-primary" />}
               {!loading && isDirty && (
                 <Badge variant="warning" size="sm">
@@ -801,7 +802,7 @@ export const SheetBackupAdminConfigCard: React.FC = () => {
           {loading ? (
             <div className="py-10 flex flex-col items-center justify-center text-text-muted gap-2 text-xs">
               <RefreshCw className="w-5 h-5 animate-spin text-primary" />
-              <span>Đang tải cấu hình cột Web → Sheet Backup...</span>
+              <span>Đang tải cấu hình cột Web → Sheet sao lưu...</span>
             </div>
           ) : !sheetCfg ? (
             <div className="py-8 flex flex-col items-center justify-center gap-2 text-xs text-text-muted">

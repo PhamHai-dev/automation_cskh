@@ -238,7 +238,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               allowedRoles: ['ADMIN', 'MANAGE', 'CS'],
             },
             {
-              name: 'Lịch sử Backup',
+              name: 'Lịch sử sao lưu',
               tab: 'backup',
               allowedRoles: ['ADMIN', 'MANAGE', 'CS'],
             },
@@ -275,7 +275,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           ],
         },
         {
-          name: 'Backup dữ liệu',
+          name: 'Sao lưu dữ liệu',
           path: '/data-backup',
           activePaths: [
             '/data-backup',
@@ -288,12 +288,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
           end: false,
           subItems: [
             {
-              name: 'Danh sách nguồn Backup',
+              name: 'Danh sách nguồn sao lưu',
               tab: 'configs',
               allowedRoles: ['ADMIN', 'MANAGE', 'CS', 'TEACHER'],
             },
             {
-              name: 'Lịch sử Backup',
+              name: 'Lịch sử sao lưu',
               tab: 'history',
               allowedRoles: ['ADMIN', 'MANAGE', 'CS', 'TEACHER'],
             },

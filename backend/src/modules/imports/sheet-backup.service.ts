@@ -29,6 +29,7 @@ import {
 
 import { prisma } from '../../prisma/client';
 import { createLogger } from '../../shared/logger/logger';
+import { resolveActivityDateRange, vietnamDateKey } from '../activity-logs/activity-time';
 import { AppError } from '../../middlewares/error.middleware';
 import { isConsumedAttendance } from '../enrollments/enrollment-entitlement';
 import { ImportsService } from './imports.service';
@@ -3186,9 +3187,28 @@ export class SheetBackupService {
 
   /* --------------------------- E. Backup History -------------------------- */
 
+  private async getHistoryAllowedConfigIds(actor: { id: number; roles: string[] }): Promise<number[] | null> {
+    if (actor.roles.includes('ADMIN')) return null;
+    const allowedUserIds = new Set<number>([actor.id]);
+    if (actor.roles.includes('MANAGE')) {
+      const assignments = await prisma.manageAssignment.findMany({
+        where: { manage_user_id: actor.id },
+        include: { cs_group: { include: { members: true } } },
+      });
+      for (const assignment of assignments) {
+        for (const member of assignment.cs_group?.members || []) allowedUserIds.add(member.user_id);
+      }
+    }
+    const configs = await prisma.programSheetBackupConfig.findMany({
+      where: { cs_user_id: { in: [...allowedUserIds] } },
+      select: { id: true },
+    });
+    return configs.map((config) => config.id);
+  }
+
   public async getBackupHistory(
     actor: { id: number; roles: string[] },
-    query: { programType?: string; status?: string; fromDate?: string; toDate?: string; limit?: number } = {}
+    query: { programType?: string; status?: string; fromDate?: string; toDate?: string; pageSize?: number; page?: number } = {},
   ): Promise<{
     stats: {
       todayTotal: number;
@@ -3198,24 +3218,31 @@ export class SheetBackupService {
     };
     batches: BackupHistoryBatch[];
     total: number;
+    page: number;
+    pageSize: number;
+    totalPages: number;
+    refreshedAt: string;
   }> {
     const { configs } = await this.listConfigs(actor);
-    const configById = new Map<number, ProgramBackupConfigItem>(configs.map((c) => [c.id, c]));
-    const allowedConfigIds = new Set(configs.map((c) => c.id));
+    const historyAllowedIds = await this.getHistoryAllowedConfigIds(actor);
+    const visibleConfigs = historyAllowedIds
+      ? configs.filter((config) => historyAllowedIds.includes(config.id))
+      : configs;
+    const configById = new Map<number, ProgramBackupConfigItem>(visibleConfigs.map((c) => [c.id, c]));
+    const allowedConfigIds = new Set(visibleConfigs.map((c) => c.id));
 
-    const limit = Math.min(Math.max(Number(query.limit) || 50, 1), 200);
+    const page = Math.max(Number(query.page) || 1, 1);
+    const pageSize = Math.min(Math.max(Number(query.pageSize) || 25, 1), 100);
+    const range = resolveActivityDateRange(query.fromDate, query.toDate);
     const filterProgram = query.programType && query.programType !== 'ALL' ? normalizeProgramType(query.programType) : null;
     const filterStatus = query.status && query.status !== 'ALL' ? String(query.status).toUpperCase() : null;
-    const fromDateStr = query.fromDate ? String(query.fromDate).slice(0, 10) : null;
-    const toDateStr = query.toDate ? String(query.toDate).slice(0, 10) : null;
-
     const logs = await prisma.auditLog.findMany({
       where: {
         action: 'CS_PROGRAM_BACKUP',
         entity_type: 'ProgramSheetBackupConfig',
+        created_at: { gte: range.from, lte: range.to },
       },
       orderBy: { created_at: 'desc' },
-      take: 400,
     });
 
     const items: Array<BackupHistoryItem & { batchId: string; triggerType: 'MANUAL' | 'AUTO' }> = [];
@@ -3271,9 +3298,11 @@ export class SheetBackupService {
       });
     }
 
-    // Fallback từ các config đã có last_backup_at nhưng chưa có trong AuditLog
-    for (const cfg of configs) {
+    // Fallback từ các config đã có last_backup_at nhưng chưa có trong AuditLog.
+    for (const cfg of visibleConfigs) {
       if (seenConfigIdsInLogs.has(cfg.id) || !cfg.last_backup_at) continue;
+      const fallbackDate = new Date(cfg.last_backup_at);
+      if (fallbackDate < range.from || fallbackDate > range.to) continue;
       const sum = (cfg.last_summary && typeof cfg.last_summary === 'object' ? cfg.last_summary : {}) as Record<string, any>;
       const status: 'SUCCESS' | 'FAILED' = cfg.last_status === 'FAILED' ? 'FAILED' : 'SUCCESS';
       const dt = new Date(cfg.last_backup_at);
@@ -3310,9 +3339,8 @@ export class SheetBackupService {
       });
     }
 
-    // Tính stats hôm nay
-    const now = new Date();
-    const todayPrefix = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    // Tính stats hôm nay theo giờ Việt Nam; không fallback sang tổng lịch sử khi hôm nay bằng 0.
+    const todayKey = vietnamDateKey();
     let todayTotal = 0;
     let todaySuccess = 0;
     let todayFailed = 0;
@@ -3321,8 +3349,8 @@ export class SheetBackupService {
     for (const it of items) {
       if (!latestIso || it.backedUpAt > latestIso) latestIso = it.backedUpAt;
       const d = new Date(it.backedUpAt);
-      const dayStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-      if (dayStr === todayPrefix) {
+      const dayStr = vietnamDateKey(d);
+      if (dayStr === todayKey) {
         todayTotal++;
         if (it.status === 'SUCCESS') todaySuccess++;
         else todayFailed++;
@@ -3337,16 +3365,10 @@ export class SheetBackupService {
         : `${String(ld.getHours()).padStart(2, '0')}:${String(ld.getMinutes()).padStart(2, '0')}`;
     }
 
-    // Lọc theo query
+    // Lọc theo query; date range đã được áp dụng tại DB/fallback boundary.
     const filteredItems = items.filter((it) => {
       if (filterProgram && it.programType !== filterProgram) return false;
       if (filterStatus && it.status !== filterStatus) return false;
-      if (fromDateStr || toDateStr) {
-        const d = new Date(it.backedUpAt);
-        const dayKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-        if (fromDateStr && dayKey < fromDateStr) return false;
-        if (toDateStr && dayKey > toDateStr) return false;
-      }
       return true;
     });
 
@@ -3399,15 +3421,20 @@ export class SheetBackupService {
     }
 
     const allBatches = [...batchMap.values()].sort((a, b) => b.startedAt.localeCompare(a.startedAt));
+    const total = allBatches.length;
     return {
       stats: {
-        todayTotal: todayTotal || items.length,
-        todaySuccess: todayTotal ? todaySuccess : items.filter((i) => i.status === 'SUCCESS').length,
-        todayFailed: todayTotal ? todayFailed : items.filter((i) => i.status === 'FAILED').length,
+        todayTotal,
+        todaySuccess,
+        todayFailed,
         lastRunTime,
       },
-      batches: allBatches.slice(0, limit),
-      total: allBatches.length,
+      batches: allBatches.slice((page - 1) * pageSize, page * pageSize),
+      total,
+      page,
+      pageSize,
+      totalPages: Math.max(1, Math.ceil(total / pageSize)),
+      refreshedAt: new Date().toISOString(),
     };
   }
 }

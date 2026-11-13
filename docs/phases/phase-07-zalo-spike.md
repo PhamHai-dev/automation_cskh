@@ -60,3 +60,9 @@ Technical spike không bắt buộc expose public business API. Nếu tạo temp
 ## Implementation notes
 
 ## Changes from original plan
+
+## Tác vụ UI độc lập — 2026-11-10
+
+Theo yêu cầu người dùng, đã chỉnh trình bày Đồng bộ/Sao lưu dữ liệu theo Q-014.
+Không triển khai nghiệp vụ Zalo, không thay đổi trạng thái hoặc phạm vi Phase 7.
+Kết quả kiểm tra và giới hạn browser được ghi tại STATUS/CHANGELOG.

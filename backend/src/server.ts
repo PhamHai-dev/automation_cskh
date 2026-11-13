@@ -14,6 +14,7 @@ import { startLineHealthCheck } from './modules/line/line-health-check';
 import { startAutoAttendanceScheduler, stopAutoAttendanceScheduler } from './modules/auto-attendance/auto-attendance-scheduler';
 import { startGoogleSheetSyncScheduler, stopGoogleSheetSyncScheduler } from './modules/imports/sheet-sync.service';
 import { startCsSheetBackupScheduler, stopCsSheetBackupScheduler } from './modules/imports/sheet-backup.service';
+import { startActivityLogRetentionScheduler, stopActivityLogRetentionScheduler } from './modules/activity-logs/activity-log-retention';
 
 const log = createLogger('Server');
 
@@ -119,6 +120,16 @@ const server = app.listen(PORT, async () => {
         error: err instanceof Error ? err.message : String(err),
       });
     }
+
+    // Purge retained activity/login/sync history daily; physical backup files are not touched.
+    try {
+      startActivityLogRetentionScheduler();
+      log.info('Activity history retention scheduler started');
+    } catch (err) {
+      log.warn('Activity history retention scheduler start failed (continuing)', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 
   log.info('Server started', {
@@ -187,6 +198,16 @@ async function shutdown(signal: string): Promise<void> {
     log.info('CS Sheet backup scheduler stopped');
   } catch (err) {
     log.error('CS Sheet backup scheduler shutdown error', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+
+  // Stop activity history retention scheduler
+  try {
+    stopActivityLogRetentionScheduler();
+    log.info('Activity history retention scheduler stopped');
+  } catch (err) {
+    log.error('Activity history retention scheduler shutdown error', {
       error: err instanceof Error ? err.message : String(err),
     });
   }

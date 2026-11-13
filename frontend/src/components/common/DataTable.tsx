@@ -25,6 +25,7 @@ export interface DataTableProps<T> {
   page?: number;
   onPageChange?: (page: number) => void;
   onPageSizeChange?: (pageSize: number) => void;
+  pageSizeOptions?: number[];
   /** Omit outer card border/rounding when already wrapped in a parent table card */
   bare?: boolean;
 }
@@ -42,6 +43,7 @@ export function DataTable<T>({
   page: externalPage = 1,
   onPageChange,
   onPageSizeChange,
+  pageSizeOptions,
   bare = false,
 }: DataTableProps<T>) {
   const [currentPage, setCurrentPage] = useState(1);
@@ -174,6 +176,7 @@ export function DataTable<T>({
           totalPages={totalPages}
           onPageChange={handlePageChange}
           onPageSizeChange={handlePageSizeChange}
+          pageSizeOptions={pageSizeOptions}
         />
       )}
     </div>

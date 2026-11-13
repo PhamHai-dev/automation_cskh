@@ -1,45 +1,36 @@
 import { Request, Response, NextFunction } from 'express';
 import { activityLogsService } from './activity-logs.service';
-import type { ActivityModuleType, LoginAuditFilterStatus } from './activity-logs.types';
+import {
+  activityExportQuerySchema,
+  auditLogQuerySchema,
+  loginAuditQuerySchema,
+} from './activity-logs.schema';
 
-function parseOptionalInt(val: unknown): number | undefined {
-  if (val === undefined || val === null || val === '') return undefined;
-  const num = Number(val);
-  return Number.isInteger(num) && num > 0 ? num : undefined;
+function normalizedQuery(query: Request['query']): Record<string, unknown> {
+  return {
+    ...query,
+    actorId: query.actorId ?? query.actor_id,
+    fromDate: query.fromDate ?? query.from_date,
+    toDate: query.toDate ?? query.to_date,
+    pageSize: query.pageSize ?? query.page_size ?? query.limit,
+  };
 }
 
-function parseOptionalStr(val: unknown): string | undefined {
-  if (typeof val !== 'string') return undefined;
-  const trimmed = val.trim();
-  return trimmed.length > 0 ? trimmed : undefined;
+function csvFilename(view: string): string {
+  const names: Record<string, string> = {
+    audit: 'lich-su-thao-tac-web',
+    sync: 'lich-su-dong-bo',
+    backup: 'lich-su-sao-luu',
+    login: 'lich-su-dang-nhap',
+  };
+  return `${names[view] || 'lich-su-hoat-dong'}.csv`;
 }
 
 export class ActivityLogsController {
   async listAuditLogs(req: Request, res: Response, next: NextFunction) {
     try {
-      const user = req.user!;
-      const rawModule = parseOptionalStr(req.query.module)?.toUpperCase() as
-        | ActivityModuleType
-        | undefined;
-      const action = parseOptionalStr(req.query.action);
-      const actorId = parseOptionalInt(req.query.actorId ?? req.query.actor_id);
-      const search = parseOptionalStr(req.query.search);
-      const fromDate = parseOptionalStr(req.query.fromDate ?? req.query.from_date);
-      const toDate = parseOptionalStr(req.query.toDate ?? req.query.to_date);
-      const page = parseOptionalInt(req.query.page) ?? 1;
-      const limit = Math.min(200, parseOptionalInt(req.query.limit) ?? 50);
-
-      const result = await activityLogsService.listAuditLogs(user, {
-        module: rawModule || 'ALL',
-        action,
-        actorId,
-        search,
-        fromDate,
-        toDate,
-        page,
-        limit,
-      });
-
+      const query = auditLogQuerySchema.parse(normalizedQuery(req.query));
+      const result = await activityLogsService.listAuditLogs(req.user!, query);
       res.json(result);
     } catch (err) {
       next(err);
@@ -48,27 +39,8 @@ export class ActivityLogsController {
 
   async listLoginAudits(req: Request, res: Response, next: NextFunction) {
     try {
-      const user = req.user!;
-      const rawStatus = parseOptionalStr(req.query.status)?.toUpperCase() as
-        | LoginAuditFilterStatus
-        | undefined;
-      const actorId = parseOptionalInt(req.query.actorId ?? req.query.actor_id);
-      const search = parseOptionalStr(req.query.search);
-      const fromDate = parseOptionalStr(req.query.fromDate ?? req.query.from_date);
-      const toDate = parseOptionalStr(req.query.toDate ?? req.query.to_date);
-      const page = parseOptionalInt(req.query.page) ?? 1;
-      const limit = Math.min(200, parseOptionalInt(req.query.limit) ?? 50);
-
-      const result = await activityLogsService.listLoginAudits(user, {
-        status: rawStatus || 'ALL',
-        actorId,
-        search,
-        fromDate,
-        toDate,
-        page,
-        limit,
-      });
-
+      const query = loginAuditQuerySchema.parse(normalizedQuery(req.query));
+      const result = await activityLogsService.listLoginAudits(req.user!, query);
       res.json(result);
     } catch (err) {
       next(err);
@@ -77,9 +49,23 @@ export class ActivityLogsController {
 
   async listActors(req: Request, res: Response, next: NextFunction) {
     try {
-      const user = req.user!;
-      const result = await activityLogsService.listActors(user);
+      const result = await activityLogsService.listActors(req.user!);
       res.json(result);
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  async exportCsv(req: Request, res: Response, next: NextFunction) {
+    try {
+      const query = activityExportQuerySchema.parse(normalizedQuery(req.query));
+      const csv = await activityLogsService.exportCsv(req.user!, query);
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename="${csvFilename(query.view)}"`,
+      );
+      res.status(200).send(`\uFEFF${csv}`);
     } catch (err) {
       next(err);
     }

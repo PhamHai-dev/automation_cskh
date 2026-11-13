@@ -1,5 +1,25 @@
 # Project Status
 
+## Trung tâm Lịch sử hoạt động — 2026-11-13
+
+- Đã tái thiết kế `/activity-logs` thành trung tâm bốn view: thao tác Web, đồng bộ, sao lưu và đăng nhập; desktop dùng bảng, mobile dùng card, modal chi tiết responsive.
+- Filter, tab, trang, page size và từ khóa được lưu trong URL; từ khóa debounce 400ms; mặc định 7 ngày; preset Hôm nay/7/30 ngày/tùy chỉnh; page size 25/50/100.
+- Backend áp dụng data scope ADMIN/MANAGE/CS, chặn TEACHER; login chỉ ADMIN/MANAGE; rollback sync chỉ ADMIN/MANAGE và kiểm tra scope.
+- CSV xuất toàn bộ dữ liệu đã lọc của view hiện tại từ server, không chỉ trang đang xem; thời gian ghi rõ UTC+7.
+- Retention vật lý 30 ngày chạy 02:30 theo `Asia/Ho_Chi_Minh` cho audit/login/sync; không xóa file sao lưu vật lý; ghi một audit tổng hợp.
+- Đã thêm index Prisma và migration nhưng chưa chạy migration trên database.
+- Xác minh: backend typecheck pass; 14/14 activity backend tests pass; frontend production build pass; 14/14 frontend feature regression tests pass; `git diff --check` pass.
+- Browser QA pass ở desktop 1440×900, tablet khoảng 768px và mobile khoảng 390px cho bốn view, modal, refresh/export và responsive. Lint frontend chưa chạy được vì repository chưa có ESLint config.
+
+## Cập nhật nhãn sao lưu — 2026-11-10
+
+- Đã đổi nhãn hiển thị Backup → Sao lưu trong các trang Sheet/Excel liên quan; không đổi URL/API/logic/quyền hoặc dữ liệu.
+- Đã triển khai UI theo Q-014 được duyệt: sidebar/submenu là điều hướng chính, bảng phẳng theo cột, menu thao tác phụ, bộ lọc thu gọn, form và lịch sử đồng nhất.
+- Thiết kế hiện tại dùng header xanh nhạt, 4 KPI pastel và badge nhận diện luồng; không còn viền dọc màu hoặc dòng chi tiết xổ xuống. Thông tin kết nối/nơi lưu và phạm vi được đưa thành cột; cột Tự động chỉ còn công tắc.
+- Frontend typecheck + production build pass; có cảnh báo bundle lớn. Lint chưa chạy được vì repository chưa có cấu hình ESLint.
+- 9 kiểm thử render/static regression đạt; không thay thế kiểm thử E2E. Browser CDP timeout nên responsive/tương tác thực tế chưa xác minh. Không chạy đồng bộ/sao lưu thật.
+- Đây là tác vụ UI riêng, không chuyển trạng thái hoặc bắt đầu phase Zalo.
+
 ## Cập nhật đối soát điểm danh — 2026-10-11
 
 - Hàng chờ đối soát giờ được xác định đồng thời từ `reconciliation_state` và trạng thái thực tế hai phía, tránh hiển thị nhầm bản ghi cả GV lẫn CSKH chưa nhập trong Chờ CSKH.
