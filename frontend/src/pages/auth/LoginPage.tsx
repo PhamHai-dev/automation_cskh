@@ -42,7 +42,7 @@ export const LoginPage: React.FC = () => {
         !roles.includes('ADMIN') &&
         !roles.includes('MANAGE') &&
         !roles.includes('CS');
-      navigate(isTeacherOnly ? '/teacher/my-sessions' : '/dashboard');
+      navigate(isTeacherOnly ? '/teacher/dashboard' : '/dashboard');
     } catch (err: any) {
       const message = err.response?.data?.message || 'Đăng nhập không thành công. Vui lòng kiểm tra email hoặc mật khẩu.';
       setError(message);

@@ -1,6 +1,11 @@
 import { Request, Response, NextFunction } from 'express';
 import { TeachersService } from './teachers.service';
-import { createTeacherSchema, updateTeacherSchema, provisionAccountSchema } from './teachers.schema';
+import {
+  createTeacherSchema,
+  updateTeacherSchema,
+  updateMyTeacherProfileSchema,
+  provisionAccountSchema,
+} from './teachers.schema';
 import { parsePaginationQuery, parseSearchQuery } from '../../shared/utils/query-validation';
 import { AppError } from '../../middlewares/error.middleware';
 
@@ -63,6 +68,37 @@ export class TeachersController {
       const teacher = await teachersService.getTeacherById(id);
       res.json({ data: teacher, meta: null });
     } catch (error) {
+      next(error);
+    }
+  }
+
+  async getMyProfile(req: Request, res: Response, next: NextFunction) {
+    try {
+      if (!req.user?.id) throw new AppError(401, 'Chưa xác thực');
+      const teacher = await teachersService.getMyProfile(req.user.id);
+      res.json({ data: teacher, meta: null });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async updateMyProfile(req: Request, res: Response, next: NextFunction) {
+    try {
+      if (!req.user?.id) throw new AppError(401, 'Chưa xác thực');
+      const validated = updateMyTeacherProfileSchema.parse({ body: req.body });
+      const teacher = await teachersService.updateMyProfile(req.user.id, validated.body);
+      res.json({ data: teacher, meta: null });
+    } catch (error: any) {
+      if (error.name === 'ZodError') {
+        res.status(400).json({
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'Dữ liệu liên hệ không hợp lệ',
+            details: error.errors,
+          },
+        });
+        return;
+      }
       next(error);
     }
   }

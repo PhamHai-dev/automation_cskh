@@ -22,6 +22,24 @@ export const updateTeacherSchema = z.object({
   }),
 });
 
+export const updateMyTeacherProfileSchema = z.object({
+  body: z
+    .object({
+      phone: z.string().trim().max(30, 'Số điện thoại tối đa 30 ký tự').nullable().optional(),
+      email: z
+        .string()
+        .trim()
+        .email('Email không hợp lệ')
+        .max(255, 'Email tối đa 255 ký tự')
+        .nullable()
+        .optional(),
+    })
+    .strict('Chỉ được cập nhật email và số điện thoại')
+    .refine((body) => body.phone !== undefined || body.email !== undefined, {
+      message: 'Cần cung cấp email hoặc số điện thoại',
+    }),
+});
+
 export const provisionAccountSchema = z.object({
   body: z.object({
     email: z.string().email('Email không hợp lệ'),

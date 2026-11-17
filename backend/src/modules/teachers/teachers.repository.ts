@@ -121,6 +121,17 @@ export class TeachersRepository {
     });
   }
 
+  async findByUserId(userId: number) {
+    return prisma.teacher.findUnique({
+      where: { user_id: userId },
+      include: {
+        user: {
+          select: SAFE_USER_SELECT,
+        },
+      },
+    });
+  }
+
   async findByName(name: string) {
     return prisma.teacher.findFirst({
       where: { name: { contains: name } },
@@ -170,6 +181,41 @@ export class TeachersRepository {
           select: SAFE_USER_SELECT,
         },
       },
+    });
+  }
+
+  async updateMyContact(
+    teacherId: number,
+    userId: number,
+    data: { phone?: string | null; email?: string | null },
+    beforeData: { phone: string | null; email: string | null },
+  ) {
+    return prisma.$transaction(async (tx) => {
+      const updated = await tx.teacher.update({
+        where: { id: teacherId },
+        data: {
+          ...(data.phone !== undefined ? { phone: data.phone?.trim() || null } : {}),
+          ...(data.email !== undefined ? { email: data.email?.trim() || null } : {}),
+        },
+        include: {
+          user: {
+            select: SAFE_USER_SELECT,
+          },
+        },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          user_id: userId,
+          action: 'TEACHER_PROFILE_CONTACT_UPDATED',
+          entity_type: 'Teacher',
+          entity_id: String(teacherId),
+          before_data: beforeData,
+          after_data: { phone: updated.phone, email: updated.email },
+        },
+      });
+
+      return updated;
     });
   }
 

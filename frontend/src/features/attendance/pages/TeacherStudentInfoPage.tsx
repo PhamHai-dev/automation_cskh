@@ -290,7 +290,7 @@ export const TeacherStudentInfoPage: React.FC = () => {
   return (
     <PageContainer>
       <PageHeader
-        title="Thông tin Học viên & Lộ trình Bài học"
+        title={isTeacher && !isPrivileged ? 'Học viên của tôi' : 'Thông tin Học viên & Lộ trình Bài học'}
         actions={
           !isAdmin && isPrivileged ? (
             <Badge variant="neutral" size="sm">

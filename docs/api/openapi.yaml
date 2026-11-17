@@ -46,6 +46,55 @@ paths:
         '401': { description: Authentication required }
         '403': { description: Role or data-scope restriction }
 
+  /api/v1/teachers/me:
+    get:
+      summary: Get the current teacher's own profile
+      tags: [Teachers]
+      responses:
+        '200':
+          description: Current teacher profile
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, meta]
+                properties:
+                  data: { $ref: '#/components/schemas/Teacher' }
+                  meta: { type: 'null' }
+        '401': { description: Authentication required }
+        '403': { description: TEACHER role required }
+        '404': { description: Active linked teacher profile not found }
+    patch:
+      summary: Update the current teacher's contact information
+      description: Teachers may update only their own contact email and phone. Code, name, type, active status, and account fields remain read-only.
+      tags: [Teachers]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              minProperties: 1
+              additionalProperties: false
+              properties:
+                phone: { type: [string, 'null'], maxLength: 30 }
+                email: { type: [string, 'null'], format: email, maxLength: 255 }
+      responses:
+        '200':
+          description: Updated current teacher profile
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, meta]
+                properties:
+                  data: { $ref: '#/components/schemas/Teacher' }
+                  meta: { type: 'null' }
+        '400': { description: Invalid contact information }
+        '401': { description: Authentication required }
+        '403': { description: TEACHER role required }
+        '404': { description: Linked teacher profile not found }
+
   /api/v1/settings/auto-attendance/run:
     post:
       summary: Run today's auto-attendance cycle and retry FAILED executions (ADMIN only)

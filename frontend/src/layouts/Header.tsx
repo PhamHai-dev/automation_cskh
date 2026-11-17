@@ -77,6 +77,12 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar, sidebarOpen }) 
   const canSearch = Boolean(
     user?.roles?.some((r) => ['ADMIN', 'MANAGE', 'CS', 'TEACHER'].includes(r))
   );
+  const isTeacherOnly = Boolean(
+    user?.roles?.includes('TEACHER') &&
+      !user?.roles?.includes('ADMIN') &&
+      !user?.roles?.includes('MANAGE') &&
+      !user?.roles?.includes('CS')
+  );
 
   // Debounced 300ms global search
   useEffect(() => {
@@ -192,7 +198,7 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar, sidebarOpen }) 
       }
     }
     setNotifOpen(false);
-    navigate('/care?tab=notifications');
+    navigate(isTeacherOnly ? '/teacher/notifications' : '/care?tab=notifications');
   };
 
   const handleSelectSearchResult = (targetPath: string) => {
@@ -512,7 +518,7 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar, sidebarOpen }) 
 
               <div className="p-2.5 border-t border-border/80 bg-surface-subtle/50 text-center">
                 <Link
-                  to="/care?tab=notifications"
+                  to={isTeacherOnly ? '/teacher/notifications' : '/care?tab=notifications'}
                   onClick={() => setNotifOpen(false)}
                   className="text-xs font-semibold text-primary hover:text-primary-hover inline-flex items-center gap-1"
                 >
@@ -564,6 +570,16 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar, sidebarOpen }) 
                 </div>
 
                 <div className="p-1">
+                  {isTeacherOnly && (
+                    <Link
+                      to="/teacher/profile"
+                      onClick={() => setUserMenuOpen(false)}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-text-secondary hover:bg-surface-muted hover:text-text-primary transition-colors"
+                    >
+                      <UserCheck className="w-4 h-4" />
+                      <span>Hồ sơ giáo viên</span>
+                    </Link>
+                  )}
                   <button
                     type="button"
                     onClick={handleLogout}

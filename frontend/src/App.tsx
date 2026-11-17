@@ -1,5 +1,5 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
-import { AuthProvider } from './contexts/AuthContext';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ProtectedRoute } from './components/auth/ProtectedRoute';
 import { AppLayout } from './layouts/AppLayout';
 import { LoginPage } from './pages/auth/LoginPage';
@@ -36,9 +36,22 @@ import { AttendanceReconciliationPage } from './features/attendance/pages/Attend
 import { MyTeachingSessionsPage } from './features/attendance/pages/MyTeachingSessionsPage';
 import { TeacherAttendanceTrackingPage } from './features/attendance/pages/TeacherAttendanceTrackingPage';
 import { TeacherStudentInfoPage } from './features/attendance/pages/TeacherStudentInfoPage';
+import { TeacherDashboardPage } from './features/teachers/pages/TeacherDashboardPage';
+import { TeacherProfilePage } from './features/teachers/pages/TeacherProfilePage';
 import { ActivityLogsPage } from './features/activity-logs/pages/ActivityLogsPage';
 import './styles/globals.css';
 import './styles/tokens.css';
+
+const RoleHomeRedirect = () => {
+  const { user } = useAuth();
+  const isTeacherOnly = Boolean(
+    user?.roles.includes('TEACHER') &&
+      !user?.roles.includes('ADMIN') &&
+      !user?.roles.includes('MANAGE') &&
+      !user?.roles.includes('CS')
+  );
+  return <Navigate to={isTeacherOnly ? '/teacher/dashboard' : '/dashboard'} replace />;
+};
 
 function App() {
   return (
@@ -53,7 +66,7 @@ function App() {
         <Route element={<ProtectedRoute />}>
           <Route element={<AppLayout />}>
             {/* Default Home Redirect */}
-            <Route path="/" element={<Navigate to="/dashboard" replace />} />
+            <Route path="/" element={<RoleHomeRedirect />} />
 
             {/* Admin Settings */}
             <Route element={<ProtectedRoute allowedRoles={['ADMIN']} />}>
@@ -152,12 +165,33 @@ function App() {
               <Route path="/students/:id/study-report" element={<StudentStudyReportPage />} />
               <Route path="/hoc-vien/:id/bao-cao-hoc-tap" element={<StudentStudyReportPage />} />
 
-              <Route path="/teacher/my-sessions" element={<MyTeachingSessionsPage />} />
-              <Route path="/lich-day-cua-toi" element={<Navigate to="/teacher/my-sessions" replace />} />
-              <Route path="/teacher/student-info" element={<TeacherStudentInfoPage />} />
-              <Route path="/thong-tin-hoc-vien-gv" element={<Navigate to="/teacher/student-info" replace />} />
-              <Route path="/teacher/attendance-tracking" element={<TeacherAttendanceTrackingPage />} />
-              <Route path="/theo-doi-diem-danh" element={<Navigate to="/teacher/attendance-tracking" replace />} />
+              {/* Không gian giáo viên mới; tài khoản đa vai trò vẫn giữ sidebar đầy đủ. */}
+              <Route element={<ProtectedRoute allowedRoles={['TEACHER']} />}>
+                <Route path="/teacher/dashboard" element={<TeacherDashboardPage />} />
+                <Route path="/teacher/attendance" element={<ClassesPage initialDisplayMode="classes" />} />
+                <Route
+                  path="/teacher/schedule"
+                  element={
+                    <MyTeachingSessionsPage
+                      initialMainTab="schedule"
+                      pageTitle="Lịch dạy"
+                      showMainTabs={false}
+                    />
+                  }
+                />
+                <Route path="/teacher/tasks" element={<TeacherAttendanceTrackingPage />} />
+                <Route path="/teacher/students" element={<TeacherStudentInfoPage />} />
+                <Route path="/teacher/notifications" element={<CarePage />} />
+                <Route path="/teacher/profile" element={<TeacherProfilePage />} />
+              </Route>
+
+              {/* Alias tương thích với các liên kết giáo viên cũ. */}
+              <Route path="/teacher/my-sessions" element={<Navigate to="/teacher/schedule" replace />} />
+              <Route path="/lich-day-cua-toi" element={<Navigate to="/teacher/schedule" replace />} />
+              <Route path="/teacher/student-info" element={<Navigate to="/teacher/students" replace />} />
+              <Route path="/thong-tin-hoc-vien-gv" element={<Navigate to="/teacher/students" replace />} />
+              <Route path="/teacher/attendance-tracking" element={<Navigate to="/teacher/tasks" replace />} />
+              <Route path="/theo-doi-diem-danh" element={<Navigate to="/teacher/tasks" replace />} />
 
               <Route path="/classes" element={<ClassesPage />} />
               <Route path="/lop-hoc" element={<Navigate to="/classes" replace />} />
@@ -166,7 +200,7 @@ function App() {
         </Route>
 
         {/* Catch-all */}
-        <Route path="*" element={<Navigate to="/dashboard" replace />} />
+        <Route path="*" element={<RoleHomeRedirect />} />
       </Routes>
       </ToastProvider>
     </AuthProvider>

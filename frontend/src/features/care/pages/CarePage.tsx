@@ -347,7 +347,7 @@ export const CarePage: React.FC = () => {
   return (
     <PageContainer>
       <PageHeader
-        title={isTeacherOnly ? 'Thông báo Điểm danh' : 'Quản lý Chăm sóc Học viên & Nhiệm vụ CS'}
+        title={isTeacherOnly ? 'Thông báo' : 'Quản lý Chăm sóc Học viên & Nhiệm vụ CS'}
         actions={
           activeTab === 'tasks' && !isTeacherOnly ? (
             <Button
@@ -365,13 +365,15 @@ export const CarePage: React.FC = () => {
         }
       />
 
-      <HorizontalTabs
-        ariaLabel="Nội dung chăm sóc học viên"
-        value={activeTab}
-        onChange={setActiveTab}
-        className="mb-6"
-        items={tabItems}
-      />
+      {!isTeacherOnly && (
+        <HorizontalTabs
+          ariaLabel="Nội dung chăm sóc học viên"
+          value={activeTab}
+          onChange={setActiveTab}
+          className="mb-6"
+          items={tabItems}
+        />
+      )}
 
       {/* Content */}
       {activeTab === 'tasks' && !isTeacherOnly ? (

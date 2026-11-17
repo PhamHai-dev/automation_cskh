@@ -1,5 +1,14 @@
 # Project Changelog
 
+## 2026-11-17 — Không gian Giáo viên
+
+- Tài khoản chỉ có role `TEACHER` dùng sidebar tinh gọn theo ba nhóm: Tổng quan, Giảng dạy và Cá nhân; tài khoản đa vai trò tiếp tục dùng sidebar đầy đủ.
+- Chuẩn hóa bảy route `/teacher/*` cho Dashboard, Điểm danh, Lịch dạy, Việc cần xử lý, Học viên của tôi, Thông báo và Hồ sơ giáo viên; các URL giáo viên cũ vẫn redirect để giữ tương thích.
+- Dashboard giáo viên tổng hợp lịch hôm nay/buổi tiếp theo, hàng chờ xác nhận, thông báo mới, số lớp và số học viên đang phụ trách từ các API có data scope hiện hành.
+- Tái sử dụng luồng Lớp học & Điểm danh, Chờ GV xác nhận, Thông tin Học viên & Buổi học và Thông báo; mỗi nghiệp vụ được tách thành trang chuyên biệt, không thay đổi logic điểm danh.
+- Thêm `GET/PATCH /api/v1/teachers/me`; giáo viên chỉ được tự cập nhật email và số điện thoại của hồ sơ liên kết, mọi thay đổi được ghi AuditLog.
+- Xác minh thành công: backend typecheck; frontend production build; 5/5 unit test teachers; `git diff --check`; browser desktop 1440×900, tablet 732px và viewport hẹp 627px. Frontend lint bị chặn vì repository chưa có ESLint config; build còn cảnh báo bundle lớn hiện hữu.
+
 ## 2026-11-17 — Chuẩn hóa Gói học Kaiwa/JLPT
 
 - Kaiwa `Gói học` và JLPT `Gói SP` cùng dùng `Enrollment.package_id -> Package`; bổ sung `Enrollment.course_code` cho JLPT `Mã khóa học`.

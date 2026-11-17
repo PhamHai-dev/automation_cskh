@@ -3989,7 +3989,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
   return (
     <PageContainer>
       <PageHeader
-        title="Lớp học & Điểm danh"
+        title={isTeacher ? 'Điểm danh' : 'Lớp học & Điểm danh'}
         actions={
           <div className="flex flex-wrap items-center gap-2.5">
             {/* Bộ chọn Chương trình (Tất cả | Giao tiếp Kaiwa | Luyện thi JLPT) kèm số đếm giống test_diem_danh */}

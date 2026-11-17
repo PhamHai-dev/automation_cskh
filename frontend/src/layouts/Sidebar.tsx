@@ -23,6 +23,8 @@ import {
   RefreshCw,
   FileText,
   History,
+  Bell,
+  CircleUserRound,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -84,7 +86,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     return () => window.removeEventListener('teacher-attendance-updated', handleRefresh);
   }, [loadAttendanceCount]);
 
-  const navGroups: NavGroup[] = [
+  const staffNavGroups: NavGroup[] = [
     {
       title: 'TỔNG QUAN',
       items: [
@@ -320,6 +322,69 @@ export const Sidebar: React.FC<SidebarProps> = ({
     },
   ];
 
+  const teacherNavGroups: NavGroup[] = [
+    {
+      title: 'TỔNG QUAN',
+      items: [
+        {
+          name: 'Dashboard',
+          path: '/teacher/dashboard',
+          icon: <Home className="w-5 h-5 shrink-0" />,
+          allowedRoles: ['TEACHER'],
+        },
+      ],
+    },
+    {
+      title: 'GIẢNG DẠY',
+      items: [
+        {
+          name: 'Điểm danh',
+          path: '/teacher/attendance',
+          icon: <ClipboardCheck className="w-5 h-5 shrink-0" />,
+          allowedRoles: ['TEACHER'],
+        },
+        {
+          name: 'Lịch dạy',
+          path: '/teacher/schedule',
+          icon: <CalendarCheck className="w-5 h-5 shrink-0" />,
+          allowedRoles: ['TEACHER'],
+        },
+        {
+          name: 'Việc cần xử lý',
+          path: '/teacher/tasks',
+          icon: <HeartHandshake className="w-5 h-5 shrink-0" />,
+          allowedRoles: ['TEACHER'],
+          badge: attendancePendingCount,
+        },
+        {
+          name: 'Học viên của tôi',
+          path: '/teacher/students',
+          icon: <Users className="w-5 h-5 shrink-0" />,
+          allowedRoles: ['TEACHER'],
+        },
+      ],
+    },
+    {
+      title: 'CÁ NHÂN',
+      items: [
+        {
+          name: 'Thông báo',
+          path: '/teacher/notifications',
+          icon: <Bell className="w-5 h-5 shrink-0" />,
+          allowedRoles: ['TEACHER'],
+        },
+        {
+          name: 'Hồ sơ giáo viên',
+          path: '/teacher/profile',
+          icon: <CircleUserRound className="w-5 h-5 shrink-0" />,
+          allowedRoles: ['TEACHER'],
+        },
+      ],
+    },
+  ];
+
+  const navGroups = isTeacherOnly ? teacherNavGroups : staffNavGroups;
+
   const hasPermission = (allowedRoles?: string[]) => {
     if (!allowedRoles || allowedRoles.length === 0) return true;
     return userRoles.some((role) => allowedRoles.includes(role));
@@ -329,7 +394,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     <aside className="h-full w-64 bg-surface border-r border-border/80 flex flex-col select-none">
       {/* Brand Header */}
       <div className="h-16 flex items-center justify-between px-4 border-b border-border/80 shrink-0">
-        <NavLink to={isTeacherOnly ? '/teacher/my-sessions' : '/dashboard'} className="flex items-center gap-3 overflow-hidden">
+        <NavLink to={isTeacherOnly ? '/teacher/dashboard' : '/dashboard'} className="flex items-center gap-3 overflow-hidden">
           <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-primary to-accent flex items-center justify-center text-white shadow-md shadow-primary/20 shrink-0">
             <Sparkles className="w-5 h-5" />
           </div>

@@ -49,3 +49,4 @@
     - Mọi số dương trong Excel chỉ được chuẩn hóa thành `ATTENDED`; không lưu giá trị số.
 34. **Đối soát hai nguồn (2026-10-10):** CSKH phụ trách được phân xử trong scope; ADMIN/MANAGE được phân xử mọi trường hợp. Phân xử bắt buộc có lý do. Dữ liệu pending/conflict không được tác động số buổi hoặc automation.
 35. **Chuẩn hóa Gói học (2026-11-17):** Kaiwa `Gói học` và JLPT `Gói SP` cùng dùng `Enrollment.package_id -> Package`; JLPT `Mã khóa học` lưu riêng tại `Enrollment.course_code`. `Enrollment.level` không còn là nơi ghi Gói SP cho dữ liệu mới.
+36. **Không gian Giáo viên (2026-11-17):** Tài khoản chỉ có role `TEACHER` dùng sidebar riêng gồm Dashboard; nhóm Giảng dạy (Điểm danh, Lịch dạy, Việc cần xử lý, Học viên của tôi); nhóm Cá nhân (Thông báo, Hồ sơ giáo viên). Tài khoản đa vai trò giữ sidebar đầy đủ. Hồ sơ cá nhân cho phép giáo viên tự sửa `phone` và `email`; mã, tên, loại và trạng thái do Admin/Manage quản lý.

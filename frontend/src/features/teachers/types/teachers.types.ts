@@ -37,6 +37,11 @@ export interface UpdateTeacherDTO {
   active?: boolean;
 }
 
+export interface UpdateMyTeacherProfileDTO {
+  phone?: string | null;
+  email?: string | null;
+}
+
 export interface ProvisionAccountDTO {
   email: string;
   password?: string;

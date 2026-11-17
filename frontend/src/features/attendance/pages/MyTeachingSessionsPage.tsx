@@ -183,6 +183,8 @@ type CompletionFilter = 'ALL' | 'PENDING' | 'COMPLETED';
 
 export interface MyTeachingSessionsPageProps {
   initialMainTab?: MainTeacherTab;
+  pageTitle?: string;
+  showMainTabs?: boolean;
 }
 
 interface EnrichedSession {
@@ -204,6 +206,8 @@ interface EnrichedSession {
 
 export const MyTeachingSessionsPage: React.FC<MyTeachingSessionsPageProps> = ({
   initialMainTab = 'schedule',
+  pageTitle = 'Lịch dạy & Theo dõi Điểm danh',
+  showMainTabs = true,
 }) => {
   const toast = useToast();
 
@@ -1537,37 +1541,39 @@ export const MyTeachingSessionsPage: React.FC<MyTeachingSessionsPageProps> = ({
 
   return (
     <PageContainer>
-      <PageHeader title="Lịch dạy & Theo dõi Điểm danh" />
+      <PageHeader title={pageTitle} />
 
-      {/* 3 Tab nghiệp vụ lớn ngay dưới PageHeader */}
-      <HorizontalTabs
-        ariaLabel="Chế độ lịch dạy và theo dõi điểm danh giáo viên"
-        value={mainTab}
-        onChange={(nextTab) => {
-          setMainTab(nextTab);
-          setCurrentPage(1);
-          setTrackingPage(1);
-        }}
-        className="mb-4"
-        items={[
-          {
-            value: 'schedule',
-            label: 'Lịch dạy & Điểm danh',
-            icon: <Calendar />,
-          },
-          {
-            value: 'pending',
-            label: 'Chờ GV xác nhận',
-            icon: <ClipboardCheck />,
-            badge: pendingCount,
-          },
-          {
-            value: 'history',
-            label: 'Lịch sử thay đổi',
-            icon: <History />,
-          },
-        ]}
-      />
+      {/* Trang hợp nhất cũ vẫn có tab; các route giáo viên mới dùng từng view độc lập. */}
+      {showMainTabs && (
+        <HorizontalTabs
+          ariaLabel="Chế độ lịch dạy và theo dõi điểm danh giáo viên"
+          value={mainTab}
+          onChange={(nextTab) => {
+            setMainTab(nextTab);
+            setCurrentPage(1);
+            setTrackingPage(1);
+          }}
+          className="mb-4"
+          items={[
+            {
+              value: 'schedule',
+              label: 'Lịch dạy & Điểm danh',
+              icon: <Calendar />,
+            },
+            {
+              value: 'pending',
+              label: 'Chờ GV xác nhận',
+              icon: <ClipboardCheck />,
+              badge: pendingCount,
+            },
+            {
+              value: 'history',
+              label: 'Lịch sử thay đổi',
+              icon: <History />,
+            },
+          ]}
+        />
+      )}
 
       {/* Cụm FilterBar chuẩn Design System dùng chung cho cả 3 Tab */}
       <FilterBar

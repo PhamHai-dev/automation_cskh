@@ -1,6 +1,12 @@
 import { apiClient } from '../../../api/client';
 import { PaginatedMeta, PaginatedResponse, normalizePaginatedResponse } from '../../../api/pagination.types';
-import { Teacher, CreateTeacherDTO, UpdateTeacherDTO, ProvisionAccountDTO } from '../types/teachers.types';
+import {
+  Teacher,
+  CreateTeacherDTO,
+  UpdateTeacherDTO,
+  UpdateMyTeacherProfileDTO,
+  ProvisionAccountDTO,
+} from '../types/teachers.types';
 
 export type { PaginatedMeta, PaginatedResponse };
 
@@ -29,6 +35,16 @@ export const teachersApi = {
 
   get: async (id: number, signal?: AbortSignal): Promise<Teacher> => {
     const res = await apiClient.get(`/teachers/${id}`, { signal });
+    return res.data.data;
+  },
+
+  getMyProfile: async (signal?: AbortSignal): Promise<Teacher> => {
+    const res = await apiClient.get('/teachers/me', { signal });
+    return res.data.data;
+  },
+
+  updateMyProfile: async (data: UpdateMyTeacherProfileDTO): Promise<Teacher> => {
+    const res = await apiClient.patch('/teachers/me', data);
     return res.data.data;
   },
 

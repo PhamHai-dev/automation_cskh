@@ -7,6 +7,10 @@ const controller = new TeachersController();
 
 router.use(authenticate);
 
+// Teacher self-service profile. Keep static /me before the parameterized /:id route.
+router.get('/me', requireRoles(['TEACHER']), controller.getMyProfile);
+router.patch('/me', requireRoles(['TEACHER']), controller.updateMyProfile);
+
 // Everyone with these roles can view teachers to assign them to classes
 router.get('/', requireRoles(['ADMIN', 'MANAGE', 'CS', 'TEACHER']), controller.list);
 router.get('/:id', requireRoles(['ADMIN', 'MANAGE', 'CS', 'TEACHER']), controller.get);

@@ -3,6 +3,7 @@ import {
   CreateTeacherDTO,
   UpdateTeacherDTO,
   ProvisionAccountDTO,
+  UpdateMyTeacherProfileDTO,
   TeacherListFilters,
   TeacherListResult,
 } from './teachers.types';
@@ -44,6 +45,27 @@ export class TeachersService {
       throw new AppError(404, 'Không tìm thấy giáo viên');
     }
     return this.repository.update(id, data);
+  }
+
+  async getMyProfile(userId: number) {
+    const teacher = await this.repository.findByUserId(userId);
+    if (!teacher) {
+      throw new AppError(404, 'Không tìm thấy hồ sơ giáo viên liên kết với tài khoản');
+    }
+    return teacher;
+  }
+
+  async updateMyProfile(userId: number, data: UpdateMyTeacherProfileDTO) {
+    const teacher = await this.repository.findByUserId(userId);
+    if (!teacher) {
+      throw new AppError(404, 'Không tìm thấy hồ sơ giáo viên liên kết với tài khoản');
+    }
+    return this.repository.updateMyContact(
+      teacher.id,
+      userId,
+      data,
+      { phone: teacher.phone, email: teacher.email },
+    );
   }
 
   async provisionAccount(id: number, data: ProvisionAccountDTO, creatorId?: number) {

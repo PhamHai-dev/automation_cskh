@@ -27,7 +27,7 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ allowedRoles }) 
       !user.roles.includes('ADMIN') &&
       !user.roles.includes('MANAGE') &&
       !user.roles.includes('CS');
-    return <Navigate to={isTeacherOnly ? '/teacher/my-sessions' : '/dashboard'} replace />;
+    return <Navigate to={isTeacherOnly ? '/teacher/dashboard' : '/dashboard'} replace />;
   }
 
   return <Outlet />;

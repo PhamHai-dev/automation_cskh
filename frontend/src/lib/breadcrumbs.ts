@@ -32,9 +32,16 @@ const ROUTE_MAP: RouteMap[] = [
   { prefix: '/packages', group: 'Đào tạo & Lớp học', page: 'Gói học & khóa học' },
   { prefix: '/teachers', group: 'Đào tạo & Lớp học', page: 'Quản lý giáo viên' },
 
-  // ── Lịch dạy Giáo viên ───────────────────────────────────────────────────
-  { prefix: '/teacher/my-sessions', group: 'Lịch dạy giáo viên', page: 'Lịch dạy của tôi' },
-  { prefix: '/teacher/attendance-tracking', group: 'Lịch dạy giáo viên', page: 'Theo dõi điểm danh' },
+  // ── Không gian Giáo viên ──────────────────────────────────────────────────
+  { prefix: '/teacher/dashboard', group: 'Tổng quan', page: 'Dashboard giáo viên' },
+  { prefix: '/teacher/attendance', group: 'Giảng dạy', page: 'Điểm danh' },
+  { prefix: '/teacher/schedule', group: 'Giảng dạy', page: 'Lịch dạy' },
+  { prefix: '/teacher/tasks', group: 'Giảng dạy', page: 'Việc cần xử lý' },
+  { prefix: '/teacher/students', group: 'Giảng dạy', page: 'Học viên của tôi' },
+  { prefix: '/teacher/notifications', group: 'Cá nhân', page: 'Thông báo' },
+  { prefix: '/teacher/profile', group: 'Cá nhân', page: 'Hồ sơ giáo viên' },
+  { prefix: '/teacher/my-sessions', group: 'Giảng dạy', page: 'Lịch dạy' },
+  { prefix: '/teacher/attendance-tracking', group: 'Giảng dạy', page: 'Việc cần xử lý' },
 
   // ── Đa kênh ──────────────────────────────────────────────────────────────
   { prefix: '/omnichannel/chat', group: 'Đa kênh (Zalo & LINE)', page: 'Hộp thư đa kênh' },

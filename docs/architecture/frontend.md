@@ -63,9 +63,11 @@ Nếu dùng query library, query key, invalidate strategy và error mapping ph�
   - `/teachers`: Quản lý giảng viên Việt & Bản ngữ (hỗ trợ alias redirect từ `/giao-vien`).
   - `/imports`: Nhập & Xuất Excel Sheet 1 & 3 (hỗ trợ alias redirect từ `/nhap-xuat-excel`).
   - `/settings/users`: Quản lý tài khoản & phân quyền (hỗ trợ alias redirect từ `/cai-dat/nguoi-dung`).
+  - Không gian giáo viên dùng prefix `/teacher`: `/teacher/dashboard`, `/teacher/attendance`, `/teacher/schedule`, `/teacher/tasks`, `/teacher/students`, `/teacher/notifications`, `/teacher/profile`.
 - **Giao diện người dùng (UI text, nhãn, dữ liệu, bảng, modal, thông báo lỗi):** Giữ nguyên chuẩn hóa 100% bằng **Tiếng Việt**.
 - **Cấu trúc Menu theo vai trò (Role-based Navigation):**
   - Vai trò `CS` (Sale / CSKH): Thứ tự menu tinh gọn tối ưu quy trình làm việc hàng ngày: **Báo cáo Thống kê** (`/dashboard`) ➔ **Quản lý Ghi danh** (`/enrollments`) ➔ **Danh sách Học viên** (`/students`) ➔ **Nhiệm vụ & Chăm sóc** (`/care`).
+  - Tài khoản chỉ có role `TEACHER`: **Dashboard** ➔ nhóm **Giảng dạy** (Điểm danh, Lịch dạy, Việc cần xử lý, Học viên của tôi) ➔ nhóm **Cá nhân** (Thông báo, Hồ sơ giáo viên). Tài khoản đa vai trò giữ navigation đầy đủ.
   - Dữ liệu tại `/enrollments` và `/students` tự động khóa theo tài khoản Sale đang đăng nhập.
 - Route guard chỉ để tối ưu UX; backend vẫn là nơi kiểm tra và enforce quyền (permission) cuối cùng.
 - Trang thông báo lỗi 401/403/404 bằng tiếng Việt rõ ràng.

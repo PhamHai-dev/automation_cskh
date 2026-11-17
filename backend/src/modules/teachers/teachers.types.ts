@@ -21,6 +21,11 @@ export interface ProvisionAccountDTO {
   password?: string;
 }
 
+export interface UpdateMyTeacherProfileDTO {
+  phone?: string | null;
+  email?: string | null;
+}
+
 export type TeacherAccountStatusFilter =
   | 'HAS_ACCOUNT'
   | 'NO_ACCOUNT'
