@@ -2190,11 +2190,17 @@ export class SheetSyncService {
 
     const enrollmentBySyncKey = new Map<string, (typeof allEnrollments)[number]>();
     const enrollmentByStudentAndPkg = new Map<string, (typeof allEnrollments)[number]>();
+    const jlptEnrollmentsByStudentId = new Map<number, Array<(typeof allEnrollments)[number]>>();
     const kaiwaEnrollmentsByStudentId = new Map<number, Array<(typeof allEnrollments)[number]>>();
     for (const e of allEnrollments) {
       if (e.external_sync_key) enrollmentBySyncKey.set(e.external_sync_key, e);
       if (e.student_id && e.package_id) {
         enrollmentByStudentAndPkg.set(`${e.student_id}::${e.package_id}`, e);
+      }
+      if (e.student_id && e.program_type === 'JLPT') {
+        const list = jlptEnrollmentsByStudentId.get(e.student_id) || [];
+        list.push(e);
+        jlptEnrollmentsByStudentId.set(e.student_id, list);
       }
       if (e.student_id && e.program_type === 'KAIWA') {
         const list = kaiwaEnrollmentsByStudentId.get(e.student_id) || [];
@@ -2251,6 +2257,17 @@ export class SheetSyncService {
         if (candidate && (!candidate.external_sync_key || candidate.external_sync_key === row.syncKey)) {
           existingEnrollment = candidate;
         }
+      }
+
+      // First JLPT sync after package normalization: the current DB may still point package_id
+      // to the old course code. Match that legacy record by course_code/package code to avoid duplicates.
+      if (!existingEnrollment && existingStudent && row.programType === 'JLPT' && row.courseCode) {
+        const courseCodeUpper = row.courseCode.toUpperCase();
+        const candidates = jlptEnrollmentsByStudentId.get(existingStudent.id) || [];
+        existingEnrollment = candidates.find((e) =>
+          e.course_code?.toUpperCase() === courseCodeUpper ||
+          e.package?.code?.toUpperCase() === courseCodeUpper
+        );
       }
 
       // Special rule for KAIWA_CARE (1.Chăm sóc): ONLY update when matching an existing Kaiwa student enrollment by externalId
@@ -2478,6 +2495,10 @@ export class SheetSyncService {
           ENROLLMENT_STATUS_VN_MAP[row.status] || row.status
         );
         addDiff('total_sessions', 'Tổng số buổi', existingEnrollment.total_sessions, row.totalSessions);
+        addDiff('package_code', 'Gói học', existingEnrollment.package?.code, row.packageCode);
+        if (row.programType === 'JLPT') {
+          addDiff('course_code', 'Mã khóa học', existingEnrollment.course_code, row.courseCode);
+        }
         if (!row.isKaiwaMasterOnly && row.totalAttended !== null) {
           addDiff('total_attended', 'Tổng số buổi đã học', (existingEnrollment as any).total_attended, row.totalAttended);
         }
@@ -3864,6 +3885,7 @@ export class SheetSyncService {
           study_report_url: savedEnrollment.study_report_url,
           handed_over_at: savedEnrollment.handed_over_at,
           account_created_at: (savedEnrollment as any).account_created_at,
+          course_code: savedEnrollment.course_code,
           program_metadata: savedEnrollment.program_metadata,
         },
       };
@@ -3931,10 +3953,18 @@ export class SheetSyncService {
     });
 
     // 4. Enrollment before snapshot & upsert
-    let existingEnrollment = await prisma.enrollment.findUnique({
-      where: { external_sync_key: row.syncKey },
-      include: { enrollment_classes: true, care_logs: true },
-    });
+    let existingEnrollment = item._payload.existingEnrollmentId
+      ? await prisma.enrollment.findUnique({
+          where: { id: Number(item._payload.existingEnrollmentId) },
+          include: { enrollment_classes: true, care_logs: true },
+        })
+      : null;
+    if (!existingEnrollment) {
+      existingEnrollment = await prisma.enrollment.findUnique({
+        where: { external_sync_key: row.syncKey },
+        include: { enrollment_classes: true, care_logs: true },
+      });
+    }
     if (!existingEnrollment) {
       existingEnrollment = await prisma.enrollment.findFirst({
         where: { student_id: student.id, package_id: pkg.id },
@@ -3970,6 +4000,8 @@ export class SheetSyncService {
             study_report_url: existingEnrollment.study_report_url,
             handed_over_at: existingEnrollment.handed_over_at,
             account_created_at: (existingEnrollment as any).account_created_at,
+            package_id: existingEnrollment.package_id,
+            course_code: existingEnrollment.course_code,
             program_metadata: existingEnrollment.program_metadata,
           },
         }
@@ -4017,6 +4049,7 @@ export class SheetSyncService {
       program_metadata: mergedMeta as Prisma.InputJsonValue,
       student_id: student.id,
       package_id: pkg.id,
+      course_code: row.courseCode,
       cs_id: effectiveCsId,
       paid_at: paidAtDate,
       sale_id: saleId,
@@ -4226,6 +4259,8 @@ export class SheetSyncService {
         study_report_url: savedEnrollment.study_report_url,
         handed_over_at: savedEnrollment.handed_over_at,
         account_created_at: (savedEnrollment as any).account_created_at,
+        package_id: savedEnrollment.package_id,
+        course_code: savedEnrollment.course_code,
         program_metadata: savedEnrollment.program_metadata,
       },
     };

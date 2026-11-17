@@ -121,7 +121,10 @@ export interface AutomationEnrollment {
     id: number;
     student?: { id: number; full_name: string; phone: string | null; email?: string | null };
     cs?: { id: number; name: string };
-    package?: { id: number; name: string } | null;
+    program_type?: 'JLPT' | 'KAIWA' | string;
+    level?: string | null;
+    course_content?: string | null;
+    package?: { id: number; name: string; code?: string } | null;
     enrollment_classes?: Array<{
       id: number;
       class?: {

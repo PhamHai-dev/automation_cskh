@@ -17,6 +17,7 @@ AI không được tự quyết các mục `WAITING_USER` nếu quyết định 
 | Q-011 | RESOLVED | Đối soát import Attendance | Cập nhật 2026-10-10: cả hai workbook đều preview rồi commit; chỉ match ClassSession có sẵn theo mã HV + lớp trong scope + ngày + giờ; không tự tạo/đoán dữ liệu. | 4, 5, frontend |
 | Q-012 | RESOLVED | Bảng Học viên Sheet 1 | Chuẩn hóa 28 cột theo cấu trúc Sheet 1, highlight badge đỏ cảnh báo nợ buổi âm, tự động lọc học viên theo Sale phụ trách nếu role là `CS`. | 3, frontend |
 | Q-013 | RESOLVED | Nhập/Xuất Excel Tất cả Vai trò | Mở quyền import cho ADMIN, MANAGE, CS, TEACHER theo endpoint phù hợp. Attendance import luôn preview/commit, chỉ ghi ClassSession đã tồn tại trong scope; dòng không match hoặc ngoài scope được báo lỗi và bỏ qua. | 4, 5, frontend |
+| Q-015 | RESOLVED | Chuẩn hóa Gói học | Chốt 2026-11-17: Kaiwa Gói học và JLPT Gói SP cùng lưu qua `Enrollment.package_id -> Package`; JLPT Mã khóa học tách riêng tại `Enrollment.course_code`; migrate dữ liệu cũ nhưng chưa chạy trên DB hiện tại. | 3, 5, frontend |
 
 ## Q-014 — Điều hướng Đồng bộ dữ liệu / Sao lưu dữ liệu
 

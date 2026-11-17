@@ -15,7 +15,10 @@ export interface CreateStudentDTO {
   program_type?: 'JLPT' | 'KAIWA';
   program_metadata?: Record<string, any> | null;
   cs_id?: number;
+  /** Unified package/product code: Kaiwa "Gói học" or JLPT "Gói SP". */
   package_code?: string;
+  /** JLPT "Mã khóa học", separate from the package/product. */
+  course_code?: string;
   paid_at?: string | Date;
   sale_name?: string;
   student_source_status?: string;
@@ -70,7 +73,10 @@ export interface UpdateStudentDTO {
   program_type?: 'JLPT' | 'KAIWA';
   program_metadata?: Record<string, any> | null;
   cs_id?: number;
+  /** Unified package/product code: Kaiwa "Gói học" or JLPT "Gói SP". */
   package_code?: string;
+  /** JLPT "Mã khóa học", separate from the package/product. */
+  course_code?: string;
   paid_at?: string | Date;
   sale_name?: string;
   student_source_status?: string;

@@ -1,5 +1,12 @@
 # Project Status
 
+## Chuẩn hóa Gói học Kaiwa/JLPT — 2026-11-17
+
+- Đã thống nhất Kaiwa `Gói học` và JLPT `Gói SP` qua `Enrollment.package_id -> Package`; JLPT `Mã khóa học` lưu riêng tại `Enrollment.course_code`.
+- Đã cập nhật API tạo/sửa, import/backup workbook và cột Gói học chung ở cả Hồ sơ Học viên lẫn Báo cáo Học tập & Chăm sóc.
+- Migration dữ liệu đã được viết nhưng **chưa chạy** trên database hiện tại vì lịch sử migration đang không đồng nhất; không reset/migrate DB khi chưa có môi trường test an toàn.
+- Prisma schema format/validate đạt; bước generate từng bị chặn do DLL Prisma đang được process khác sử dụng. Backend/frontend/tests đang được xác minh lại sau chỉnh sửa.
+
 ## Trung tâm Lịch sử hoạt động — 2026-11-13
 
 - Đã tái thiết kế `/activity-logs` thành trung tâm bốn view: thao tác Web, đồng bộ, sao lưu và đăng nhập; desktop dùng bảng, mobile dùng card, modal chi tiết responsive.

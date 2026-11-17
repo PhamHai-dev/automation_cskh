@@ -16,6 +16,7 @@ import {
 } from '../../classes/types/classes.types';
 import { CareSelectCell } from '../components/CareSelectCell';
 import { ReassignCsModal } from '../components/ReassignCsModal';
+import { getEnrollmentPackageLabel } from '../../enrollments/utils/enrollmentDisplay';
 import { PageContainer } from '../../../components/common/PageContainer';
 import { PageHeader } from '../../../components/common/PageHeader';
 import { FilterBar } from '../../../components/common/FilterBar';
@@ -382,6 +383,8 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
     note: '',
 
     // 2. Khóa học & Tài chính
+    package_code: '',
+    course_code: '',
     paid_at: '',
     sale_name: '',
     student_source_status: 'Học viên chuẩn',
@@ -888,12 +891,14 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
         note: student.note || '',
 
         // 2. Gói học, Học phí & Tiến độ
+        package_code: enr?.package?.code || '',
+        course_code: enr?.course_code || '',
         paid_at: enr?.paid_at ? new Date(enr.paid_at).toISOString().split('T')[0] : '',
         sale_name: enr?.sale_name || enr?.sale?.name || enr?.cs?.name || '',
         student_source_status: enr?.student_source_status || 'Học viên chuẩn',
-        course_content: enr?.course_content || enr?.package?.name || 'Tiếng Nhật Kaiwa',
+        course_content: enr?.course_content || (enr?.program_type === 'KAIWA' ? enr?.package?.name : '') || 'Tiếng Nhật Kaiwa',
         payment_status: enr?.payment_status || 'Đã đóng đủ',
-        level: enr?.level || 'N5',
+        level: enr?.program_type === 'JLPT' ? '' : enr?.level || 'N5',
         total_sessions: enr?.total_sessions ?? 30,
         external_remaining_sessions: enr?.external_remaining_sessions ?? 30,
         attended_previous_years:
@@ -1373,6 +1378,18 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
       );
     },
   };
+  const packageColumn: Column<Student> = {
+    key: 'package_name',
+    header: 'Gói học',
+    cell: (item) => {
+      const enr = item.enrollments?.[0];
+      return (
+        <span className="font-semibold text-slate-800 text-xs whitespace-nowrap">
+          {getEnrollmentPackageLabel(enr)}
+        </span>
+      );
+    },
+  };
 
   // --- TAB 1: CỘT HỌC VIÊN (A ➔ I + J ➔ AJ) ---
   const tab1Columns: Column<Student>[] = [
@@ -1392,29 +1409,14 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
         );
       },
     },
-    {
-      key: 'package_name',
-      header: 'Gói học',
-      cell: (item) => {
-        const enr = item.enrollments?.[0];
-        const isJlpt = (enr?.program_type || '').toUpperCase() === 'JLPT';
-        const val = isJlpt
-          ? enr?.level || '—'
-          : enr?.package?.code || enr?.package?.name || '—';
-        return (
-          <span className="font-semibold text-slate-800 text-xs whitespace-nowrap">
-            {val}
-          </span>
-        );
-      },
-    },
+    packageColumn,
     {
       key: 'jlpt_course_code',
       header: 'Mã khóa học',
       cell: (item) => {
         const enr = item.enrollments?.[0];
         const isJlpt = (enr?.program_type || '').toUpperCase() === 'JLPT';
-        const val = isJlpt ? enr?.package?.code || enr?.package?.name || '—' : '—';
+        const val = isJlpt ? enr?.course_code || '—' : '—';
         return (
           <span className="font-mono font-semibold text-slate-700 text-xs whitespace-nowrap">
             {val}
@@ -1923,6 +1925,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
   // --- TAB 2: CỘT BÁO CÁO HỌC TẬP & CHĂM SÓC ---
   const tab2Columns: Column<Student>[] = [
     ...commonColumnsAtoI,
+    packageColumn,
     {
       key: 'study_report_url',
       header: 'Báo cáo học tập',
@@ -2720,13 +2723,13 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
                   <div>
                     <span className="text-slate-500 block">Gói học:</span>
                     <strong className="text-slate-900">
-                      {viewingStudent.enrollments[0].package?.name || '—'}
+                      {getEnrollmentPackageLabel(viewingStudent.enrollments[0])}
                     </strong>
                   </div>
                   <div>
-                    <span className="text-slate-500 block">Trình độ:</span>
+                    <span className="text-slate-500 block">Mã khóa học:</span>
                     <strong className="text-slate-900 font-mono">
-                      {viewingStudent.enrollments[0].level || 'N5'}
+                      {viewingStudent.enrollments[0].course_code || '—'}
                     </strong>
                   </div>
                   <div>
@@ -3141,6 +3144,44 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
               <div className="space-y-4 pt-1 animate-fadeIn text-xs">
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
                   <div>
+                    <label className="block font-medium text-slate-700 mb-1">Gói học</label>
+                    <Input
+                      placeholder={formData.program_type === 'JLPT' ? 'Ví dụ: N4CB (Gói SP)' : 'Ví dụ: CKAI451030JP'}
+                      value={formData.package_code || ''}
+                      onChange={(e) => setFormData({ ...formData, package_code: e.target.value })}
+                    />
+                    {formData.program_type === 'JLPT' && (
+                      <p className="mt-1 text-[10px] text-slate-500">Tương ứng cột Gói SP của dữ liệu JLPT.</p>
+                    )}
+                  </div>
+                  {formData.program_type === 'JLPT' && (
+                    <div>
+                      <label className="block font-medium text-slate-700 mb-1">Mã khóa học</label>
+                      <Input
+                        placeholder="Ví dụ: N4VIP16"
+                        value={formData.course_code || ''}
+                        onChange={(e) => setFormData({ ...formData, course_code: e.target.value })}
+                      />
+                    </div>
+                  )}
+                  {formData.program_type !== 'JLPT' && (
+                    <div>
+                      <label className="block font-medium text-slate-700 mb-1">Trình độ</label>
+                      <select
+                        value={formData.level || 'N5'}
+                        onChange={(e) => setFormData({ ...formData, level: e.target.value })}
+                        className="w-full text-xs px-3 py-2 bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20"
+                      >
+                        <option value="N5">N5 (Sơ cấp 1)</option>
+                        <option value="N4">N4 (Sơ cấp 2)</option>
+                        <option value="N3">N3 (Trung cấp)</option>
+                        <option value="N2">N2 (Trung - Cao cấp)</option>
+                        <option value="N1">N1 (Cao cấp)</option>
+                        <option value="Kaiwa">Giao tiếp Kaiwa</option>
+                      </select>
+                    </div>
+                  )}
+                  <div>
                     <label className="block font-medium text-slate-700 mb-1">
                       Nội dung khóa học
                     </label>
@@ -3149,21 +3190,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
                       value={formData.course_content || ''}
                       onChange={(e) => setFormData({ ...formData, course_content: e.target.value })}
                     />
-                  </div>
-                  <div>
-                    <label className="block font-medium text-slate-700 mb-1">Trình độ</label>
-                    <select
-                      value={formData.level || 'N5'}
-                      onChange={(e) => setFormData({ ...formData, level: e.target.value })}
-                      className="w-full text-xs px-3 py-2 bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20"
-                    >
-                      <option value="N5">N5 (Sơ cấp 1)</option>
-                      <option value="N4">N4 (Sơ cấp 2)</option>
-                      <option value="N3">N3 (Trung cấp)</option>
-                      <option value="N2">N2 (Trung - Cao cấp)</option>
-                      <option value="N1">N1 (Cao cấp)</option>
-                      <option value="Kaiwa">Giao tiếp Kaiwa</option>
-                    </select>
                   </div>
                   <div>
                     <label className="block font-medium text-slate-700 mb-1">Sale phụ trách</label>

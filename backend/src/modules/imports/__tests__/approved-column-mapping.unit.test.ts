@@ -152,8 +152,9 @@ describe('approved workbook column mappings', () => {
     expect(row.totalAttended).toBe(6);
     expect(row.attendedPreviousYears).toBe(0);
     expect(row.classModel).toBe('1-n');
-    expect(row.level).toBe('N4CB');
-    expect(row.packageCode).toBe('N4VIP16');
+    expect(row.level).toBeNull();
+    expect(row.packageCode).toBe('N4CB');
+    expect(row.courseCode).toBe('N4VIP16');
     expect(row.courseContent).toBeNull();
     expect(row.programMetadata.tuition_fee).toBe(4000000);
     expect(row.endHoldWeek).toBeNull();

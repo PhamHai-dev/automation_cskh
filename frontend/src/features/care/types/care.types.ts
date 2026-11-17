@@ -44,6 +44,9 @@ export interface CareTask {
       phone: string;
       external_id: string;
     };
+    program_type?: 'JLPT' | 'KAIWA' | string;
+    level?: string | null;
+    course_content?: string | null;
     package?: {
       id: number;
       name: string;

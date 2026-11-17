@@ -132,6 +132,7 @@ export interface NormalizedSheetRow {
   courseContent: string | null;
   paymentStatus: string | null;
   packageCode: string;
+  courseCode: string | null;
   courseTeacherType: string | null;
   level: string | null;
   totalSessions: number;
@@ -750,7 +751,8 @@ export function parseJlptSheetRows(
     const email = cellText(row.getCell(8)) || null;
     const sourcePackageCode = cellText(row.getCell(9)) || null;
     const classModel = sourcePackageCode;
-    const level = cellText(row.getCell(10)) || null;
+    const packageCode = (cellText(row.getCell(10)) || 'JLPT_DEFAULT').trim();
+    const level = null;
 
     const rawTuition = extractCellValue(row.getCell(11).value);
     const courseContent = null;
@@ -763,8 +765,8 @@ export function parseJlptSheetRows(
     const cvhtCode = extractCvhtCode(row.getCell(16).value, salesNote);
 
     const rawCourseCode = cellText(row.getCell(17));
-    const packageCode = (rawCourseCode || level || 'JLPT_DEFAULT').trim();
-    const settingLookupKey = packageCode.toUpperCase();
+    const courseCode = rawCourseCode ? rawCourseCode.trim() : null;
+    const settingLookupKey = String(courseCode || packageCode).toUpperCase();
     const courseSetting = settingsMap.get(settingLookupKey);
 
     const totalSessions = courseSetting?.totalSessions || 38;
@@ -887,6 +889,7 @@ export function parseJlptSheetRows(
       courseContent,
       paymentStatus,
       packageCode,
+      courseCode,
       courseTeacherType: null,
       level,
       totalSessions,
@@ -1067,6 +1070,7 @@ export function parseKaiwaSheetRows(
         courseContent: null,
         paymentStatus: null,
         packageCode,
+        courseCode: null,
         courseTeacherType: null,
         level: null,
         totalSessions: 30,
@@ -1198,6 +1202,7 @@ export function parseKaiwaSheetRows(
       courseContent,
       paymentStatus,
       packageCode,
+      courseCode: null,
       courseTeacherType,
       level,
       totalSessions,

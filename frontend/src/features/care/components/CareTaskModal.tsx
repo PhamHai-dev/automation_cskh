@@ -3,6 +3,7 @@ import { CareTask, CreateCareTaskDTO, UpdateCareTaskDTO, TaskType, TaskPriority 
 import { Button } from '../../../components/ui/Button';
 import { useToast } from '../../../components/ui/Toast';
 import { EnrollmentSearchSelect } from './EnrollmentSearchSelect';
+import { getEnrollmentPackageLabel } from '../../enrollments/utils/enrollmentDisplay';
 
 interface CareTaskModalProps {
   isOpen: boolean;
@@ -131,9 +132,7 @@ export const CareTaskModal: React.FC<CareTaskModalProps> = ({
                   ? `${initialTask.enrollment.student?.full_name || 'HV'} · ${
                       initialTask.enrollment.student?.external_id || `#${initialTask.enrollment.id}`
                     } · ${
-                      initialTask.enrollment.package?.name ||
-                      initialTask.enrollment.package?.code ||
-                      'Gói chưa rõ'
+                      getEnrollmentPackageLabel(initialTask.enrollment)
                     }`
                   : undefined
               }

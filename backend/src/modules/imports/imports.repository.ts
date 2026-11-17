@@ -280,6 +280,7 @@ export class ImportsRepository {
     payment_status?: string | null;
     course_teacher_type?: string | null;
     level?: string | null;
+    course_code?: string | null;
     total_sessions: number;
     class_model?: string | null;
     sales_note?: string | null;
@@ -312,6 +313,7 @@ export class ImportsRepository {
         payment_status: data.payment_status,
         course_teacher_type: data.course_teacher_type,
         level: data.level,
+        course_code: data.course_code,
         total_sessions: data.total_sessions,
         class_model: data.class_model,
         sales_note: data.sales_note,

@@ -23,6 +23,7 @@ import {
   isImageAttachment,
   formatBytes,
 } from './RichChatComposer';
+import { getEnrollmentPackageLabel } from '../../enrollments/utils/enrollmentDisplay';
 import { DataTable, Column } from '../../../components/common/DataTable';
 import { Button } from '../../../components/ui/Button';
 import { Input } from '../../../components/ui/Input';
@@ -107,7 +108,7 @@ function normalizeStudentItem(s: BroadcastTargetStudentItem): NormalizedCatalogS
     (firstCls ? `${firstCls.class_name}${firstCls.class_code ? ` (${firstCls.class_code})` : ''}` : '') ||
     'Chưa xếp lớp';
 
-  const packageName = s.package_name || firstEnr?.package?.name || 'Tiêu chuẩn';
+  const packageName = s.package_name || getEnrollmentPackageLabel(firstEnr) || 'Tiêu chuẩn';
   const teacherName = s.teacher_name || firstTeacher || 'Giáo viên phụ trách';
   const remainingSessions =
     s.remaining_sessions != null ? String(s.remaining_sessions) : '10';

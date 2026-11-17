@@ -20,6 +20,7 @@ import {
   DELIVERY_STATUS_LABELS,
   TEMPLATE_VARIABLES,
 } from '../types/automation.types';
+import { getEnrollmentPackageLabel } from '../../enrollments/utils/enrollmentDisplay';
 import { PageContainer } from '../../../components/common/PageContainer';
 import { Button } from '../../../components/ui/Button';
 import { Input } from '../../../components/ui/Input';
@@ -799,9 +800,9 @@ export const AutomationWorkflowDetailPage: React.FC = () => {
                               <span>📧 {en.enrollment.student.email}</span>
                             )}
                             {en.enrollment?.cs && <span>• CSKH: {en.enrollment.cs.name}</span>}
-                            {en.enrollment?.package?.name && (
+                            {en.enrollment && getEnrollmentPackageLabel(en.enrollment) !== '—' && (
                               <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-primary/5 text-primary text-[10px] font-bold">
-                                {en.enrollment.package.name}
+                                {getEnrollmentPackageLabel(en.enrollment)}
                               </span>
                             )}
                           </div>
@@ -1324,7 +1325,7 @@ export const AutomationWorkflowDetailPage: React.FC = () => {
                         </div>
                       </td>
                       <td className="px-3 py-2.5 text-[10px] text-text-secondary">
-                        <div>{en.package?.name || '—'}</div>
+                        <div>{getEnrollmentPackageLabel(en)}</div>
                         {en.enrollment_classes?.[0]?.class && (
                           <div>
                             Lớp:{' '}

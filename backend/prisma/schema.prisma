@@ -220,6 +220,7 @@ model Enrollment {
   program_metadata            Json?
   student_id                  Int
   package_id                  Int?
+  course_code                 String?
   cs_id                       Int
   paid_at                     DateTime?
   sale_id                     Int?

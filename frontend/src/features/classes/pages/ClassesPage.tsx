@@ -23,6 +23,7 @@ import {
   formatCourseContentDisplay,
   formatScheduleTimeDisplay,
 } from '../types/classes.types';
+import { getEnrollmentPackageLabel } from '../../enrollments/utils/enrollmentDisplay';
 import { teachersApi } from '../../teachers/api/teachers.api';
 import { Teacher } from '../../teachers/types/teachers.types';
 import {
@@ -1051,7 +1052,6 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
       enrollments.forEach((enr) => {
         const student = enr.student;
         if (!student) return;
-        const pkg = enr.package;
         const enrCsId = (enr as any)?.cs_user_id ?? enr?.cs_id ?? enr?.cs?.id ?? null;
         const isReadonlyForCs = Boolean(
           isCSOnly && user?.id && enrCsId && Number(enrCsId) !== Number(user.id)
@@ -1067,8 +1067,8 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
               fullClass?.class_teachers?.find((t) => t.active !== false)?.teacher ||
               (cls as any)?.class_teachers?.[0]?.teacher;
             const schedule = fullClass?.class_schedules?.[0] || (cls as any)?.class_schedules?.[0];
-            const pkgLabel = pkg?.name || pkg?.code || '—';
             const levelLabel = enr.level || (cls as any)?.level || '—';
+            const pkgLabel = getEnrollmentPackageLabel(enr);
             const classStudentCount = fullClass?.enrollment_classes?.length;
             const resolvedModel = normalizeClassModel(
               enr.class_model || (cls as any)?.model_type,
@@ -1132,8 +1132,8 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
             });
           });
         } else {
-          const pkgLabel = pkg?.name || pkg?.code || '—';
           const levelLabel = enr.level || '—';
+          const pkgLabel = getEnrollmentPackageLabel(enr);
           const resolvedStatus = resolveEffectiveEnrollmentStatus(
             enr.status,
             false,

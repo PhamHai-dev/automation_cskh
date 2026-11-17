@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { enrollmentsApi } from '../../enrollments/api/enrollments.api';
 import { Enrollment } from '../../enrollments/types/enrollments.types';
+import { getEnrollmentPackageLabel } from '../../enrollments/utils/enrollmentDisplay';
 import { useDebouncedValue } from '../../../hooks/useDebouncedValue';
 import { useQuery } from '../../../hooks/useQuery';
 import { Search, X } from 'lucide-react';
@@ -17,7 +18,7 @@ interface EnrollmentSearchSelectProps {
 const normalizeStaffLabel = (enr: Enrollment): string => {
   const name = enr.student?.full_name || `HV #${enr.student_id}`;
   const code = enr.student?.external_id || enr.external_id || `GĐ_${enr.id}`;
-  const pkg = enr.package?.name || enr.package?.code || 'Gói chưa rõ';
+  const pkg = getEnrollmentPackageLabel(enr);
   return `${name} · ${code} · ${pkg}`;
 };
 

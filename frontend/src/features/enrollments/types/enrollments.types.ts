@@ -34,6 +34,7 @@ export interface Enrollment {
   external_id?: string;
   student_id: number;
   package_id?: number;
+  course_code?: string | null;
   cs_id: number;
   program_type?: 'JLPT' | 'KAIWA' | string;
   external_sync_key?: string | null;

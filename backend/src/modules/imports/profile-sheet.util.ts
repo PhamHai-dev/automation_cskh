@@ -226,14 +226,14 @@ const JLPT_PROFILE_COLS = buildCols([
   [7, 'student.phone', 'SĐT', G.profile],
   [8, 'student.email', 'Email', G.profile],
   [9, 'enr.class_model', 'Mã gói', G.profile],
-  [10, 'enr.level', 'Gói SP', G.profile],
+  [10, 'pkg.code', 'Gói SP', G.profile],
   [11, 'meta.tuition_fee', 'Học phí thực nộp', G.profile],
   [12, 'enr.payment_status', 'Trạng thái thanh toán', G.profile],
   [13, 'enr.sales_note', 'Ghi chú', G.profile],
   [14, 'meta.expected_start_date', 'Ngày khai giảng dự kiến', G.class],
   [15, 'meta.active_state', 'Tình trạng', G.class],
   [16, 'cvht.staff_code', 'CVHT', G.class],
-  [17, 'pkg.code', 'Mã khóa học', G.profile],
+  [17, 'enr.course_code', 'Mã khóa học', G.profile],
   [18, 'enr.start_date', 'Ngày bắt đầu học', G.class],
   [19, 'enr.status_label', 'Trạng thái', G.class],
   [20, 'schedule.start_time', 'Giờ học', G.class],
@@ -736,6 +736,7 @@ export function resolveBackupFieldValue(
     case 'enr.payment_status': return okText(enr?.payment_status);
     case 'enr.course_teacher_type': return okText(enr?.course_teacher_type);
     case 'enr.level': return okText(enr?.level);
+    case 'enr.course_code': return okText(enr?.course_code);
     case 'enr.total_sessions': return enr?.total_sessions === null || enr?.total_sessions === undefined ? none : ok(Number(enr.total_sessions));
     case 'enr.class_model': return okText(enr?.class_model);
     case 'enr.sales_note': return okText(enr?.sales_note);

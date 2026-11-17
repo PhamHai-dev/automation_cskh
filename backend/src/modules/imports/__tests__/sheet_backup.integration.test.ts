@@ -154,9 +154,9 @@ describe('Program Sheet Backup (2-Sheet JLPT & KAIWA + Admin Column Config) Inte
 
     // ---- Temp seed data -------------------------------------------------
     const pkgJlpt = await prisma.package.upsert({
-      where: { code: 'JLPT_SBK_TEST' },
-      update: { default_total_sessions: 12, active: true },
-      create: { code: 'JLPT_SBK_TEST', name: 'Gói JLPT Backup Test', default_total_sessions: 12, active: true },
+      where: { code: 'N4' },
+      update: { name: 'Gói N4', default_total_sessions: 12, active: true },
+      create: { code: 'N4', name: 'Gói N4', default_total_sessions: 12, active: true },
     });
 
     const pkgKaiwa = await prisma.package.upsert({
@@ -275,6 +275,7 @@ describe('Program Sheet Backup (2-Sheet JLPT & KAIWA + Admin Column Config) Inte
         cs_id: csTestId,
         student_id: student1.id,
         package_id: pkgJlpt.id,
+        course_code: 'JLPT_SBK_TEST',
         paid_at: new Date('2026-09-01T00:00:00.000Z'),
         sale_name: 'Sale A',
         student_source_status: 'HV mới',
@@ -299,6 +300,7 @@ describe('Program Sheet Backup (2-Sheet JLPT & KAIWA + Admin Column Config) Inte
         program_type: 'JLPT',
         student_id: student1.id,
         package_id: pkgJlpt.id,
+        course_code: 'JLPT_SBK_TEST',
         cs_id: csTestId,
         paid_at: new Date('2026-09-01T00:00:00.000Z'),
         sale_name: 'Sale A',

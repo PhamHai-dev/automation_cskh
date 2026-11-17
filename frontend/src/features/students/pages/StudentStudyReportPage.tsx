@@ -8,6 +8,7 @@ import {
 } from '../types/students.types';
 import { Enrollment } from '../../enrollments/types/enrollments.types';
 import { PageContainer } from '../../../components/common/PageContainer';
+import { getEnrollmentPackageLabel } from '../../enrollments/utils/enrollmentDisplay';
 import { PageHeader } from '../../../components/common/PageHeader';
 import { Button } from '../../../components/ui/Button';
 import { Select } from '../../../components/ui/Select';
@@ -173,7 +174,7 @@ const detectTemplateMode = (enr?: Enrollment): StudyReportTemplateMode => {
 
 const enrollmentLabel = (enr: Enrollment): string => {
   const program = enr.program_type || 'Không rõ chương trình';
-  const pkg = enr.package?.code || enr.package?.name || 'Gói';
+  const pkg = getEnrollmentPackageLabel(enr);
   const className = enr.enrollment_classes?.[0]?.class?.class_name || 'chưa có lớp';
   return `${program} • ${pkg} • Lớp ${className}`;
 };
@@ -409,12 +410,7 @@ export const StudentStudyReportPage: React.FC = () => {
     ec?.class?.class_teachers?.[0]?.teacher?.name ||
     (ec?.class as any)?.teacher_name ||
     '—';
-  const courseCode =
-    enr?.package?.code ||
-    enr?.package?.name ||
-    enr?.course_content ||
-    enr?.level ||
-    '—';
+  const courseCode = getEnrollmentPackageLabel(enr);
   const studentCode = student.external_id || `HV_${student.id}`;
 
   const fallbackJlptRow: JlptAttendanceReportRow = jlptReportRow || {

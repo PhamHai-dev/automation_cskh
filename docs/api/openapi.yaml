@@ -1467,8 +1467,31 @@ components:
           type: integer
         student_id:
           type: integer
+        program_type:
+          type: string
+          enum: [KAIWA, JLPT]
         package_id:
           type: integer
+          nullable: true
+          description: Source of truth cho Kaiwa Gói học và JLPT Gói SP.
+        package:
+          type: object
+          nullable: true
+          properties:
+            id:
+              type: integer
+            code:
+              type: string
+            name:
+              type: string
+        course_code:
+          type: string
+          nullable: true
+          description: JLPT Mã khóa học, tách biệt với package/Gói SP.
+        level:
+          type: string
+          nullable: true
+          description: Trình độ Kaiwa hoặc dữ liệu legacy; không dùng để ghi Gói SP JLPT mới.
         cs_id:
           type: integer
         status:

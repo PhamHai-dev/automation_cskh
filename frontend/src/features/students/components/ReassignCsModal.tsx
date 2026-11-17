@@ -7,6 +7,7 @@ import {
 } from '../../enrollments/types/enrollments.types';
 import { Student } from '../types/students.types';
 import { Modal } from '../../../components/ui/Modal';
+import { getEnrollmentPackageLabel } from '../../enrollments/utils/enrollmentDisplay';
 import { Button } from '../../../components/ui/Button';
 import { Badge } from '../../../components/ui/Badge';
 import { useToast } from '../../../components/ui/Toast';
@@ -239,10 +240,7 @@ export const ReassignCsModal: React.FC<ReassignCsModalProps> = ({
                 <div>
                   <span className="text-slate-500">Gói học / Khóa: </span>
                   <strong className="text-slate-800">
-                    {singleEnrollment?.package?.name ||
-                      singleEnrollment?.package?.code ||
-                      singleEnrollment?.course_content ||
-                      '—'}
+                    {getEnrollmentPackageLabel(singleEnrollment)}
                   </strong>
                 </div>
                 <div>

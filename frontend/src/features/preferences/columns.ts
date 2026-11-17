@@ -141,6 +141,7 @@ export const STUDENT_TAB2_COLUMNS: ColumnMeta[] = [
   { key: 'email',                  label: 'Email',                  defaultVisible: false },
   { key: 'course_content',         label: 'Nội dung khóa',          defaultVisible: false, program: 'KAIWA' },
   { key: 'tuition_fee',            label: 'Học phí thực nộp',       defaultVisible: false },
+  { key: 'package_name',           label: 'Gói học',                defaultVisible: true },
   // Care & study report columns (visible by default)
   { key: 'study_report_url',       label: 'Báo cáo học tập',        defaultVisible: true,  program: 'KAIWA' },
   { key: 'exchange_info',          label: 'Trao đổi với học viên',  defaultVisible: true },

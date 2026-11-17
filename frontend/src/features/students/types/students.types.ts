@@ -75,7 +75,10 @@ export interface CreateStudentDTO {
   program_type?: 'JLPT' | 'KAIWA' | string;
   program_metadata?: Record<string, any>;
   cs_id?: number;
+  /** Unified Kaiwa "Gói học" / JLPT "Gói SP" code. */
   package_code?: string;
+  /** JLPT "Mã khóa học"; independent from the package/product. */
+  course_code?: string;
 }
 
 export interface UpdateStudentDTO extends Partial<CreateStudentDTO> {

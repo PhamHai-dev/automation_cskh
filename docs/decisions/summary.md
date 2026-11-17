@@ -48,3 +48,4 @@
     - Thay đổi từng học viên lưu ngay; thao tác nhiều học viên hoặc cả lớp bắt buộc xác nhận.
     - Mọi số dương trong Excel chỉ được chuẩn hóa thành `ATTENDED`; không lưu giá trị số.
 34. **Đối soát hai nguồn (2026-10-10):** CSKH phụ trách được phân xử trong scope; ADMIN/MANAGE được phân xử mọi trường hợp. Phân xử bắt buộc có lý do. Dữ liệu pending/conflict không được tác động số buổi hoặc automation.
+35. **Chuẩn hóa Gói học (2026-11-17):** Kaiwa `Gói học` và JLPT `Gói SP` cùng dùng `Enrollment.package_id -> Package`; JLPT `Mã khóa học` lưu riêng tại `Enrollment.course_code`. `Enrollment.level` không còn là nơi ghi Gói SP cho dữ liệu mới.

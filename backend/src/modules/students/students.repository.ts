@@ -810,10 +810,27 @@ export class StudentsRepository {
         },
       });
 
-      // 2. Create Enrollment (cs_id already authorized above)
+      // 2. Resolve the unified package/product for both programs.
+      const trimmedPackageCode = String(data.package_code || '').trim();
+      const packageRecord = trimmedPackageCode
+        ? await tx.package.upsert({
+            where: { code: trimmedPackageCode },
+            update: {},
+            create: {
+              code: trimmedPackageCode,
+              name: `Gói ${trimmedPackageCode}`,
+              default_total_sessions: data.total_sessions ? Number(data.total_sessions) : 30,
+              active: true,
+            },
+          })
+        : null;
+
+      // 3. Create Enrollment (cs_id already authorized above)
       const enrollment = await tx.enrollment.create({
         data: {
           student_id: student.id,
+          package_id: packageRecord?.id,
+          course_code: data.course_code ? String(data.course_code).trim() : undefined,
           cs_id: csId,
           program_type: data.program_type || 'KAIWA',
           ...(data.program_metadata !== undefined ? { program_metadata: data.program_metadata as any } : {}),
@@ -849,7 +866,7 @@ export class StudentsRepository {
         },
       });
 
-      // 3. Create or link Class & Schedules
+      // 4. Create or link Class & Schedules
       if (data.class_name || data.schedule_pattern) {
         const className =
           data.class_name?.trim() ||
@@ -1099,20 +1116,23 @@ export class StudentsRepository {
       if (data.package_code !== undefined) {
         const trimmedPkg = String(data.package_code).trim();
         if (trimmedPkg) {
-          let pkg = await tx.package.findUnique({ where: { code: trimmedPkg } });
-          if (!pkg) {
-            pkg = await tx.package.create({
-              data: {
-                code: trimmedPkg,
-                name: `Gói ${trimmedPkg}`,
-                default_total_sessions: data.total_sessions ? Number(data.total_sessions) : 30,
-                active: true,
-              },
-            });
-          }
+          const pkg = await tx.package.upsert({
+            where: { code: trimmedPkg },
+            update: {},
+            create: {
+              code: trimmedPkg,
+              name: `Gói ${trimmedPkg}`,
+              default_total_sessions: data.total_sessions ? Number(data.total_sessions) : 30,
+              active: true,
+            },
+          });
           enrollmentUpdate.package_id = pkg.id;
+        } else {
+          enrollmentUpdate.package_id = null;
         }
       }
+      if (data.course_code !== undefined)
+        enrollmentUpdate.course_code = data.course_code ? String(data.course_code).trim() : null;
       if (data.sale_name !== undefined) enrollmentUpdate.sale_name = data.sale_name || null;
       if (data.student_source_status !== undefined)
         enrollmentUpdate.student_source_status = data.student_source_status || null;

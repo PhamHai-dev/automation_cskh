@@ -1,5 +1,12 @@
 # Project Changelog
 
+## 2026-11-17 — Chuẩn hóa Gói học Kaiwa/JLPT
+
+- Kaiwa `Gói học` và JLPT `Gói SP` cùng dùng `Enrollment.package_id -> Package`; bổ sung `Enrollment.course_code` cho JLPT `Mã khóa học`.
+- Import/backup workbook, API tạo-sửa học viên và giao diện hai tab Học viên/Chăm sóc dùng cùng contract; `level` chỉ còn trình độ/legacy.
+- Thêm migration bảo toàn Mã khóa học cũ trước khi relink package JLPT theo Gói SP. Migration chưa chạy trên database hiện tại do lịch sử migration đang lệch.
+- Prisma schema format + validate đạt; generate bị khóa DLL bởi process đang chạy và sẽ được chạy lại sau khi giải phóng file.
+
 ## 2026-11-13 — Tái thiết kế và hardening Trung tâm Lịch sử hoạt động
 
 - Tái cấu trúc trang `/activity-logs` từ một file 2.291 dòng thành trang điều phối gọn hơn cùng component KPI, điều khiển ngày và hook debounce chuyên biệt.

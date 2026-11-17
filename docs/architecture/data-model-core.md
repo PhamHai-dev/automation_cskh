@@ -142,7 +142,8 @@ Enrollment (
   id,
   external_id?,                     -- map cột ID của Excel/hệ thống cũ; unique nếu nghiệp vụ xác nhận
   student_id -> Student,
-  package_id? -> Package,
+  package_id? -> Package,             -- source of truth: Kaiwa Gói học / JLPT Gói SP
+  course_code?,                       -- JLPT Mã khóa học, tách biệt với package_id
   cs_id -> User(role=cs),
 
   paid_at?,                         -- Ngày nộp học phí
@@ -151,7 +152,7 @@ Enrollment (
   course_content?,                  -- Nội dung khoá, vd Thường
   payment_status?,                  -- Full phí/...
   course_teacher_type?,             -- Khoá học: GV Việt Nam / GV Nhật Bản
-  level?,                           -- Trình độ: Kaiwa 1/2/3...
+  level?,                           -- Trình độ Kaiwa/legacy; không lưu Gói SP JLPT mới
   total_sessions,
   class_model?,                     -- Mô hình lớp / Mô hình: 1-1, nhóm...
   sales_note?,
@@ -171,6 +172,8 @@ Enrollment (
   updated_at
 )
 ```
+
+**Quy tắc package (chốt 2026-11-17):** cả Kaiwa `Gói học` và JLPT `Gói SP` đều được chuẩn hóa qua `Enrollment.package_id -> Package`. JLPT `Mã khóa học` lưu riêng tại `Enrollment.course_code`; các ghi mới không dùng `Enrollment.level` để lưu `Gói SP`.
 
 **Không có `class_id` trong Enrollment.** Một Enrollment có thể đi qua nhiều lớp trong cùng hành trình học; quan hệ này được lưu ở `EnrollmentClass`.
 

@@ -182,18 +182,12 @@ export class ImportsService {
       } else if (lower === 'cvht' || lower.includes('cvht') || lower.includes('cố vấn')) {
         suggestedMapping['cvht_code'] = colLetter;
       } else if (lower.includes('mã khóa học') || lower.includes('mã khoá học')) {
-        suggestedMapping['package_code'] = colLetter;
+        suggestedMapping['course_code'] = colLetter;
       } else if (lower.includes('gói sp') || lower.includes('gói sản phẩm')) {
-        suggestedMapping['level'] = colLetter;
-        if (!suggestedMapping['package_code']) {
-          suggestedMapping['package_code'] = colLetter;
-        }
+        suggestedMapping['package_code'] = colLetter;
       } else if (lower === 'mã gói') {
         if (!suggestedMapping['class_model']) {
           suggestedMapping['class_model'] = colLetter;
-        }
-        if (!suggestedMapping['package_code']) {
-          suggestedMapping['package_code'] = colLetter;
         }
       } else if (lower.includes('gói học') || lower === 'gói' || lower.startsWith('gói')) {
         suggestedMapping['package_code'] = colLetter;
@@ -1492,8 +1486,8 @@ export class ImportsService {
             });
           }
 
-          // 2. Package
-          const courseSetting = jlptSettingsMap.get(item.packageCode.toUpperCase());
+          const courseSettingKey = String(snap.course_code || item.packageCode).trim().toUpperCase();
+          const courseSetting = jlptSettingsMap.get(courseSettingKey);
           const resolvedTotalSessions = Number(snap.total_sessions) || courseSetting?.totalSessions || 30;
           let pkg = await tx.package.findUnique({ where: { code: item.packageCode } });
           if (!pkg) {
@@ -1544,7 +1538,8 @@ export class ImportsService {
                 course_content: snap.course_content || null,
                 payment_status: snap.payment_status || null,
                 course_teacher_type: snap.course_teacher_type || null,
-                level: snap.level || null,
+                level: detectedProgramType === 'JLPT' ? null : snap.level || null,
+                course_code: detectedProgramType === 'JLPT' && snap.course_code ? String(snap.course_code).trim() : null,
                 total_sessions: resolvedTotalSessions,
                 class_model: snap.class_model || null,
                 sales_note: snap.sales_note || null,
@@ -1571,7 +1566,12 @@ export class ImportsService {
               total_sessions: Number(snap.total_sessions) || courseSetting?.totalSessions || enrollment.total_sessions,
               external_remaining_sessions: snap.remaining_sessions !== undefined && snap.remaining_sessions !== '' ? Number(snap.remaining_sessions) : null,
               attended_previous_years: snap.attended_previous_years !== undefined && snap.attended_previous_years !== '' ? Number(snap.attended_previous_years) : enrollment.attended_previous_years,
-              level: snap.level !== undefined ? (snap.level || null) : enrollment.level,
+              level: detectedProgramType === 'JLPT'
+                ? enrollment.level
+                : snap.level !== undefined ? (snap.level || null) : enrollment.level,
+              course_code: detectedProgramType === 'JLPT' && snap.course_code !== undefined
+                ? (snap.course_code ? String(snap.course_code).trim() : null)
+                : enrollment.course_code,
               status: snap.status ? this.statusFromText(snap.status) : enrollment.status,
               start_date: snap.start_date !== undefined ? this.parseExcelDate(snap.start_date) : enrollment.start_date,
               end_date: snap.end_date !== undefined ? this.parseExcelDate(snap.end_date) : enrollment.end_date,
@@ -1858,9 +1858,9 @@ export class ImportsService {
             note,
           });
 
-          // 2. Package & total sessions (check JLPT Setting sheet if available)
-          const packageCode = getColVal('package_code') || getColVal('level') || 'DEFAULT';
-          const courseSetting = jlptSettingsMap.get(packageCode.toUpperCase());
+          const packageCode = getColVal('package_code') || 'DEFAULT';
+          const courseCode = getColVal('course_code');
+          const courseSetting = jlptSettingsMap.get((courseCode || packageCode).toUpperCase());
           const totalSessionsRaw = parseInt(getColVal('total_sessions') || '', 10);
           const totalSessions = !isNaN(totalSessionsRaw) && totalSessionsRaw > 0
             ? totalSessionsRaw
@@ -1912,7 +1912,8 @@ export class ImportsService {
             course_content: courseContent,
             payment_status: getColVal('payment_status'),
             course_teacher_type: getColVal('course_teacher_type'),
-            level: getColVal('level'),
+            level: detectedProgramType === 'JLPT' ? null : getColVal('level'),
+            course_code: detectedProgramType === 'JLPT' ? (courseCode || null) : null,
             total_sessions: totalSessions,
             class_model: getColVal('class_model'),
             sales_note: salesNote,
