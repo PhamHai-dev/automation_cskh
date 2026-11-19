@@ -10,6 +10,7 @@ import { Server, type ServerOptions } from 'socket.io';
 import jwt from 'jsonwebtoken';
 import { env } from '../../config/env';
 import { createLogger } from '../logger/logger';
+import { prisma } from '../../prisma/client';
 
 const log = createLogger('SocketSingleton');
 
@@ -29,26 +30,29 @@ export function setupIo(httpServer: HttpServer, opts?: Partial<ServerOptions>): 
     ...opts,
   });
 
-  // Extract authenticated userId from handshake token if provided and join user room
-  io.use((socket, next) => {
+  io.use(async (socket, next) => {
     const rawToken =
       socket.handshake.auth?.token ||
       (typeof socket.handshake.headers?.authorization === 'string' &&
       socket.handshake.headers.authorization.startsWith('Bearer ')
         ? socket.handshake.headers.authorization.slice(7)
         : undefined);
-    if (rawToken && typeof rawToken === 'string') {
-      try {
-        const decoded = jwt.verify(rawToken, env.JWT_SECRET) as { id?: number };
-        if (decoded?.id) {
-          socket.data.userId = Number(decoded.id);
-          socket.join(`user:${decoded.id}`);
-        }
-      } catch {
-        // Invalid/expired token — socket.data.userId remains undefined
+    try {
+      if (typeof rawToken !== 'string') throw new Error('Missing token');
+      const decoded = jwt.verify(rawToken, env.JWT_SECRET) as { id?: number };
+      if (!Number.isInteger(decoded.id) || Number(decoded.id) <= 0) throw new Error('Invalid user');
+      const user = await prisma.user.findUnique({
+        where: { id: decoded.id }, select: { id: true, active: true, roles: true },
+      });
+      if (!user?.active || !(user.roles as string[]).some((role) => ['ADMIN', 'MANAGE', 'CS'].includes(role))) {
+        throw new Error('Account unavailable');
       }
+      socket.data.userId = user.id;
+      await socket.join(`user:${user.id}`);
+      next();
+    } catch {
+      next(new Error('Unauthorized'));
     }
-    next();
   });
 
   log.info('Socket.IO server initialized');

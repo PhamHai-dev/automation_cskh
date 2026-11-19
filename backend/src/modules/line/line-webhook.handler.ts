@@ -66,12 +66,9 @@ export class LineWebhookHandler {
       return { processed: 0, accountId: null };
     }
 
-    await linePool.ensureAccountReady(account.id);
-    const oaAdapter = linePool.getOaAdapter(account.id);
-
-    // 2. Verify X-Line-Signature when signature and secret are provided
-    if (!params.skipSignatureCheck && params.signature && account.webhook_secret && params.rawBody) {
-      const valid = LineOaAdapter.verifyWebhookSignature(
+    // Authenticate before restoring adapters or performing any provider/DB side effects.
+    if (!params.skipSignatureCheck) {
+      const valid = account.account_type === 'OA' && params.signature && account.webhook_secret && params.rawBody && LineOaAdapter.verifyWebhookSignature(
         params.rawBody,
         params.signature,
         account.webhook_secret,
@@ -82,6 +79,9 @@ export class LineWebhookHandler {
         throw err;
       }
     }
+
+    await linePool.ensureAccountReady(account.id);
+    const oaAdapter = linePool.getOaAdapter(account.id);
 
     let processed = 0;
 

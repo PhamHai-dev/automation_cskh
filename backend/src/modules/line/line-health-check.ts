@@ -52,7 +52,7 @@ export async function runLineHealthAndQuotaCheck(): Promise<{
           continue;
         }
         const liveAdapter = linePool.getPersonalAdapter(acc.id);
-        if (!liveAdapter?.client) {
+        if (!liveAdapter?.client || !liveAdapter.isListening) {
           const ok = await linePool.ensureAccountReady(acc.id).catch(() => false);
           if (ok) {
             reconnectedPersonal++;

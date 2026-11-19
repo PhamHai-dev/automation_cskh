@@ -299,10 +299,7 @@ export class ZaloService {
       throw new AppError(409, 'Nick này đã ngắt thủ công — vui lòng quét QR mới để đăng nhập lại.');
     const session = account.encrypted_session_data as any;
     if (!session) throw new AppError(400, 'No saved session — please login with QR first');
-    const sessionData = typeof session === 'string' ? JSON.parse(session) : session;
-    if (!sessionData?.cookie?.imei && !sessionData?.imei)
-      throw new AppError(400, 'No valid session — please login with QR first');
-    zaloPool.reconnect(id, sessionData).catch(() => {});
+    zaloPool.reconnect(id, session).catch(() => {});
     return { message: 'Reconnect initiated' };
   }
 

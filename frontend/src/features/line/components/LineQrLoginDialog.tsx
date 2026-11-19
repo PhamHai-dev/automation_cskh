@@ -12,17 +12,10 @@ import { ShieldCheck, QrCode, RefreshCw, KeyRound, CheckCircle2 } from 'lucide-r
 function normalizeQrImageUrl(raw: string | null | undefined): string | null {
   if (!raw) return null;
   if (raw.startsWith('data:image')) return raw;
-  if (raw.startsWith('http://') || raw.startsWith('https://')) {
-    if (raw.includes('api.qrserver.com')) return raw;
-    return `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(raw)}`;
-  }
-  if (raw.startsWith('line://')) {
-    return `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(raw)}`;
-  }
-  if (/^[A-Za-z0-9+/=]/.test(raw) && raw.length > 80) {
+  if (/^[A-Za-z0-9+/=]+$/.test(raw) && raw.length > 80) {
     return `data:image/png;base64,${raw}`;
   }
-  return `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(raw)}`;
+  return null;
 }
 
 interface LineQrLoginDialogProps {
@@ -55,7 +48,8 @@ export const LineQrLoginDialog: React.FC<LineQrLoginDialogProps> = ({
   const handleQrEvent = useCallback(
     (data: LineSocketQrEvent) => {
       if (data.accountId !== account.id) return;
-      const raw = data.qrDataUrl || data.qrUrl;
+      const raw = data.qrCodeDataUri || data.qrDataUrl || data.qrUrl;
+      setError('');
       setQrImageUrl(normalizeQrImageUrl(raw));
       setPhase('qr');
       setLoading(false);
@@ -113,6 +107,9 @@ export const LineQrLoginDialog: React.FC<LineQrLoginDialogProps> = ({
   const startQrFlow = async () => {
     setLoading(true);
     setError('');
+    setQrImageUrl(null);
+    setPinCode(null);
+    setPhase('qr');
     try {
       const res = await lineApi.startQrLogin(account.id);
       if (res?.pinCode) {
@@ -121,6 +118,9 @@ export const LineQrLoginDialog: React.FC<LineQrLoginDialogProps> = ({
       } else if (res?.qrDataUrl || res?.qrUrl) {
         setQrImageUrl(normalizeQrImageUrl(res.qrDataUrl || res.qrUrl));
         setPhase('qr');
+      } else if (res?.status === 'NOT_LOGGED_IN' || res?.status === 'EXPIRED') {
+        setError('Không thể tạo mã QR LINE. Vui lòng thử lại.');
+        setPhase('expired');
       }
     } catch (err: any) {
       setError(
@@ -151,8 +151,9 @@ export const LineQrLoginDialog: React.FC<LineQrLoginDialogProps> = ({
           setPinCode(acc.pin_code);
           if (st === 'PIN_REQUIRED') setPhase('pin');
         }
-        if (acc.qr_code && !qrImageUrl) {
+        if (acc.qr_code && normalizeQrImageUrl(acc.qr_code) !== qrImageUrl) {
           setQrImageUrl(normalizeQrImageUrl(acc.qr_code));
+          setLoading(false);
         }
         if (st === 'ACTIVE') {
           setPhase('success');
@@ -162,7 +163,6 @@ export const LineQrLoginDialog: React.FC<LineQrLoginDialogProps> = ({
           setPhase('expired');
         } else if (
           st === 'NOT_LOGGED_IN' &&
-          phase === 'pin' &&
           (acc as any).disconnect_reason === 'qr_login_failed'
         ) {
           setError(
@@ -292,6 +292,7 @@ export const LineQrLoginDialog: React.FC<LineQrLoginDialogProps> = ({
                     <img
                       src={qrImageUrl}
                       alt="QR Code LINE"
+                      onError={() => setError('Không tải được ảnh QR LINE. Vui lòng tạo mã QR mới.')}
                       className="w-full h-full object-contain p-3"
                     />
                     {phase === 'expired' && (

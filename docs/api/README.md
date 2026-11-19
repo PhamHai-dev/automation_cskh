@@ -39,6 +39,7 @@ Với endpoint mới hoặc thay đổi endpoint:
 - `activity-logs.md` — audit/sync/backup/login history, data scope, CSV export và retention 30 ngày.
 - `dashboard.md` — aggregate/filter theo scope.
 - `zalo.md` — Zalo account/rule/delivery; chỉ production sau spike.
+- `line.md` — LINE personal QR, OA webhook authentication and realtime message contract.
 
 ## 4. Prefix
 

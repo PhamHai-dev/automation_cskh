@@ -209,6 +209,11 @@ export class LineOaAdapter {
         };
       } catch (err) {
         const status = getHttpStatus(err);
+        // A push retry key cannot deduplicate a reply whose outcome is unknown.
+        if (status !== 400) {
+          throw Object.assign(new Error('Kết quả gửi LINE Reply chưa xác định; cần kiểm tra hội thoại trước khi gửi lại.'),
+            { code: 'LINE_UNCERTAIN_SEND', cause: err });
+        }
         log.warn(
           `[LineOaAdapter] replyMessage failed (${status ?? 'unknown'}) for account ${lineAccountId} -> falling back to pushMessage`,
           { error: String(err) },

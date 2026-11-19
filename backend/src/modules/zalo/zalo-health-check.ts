@@ -33,7 +33,8 @@ export function startZaloHealthCheck(): void {
           encrypted_session_data: { not: null },
           archived_at: null,
           zalo_uid: { not: null },
-          NOT: { disconnect_reason: 'manual' },
+          status: { not: 'DISABLED' },
+          OR: [{ disconnect_reason: null }, { disconnect_reason: { not: 'manual' } }],
         },
         select: { id: true, display_name: true, encrypted_session_data: true },
       });
@@ -64,7 +65,8 @@ export function startZaloHealthCheck(): void {
           encrypted_session_data: { not: null },
           archived_at: null,
           zalo_uid: { not: null },
-          NOT: { disconnect_reason: 'manual' },
+          status: { not: 'DISABLED' },
+          OR: [{ disconnect_reason: null }, { disconnect_reason: { not: 'manual' } }],
         },
         select: { id: true, encrypted_session_data: true },
       });

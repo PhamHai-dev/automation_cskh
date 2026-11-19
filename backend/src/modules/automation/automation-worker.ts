@@ -366,7 +366,7 @@ export async function processDeliveryJob(job: Job<SendJobData>): Promise<void> {
         // LINE OA (`hasLineRetryKeyHeaderSupport === true`) passes `X-Line-Retry-Key` to
         // `@line/bot-sdk` `pushMessage(payload, retryKey)` -> safe to auto-retry on the same row.
         // LINE PERSONAL (`@evex/linejs`) does NOT send `X-Line-Retry-Key` -> treat like Class (2) UNCERTAIN_SEND.
-        if (hasLineRetryKeyHeaderSupport(delivery)) {
+        if (hasLineRetryKeyHeaderSupport(delivery) && sendErr?.code !== 'LINE_UNCERTAIN_SEND') {
           await prisma.messageDelivery.update({
             where: { id: deliveryId },
             data: {

@@ -33,6 +33,7 @@ const log = createLogger('LinePool');
 export class LineAccountPool implements ILineDeliveryDispatcher {
   private oaAdapters = new Map<number, LineOaAdapter>();
   private personalAdapters = new Map<number, LinePersonalAdapter>();
+  private connecting = new Map<number, Promise<boolean>>();
 
   constructor() {
     registerLineDeliveryDispatcher(this);
@@ -183,14 +184,24 @@ export class LineAccountPool implements ILineDeliveryDispatcher {
   // ─── ILineDeliveryDispatcher Implementation ───────────────────────────────
 
   async ensureAccountReady(lineAccountId: number): Promise<boolean> {
-    if (this.oaAdapters.has(lineAccountId)) return true;
-    const existingPersonal = this.personalAdapters.get(lineAccountId);
-    if (existingPersonal?.client) return true;
+    const pending = this.connecting.get(lineAccountId);
+    if (pending) return pending;
+    const operation = this.restoreAccount(lineAccountId);
+    this.connecting.set(lineAccountId, operation);
+    try { return await operation; }
+    finally { if (this.connecting.get(lineAccountId) === operation) this.connecting.delete(lineAccountId); }
+  }
 
+  private async restoreAccount(lineAccountId: number): Promise<boolean> {
     const account = await lineRepository.findAccountById(lineAccountId);
-    if (!account || account.archived_at || !account.encrypted_session_data) {
+    if (!account || account.archived_at || !account.encrypted_session_data ||
+      ['DISABLED', 'BANNED'].includes(account.status) ||
+      ['manual_disconnect', 'circuit_breaker'].includes(account.disconnect_reason ?? '')) {
       return false;
     }
+    if (this.oaAdapters.has(lineAccountId)) return true;
+    const existingPersonal = this.personalAdapters.get(lineAccountId);
+    if (existingPersonal?.client && existingPersonal.isListening) return true;
 
     try {
       const session = decryptJson<LineSessionData>(account.encrypted_session_data);
@@ -205,11 +216,13 @@ export class LineAccountPool implements ILineDeliveryDispatcher {
         return true;
       } else {
         const personalCreds = session as LinePersonalSessionData;
-        const adapter = new LinePersonalAdapter(
+        const adapter = existingPersonal ?? new LinePersonalAdapter(
           lineAccountId,
           personalCreds,
           account.proxy_url,
         );
+        if (adapter.circuitBroken) return false;
+        this.personalAdapters.set(lineAccountId, adapter);
         const connected = await adapter.connectWithSavedSession();
         if (connected) {
           this.personalAdapters.set(lineAccountId, adapter);

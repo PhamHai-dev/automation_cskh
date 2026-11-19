@@ -1,5 +1,15 @@
 # Project Status
 
+## Zalo/LINE: sửa kết nối và kiểm thử product — 2026-11-19
+
+- Đã chạy product local với MySQL hiện có, tắt worker/scheduler gửi tin. Không thay schema, migration hoặc dữ liệu nghiệp vụ.
+- QR LINE tạo PNG tại backend; lỗi tạo QR, timeout, hủy/thay thế phiên được xử lý rõ ràng. Sửa listener Zalo/LINE, định dạng tin LINE, room realtime và khôi phục subscription sau reconnect.
+- Bắt buộc token cho socket, tách room giữa hai nền tảng và bắt buộc chữ ký webhook OA; giữ nguyên scope chủ tài khoản.
+- 113/113 test liên quan pass; backend/frontend typecheck/build pass. Browser kiểm chứng gửi/nhận/reconnect Zalo và LINE, hai tab LINE, và Omnichannel với provider giả lập + DB/API/Socket.IO thật; QR LINE kiểm chứng bằng SDK thật, chưa quét QR/PIN.
+- Lint chưa chạy được do hạ tầng có sẵn: backend thiếu ESLint, frontend thiếu config. OpenAPI YAML đã parse thành công sau sửa một scalar mô tả cũ thiếu dấu nháy.
+- Chưa xác nhận delivery tới điện thoại thật, bù lịch sử mất kết nối, đồng bộ reaction/read receipt, dedup counters hay recovery DB → queue/broadcast. Chưa bật production automation.
+- Báo cáo chi tiết: `khao-sat/AI_REVIEW/10_ZALO_LINE_PRODUCT_FIX_VERIFICATION_2026-11-19.md`.
+
 ## Không gian Giáo viên — 2026-11-17
 
 - Tài khoản chỉ có role `TEACHER` dùng sidebar riêng gồm Dashboard; Giảng dạy (Điểm danh, Lịch dạy, Việc cần xử lý, Học viên của tôi); Cá nhân (Thông báo, Hồ sơ giáo viên). Tài khoản đa vai trò giữ sidebar đầy đủ.

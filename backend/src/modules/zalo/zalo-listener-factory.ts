@@ -384,6 +384,7 @@ export function attachListenersForAccount(accountId: number): void {
 
   const api = client.api ?? client;
   const listener = client.listener ?? client;
+  const currentListener = () => zaloPool.getAccountClient(accountId)?.listener === listener;
   const userInfoCache = new Map<string, UserInfoCacheEntry>();
 
   // ─── connected ───────────────────────────────────────────────────────────
@@ -550,6 +551,7 @@ export function attachListenersForAccount(accountId: number): void {
   // Core handler — resolves sender info, group info, content type, album, mentions
   listener.on('message', async (message: any) => {
     try {
+      if (!currentListener()) return;
       const isGroup = message.type === 1;
       const isSelf = Boolean(message.isSelf);
       const senderUid = String(message.data?.uidFrom || '');
@@ -597,6 +599,7 @@ export function attachListenersForAccount(accountId: number): void {
       );
       const zaloCliMsgId = message.data?.cliMsgId ? String(message.data.cliMsgId) : null;
 
+      if (!currentListener()) return;
       await persistZaloMessageToDb({
         accountId,
         threadId: resolvedThreadId,
@@ -647,10 +650,12 @@ export function attachListenersForAccount(accountId: number): void {
         threadId: resolvedThreadId,
         senderUid: senderUid,
         displayName: senderName,
-        content: content.slice(0, 2500),
+        content,
         timestamp: incomingMsg.timestamp.toISOString(),
         isGroup,
         contentType,
+        zaloMsgId,
+        isSelf,
       });
     } catch (err) {
       log.error('Message handler error', { accountId, error: String(err) });

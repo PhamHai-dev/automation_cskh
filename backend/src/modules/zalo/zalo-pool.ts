@@ -98,6 +98,11 @@ class ZaloAccountPool extends EventEmitter {
   private reconnecting = new Set<number>();
   private epochCounter = 0;
 
+  constructor() {
+    super();
+    this.on('error', (event: PoolEvent) => log.warn('Zalo pool operation failed', { accountId: event.accountId }));
+  }
+
   // ── Epoch guard (anti-flap) ──────────────────────────────────────────────
   private nextEpoch(): number {
     return ++this.epochCounter;
@@ -111,6 +116,7 @@ class ZaloAccountPool extends EventEmitter {
   // Dọn listener/WS cũ trước khi tạo instance mới (Fix flap ZaloCRM 2026-06-06)
   private teardownExisting(accountId: number): void {
     const prev = this.instances.get(accountId);
+    this.instances.delete(accountId);
     if (prev?.api?.listener) {
       try { prev.api.listener.stop(); } catch { /* ignore */ }
     }
@@ -171,6 +177,7 @@ class ZaloAccountPool extends EventEmitter {
           case 0: // QRCodeGenerated
             log.info('QR code generated', { accountId });
             const qrDataUrl = normalizeQrImage(event.data.image);
+            resolve({ qrImage: qrDataUrl });
             this.emitEvent({ type: 'qr:generated', accountId, data: { qr: qrDataUrl } });
             emitToAccount(accountId, 'zalo:qr', { accountId, qrDataUrl });
             break;
@@ -211,10 +218,12 @@ class ZaloAccountPool extends EventEmitter {
 
         Promise.resolve(api.getOwnId()).then(async (ownId: string) => {
           instance.zaloUid = ownId;
+          this.attachListeners(accountId, api, epoch);
           await this.updateAccountDB(accountId, 'connected', ownId);
           await this.fetchAndSaveAvatar(accountId, api, ownId);
           this.autoSyncOnConnect(accountId);
           this.emitEvent({ type: 'session:connected', accountId });
+          api.listener?.start();
           emitToAccount(accountId, 'zalo:status', { accountId, status: 'ACTIVE' });
           log.info('Login completed', { accountId, zaloUid: ownId });
         }).catch((err: any) => {
@@ -324,12 +333,13 @@ class ZaloAccountPool extends EventEmitter {
       await this.fetchAndSaveAvatar(accountId, api, ownId);
       this.autoSyncOnConnect(accountId);
       this.emitEvent({ type: 'session:connected', accountId });
+      api.listener?.start();
       emitToAccount(accountId, 'zalo:status', { accountId, status: 'ACTIVE' });
       log.info('Reconnected', { accountId, zaloUid: ownId });
     } catch (err) {
       const instance = this.instances.get(accountId);
       if (instance) instance.status = 'disconnected';
-      this.updateAccountDB(accountId, 'qr_pending', null);
+      this.updateAccountDB(accountId, 'disconnected', null);
       this.emitEvent({ type: 'error', accountId, error: String(err) });
     } finally {
       this.reconnecting.delete(accountId);
@@ -398,7 +408,7 @@ class ZaloAccountPool extends EventEmitter {
     // Disconnect handler with epoch guard + circuit breaker
     const handleDisconnect = () => {
       const cur = this.instances.get(accountId);
-      if (cur && cur.epoch !== epoch) {
+      if (!cur || cur.epoch !== epoch) {
         log.info('Ignoring stale closed from superseded listener', { accountId });
         return;
       }
@@ -436,7 +446,7 @@ class ZaloAccountPool extends EventEmitter {
     // Message events (for downstream consumers)
     const handleMessage = (payload: any) => {
       const cur = this.instances.get(accountId);
-      if (cur && cur.epoch !== epoch) return;
+      if (!cur || cur.epoch !== epoch) return;
       this.emit('message', { accountId, payload });
     };
     for (const evt of ['message', 'onMessage', 'newMessage']) {
@@ -612,10 +622,10 @@ class ZaloAccountPool extends EventEmitter {
   // ── Public API (preserved for zalo.service.ts, zalo-health-check.ts) ────
   disconnect(accountId: number): void {
     const instance = this.instances.get(accountId);
+    this.instances.delete(accountId);
     if (instance?.api?.listener) {
       try { instance.api.listener.stop(); } catch { /* ignore */ }
     }
-    this.instances.delete(accountId);
     emitToAccount(accountId, 'zalo:status', { accountId, status: 'NOT_LOGGED_IN', reason: 'manual' });
     log.info('Disconnected', { accountId });
   }
@@ -683,7 +693,7 @@ class ZaloAccountPool extends EventEmitter {
       where: {
         encrypted_session_data: { not: null },
         archived_at: null,
-        status: { not: 'NOT_LOGGED_IN' as any },
+        status: { not: 'DISABLED' as any },
         OR: [
           { disconnect_reason: null },
           { disconnect_reason: { not: 'manual' } },

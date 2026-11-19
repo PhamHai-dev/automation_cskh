@@ -1,5 +1,14 @@
 # Project Changelog
 
+## 2026-11-19 — Zalo/LINE QR, listener và realtime
+
+- Tạo ảnh QR LINE nội bộ với `qrcode@1.5.4`, truyền lỗi/timeout về UI, hủy transport và chặn callback của phiên QR cũ. Không chuyển URL đăng nhập sang dịch vụ tạo ảnh ngoài.
+- Khởi động listener Zalo sau khi gắn handler; reconnect dùng đúng ciphertext và không xóa session vì lỗi mạng tạm thời. Health/boot recovery xử lý đúng disconnect_reason NULL và account disabled.
+- Đọc đúng `TalkMessage` LINE (from/to object, raw provider ID); nhận diện stream lỗi từ SDK và coalesce tác vụ reconnect theo account. Không gửi fallback plaintext sau timeout; OA giữ trạng thái chưa rõ kết quả reply.
+- Bắt buộc xác thực socket và HMAC webhook, tách LINE room, giữ scope account owner. Frontend đăng ký room theo account có reference count, tự đăng ký lại sau transport reconnect; sửa payload LINE và hiển thị tin Zalo từ DB để giữ chiều outgoing/ID/full content.
+- Sync contacts/groups không còn báo toast thành công khi request lỗi. Thêm 22 regression tests, kiểm thử browser với provider giả lập và QR thật; xem báo cáo kiểm chứng để biết phạm vi/giới hạn.
+- Không thay schema/migration hay triển khai publisher Outbox trong đợt sửa này. Lint bị chặn bởi cấu hình có sẵn; YAML OpenAPI sửa thêm một lỗi quoting cũ để parse được toàn bộ tài liệu.
+
 ## 2026-11-17 — Không gian Giáo viên
 
 - Tài khoản chỉ có role `TEACHER` dùng sidebar tinh gọn theo ba nhóm: Tổng quan, Giảng dạy và Cá nhân; tài khoản đa vai trò tiếp tục dùng sidebar đầy đủ.

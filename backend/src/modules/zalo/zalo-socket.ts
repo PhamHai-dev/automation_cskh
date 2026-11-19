@@ -2,11 +2,8 @@
  * zalo-socket.ts — Zalo Socket.IO event handlers.
  * Ported from ZaloCRM zalo-socket.ts (64 lines) → single-org, Int IDs.
  *
- * Adaptations:
- *   - No getSocketAuth/withTenant/orgId → single-org: any authenticated socket
- *     may subscribe to any account room (no cross-tenant risk in single-org).
- *   - 'org:join' no-op kept for FE compatibility.
- *   - Room naming unchanged: `account:${accountId}`.
+ * Requires the authenticated account owner; Zalo uses `account:<id>` rooms.
+ * LINE has its own room namespace. 'org:join' is retained as a no-op.
  */
 import type { Server, Socket } from 'socket.io';
 import { createLogger } from '../../shared/logger/logger';
@@ -22,7 +19,7 @@ export function registerZaloSocketHandlers(io: Server): void {
     });
 
     // Subscribe QR/status của một Zalo account.
-    // Single-org: chỉ cần account tồn tại (không có cross-tenant IDOR).
+    // Account existence and ownership are both required.
     socket.on('zalo:subscribe', async (data: { accountId?: string | number }) => {
       if (!data?.accountId) return;
       const accountId = Number(data.accountId);
@@ -36,7 +33,7 @@ export function registerZaloSocketHandlers(io: Server): void {
           log.warn(`[zalo-socket] từ chối subscribe account ${accountId} — không tồn tại`);
           return;
         }
-        if (socket.data?.userId && account.cs_id !== socket.data.userId) {
+        if (!socket.data?.userId || account.cs_id !== socket.data.userId) {
           log.warn(`[zalo-socket] từ chối subscribe account ${accountId} — không thuộc user ${socket.data.userId}`);
           return;
         }

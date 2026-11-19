@@ -1,5 +1,5 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
-import { getSocket, connectSocket } from '../lib/socket';
+import { getSocket, connectSocket, subscribeAccount } from '../lib/socket';
 import type { Socket } from '../lib/socket';
 
 /**
@@ -59,12 +59,7 @@ export function useSocket() {
  */
 export function useZaloAccountSocket(accountId: number | null) {
   const { connected, on, off, emit } = useSocket();
-
-  useEffect(() => {
-    if (!accountId || !connected) return;
-    emit('zalo:subscribe', { accountId });
-    return () => { emit('zalo:unsubscribe', { accountId }); };
-  }, [accountId, connected, emit]);
+  useAccountSubscriptions('zalo', accountId ? [accountId] : []);
 
   return { connected, on, off, emit };
 }
@@ -74,13 +69,16 @@ export function useZaloAccountSocket(accountId: number | null) {
  */
 export function useLineAccountSocket(accountId: number | null) {
   const { connected, on, off, emit } = useSocket();
-
-  useEffect(() => {
-    if (!accountId || !connected) return;
-    emit('line:subscribe', { accountId });
-    return () => { emit('line:unsubscribe', { accountId }); };
-  }, [accountId, connected, emit]);
+  useAccountSubscriptions('line', accountId ? [accountId] : []);
 
   return { connected, on, off, emit };
+}
+
+export function useAccountSubscriptions(platform: 'zalo' | 'line', accountIds: number[]) {
+  const ids = [...new Set(accountIds.filter((id) => id > 0))].sort((a, b) => a - b).join(',');
+  useEffect(() => {
+    const releases = ids ? ids.split(',').map((id) => subscribeAccount(platform, Number(id))) : [];
+    return () => { releases.forEach((release) => release()); };
+  }, [platform, ids]);
 }
 

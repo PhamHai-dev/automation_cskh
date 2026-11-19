@@ -23,6 +23,7 @@ import {
 import type { LinePersonalSessionData } from './types/line.types';
 import type { LineSendResult } from './line-dispatcher.contract';
 import { runStudentCareGroupAutoSync } from '../zalo/student-care-group.contract';
+import QRCode from 'qrcode';
 
 const log = createLogger('LinePersonalAdapter');
 
@@ -123,6 +124,7 @@ export class LinePersonalAdapter {
   private abortController: AbortController | null = null;
   private persistTimer: ReturnType<typeof setTimeout> | null = null;
   private lastInboundMsgIdByThread = new Map<string, string>();
+  private cancelQrWaiter: (() => void) | null = null;
 
   constructor(
     accountId: number,
@@ -191,6 +193,7 @@ export class LinePersonalAdapter {
    * Prepare a new connection epoch, aborting any previous polling listener.
    */
   private advanceEpoch(): { epoch: number; signal: AbortSignal } {
+    this.cancelQrWaiter?.();
     if (this.abortController) {
       try {
         this.abortController.abort();
@@ -260,10 +263,14 @@ export class LinePersonalAdapter {
 
   private buildInitOptions(): Record<string, any> {
     const customProxyFetch = createProxyFetch(this.proxyUrl);
+    const signal = this.abortController?.signal;
+    const transport = customProxyFetch ?? globalThis.fetch;
     return {
       device: (this.sessionData.device as any) || 'DESKTOPWIN',
       storage: this.storage as any,
-      ...(customProxyFetch ? { fetch: customProxyFetch } : {}),
+      fetch: (input: any, init?: any) => transport(input, { ...init,
+        signal: signal && init?.signal ? AbortSignal.any([signal, init.signal]) : signal ?? init?.signal,
+      }),
     };
   }
 
@@ -274,45 +281,37 @@ export class LinePersonalAdapter {
     this.circuitBroken = false;
     this.disconnectHistory = [];
     const { epoch } = this.advanceEpoch();
-
-    let firstQrUrl: string | undefined;
-    let currentPin: string | undefined;
-
-    let resolveInitialQr: ((val: { qrUrl?: string; pinCode?: string; status: string }) => void) | null =
-      null;
-    const initialQrPromise = new Promise<{ qrUrl?: string; pinCode?: string; status: string }>(
-      (resolve) => {
-        resolveInitialQr = resolve;
-        setTimeout(() => {
-          if (resolveInitialQr) {
-            const r = resolveInitialQr;
-            resolveInitialQr = null;
-            r({ qrUrl: firstQrUrl, pinCode: currentPin, status: 'QR_PENDING' });
-          }
-        }, 8000);
-      },
-    );
-
-    void this.runQrLoginFlow(epoch, {
-      onQr: (qrUrl, qrDataUri) => {
-        firstQrUrl = qrDataUri || qrUrl;
-        if (resolveInitialQr) {
-          const r = resolveInitialQr;
-          resolveInitialQr = null;
-          r({ qrUrl: firstQrUrl, status: 'QR_PENDING' });
-        }
-      },
-      onPin: (pin) => {
-        currentPin = pin;
-        if (resolveInitialQr) {
-          const r = resolveInitialQr;
-          resolveInitialQr = null;
-          r({ qrUrl: firstQrUrl, pinCode: pin, status: 'PIN_REQUIRED' });
-        }
-      },
+    this.client = null;
+    await lineRepository.updateAccount(this.accountId, {
+      status: 'QR_PENDING', qr_code: null, pin_code: null, last_sync_error: null,
     });
-
-    return initialQrPromise;
+    if (this.epoch !== epoch) throw new Error('Phiên tạo QR đã được thay thế hoặc hủy.');
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      const finish = (error?: Error, qrUrl?: string, pinCode?: string) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        this.cancelQrWaiter = null;
+        if (error) reject(error);
+        else resolve({ qrUrl, pinCode, status: pinCode ? 'PIN_REQUIRED' : 'QR_PENDING' });
+      };
+      const timer = setTimeout(() => {
+        // Cancel the epoch so a late provider callback cannot revive an expired attempt.
+        finish(Object.assign(new Error('Không lấy được mã QR LINE sau 20 giây. Vui lòng thử lại.'), { statusCode: 504 }));
+        if (this.epoch === epoch) {
+          this.disconnect();
+          void lineRepository.updateAccount(this.accountId, { status: 'NOT_LOGGED_IN', qr_code: null, pin_code: null,
+            disconnect_reason: 'qr_login_failed', last_sync_error: 'Hết thời gian khởi tạo QR LINE.' }).catch(() => undefined);
+        }
+      }, 20_000);
+      this.cancelQrWaiter = () => finish(new Error('Phiên tạo QR đã được thay thế hoặc hủy.'));
+      void this.runQrLoginFlow(epoch, {
+        onQr: (_qrUrl, qrDataUri) => finish(undefined, qrDataUri),
+        onPin: (pin) => finish(undefined, undefined, pin),
+        onError: (error) => finish(error),
+      });
+    });
   }
 
   private async runQrLoginFlow(
@@ -320,6 +319,7 @@ export class LinePersonalAdapter {
     callbacks?: {
       onQr?: (qrUrl: string, qrDataUri: string) => void;
       onPin?: (pin: string) => void;
+      onError?: (error: Error) => void;
     },
   ): Promise<void> {
     try {
@@ -332,9 +332,8 @@ export class LinePersonalAdapter {
 
       const handleQrUrl = async (qrUrl: string) => {
         if (this.epoch !== runEpoch) return;
-        const qrDataUri = `https://api.qrserver.com/v1/create-qr-code/?size=280x280&data=${encodeURIComponent(
-          qrUrl,
-        )}`;
+        const qrDataUri = await QRCode.toDataURL(qrUrl, { width: 280, margin: 4 });
+        if (this.epoch !== runEpoch) return;
         await lineRepository.updateAccount(this.accountId, {
           status: 'QR_PENDING',
           qr_code: qrDataUri,
@@ -342,6 +341,7 @@ export class LinePersonalAdapter {
           qr_pending_at: new Date(),
           session_epoch: runEpoch,
         });
+        if (this.epoch !== runEpoch) return;
         emitLineQr({
           accountId: this.accountId,
           qrUrl,
@@ -359,6 +359,7 @@ export class LinePersonalAdapter {
           pin_code: pin,
           session_epoch: runEpoch,
         });
+        if (this.epoch !== runEpoch) return;
         emitLinePin({
           accountId: this.accountId,
           pinCode: pin,
@@ -368,26 +369,37 @@ export class LinePersonalAdapter {
         callbacks?.onPin?.(pin);
       };
 
-      const client = await loginFn(
+      // The SDK emits QR/PIN synchronously and does not await async callbacks.
+      // Race callback persistence errors against login to avoid unhandled rejections.
+      let rejectCallback: (error: unknown) => void = () => {};
+      const callbackFailure = new Promise<never>((_resolve, reject) => { rejectCallback = reject; });
+      const safeCallback = (handler: (value: string) => Promise<void>) => (value: string) => {
+        void handler(value).catch(rejectCallback);
+      };
+      const client = await Promise.race([loginFn(
         {
-          onReceiveQRUrl: handleQrUrl,
-          onReceiveQrUrl: handleQrUrl,
-          onPincodeRequest: handlePinCode,
-          onReceivePinCode: handlePinCode,
+          onReceiveQRUrl: safeCallback(handleQrUrl),
+          onReceiveQrUrl: safeCallback(handleQrUrl),
+          onPincodeRequest: safeCallback(handlePinCode),
+          onReceivePinCode: safeCallback(handlePinCode),
         },
         this.buildInitOptions(),
-      );
+      ), callbackFailure]);
 
       if (this.epoch !== runEpoch) return;
       await this.finalizeConnectedClient(client, runEpoch);
     } catch (err: any) {
       if (this.epoch !== runEpoch) return;
+      callbacks?.onError?.(Object.assign(new Error('Không thể tạo hoặc xác thực QR LINE. Vui lòng thử lại.'), { statusCode: 502 }));
+      this.disconnect();
       log.error(`[LinePersonalAdapter] QR login failed for account ${this.accountId}`, {
         error: err?.message ?? String(err),
       });
       await lineRepository
         .updateAccount(this.accountId, {
           status: 'NOT_LOGGED_IN',
+          qr_code: null,
+          pin_code: null,
           disconnect_reason: 'qr_login_failed',
           last_sync_error: err?.message ?? String(err),
         })
@@ -426,6 +438,7 @@ export class LinePersonalAdapter {
       await this.finalizeConnectedClient(client, runEpoch);
       return true;
     } catch (err: any) {
+      if (this.epoch !== runEpoch) return false;
       log.warn(`[LinePersonalAdapter] Reconnect failed for account ${this.accountId}`, {
         error: err?.message ?? String(err),
       });
@@ -463,6 +476,7 @@ export class LinePersonalAdapter {
     const now = new Date();
 
     const existingAccount = await lineRepository.findAccountById(this.accountId);
+    if (this.epoch !== runEpoch) return;
     const keepDisplayName =
       existingAccount?.display_name &&
       !existingAccount.display_name.startsWith('LINE ') &&
@@ -517,9 +531,33 @@ export class LinePersonalAdapter {
       this.abortController = new AbortController();
     }
     const signal = this.abortController.signal;
+    let streamFailed = false;
+    const handleStreamFailure = async (error: unknown) => {
+      if (streamFailed || this.epoch !== listenerEpoch || signal.aborted) return;
+      streamFailed = true;
+      log.warn('LINE receiving stream stopped', { accountId: this.accountId });
+      this.disconnect();
+      const code = extractTalkExceptionCode(error);
+      if (code === 8 || code === 14 || code === 107) {
+        await this.handleTalkExceptionOrDisconnect(error).catch(() => undefined);
+      } else {
+        const broken = await this.recordDisconnectEvent('stream_disconnected');
+        if (!broken) {
+          await lineRepository.updateAccount(this.accountId, { status: 'NOT_LOGGED_IN' }).catch(() => undefined);
+          emitLineStatus({ accountId: this.accountId, accountType: 'PERSONAL', status: 'NOT_LOGGED_IN',
+            disconnectReason: 'stream_disconnected', timestamp: new Date().toISOString() });
+        }
+      }
+    };
 
     try {
-      this.client.on?.('update:authtoken', async (newToken: string) => {
+      const onSdkLog = (entry: { type?: string; data?: { error?: unknown } }) => {
+        if (entry?.type === 'LegyPusherError') void handleStreamFailure(entry.data?.error);
+      };
+      this.client.base?.on?.('log', onSdkLog);
+      signal.addEventListener('abort', () => this.client?.base?.off?.('log', onSdkLog), { once: true });
+      const sessionEvents = this.client.base?.on ? this.client.base : this.client;
+      sessionEvents.on?.('update:authtoken', async (newToken: string) => {
         if (this.epoch !== listenerEpoch) return;
         this.sessionData.authToken = newToken;
         this.sessionData.e2eeKeychain = this.storage.getSnapshot();
@@ -531,7 +569,7 @@ export class LinePersonalAdapter {
           .catch(() => undefined);
       });
 
-      this.client.on?.('update:qrcert', async (qrCert: string) => {
+      sessionEvents.on?.('update:qrcert', async (qrCert: string) => {
         if (this.epoch !== listenerEpoch) return;
         this.sessionData.qrCert = qrCert;
         this.scheduleSessionPersistence();
@@ -540,29 +578,29 @@ export class LinePersonalAdapter {
       this.client.on?.('message', async (msg: any) => {
         if (this.epoch !== listenerEpoch) return;
         try {
-          const isGroup =
-            msg?.toType === 'GROUP' ||
-            msg?.toType === 2 ||
-            String(msg?.to ?? '').startsWith('c');
-          const externalThreadId = isGroup
-            ? String(msg.to)
-            : String(msg.from ?? msg.author?.mid ?? '');
-          if (!externalThreadId) return;
-
-          const text = String(msg?.text ?? msg?.content ?? '');
-          const lineMsgId = String(msg?.id ?? `personal_${Date.now()}`);
-          const senderUid = String(msg?.from ?? msg?.author?.mid ?? externalThreadId);
+          const raw = msg?.raw ?? msg;
+          const from = typeof msg?.from === 'object' ? msg.from.id : raw?.from;
+          const to = typeof msg?.to === 'object' ? msg.to.id : raw?.to;
+          const toType = msg?.to?.type ?? raw?.toType;
+          const isGroup = ['GROUP', 'ROOM', 1, 2].includes(toType) || /^[cr]/.test(String(to ?? ''));
           const isSelf = Boolean(msg?.isMyMessage);
+          const externalThreadId = String(isGroup || isSelf ? to ?? '' : from ?? '');
+          const lineMsgId = String(raw?.id ?? '');
+          if (!externalThreadId || !lineMsgId) return;
+          const contentType = raw?.contentType && raw.contentType !== 'NONE' ? String(raw.contentType).toLowerCase() : 'text';
+          const text = String(msg?.text ?? raw?.text ?? `[${contentType.toUpperCase()}]`);
+          const senderUid = String(from ?? '');
+          const timestamp = raw?.createdTime ? new Date(Number(raw.createdTime)) : new Date();
 
-          if (!isSelf && msg?.id) {
-            this.lastInboundMsgIdByThread.set(externalThreadId, String(msg.id));
+          if (!isSelf) {
+            this.lastInboundMsgIdByThread.set(externalThreadId, lineMsgId);
           }
 
           const conv = await lineRepository.upsertConversation({
             line_account_id: this.accountId,
             external_thread_id: externalThreadId,
             thread_type: isGroup ? 'group' : 'user',
-            last_message_at: new Date(),
+            last_message_at: timestamp,
             incrementUnread: !isSelf,
             is_replied: isSelf,
           });
@@ -573,10 +611,10 @@ export class LinePersonalAdapter {
             sender_uid: senderUid,
             sender_type: isSelf ? 'self' : 'other',
             content: text,
-            content_type: 'text',
+            content_type: contentType,
             is_self: isSelf,
             sent_via: 'user',
-            timestamp: new Date(),
+            timestamp,
           });
 
           emitLineMessage({
@@ -605,14 +643,7 @@ export class LinePersonalAdapter {
       });
 
       if (typeof this.client.listen === 'function') {
-        void Promise.resolve(this.client.listen({ talk: true, signal })).catch(async (err) => {
-          if (this.epoch !== listenerEpoch || signal.aborted) return;
-          log.warn(`[LinePersonalAdapter] listen stopped for account ${this.accountId}`, {
-            error: String(err),
-          });
-          this.isListening = false;
-          await this.recordDisconnectEvent('stream_disconnected');
-        });
+        void Promise.resolve(this.client.listen({ talk: true, signal })).catch(handleStreamFailure);
       }
     } catch (err) {
       this.isListening = false;
@@ -728,8 +759,8 @@ export class LinePersonalAdapter {
   }
 
   /**
-   * Send a 1-1 or Group message via `@evex/linejs` TalkService (with E2EE support,
-   * human simulation, and `TalkException` detection).
+   * Send once via the available SDK method; a timeout may follow provider acceptance.
+   * Never fall back to another send on an ambiguous result.
    */
   async sendMessage(toMid: string, text: string): Promise<LineSendResult> {
     if (!this.client) {
@@ -741,37 +772,9 @@ export class LinePersonalAdapter {
     try {
       let sent: any;
       if (typeof this.client.sendCompactMessage === 'function') {
-        try {
-          sent = await this.client.sendCompactMessage(toMid, text);
-        } catch (firstErr) {
-          const code = extractTalkExceptionCode(firstErr);
-          if (code === 35 || code === 8 || code === 14 || code === 107) {
-            throw firstErr;
-          }
-          sent = await this.client.base?.talk?.sendMessage?.({
-            to: toMid,
-            text,
-            e2ee: false,
-          });
-        }
+        sent = await this.client.sendCompactMessage(toMid, text);
       } else if (this.client.base?.talk?.sendMessage) {
-        try {
-          sent = await this.client.base.talk.sendMessage({
-            to: toMid,
-            text,
-            e2ee: true,
-          });
-        } catch (firstErr) {
-          const code = extractTalkExceptionCode(firstErr);
-          if (code === 35 || code === 8 || code === 14 || code === 107) {
-            throw firstErr;
-          }
-          sent = await this.client.base.talk.sendMessage({
-            to: toMid,
-            text,
-            e2ee: false,
-          });
-        }
+        sent = await this.client.base.talk.sendMessage({ to: toMid, text, e2ee: true });
       } else if (typeof this.client.sendMessage === 'function') {
         sent = await this.client.sendMessage({ to: toMid, text });
       } else {
@@ -797,7 +800,7 @@ export class LinePersonalAdapter {
       const contactByMid = new Map<string, any>();
 
       if (typeof this.client.fetchUsers === 'function') {
-        const fetched = (await this.client.fetchUsers().catch(() => [])) ?? [];
+        const fetched = (await this.client.fetchUsers()) ?? [];
         for (const c of fetched) {
           const raw = c?.raw ?? c;
           const mid = c?.mid ?? raw?.mid ?? raw?.targetUserMid;
@@ -807,10 +810,10 @@ export class LinePersonalAdapter {
 
       if (this.client.base?.talk) {
         const contactIds: string[] =
-          (await this.client.base.talk.getAllContactIds?.().catch(() => [])) ?? [];
+          (await this.client.base.talk.getAllContactIds?.()) ?? [];
         if (contactIds.length > 0 && typeof this.client.base.talk.getContacts === 'function') {
           const talkContacts =
-            (await this.client.base.talk.getContacts({ mids: contactIds }).catch(() => [])) ?? [];
+            (await this.client.base.talk.getContacts({ mids: contactIds })) ?? [];
           for (const tc of talkContacts) {
             const mid = tc?.mid;
             if (mid && !contactByMid.has(String(mid))) {
@@ -824,8 +827,7 @@ export class LinePersonalAdapter {
       const messageBoxByMid = new Map<string, { unreadCount: number; deliveredTime?: number }>();
       if (typeof this.client.base?.talk?.getMessageBoxes === 'function') {
         const mBoxesRes = await this.client.base.talk
-          .getMessageBoxes({ messageBoxListRequest: { messageBoxCountLimit: 50 } })
-          .catch(() => null);
+          .getMessageBoxes({ messageBoxListRequest: { messageBoxCountLimit: 50 } });
         const boxes: any[] = mBoxesRes?.messageBoxes ?? [];
         for (const box of boxes) {
           const boxId = box?.id ? String(box.id) : '';
@@ -1027,6 +1029,8 @@ export class LinePersonalAdapter {
   }
 
   disconnect(): void {
+    this.cancelQrWaiter?.();
+    this.cancelQrWaiter = null;
     if (this.persistTimer) {
       clearTimeout(this.persistTimer);
       this.persistTimer = null;

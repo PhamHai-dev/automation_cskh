@@ -7,6 +7,7 @@ const SOCKET_URL =
   'http://localhost:3000';
 
 let socket: Socket | null = null;
+const accountSubscriptions = new Map<string, { platform: 'zalo' | 'line'; accountId: number; count: number }>();
 
 export function getSocket(): Socket {
   if (socket) return socket;
@@ -22,7 +23,28 @@ export function getSocket(): Socket {
       cb(token ? { token } : {});
     },
   });
+  socket.on('connect', () => {
+    for (const { platform, accountId } of accountSubscriptions.values()) {
+      socket?.emit(`${platform}:subscribe`, { accountId });
+    }
+  });
   return socket;
+}
+
+export function subscribeAccount(platform: 'zalo' | 'line', accountId: number): () => void {
+  const key = `${platform}:${accountId}`;
+  const existing = accountSubscriptions.get(key);
+  if (existing) existing.count += 1;
+  else {
+    accountSubscriptions.set(key, { platform, accountId, count: 1 });
+    if (getSocket().connected) getSocket().emit(`${platform}:subscribe`, { accountId });
+  }
+  return () => {
+    const current = accountSubscriptions.get(key);
+    if (!current || --current.count > 0) return;
+    accountSubscriptions.delete(key);
+    if (socket?.connected) socket.emit(`${platform}:unsubscribe`, { accountId });
+  };
 }
 
 export function connectSocket(): Socket {
@@ -32,7 +54,7 @@ export function connectSocket(): Socket {
 }
 
 export function disconnectSocket(): void {
-  if (socket?.connected) socket.disconnect();
+  socket?.disconnect();
 }
 
 export type { Socket };

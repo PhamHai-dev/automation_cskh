@@ -33,12 +33,11 @@ export function registerLineSocketHandlers(io: Server): void {
           log.warn(`[line-socket] rejected subscribe for non-existent LINE account ${accountId}`);
           return;
         }
-        if (socket.data?.userId && account.cs_id !== socket.data.userId) {
+        if (!socket.data?.userId || account.cs_id !== socket.data.userId) {
           log.warn(`[line-socket] rejected subscribe for LINE account ${accountId} — not owned by user ${socket.data.userId}`);
           return;
         }
         socket.join(`line:${accountId}`);
-        socket.join(`account:${accountId}`);
         log.debug(`Socket ${socket.id} joined line:${accountId}`);
       } catch (err) {
         log.error('[line-socket] line:subscribe error', { error: String(err) });
@@ -50,7 +49,6 @@ export function registerLineSocketHandlers(io: Server): void {
       const accountId = Number(data.accountId);
       if (!Number.isInteger(accountId) || accountId <= 0) return;
       socket.leave(`line:${accountId}`);
-      socket.leave(`account:${accountId}`);
       log.debug(`Socket ${socket.id} left line:${accountId}`);
     });
   });
@@ -59,7 +57,7 @@ export function registerLineSocketHandlers(io: Server): void {
 function emitLineEvent(accountId: number, event: string, payload: unknown): void {
   const io = getIo();
   if (!io) return;
-  io.to(`line:${accountId}`).to(`account:${accountId}`).emit(event, payload);
+  io.to(`line:${accountId}`).emit(event, payload);
 }
 
 export function emitLineStatus(payload: LineStatusSocketPayload): void {

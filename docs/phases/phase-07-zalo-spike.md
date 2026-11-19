@@ -59,6 +59,15 @@ Technical spike không bắt buộc expose public business API. Nếu tạo temp
 
 ## Implementation notes
 
+### Added during implementation — 2026-11-19 connection verification
+
+Theo yêu cầu tiếp tục của người dùng, đã chạy product và sửa lỗi kết nối Zalo/LINE hiện có; không coi đây là hoàn tất toàn bộ Phase 7 hoặc cho phép bật automation production.
+
+- QR LINE SDK thật tạo được PNG và browser tải thành công ở desktop/tablet/mobile; chưa quét QR/PIN.
+- 113 regression tests liên quan pass; browser test với DB/API/Socket.IO thật và provider giả lập xác nhận gửi/nhận/reconnect ở Zalo, LINE và cập nhật Omnichannel.
+- Các tiêu chí tài khoản thật, provider delivery, restart/recovery đầy đủ và nghiệm thu production vẫn chưa được đánh dấu đạt.
+- Chi tiết: `../khao-sat/AI_REVIEW/10_ZALO_LINE_PRODUCT_FIX_VERIFICATION_2026-11-19.md`.
+
 ## Changes from original plan
 
 ## Tác vụ UI độc lập — 2026-11-10

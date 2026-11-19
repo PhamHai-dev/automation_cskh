@@ -7,7 +7,7 @@ import type { LineAccount, LineConversation, LineMessage } from '../../line/type
 import { ZaloChatPage } from '../../zalo/pages/ZaloChatPage';
 import { LineChatPage } from '../../line/pages/LineChatPage';
 import { useToast } from '../../../components/ui/Toast';
-import { useSocket } from '../../../hooks/useSocket';
+import { useSocket, useAccountSubscriptions } from '../../../hooks/useSocket';
 import {
   MessageSquare,
   Send,
@@ -76,6 +76,8 @@ export const OmnichannelInboxPage: React.FC<{ initialMode?: WorkspaceMode }> = (
 
   const [zaloAccounts, setZaloAccounts] = useState<ZaloAccount[]>([]);
   const [lineAccounts, setLineAccounts] = useState<LineAccount[]>([]);
+  useAccountSubscriptions('zalo', mode === 'UNIFIED' ? zaloAccounts.map((a) => a.id) : []);
+  useAccountSubscriptions('line', mode === 'UNIFIED' ? lineAccounts.map((a) => a.id) : []);
   const [conversations, setConversations] = useState<UnifiedConversationItem[]>([]);
   const [loadingList, setLoadingList] = useState(false);
 

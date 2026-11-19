@@ -167,6 +167,11 @@ export async function syncFriendsForAccount(
       : Array.isArray(liveRaw?.items) ? liveRaw.items : [];
   } catch (err) {
     log.warn(`[friend-sync:${accountId}] getAllFriends failed`, { error: String(err) });
+    result.errors++;
+    await prisma.zaloAccount.update({ where: { id: accountId }, data: {
+      last_sync_error: 'Không lấy được danh bạ từ Zalo. Vui lòng kiểm tra kết nối và thử lại.',
+    } }).catch(() => undefined);
+    throw new Error('Không lấy được danh bạ từ Zalo. Vui lòng kiểm tra kết nối và thử lại.');
   }
 
   // FIX #11: getSentFriendRequests may not exist in all zca-js versions

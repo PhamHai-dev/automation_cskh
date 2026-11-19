@@ -3,7 +3,7 @@ import { zaloApi } from '../api/zalo.api';
 import type { ZaloAccount, ZaloSocketMessageEvent } from '../types/zalo.types';
 import { Button } from '../../../components/ui/Button';
 import { FriendAvatar } from '../components/FriendAvatar';
-import { useSocket } from '../../../hooks/useSocket';
+import { useZaloAccountSocket } from '../../../hooks/useSocket';
 import { ReactionPicker } from '../components/ReactionPicker';
 import { ReactionDisplay } from '../components/ReactionDisplay';
 import { ReactionDetailPopup } from '../components/ReactionDetailPopup';
@@ -127,7 +127,7 @@ export const ZaloChatPage: React.FC = () => {
   const [contactSearch, setContactSearch] = useState('');
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const { on, off } = useSocket();
+  const { on, off } = useZaloAccountSocket(selectedAccountId || null);
 
   // ─── Fetch accounts ─────────────────────────────────────────────────────
   useEffect(() => {
@@ -254,24 +254,13 @@ export const ZaloChatPage: React.FC = () => {
 
   // ─── Live messages via socket ──────────────────────────────────────────
   const handleLiveMessage = useCallback((evt: ZaloSocketMessageEvent) => {
-    if (!activeThread || evt.accountId !== selectedAccountId) return;
-    if (evt.threadId === activeThread.externalThreadId) {
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: Date.now(),
-          zaloMsgId: `live_${Date.now()}`,
-          senderUid: evt.senderUid,
-          content: evt.content,
-          contentType: evt.contentType || 'text',
-          isSelf: false,
-          isBackfill: false,
-          timestamp: evt.timestamp,
-        },
-      ]);
+    if (evt.accountId !== selectedAccountId) return;
+    if (evt.threadId === activeThread?.externalThreadId) {
+      void fetchMessages();
     }
     fetchConversations();
-  }, [activeThread, selectedAccountId, fetchConversations]);
+    fetchCounts();
+  }, [activeThread, selectedAccountId, fetchConversations, fetchMessages, fetchCounts]);
 
   useEffect(() => {
     on('zalo:message', handleLiveMessage);
@@ -283,18 +272,8 @@ export const ZaloChatPage: React.FC = () => {
     if (!newMsg.trim() || !activeThread || !selectedAccountId) return;
     setSending(true);
     try {
-      const sent = await zaloApi.sendMessage(selectedAccountId, activeThread.externalThreadId, newMsg.trim());
-      setMessages((prev) => [...prev, {
-        id: sent.id || Date.now(),
-        zaloMsgId: sent.zaloMsgId || `local_${Date.now()}`,
-        senderUid: 'self',
-        content: newMsg.trim(),
-        contentType: 'text',
-        quote: replyQuote,
-        isSelf: true,
-        isBackfill: false,
-        timestamp: sent.timestamp || new Date().toISOString(),
-      }]);
+      await zaloApi.sendMessage(selectedAccountId, activeThread.externalThreadId, newMsg.trim());
+      await fetchMessages();
       setNewMsg('');
       setReplyQuote(null);
       fetchConversations();

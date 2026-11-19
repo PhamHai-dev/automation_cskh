@@ -13,6 +13,89 @@ security:
   - bearerAuth: []
 
 paths:
+  /api/v1/line/accounts/{id}/qr-login:
+    post:
+      summary: Create a local PNG QR for a personal LINE account
+      description: ADMIN, MANAGE or CS; current user must own the account. OA accounts use credentials rather than QR. No login URL is sent to an external image service.
+      tags: [LINE]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+      responses:
+        '200':
+          description: QR image or PIN is available; authentication on the phone is still required.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: object
+                    required: [accountId, status]
+                    properties:
+                      accountId: { type: integer }
+                      status: { type: string, enum: [QR_PENDING, PIN_REQUIRED, ACTIVE, NOT_LOGGED_IN, EXPIRED] }
+                      qrCode: { type: [string, 'null'], description: PNG data URI }
+                      qrUrl: { type: [string, 'null'], description: PNG data URI alias }
+                      pinCode: { type: [string, 'null'] }
+        '400': { description: Account is an OA account }
+        '401': { description: Authentication required }
+        '403': { description: Account is not owned by the current user }
+        '404': { description: Account not found }
+        '502': { description: QR generation or verification failed }
+        '504': { description: QR initialization exceeded 20 seconds }
+  /api/v1/line/webhook/{accountId}:
+    post:
+      summary: Receive signed LINE OA events
+      security: []
+      tags: [LINE]
+      parameters:
+        - { name: accountId, in: path, required: true, schema: { type: integer, minimum: 1 } }
+        - { name: x-line-signature, in: header, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                destination: { type: string }
+                events: { type: array, items: { type: object } }
+      responses:
+        '200': { description: Accepted event batch; response includes processed count }
+        '401': { description: Missing or invalid signature, secret or raw request body }
+  /api/v1/zalo/accounts/{id}/qr-login:
+    post:
+      summary: Generate a Zalo QR image without waiting for phone confirmation
+      tags: [Zalo]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+      responses:
+        '200':
+          description: QR generated; completion is reported by authenticated account socket events.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      qrDataUrl: { type: string }
+        '401': { description: Authentication required }
+        '403': { description: Current user does not own the account }
+  /api/v1/zalo/accounts/{id}/reconnect:
+    post:
+      summary: Restore the account using its encrypted saved session
+      tags: [Zalo]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+      responses:
+        '200': { description: Reconnect initiated; account status is reported asynchronously }
+        '400': { description: No saved session }
+        '401': { description: Authentication required }
+        '403': { description: Current user does not own the account }
+        '409': { description: Account was disconnected manually and requires a new QR login }
   /api/v1/teachers:
     get:
       summary: List teachers with server-side search, filters, and pagination
@@ -1170,7 +1253,7 @@ paths:
   /api/v1/attendance-reconciliation/history:
     get:
       summary: Paginated reconciliation history (changes made after the first attendance report)
-      description: Returns attendance audit changes scoped to the actor (CS sees only assigned students). Only post-first-mark actions are included: CS mark, bulk approve, conflict resolve.
+      description: 'Returns attendance audit changes scoped to the actor (CS sees only assigned students). Only post-first-mark actions are included: CS mark, bulk approve, conflict resolve.'
       tags: [Attendance Reconciliation]
       parameters:
         - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }

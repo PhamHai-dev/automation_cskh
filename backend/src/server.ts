@@ -25,6 +25,8 @@ const server = app.listen(PORT, async () => {
   const io = setupIo(server);
   registerZaloSocketHandlers(io);
   registerLineSocketHandlers(io);
+  // Manual QR logins need listener wiring even when automatic workers are disabled.
+  wirePoolEvents();
 
   const isTestOrIsolated =
     env.NODE_ENV === 'test' || process.env.DISABLE_EXTERNAL_WORKERS === 'true';
@@ -37,7 +39,6 @@ const server = app.listen(PORT, async () => {
     // Wire listener-factory to pool events FIRST (message/friend/group routing).
     // Must run before init(): reconnectAll() emits session:connected synchronously
     // during boot, and a late subscription would miss those events.
-    wirePoolEvents();
 
     // Initialize Zalo pool — restore active sessions from DB
     try {

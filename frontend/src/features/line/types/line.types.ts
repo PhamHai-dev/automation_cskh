@@ -269,6 +269,7 @@ export const LINE_STATUS_COLORS: Record<LineAccountStatus, string> = {
 
 export interface LineSocketQrEvent {
   accountId: number;
+  qrCodeDataUri?: string;
   qrDataUrl?: string;
   qrUrl?: string;
 }
@@ -288,12 +289,16 @@ export interface LineSocketStatusEvent {
 
 export interface LineSocketMessageEvent {
   accountId: number;
-  threadId: string;
-  senderUid: string;
-  displayName?: string;
-  content: string;
-  timestamp: string;
-  isGroup?: boolean;
-  contentType?: string;
-  replyTokenExpiresAt?: string | null;
+  conversationId: number;
+  externalThreadId: string;
+  threadType: 'user' | 'group';
+  message: {
+    id: number;
+    lineMsgId: string;
+    senderUid: string;
+    content: string;
+    contentType: string;
+    isSelf: boolean;
+    timestamp: string;
+  };
 }

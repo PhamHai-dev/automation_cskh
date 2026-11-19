@@ -7,7 +7,7 @@ import type {
   LineSocketMessageEvent,
 } from '../types/line.types';
 import { Button } from '../../../components/ui/Button';
-import { useSocket } from '../../../hooks/useSocket';
+import { useLineAccountSocket } from '../../../hooks/useSocket';
 import { useToast } from '../../../components/ui/Toast';
 import {
   Search,
@@ -49,7 +49,7 @@ export const LineChatPage: React.FC = () => {
   const [sending, setSending] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
-  const { on, off } = useSocket();
+  const { on, off } = useLineAccountSocket(selectedAccountId || null);
 
   useEffect(() => {
     lineApi
@@ -115,7 +115,7 @@ export const LineChatPage: React.FC = () => {
     (evt: LineSocketMessageEvent) => {
       if (evt.accountId !== selectedAccountId) return;
       fetchConversations();
-      if (evt.threadId === selectedThreadId) {
+      if (evt.externalThreadId === selectedThreadId) {
         fetchMessages(selectedThreadId);
       }
     },

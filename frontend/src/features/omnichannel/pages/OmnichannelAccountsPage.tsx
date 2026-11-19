@@ -27,7 +27,7 @@ import {
   ChannelSecurityLimitsDialog,
   type SecurityDialogTargetAccount,
 } from '../components/ChannelSecurityLimitsDialog';
-import { useSocket } from '../../../hooks/useSocket';
+import { useSocket, useAccountSubscriptions } from '../../../hooks/useSocket';
 import { useAuth } from '../../../contexts/AuthContext';
 import {
   Plus,
@@ -87,6 +87,8 @@ export const OmnichannelAccountsPage: React.FC<{ initialChannel?: ChannelFilterT
   const [activeFilter, setActiveFilter] = useState<ChannelFilterTab>(initialTabFromQuery);
   const [zaloAccounts, setZaloAccounts] = useState<ZaloAccount[]>([]);
   const [lineAccounts, setLineAccounts] = useState<LineAccount[]>([]);
+  useAccountSubscriptions('zalo', zaloAccounts.map((a) => a.id));
+  useAccountSubscriptions('line', lineAccounts.map((a) => a.id));
   const [loading, setLoading] = useState(true);
   const [syncingRowKey, setSyncingRowKey] = useState<string | null>(null);
   const [reconnectingRowKey, setReconnectingRowKey] = useState<string | null>(null);
@@ -277,6 +279,11 @@ export const OmnichannelAccountsPage: React.FC<{ initialChannel?: ChannelFilterT
           zaloApi.syncFriends(row.id),
           zaloApi.refreshGroups(row.id),
         ]);
+        if (frRes.status === 'rejected' || grRes.status === 'rejected') {
+          toast.warning('Đồng bộ Zalo chưa hoàn tất. Vui lòng kiểm tra kết nối và thử lại.');
+          await fetchAllAccounts();
+          return;
+        }
         const grCount = grRes.status === 'fulfilled' ? grRes.value?.synced ?? 0 : 0;
         const frLoaded = frRes.status === 'fulfilled';
         const matchReport = await omnichannelApi
@@ -291,6 +298,11 @@ export const OmnichannelAccountsPage: React.FC<{ initialChannel?: ChannelFilterT
           lineApi.syncFriends(row.id),
           lineApi.syncGroups(row.id),
         ]);
+        if (frRes.status === 'rejected' || grRes.status === 'rejected') {
+          toast.warning('Đồng bộ LINE chưa hoàn tất. Vui lòng kiểm tra kết nối và thử lại.');
+          await fetchAllAccounts();
+          return;
+        }
         const frCount =
           frRes.status === 'fulfilled'
             ? frRes.value?.synced ?? frRes.value?.upserted ?? 0

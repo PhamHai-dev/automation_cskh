@@ -273,6 +273,8 @@ export class LineService {
 
   async reconnectAccount(accountId: number) {
     await this.getAccount(accountId);
+    // Explicit user action permits a saved-session reconnect after manual disconnect.
+    await lineRepository.updateAccount(accountId, { disconnect_reason: null });
     const ok = await linePool.ensureAccountReady(accountId);
     const updated = await lineRepository.findAccountById(accountId);
     return { reconnected: ok, account: updated };
@@ -538,6 +540,7 @@ export class LineService {
         const res = await adapter.syncFriends();
         return { synced: res.synced, upserted: res.synced };
       }
+      throw Object.assign(new Error('Tài khoản LINE chưa kết nối để đồng bộ danh bạ.'), { statusCode: 503 });
     }
 
     const existing = await lineRepository.findFriendsByAccount(accountId, { limit: 200 });
@@ -610,6 +613,7 @@ export class LineService {
       if (adapter?.client) {
         return adapter.syncGroups();
       }
+      throw Object.assign(new Error('Tài khoản LINE chưa kết nối để đồng bộ nhóm.'), { statusCode: 503 });
     } else {
       const oaAdapter = linePool.getOaAdapter(accountId);
       const groups = await lineRepository.findGroupsByAccount(accountId);
