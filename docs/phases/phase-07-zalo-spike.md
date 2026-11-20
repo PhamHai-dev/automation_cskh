@@ -1,6 +1,6 @@
 # Phase 7 — Zalo Technical Spike
 
-- Status: NOT_STARTED
+- Status: IN_PROGRESS
 - Started at:
 - Completed at:
 - Dependencies: Core phases 0–6 stable
@@ -11,6 +11,15 @@
 Giảm rủi ro `zca-js` trước khi tích hợp sâu. Đây là technical spike, không phải production automation.
 
 ## Checklist chi tiết
+
+### 7.0 Program-scoped care-group foundation — 2026-11-20
+
+- [x] Kaiwa/JLPT naming engine, validation and preview
+- [x] Program-scoped Zalo/LINE relations and migration backup
+- [x] Duplicate candidate report with manual selection rule
+- [x] Automation target isolation and pre-send relation checks
+- [x] Admin/Manage settings UI, responsive table QA and permission tests
+- [x] MySQL API verification with dual-program fixture; no real provider send
 
 ### 7.1 Bắt buộc test
 
@@ -69,6 +78,42 @@ Theo yêu cầu tiếp tục của người dùng, đã chạy product và sửa
 - Chi tiết: `../khao-sat/AI_REVIEW/10_ZALO_LINE_PRODUCT_FIX_VERIFICATION_2026-11-19.md`.
 
 ## Changes from original plan
+
+### Nhóm lớp và danh bạ — 2026-11-20
+
+Follow-up layout: bảng nhóm lớp/danh bạ giữ cùng tỷ lệ cột qua fixed layout; text căn trái/trên, số phải và action grid giữ vị trí theo nền tảng. Kiểm tra DOM chiều rộng, overflow, tên/mã dài, nhiều liên kết và dữ liệu thật local; không đổi API hoặc khởi động lại backend.
+
+Theo người dùng yêu cầu, nhóm lớp chỉ hiện nhóm GROUP liên kết học viên có EnrollmentClass trong phạm vi được xem; danh bạ có hai mục bạn bè và nhóm/cộng đồng (toàn bộ nhóm sync). API đọc `/omnichannel/groups` phân biệt scope, giữ owner isolation và student scope, không cần migration/field mới hoặc query toàn bộ Enrollment gây lỗi course_code hiện có. 16 integration tests pass, browser fixture desktop/tablet/mobile pass và API local xác nhận 7 nhóm tổng/1 nhóm liên kết lớp. Chỉ đọc/kiểm thử fixture; không gửi tin thật hoặc bật automation, không thay trạng thái nghiệm thu phase.
+
+### Gộp hộp thư — 2026-11-20
+
+Review tiếp theo: thu bộ lọc mặc định xuống dưới 160px (chưa tính padding ngoài); chỉ hiện tìm kiếm/nền tảng/tài khoản, loại/trạng thái mở qua Bộ lọc bổ sung có badge số điều kiện. Không thay logic lọc; browser responsive, mở/đóng/reset và 26 tests pass.
+
+Người dùng chọn một hộp thư chung thay ba tab trùng lặp. `OmnichannelInboxPage` dùng `InboxWorkspace` + `InboxThread`, mapper chung Zalo/LINE; bỏ hai page chat riêng. Theo review tiếp theo của người dùng, tìm kiếm/nền tảng/tài khoản/loại/trạng thái gom vào một FilterBar tại danh sách, loại và trạng thái lọc kết hợp, có reset; bỏ nút nhắn từ danh bạ và lọc nền tảng riêng trên header. Alias route cũ giữ nguyên khả năng truy cập. Chức năng Zalo được đặt theo hội thoại; free reply chỉ hiện cho LINE OA còn hạn. Kiểm thử browser 1440/768/390 với fixture không gửi tin thật: bố cục, gửi nhiều dòng, giữ draft khi lỗi, realtime, link cũ, race và retry; 26 frontend tests và build pass. Không đổi API/DB, không bật worker hoặc đánh dấu nghiệm thu provider/phase. Các giới hạn quote/reactions/poll history có sẵn được ghi trong STATUS.
+
+### Bảng tài khoản: nội dung giới hạn — 2026-11-20
+
+Theo yêu cầu chốt của người dùng, giá trị Nhân viên CSKH căn giữa và bỏ hẳn cột Giới hạn sử dụng cho mọi loại tài khoản, mọi bộ lọc. Không giữ logic ẩn/hiện theo số liệu OA. Giữ chức năng cài đặt và KPI OA có dữ liệu thực tế; kiểm chứng bố cục 5 cột trên desktop/tablet/mobile, không thay backend limits hoặc trạng thái phase.
+
+### LINE own-profile name sync — 2026-11-20
+
+Theo báo lỗi của người dùng, đổi tên tạm thiết lập sang tên hồ sơ LINE khi login/restore và contact sync; không xóa tên khi profile trống/lỗi. Frontend nhận profile status realtime. 66 backend tests pass, xác nhận SDK thật và browser trên tài khoản hiện tại bằng saved session; không gửi tin/khởi động automation. Không thay đổi nghiệm thu phase.
+
+### Zalo status label follow-up — 2026-11-20
+
+Người dùng xác nhận phone login và QR dialog hoàn tất nhưng nhãn tài khoản “Chưa xác định”. Log/DB xác nhận kết nối thật thành công. Sửa frontend chuẩn hóa pool liveStatus lowercase tại API boundary; kiểm thử active/pending/disconnected và action visibility bằng browser fixture, thêm 4 regression cases. Không thay backend/login protocol hoặc restart phiên. Lỗi thiếu cột DB khi sync nhóm vẫn được theo dõi riêng.
+
+### Audit table toàn frontend — 2026-11-20
+
+Theo yêu cầu người dùng, rà toàn bộ 38 bảng HTML và 155 cấu hình cột tại 32 file; quy chuẩn header căn giữa và body theo kiểu dữ liệu trong design system. Triển khai CSS contract chung, kiểm tra source tự động, browser fixture QA trên desktop/tablet/mobile và 17 frontend tests. Không đổi trạng thái phase hoặc coi đây là nghiệm thu automation/provider; chi tiết tại `../khao-sat/AI_REVIEW/11_TABLE_LAYOUT_AUDIT_2026-11-20.md`.
+
+### Bảng tài khoản đa kênh — 2026-11-20
+
+Theo yêu cầu người dùng, chuẩn hóa trạng thái Zalo/LINE, bảng tài khoản, nhóm thao tác và responsive bằng component chung. Bỏ số giới hạn tra cứu ghi cứng/câu khẳng định chống khóa khỏi tổng quan, giữ riêng quota OA. Browser fixture QA pass ở desktop/tablet/mobile và các state loading/empty/error; không thay backend limits, scope hoặc đánh dấu nghiệm thu automation production.
+
+### LINE gateway follow-up — 2026-11-20
+
+Sau báo lỗi thực tế khi quét QR, tái hiện empty 404 của `/enc` bằng SDK 3.5.0 và token giả, đối chiếu upstream linejs #280. Adapter chuyển sang HTTPS Thrift thông thường, giữ Letter Sealing; sửa timeout/cancellation, native Request qua proxy và HTTP/2 PUSH. 22/22 channel regression tests pass; loopback TLS xác nhận duplex h2. Chưa đánh dấu đạt tiêu chí phone login hoặc gửi/nhận provider thật sau thay đổi này.
 
 ## Tác vụ UI độc lập — 2026-11-10
 

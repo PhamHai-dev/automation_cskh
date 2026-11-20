@@ -25,6 +25,10 @@ import {
   registerCareGroupAutoSyncRunner,
 } from './student-care-group.contract';
 
+import { careGroupLinksRepository } from '../omnichannel/care-group-links.repository';
+import { careGroupSettingsRepository } from '../omnichannel/care-group-settings.repository';
+import { classifyCareGroupName, suggestCareGroupName, type CareProgram } from '../omnichannel/care-group-rules';
+
 const log = createLogger('StudentCareGroupMatcher');
 
 const CARE_GROUP_NAME_REGEX =
@@ -238,29 +242,19 @@ async function ensureAllCsUsersHaveCodes(): Promise<void> {
  */
 function normalizeCsCodeToStandard(rawCode?: string | null, fallbackCsId?: number | null): string | null {
   if (rawCode && rawCode.trim()) {
-    const m = rawCode.trim().match(/(?:CVHT[-_\s]*)?0*(\d+)/i);
+    const m = rawCode.trim().match(/^(?:CVHT[-_\s]*)?0*(\d+)$/i);
     if (m) {
       const num = parseInt(m[1], 10);
       if (Number.isFinite(num) && num > 0) {
         return `CVHT${String(num).padStart(2, '0')}`;
       }
     }
-    return rawCode.trim().toUpperCase();
+    return null;
   }
   if (typeof fallbackCsId === 'number' && Number.isFinite(fallbackCsId) && fallbackCsId > 0) {
     return `CVHT${String(fallbackCsId).padStart(2, '0')}`;
   }
   return null;
-}
-
-/**
- * Check if a group name contains the student external ID as a standalone token.
- */
-function groupNameContainsExternalIdToken(groupName: string | null | undefined, externalId: string): boolean {
-  if (!groupName || !externalId) return false;
-  const escaped = externalId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const tokenRegex = new RegExp(`(?:^|[\\s\\-–—_:|\\[\\]()]+)${escaped}(?:$|[\\s\\-–—_:|\\[\\]()]+)`, 'i');
-  return tokenRegex.test(groupName);
 }
 
 /**
@@ -270,12 +264,14 @@ export async function syncAndMatchCareGroups(
   options?: SyncCareGroupsOptions,
 ): Promise<CareGroupSyncReport> {
   const triggeredBy = options?.triggeredBy ?? 'manual';
+  const applyMatches = options?.applyMatches !== false;
+  const rules = await careGroupSettingsRepository.read();
   const isSilent = Boolean(options?.silent);
   const startedAtDate = new Date();
   const startedAtMs = startedAtDate.getTime();
 
-  if (!isSilent) {
-    getIo()?.emit('omnichannel:sync-progress', {
+  if (!isSilent && options?.csId) {
+    getIo()?.to(`user:${options.csId}`).emit('omnichannel:sync-progress', {
       status: 'PROCESSING',
       stage: 'SYNCING_GROUPS',
       triggeredBy,
@@ -286,11 +282,10 @@ export async function syncAndMatchCareGroups(
   let refreshedLineAccounts = 0;
 
   // ── Step 1: Live SDK Group Refresh (when refreshLiveGroups is true) ────────
-  if (options?.refreshLiveGroups) {
+  if (applyMatches && options?.refreshLiveGroups) {
     try {
-      const targetZaloAccountIds = options.zaloAccountId
-        ? [options.zaloAccountId]
-        : zaloPool.getActiveAccountIds();
+      const allowed = await prisma.zaloAccount.findMany({ where: { archived_at: null, ...(options.csId ? { cs_id: options.csId } : {}), ...(options.zaloAccountId ? { id: options.zaloAccountId } : {}) }, select: { id: true } });
+      const targetZaloAccountIds = allowed.map(a => a.id).filter(id => zaloPool.getActiveAccountIds().includes(id));
 
       for (const accId of targetZaloAccountIds) {
         try {
@@ -314,7 +309,7 @@ export async function syncAndMatchCareGroups(
 
       const activeLineAccounts =
         (await prisma.lineAccount?.findMany?.({
-          where: lineWhere,
+          where: { ...lineWhere, ...(options.csId ? { cs_id: options.csId } : {}) },
           select: { id: true },
         })) ?? [];
 
@@ -338,7 +333,7 @@ export async function syncAndMatchCareGroups(
   }
 
   // ── Step 2: Load Eligible Students & Groups from DB ───────────────────────
-  await ensureAllCsUsersHaveCodes();
+  if (applyMatches) await ensureAllCsUsersHaveCodes();
 
   // ── Non-destructive candidate collection (replaces the former orphan sweep) ─
   // OWNER RULING (2026-10-26): the previous unscoped
@@ -476,7 +471,7 @@ export async function syncAndMatchCareGroups(
         zalo_contact_relations: {
           include: {
             zalo_account: {
-              select: { id: true, display_name: true, status: true, archived_at: true },
+              select: { id: true, cs_id: true, display_name: true, status: true, archived_at: true },
             },
             zalo_group: {
               select: {
@@ -493,7 +488,7 @@ export async function syncAndMatchCareGroups(
         line_contact_relations: {
           include: {
             line_account: {
-              select: { id: true, display_name: true, status: true, archived_at: true },
+              select: { id: true, cs_id: true, display_name: true, status: true, archived_at: true },
             },
             line_group: {
               select: {
@@ -512,7 +507,8 @@ export async function syncAndMatchCareGroups(
     }),
     prisma.zaloGroup.findMany({
       where: {
-        zalo_account: { archived_at: null },
+        zalo_account: { archived_at: null, ...(options?.csId ? { cs_id: options.csId } : {}) },
+        ...(options?.zaloAccountId ? { zalo_account_id: options.zaloAccountId } : {}),
       },
       include: {
         zalo_account: {
@@ -523,7 +519,8 @@ export async function syncAndMatchCareGroups(
     prisma.lineGroup?.findMany
       ? prisma.lineGroup.findMany({
           where: {
-            line_account: { archived_at: null },
+            line_account: { archived_at: null, ...(options?.csId ? { cs_id: options.csId } : {}) },
+            ...(options?.lineAccountId ? { line_account_id: options.lineAccountId } : {}),
           },
           include: {
             line_account: {
@@ -535,425 +532,108 @@ export async function syncAndMatchCareGroups(
   ]);
 
   // ── Step 3: Index Groups & Automatic Matching ─────────────────────────────
-  type IndexedZaloGroup = (typeof zaloGroups)[number] & { parsed: ParsedCareGroupName | null };
-  type IndexedLineGroup = (typeof lineGroups)[number] & { parsed: ParsedCareGroupName | null };
 
-  const zaloByCodeAndExt = new Map<string, IndexedZaloGroup[]>();
-  const zaloByExtOnly = new Map<string, IndexedZaloGroup[]>();
-  const allIndexedZaloGroups: IndexedZaloGroup[] = [];
-
-  for (const zg of zaloGroups) {
-    const parsed = parseStudentCareGroupName(zg.name);
-    const item: IndexedZaloGroup = { ...zg, parsed };
-    allIndexedZaloGroups.push(item);
-
-    if (parsed) {
-      const codeKey = `${parsed.csCode.toUpperCase()}::${parsed.studentExternalId.toUpperCase()}`;
-      const list1 = zaloByCodeAndExt.get(codeKey) ?? [];
-      list1.push(item);
-      zaloByCodeAndExt.set(codeKey, list1);
-
-      const extKey = parsed.studentExternalId.toUpperCase();
-      const list2 = zaloByExtOnly.get(extKey) ?? [];
-      list2.push(item);
-      zaloByExtOnly.set(extKey, list2);
-    }
-  }
-
-  const lineByCodeAndExt = new Map<string, IndexedLineGroup[]>();
-  const lineByExtOnly = new Map<string, IndexedLineGroup[]>();
-  const allIndexedLineGroups: IndexedLineGroup[] = [];
-
-  for (const lg of lineGroups) {
-    const parsed = parseStudentCareGroupName(lg.name);
-    const item: IndexedLineGroup = { ...lg, parsed };
-    allIndexedLineGroups.push(item);
-
-    if (parsed) {
-      const codeKey = `${parsed.csCode.toUpperCase()}::${parsed.studentExternalId.toUpperCase()}`;
-      const list1 = lineByCodeAndExt.get(codeKey) ?? [];
-      list1.push(item);
-      lineByCodeAndExt.set(codeKey, list1);
-
-      const extKey = parsed.studentExternalId.toUpperCase();
-      const list2 = lineByExtOnly.get(extKey) ?? [];
-      list2.push(item);
-      lineByExtOnly.set(extKey, list2);
-    }
-  }
-
-  function pickBestGroup<
-    T extends { zalo_account?: { cs_id: number; status: string } | null; line_account?: { cs_id: number; status: string } | null }
-  >(candidates: T[], csId: number | null): T | null {
-    if (!candidates || candidates.length === 0) return null;
-    // 1. Owned by csId & ACTIVE
-    if (csId != null) {
-      const ownedActive = candidates.find((c) => {
-        const acc = c.zalo_account ?? c.line_account;
-        return acc?.cs_id === csId && acc?.status === 'ACTIVE';
-      });
-      if (ownedActive) return ownedActive;
-
-      // 2. Owned by csId (any status)
-      const ownedAny = candidates.find((c) => {
-        const acc = c.zalo_account ?? c.line_account;
-        return acc?.cs_id === csId;
-      });
-      if (ownedAny) return ownedAny;
-    }
-
-    // 3. Any ACTIVE account
-    const anyActive = candidates.find((c) => {
-      const acc = c.zalo_account ?? c.line_account;
-      return acc?.status === 'ACTIVE';
-    });
-    if (anyActive) return anyActive;
-
-    // 4. First candidate
-    return candidates[0];
-  }
-
+  const indexedZalo = zaloGroups.map(group => ({ ...group, parsed: classifyCareGroupName(group.name, rules) }));
+  const indexedLine = lineGroups.map(group => ({ ...group, parsed: classifyCareGroupName(group.name, rules) }));
   let newlyLinkedZaloCount = 0;
   let newlyLinkedLineCount = 0;
   const linkedItems: LinkedStudentCareGroupItem[] = [];
   const unlinkedItems: UnlinkedStudentCareGroupItem[] = [];
 
   for (const student of students) {
-    const allEnrollments = student.enrollments ?? [];
-    const latestEnrollment = allEnrollments[0] ?? null;
-    const cs = latestEnrollment?.cs ?? null;
-    let csId = cs?.id ?? null;
-    let csName = cs?.name ?? null;
-    let csCode = normalizeCsCodeToStandard(cs?.code, csId);
-    const extId = student.external_id?.trim() || null;
-
-    const candidateEnrollments =
-      allEnrollments.length > 0
-        ? allEnrollments.map((enr) => {
-            const enrCsId = enr.cs?.id ?? null;
-            return {
-              csId: enrCsId,
-              csName: enr.cs?.name ?? null,
-              csCode: normalizeCsCodeToStandard(enr.cs?.code, enrCsId),
-            };
-          })
-        : [{ csId, csName, csCode }];
-
-    let zaloLinked = false;
-    let zaloGroupName: string | null = null;
-    let zaloGroupId: string | null = null;
-    let zaloAccountId: number | null = null;
-    let newlyLinkedZaloForStudent = false;
-
-    let lineLinked = false;
-    let lineGroupName: string | null = null;
-    let lineGroupId: string | null = null;
-    let lineAccountId: number | null = null;
-    let newlyLinkedLineForStudent = false;
-
-    // Check existing Zalo relations (only valid FRIEND links on non-archived accounts with group, friend UID, or display_name)
-    const existingZaloRelations = student.zalo_contact_relations ?? [];
-    const isValidZaloRel = (r: (typeof existingZaloRelations)[number]) =>
-      r.relation_status === 'FRIEND' &&
-      (r as any).zalo_account?.archived_at == null &&
-      (r.zalo_group_id != null || Boolean(r.friend_zalo_uid?.trim()) || Boolean(r.display_name?.trim()));
-
-    const existingZaloFriendRel =
-      existingZaloRelations.find((r) => isValidZaloRel(r) && (r.target_type === 'GROUP' || r.zalo_group_id != null)) ??
-      existingZaloRelations.find(isValidZaloRel);
-
-    if (existingZaloFriendRel) {
-      zaloLinked = true;
-      const isGroupLink =
-        existingZaloFriendRel.target_type === 'GROUP' || existingZaloFriendRel.zalo_group_id != null;
-      zaloGroupName =
-        existingZaloFriendRel.zalo_group?.name ??
-        (existingZaloFriendRel.display_name
-          ? isGroupLink
-            ? existingZaloFriendRel.display_name
-            : `${existingZaloFriendRel.display_name} (Cá nhân)`
-          : `UID: ${existingZaloFriendRel.friend_zalo_uid}`);
-      zaloGroupId =
-        existingZaloFriendRel.zalo_group?.zalo_group_id ??
-        existingZaloFriendRel.friend_zalo_uid ??
-        null;
-      zaloAccountId = existingZaloFriendRel.zalo_account_id;
+    // One coverage unit per program + CS, regardless of repeated enrollments.
+    const cohorts = new Map<string, (typeof student.enrollments)[number]>();
+    for (const enrollment of student.enrollments) {
+      if (!['KAIWA', 'JLPT'].includes(enrollment.program_type)) continue;
+      const key = enrollment.program_type + ':' + enrollment.cs_id;
+      if (!cohorts.has(key)) cohorts.set(key, enrollment);
     }
+    for (const enrollment of cohorts.values()) {
+      const programType = enrollment.program_type as CareProgram;
+      const csId = enrollment.cs_id;
+      const csName = enrollment.cs?.name || null;
+      const csCode = normalizeCsCodeToStandard(enrollment.cs?.code); // Never invent CS sequence from user ID.
+      const extId = student.external_id?.trim() || null;
+      const suggestedGroupName = csCode && extId ? suggestCareGroupName(rules, programType, {
+        csNumber: csCode.replace(/\D/g, ''), studentId: extId, studentName: student.full_name,
+        // Informational suggestion only: the level NEVER selects a candidate group.
+        level: enrollment.level,
+      }) : '';
+      const warnings: string[] = [];
+      let newlyLinked = false;
 
-    // Check existing LINE relations (only valid FRIEND links on non-archived accounts with group, friend UID, or display_name)
-    const existingLineRelations = student.line_contact_relations ?? [];
-    const isValidLineRel = (r: (typeof existingLineRelations)[number]) =>
-      r.relation_status === 'FRIEND' &&
-      (r as any).line_account?.archived_at == null &&
-      (r.line_group_id != null || Boolean(r.friend_line_uid?.trim()) || Boolean(r.display_name?.trim()));
-
-    const existingLineFriendRel =
-      existingLineRelations.find((r) => isValidLineRel(r) && (r.target_type === 'GROUP' || r.line_group_id != null)) ??
-      existingLineRelations.find(isValidLineRel);
-
-    if (existingLineFriendRel) {
-      lineLinked = true;
-      const isGroupLink =
-        existingLineFriendRel.target_type === 'GROUP' || existingLineFriendRel.line_group_id != null;
-      lineGroupName =
-        existingLineFriendRel.line_group?.name ??
-        (existingLineFriendRel.display_name
-          ? isGroupLink
-            ? existingLineFriendRel.display_name
-            : `${existingLineFriendRel.display_name} (Cá nhân)`
-          : `UID: ${existingLineFriendRel.friend_line_uid}`);
-      lineGroupId =
-        existingLineFriendRel.line_group?.line_group_id ??
-        existingLineFriendRel.friend_line_uid ??
-        null;
-      lineAccountId = existingLineFriendRel.line_account_id;
-    }
-
-    if (extId) {
-      const extUpper = extId.toUpperCase();
-
-      // ── Match ZaloGroup across all enrollments ──
-      let matchedZaloGroup: IndexedZaloGroup | null = null;
-      for (const cand of candidateEnrollments) {
-        if (cand.csCode) {
-          const exactKey = `${cand.csCode.toUpperCase()}::${extUpper}`;
-          matchedZaloGroup = pickBestGroup(zaloByCodeAndExt.get(exactKey) ?? [], cand.csId);
-        }
-        if (!matchedZaloGroup && cand.csId != null) {
-          // Fallback: ZaloGroup on an account owned by csId whose parsed studentExternalId or group name token matches
-          const parsedCandidates = (zaloByExtOnly.get(extUpper) ?? []).filter(
-            (g) => g.zalo_account?.cs_id === cand.csId,
-          );
-          if (parsedCandidates.length > 0) {
-            matchedZaloGroup = pickBestGroup(parsedCandidates, cand.csId);
-          } else {
-            const tokenCandidates = allIndexedZaloGroups.filter(
-              (g) => g.zalo_account?.cs_id === cand.csId && groupNameContainsExternalIdToken(g.name, extId),
-            );
-            matchedZaloGroup = pickBestGroup(tokenCandidates, cand.csId);
+      async function resolve(platform: 'ZALO' | 'LINE') {
+        const isZalo = platform === 'ZALO';
+        const accountField = isZalo ? 'zalo_account_id' : 'line_account_id';
+        const groupField = isZalo ? 'zalo_group_id' : 'line_group_id';
+        const accountKey = isZalo ? 'zalo_account' : 'line_account';
+        const groupKey = isZalo ? 'zalo_group' : 'line_group';
+        const uidField = isZalo ? 'friend_zalo_uid' : 'friend_line_uid';
+        const restrictedAccountId = isZalo ? options?.zaloAccountId : options?.lineAccountId;
+        const allRelations: any[] = isZalo ? student.zalo_contact_relations : student.line_contact_relations;
+        const ownedRelations = allRelations.filter(r => r[accountKey]?.cs_id === csId && r[accountKey]?.archived_at == null && (!restrictedAccountId || r[accountField] === restrictedAccountId));
+        const exactRelations = ownedRelations.filter(r => r.program_type === programType);
+        const valid = (r: any) => r.relation_status === 'FRIEND' && (r[groupField] != null || Boolean(r[uidField]));
+        const manual = exactRelations.filter(r => valid(r) && r.matched_by === 'MANUAL');
+        if (manual.length > 1) { warnings.push(platform + ': có nhiều liên kết thủ công, cần kiểm tra'); return null; }
+        if (manual.length === 1) return manual[0];
+        if (ownedRelations.some(r => r.program_type === 'ALL' && (r.target_type === 'GROUP' || r[groupField] != null))) warnings.push(platform + ': liên kết nhóm cũ chưa xác định chương trình; cần chọn lại nhóm');
+        const candidates: any[] = (isZalo ? indexedZalo : indexedLine).filter((g: any) =>
+          !['DISABLED', 'BANNED'].includes(g[accountKey]?.status) && g[accountKey]?.cs_id === csId && g.parsed?.csCode === csCode &&
+          g.parsed?.studentId.toUpperCase() === extId?.toUpperCase() && g.parsed?.programType === programType);
+        const sharedUser = ownedRelations.find(r => valid(r) && r.program_type === 'ALL' && r.target_type === 'USER' && r[groupField] == null && (isZalo || !/^[cC]/.test(r.friend_line_uid || '')));
+        if (candidates.length > 1) {
+          warnings.push(platform + ': trùng ' + candidates.length + ' nhóm ' + programType + ', cần chọn thủ công');
+          // Retain records and metadata, but stop automatic delivery to an ambiguous group.
+          if (applyMatches && rules.enabled) for (const rel of exactRelations.filter(r => r.matched_by === 'AUTO_GROUP_NAME')) {
+            await careGroupLinksRepository.suspendAutomatic(platform, rel.id);
           }
+          return null;
         }
-        if (matchedZaloGroup) {
-          if (cand.csId != null) {
-            csId = cand.csId;
-            csName = cand.csName;
-            csCode = cand.csCode;
-          }
-          break;
+        // A read-only report reports only persisted links. It never fabricates a new link.
+        if (!applyMatches || !rules.enabled) return exactRelations.find(valid) || sharedUser || null;
+        if (!candidates.length || !extId || !csCode) return exactRelations.find(valid) || sharedUser || null;
+        const group = candidates[0];
+        const existing = exactRelations.find(r => r[accountField] === group[accountField]);
+        // Respect every explicit manual decision, including blocked/non-friend links.
+        if (existing?.matched_by === 'MANUAL') return valid(existing) ? existing : null;
+        const relation: any = isZalo ? await careGroupLinksRepository.matchZalo(student.id, programType, group) : await careGroupLinksRepository.matchLine(student.id, programType, group);
+        if (!relation || !valid(relation)) return null;
+        if ((!existing || !valid(existing) || existing[groupField] !== relation[groupField]) && relation.matched_by === 'AUTO_GROUP_NAME') {
+          newlyLinked = true;
+          if (isZalo) newlyLinkedZaloCount++; else newlyLinkedLineCount++;
         }
+        return relation;
       }
-
-      if (matchedZaloGroup) {
-        const alreadyLinkedSameGroup = existingZaloRelations.some(
-          (r) =>
-            r.zalo_account_id === matchedZaloGroup!.zalo_account_id &&
-            r.relation_status === 'FRIEND' &&
-            r.target_type === 'GROUP' &&
-            r.zalo_group_id === matchedZaloGroup!.id,
-        );
-
-        await prisma.zaloContactRelation.upsert({
-          where: {
-            student_id_zalo_account_id: {
-              student_id: student.id,
-              zalo_account_id: matchedZaloGroup.zalo_account_id,
-            },
-          },
-          create: {
-            student_id: student.id,
-            zalo_account_id: matchedZaloGroup.zalo_account_id,
-            relation_status: 'FRIEND',
-            target_type: 'GROUP',
-            zalo_group_id: matchedZaloGroup.id,
-            friend_zalo_uid: matchedZaloGroup.zalo_group_id,
-            display_name: matchedZaloGroup.name,
-            avatar_url: matchedZaloGroup.avatar_url,
-            matched_by: 'AUTO_GROUP_NAME',
-            last_checked_at: new Date(),
-          },
-          update: {
-            relation_status: 'FRIEND',
-            target_type: 'GROUP',
-            zalo_group_id: matchedZaloGroup.id,
-            friend_zalo_uid: matchedZaloGroup.zalo_group_id,
-            display_name: matchedZaloGroup.name,
-            avatar_url: matchedZaloGroup.avatar_url,
-            matched_by: 'AUTO_GROUP_NAME',
-            last_checked_at: new Date(),
-          },
-        });
-
-        if (!alreadyLinkedSameGroup) {
-          newlyLinkedZaloCount++;
-          newlyLinkedZaloForStudent = true;
-        }
-        zaloLinked = true;
-        zaloGroupName = matchedZaloGroup.name;
-        zaloGroupId = matchedZaloGroup.zalo_group_id;
-        zaloAccountId = matchedZaloGroup.zalo_account_id;
-      }
-
-      // ── Match LineGroup across all enrollments ──
-      let matchedLineGroup: IndexedLineGroup | null = null;
-      for (const cand of candidateEnrollments) {
-        if (cand.csCode) {
-          const exactKey = `${cand.csCode.toUpperCase()}::${extUpper}`;
-          matchedLineGroup = pickBestGroup(lineByCodeAndExt.get(exactKey) ?? [], cand.csId);
-        }
-        if (!matchedLineGroup && cand.csId != null) {
-          const parsedCandidates = (lineByExtOnly.get(extUpper) ?? []).filter(
-            (g) => g.line_account?.cs_id === cand.csId,
-          );
-          if (parsedCandidates.length > 0) {
-            matchedLineGroup = pickBestGroup(parsedCandidates, cand.csId);
-          } else {
-            const tokenCandidates = allIndexedLineGroups.filter(
-              (g) => g.line_account?.cs_id === cand.csId && groupNameContainsExternalIdToken(g.name, extId),
-            );
-            matchedLineGroup = pickBestGroup(tokenCandidates, cand.csId);
-          }
-        }
-        if (matchedLineGroup) {
-          if (!matchedZaloGroup && cand.csId != null) {
-            csId = cand.csId;
-            csName = cand.csName;
-            csCode = cand.csCode;
-          }
-          break;
-        }
-      }
-
-      if (matchedLineGroup) {
-        const alreadyLinkedSameLineGroup = existingLineRelations.some(
-          (r) =>
-            r.line_account_id === matchedLineGroup!.line_account_id &&
-            r.relation_status === 'FRIEND' &&
-            r.target_type === 'GROUP' &&
-            r.line_group_id === matchedLineGroup!.id,
-        );
-
-        await prisma.lineContactRelation.upsert({
-          where: {
-            student_id_line_account_id: {
-              student_id: student.id,
-              line_account_id: matchedLineGroup.line_account_id,
-            },
-          },
-          create: {
-            student_id: student.id,
-            line_account_id: matchedLineGroup.line_account_id,
-            relation_status: 'FRIEND',
-            target_type: 'GROUP',
-            line_group_id: matchedLineGroup.id,
-            friend_line_uid: matchedLineGroup.line_group_id,
-            display_name: matchedLineGroup.name,
-            avatar_url: matchedLineGroup.avatar_url,
-            matched_by: 'AUTO_GROUP_NAME',
-            last_checked_at: new Date(),
-          },
-          update: {
-            relation_status: 'FRIEND',
-            target_type: 'GROUP',
-            line_group_id: matchedLineGroup.id,
-            friend_line_uid: matchedLineGroup.line_group_id,
-            display_name: matchedLineGroup.name,
-            avatar_url: matchedLineGroup.avatar_url,
-            matched_by: 'AUTO_GROUP_NAME',
-            last_checked_at: new Date(),
-          },
-        });
-
-        if (!alreadyLinkedSameLineGroup) {
-          newlyLinkedLineCount++;
-          newlyLinkedLineForStudent = true;
-        }
-        lineLinked = true;
-        lineGroupName = matchedLineGroup.name;
-        lineGroupId = matchedLineGroup.line_group_id;
-        lineAccountId = matchedLineGroup.line_account_id;
-      }
-    }
-
-    // ── Step 4: Categorize student into linkedItems vs unlinkedItems ────────
-    if (zaloLinked || lineLinked) {
-      linkedItems.push({
-        studentId: student.id,
-        studentExternalId: extId ?? '',
-        studentName: student.full_name,
-        csId: csId ?? 0,
-        csName,
-        csCode,
-        zaloLinked,
-        zaloGroupName,
-        zaloGroupId,
-        zaloAccountId,
-        lineLinked,
-        lineGroupName,
-        lineGroupId,
-        lineAccountId,
-        newlyLinked: newlyLinkedZaloForStudent || newlyLinkedLineForStudent,
-      });
-    } else {
-      const expectedGroupPrefix = formatExpectedCareGroupPrefix(csCode ?? csId, extId);
-      const suggestedGroupName = `${expectedGroupPrefix} ${student.full_name}`.trim();
-
-      let reason: string;
-      if (!extId) {
-        reason = 'Học viên chưa có mã học viên (external_id) trên hệ thống';
-      } else if (!csId) {
-        reason = `Học viên (${extId}) chưa được phân công CVHT phụ trách`;
-      } else {
-        reason = `Chưa tìm thấy nhóm Zalo/LINE bắt đầu bằng "${expectedGroupPrefix}" trên tài khoản của ${csName || csCode || `CS #${csId}`}`;
-      }
-
-      unlinkedItems.push({
-        studentId: student.id,
-        studentExternalId: extId,
-        studentName: student.full_name,
-        csId,
-        csName,
-        csCode,
-        expectedGroupPrefix,
-        suggestedGroupName,
-        reason,
-      });
+      const zalo = await resolve('ZALO');
+      const line = await resolve('LINE');
+      const base = { studentId: student.id, studentExternalId: extId, studentName: student.full_name, studentPhone: student.phone, studentEmail: student.email, csId, csName, csCode, programType };
+      if (zalo || line) linkedItems.push({ ...base, studentExternalId: extId || '', csId: csId || 0, suggestedGroupName, warnings,
+        zaloLinked: Boolean(zalo), zaloGroupName: zalo?.zalo_group?.name || zalo?.display_name, zaloGroupId: zalo?.zalo_group?.zalo_group_id || zalo?.friend_zalo_uid, zaloAccountId: zalo?.zalo_account_id,
+        lineLinked: Boolean(line), lineGroupName: line?.line_group?.name || line?.display_name, lineGroupId: line?.line_group?.line_group_id || line?.friend_line_uid, lineAccountId: line?.line_account_id, newlyLinked });
+      else unlinkedItems.push({ ...base, expectedGroupPrefix: suggestedGroupName, suggestedGroupName,
+        reason: warnings.join('; ') || (!extId ? 'Thiếu mã học viên' : !csCode ? 'Thiếu mã CVHT hợp lệ' : 'Chưa liên kết nhóm ' + programType + ' theo cấu hình; cần đồng bộ hoặc chọn thủ công') });
     }
   }
-
   const completedAtDate = new Date();
   const report: CareGroupSyncReport = {
-    triggeredBy,
-    startedAt: startedAtDate.toISOString(),
-    completedAt: completedAtDate.toISOString(),
-    durationMs: Math.max(0, completedAtDate.getTime() - startedAtMs),
-    refreshedZaloAccounts,
-    refreshedLineAccounts,
-    totalZaloGroupsScanned: zaloGroups.length,
-    totalLineGroupsScanned: lineGroups.length,
-    totalEligibleStudents: students.length,
-    linkedStudentsCount: linkedItems.length,
-    unlinkedStudentsCount: unlinkedItems.length,
-    newlyLinkedZaloCount,
-    newlyLinkedLineCount,
-    linkedItems,
-    unlinkedItems,
+    triggeredBy, startedAt: startedAtDate.toISOString(), completedAt: completedAtDate.toISOString(),
+    durationMs: Math.max(0, completedAtDate.getTime() - startedAtMs), refreshedZaloAccounts, refreshedLineAccounts,
+    totalZaloGroupsScanned: zaloGroups.length, totalLineGroupsScanned: lineGroups.length,
+    totalEligibleStudents: linkedItems.length + unlinkedItems.length, linkedStudentsCount: linkedItems.length, unlinkedStudentsCount: unlinkedItems.length,
+    newlyLinkedZaloCount, newlyLinkedLineCount, linkedItems, unlinkedItems,
   };
-
   if (!isSilent) {
-    getIo()?.emit('omnichannel:sync-complete', report);
+    const owners = options?.csId ? [options.csId] : [...new Set([...linkedItems, ...unlinkedItems].map(item => item.csId).filter((id): id is number => id != null))];
+    for (const owner of owners) {
+      const ownerLinked = linkedItems.filter(item => item.csId === owner);
+      const ownerUnlinked = unlinkedItems.filter(item => item.csId === owner);
+      getIo()?.to(`user:${owner}`).emit('omnichannel:sync-complete', { ...report,
+        linkedItems: ownerLinked, unlinkedItems: ownerUnlinked, totalEligibleStudents: ownerLinked.length + ownerUnlinked.length,
+        linkedStudentsCount: ownerLinked.length, unlinkedStudentsCount: ownerUnlinked.length,
+      });
+    }
   }
-
-  log.info('Student care group sync & match completed', {
-    triggeredBy,
-    totalEligibleStudents: report.totalEligibleStudents,
-    linkedStudentsCount: report.linkedStudentsCount,
-    unlinkedStudentsCount: report.unlinkedStudentsCount,
-    newlyLinkedZaloCount: report.newlyLinkedZaloCount,
-    newlyLinkedLineCount: report.newlyLinkedLineCount,
-    durationMs: report.durationMs,
-  });
-
   return report;
 }
-
 registerCareGroupAutoSyncRunner(syncAndMatchCareGroups);

@@ -98,6 +98,8 @@ Thiết lập alias hợp lý, ví dụ `@/` trỏ `src/`, tránh relative path 
 
 ## API integration
 
+- Hộp thư đa kênh dùng một `OmnichannelInboxPage` với `InboxWorkspace`/`InboxThread` và mapper chung trong `features/omnichannel/utils/inbox.ts`. Alias Zalo/LINE chỉ đặt bộ lọc ban đầu. Bộ lọc nằm trong một `FilterBar variant="embedded"` ở danh sách, không tạo page riêng hoặc phân tán option lên header; loại hội thoại và trạng thái là hai điều kiện độc lập.
+
 - Trước khi viết service/query cho một feature, đọc `docs/api/openapi.yaml` và module doc trong `docs/api/`.
 - Không hardcode response shape khác contract.
 - Không gọi API trực tiếp rải rác trong page/component nếu đã có service/query layer.

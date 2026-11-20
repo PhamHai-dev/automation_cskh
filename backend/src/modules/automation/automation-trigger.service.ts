@@ -1,3 +1,4 @@
+import { programRelationWhere, lineProgramRelationWhere } from '../omnichannel/care-group-rules';
 /**
  * Automation Trigger Service — Core automation engine.
  *
@@ -1303,6 +1304,7 @@ export async function resolveDeliveryTarget(
   const enrollment = await prisma.enrollment.findUnique({
     where: { id: enrollmentId },
     select: {
+      program_type: true,
       student_id: true,
       student: { select: { id: true, line_uid: true } },
     },
@@ -1349,7 +1351,9 @@ export async function resolveDeliveryTarget(
   if (step.channel === 'LINE_PERSONAL') {
     // Priority 1: CS's own active LINE account (OA or PERSONAL)
     const csRelation = await prisma.lineContactRelation.findFirst({
+      orderBy: { program_type: 'desc' },
       where: {
+        ...lineProgramRelationWhere(enrollment.program_type),
         student_id: enrollment.student_id,
         relation_status: 'FRIEND',
         line_account: { cs_id: csId, status: 'ACTIVE' },
@@ -1364,7 +1368,9 @@ export async function resolveDeliveryTarget(
 
     // Priority 2: Any active OA account linked with the student
     const oaRelation = await prisma.lineContactRelation.findFirst({
+      orderBy: { program_type: 'desc' },
       where: {
+        ...lineProgramRelationWhere(enrollment.program_type),
         student_id: enrollment.student_id,
         relation_status: 'FRIEND',
         line_account: { account_type: 'OA', status: 'ACTIVE' },
@@ -1379,7 +1385,9 @@ export async function resolveDeliveryTarget(
 
     // Priority 3: Any active LineAccount with relation_status === 'FRIEND'
     const anyLineRelation = await prisma.lineContactRelation.findFirst({
+      orderBy: { program_type: 'desc' },
       where: {
+        ...lineProgramRelationWhere(enrollment.program_type),
         student_id: enrollment.student_id,
         relation_status: 'FRIEND',
         line_account: { status: 'ACTIVE' },
@@ -1394,7 +1402,7 @@ export async function resolveDeliveryTarget(
 
     // Priority 4: Direct Student.line_uid + Active OA Fallback
     const studentLineUid = enrollment.student?.line_uid?.trim();
-    if (studentLineUid) {
+    if (studentLineUid && !/^[cC]/.test(studentLineUid)) {
       const csOaAccount = await prisma.lineAccount.findFirst({
         where: {
           cs_id: csId,
@@ -1425,7 +1433,9 @@ export async function resolveDeliveryTarget(
   // ZALO_PERSONAL: resolve via ZaloContactRelation
   // Priority: nick owned by csId + FRIEND
   const preferredRelation = await prisma.zaloContactRelation.findFirst({
+      orderBy: { program_type: 'desc' },
     where: {
+        ...programRelationWhere(enrollment.program_type),
       student_id: enrollment.student_id,
       zalo_account: { cs_id: csId },
       relation_status: 'FRIEND',
@@ -1440,7 +1450,9 @@ export async function resolveDeliveryTarget(
 
   // Fallback: any nick that is FRIEND
   const anyRelation = await prisma.zaloContactRelation.findFirst({
+      orderBy: { program_type: 'desc' },
     where: {
+        ...programRelationWhere(enrollment.program_type),
       student_id: enrollment.student_id,
       relation_status: 'FRIEND',
     },

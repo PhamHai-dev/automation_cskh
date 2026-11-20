@@ -1,681 +1,133 @@
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { Layers } from 'lucide-react';
 import { zaloApi } from '../../zalo/api/zalo.api';
 import { lineApi } from '../../line/api/line.api';
-import type { ZaloAccount } from '../../zalo/types/zalo.types';
-import type { LineAccount, LineConversation, LineMessage } from '../../line/types/line.types';
-import { ZaloChatPage } from '../../zalo/pages/ZaloChatPage';
-import { LineChatPage } from '../../line/pages/LineChatPage';
-import { useToast } from '../../../components/ui/Toast';
-import { useSocket, useAccountSubscriptions } from '../../../hooks/useSocket';
-import {
-  MessageSquare,
-  Send,
-  RefreshCw,
-  Search,
-  Users,
-  User,
-  Sparkles,
-  Bot,
-  Smartphone,
-  Layers,
-  Clock,
-  ShieldCheck,
-} from 'lucide-react';
+import { useAccountSubscriptions, useSocket } from '../../../hooks/useSocket';
+import { InboxWorkspace, InboxToolbar, InboxConversation, InboxState, type InboxReadStatus, type InboxThreadType } from '../components/InboxWorkspace';
+import { InboxThread } from '../components/InboxThread';
+import { toInboxConversation, type InboxAccount, type InboxConversationItem, type InboxPlatform } from '../utils/inbox';
 
-type WorkspaceMode = 'UNIFIED' | 'ZALO' | 'LINE';
-type PlatformFilter = 'ALL' | 'ZALO' | 'LINE';
-type ThreadFilter = 'all' | 'unread' | 'user' | 'group';
+type InitialMode = 'UNIFIED' | 'ZALO' | 'LINE';
 
-interface UnifiedConversationItem {
-  uidKey: string;
-  platform: 'ZALO' | 'LINE';
-  accountId: number;
-  accountName: string;
-  accountTypeLabel: string;
-  externalThreadId: string;
-  threadType: 'user' | 'group';
-  displayName: string;
-  avatarUrl: string | null;
-  unreadCount: number;
-  lastMessageText: string;
-  lastMessageAt: string | null;
-  replyTokenExpiresAt?: string | null;
-}
-
-interface UnifiedMessageItem {
-  id: string | number;
-  senderUid: string;
-  senderName: string | null;
-  isSelf: boolean;
-  content: string;
-  contentType: string;
-  sentVia?: string;
-  timestamp: string;
-}
-
-export const OmnichannelInboxPage: React.FC<{ initialMode?: WorkspaceMode }> = ({
-  initialMode,
-}) => {
-  const [searchParams] = useSearchParams();
-  const toast = useToast();
+export const OmnichannelInboxPage: React.FC<{ initialMode?: InitialMode }> = ({ initialMode }) => {
+  const [params] = useSearchParams();
+  const initialPlatform = initialMode === 'ZALO' || initialMode === 'LINE' ? initialMode
+    : ['ZALO', 'LINE'].includes(params.get('channel') || '') ? params.get('channel') as InboxPlatform : 'ALL';
+  const [platform, setPlatform] = useState<InboxPlatform>(initialPlatform);
+  const [accountFilter, setAccountFilter] = useState('ALL');
+  const [threadType, setThreadType] = useState<InboxThreadType>('ALL');
+  const [readStatus, setReadStatus] = useState<InboxReadStatus>('ALL');
+  const [search, setSearch] = useState('');
+  const [accounts, setAccounts] = useState<InboxAccount[]>([]);
+  const [conversations, setConversations] = useState<InboxConversationItem[]>([]);
+  const [selected, setSelected] = useState<InboxConversationItem | null>(null);
+  const [showThread, setShowThread] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const listVersion = useRef(0);
+  const deepLinkHandled = useRef(false);
   const socket = useSocket();
+  useAccountSubscriptions('zalo', accounts.filter((a) => a.platform === 'ZALO').map((a) => a.id));
+  useAccountSubscriptions('line', accounts.filter((a) => a.platform === 'LINE').map((a) => a.id));
 
-  const resolvedInitialMode = useMemo<WorkspaceMode>(() => {
-    if (initialMode) return initialMode;
-    const ch = (searchParams.get('channel') || '').toUpperCase();
-    if (ch === 'ZALO') return 'ZALO';
-    if (ch === 'LINE') return 'LINE';
-    return 'UNIFIED';
-  }, [initialMode, searchParams]);
+  useEffect(() => {
+    deepLinkHandled.current = false;
+    setPlatform(initialPlatform); setAccountFilter('ALL'); setThreadType('ALL'); setReadStatus('ALL'); setSearch('');
+    setSelected(null); setShowThread(false);
+  }, [initialPlatform, params]);
 
-  const [mode, setMode] = useState<WorkspaceMode>(resolvedInitialMode);
-  const [platformFilter, setPlatformFilter] = useState<PlatformFilter>('ALL');
-  const [threadFilter, setThreadFilter] = useState<ThreadFilter>('all');
-  const [searchQuery, setSearchQuery] = useState('');
-
-  const [zaloAccounts, setZaloAccounts] = useState<ZaloAccount[]>([]);
-  const [lineAccounts, setLineAccounts] = useState<LineAccount[]>([]);
-  useAccountSubscriptions('zalo', mode === 'UNIFIED' ? zaloAccounts.map((a) => a.id) : []);
-  useAccountSubscriptions('line', mode === 'UNIFIED' ? lineAccounts.map((a) => a.id) : []);
-  const [conversations, setConversations] = useState<UnifiedConversationItem[]>([]);
-  const [loadingList, setLoadingList] = useState(false);
-
-  const [selectedConv, setSelectedConv] = useState<UnifiedConversationItem | null>(null);
-  const [messages, setMessages] = useState<UnifiedMessageItem[]>([]);
-  const [loadingMessages, setLoadingMessages] = useState(false);
-  const [composerText, setComposerText] = useState('');
-  const [sending, setSending] = useState(false);
-
-  const loadUnifiedConversations = useCallback(async () => {
-    setLoadingList(true);
+  const loadConversations = useCallback(async (silent = false) => {
+    const version = ++listVersion.current;
+    if (!silent) setLoading(true);
+    setError('');
     try {
-      const [zAccs, lAccs] = await Promise.all([
-        zaloApi.listAccounts().catch(() => [] as ZaloAccount[]),
-        lineApi.listAccounts().catch(() => [] as LineAccount[]),
-      ]);
-      setZaloAccounts(zAccs);
-      setLineAccounts(lAccs);
-
-      const activeZalo = zAccs.filter((a) => (a.liveStatus || a.status) === 'ACTIVE' || a.status === 'ACTIVE');
-      const activeLine = lAccs.filter((a) => ((a as any).liveStatus || a.status) === 'ACTIVE' || a.status === 'ACTIVE');
-
-      const zaloPromises = activeZalo.map(async (acc) => {
+      // A provider failure must not hide the other provider's conversations.
+      const [zaloResult, lineResult] = await Promise.allSettled([zaloApi.listAccounts(), lineApi.listAccounts()]);
+      if (version !== listVersion.current) return;
+      const loadedAccounts: InboxAccount[] = [
+        ...(zaloResult.status === 'fulfilled' ? zaloResult.value.map((a): InboxAccount => ({ key: `ZALO:${a.id}`, platform: 'ZALO', id: a.id, name: a.display_name || `Zalo #${a.id}`, type: 'PERSONAL', status: a.liveStatus || a.status })) : []),
+        ...(lineResult.status === 'fulfilled' ? lineResult.value.map((a): InboxAccount => ({ key: `LINE:${a.id}`, platform: 'LINE', id: a.id, name: a.display_name || `LINE #${a.id}`, type: a.account_type, status: a.liveStatus || a.status })) : []),
+      ];
+      setAccounts(loadedAccounts);
+      const failures: string[] = [];
+      if (zaloResult.status === 'rejected') failures.push('tài khoản Zalo');
+      if (lineResult.status === 'rejected') failures.push('tài khoản LINE');
+      const lists = await Promise.all(loadedAccounts.map(async (account) => {
         try {
-          const res = await zaloApi.getConversations(acc.id, { limit: 40 });
-          const items = res.items ?? [];
-          return items.map((c: any): UnifiedConversationItem => ({
-            uidKey: `ZALO:${acc.id}:${c.externalThreadId}`,
-            platform: 'ZALO',
-            accountId: acc.id,
-            accountName: acc.display_name || `Zalo #${acc.id}`,
-            accountTypeLabel: 'Zalo Cá nhân',
-            externalThreadId: String(c.externalThreadId || ''),
-            threadType: c.threadType === 'group' ? 'group' : 'user',
-            displayName: String(c.groupName || c.displayName || c.externalThreadId || ''),
-            avatarUrl: c.groupAvatarUrl || c.avatarUrl || null,
-            unreadCount: c.unreadCount ?? 0,
-            lastMessageText: c.lastMessage?.content || '',
-            lastMessageAt: c.lastMessageAt || null,
-          }));
-        } catch {
-          return [] as UnifiedConversationItem[];
-        }
-      });
-
-      const linePromises = activeLine.map(async (acc) => {
-        try {
-          const res = await lineApi.listConversations(acc.id, { limit: 40 });
-          const items = res.items ?? [];
-          return items.map((c: LineConversation): UnifiedConversationItem => {
-            const lastMsg = (c as any).messages?.[0];
-            const extId = String(c.external_thread_id || '');
-            return {
-              uidKey: `LINE:${acc.id}:${extId}`,
-              platform: 'LINE',
-              accountId: acc.id,
-              accountName: acc.display_name || `LINE #${acc.id}`,
-              accountTypeLabel: acc.account_type === 'OA' ? 'LINE Official Account' : 'LINE Cá nhân',
-              externalThreadId: extId,
-              threadType: c.thread_type === 'group' ? 'group' : 'user',
-              displayName: String(c.group_name || c.display_name || extId),
-              avatarUrl: c.group_avatar_url || c.avatar_url || null,
-              unreadCount: c.unread_count ?? 0,
-              lastMessageText: lastMsg?.content || '',
-              lastMessageAt: c.last_message_at || null,
-              replyTokenExpiresAt: c.reply_token_expires_at || null,
-            };
-          });
-        } catch {
-          return [] as UnifiedConversationItem[];
-        }
-      });
-
-      const allNested = await Promise.all([...zaloPromises, ...linePromises]);
-      const merged = allNested
-        .flat()
-        .sort((a: UnifiedConversationItem, b: UnifiedConversationItem) => {
-          const ta = a.lastMessageAt ? new Date(a.lastMessageAt).getTime() : 0;
-          const tb = b.lastMessageAt ? new Date(b.lastMessageAt).getTime() : 0;
-          return tb - ta;
-        });
-
+          const result = account.platform === 'ZALO' ? await zaloApi.getConversations(account.id, { limit: 100 })
+            : await lineApi.listConversations(account.id, { limit: 100 });
+          return (result.items || []).map((c: any) => toInboxConversation(account, c));
+        } catch { failures.push(account.name); return []; }
+      }));
+      if (version !== listVersion.current) return;
+      const merged = lists.flat().sort((a, b) => (Date.parse(b.lastMessageAt || '') || 0) - (Date.parse(a.lastMessageAt || '') || 0));
       setConversations(merged);
-      const qAccountId = Number(searchParams.get('accountId') || 0);
-      const qThreadId = searchParams.get('threadId') || '';
-      const qChannel = (searchParams.get('channel') || '').toUpperCase();
-      if (qThreadId && merged.length > 0) {
-        const matched = merged.find(
-          (c) =>
-            c.externalThreadId === qThreadId &&
-            (!qAccountId || c.accountId === qAccountId) &&
-            (!qChannel || c.platform === qChannel),
-        );
-        if (matched) {
-          setSelectedConv(matched);
-          return;
+      setSelected((current) => current ? merged.find((c) => c.key === current.key) || current : null);
+      if (failures.length) setError(`Chưa tải được: ${failures.join(', ')}. Bạn có thể thử lại.`);
+      if (!deepLinkHandled.current) {
+        const requestedAccount = Number(params.get('accountId'));
+        const requestedThread = params.get('threadId');
+        const requestedChannel = initialMode === 'ZALO' || initialMode === 'LINE' ? initialMode : params.get('channel');
+        const found = requestedThread ? merged.find((c) => c.threadId === requestedThread && (!requestedAccount || c.account.id === requestedAccount) && (!requestedChannel || c.account.platform === requestedChannel)) : null;
+        if (requestedAccount) {
+          const account = loadedAccounts.find((a) => a.id === requestedAccount && (!requestedChannel || a.platform === requestedChannel));
+          if (account) setAccountFilter(account.key);
         }
+        if (found) { setSelected(found); setShowThread(true); }
+        // A failed provider load should still allow the deep link to resolve on retry.
+        if (!failures.length || found) deepLinkHandled.current = true;
       }
-      if (!selectedConv && merged.length > 0) {
-        setSelectedConv(merged[0]);
-      }
-    } finally {
-      setLoadingList(false);
-    }
-  }, [selectedConv]);
-
+    } finally { if (version === listVersion.current) setLoading(false); }
+  }, [params, initialMode]);
+  useEffect(() => { void loadConversations(); return () => { listVersion.current++; }; }, [loadConversations]);
   useEffect(() => {
-    if (mode === 'UNIFIED') {
-      loadUnifiedConversations();
-    }
-  }, [mode, loadUnifiedConversations]);
+    if (!socket) return;
+    const incoming = () => { void loadConversations(true); };
+    socket.on('zalo:message', incoming); socket.on('line:message', incoming);
+    return () => { socket.off('zalo:message', incoming); socket.off('line:message', incoming); };
+  }, [socket, loadConversations]);
 
-  const loadMessagesForSelected = useCallback(async (conv: UnifiedConversationItem) => {
-    setLoadingMessages(true);
-    try {
-      if (conv.platform === 'ZALO') {
-        const res = await zaloApi.getMessages(conv.accountId, conv.externalThreadId, {
-          limit: 60,
-        });
-        const items: UnifiedMessageItem[] = (res.items ?? []).map((m: any) => ({
-          id: m.id,
-          senderUid: String(m.senderUid || ''),
-          senderName: m.senderName || null,
-          isSelf: Boolean(m.isSelf),
-          content: m.content,
-          contentType: m.contentType || 'text',
-          sentVia: 'zalo_sdk',
-          timestamp: m.timestamp,
-        }));
-        setMessages(items);
-        if (conv.unreadCount > 0) {
-          zaloApi.markConversationRead(conv.accountId, conv.externalThreadId).catch(() => {});
-        }
-      } else {
-        const res = await lineApi.listMessages(conv.accountId, conv.externalThreadId, {
-          limit: 60,
-        });
-        const items: UnifiedMessageItem[] = (res.items ?? []).map((m: LineMessage) => ({
-          id: m.id,
-          senderUid: String(m.sender_uid || ''),
-          senderName: m.sender_name || null,
-          isSelf: Boolean(m.is_self),
-          content: m.content,
-          contentType: m.content_type || 'text',
-          sentVia: m.sent_via,
-          timestamp: m.timestamp,
-        }));
-        setMessages(items);
-        if (conv.unreadCount > 0) {
-          lineApi.markRead(conv.accountId, conv.externalThreadId).catch(() => {});
-        }
-      }
-    } catch {
-      setMessages([]);
-    } finally {
-      setLoadingMessages(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (mode === 'UNIFIED' && selectedConv) {
-      loadMessagesForSelected(selectedConv);
-    }
-  }, [mode, selectedConv, loadMessagesForSelected]);
-
-  // Real-time Socket.IO subscription for both Zalo & LINE
-  useEffect(() => {
-    if (!socket || mode !== 'UNIFIED') return;
-    const handleIncoming = () => {
-      loadUnifiedConversations();
-      if (selectedConv) {
-        loadMessagesForSelected(selectedConv);
-      }
-    };
-    socket.on('zalo:message', handleIncoming);
-    socket.on('line:message', handleIncoming);
-    return () => {
-      socket.off('zalo:message', handleIncoming);
-      socket.off('line:message', handleIncoming);
-    };
-  }, [socket, mode, selectedConv, loadUnifiedConversations, loadMessagesForSelected]);
-
-  const filteredConversations = useMemo(() => {
-    return conversations.filter((c) => {
-      if (platformFilter !== 'ALL' && c.platform !== platformFilter) return false;
-      if (threadFilter === 'unread' && c.unreadCount <= 0) return false;
-      if (threadFilter === 'user' && c.threadType !== 'user') return false;
-      if (threadFilter === 'group' && c.threadType !== 'group') return false;
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase();
-        return (
-          c.displayName.toLowerCase().includes(q) ||
-          c.accountName.toLowerCase().includes(q) ||
-          c.externalThreadId.toLowerCase().includes(q)
-        );
-      }
-      return true;
-    });
-  }, [conversations, platformFilter, threadFilter, searchQuery]);
-
-  const handleSend = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedConv || !composerText.trim() || sending) return;
-    setSending(true);
-    try {
-      const text = composerText.trim();
-      setComposerText('');
-      if (selectedConv.platform === 'ZALO') {
-        await zaloApi.sendMessage(
-          selectedConv.accountId,
-          selectedConv.externalThreadId,
-          text,
-        );
-      } else {
-        await lineApi.sendMessage(selectedConv.accountId, selectedConv.externalThreadId, text);
-      }
-      await loadMessagesForSelected(selectedConv);
-    } catch (err: any) {
-      toast.error(
-        err?.response?.data?.error || err?.message || 'Không thể gửi tin nhắn (kiểm tra giới hạn)',
-      );
-    } finally {
-      setSending(false);
-    }
-  };
-
-  const hasFreeReplyWindow = useMemo(() => {
-    if (!selectedConv?.replyTokenExpiresAt) return false;
-    return new Date(selectedConv.replyTokenExpiresAt).getTime() > Date.now();
-  }, [selectedConv]);
+  const availableAccounts = accounts.filter((a) => platform === 'ALL' || a.platform === platform);
+  const filtered = useMemo(() => conversations.filter((c) => {
+    if (platform !== 'ALL' && c.account.platform !== platform) return false;
+    if (accountFilter !== 'ALL' && c.account.key !== accountFilter) return false;
+    if (readStatus === 'unread' && c.unread <= 0) return false;
+    if (readStatus === 'read' && c.unread > 0) return false;
+    if (readStatus === 'unreplied' && c.isReplied !== false) return false;
+    if (threadType === 'group' && !c.group) return false;
+    if (threadType === 'user' && c.group) return false;
+    return !search.trim() || `${c.name} ${c.account.name} ${c.threadId}`.toLowerCase().includes(search.trim().toLowerCase());
+  }), [conversations, platform, accountFilter, readStatus, threadType, search]);
+  const clearSelection = () => { setSelected(null); setShowThread(false); };
+  const markRead = useCallback((key: string) => { setConversations((items) => items.map((c) => c.key === key ? { ...c, unread: 0 } : c)); }, []);
 
   return (
-    <div className="flex flex-col h-[calc(100vh-4rem)] bg-background">
-      {/* Top Omnichannel Mode Switcher Bar */}
-      <div className="px-4 py-2.5 bg-surface border-b border-border flex flex-wrap items-center justify-between gap-3 shrink-0">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-blue-600 to-emerald-500 text-white flex items-center justify-center shadow-xs">
-            <Layers className="w-4 h-4" />
-          </div>
-          <div>
-            <h1 className="text-sm font-bold text-text-primary leading-tight">
-              Hộp thư Đa kênh (Zalo & LINE)
-            </h1>
-            <p className="text-[11px] text-text-muted">
-              Theo dõi và phản hồi tin nhắn học viên tập trung từ Zalo Cá nhân, LINE Official Account
-              & LINE Cá nhân
-            </p>
-          </div>
+    <div className="flex h-[calc(100dvh-4rem)] min-h-0 min-w-0 flex-col overflow-hidden bg-background">
+      <header className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border bg-surface p-3 sm:px-4">
+        <div className="flex min-w-0 items-center gap-2">
+          <Layers className="h-5 w-5 shrink-0 text-primary" />
+          <div><h1 className="text-base font-semibold text-text-primary">Hộp thư đa kênh</h1><p className="text-xs text-text-muted">Quản lý hội thoại và phản hồi qua Zalo, LINE</p></div>
         </div>
-
-        <div className="flex items-center gap-1.5 bg-surface-muted p-1 rounded-xl border border-border">
-          <button
-            type="button"
-            onClick={() => setMode('UNIFIED')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${
-              mode === 'UNIFIED'
-                ? 'bg-surface text-primary shadow-xs'
-                : 'text-text-secondary hover:text-text-primary'
-            }`}
-          >
-            <Sparkles className="w-3.5 h-3.5" />
-            Tất cả tin nhắn (Zalo + LINE)
-          </button>
-          <button
-            type="button"
-            onClick={() => setMode('ZALO')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${
-              mode === 'ZALO'
-                ? 'bg-blue-600 text-white shadow-xs'
-                : 'text-text-secondary hover:text-text-primary'
-            }`}
-          >
-            <Smartphone className="w-3.5 h-3.5" />
-            Hộp thư Zalo chi tiết
-          </button>
-          <button
-            type="button"
-            onClick={() => setMode('LINE')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${
-              mode === 'LINE'
-                ? 'bg-[#06C755] text-white shadow-xs'
-                : 'text-text-secondary hover:text-text-primary'
-            }`}
-          >
-            <Bot className="w-3.5 h-3.5" />
-            Hộp thư LINE chi tiết
-          </button>
-        </div>
+      </header>
+      <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
+        <InboxWorkspace showThread={showThread} listHeader={
+          <InboxToolbar accounts={[{ value: 'ALL', label: 'Tất cả tài khoản' }, ...availableAccounts.map((a) => ({ value: a.key, label: `${a.name} · ${a.platform === 'ZALO' ? 'Zalo' : a.type === 'OA' ? 'LINE OA' : 'LINE cá nhân'}` }))]}
+            accountId={accountFilter} onAccountChange={(value) => { setAccountFilter(value); clearSelection(); }} search={search} onSearchChange={setSearch}
+            platform={platform} onPlatformChange={(value) => { setPlatform(value); setAccountFilter('ALL'); clearSelection(); }}
+            threadType={threadType} onThreadTypeChange={setThreadType} readStatus={readStatus} onReadStatusChange={setReadStatus}
+            onReset={() => { setPlatform('ALL'); setAccountFilter('ALL'); setThreadType('ALL'); setReadStatus('ALL'); setSearch(''); clearSelection(); }}
+            onRefresh={() => void loadConversations()} loading={loading} count={filtered.length} />
+        } list={<>
+          {error && <InboxState error={error} onRetry={() => void loadConversations()} />}
+          {loading && !conversations.length ? <InboxState loading /> : !filtered.length && !error ? <InboxState title={search || readStatus !== 'ALL' || threadType !== 'ALL' ? 'Không có hội thoại phù hợp bộ lọc' : 'Chưa có hội thoại'} />
+            : filtered.map((c) => <InboxConversation key={c.key} name={c.name} avatar={c.avatar} group={c.group} platform={c.account.platform === 'ZALO' ? 'Zalo' : 'LINE'} accountName={c.account.name}
+              preview={c.preview} timestamp={c.lastMessageAt} unread={c.unread} selected={selected?.key === c.key} onClick={() => { setSelected(c); setShowThread(true); }} />)}
+        </>}>
+          {selected ? <InboxThread key={selected.key} conversation={selected} onBack={clearSelection} onRead={markRead} onChanged={() => void loadConversations(true)}
+            onDeleted={(key) => { setConversations((items) => items.filter((c) => c.key !== key)); clearSelection(); }} /> : <InboxState />}
+        </InboxWorkspace>
       </div>
-
-      {/* Mode Content */}
-      {mode === 'ZALO' ? (
-        <div className="flex-1 overflow-hidden">
-          <ZaloChatPage />
-        </div>
-      ) : mode === 'LINE' ? (
-        <div className="flex-1 overflow-hidden">
-          <LineChatPage />
-        </div>
-      ) : (
-        <div className="flex-1 flex overflow-hidden">
-          {/* Left Pane: Unified Conversation Stream */}
-          <div className="w-80 sm:w-96 border-r border-border bg-surface flex flex-col shrink-0">
-            <div className="p-3 border-b border-border space-y-2.5">
-              {/* Platform Filter Pills */}
-              <div className="flex items-center justify-between gap-1">
-                <div className="flex items-center gap-1 bg-surface-muted p-1 rounded-lg flex-1">
-                  {(['ALL', 'ZALO', 'LINE'] as PlatformFilter[]).map((pf) => (
-                    <button
-                      key={pf}
-                      type="button"
-                      onClick={() => setPlatformFilter(pf)}
-                      className={`flex-1 py-1 rounded-md text-[11px] font-bold transition-colors ${
-                        platformFilter === pf
-                          ? pf === 'ZALO'
-                            ? 'bg-blue-600 text-white'
-                            : pf === 'LINE'
-                              ? 'bg-[#06C755] text-white'
-                              : 'bg-surface text-text-primary shadow-2xs'
-                          : 'text-text-muted hover:text-text-primary'
-                      }`}
-                    >
-                      {pf === 'ALL'
-                        ? `Tất cả (${conversations.length})`
-                        : pf === 'ZALO'
-                          ? `Zalo (${zaloAccounts.filter((a) => a.status === 'ACTIVE').length} tài khoản)`
-                          : `LINE (${lineAccounts.filter((a) => a.status === 'ACTIVE').length} tài khoản)`}
-                    </button>
-                  ))}
-                </div>
-                <button
-                  type="button"
-                  onClick={loadUnifiedConversations}
-                  className="p-1.5 rounded-lg border border-border text-text-muted hover:text-text-primary hover:bg-surface-muted"
-                  title="Làm mới danh sách hội thoại"
-                >
-                  <RefreshCw className={`w-4 h-4 ${loadingList ? 'animate-spin' : ''}`} />
-                </button>
-              </div>
-
-              {/* Search */}
-              <div className="relative">
-                <Search className="w-4 h-4 text-text-muted absolute left-3 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Tìm tên học viên, nhóm chăm sóc, tài khoản..."
-                  className="w-full pl-9 pr-3 py-1.5 text-xs rounded-lg border border-border bg-surface-muted/60 focus:bg-surface focus:outline-none focus:ring-2 focus:ring-primary/20"
-                />
-              </div>
-
-              {/* Thread Type Tabs */}
-              <div className="flex items-center gap-1 text-[11px]">
-                {[
-                  { id: 'all', label: 'Tất cả' },
-                  { id: 'unread', label: 'Chưa đọc' },
-                  { id: 'user', label: 'Cá nhân 1-1' },
-                  { id: 'group', label: 'Nhóm chăm sóc' },
-                ].map((t) => (
-                  <button
-                    key={t.id}
-                    type="button"
-                    onClick={() => setThreadFilter(t.id as ThreadFilter)}
-                    className={`px-2.5 py-1 rounded-md font-medium transition-colors ${
-                      threadFilter === t.id
-                        ? 'bg-primary-soft text-primary font-semibold'
-                        : 'text-text-muted hover:bg-surface-muted'
-                    }`}
-                  >
-                    {t.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Conversation List */}
-            <div className="flex-1 overflow-y-auto divide-y divide-border/60">
-              {loadingList && conversations.length === 0 ? (
-                <div className="p-8 text-center text-xs text-text-muted">
-                  Đang tải danh sách hội thoại Zalo & LINE...
-                </div>
-              ) : filteredConversations.length === 0 ? (
-                <div className="p-8 text-center text-xs text-text-muted">
-                  Chưa có hội thoại nào khớp bộ lọc.
-                </div>
-              ) : (
-                filteredConversations.map((conv) => {
-                  const isSelected = selectedConv?.uidKey === conv.uidKey;
-                  return (
-                    <button
-                      key={conv.uidKey}
-                      type="button"
-                      onClick={() => setSelectedConv(conv)}
-                      className={`w-full text-left p-3 flex items-start gap-3 transition-colors ${
-                        isSelected ? 'bg-primary-soft/60' : 'hover:bg-surface-muted/60'
-                      }`}
-                    >
-                      <div className="relative shrink-0">
-                        <div className="w-10 h-10 rounded-full bg-surface-muted border border-border flex items-center justify-center overflow-hidden text-xs font-bold text-text-secondary">
-                          {conv.avatarUrl ? (
-                            <img
-                              src={conv.avatarUrl}
-                              alt={conv.displayName}
-                              className="w-full h-full object-cover"
-                            />
-                          ) : conv.threadType === 'group' ? (
-                            <Users className="w-5 h-5 text-text-muted" />
-                          ) : (
-                            <User className="w-5 h-5 text-text-muted" />
-                          )}
-                        </div>
-                        <span
-                          className={`absolute -bottom-0.5 -right-0.5 px-1 py-0.2 rounded text-[9px] font-bold text-white shadow-2xs ${
-                            conv.platform === 'ZALO' ? 'bg-blue-600' : 'bg-[#06C755]'
-                          }`}
-                        >
-                          {conv.platform}
-                        </span>
-                      </div>
-
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between gap-1">
-                          <span className="font-semibold text-xs text-text-primary truncate">
-                            {conv.displayName}
-                          </span>
-                          {conv.unreadCount > 0 && (
-                            <span className="px-1.5 py-0.5 text-[10px] font-bold rounded-full bg-rose-500 text-white">
-                              {conv.unreadCount}
-                            </span>
-                          )}
-                        </div>
-
-                        <p className="text-[11px] text-text-secondary truncate mt-0.5">
-                          {conv.lastMessageText || 'Chưa có tin nhắn'}
-                        </p>
-
-                        <div className="flex items-center justify-between gap-2 mt-1">
-                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-surface-muted text-text-muted truncate">
-                            {conv.accountName}
-                          </span>
-                          {conv.lastMessageAt && (
-                            <span className="text-[10px] text-text-muted shrink-0">
-                              {new Date(conv.lastMessageAt).toLocaleTimeString('vi-VN', {
-                                hour: '2-digit',
-                                minute: '2-digit',
-                              })}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </button>
-                  );
-                })
-              )}
-            </div>
-          </div>
-
-          {/* Center Pane: Active Thread */}
-          <div className="flex-1 flex flex-col bg-surface-subtle/30">
-            {!selectedConv ? (
-              <div className="flex-1 flex flex-col items-center justify-center text-center p-8 text-text-muted">
-                <MessageSquare className="w-10 h-10 mb-2 opacity-40" />
-                <p className="text-sm font-medium">Chọn một hội thoại Zalo hoặc LINE để bắt đầu</p>
-              </div>
-            ) : (
-              <>
-                {/* Thread Header */}
-                <div className="h-14 px-4 bg-surface border-b border-border flex items-center justify-between gap-3 shrink-0">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <span
-                      className={`px-2 py-0.5 rounded-md text-[10px] font-bold text-white ${
-                        selectedConv.platform === 'ZALO' ? 'bg-blue-600' : 'bg-[#06C755]'
-                      }`}
-                    >
-                      {selectedConv.accountTypeLabel}
-                    </span>
-                    <div className="truncate">
-                      <div className="font-bold text-sm text-text-primary truncate">
-                        {selectedConv.displayName}
-                      </div>
-                      <div className="text-[11px] text-text-muted truncate">
-                        Tài khoản: {selectedConv.accountName}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2 shrink-0">
-                    {selectedConv.platform === 'LINE' && (
-                      <span
-                        className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold ${
-                          hasFreeReplyWindow
-                            ? 'bg-emerald-500/15 text-emerald-700 border border-emerald-500/30'
-                            : 'bg-amber-500/10 text-amber-700 border border-amber-500/20'
-                        }`}
-                      >
-                        <Clock className="w-3 h-3" />
-                        {hasFreeReplyWindow
-                          ? 'Đang trong phiên phản hồi miễn phí'
-                          : 'Gửi tin nhắn chủ động'}
-                      </span>
-                    )}
-                    <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-surface-muted text-[11px] text-text-secondary">
-                      <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                      Bảo vệ chống khóa
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setMode(selectedConv.platform)}
-                      className="px-2.5 py-1 rounded-lg border border-border text-xs font-medium hover:bg-surface-muted text-text-secondary"
-                    >
-                      Mở hộp thư {selectedConv.platform} đầy đủ
-                    </button>
-                  </div>
-                </div>
-
-                {/* Messages Stream */}
-                <div className="flex-1 overflow-y-auto p-4 space-y-3">
-                  {loadingMessages ? (
-                    <div className="text-center py-8 text-xs text-text-muted">
-                      Đang tải lịch sử tin nhắn...
-                    </div>
-                  ) : messages.length === 0 ? (
-                    <div className="text-center py-8 text-xs text-text-muted">
-                      Chưa có tin nhắn trong cuộc trò chuyện này.
-                    </div>
-                  ) : (
-                    messages.map((m) => (
-                      <div
-                        key={m.id}
-                        className={`flex flex-col ${m.isSelf ? 'items-end' : 'items-start'}`}
-                      >
-                        {!m.isSelf && m.senderName && (
-                          <span className="text-[10px] text-text-muted mb-0.5 px-1">
-                            {m.senderName}
-                          </span>
-                        )}
-                        <div
-                          className={`max-w-[75%] rounded-2xl px-3.5 py-2 text-xs shadow-2xs ${
-                            m.isSelf
-                              ? selectedConv.platform === 'ZALO'
-                                ? 'bg-blue-600 text-white'
-                                : 'bg-[#06C755] text-white'
-                              : 'bg-surface border border-border text-text-primary'
-                          }`}
-                        >
-                          <div className="whitespace-pre-wrap break-words">{m.content}</div>
-                          <div
-                            className={`text-[10px] mt-1 flex items-center justify-end gap-1.5 ${
-                              m.isSelf ? 'text-white/80' : 'text-text-muted'
-                            }`}
-                          >
-                            {m.sentVia === 'reply_token' && (
-                              <span className="underline">Phản hồi miễn phí</span>
-                            )}
-                            <span>
-                              {new Date(m.timestamp).toLocaleTimeString('vi-VN', {
-                                hour: '2-digit',
-                                minute: '2-digit',
-                              })}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-
-                {/* Composer */}
-                <form
-                  onSubmit={handleSend}
-                  className="p-3 bg-surface border-t border-border flex items-center gap-2"
-                >
-                  <input
-                    type="text"
-                    value={composerText}
-                    onChange={(e) => setComposerText(e.target.value)}
-                    placeholder={`Nhập tin nhắn gửi qua ${selectedConv.accountName} (${selectedConv.platform})...`}
-                    className="flex-1 px-3.5 py-2 text-xs rounded-xl border border-border bg-surface-muted/50 focus:bg-surface focus:outline-none focus:ring-2 focus:ring-primary/20"
-                  />
-                  <button
-                    type="submit"
-                    disabled={sending || !composerText.trim()}
-                    className={`px-4 py-2 rounded-xl text-xs font-semibold text-white flex items-center gap-1.5 disabled:opacity-50 ${
-                      selectedConv.platform === 'ZALO'
-                        ? 'bg-blue-600 hover:bg-blue-700'
-                        : 'bg-[#06C755] hover:bg-emerald-600'
-                    }`}
-                  >
-                    <Send className="w-3.5 h-3.5" />
-                    {sending ? 'Đang gửi...' : 'Gửi'}
-                  </button>
-                </form>
-              </>
-            )}
-          </div>
-        </div>
-      )}
     </div>
   );
 };

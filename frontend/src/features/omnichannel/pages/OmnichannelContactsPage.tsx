@@ -6,14 +6,16 @@ import type { ZaloAccount } from '../../zalo/types/zalo.types';
 import type { LineAccount, LineFriend } from '../../line/types/line.types';
 import { PageContainer } from '../../../components/common/PageContainer';
 import { PageHeader } from '../../../components/common/PageHeader';
+import { HorizontalTabs } from '../../../components/ui/HorizontalTabs';
+import { GroupDirectory } from '../components/GroupDirectory';
 import { PaginationFooter } from '../../../components/common/Pagination';
 import { Button } from '../../../components/ui/Button';
 import { Input } from '../../../components/ui/Input';
 import { Modal } from '../../../components/ui/Modal';
 import { useToast } from '../../../components/ui/Toast';
 import {
-  Smartphone,
   Bot,
+  Smartphone,
   RefreshCw,
   Search,
   MessageSquare,
@@ -46,7 +48,7 @@ const ZALO_KIND_LABELS: Record<string, string> = {
   received: 'Chờ xác nhận',
 };
 
-export const OmnichannelContactsPage: React.FC<{ initialChannel?: ContactsChannelTab }> = ({
+const FriendsDirectory: React.FC<{ initialChannel?: ContactsChannelTab }> = ({
   initialChannel,
 }) => {
   const [searchParams] = useSearchParams();
@@ -59,6 +61,7 @@ export const OmnichannelContactsPage: React.FC<{ initialChannel?: ContactsChanne
   }, [initialChannel, searchParams]);
 
   const [channel, setChannel] = useState<ContactsChannelTab>(resolvedInitial);
+  useEffect(() => { setChannel(resolvedInitial); }, [resolvedInitial]);
 
   // ── Zalo Contacts State ──────────────────────────────────────────────────
   const [zaloAccounts, setZaloAccounts] = useState<ZaloAccount[]>([]);
@@ -338,40 +341,12 @@ export const OmnichannelContactsPage: React.FC<{ initialChannel?: ContactsChanne
   const selectedZaloAccount = zaloAccounts.find((a) => a.id === selectedZaloId) || null;
 
   return (
-    <PageContainer>
-      <PageHeader
-        title="Danh bạ Bạn bè & Liên hệ (Zalo & LINE)"
-        description="Quản lý tập trung danh sách bạn bè Zalo, người theo dõi kênh LINE Official Account và bạn bè LINE Cá nhân trên một màn hình duy nhất."
-        actions={
-          <div className="flex flex-wrap items-center gap-2">
-            {/* Native Top Channel Switcher */}
-            <div className="flex items-center gap-1 bg-surface-muted p-1 rounded-xl border border-border">
-              <button
-                type="button"
-                onClick={() => setChannel('ZALO')}
-                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
-                  channel === 'ZALO'
-                    ? 'bg-blue-600 text-white shadow-2xs'
-                    : 'text-text-secondary hover:text-text-primary'
-                }`}
-              >
-                <Smartphone className="w-3.5 h-3.5" />
-                Danh bạ Zalo
-              </button>
-              <button
-                type="button"
-                onClick={() => setChannel('LINE')}
-                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
-                  channel === 'LINE'
-                    ? 'bg-[#06C755] text-white shadow-2xs'
-                    : 'text-text-secondary hover:text-text-primary'
-                }`}
-              >
-                <Bot className="w-3.5 h-3.5" />
-                Danh bạ LINE
-              </button>
-            </div>
+    <div className="space-y-4">
 
+          <div className="flex flex-wrap items-center gap-2">
+            <HorizontalTabs<ContactsChannelTab> ariaLabel="Nền tảng bạn bè" size="sm" value={channel} onChange={setChannel} items={[
+              { value: 'ZALO', label: 'Zalo' }, { value: 'LINE', label: 'LINE' },
+            ]} />
             {channel === 'ZALO' ? (
               <Button
                 variant="primary"
@@ -412,9 +387,6 @@ export const OmnichannelContactsPage: React.FC<{ initialChannel?: ContactsChanne
               </>
             )}
           </div>
-        }
-      />
-
       {/* ZALO CONTACTS VIEW */}
       {channel === 'ZALO' && (
         <div className="space-y-4">
@@ -880,6 +852,22 @@ export const OmnichannelContactsPage: React.FC<{ initialChannel?: ContactsChanne
           )}
         </form>
       </Modal>
-    </PageContainer>
+    </div>
   );
+};
+
+export const OmnichannelContactsPage: React.FC<{ initialChannel?: ContactsChannelTab }> = ({ initialChannel }) => {
+  const [params, setParams] = useSearchParams();
+  const view = params.get('view') === 'groups' ? 'groups' : 'friends';
+  const requested = initialChannel || params.get('channel');
+  const platform = requested === 'ZALO' || requested === 'LINE' ? requested : 'ALL';
+  return <PageContainer>
+    <PageHeader title="Danh bạ đa kênh" description="Toàn bộ bạn bè, nhóm và cộng đồng đã đồng bộ từ tài khoản Zalo và LINE." />
+    <HorizontalTabs<'friends' | 'groups'> ariaLabel="Loại danh bạ" value={view} onChange={(value) => {
+      const next = new URLSearchParams(params); next.set('view', value); setParams(next);
+    }} className="mb-4" items={[
+      { value: 'friends', label: 'Danh sách bạn bè' }, { value: 'groups', label: 'Danh sách nhóm và cộng đồng' },
+    ]} />
+    {view === 'friends' ? <FriendsDirectory initialChannel={initialChannel} /> : <GroupDirectory key={platform} scope="all" initialPlatform={platform} />}
+  </PageContainer>;
 };

@@ -2,6 +2,10 @@
 
 ## 8. Quyết định đã chốt
 
+### Phạm vi nhóm và danh bạ đa kênh — người dùng chốt 2026-11-20
+
+Nhóm Lớp Đa kênh chỉ liệt kê nhóm Zalo/LINE có liên kết GROUP đã lưu với học viên có lớp (EnrollmentClass), không coi toàn bộ nhóm sync là nhóm lớp. Danh bạ đa kênh gồm Danh sách bạn bè và Danh sách nhóm và cộng đồng; mục nhóm chứa toàn bộ nhóm sync từ tài khoản sở hữu. Không tạo quan hệ Class ↔ Group mới, không suy luận liên kết bằng tên khi đọc danh sách, không thay phạm vi truy cập kênh hiện có. Chi tiết: `../api/omnichannel.md`.
+
 1. **Scope dữ liệu:** tập trung Sheet `1.Chăm sóc` và `3.Chấm buổi`; không thiết kế module tái tục/bàn giao ca trong MVP này.
 2. **Student:** một con người; chỉ chứa thông tin cá nhân.
 3. **Enrollment:** một gói/lần đăng ký học; tương ứng gần nhất với một dòng nghiệp vụ ở Sheet 1.
@@ -50,3 +54,5 @@
 34. **Đối soát hai nguồn (2026-10-10):** CSKH phụ trách được phân xử trong scope; ADMIN/MANAGE được phân xử mọi trường hợp. Phân xử bắt buộc có lý do. Dữ liệu pending/conflict không được tác động số buổi hoặc automation.
 35. **Chuẩn hóa Gói học (2026-11-17):** Kaiwa `Gói học` và JLPT `Gói SP` cùng dùng `Enrollment.package_id -> Package`; JLPT `Mã khóa học` lưu riêng tại `Enrollment.course_code`. `Enrollment.level` không còn là nơi ghi Gói SP cho dữ liệu mới.
 36. **Không gian Giáo viên (2026-11-17):** Tài khoản chỉ có role `TEACHER` dùng sidebar riêng gồm Dashboard; nhóm Giảng dạy (Điểm danh, Lịch dạy, Việc cần xử lý, Học viên của tôi); nhóm Cá nhân (Thông báo, Hồ sơ giáo viên). Tài khoản đa vai trò giữ sidebar đầy đủ. Hồ sơ cá nhân cho phép giáo viên tự sửa `phone` và `email`; mã, tên, loại và trạng thái do Admin/Manage quản lý.
+37. **Nhóm chăm sóc theo chương trình (2026-11-20):** Mỗi liên kết GROUP của học viên phải ghi `program_type=KAIWA|JLPT`; unique scope là học viên + tài khoản + chương trình để một học viên học cả hai chương trình không bị ghi đè. Kaiwa dùng mẫu không có hậu tố; JLPT có `{level}` cuối tên. Hậu tố là ghi chú nhận diện, không phải tiêu chí chọn nhóm. Nhiều nhóm cùng khóa không tự chọn; người dùng chọn thủ công. USER `ALL` có thể dùng chung, GROUP `ALL` legacy cần xác định lại.
+38. **Cấu hình quy tắc tên (2026-11-20):** AppSetting `omnichannel.care-group-rules.v1` là nguồn cấu hình toàn hệ thống. ADMIN/MANAGE được chỉnh và xem trước; CS chỉ đọc. Lưu không tự đồng bộ, đổi tên hoặc gửi tin; mọi thay đổi có audit và optimistic version.

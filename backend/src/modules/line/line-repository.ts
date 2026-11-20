@@ -593,6 +593,7 @@ export class LineRepository {
     return prisma.lineContactRelation.upsert({
       where: {
         student_id_line_account_id: {
+          program_type: 'ALL',
           student_id: studentId,
           line_account_id: lineAccountId,
         },

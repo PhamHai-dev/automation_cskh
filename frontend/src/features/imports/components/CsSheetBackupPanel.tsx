@@ -889,10 +889,10 @@ export const CsSheetBackupPanel: React.FC<CsSheetBackupPanelProps> = ({ initialT
           {/* 5. Bảng Nguồn sao lưu (8 Cột) & Phân trang */}
           <div className="bg-white rounded-2xl border border-slate-200/90 shadow-xs overflow-hidden">
             <div className="data-table-scroll">
-              <table className="data-source-table">
+              <table data-table="native" className="data-source-table">
                 <thead>
                   <tr className="border-b border-slate-200 bg-slate-50/80 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
-                    <th className="py-3 pl-4 pr-2 w-10">
+                    <th scope="col" className="py-3 pl-4 pr-2 w-10">
                       <input
                         type="checkbox" aria-label="Chọn tất cả nguồn trên trang"
                         checked={
@@ -917,20 +917,20 @@ export const CsSheetBackupPanel: React.FC<CsSheetBackupPanelProps> = ({ initialT
                         className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
                       />
                     </th>
-                    <th>Tên nguồn</th><th>Phân loại</th><th>Nơi lưu</th><th>Phạm vi</th><th>Tự động</th><th>Kết quả gần nhất</th><th>Thao tác</th>
+                    <th scope="col">Tên nguồn</th><th scope="col">Phân loại</th><th scope="col">Nơi lưu</th><th scope="col">Phạm vi</th><th scope="col">Tự động</th><th scope="col">Kết quả gần nhất</th><th scope="col">Thao tác</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-xs">
                   {loading ? (
                     <tr>
-                      <td colSpan={8} className="py-12 text-center text-slate-500">
+                      <td data-align="center" colSpan={8} className="py-12 text-center text-slate-500">
                         <RefreshCw className="w-4 h-4 animate-spin inline mr-2 text-blue-600" />
                         Đang tải danh sách nguồn sao lưu...
                       </td>
                     </tr>
                   ) : paginatedConfigs.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="py-12 text-center text-slate-500">
+                      <td data-align="center" colSpan={8} className="py-12 text-center text-slate-500">
                         Không có nguồn sao lưu nào phù hợp với bộ lọc hiện tại.
                       </td>
                     </tr>
@@ -958,7 +958,7 @@ export const CsSheetBackupPanel: React.FC<CsSheetBackupPanelProps> = ({ initialT
                       return (
                         <React.Fragment key={String(cfg.id)}>
                           <tr data-flow={flow.toLowerCase()} className={`data-source-row ${isChecked ? 'is-selected' : ''}`}>
-                            <td>
+                            <td data-align="center" data-wrap="nowrap">
                             <input
                               type="checkbox" aria-label={`Chọn ${cfg.name}`}
                               checked={isChecked}
@@ -973,17 +973,17 @@ export const CsSheetBackupPanel: React.FC<CsSheetBackupPanelProps> = ({ initialT
                               className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
                             />
                           </td>
-                            <td><div className="data-source-name"><span>{cfg.name}</span></div></td>
-                            <td><div className="data-classification">{renderFlowBadge(flow)}
+                            <td data-align="left" data-wrap="normal"><div className="data-source-name"><span>{cfg.name}</span></div></td>
+                            <td data-align="center" data-wrap="nowrap"><div className="data-classification">{renderFlowBadge(flow)}
                             {renderProgramBadge(cfg.program_type)}
                           </div></td>
-                            <td><div className="data-table-cell">
+                            <td data-align="left" data-wrap="normal"><div className="data-table-cell">
                               <div className="data-cell-primary">{sheetUrl ? 'Google Sheet + Excel' : 'Excel trên máy chủ'}</div>
                               <div className="data-cell-secondary">{sheets.slice(0, 2).join(' · ')}{sheets.length > 2 ? ` +${sheets.length - 2}` : ''}</div>
                               <div className="data-cell-actions">{sheetUrl ? <a href={sheetUrl} target="_blank" rel="noreferrer">Mở Sheet <ExternalLink className="w-3 h-3" /></a> : <button type="button" onClick={() => { setEditingConfig(cfg); setConfigModalOpen(true); }}>Gắn Sheet</button>}</div>
                             </div></td>
-                            <td><div className="data-table-cell"><div className="data-cell-primary">Năm {cfg.backup_year || 'Tất cả'} · {cfg.student_counts?.total ?? 0} HV</div><div className="data-cell-secondary">Đang học: {cfg.student_counts?.attending ?? 0}{cfg.mask_sensitive_data ? ' · Đã che SĐT' : ''}</div></div></td>
-                            <td className="data-auto-cell">
+                            <td data-align="left" data-wrap="normal"><div className="data-table-cell"><div className="data-cell-primary">Năm {cfg.backup_year || 'Tất cả'} · {cfg.student_counts?.total ?? 0} HV</div><div className="data-cell-secondary">Đang học: {cfg.student_counts?.attending ?? 0}{cfg.mask_sensitive_data ? ' · Đã che SĐT' : ''}</div></div></td>
+                            <td data-align="center" data-wrap="nowrap" className="data-auto-cell">
                             <button
                               type="button"
                               role="switch"
@@ -995,7 +995,7 @@ export const CsSheetBackupPanel: React.FC<CsSheetBackupPanelProps> = ({ initialT
                               className={`data-auto-switch ${cfg.enabled ? 'is-on' : ''}`}
                             ><span /></button>
                           </td>
-                            <td>
+                            <td data-align="left" data-wrap="normal">
                             <div className="flex flex-col items-start gap-1">
                               <span className="text-text-muted text-xs">
                                 {runDate === 'Chưa chạy'
@@ -1030,7 +1030,7 @@ export const CsSheetBackupPanel: React.FC<CsSheetBackupPanelProps> = ({ initialT
                               </span>
                             </div>
                           </td>
-                            <td><div className="data-row-actions"><Button size="sm" variant="outline" isLoading={runningId === String(cfg.id)} onClick={() => { void handleRunOne(cfg); }} leftIcon={<Play className="w-4 h-4" />}>Sao lưu ngay</Button><DataRowMenu label={cfg.name} actions={[
+                            <td data-align="center" data-wrap="nowrap"><div className="data-row-actions"><Button size="sm" variant="outline" isLoading={runningId === String(cfg.id)} onClick={() => { void handleRunOne(cfg); }} leftIcon={<Play className="w-4 h-4" />}>Sao lưu ngay</Button><DataRowMenu label={cfg.name} actions={[
     { label: 'Cấu hình', icon: <Settings className="w-4 h-4" />, onClick: () => { setEditingConfig(cfg); setConfigModalOpen(true); } },
     { label: 'Tải file Excel', icon: <Download className="w-4 h-4" />, disabled: downloadingId === cfg.id, onClick: () => { void handleDownloadExcel(cfg); } },
     { label: 'Xem lịch sử', icon: <History className="w-4 h-4" />, onClick: () => { setHistorySearch(cfg.cs_user?.staff_code || cfg.name); changeSubTab('history'); } },
@@ -1225,23 +1225,23 @@ export const CsSheetBackupPanel: React.FC<CsSheetBackupPanelProps> = ({ initialT
           {/* 3. Bảng phẳng Lịch sử sao lưu (10 cột) */}
           <div className="bg-white rounded-2xl border border-slate-200/90 shadow-xs overflow-hidden">
             <div className="data-table-scroll">
-              <table className="data-history-table w-full text-left border-collapse">
+              <table data-table="native" className="data-history-table w-full text-left border-collapse">
                 <thead>
                   <tr className="border-b border-slate-200 bg-slate-50/70 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
-                    <th className="py-3 pl-4 pr-3">Thời gian</th>
-                    <th className="py-3 px-3">Nguồn sao lưu</th>
-                    <th className="py-3 px-3">Chương trình</th>
-                    <th className="py-3 px-3">Kích hoạt</th>
-                    <th className="py-3 px-3">Kết quả xử lý</th>
-                    <th className="py-3 px-3">Kết quả</th>
-                    <th className="py-3 px-3">Thời lượng</th>
-                    <th className="py-3 pl-3 pr-4 text-right">Chi tiết &amp; File .xlsx</th>
+                    <th scope="col" className="py-3 pl-4 pr-3">Thời gian</th>
+                    <th scope="col" className="py-3 px-3">Nguồn sao lưu</th>
+                    <th scope="col" className="py-3 px-3">Chương trình</th>
+                    <th scope="col" className="py-3 px-3">Kích hoạt</th>
+                    <th scope="col" className="py-3 px-3">Kết quả xử lý</th>
+                    <th scope="col" className="py-3 px-3">Kết quả</th>
+                    <th scope="col" className="py-3 px-3">Thời lượng</th>
+                    <th scope="col" className="py-3 pl-3 pr-4 ">Chi tiết &amp; File .xlsx</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-xs">
                   {paginatedHistoryItems.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="py-12 text-center text-slate-500">
+                      <td data-align="center" colSpan={8} className="py-12 text-center text-slate-500">
                         Chưa có phiên chạy sao lưu nào khớp bộ lọc. Hãy bấm{' '}
                         <strong>[Sao lưu ngay]</strong> trên một nguồn bất kỳ để tạo lịch sử.
                       </td>
@@ -1255,7 +1255,7 @@ export const CsSheetBackupPanel: React.FC<CsSheetBackupPanelProps> = ({ initialT
                           onClick={() => setSelectedHistoryItem(item)}
                           className="hover:bg-slate-50/80 transition-colors cursor-pointer"
                         >
-                          <td className="py-3.5 pl-4 pr-3 align-middle font-medium text-slate-800 whitespace-nowrap">
+                          <td data-align="center" data-wrap="nowrap" className="py-3.5 pl-4 pr-3 align-middle font-medium text-slate-800 whitespace-nowrap">
                             <div>{formatDateTimeFull(item.backedUpAt || item.createdAt)}</div>
                             {item.batchId && (
                               <div className="text-[10px] font-mono text-slate-400">
@@ -1263,7 +1263,7 @@ export const CsSheetBackupPanel: React.FC<CsSheetBackupPanelProps> = ({ initialT
                               </div>
                             )}
                           </td>
-                          <td className="py-3.5 px-3 align-middle">
+                          <td data-align="left" data-wrap="normal" className="py-3.5 px-3 align-middle">
                             <div className="font-bold text-slate-900">
                               {item.configName || `Nguồn #${item.configId}`}
                             </div>
@@ -1273,14 +1273,14 @@ export const CsSheetBackupPanel: React.FC<CsSheetBackupPanelProps> = ({ initialT
                               </div>
                             )}
                           </td>
-                          <td className="py-3.5 px-3 align-middle">
+                          <td data-align="center" data-wrap="nowrap" className="py-3.5 px-3 align-middle">
                             {renderProgramBadge(item.programType)}
                           </td>
-                          <td className="py-3.5 px-3 align-middle text-slate-600">
+                          <td data-align="center" data-wrap="nowrap" className="py-3.5 px-3 align-middle text-slate-600">
                             {item.triggerType === 'AUTO' ? 'Tự động' : 'Thủ công'}
                           </td>
-                          <td className="py-3.5 px-3"><div className="data-history-result"><span>{item.totalStudents ?? 0} học viên</span><span>+{item.appendedRows ?? 0} dòng mới</span><span>{item.updatedCellsCount ?? 0} ô cập nhật</span></div></td>
-                          <td className="py-3.5 px-3 align-middle">
+                          <td data-align="left" data-wrap="normal" className="py-3.5 px-3"><div className="data-history-result"><span>{item.totalStudents ?? 0} học viên</span><span>+{item.appendedRows ?? 0} dòng mới</span><span>{item.updatedCellsCount ?? 0} ô cập nhật</span></div></td>
+                          <td data-align="center" data-wrap="nowrap" className="py-3.5 px-3 align-middle">
                             {isFailed ? (
                               <Badge variant="danger" size="sm" dot>
                                 Thất bại
@@ -1291,10 +1291,10 @@ export const CsSheetBackupPanel: React.FC<CsSheetBackupPanelProps> = ({ initialT
                               </Badge>
                             )}
                           </td>
-                          <td className="py-3.5 px-3 align-middle text-slate-600">
+                          <td data-align="right" data-wrap="nowrap" className="py-3.5 px-3 align-middle text-slate-600">
                             {item.durationSec} giây
                           </td>
-                          <td className="py-3.5 pl-3 pr-4 align-middle text-right">
+                          <td data-align="center" data-wrap="nowrap" className="py-3.5 pl-3 pr-4 align-middle text-right">
                             <Button size="sm" variant="ghost" onClick={event => { event.stopPropagation(); setSelectedHistoryItem(item); }}>Xem chi tiết →</Button>
                           </td>
                         </tr>
@@ -1444,15 +1444,15 @@ export const CsSheetBackupPanel: React.FC<CsSheetBackupPanelProps> = ({ initialT
             )}
 
             {/* Bảng thống kê từng Sheet trong Workbook */}
-            <div className="border border-slate-200 rounded-xl overflow-hidden">
-              <table className="w-full text-left border-collapse text-xs">
+            <div className="border border-slate-200 rounded-xl overflow-x-auto">
+              <table data-table="native" className="w-full text-left border-collapse text-xs">
                 <thead>
                   <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase">
-                    <th className="py-2.5 px-3">Tên Sheet trong File</th>
-                    <th className="py-2.5 px-3">Tổng dòng HV</th>
-                    <th className="py-2.5 px-3">Thêm mới</th>
-                    <th className="py-2.5 px-3">Dòng sửa</th>
-                    <th className="py-2.5 px-3">Ô cập nhật</th>
+                    <th scope="col" className="py-2.5 px-3">Tên Sheet trong File</th>
+                    <th scope="col" className="py-2.5 px-3">Tổng dòng HV</th>
+                    <th scope="col" className="py-2.5 px-3">Thêm mới</th>
+                    <th scope="col" className="py-2.5 px-3">Dòng sửa</th>
+                    <th scope="col" className="py-2.5 px-3">Ô cập nhật</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -1473,19 +1473,19 @@ export const CsSheetBackupPanel: React.FC<CsSheetBackupPanelProps> = ({ initialT
                     .filter((x) => Boolean(x.stat))
                     .map((entry, idx) => (
                       <tr key={idx}>
-                        <td className="py-2.5 px-3 font-bold text-slate-800">
+                        <td data-align="left" data-wrap="normal" className="py-2.5 px-3 font-bold text-slate-800">
                           {entry.stat?.sheetName || entry.fallback}
                         </td>
-                        <td className="py-2.5 px-3">
+                        <td data-align="right" data-wrap="nowrap" className="py-2.5 px-3">
                           {entry.stat?.totalEnrollments ?? 0}
                         </td>
-                        <td className="py-2.5 px-3 text-emerald-600 font-semibold">
+                        <td data-align="right" data-wrap="nowrap" className="py-2.5 px-3 text-emerald-600 font-semibold">
                           +{entry.stat?.appendedRows ?? 0}
                         </td>
-                        <td className="py-2.5 px-3 text-blue-600 font-semibold">
+                        <td data-align="right" data-wrap="nowrap" className="py-2.5 px-3 text-blue-600 font-semibold">
                           ~{entry.stat?.updatedRows ?? 0}
                         </td>
-                        <td className="py-2.5 px-3 font-mono font-bold text-indigo-700">
+                        <td data-align="right" data-wrap="nowrap" className="py-2.5 px-3 font-mono font-bold text-indigo-700">
                           {entry.stat?.updatedCellsCount ?? 0} ô
                         </td>
                       </tr>

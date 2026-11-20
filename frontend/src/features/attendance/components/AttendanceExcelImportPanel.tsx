@@ -138,32 +138,32 @@ export const AttendanceExcelImportPanel: React.FC = () => {
         </div>
         <div className="rounded-xl border border-border overflow-hidden">
           <div className="max-h-[420px] overflow-auto">
-            <table className="min-w-[850px] w-full text-xs">
+            <table data-table="native" className="min-w-[850px] w-full text-xs">
               <thead className="sticky top-0 bg-surface-muted">
                 <tr>
-                  <th className="p-3 text-left">Học viên</th>
-                  <th className="p-3 text-left">Ngày</th>
-                  <th className="p-3 text-left">Giá trị</th>
-                  <th className="p-3 text-left">Kết quả</th>
-                  <th className="p-3 text-left">Chi tiết</th>
+                  <th scope="col" className="p-3 ">Học viên</th>
+                  <th scope="col" className="p-3 ">Ngày</th>
+                  <th scope="col" className="p-3 ">Giá trị</th>
+                  <th scope="col" className="p-3 ">Kết quả</th>
+                  <th scope="col" className="p-3 ">Chi tiết</th>
                 </tr>
               </thead>
               <tbody>
                 {pagedResultItems.map((item) => (
                   <tr key={item.id} className="border-t border-border align-top">
-                    <td className="p-3 font-mono">
+                    <td data-align="center" data-wrap="nowrap" className="p-3 font-mono">
                       {item.externalId}
                       <br />
                       <span className="text-text-muted">{item.cellAddress}</span>
                     </td>
-                    <td className="p-3">{item.targetDate || '—'}</td>
-                    <td className="p-3">{item.rawValue}</td>
-                    <td className="p-3">
+                    <td data-align="center" data-wrap="nowrap" className="p-3">{item.targetDate || '—'}</td>
+                    <td data-align="center" data-wrap="nowrap" className="p-3">{item.rawValue}</td>
+                    <td data-align="center" data-wrap="nowrap" className="p-3">
                       <Badge variant={item.skipped ? 'neutral' : 'success'}>
                         {item.skipped ? resultLabel[item.action] : resultLabel[item.action] || 'Đã xử lý'}
                       </Badge>
                     </td>
-                    <td className="p-3">
+                    <td data-align="left" data-wrap="normal" className="p-3">
                       {item.createdSessions ? `Tạo ${item.createdSessions} buổi học; ` : ''}
                       {item.createdAttendances ? `tạo ${item.createdAttendances} điểm danh; ` : ''}
                       {item.updatedAttendances
@@ -328,39 +328,39 @@ export const AttendanceExcelImportPanel: React.FC = () => {
           </div>
           <div className="rounded-xl border border-border overflow-hidden">
             <div className="max-h-[500px] overflow-auto">
-              <table className="min-w-[1050px] w-full text-xs">
+              <table data-table="native" className="min-w-[1050px] w-full text-xs">
                 <thead className="sticky top-0 bg-surface-muted">
                   <tr>
-                    <th className="p-3 text-left">Học viên</th>
-                    <th className="p-3 text-left">Ngày</th>
-                    <th className="p-3 text-left">Giá trị</th>
-                    <th className="p-3 text-left">Ca xử lý</th>
-                    <th className="p-3 text-left">Trạng thái</th>
-                    <th className="p-3 text-left">Duyệt</th>
+                    <th scope="col" className="p-3 ">Học viên</th>
+                    <th scope="col" className="p-3 ">Ngày</th>
+                    <th scope="col" className="p-3 ">Giá trị</th>
+                    <th scope="col" className="p-3 ">Ca xử lý</th>
+                    <th scope="col" className="p-3 ">Trạng thái</th>
+                    <th scope="col" className="p-3 ">Duyệt</th>
                   </tr>
                 </thead>
                 <tbody>
                   {pagedPreviewItems.map((item) => (
                     <tr key={item.id} className="border-t border-border align-top">
-                      <td className="p-3 font-mono">
+                      <td data-align="center" data-wrap="nowrap" className="p-3 font-mono">
                         <b>{item.externalId}</b>
                         <br />
                         {item.cellAddress}
                       </td>
-                      <td className="p-3">
+                      <td data-align="center" data-wrap="nowrap" className="p-3">
                         {item.sourceDate} → <b>{item.targetDate || 'Lỗi'}</b>
                       </td>
-                      <td className="p-3">
+                      <td data-align="center" data-wrap="nowrap" className="p-3">
                         <b>{item.rawValue}</b> · {item.sessionCount} buổi
                       </td>
-                      <td className="p-3">
+                      <td data-align="left" data-wrap="normal" className="p-3">
                         {item.sessionPlans.map((plan: any) => (
                           <div key={`${plan.startTime}-${plan.endTime}`}>
                             {plan.startTime}–{plan.endTime}: {plan.action}
                           </div>
                         ))}
                       </td>
-                      <td className="p-3">
+                      <td data-align="center" data-wrap="nowrap" className="p-3">
                         <Badge
                           variant={
                             item.classification === 'INVALID'
@@ -380,7 +380,7 @@ export const AttendanceExcelImportPanel: React.FC = () => {
                           </p>
                         ))}
                       </td>
-                      <td className="p-3">
+                      <td data-align="center" data-wrap="nowrap" className="p-3">
                         {item.classification === 'CONFLICT' ? (
                           <select
                             id={`attendance-action-${item.id}`}

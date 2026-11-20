@@ -150,14 +150,14 @@ export const PackagesPage: React.FC = () => {
   };
 
   const columns: Column<Package>[] = [
-    { header: 'Mã gói', accessorKey: 'code', className: 'font-bold text-slate-900 text-xs' },
-    { header: 'Tên gói học', accessorKey: 'name', cell: (item) => <span className="font-semibold text-xs text-slate-800">{item.name || '—'}</span> },
+    { align: 'center' as const, wrap: false, header: 'Mã gói', accessorKey: 'code', className: 'font-bold text-slate-900 text-xs' },
+    { align: 'left' as const, wrap: true, header: 'Tên gói học', accessorKey: 'name', cell: (item) => <span className="font-semibold text-xs text-slate-800">{item.name || '—'}</span> },
     {
-      header: 'Số buổi định mức',
+      align: 'right' as const, wrap: false, header: 'Số buổi định mức',
       cell: (item) => (item.default_total_sessions ? `${item.default_total_sessions} buổi` : '—'),
     },
     {
-      header: 'Trạng thái',
+      align: 'center' as const, wrap: false, header: 'Trạng thái',
       cell: (item) => (
         <Badge variant={item.active ? 'success' : 'danger'}>
           {item.active ? 'Đang hoạt động' : 'Ngừng áp dụng'}
@@ -165,7 +165,7 @@ export const PackagesPage: React.FC = () => {
       ),
     },
     {
-      header: 'Thao tác',
+      align: 'center' as const, wrap: false, header: 'Thao tác',
       className: 'text-right',
       cell: (item) => (
         <div className="flex justify-end">

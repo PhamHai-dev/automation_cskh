@@ -1,0 +1,60 @@
+/* Table contract: centered headers, explicit body alignment by data type.
+   Use data-wrap="normal" for prose, never force an entire table to nowrap. */
+table[data-table] th {
+  text-align: center !important;
+  vertical-align: middle;
+  white-space: nowrap;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+table[data-table] th > :is(.flex, .inline-flex) {
+  justify-content: center;
+}
+
+table[data-table] td[data-align] {
+  vertical-align: middle;
+}
+
+table[data-table] td[data-align="left"] { text-align: left !important; }
+table[data-table] td[data-align="center"] { text-align: center !important; }
+table[data-table] td[data-align="right"] {
+  text-align: right !important;
+  font-variant-numeric: tabular-nums;
+}
+
+table[data-table] td[data-wrap="nowrap"] { white-space: nowrap; }
+table[data-table] td[data-wrap="nowrap"] > .flex:not(.flex-col) { flex-wrap: nowrap; }
+table[data-table] td[data-wrap="normal"] {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: normal;
+  min-width: 8rem;
+  max-width: 28rem;
+}
+table[data-table] td[data-wrap="normal"] :is(p, code, a) { overflow-wrap: anywhere; }
+table[data-table] td[data-wrap="normal"] > .whitespace-nowrap { white-space: normal; }
+
+/* A flex action group must follow the cell, rather than its old justify-end.
+   Matrix controls with their own multi-part layout opt out explicitly. */
+table[data-table] td[data-align="center"]:not([data-cell-layout="custom"]) > .flex:not(.flex-col) { justify-content: center; }
+table[data-table] td[data-align="center"]:not([data-cell-layout="custom"]) > .flex-col { align-items: center; }
+table[data-table] td[data-align="right"]:not([data-cell-layout="custom"]) > .flex:not(.flex-col) { justify-content: flex-end; }
+table[data-table] td[data-align="right"]:not([data-cell-layout="custom"]) > .flex-col { align-items: flex-end; }
+table[data-table]:not([data-table="report"]) td[data-align="left"]:not([data-cell-layout="custom"]) > .flex:not(.flex-col) { justify-content: flex-start; }
+
+table[data-table] td[data-align] > .block { text-align: inherit; }
+table[data-table] td[data-align="right"] input:not([type="checkbox"]):not([type="radio"]) { text-align: right; font-variant-numeric: tabular-nums; }
+table[data-table] td[data-align="center"] > :is(input, select) { text-align: center; }
+table[data-table] td[data-align] :is(button, [role="button"]) { flex-shrink: 0; }
+table[data-table] td[data-align] svg { flex-shrink: 0; }
+table[data-table] td[data-align] .inline-flex.rounded-full { flex-shrink: 0; white-space: nowrap; }
+
+/* Fixed columns can cover the entire viewport on a phone. Keep horizontal
+   scrolling usable there while preserving sticky headers and desktop offsets. */
+@media (max-width: 639px) {
+  table[data-table] :is(th, td).sticky[class*="left-"] {
+    left: auto !important;
+    right: auto !important;
+  }
+}

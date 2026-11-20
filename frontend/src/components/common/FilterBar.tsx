@@ -11,6 +11,8 @@ export interface FilterBarProps {
   onClear?: () => void;
   hasActiveFilters?: boolean;
   activeCount?: number;
+  variant?: 'card' | 'embedded';
+  showHeader?: boolean;
 }
 
 export const FilterBar: React.FC<FilterBarProps> = ({
@@ -22,15 +24,17 @@ export const FilterBar: React.FC<FilterBarProps> = ({
   onClear,
   hasActiveFilters = false,
   activeCount = 0,
+  variant = 'card',
+  showHeader = true,
 }) => {
   const resetFn = onClear || onReset;
   const showReset = Boolean(resetFn && (hasActiveFilters || activeCount > 0));
 
   return (
     <div
-      className={`mb-6 bg-surface p-4 sm:p-5 rounded-2xl border border-border/80 shadow-soft transition-all ${className}`}
+      className={`${variant === 'embedded' ? 'bg-surface' : 'mb-6 bg-surface p-4 sm:p-5 rounded-2xl border border-border/80 shadow-soft'} transition-all ${className}`}
     >
-      <div className="flex items-center justify-between pb-3 mb-3 border-b border-border/60">
+      {showHeader && <div className="flex items-center justify-between pb-3 mb-3 border-b border-border/60">
         <div className="flex items-center gap-2 text-xs font-bold text-text-secondary uppercase tracking-wider">
           <Filter className="w-3.5 h-3.5 text-primary" />
           <span>{title}</span>
@@ -51,7 +55,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
             Xóa bộ lọc
           </Button>
         )}
-      </div>
+      </div>}
 
       <div className={gridClassName}>
         {children}

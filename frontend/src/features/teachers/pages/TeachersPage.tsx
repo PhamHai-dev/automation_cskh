@@ -210,7 +210,7 @@ export const TeachersPage: React.FC = () => {
 
   const columns: Column<Teacher>[] = [
     {
-      header: 'Họ tên Giáo viên',
+      align: 'left' as const, wrap: true, header: 'Họ và tên giáo viên',
       cell: (item) => (
         <div className="flex items-center space-x-3">
           <div className="w-8 h-8 rounded-full bg-teal-100 text-teal-800 flex items-center justify-center font-bold text-xs">
@@ -224,7 +224,7 @@ export const TeachersPage: React.FC = () => {
       ),
     },
     {
-      header: 'Mã giáo viên',
+      align: 'center' as const, wrap: false, header: 'Mã giáo viên',
       cell: (item) => (
         <span className="font-mono text-xs text-slate-800 font-semibold bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
           {item.code || '—'}
@@ -232,19 +232,19 @@ export const TeachersPage: React.FC = () => {
       ),
     },
     {
-      header: 'Phân loại GV',
+      align: 'center' as const, wrap: false, header: 'Loại giáo viên',
       cell: (item) => {
         const type = item.teacher_type;
         return type ? <Badge variant="info">{TEACHER_TYPE_LABELS[type] || type}</Badge> : '—';
       },
     },
     {
-      header: 'Số điện thoại',
+      align: 'center' as const, wrap: false, header: 'Số điện thoại',
       accessorKey: 'phone',
       cell: (item) => item.phone || '—',
     },
     {
-      header: 'Tài khoản đăng nhập',
+      align: 'left' as const, wrap: true, header: 'Tài khoản đăng nhập',
       cell: (item) => {
         if (item.user) {
           return (
@@ -260,7 +260,7 @@ export const TeachersPage: React.FC = () => {
       },
     },
     {
-      header: 'Trạng thái',
+      align: 'center' as const, wrap: false, header: 'Trạng thái',
       cell: (item) => (
         <Badge variant={item.active ? 'success' : 'danger'}>
           {item.active ? 'Đang giảng dạy' : 'Tạm ngừng'}
@@ -268,7 +268,7 @@ export const TeachersPage: React.FC = () => {
       ),
     },
     {
-      header: 'Thao tác',
+      align: 'center' as const, wrap: false, header: 'Thao tác',
       className: 'text-right',
       cell: (item) => (
         <div className="flex justify-end items-center gap-1.5">

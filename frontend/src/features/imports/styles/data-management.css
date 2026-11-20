@@ -92,7 +92,7 @@
 .data-source-table td { padding:15px 12px; border-bottom:1px solid #e8edf5; font-size:13px; vertical-align:middle; transition:background .15s; }
 .data-source-table th:first-child { width:40px; }
 .data-source-table th:nth-child(2) { width:25%; }
-.data-source-table th:last-child { text-align:right; }
+.data-source-table th:last-child { text-align:center; }
 .data-source-row { --flow:var(--data-indigo); }
 .data-source-row[data-flow="student-master"],.data-source-row[data-flow="admin"] { --flow:var(--data-violet); }
 .data-source-row[data-flow="cskh-attendance"],.data-source-row[data-flow="cskh"] { --flow:var(--data-blue); }
@@ -120,7 +120,7 @@
 .data-auto-switch.is-on { background:#10b981; }
 .data-auto-switch.is-on > span { transform:translateX(15px); }
 .data-auto-switch:disabled { opacity:.48; cursor:not-allowed; }
-.data-row-actions { display:flex; align-items:center; justify-content:flex-end; gap:8px; white-space:nowrap; }
+.data-row-actions { display:flex; align-items:center; justify-content:center; gap:8px; white-space:nowrap; }
 .data-menu { position:fixed; z-index:1000; width:224px; padding:6px; border:1px solid #dbe3f0; border-radius:12px; background:var(--color-surface); box-shadow:0 14px 34px rgb(15 23 42 / 18%); }
 .data-menu button { width:100%; text-align:left; display:flex; align-items:center; gap:8px; padding:10px 12px; border:0; background:transparent; border-radius:8px; font-size:13px; color:var(--color-text-secondary); }
 .data-menu button:hover,.data-menu button:focus-visible { background:#f3f6fb; color:#334155; }

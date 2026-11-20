@@ -691,10 +691,10 @@ export const SyncHistoryDetailPage: React.FC = () => {
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse text-xs">
+            <table data-table="native" className="w-full text-left border-collapse text-xs">
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-50/80 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
-                  <th className="py-3 pl-4 pr-2 w-10">
+                  <th scope="col" className="py-3 pl-4 pr-2 w-10">
                     <input
                       type="checkbox"
                       checked={
@@ -711,19 +711,19 @@ export const SyncHistoryDetailPage: React.FC = () => {
                       className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
                     />
                   </th>
-                  <th className="py-3 px-3 w-20">Dòng</th>
-                  <th className="py-3 px-3 w-48">Mã định danh &amp; Học viên</th>
-                  <th className="py-3 px-3 w-32">Loại dữ liệu</th>
-                  <th className="py-3 px-3 w-28">Thao tác</th>
-                  <th className="py-3 px-3">Chi tiết thay đổi (Trước → Sau)</th>
-                  <th className="py-3 px-3 w-36">Trạng thái</th>
-                  <th className="py-3 pl-3 pr-4 text-right w-36">Hành động</th>
+                  <th scope="col" className="py-3 px-3 w-20">Dòng</th>
+                  <th scope="col" className="py-3 px-3 w-48">Mã định danh &amp; Học viên</th>
+                  <th scope="col" className="py-3 px-3 w-32">Loại dữ liệu</th>
+                  <th scope="col" className="py-3 px-3 w-28">Thao tác</th>
+                  <th scope="col" className="py-3 px-3">Chi tiết thay đổi (Trước → Sau)</th>
+                  <th scope="col" className="py-3 px-3 w-36">Trạng thái</th>
+                  <th scope="col" className="py-3 pl-3 pr-4 w-36">Hành động</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {filteredItems.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="py-12 text-center text-slate-500">
+                    <td data-align="center" colSpan={8} className="py-12 text-center text-slate-500">
                       Không có bản ghi thay đổi nào phù hợp với bộ lọc.
                     </td>
                   </tr>
@@ -749,7 +749,7 @@ export const SyncHistoryDetailPage: React.FC = () => {
                             : 'hover:bg-slate-50/70'
                         }`}
                       >
-                        <td className="py-3.5 pl-4 pr-2 align-top">
+                        <td data-align="center" data-wrap="nowrap" className="py-3.5 pl-4 pr-2 align-top">
                           <input
                             type="checkbox"
                             disabled={isRolledBack || item.status === 'FAILED'}
@@ -758,10 +758,10 @@ export const SyncHistoryDetailPage: React.FC = () => {
                             className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 disabled:opacity-40 cursor-pointer mt-0.5"
                           />
                         </td>
-                        <td className="py-3.5 px-3 align-top font-mono font-semibold text-slate-600">
+                        <td data-align="center" data-wrap="nowrap" className="py-3.5 px-3 align-top font-mono font-semibold text-slate-600">
                           #{item.rowNumber}
                         </td>
-                        <td className="py-3.5 px-3 align-top">
+                        <td data-align="left" data-wrap="normal" className="py-3.5 px-3 align-top">
                           <div className="font-bold text-slate-900">
                             {item.fullName}
                           </div>
@@ -770,13 +770,13 @@ export const SyncHistoryDetailPage: React.FC = () => {
                             {item.classCode ? ` • Lớp: ${item.classCode}` : ''}
                           </div>
                         </td>
-                        <td className="py-3.5 px-3 align-top">
+                        <td data-align="center" data-wrap="nowrap" className="py-3.5 px-3 align-top">
                           <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-semibold text-[11px]">
                             {ENTITY_TYPE_LABELS[item.entityType] ||
                               item.entityType}
                           </span>
                         </td>
-                        <td className="py-3.5 px-3 align-top">
+                        <td data-align="center" data-wrap="nowrap" className="py-3.5 px-3 align-top">
                           {item.action === 'CREATE' ? (
                             <Badge variant="success" size="sm">
                               Thêm mới
@@ -791,7 +791,7 @@ export const SyncHistoryDetailPage: React.FC = () => {
                             </Badge>
                           )}
                         </td>
-                        <td className="py-3.5 px-3 align-top space-y-1.5">
+                        <td data-align="left" data-wrap="normal" className="py-3.5 px-3 align-top space-y-1.5">
                           {visibleDiffs.map((diff, idx) => (
                             <div
                               key={idx}
@@ -843,7 +843,7 @@ export const SyncHistoryDetailPage: React.FC = () => {
                             </div>
                           )}
                         </td>
-                        <td className="py-3.5 px-3 align-top">
+                        <td data-align="center" data-wrap="nowrap" className="py-3.5 px-3 align-top">
                           {item.status === 'ROLLED_BACK' ? (
                             <span className="inline-flex items-center gap-1 text-slate-500 font-semibold">
                               <RotateCcw className="w-3.5 h-3.5" />
@@ -866,7 +866,7 @@ export const SyncHistoryDetailPage: React.FC = () => {
                             </span>
                           )}
                         </td>
-                        <td className="py-3.5 pl-3 pr-4 align-top text-right">
+                        <td data-align="center" data-wrap="nowrap" className="py-3.5 pl-3 pr-4 align-top text-right">
                           {!isRolledBack && item.status !== 'FAILED' ? (
                             <button
                               type="button"
@@ -955,20 +955,20 @@ export const SyncHistoryDetailPage: React.FC = () => {
           </div>
 
           <div className="max-h-64 overflow-y-auto rounded-xl border border-slate-200">
-            <table className="w-full text-left border-collapse text-xs">
+            <table data-table="native" className="w-full text-left border-collapse text-xs">
               <thead className="bg-slate-50 border-b border-slate-200 sticky top-0">
                 <tr className="text-[11px] font-semibold text-slate-500 uppercase">
-                  <th className="py-2 px-3">Học viên</th>
-                  <th className="py-2 px-3">Trường dữ liệu</th>
-                  <th className="py-2 px-3">Trước đồng bộ</th>
-                  <th className="py-2 px-3">Giá trị đồng bộ</th>
-                  <th className="py-2 px-3">Hiện tại trên Web</th>
+                  <th scope="col" className="py-2 px-3">Học viên</th>
+                  <th scope="col" className="py-2 px-3">Trường dữ liệu</th>
+                  <th scope="col" className="py-2 px-3">Trước đồng bộ</th>
+                  <th scope="col" className="py-2 px-3">Giá trị đồng bộ</th>
+                  <th scope="col" className="py-2 px-3">Hiện tại trên Web</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {conflictList.map((c) => (
                   <tr key={c.changeId}>
-                    <td className="py-2.5 px-3">
+                    <td data-align="left" data-wrap="normal" className="py-2.5 px-3">
                       <div className="font-bold text-slate-900">
                         {c.fullName}
                       </div>
@@ -976,16 +976,16 @@ export const SyncHistoryDetailPage: React.FC = () => {
                         {c.externalId} (Dòng #{c.rowNumber})
                       </div>
                     </td>
-                    <td className="py-2.5 px-3 font-semibold text-slate-700">
+                    <td data-align="left" data-wrap="normal" className="py-2.5 px-3 font-semibold text-slate-700">
                       {c.fieldLabel}
                     </td>
-                    <td className="py-2.5 px-3 text-slate-600">
+                    <td data-align="left" data-wrap="normal" className="py-2.5 px-3 text-slate-600">
                       {formatDiffVal(c.beforeSyncValue)}
                     </td>
-                    <td className="py-2.5 px-3 text-blue-700 font-semibold">
+                    <td data-align="left" data-wrap="normal" className="py-2.5 px-3 text-blue-700 font-semibold">
                       {formatDiffVal(c.syncedValue)}
                     </td>
-                    <td className="py-2.5 px-3 text-amber-800 font-bold bg-amber-50/60">
+                    <td data-align="left" data-wrap="normal" className="py-2.5 px-3 text-amber-800 font-bold bg-amber-50/60">
                       {formatDiffVal(c.currentWebValue)}
                     </td>
                   </tr>

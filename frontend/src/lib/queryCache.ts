@@ -42,11 +42,14 @@ export function getInflightPromise<T>(serializedKey: string): Promise<T> | undef
 
 export function setInflightPromise<T>(serializedKey: string, promise: Promise<T>): void {
   inflightStore.set(serializedKey, promise);
-  promise.finally(() => {
+  const cleanup = () => {
     if (inflightStore.get(serializedKey) === promise) {
       inflightStore.delete(serializedKey);
     }
-  });
+  };
+  // finally() creates a second rejected promise when the request fails. Handle
+  // both outcomes directly so callers can own the original request error.
+  void promise.then(cleanup, cleanup);
 }
 
 export function subscribeQueryCache(listener: () => void): () => void {

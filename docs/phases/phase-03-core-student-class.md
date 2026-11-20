@@ -108,6 +108,12 @@ Không để frontend tự đoán cấu trúc Student/Enrollment/Class response.
 
 ## Implementation notes
 
+### Khôi phục DB local — 2026-11-20
+
+Theo lỗi tải dữ liệu người dùng cung cấp, xác nhận Prisma P2022 thiếu enrollments.course_code do hai migration 13/11, 17/11 chưa chạy. Snapshot trước áp dụng; bỏ UTF-8 BOM ở file index, resolve lần fail chưa chạy statement nào và migrate deploy thành công. Chuẩn hóa package theo quyết định đã chốt, giữ toàn bộ 2.390 enrollments và dữ liệu field cũ, 1.268 course codes. Bổ sung migration backup per-program giữ config và bảng legacy; không reset/drop dữ liệu.
+
+32 API GET thật bằng Admin/CS trả 200; browser 7 trang và simulated error pass, 28 frontend tests/9 backend scope-backup tests pass. Sửa cleanup queryCache để không sinh rejection thứ cấp. Không đổi trạng thái phase hoặc bật worker. Chi tiết snapshot và đối chiếu ở STATUS.
+
 ## Changes from original plan
 
 

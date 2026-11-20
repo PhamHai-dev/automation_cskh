@@ -259,18 +259,18 @@ export const ImportWizard: React.FC<Props> = ({ onImportComplete }) => {
         ))}
       </div>
       <div className="overflow-x-auto rounded-xl border border-border">
-        <table className="min-w-full text-xs">
+        <table data-table="native" className="min-w-full text-xs">
           <thead className="bg-surface-muted">
             <tr>
-              <th className="p-2">Dòng</th>
-              {current.headers.slice(0, 12).map((h) => <th key={h.col} className="p-2 text-left whitespace-nowrap">{h.col}. {h.title}</th>)}
+              <th scope="col" className="p-2">Dòng</th>
+              {current.headers.slice(0, 12).map((h) => <th scope="col" key={h.col} className="p-2 whitespace-nowrap">{h.col}. {h.title}</th>)}
             </tr>
           </thead>
           <tbody>
             {current.rows.slice(0, 5).map((r, i) => (
               <tr key={i} className="border-t border-border">
-                <td className="p-2 text-center text-text-muted">{String(r._rowNumber)}</td>
-                {current.headers.slice(0, 12).map((h) => <td key={h.col} className="p-2 whitespace-nowrap">{String(r[h.col] ?? '')}</td>)}
+                <td data-align="center" data-wrap="nowrap" className="p-2 text-center text-text-muted">{String(r._rowNumber)}</td>
+                {current.headers.slice(0, 12).map((h) => <td data-align="left" data-wrap="normal" key={h.col} className="p-2 whitespace-nowrap">{String(r[h.col] ?? '')}</td>)}
               </tr>
             ))}
           </tbody>
@@ -341,13 +341,13 @@ export const ImportWizard: React.FC<Props> = ({ onImportComplete }) => {
       )}
 
       <div className="overflow-x-auto max-h-[420px] rounded-xl border border-border">
-        <table className="min-w-full text-xs">
+        <table data-table="native" className="min-w-full text-xs">
           <thead className="sticky top-0 bg-surface-muted">
             <tr>
-              <th className="p-3 text-left">Khóa học viên</th>
-              <th className="p-3">Hành động</th>
-              <th className="p-3 text-left">Chi tiết thay đổi</th>
-              <th className="p-3 text-left">Cảnh báo / Lỗi</th>
+              <th scope="col" className="p-3 ">Khóa học viên</th>
+              <th scope="col" className="p-3">Hành động</th>
+              <th scope="col" className="p-3 ">Chi tiết thay đổi</th>
+              <th scope="col" className="p-3 ">Cảnh báo / Lỗi</th>
             </tr>
           </thead>
           <tbody>
@@ -365,15 +365,15 @@ export const ImportWizard: React.FC<Props> = ({ onImportComplete }) => {
 
               return (
                 <tr key={item.key} className="border-t border-border align-top">
-                  <td className="p-3 font-mono">
+                  <td data-align="center" data-wrap="nowrap" className="p-3 font-mono">
                     <span className="font-semibold text-text-primary">{item.externalId}</span>
                     <br />
                     <span className="text-text-muted">{item.packageCode}</span>
                   </td>
-                  <td className="p-3 text-center">
+                  <td data-align="center" data-wrap="nowrap" className="p-3 text-center">
                     <Badge variant={badgeVariant}>{badgeText}</Badge>
                   </td>
-                  <td className="p-3">
+                  <td data-align="left" data-wrap="normal" className="p-3">
                     {item.diffs.length + item.attendanceDiffs.length ? (
                       [...item.diffs, ...item.attendanceDiffs].slice(0, 4).map((d, i) => (
                         <div key={i} className="text-text-secondary">
@@ -384,7 +384,7 @@ export const ImportWizard: React.FC<Props> = ({ onImportComplete }) => {
                       <span className="text-text-muted">Không thay đổi</span>
                     )}
                   </td>
-                  <td className="p-3">
+                  <td data-align="left" data-wrap="normal" className="p-3">
                     {[...item.warnings, ...item.errors].length > 0 ? (
                       <span className={item.errors.length ? 'text-danger font-medium' : 'text-warning'}>
                         {[...item.warnings, ...item.errors].join('; ')}

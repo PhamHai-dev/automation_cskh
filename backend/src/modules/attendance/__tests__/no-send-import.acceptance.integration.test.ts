@@ -207,7 +207,7 @@ describe('Acceptance: NO_SEND historical import lane emits no outbound messages'
     zaloAccountId = account.id;
     for (const sid of [studentAId, studentBId]) {
       await prisma.zaloContactRelation.upsert({
-        where: { student_id_zalo_account_id: { student_id: sid, zalo_account_id: account.id } },
+        where: { student_id_zalo_account_id: { program_type: 'ALL', student_id: sid, zalo_account_id: account.id } },
         update: { relation_status: ZaloContactRelationStatus.FRIEND },
         // display_name + friend_zalo_uid are set (like real synced rows) so the
         // care-group matcher's global "orphan relation" sweep — which deletes

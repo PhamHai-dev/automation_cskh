@@ -1207,7 +1207,7 @@ export const MyTeachingSessionsPage: React.FC<MyTeachingSessionsPageProps> = ({
   // Columns for Tab 2 (`pending`)
   const pendingColumns: Column<TeacherTrackingPendingItem>[] = [
     {
-      header: 'Ngày / giờ',
+      align: 'center' as const, wrap: false, header: 'Ngày / giờ',
       cell: (item) => (
         <div>
           <div className="font-semibold text-text-primary">
@@ -1220,7 +1220,7 @@ export const MyTeachingSessionsPage: React.FC<MyTeachingSessionsPageProps> = ({
       ),
     },
     {
-      header: 'Học viên',
+      align: 'left' as const, wrap: true, header: 'Học viên',
       cell: (item) => (
         <div>
           <div className="font-bold text-text-primary">{item.student.full_name}</div>
@@ -1232,7 +1232,7 @@ export const MyTeachingSessionsPage: React.FC<MyTeachingSessionsPageProps> = ({
       ),
     },
     {
-      header: 'Lớp / buổi',
+      align: 'left' as const, wrap: true, header: 'Lớp / buổi',
       cell: (item) => (
         <div>
           <div className="font-semibold text-text-primary">
@@ -1243,7 +1243,7 @@ export const MyTeachingSessionsPage: React.FC<MyTeachingSessionsPageProps> = ({
       ),
     },
     {
-      header: 'Trạng thái',
+      align: 'center' as const, wrap: false, header: 'Trạng thái',
       cell: () => (
         <Badge variant="warning" dot>
           Chưa điểm danh
@@ -1251,7 +1251,7 @@ export const MyTeachingSessionsPage: React.FC<MyTeachingSessionsPageProps> = ({
       ),
     },
     {
-      header: 'Thao tác',
+      align: 'center' as const, wrap: false, header: 'Thao tác',
       className: 'text-right',
       cell: (item) =>
         isPrivileged && !isAdmin ? (
@@ -1285,7 +1285,7 @@ export const MyTeachingSessionsPage: React.FC<MyTeachingSessionsPageProps> = ({
   // Columns for Tab 3 (`history`)
   const historyColumns: Column<TeacherTrackingHistoryItem>[] = [
     {
-      header: 'Thời gian đổi',
+      align: 'center' as const, wrap: false, header: 'Thời gian đổi',
       cell: (item) => (
         <span className="whitespace-nowrap font-medium text-text-primary">
           {dateTimeLabel(item.created_at)}
@@ -1293,7 +1293,7 @@ export const MyTeachingSessionsPage: React.FC<MyTeachingSessionsPageProps> = ({
       ),
     },
     {
-      header: 'Học viên',
+      align: 'left' as const, wrap: true, header: 'Học viên',
       cell: (item) => (
         <div>
           <div className="font-bold text-text-primary">{item.student?.full_name || '—'}</div>
@@ -1304,7 +1304,7 @@ export const MyTeachingSessionsPage: React.FC<MyTeachingSessionsPageProps> = ({
       ),
     },
     {
-      header: 'Lớp / buổi',
+      align: 'left' as const, wrap: true, header: 'Lớp / buổi',
       cell: (item) => (
         <div>
           <div className="font-semibold text-text-primary">
@@ -1319,7 +1319,7 @@ export const MyTeachingSessionsPage: React.FC<MyTeachingSessionsPageProps> = ({
       ),
     },
     {
-      header: 'Thay đổi',
+      align: 'center' as const, wrap: false, header: 'Thay đổi',
       cell: (item) => (
         <div className="flex items-center justify-center gap-2 whitespace-nowrap">
           <Badge variant="neutral">{statusLabel(item.from_status)}</Badge>
@@ -1329,7 +1329,7 @@ export const MyTeachingSessionsPage: React.FC<MyTeachingSessionsPageProps> = ({
       ),
     },
     {
-      header: 'Bài học / Ghi chú',
+      align: 'left' as const, wrap: true, header: 'Bài học / Ghi chú',
       cell: (item) => (
         <div className="space-y-0.5">
           {item.lesson_topic && (
@@ -1342,7 +1342,7 @@ export const MyTeachingSessionsPage: React.FC<MyTeachingSessionsPageProps> = ({
       ),
     },
     {
-      header: 'Người thao tác',
+      align: 'left' as const, wrap: true, header: 'Người thao tác',
       cell: (item) => <span className="font-medium text-text-primary">{item.performed_by}</span>,
     },
   ];
@@ -1378,7 +1378,7 @@ export const MyTeachingSessionsPage: React.FC<MyTeachingSessionsPageProps> = ({
 
     if (isOpen) {
       return (
-        <div className="inline-flex flex-wrap items-center gap-1 rounded-xl border border-primary/40 bg-white p-1 shadow-xs">
+        <div className="inline-flex max-w-full flex-nowrap items-center gap-1 overflow-x-auto rounded-xl border border-primary/40 bg-white p-1 shadow-xs">
           {STATUS_PICKER_LIST.map((stKey) => {
             const stCfg = STATUS_CONFIG[stKey];
             const isSelected = curStatus === stKey;
@@ -1414,7 +1414,7 @@ export const MyTeachingSessionsPage: React.FC<MyTeachingSessionsPageProps> = ({
     }
 
     return (
-      <div className="inline-flex items-center gap-1.5 flex-wrap">
+      <div className="flex flex-nowrap items-center gap-1.5 whitespace-nowrap">
         <button
           type="button"
           disabled={isSavingThis}
@@ -1441,15 +1441,15 @@ export const MyTeachingSessionsPage: React.FC<MyTeachingSessionsPageProps> = ({
 
         {/* Reconciliation status micro-badge */}
         {att?.reconciliation_state === 'MATCHED' ? (
-          <Badge variant="success" size="sm" dot>
+          <Badge variant="success" size="sm" dot className="shrink-0 whitespace-nowrap">
             Khớp CSKH
           </Badge>
         ) : att?.reconciliation_state === 'CONFLICT' ? (
-          <Badge variant="danger" size="sm" dot>
+          <Badge variant="danger" size="sm" dot className="shrink-0 whitespace-nowrap">
             Lệch ý kiến
           </Badge>
         ) : att?.teacher_status ? (
-          <Badge variant="warning" size="sm" dot>
+          <Badge variant="warning" size="sm" dot className="shrink-0 whitespace-nowrap">
             Chờ CSKH duyệt
           </Badge>
         ) : null}
@@ -1466,9 +1466,9 @@ export const MyTeachingSessionsPage: React.FC<MyTeachingSessionsPageProps> = ({
       progressBadge = (
         <span
           data-testid={`group-progress-${item.session.id}`}
-          className="inline-flex h-7 items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 text-xs font-bold text-emerald-700 whitespace-nowrap"
+          className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 text-xs font-bold text-emerald-700 whitespace-nowrap"
         >
-          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+          <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" />
           Đã chấm đủ {item.markedCount}/{item.totalStudents}
         </span>
       );
@@ -1476,9 +1476,9 @@ export const MyTeachingSessionsPage: React.FC<MyTeachingSessionsPageProps> = ({
       progressBadge = (
         <span
           data-testid={`group-progress-${item.session.id}`}
-          className="inline-flex h-7 items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-2.5 text-xs font-bold text-amber-700 whitespace-nowrap"
+          className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-2.5 text-xs font-bold text-amber-700 whitespace-nowrap"
         >
-          <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+          <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" />
           Đã chấm {item.markedCount}/{item.totalStudents}
         </span>
       );
@@ -1486,16 +1486,16 @@ export const MyTeachingSessionsPage: React.FC<MyTeachingSessionsPageProps> = ({
       progressBadge = (
         <span
           data-testid={`group-progress-${item.session.id}`}
-          className="inline-flex h-7 items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-100 px-2.5 text-xs font-semibold text-slate-600 whitespace-nowrap"
+          className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-100 px-2.5 text-xs font-semibold text-slate-600 whitespace-nowrap"
         >
-          <span className="h-1.5 w-1.5 rounded-full bg-slate-400" />
+          <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-slate-400" />
           Chưa chấm 0/{item.totalStudents}
         </span>
       );
     }
 
     return (
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-nowrap items-center gap-2 whitespace-nowrap">
         {progressBadge}
 
         {canMark && item.totalStudents > 0 && (
@@ -1515,7 +1515,7 @@ export const MyTeachingSessionsPage: React.FC<MyTeachingSessionsPageProps> = ({
                 ? 'Bỏ chấm điểm danh của toàn bộ học viên trong lớp nhóm này'
                 : 'Thao tác chấm nhanh 1 · Có mặt cho toàn bộ học viên trong lớp nhóm này'
             }
-            className={`inline-flex h-7 items-center gap-1.5 rounded-lg border border-dashed bg-white px-2.5 text-xs font-bold transition whitespace-nowrap cursor-pointer disabled:opacity-50 ${
+            className={`inline-flex h-7 shrink-0 items-center gap-1.5 rounded-lg border border-dashed bg-white px-2.5 text-xs font-bold transition whitespace-nowrap cursor-pointer disabled:opacity-50 ${
               item.isFullyMarked
                 ? 'border-rose-300 text-rose-700 hover:bg-rose-50 hover:border-rose-400'
                 : 'border-indigo-300 text-indigo-700 hover:bg-indigo-50 hover:border-indigo-400'
@@ -1811,10 +1811,11 @@ export const MyTeachingSessionsPage: React.FC<MyTeachingSessionsPageProps> = ({
           {/* Thanh công cụ đầu bảng (Table Toolbar) */}
           <div
             data-testid="sessions-kpi-bar"
-            className="border-b border-border/80 bg-slate-50/60 p-3 sm:px-4 flex flex-wrap items-center justify-between gap-2.5 text-xs"
+            className="overflow-x-auto border-b border-border/80 bg-slate-50/60 p-3 text-xs sm:px-4"
           >
+            <div className="flex min-w-max flex-nowrap items-center justify-between gap-3">
             {/* Bên trái: Các chip KPI lọc nhanh gọn gàng */}
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-nowrap items-center gap-2 whitespace-nowrap">
               <button
                 type="button"
                 data-testid="kpi-chip-all"
@@ -1822,7 +1823,7 @@ export const MyTeachingSessionsPage: React.FC<MyTeachingSessionsPageProps> = ({
                   setCompletionFilter('ALL');
                   setCurrentPage(1);
                 }}
-                className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition cursor-pointer ${
+                className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition cursor-pointer ${
                   completionFilter === 'ALL'
                     ? 'border-primary bg-primary-soft/60 text-primary shadow-2xs'
                     : 'border-border/80 bg-surface text-text-secondary hover:bg-slate-100'
@@ -1842,7 +1843,7 @@ export const MyTeachingSessionsPage: React.FC<MyTeachingSessionsPageProps> = ({
                   setCompletionFilter(completionFilter === 'PENDING' ? 'ALL' : 'PENDING');
                   setCurrentPage(1);
                 }}
-                className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition cursor-pointer ${
+                className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition cursor-pointer ${
                   completionFilter === 'PENDING'
                     ? 'border-amber-400 bg-amber-50 text-amber-800 shadow-2xs ring-1 ring-amber-300'
                     : 'border-amber-200/80 bg-amber-50/40 text-amber-700 hover:bg-amber-50'
@@ -1862,7 +1863,7 @@ export const MyTeachingSessionsPage: React.FC<MyTeachingSessionsPageProps> = ({
                   setCompletionFilter(completionFilter === 'COMPLETED' ? 'ALL' : 'COMPLETED');
                   setCurrentPage(1);
                 }}
-                className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition cursor-pointer ${
+                className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition cursor-pointer ${
                   completionFilter === 'COMPLETED'
                     ? 'border-emerald-400 bg-emerald-50 text-emerald-800 shadow-2xs ring-1 ring-emerald-300'
                     : 'border-emerald-200/80 bg-emerald-50/40 text-emerald-700 hover:bg-emerald-50'
@@ -1885,10 +1886,10 @@ export const MyTeachingSessionsPage: React.FC<MyTeachingSessionsPageProps> = ({
             </div>
 
             {/* Bên phải: Bộ chuyển kiểu xem + Bộ chọn phạm vi kỳ + Cụm lịch */}
-            <div className="flex flex-wrap items-center gap-2 ml-auto">
+            <div className="ml-auto flex flex-nowrap items-center gap-2 whitespace-nowrap">
               {/* Bộ chuyển kiểu xem (2 chế độ hiển thị: Xem danh sách ⇄ Xem lịch tuần) */}
               <div
-                className="inline-flex h-9 items-center p-1 bg-slate-100 rounded-xl border border-slate-200/90 gap-1"
+                className="inline-flex h-9 shrink-0 items-center gap-1 whitespace-nowrap rounded-xl border border-slate-200/90 bg-slate-100 p-1"
                 role="tablist"
                 aria-label="Chuyển đổi chế độ hiển thị lịch dạy"
               >
@@ -2012,6 +2013,7 @@ export const MyTeachingSessionsPage: React.FC<MyTeachingSessionsPageProps> = ({
                 </button>
               </div>
             </div>
+            </div>
           </div>
 
           {/* Nội dung bảng lịch dạy hoặc thời khóa biểu tuần */}
@@ -2031,15 +2033,23 @@ export const MyTeachingSessionsPage: React.FC<MyTeachingSessionsPageProps> = ({
           ) : viewMode === 'table' ? (
             <>
               <div data-testid="sessions-table-view" className="overflow-x-auto">
-                <table className="w-full border-collapse text-left text-xs">
+                <table data-table="native" className="w-full min-w-[1420px] table-fixed border-collapse text-left text-xs">
+                  <colgroup>
+                    <col className="w-[170px]" />
+                    <col className="w-[145px]" />
+                    <col className="w-[285px]" />
+                    <col className="w-[210px]" />
+                    <col className="w-[305px]" />
+                    <col className="w-[305px]" />
+                  </colgroup>
                   <thead>
                     <tr className="border-b border-border/80 bg-slate-50/90 text-[11px] font-bold uppercase tracking-wider text-text-secondary">
-                      <th className="py-2.5 px-3 whitespace-nowrap">Ngày & Thứ</th>
-                      <th className="py-2.5 px-3 whitespace-nowrap">Khung giờ</th>
-                      <th className="py-2.5 px-3 whitespace-nowrap">Lớp học</th>
-                      <th className="py-2.5 px-3 whitespace-nowrap">Học viên</th>
-                      <th className="py-2.5 px-3 whitespace-nowrap">Tiến độ & Điểm danh</th>
-                      <th className="py-2.5 px-3 whitespace-nowrap min-w-[260px]">
+                      <th scope="col" className="w-[170px] whitespace-nowrap px-3 py-2.5 align-middle">Ngày & Thứ</th>
+                      <th scope="col" className="w-[145px] whitespace-nowrap px-3 py-2.5 align-middle">Khung giờ</th>
+                      <th scope="col" className="w-[285px] whitespace-nowrap px-3 py-2.5 align-middle">Lớp học</th>
+                      <th scope="col" className="w-[210px] whitespace-nowrap px-3 py-2.5 align-middle">Học viên</th>
+                      <th scope="col" className="w-[305px] whitespace-nowrap px-3 py-2.5 align-middle">Tiến độ & Điểm danh</th>
+                      <th scope="col" className="w-[305px] whitespace-nowrap px-3 py-2.5 align-middle">
                         Bài học & Ghi chú GV
                       </th>
                     </tr>
@@ -2070,50 +2080,53 @@ export const MyTeachingSessionsPage: React.FC<MyTeachingSessionsPageProps> = ({
                         <React.Fragment key={session.id}>
                           <tr
                             data-testid={`session-row-${session.id}`}
-                            className={`min-h-[44px] transition-colors ${
+                            className={`h-11 transition-colors ${
                               item.isFullyMarked
                                 ? 'bg-emerald-50/15 hover:bg-emerald-50/30'
                                 : 'hover:bg-slate-50/80'
                             }`}
                           >
                             {/* 1. Ngày & Thứ + Ca */}
-                            <td className="py-2 px-3 whitespace-nowrap align-middle">
-                              <div className="flex items-center gap-1.5">
-                                <span className="inline-flex h-5 items-center justify-center rounded bg-slate-100 px-1.5 text-[11px] font-extrabold text-slate-700">
+                            <td data-align="center" data-wrap="nowrap" className="w-[170px] whitespace-nowrap px-3 py-2 align-middle">
+                              <div className="flex flex-nowrap items-center gap-1.5 whitespace-nowrap">
+                                <span className="inline-flex h-5 shrink-0 items-center justify-center rounded bg-slate-100 px-1.5 text-[11px] font-extrabold text-slate-700">
                                   {dayFmt.dow}
                                 </span>
-                                <span className="font-bold text-text-primary">{dayFmt.dmy}</span>
-                                <span className="inline-flex items-center rounded-md bg-teal-50 border border-teal-200/80 px-1.5 py-0.5 text-[10px] font-extrabold text-teal-700">
+                                <span className="shrink-0 font-bold text-text-primary">{dayFmt.dmy}</span>
+                                <span className="inline-flex shrink-0 items-center rounded-md border border-teal-200/80 bg-teal-50 px-1.5 py-0.5 text-[10px] font-extrabold text-teal-700">
                                   Ca {item.caInDay}
                                 </span>
                               </div>
                             </td>
 
                             {/* 2. Khung giờ */}
-                            <td className="py-2 px-3 whitespace-nowrap align-middle">
+                            <td data-align="center" data-wrap="nowrap" className="w-[145px] whitespace-nowrap px-3 py-2 align-middle">
                               {session.start_time || session.end_time ? (
-                                <span className="inline-flex items-center gap-1 font-semibold text-text-primary">
+                                <span className="inline-flex flex-nowrap items-center gap-1 whitespace-nowrap font-semibold text-text-primary">
                                   <Clock className="w-3.5 h-3.5 text-teal-600 shrink-0" />
-                                  {session.start_time || '—'} - {session.end_time || '—'}
+                                  <span>{session.start_time || '—'} - {session.end_time || '—'}</span>
                                 </span>
                               ) : (
-                                <span className="italic text-text-muted">Chưa xếp giờ</span>
+                                <span className="whitespace-nowrap italic text-text-muted">Chưa xếp giờ</span>
                               )}
                             </td>
 
                             {/* 3. Lớp học */}
-                            <td className="py-2 px-3 align-middle">
-                              <div className="flex flex-wrap items-center gap-1.5">
-                                <span className="font-mono text-[11px] font-bold text-slate-500">
+                            <td data-align="left" data-wrap="normal" className="w-[285px] whitespace-nowrap px-3 py-2 align-middle">
+                              <div
+                                className="flex min-w-0 flex-nowrap items-center gap-1.5 whitespace-nowrap"
+                                title={`${classCode} · ${cleanClassIdentifier(session.class?.class_name) || session.class?.class_name || '—'}`}
+                              >
+                                <span className="shrink-0 font-mono text-[11px] font-bold text-slate-500">
                                   {classCode}
                                 </span>
-                                <span className="font-bold text-text-primary">
+                                <span className="min-w-0 truncate font-bold text-text-primary">
                                   {cleanClassIdentifier(session.class?.class_name) ||
                                     session.class?.class_name ||
                                     '—'}
                                 </span>
                                 <span
-                                  className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] border ${
+                                  className={`inline-flex shrink-0 items-center rounded border px-1.5 py-0.5 text-[10px] ${
                                     CLASS_MODEL_BADGE_STYLES[item.modelType]?.className ||
                                     CLASS_MODEL_BADGE_STYLES['1:1'].className
                                   }`}
@@ -2121,7 +2134,7 @@ export const MyTeachingSessionsPage: React.FC<MyTeachingSessionsPageProps> = ({
                                   {item.modelType}
                                 </span>
                                 {session.class?.level && (
-                                  <span className="inline-flex items-center rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600">
+                                  <span className="inline-flex shrink-0 items-center rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600">
                                     {session.class.level}
                                   </span>
                                 )}
@@ -2129,43 +2142,44 @@ export const MyTeachingSessionsPage: React.FC<MyTeachingSessionsPageProps> = ({
                             </td>
 
                             {/* 4. Học viên */}
-                            <td className="py-2 px-3 whitespace-nowrap align-middle">
+                            <td data-align="left" data-wrap="normal" className="w-[210px] whitespace-nowrap px-3 py-2 align-middle">
                               {!item.isGroupClass ? (
                                 singleStudent ? (
-                                  <div className="flex items-center gap-1.5">
+                                  <div
+                                    className="flex min-w-0 flex-nowrap items-center gap-1.5 whitespace-nowrap"
+                                    title={`${singleStudent.full_name} (${singleStudent.external_id || '—'})`}
+                                  >
                                     <User className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                                    <div>
-                                      <span className="font-bold text-text-primary">
-                                        {singleStudent.full_name}
-                                      </span>
-                                      <span className="ml-1.5 text-[11px] text-text-muted">
-                                        ({singleStudent.external_id || '—'})
-                                      </span>
-                                    </div>
+                                    <span title={String(singleStudent.full_name ?? '')} className="min-w-0 truncate font-bold text-text-primary">
+                                      {singleStudent.full_name}
+                                    </span>
+                                    <span className="shrink-0 text-[11px] text-text-muted">
+                                      ({singleStudent.external_id || '—'})
+                                    </span>
                                   </div>
                                 ) : (
-                                  <span className="italic text-text-muted">Chưa có học viên</span>
+                                  <span className="whitespace-nowrap italic text-text-muted">Chưa có học viên</span>
                                 )
                               ) : (
                                 <button
                                   type="button"
                                   data-testid={`toggle-group-students-${session.id}`}
                                   onClick={() => toggleGroupExpand(session.id)}
-                                  className="inline-flex h-7 items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-2.5 text-xs font-bold text-slate-700 hover:bg-slate-100 transition cursor-pointer"
+                                  className="inline-flex h-7 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border border-slate-200 bg-slate-50 px-2.5 text-xs font-bold text-slate-700 hover:bg-slate-100 transition cursor-pointer"
                                 >
-                                  <Users className="w-3.5 h-3.5 text-indigo-600" />
+                                  <Users className="w-3.5 h-3.5 shrink-0 text-indigo-600" />
                                   <span>{item.totalStudents} học viên</span>
                                   {isExpanded ? (
-                                    <ChevronUp className="w-3.5 h-3.5 text-slate-500" />
+                                    <ChevronUp className="w-3.5 h-3.5 shrink-0 text-slate-500" />
                                   ) : (
-                                    <ChevronDown className="w-3.5 h-3.5 text-slate-500" />
+                                    <ChevronDown className="w-3.5 h-3.5 shrink-0 text-slate-500" />
                                   )}
                                 </button>
                               )}
                             </td>
 
                             {/* 5. Tiến độ & Điểm danh */}
-                            <td className="py-2 px-3 align-middle">
+                            <td data-align="center" data-wrap="nowrap" className="w-[305px] whitespace-nowrap px-3 py-2 align-middle">
                               {!item.isGroupClass ? (
                                 singleEc ? (
                                   renderProgressiveStudentStatus(item, singleEc)
@@ -2178,9 +2192,9 @@ export const MyTeachingSessionsPage: React.FC<MyTeachingSessionsPageProps> = ({
                             </td>
 
                             {/* 6. Bài học & Ghi chú GV */}
-                            <td className="py-2 px-3 align-middle">
+                            <td data-align="left" data-wrap="normal" className="w-[305px] whitespace-nowrap px-3 py-2 align-middle">
                               {canMark ? (
-                                <div className="flex items-center gap-1.5">
+                                <div className="flex flex-nowrap items-center gap-1.5 whitespace-nowrap">
                                   <input
                                     type="text"
                                     value={lessonVal}
@@ -2199,7 +2213,7 @@ export const MyTeachingSessionsPage: React.FC<MyTeachingSessionsPageProps> = ({
                                     }}
                                     placeholder="Bài học (VD: K2 L4)..."
                                     aria-label={`Bài học ca ${session.id}`}
-                                    className="h-7 w-32 sm:w-36 rounded-lg border border-border/80 bg-white px-2 text-xs text-text-primary placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-primary/30"
+                                    className="h-7 w-[120px] shrink-0 rounded-lg border border-border/80 bg-white px-2 text-xs text-text-primary placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-primary/30"
                                   />
                                   <input
                                     type="text"
@@ -2219,7 +2233,7 @@ export const MyTeachingSessionsPage: React.FC<MyTeachingSessionsPageProps> = ({
                                     }}
                                     placeholder="Ghi chú GV..."
                                     aria-label={`Ghi chú GV ca ${session.id}`}
-                                    className="h-7 w-32 sm:w-40 rounded-lg border border-border/80 bg-white px-2 text-xs text-text-primary placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-primary/30"
+                                    className="h-7 w-[130px] shrink-0 rounded-lg border border-border/80 bg-white px-2 text-xs text-text-primary placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-primary/30"
                                   />
                                   <button
                                     type="button"
@@ -2232,16 +2246,16 @@ export const MyTeachingSessionsPage: React.FC<MyTeachingSessionsPageProps> = ({
                                   </button>
                                 </div>
                               ) : (
-                                <div className="text-xs text-text-secondary">
+                                <div className="flex min-w-0 flex-nowrap items-center gap-2 truncate text-xs text-text-secondary">
                                   {lessonVal ? (
-                                    <span className="font-semibold text-teal-700">
+                                    <span className="shrink-0 font-semibold text-teal-700">
                                       Bài: {lessonVal}
                                     </span>
                                   ) : (
                                     <span className="text-text-muted">—</span>
                                   )}
                                   {noteVal && (
-                                    <span className="ml-2 italic text-text-muted">"{noteVal}"</span>
+                                    <span className="min-w-0 truncate italic text-text-muted">"{noteVal}"</span>
                                   )}
                                 </div>
                               )}
@@ -2251,7 +2265,7 @@ export const MyTeachingSessionsPage: React.FC<MyTeachingSessionsPageProps> = ({
                           {/* Expanded sub-rows for Group Class (1:2 / 1:n) */}
                           {item.isGroupClass && isExpanded && (
                             <tr className="bg-slate-50/70">
-                              <td colSpan={6} className="px-4 py-2.5">
+                              <td data-align="left" colSpan={6} className="px-4 py-2.5">
                                 <div className="rounded-xl border border-indigo-100 bg-white p-2.5 shadow-2xs">
                                   <div className="mb-2 flex items-center justify-between text-[11px] font-bold text-indigo-900">
                                     <span>
@@ -2484,7 +2498,7 @@ export const MyTeachingSessionsPage: React.FC<MyTeachingSessionsPageProps> = ({
                                   </span>
                                 </div>
 
-                                <div className="mt-1 font-bold text-xs truncate">
+                                <div title={String(session.class?.class_name ?? '')} className="mt-1 font-bold text-xs truncate">
                                   {session.class?.class_name}
                                 </div>
 

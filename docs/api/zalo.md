@@ -1,5 +1,9 @@
 # Zalo API
 
+## Frontend status normalization — 2026-11-20
+
+The current account/status HTTP responses can expose internal pool names in `liveStatus`: `connected`, `disconnected`, `qr_pending`, `connecting`. The frontend Zalo API boundary maps these to `ACTIVE`, `NOT_LOGGED_IN`, `QR_PENDING`, `CONNECTING` before consumers use labels, counters or action visibility. Existing uppercase values remain supported. Unknown/missing live status falls back to the stored account status; stored `DISABLED`/`BANNED` takes priority. This is compatibility handling for existing responses; backend routes and owner scope are unchanged.
+
 ## Connection hardening — 2026-11-19
 
 The existing implementation uses owner-scoped `/api/v1/zalo/accounts/{id}` routes. Current QR/reconnect paths are documented in `openapi.yaml`; the singular paths below are legacy planning notes.

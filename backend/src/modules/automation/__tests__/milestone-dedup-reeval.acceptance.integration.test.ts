@@ -270,7 +270,7 @@ describe('Acceptance (DB): S1a/S2c milestone occurrence dedup & forward re-evalu
 
     await prisma.zaloContactRelation.upsert({
       where: {
-        student_id_zalo_account_id: {
+        student_id_zalo_account_id: { program_type: 'ALL',
           student_id: studentId,
           zalo_account_id: zaloAccountId,
         },

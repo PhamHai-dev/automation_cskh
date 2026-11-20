@@ -546,6 +546,7 @@ lineRouter.post('/links', async (req: Request, res: Response, next: NextFunction
     const rawLineAccountId = req.body.line_account_id ?? req.body.lineAccountId;
     const result = await lineService.createOrUpdateLink({
       student_id: Number(req.body.student_id ?? req.body.studentId),
+      program_type: req.body.program_type,
       line_account_id: rawLineAccountId != null ? Number(rawLineAccountId) : undefined,
       line_group_id:
         rawLineGroupId === null

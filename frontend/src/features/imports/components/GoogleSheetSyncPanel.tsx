@@ -1271,10 +1271,10 @@ export const GoogleSheetSyncPanel: React.FC = () => {
           {/* 3. Bảng Quản Lý Theo Dòng — 8 Cột Tiêu Chuẩn */}
           <div className="bg-white rounded-2xl border border-slate-200/90 shadow-xs overflow-hidden">
             <div className="data-table-scroll">
-              <table className="data-source-table">
+              <table data-table="native" className="data-source-table">
                 <thead>
                   <tr className="border-b border-slate-200 bg-slate-50/80 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
-                    <th className="py-3 pl-4 pr-2 w-10">
+                    <th scope="col" className="py-3 pl-4 pr-2 w-10">
                       <input
                         type="checkbox" aria-label="Chọn tất cả nguồn trên trang"
                         checked={
@@ -1303,13 +1303,13 @@ export const GoogleSheetSyncPanel: React.FC = () => {
                         className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
                       />
                     </th>
-                    <th>Tên nguồn</th><th>Phân loại</th><th>Kết nối</th><th>Phạm vi</th><th>Tự động</th><th>Kết quả gần nhất</th><th>Thao tác</th>
+                    <th scope="col">Tên nguồn</th><th scope="col">Phân loại</th><th scope="col">Kết nối</th><th scope="col">Phạm vi</th><th scope="col">Tự động</th><th scope="col">Kết quả gần nhất</th><th scope="col">Thao tác</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-xs">
                   {paginatedConfigs.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="py-12 text-center text-slate-500">
+                      <td data-align="center" colSpan={8} className="py-12 text-center text-slate-500">
                         Không có nguồn đồng bộ nào phù hợp với bộ lọc hiện tại.
                       </td>
                     </tr>
@@ -1342,7 +1342,7 @@ export const GoogleSheetSyncPanel: React.FC = () => {
                       return (
                         <React.Fragment key={cfg.code}>
                           <tr data-flow={flowType.toLowerCase().replace(/_/g, '-')} className={`data-source-row ${isChecked ? 'is-selected' : ''}`}>
-                            <td>
+                            <td data-align="center" data-wrap="nowrap">
                             <input
                               type="checkbox" aria-label={`Chọn ${cfg.name}`}
                               checked={isChecked}
@@ -1357,8 +1357,8 @@ export const GoogleSheetSyncPanel: React.FC = () => {
                               className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
                             />
                           </td>
-                            <td><div className="data-source-name"><span>{cfg.name}</span></div></td>
-                            <td><div className="data-classification">
+                            <td data-align="left" data-wrap="normal"><div className="data-source-name"><span>{cfg.name}</span></div></td>
+                            <td data-align="center" data-wrap="nowrap"><div className="data-classification">
                             {renderFlowBadge(flowType)}
 
                             <span
@@ -1371,15 +1371,15 @@ export const GoogleSheetSyncPanel: React.FC = () => {
                               {isJlpt ? 'JLPT' : 'KAIWA'}
                             </span>
                           </div></td>
-                            <td><div className="data-table-cell">
+                            <td data-align="left" data-wrap="normal"><div className="data-table-cell">
                               <div className="data-cell-primary">{isGoogleSheet && sheetUrl ? `Tab: ${cfg.sheet_name || 'Chưa chọn'}` : localFileName || 'Chưa chọn file'}</div>
                               <div className="data-cell-actions">
                                 {renderColumnScopeBadge(cfg)}
                                 {isGoogleSheet && sheetUrl ? <a href={sheetUrl} target="_blank" rel="noreferrer">Mở Sheet <ExternalLink className="w-3 h-3" /></a> : <button type="button" onClick={() => handleTriggerInlineFileUpload(cfg.code)}>Thay file</button>}
                               </div>
                             </div></td>
-                            <td>{renderFilterSummaryCell(cfg)}</td>
-                            <td className="data-auto-cell">
+                            <td data-align="left" data-wrap="normal">{renderFilterSummaryCell(cfg)}</td>
+                            <td data-align="center" data-wrap="nowrap" className="data-auto-cell">
                             <button
                               type="button"
                               role="switch"
@@ -1391,7 +1391,7 @@ export const GoogleSheetSyncPanel: React.FC = () => {
                               className={`data-auto-switch ${cfg.enabled && isGoogleSheet && sheetUrl ? 'is-on' : ''}`}
                             ><span /></button>
                           </td>
-                            <td>
+                            <td data-align="left" data-wrap="normal">
                             <div className="flex flex-col items-start gap-1">
                               <span className="text-text-muted text-xs">
                                 {runDate === 'Chưa chạy'
@@ -1436,7 +1436,7 @@ export const GoogleSheetSyncPanel: React.FC = () => {
                               </span>
                             </div>
                           </td>
-                            <td><div className="data-row-actions"><Button size="sm" variant="outline" onClick={() => navigate(`/data-sync/preview/${encodeURIComponent(cfg.code)}`)} leftIcon={<Eye className="w-4 h-4" />}>Đồng bộ ngay</Button><DataRowMenu label={cfg.name} actions={[
+                            <td data-align="center" data-wrap="nowrap"><div className="data-row-actions"><Button size="sm" variant="outline" onClick={() => navigate(`/data-sync/preview/${encodeURIComponent(cfg.code)}`)} leftIcon={<Eye className="w-4 h-4" />}>Đồng bộ ngay</Button><DataRowMenu label={cfg.name} actions={[
     { label: 'Cấu hình', icon: <Settings className="w-4 h-4" />, onClick: () => { setEditingConfig(cfg); setConfigModalOpen(true); } },
     { label: 'Xem lịch sử', icon: <History className="w-4 h-4" />, onClick: () => navigate(`/data-sync/history/${cfg.id}?code=${encodeURIComponent(cfg.code)}`) },
     ...(!isSystemMaster ? [{ label: 'Xóa nguồn', icon: <Trash2 className="w-4 h-4" />, danger: true, onClick: () => { void handleDeleteConfig(cfg); } }] : []),
@@ -1604,17 +1604,17 @@ export const GoogleSheetSyncPanel: React.FC = () => {
 
           <div className="bg-white rounded-2xl border border-slate-200/90 shadow-xs overflow-hidden">
             <div className="data-table-scroll">
-              <table className="data-history-table w-full text-left border-collapse">
+              <table data-table="native" className="data-history-table w-full text-left border-collapse">
                 <thead>
                   <tr className="border-b border-slate-200 bg-slate-50/70 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
-                    <th className="py-3 pl-4 pr-3">Thời gian</th>
-                    <th className="py-3 px-3">Nguồn đồng bộ</th>
-                    <th className="py-3 px-3">Chương trình</th>
-                    <th className="py-3 px-3">Kích hoạt</th>
-                    <th className="py-3 px-3">Kết quả xử lý</th>
-                    <th className="py-3 px-3">Kết quả</th>
-                    <th className="py-3 px-3">Thời lượng</th>
-                    <th className="py-3 pl-3 pr-4 text-right">
+                    <th scope="col" className="py-3 pl-4 pr-3">Thời gian</th>
+                    <th scope="col" className="py-3 px-3">Nguồn đồng bộ</th>
+                    <th scope="col" className="py-3 px-3">Chương trình</th>
+                    <th scope="col" className="py-3 px-3">Kích hoạt</th>
+                    <th scope="col" className="py-3 px-3">Kết quả xử lý</th>
+                    <th scope="col" className="py-3 px-3">Kết quả</th>
+                    <th scope="col" className="py-3 px-3">Thời lượng</th>
+                    <th scope="col" className="py-3 pl-3 pr-4 ">
                       Chi tiết &amp; Hoàn tác
                     </th>
                   </tr>
@@ -1622,7 +1622,7 @@ export const GoogleSheetSyncPanel: React.FC = () => {
                 <tbody className="divide-y divide-slate-100 text-xs">
                   {effectiveHistory.items.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="py-12 text-center text-slate-500">
+                      <td data-align="center" colSpan={8} className="py-12 text-center text-slate-500">
                         Chưa có phiên chạy đồng bộ nào. Hãy bấm{' '}
                         <strong>[Đồng bộ ngay]</strong> trên một nguồn bất kỳ để
                         kiểm tra Preview và lưu lịch sử.
@@ -1645,13 +1645,13 @@ export const GoogleSheetSyncPanel: React.FC = () => {
                           }
                           className="hover:bg-slate-50/80 transition-colors cursor-pointer"
                         >
-                          <td className="py-3.5 pl-4 pr-3 align-middle font-medium text-slate-800 whitespace-nowrap">
+                          <td data-align="center" data-wrap="nowrap" className="py-3.5 pl-4 pr-3 align-middle font-medium text-slate-800 whitespace-nowrap">
                             {formatDateTimeFull(item.createdAt)}
                           </td>
-                          <td className="py-3.5 px-3 align-middle font-bold text-slate-900">
+                          <td data-align="left" data-wrap="normal" className="py-3.5 px-3 align-middle font-bold text-slate-900">
                             {item.name || item.code}
                           </td>
-                          <td className="py-3.5 px-3 align-middle">
+                          <td data-align="center" data-wrap="nowrap" className="py-3.5 px-3 align-middle">
                             <span
                               className={
                                 isJlpt
@@ -1662,13 +1662,13 @@ export const GoogleSheetSyncPanel: React.FC = () => {
                               {item.programType}
                             </span>
                           </td>
-                          <td className="py-3.5 px-3 align-middle text-slate-600">
+                          <td data-align="center" data-wrap="nowrap" className="py-3.5 px-3 align-middle text-slate-600">
                             {item.triggerType === 'AUTO'
                               ? 'Tự động'
                               : 'Thủ công'}
                           </td>
-                          <td className="py-3.5 px-3"><div className="data-history-result"><span>{item.totalRows} dòng</span><span>+{item.createdCount} mới</span><span>{item.updatedCount} cập nhật</span><small>{item.failedCount ?? 0} lỗi · {item.unchangedRows ?? 0} không đổi</small></div></td>
-                          <td className="py-3.5 px-3 align-middle">
+                          <td data-align="left" data-wrap="normal" className="py-3.5 px-3"><div className="data-history-result"><span>{item.totalRows} dòng</span><span>+{item.createdCount} mới</span><span>{item.updatedCount} cập nhật</span><small>{item.failedCount ?? 0} lỗi · {item.unchangedRows ?? 0} không đổi</small></div></td>
+                          <td data-align="center" data-wrap="nowrap" className="py-3.5 px-3 align-middle">
                             {isFailed ? (
                               <Badge variant="danger" size="sm" dot>
                                 Thất bại
@@ -1679,10 +1679,10 @@ export const GoogleSheetSyncPanel: React.FC = () => {
                               </Badge>
                             )}
                           </td>
-                          <td className="py-3.5 px-3 align-middle text-slate-600">
+                          <td data-align="right" data-wrap="nowrap" className="py-3.5 px-3 align-middle text-slate-600">
                             {item.durationSec} giây
                           </td>
-                          <td className="py-3.5 pl-3 pr-4 align-middle text-right">
+                          <td data-align="center" data-wrap="nowrap" className="py-3.5 pl-3 pr-4 align-middle text-right">
                             <Button size="sm" variant="ghost" onClick={event => { event.stopPropagation(); navigate(`/data-sync/history/${item.id}?code=${encodeURIComponent(item.code)}`); }}>Xem chi tiết →</Button>
                           </td>
                         </tr>

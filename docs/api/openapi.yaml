@@ -13,6 +13,163 @@ security:
   - bearerAuth: []
 
 paths:
+  /api/v1/zalo/care-groups/report:
+    get:
+      tags: [Omnichannel]
+      summary: Read persisted care-group coverage for the current owner's student/program/CS cohorts
+      description: Read-only; no SDK refresh, code assignment, relation creation or suspension. Duplicate automatic matches are reported as unlinked. Manual selections remain authoritative. Counts represent student/program/CS cohorts, not distinct people.
+      responses:
+        '200':
+          description: Coverage report
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/CareGroupReport' }
+        '401': { description: Authentication required }
+        '403': { description: Channel role required }
+  /api/v1/zalo/care-groups/sync-and-match:
+    post:
+      tags: [Omnichannel]
+      summary: Explicitly sync and match care groups using configured program naming rules
+      description: Current owner's accounts and enrollments only. Level notes do not select a candidate. Multiple candidates require manual selection; existing automatic bindings become UNKNOWN without deletion. Manual bindings are never overwritten. Disabled rules prevent automatic relation writes.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                refreshLiveGroups: { type: boolean, default: true }
+                student_ids: { type: array, items: { type: integer } }
+                zalo_account_id: { type: integer }
+                line_account_id: { type: integer }
+      responses:
+        '200':
+          description: Applied report
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/CareGroupReport' }
+        '401': { description: Authentication required }
+        '403': { description: Channel role required }
+        '422': { description: Invalid request }
+  /api/v1/zalo/links:
+    post:
+      tags: [Zalo]
+      summary: Select a manual student contact or program-specific care group
+      description: Own account only. GROUP requires a saved zalo_group_id and program_type KAIWA/JLPT with an owned enrollment in that program. USER defaults to ALL. Selection suspends other GROUP bindings for the same student/program/platform/owner in a transaction; other programs remain unchanged. No provider messages.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CareGroupLinkRequest' }
+      responses:
+        '201': { description: Saved relation including program_type }
+        '403': { description: Account or enrollment outside scope }
+        '404': { description: Account or group not found }
+        '422': { description: Group program or enrollment is missing or invalid }
+  /api/v1/line/links:
+    post:
+      tags: [LINE]
+      summary: Select a manual student contact or program-specific LINE care group
+      description: Own account and enrollment only. GROUP requires line_group_id and program_type KAIWA/JLPT. USER defaults to ALL. A group MID cannot be stored as a USER. Other GROUP bindings for the same student/program/platform/owner are suspended transactionally, preserving other programs. No provider messages.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CareGroupLinkRequest' }
+      responses:
+        '201': { description: Saved relation including program_type }
+        '403': { description: Account or enrollment outside scope }
+        '404': { description: Account or group not found }
+        '422': { description: Invalid link or missing program }
+  /api/v1/omnichannel/care-group-rules:
+    get:
+      tags: [Omnichannel]
+      summary: Read global care-group naming rules (ADMIN/MANAGE/CS)
+      responses:
+        '200': { description: 'data contains kaiwaTemplate, jlptTemplate, jlptNotes, enabled and nullable updatedAt' }
+        '401': { description: Authentication required }
+        '403': { description: Channel role required }
+    put:
+      tags: [Omnichannel]
+      summary: Save global naming rules (ADMIN/MANAGE only); no automatic rematching
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - { $ref: '#/components/schemas/CareGroupRules' }
+                - type: object
+                  required: [expectedUpdatedAt]
+                  properties:
+                    expectedUpdatedAt: { type: [string, 'null'], format: date-time }
+      responses:
+        '200': { description: Saved rules and updatedAt version }
+        '400': { description: Invalid or unsafe template }
+        '401': { description: Authentication required }
+        '403': { description: ADMIN/MANAGE required }
+        '409': { description: Settings changed since they were loaded }
+  /api/v1/omnichannel/care-group-rules/preview:
+    post:
+      tags: [Omnichannel]
+      summary: Preview naming classification without writes (ADMIN/MANAGE)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [config, groupName]
+              properties:
+                config: { $ref: '#/components/schemas/CareGroupRules' }
+                groupName: { type: string, minLength: 1, maxLength: 300 }
+      responses:
+        '200': { description: 'data: classification or null; levelNote is not an identity key' }
+        '400': { description: Invalid input }
+        '401': { description: Authentication required }
+        '403': { description: ADMIN/MANAGE required }
+  /api/v1/omnichannel/groups:
+    get:
+      tags: [Omnichannel]
+      summary: List synced groups or only groups linked to student classes
+      description: Read-only. ADMIN/MANAGE/CS see only their own non-archived channel accounts. Class membership is derived from persisted GROUP student relations and EnrollmentClass, restricted to the actor's student scope. No SDK calls, matching, writes or name heuristics. Historical class assignments remain included. A group linked only to a student without a class does not qualify for class-linked scope.
+      parameters:
+        - { name: scope, in: query, schema: { type: string, enum: [all, class-linked], default: all } }
+        - { name: platform, in: query, schema: { type: string, enum: [ALL, ZALO, LINE], default: ALL } }
+        - { name: program, in: query, schema: { type: string, enum: [ALL, KAIWA, JLPT], default: ALL } }
+        - { name: accountId, in: query, description: Requires platform ZALO or LINE; foreign or archived accounts return 403, schema: { type: integer, minimum: 1 } }
+        - { name: search, in: query, schema: { type: string, maxLength: 200 } }
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 25 } }
+      responses:
+        '200':
+          description: Groups deduplicated by platform/account/provider ID, ordered by name and key; page is clamped after filtering
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, meta]
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/OmnichannelGroup' } }
+                  meta:
+                    type: object
+                    required: [page, pageSize, total, totalPages, accounts]
+                    properties:
+                      page: { type: integer }
+                      pageSize: { type: integer }
+                      total: { type: integer }
+                      totalPages: { type: integer }
+                      accounts:
+                        type: array
+                        items: { $ref: '#/components/schemas/OmnichannelGroupAccount' }
+        '400': { description: Invalid query or accountId without a specific platform }
+        '401': { description: Authentication required }
+        '403': { description: Role not permitted or account not owned by actor }
   /api/v1/line/accounts/{id}/qr-login:
     post:
       summary: Create a local PNG QR for a personal LINE account
@@ -1421,6 +1578,113 @@ components:
       scheme: bearer
       bearerFormat: JWT
   schemas:
+    CareGroupLinkRequest:
+      type: object
+      required: [student_id]
+      properties:
+        student_id: { type: integer, minimum: 1 }
+        program_type: { type: string, enum: [ALL, KAIWA, JLPT], description: 'GROUP requires KAIWA/JLPT; USER defaults ALL' }
+        target_type: { type: string, enum: [USER, GROUP] }
+        zalo_account_id: { type: integer, minimum: 1 }
+        line_account_id: { type: integer, minimum: 1 }
+        zalo_group_id: { type: [integer, 'null'], minimum: 1 }
+        line_group_id: { type: [integer, 'null'], minimum: 1 }
+        relation_status: { type: string, enum: [FRIEND, STRANGER, UNKNOWN, BLOCKED], default: FRIEND }
+        display_name: { type: string, maxLength: 200 }
+        friend_zalo_uid: { type: string, maxLength: 64 }
+        friend_line_uid: { type: string, maxLength: 64 }
+    CareGroupReport:
+      type: object
+      required: [linkedItems, unlinkedItems, totalEligibleStudents, linkedStudentsCount, unlinkedStudentsCount]
+      properties:
+        totalEligibleStudents: { type: integer, description: Number of student/program/CS cohorts }
+        linkedStudentsCount: { type: integer }
+        unlinkedStudentsCount: { type: integer }
+        linkedItems:
+          type: array
+          items:
+            allOf:
+              - { $ref: '#/components/schemas/CareGroupCoverage' }
+              - type: object
+                properties:
+                  zaloLinked: { type: boolean }
+                  lineLinked: { type: boolean }
+                  zaloAccountId: { type: [integer, 'null'] }
+                  lineAccountId: { type: [integer, 'null'] }
+                  zaloGroupId: { type: [string, 'null'] }
+                  lineGroupId: { type: [string, 'null'] }
+                  zaloGroupName: { type: [string, 'null'] }
+                  lineGroupName: { type: [string, 'null'] }
+                  warnings: { type: array, items: { type: string } }
+                  newlyLinked: { type: boolean }
+        unlinkedItems:
+          type: array
+          items:
+            allOf:
+              - { $ref: '#/components/schemas/CareGroupCoverage' }
+              - type: object
+                properties:
+                  reason: { type: string }
+                  expectedGroupPrefix: { type: string }
+    CareGroupCoverage:
+      type: object
+      required: [studentId, programType, csId, studentName, suggestedGroupName]
+      properties:
+        studentId: { type: integer }
+        programType: { type: string, enum: [KAIWA, JLPT] }
+        studentExternalId: { type: [string, 'null'] }
+        studentName: { type: string }
+        studentPhone: { type: [string, 'null'] }
+        studentEmail: { type: [string, 'null'] }
+        csId: { type: [integer, 'null'] }
+        csName: { type: [string, 'null'] }
+        csCode: { type: [string, 'null'] }
+        suggestedGroupName: { type: [string, 'null'] }
+    CareGroupRules:
+      type: object
+      required: [kaiwaTemplate, jlptTemplate, jlptNotes, enabled]
+      properties:
+        kaiwaTemplate: { type: string, maxLength: 200, description: 'Exactly one each of {csNumber}, {studentId}, {studentName}; no {level}' }
+        jlptTemplate: { type: string, maxLength: 200, description: 'Exactly one each of {csNumber}, {studentId}, {studentName}, {level}; level must be the final token' }
+        jlptNotes: { type: array, minItems: 1, maxItems: 50, items: { type: string, minLength: 1, maxLength: 40 } }
+        enabled: { type: boolean }
+    OmnichannelGroupAccount:
+      type: object
+      required: [id, platform, name, status]
+      properties:
+        id: { type: integer }
+        platform: { type: string, enum: [ZALO, LINE] }
+        name: { type: string }
+        status: { type: string }
+    OmnichannelGroup:
+      type: object
+      required: [key, id, platform, account, externalGroupId, name, avatarUrl, memberCount, lastSyncedAt, classLinks]
+      properties:
+        programType: { type: [string, 'null'], enum: [KAIWA, JLPT, null] }
+        levelNote: { type: [string, 'null'] }
+        needsProgramReview: { type: boolean }
+        key: { type: string }
+        id: { type: integer }
+        platform: { type: string, enum: [ZALO, LINE] }
+        account: { $ref: '#/components/schemas/OmnichannelGroupAccount' }
+        externalGroupId: { type: string }
+        name: { type: string }
+        avatarUrl: { type: [string, 'null'] }
+        memberCount: { type: [integer, 'null'] }
+        lastSyncedAt: { type: [string, 'null'], format: date-time }
+        classLinks:
+          type: array
+          items:
+            type: object
+            required: [studentId, studentName, studentExternalId, classId, className, classCode]
+            properties:
+              programType: { type: string, enum: [KAIWA, JLPT] }
+              studentId: { type: integer }
+              studentName: { type: string }
+              studentExternalId: { type: [string, 'null'] }
+              classId: { type: integer }
+              className: { type: string }
+              classCode: { type: [string, 'null'] }
     ActivityActor:
       type: object
       required: [id, name, code, email, roles, displayLabel]

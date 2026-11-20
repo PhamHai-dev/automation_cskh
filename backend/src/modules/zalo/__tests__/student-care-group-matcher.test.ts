@@ -33,12 +33,13 @@ jest.mock('../../../shared/logger/logger', () => ({
 }));
 
 jest.mock('../../../shared/realtime/socket-singleton', () => ({
-  getIo: jest.fn(() => ({ emit: mockEmit })),
+  getIo: jest.fn(() => ({ emit: mockEmit, to: () => ({ emit: mockEmit }) })),
   emitToAccount: jest.fn(),
 }));
 
 jest.mock('../../../prisma/client', () => ({
   prisma: {
+    appSetting: { findUnique: jest.fn().mockResolvedValue(null) },
     user: {
       findMany: jest.fn(),
       update: jest.fn(),
@@ -58,12 +59,14 @@ jest.mock('../../../prisma/client', () => ({
     },
     zaloContactRelation: {
       upsert: jest.fn(),
+      updateMany: jest.fn(), findUnique: jest.fn(),
       findMany: jest.fn(),
       // Kept in the mock so a test can assert the destructive sweep is NEVER called.
       deleteMany: jest.fn(),
     },
     lineContactRelation: {
       upsert: jest.fn(),
+      updateMany: jest.fn(), findUnique: jest.fn(),
       deleteMany: jest.fn(),
     },
   },
@@ -90,14 +93,14 @@ describe('Student Care Group Matcher Service (student-care-group-matcher.service
   });
 
   describe('parseStudentCareGroupName', () => {
-    test('parses standard "01 - 427901798 Nguyễn Văn An - N5" format', () => {
-      const parsed = parseStudentCareGroupName('01 - 427901798 Nguyễn Văn An - N5');
+    test('parses standard "01 - 427901798 Nguyễn Văn An" format', () => {
+      const parsed = parseStudentCareGroupName('01 - 427901798 Nguyễn Văn An');
       expect(parsed).toEqual({
-        rawName: '01 - 427901798 Nguyễn Văn An - N5',
+        rawName: '01 - 427901798 Nguyễn Văn An',
         csNumberPadded: '01',
         csCode: 'CVHT01',
         studentExternalId: '427901798',
-        remainderText: 'Nguyễn Văn An - N5',
+        remainderText: 'Nguyễn Văn An',
       });
     });
 
@@ -164,6 +167,8 @@ describe('Student Care Group Matcher Service (student-care-group-matcher.service
           enrollments: [
             {
               id: 501,
+              cs_id: 10,
+              program_type: 'KAIWA',
               cs: { id: 10, code: 'CVHT01', name: 'Trần Thị Hải Yến', email: 'yen@edura.vn' },
             },
           ],
@@ -177,6 +182,8 @@ describe('Student Care Group Matcher Service (student-care-group-matcher.service
           enrollments: [
             {
               id: 502,
+              cs_id: 20,
+              program_type: 'KAIWA',
               cs: { id: 20, code: 'CVHT02', name: 'Lê Minh Tuấn', email: 'tuan@edura.vn' },
             },
           ],
@@ -190,6 +197,8 @@ describe('Student Care Group Matcher Service (student-care-group-matcher.service
           enrollments: [
             {
               id: 503,
+              cs_id: 10,
+              program_type: 'KAIWA',
               cs: { id: 10, code: 'CVHT01', name: 'Trần Thị Hải Yến', email: 'yen@edura.vn' },
             },
           ],
@@ -202,7 +211,7 @@ describe('Student Care Group Matcher Service (student-care-group-matcher.service
         {
           id: 1,
           zalo_group_id: 'zg_427901798',
-          name: '01 - 427901798 Nguyễn Văn An - N5',
+          name: '01 - 427901798 Nguyễn Văn An',
           avatar_url: 'https://cdn.zalo.me/avt1.jpg',
           member_count: 4,
           zalo_account_id: 7,
@@ -232,11 +241,18 @@ describe('Student Care Group Matcher Service (student-care-group-matcher.service
         },
       ]);
 
-      (prisma.zaloContactRelation.upsert as jest.Mock).mockResolvedValue({ id: 9001 });
-      (prisma.lineContactRelation.upsert as jest.Mock).mockResolvedValue({ id: 9002 });
+      (prisma.zaloContactRelation.upsert as jest.Mock).mockImplementation(async (args: any) => {
+        const row = { id: 9001, ...args.create, zalo_group: { name: args.create.display_name, zalo_group_id: args.create.friend_zalo_uid } };
+        (prisma.zaloContactRelation.findUnique as jest.Mock).mockResolvedValue(row); return row;
+      });
+      (prisma.lineContactRelation.upsert as jest.Mock).mockImplementation(async (args: any) => {
+        const row = { id: 9002, ...args.create, line_group: { name: args.create.display_name, line_group_id: args.create.friend_line_uid } };
+        (prisma.lineContactRelation.findUnique as jest.Mock).mockResolvedValue(row); return row;
+      });
 
       const report = await syncAndMatchCareGroups({
         triggeredBy: 'manual',
+        csId: 10,
         refreshLiveGroups: false,
       });
 
@@ -246,6 +262,7 @@ describe('Student Care Group Matcher Service (student-care-group-matcher.service
         expect.objectContaining({
           where: {
             student_id_zalo_account_id: {
+              program_type: 'KAIWA',
               student_id: 101,
               zalo_account_id: 7,
             },
@@ -257,7 +274,7 @@ describe('Student Care Group Matcher Service (student-care-group-matcher.service
             target_type: 'GROUP',
             zalo_group_id: 1,
             friend_zalo_uid: 'zg_427901798',
-            display_name: '01 - 427901798 Nguyễn Văn An - N5',
+            display_name: '01 - 427901798 Nguyễn Văn An',
             avatar_url: 'https://cdn.zalo.me/avt1.jpg',
             matched_by: 'AUTO_GROUP_NAME',
           }),
@@ -270,6 +287,7 @@ describe('Student Care Group Matcher Service (student-care-group-matcher.service
         expect.objectContaining({
           where: {
             student_id_line_account_id: {
+              program_type: 'KAIWA',
               student_id: 102,
               line_account_id: 9,
             },
@@ -303,7 +321,7 @@ describe('Student Care Group Matcher Service (student-care-group-matcher.service
           studentExternalId: '427901798',
           csCode: 'CVHT01',
           zaloLinked: true,
-          zaloGroupName: '01 - 427901798 Nguyễn Văn An - N5',
+          zaloGroupName: '01 - 427901798 Nguyễn Văn An',
           zaloGroupId: 'zg_427901798',
           zaloAccountId: 7,
           lineLinked: false,
@@ -333,11 +351,11 @@ describe('Student Care Group Matcher Service (student-care-group-matcher.service
           studentName: 'Phạm Quốc Bảo',
           csId: 10,
           csCode: 'CVHT01',
-          expectedGroupPrefix: '01 - 888999000',
-          suggestedGroupName: '01 - 888999000 - Phạm Quốc Bảo',
+          expectedGroupPrefix: '01 - 888999000 Phạm Quốc Bảo',
+          suggestedGroupName: '01 - 888999000 Phạm Quốc Bảo',
         }),
       );
-      expect(report.unlinkedItems[0].reason).toContain('01 - 888999000');
+      expect(report.unlinkedItems[0].reason).toContain('KAIWA');
 
       // Verify Socket.IO events emitted
       expect(mockEmit).toHaveBeenCalledWith(
@@ -348,7 +366,9 @@ describe('Student Care Group Matcher Service (student-care-group-matcher.service
           triggeredBy: 'manual',
         }),
       );
-      expect(mockEmit).toHaveBeenCalledWith('omnichannel:sync-complete', report);
+      const emitted = mockEmit.mock.calls.find(([event]) => event === 'omnichannel:sync-complete')![1];
+      expect(emitted.linkedItems.every((item: any) => item.csId === 10)).toBe(true);
+      expect(emitted.unlinkedItems.every((item: any) => item.csId === 10)).toBe(true);
     });
 
     // CONTRACT CHANGE (owner ruling 2026-10-26, data-loss hazard fix):
@@ -377,6 +397,8 @@ describe('Student Care Group Matcher Service (student-care-group-matcher.service
           enrollments: [
             {
               id: 601,
+              cs_id: 10,
+              program_type: 'KAIWA',
               cs: { id: 10, code: 'CVHT01', name: 'Trần Thị Hải Yến', email: 'yen@edura.vn' },
             },
           ],
@@ -388,10 +410,11 @@ describe('Student Care Group Matcher Service (student-care-group-matcher.service
               zalo_account_id: 1,
               relation_status: 'FRIEND',
               target_type: 'USER',
+              program_type: 'ALL',
               zalo_group_id: null,
               friend_zalo_uid: null,
               display_name: null,
-              zalo_account: { id: 1, display_name: 'Old Nick', status: 'DISABLED', archived_at: null },
+              zalo_account: { id: 1, cs_id: 10, display_name: 'Old Nick', status: 'DISABLED', archived_at: null },
               zalo_group: null,
             },
           ],
@@ -404,6 +427,8 @@ describe('Student Care Group Matcher Service (student-care-group-matcher.service
           enrollments: [
             {
               id: 602,
+              cs_id: 10,
+              program_type: 'KAIWA',
               cs: { id: 10, code: 'CVHT01', name: 'Trần Thị Hải Yến', email: 'yen@edura.vn' },
             },
           ],
@@ -415,6 +440,7 @@ describe('Student Care Group Matcher Service (student-care-group-matcher.service
               zalo_account_id: 2,
               relation_status: 'FRIEND',
               target_type: 'USER',
+              program_type: 'ALL',
               zalo_group_id: null,
               friend_zalo_uid: 'uid_archived',
               display_name: 'Nick Archived',
@@ -436,6 +462,8 @@ describe('Student Care Group Matcher Service (student-care-group-matcher.service
           enrollments: [
             {
               id: 603,
+              cs_id: 10,
+              program_type: 'KAIWA',
               cs: { id: 10, code: 'CVHT01', name: 'Trần Thị Hải Yến', email: 'yen@edura.vn' },
             },
           ],
@@ -447,11 +475,13 @@ describe('Student Care Group Matcher Service (student-care-group-matcher.service
               zalo_account_id: 7,
               relation_status: 'FRIEND',
               target_type: 'USER',
+              program_type: 'ALL',
               zalo_group_id: null,
               friend_zalo_uid: 'zalo_uid_mai_203',
               display_name: 'Mai Lê Zalo',
               zalo_account: {
                 id: 7,
+                cs_id: 10,
                 display_name: 'CS Hải Yến Zalo',
                 status: 'ACTIVE',
                 archived_at: null,
@@ -466,11 +496,13 @@ describe('Student Care Group Matcher Service (student-care-group-matcher.service
               line_account_id: 9,
               relation_status: 'FRIEND',
               target_type: 'USER',
+              program_type: 'ALL',
               line_group_id: null,
               friend_line_uid: 'U_line_mai_203',
               display_name: 'Mai Lê LINE',
               line_account: {
                 id: 9,
+                cs_id: 10,
                 display_name: 'CS Hải Yến LINE',
                 status: 'ACTIVE',
                 archived_at: null,
@@ -562,11 +594,11 @@ describe('Student Care Group Matcher Service (student-care-group-matcher.service
         expect.objectContaining({
           studentId: 203,
           zaloLinked: true,
-          zaloGroupName: 'Mai Lê Zalo (Cá nhân)',
+          zaloGroupName: 'Mai Lê Zalo',
           zaloGroupId: 'zalo_uid_mai_203',
           zaloAccountId: 7,
           lineLinked: true,
-          lineGroupName: 'Mai Lê LINE (Cá nhân)',
+          lineGroupName: 'Mai Lê LINE',
           lineGroupId: 'U_line_mai_203',
           lineAccountId: 9,
           newlyLinked: false,

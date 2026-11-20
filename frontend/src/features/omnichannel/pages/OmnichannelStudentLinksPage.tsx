@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { apiClient } from '../../../api/client';
+import { CareGroupRulesButton } from '../components/CareGroupRulesDialog';
+import { Select } from '../../../components/ui/Select';
+import { Badge } from '../../../components/ui/Badge';
 import { zaloApi } from '../../zalo/api/zalo.api';
 import { lineApi } from '../../line/api/line.api';
 import type { ZaloAccount } from '../../zalo/types/zalo.types';
@@ -7,8 +9,6 @@ import type { LineAccount, LineFriend, LineGroupInfo } from '../../line/types/li
 import {
   omnichannelApi,
   type CareGroupSyncReport,
-  type LinkedStudentCareGroupItem,
-  type UnlinkedStudentCareGroupItem,
 } from '../api/omnichannel.api';
 import { PageContainer } from '../../../components/common/PageContainer';
 import { PageHeader } from '../../../components/common/PageHeader';
@@ -28,15 +28,12 @@ import {
   RefreshCw,
   Copy,
   Check,
-  Info,
   UserCheck,
   Users,
   Unlink2,
   Plus,
   Pencil,
   Trash2,
-  ChevronDown,
-  ChevronUp,
   Loader2,
   User,
   Clock,
@@ -56,6 +53,9 @@ interface ChannelRelationBadge {
 }
 
 interface StudentCoverageRow {
+  rowKey: string;
+  program_type: 'KAIWA' | 'JLPT';
+  warning: string;
   id: number;
   external_id: string | null;
   full_name: string;
@@ -73,37 +73,6 @@ interface StudentCoverageRow {
   newlyLinked: boolean;
 }
 
-function extractCsNumberFromCode(csCode?: string | null): string | null {
-  if (!csCode) return null;
-  const match = csCode.toUpperCase().match(/CVHT[-_\s]*(\d+)/);
-  if (match) {
-    const num = parseInt(match[1], 10);
-    if (Number.isFinite(num) && num > 0) {
-      return String(num).padStart(2, '0');
-    }
-  }
-  const digits = csCode.match(/(\d+)/);
-  if (digits) {
-    const num = parseInt(digits[1], 10);
-    if (Number.isFinite(num) && num > 0) {
-      return String(num).padStart(2, '0');
-    }
-  }
-  return null;
-}
-
-function buildSuggestedGroupName(
-  csCode?: string | null,
-  externalId?: string | null,
-  fullName?: string | null,
-): string | null {
-  const ext = (externalId || '').trim();
-  if (!ext) return null;
-  const csNum = extractCsNumberFromCode(csCode) || '01';
-  const name = (fullName || '').trim();
-  return name ? `${csNum} - ${ext} ${name}` : `${csNum} - ${ext}`;
-}
-
 export const OmnichannelStudentLinksPage: React.FC<{ initialTab?: string }> = ({
   initialTab,
 }) => {
@@ -115,6 +84,7 @@ export const OmnichannelStudentLinksPage: React.FC<{ initialTab?: string }> = ({
   const [lineAccounts, setLineAccounts] = useState<LineAccount[]>([]);
   const [students, setStudents] = useState<StudentCoverageRow[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState('');
 
   // Filters & UI state
   const [filterTab, setFilterTab] = useState<FilterTab>(() => {
@@ -125,8 +95,8 @@ export const OmnichannelStudentLinksPage: React.FC<{ initialTab?: string }> = ({
     return 'ALL';
   });
   const [searchQuery, setSearchQuery] = useState('');
+  const [programFilter, setProgramFilter] = useState('ALL');
   const [selectedCsFilter, setSelectedCsFilter] = useState<string>('ALL');
-  const [showGuide, setShowGuide] = useState(true);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
 
@@ -134,7 +104,7 @@ export const OmnichannelStudentLinksPage: React.FC<{ initialTab?: string }> = ({
   const [careReport, setCareReport] = useState<CareGroupSyncReport | null>(null);
   const [syncingCareGroups, setSyncingCareGroups] = useState(false);
   const [liveSyncStage, setLiveSyncStage] = useState<string | null>(null);
-  const [copiedId, setCopiedId] = useState<number | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
   const [unlinkingKey, setUnlinkingKey] = useState<string | null>(null);
 
   // Inline Link Modal state
@@ -161,13 +131,13 @@ export const OmnichannelStudentLinksPage: React.FC<{ initialTab?: string }> = ({
   } | null>(null);
 
   const loadWorkspaceData = useCallback(async (opts?: { silent?: boolean; skipReport?: boolean }) => {
+    setLoadError('');
     if (!opts?.silent) {
       setLoading(true);
     }
     try {
-      const [studentsRes, reportRes, zAccs, lAccs] = await Promise.all([
-        apiClient.get('/students').catch(() => ({ data: { data: [] } })),
-        opts?.skipReport ? Promise.resolve(null) : omnichannelApi.getCareGroupReport().catch(() => null),
+      const [reportRes, zAccs, lAccs] = await Promise.all([
+        omnichannelApi.getCareGroupReport(),
         zaloApi.listAccounts().catch(() => [] as ZaloAccount[]),
         lineApi.listAccounts().catch(() => [] as LineAccount[]),
       ]);
@@ -199,220 +169,37 @@ export const OmnichannelStudentLinksPage: React.FC<{ initialTab?: string }> = ({
         ),
       ]);
 
-      const zaloRelByStudent = new Map<number, any>();
-      for (const list of zaloAccRelationsLists) {
-        for (const rel of list) {
-          const stId = Number(rel.student_id ?? rel.student?.id);
-          if (stId && (!zaloRelByStudent.has(stId) || rel.target_type === 'GROUP' || rel.zalo_group)) {
-            zaloRelByStudent.set(stId, rel);
-          }
-        }
-      }
 
-      const lineRelByStudent = new Map<number, any>();
-      for (const list of lineAccRelationsLists) {
-        for (const rel of list) {
-          const stId = Number(rel.student_id ?? rel.student?.id);
-          if (stId && (!lineRelByStudent.has(stId) || rel.target_type === 'GROUP' || rel.line_group)) {
-            lineRelByStudent.set(stId, rel);
-          }
-        }
-      }
-
-      const zaloAccNameMap = new Map<number, string>(
-        safeZaloAccs.map((a) => [a.id, a.display_name || `Zalo #${a.id}`]),
-      );
-      const lineAccNameMap = new Map<number, string>(
-        safeLineAccs.map((a) => [a.id, a.display_name || `LINE #${a.id}`]),
-      );
-
-      const linkedMap = new Map<number, LinkedStudentCareGroupItem>();
-      const unlinkedMap = new Map<number, UnlinkedStudentCareGroupItem>();
-      if (reportRes) {
-        for (const item of reportRes.linkedItems ?? []) {
-          linkedMap.set(Number(item.studentId), item);
-        }
-        for (const item of reportRes.unlinkedItems ?? []) {
-          unlinkedMap.set(Number(item.studentId), item);
-        }
-      }
-
-      const rawStudents: any[] =
-        studentsRes.data?.data ?? studentsRes.data?.students ?? studentsRes.data ?? [];
-
-      const rows: StudentCoverageRow[] = (Array.isArray(rawStudents) ? rawStudents : []).map(
-        (s: any) => {
-          const studentId = Number(s.id);
-          const linkedReportItem = linkedMap.get(studentId);
-          const unlinkedReportItem = unlinkedMap.get(studentId);
-
-          const firstEnr = Array.isArray(s.enrollments) ? s.enrollments[0] : null;
-          const csObj = firstEnr?.cs;
-          const csId =
-            linkedReportItem?.csId ??
-            unlinkedReportItem?.csId ??
-            csObj?.id ??
-            firstEnr?.cs_id ??
-            null;
-          const csName =
-            linkedReportItem?.csName ??
-            unlinkedReportItem?.csName ??
-            csObj?.name ??
-            firstEnr?.sale_name ??
-            null;
-          const csCode =
-            linkedReportItem?.csCode ??
-            unlinkedReportItem?.csCode ??
-            csObj?.code ??
-            null;
-
-          let csDisplay = 'Chưa phân công CVHT';
-          if (csName && csCode) {
-            csDisplay = csName.toUpperCase().includes(csCode.toUpperCase())
-              ? csName
-              : `${csName} - ${csCode}`;
-          } else if (csName || csCode || csObj?.email) {
-            csDisplay = csName || csCode || csObj?.email;
-          }
-
-          const externalId =
-            s.external_id ||
-            linkedReportItem?.studentExternalId ||
-            unlinkedReportItem?.studentExternalId ||
-            firstEnr?.external_id ||
-            null;
-
-          const suggestedGroupName =
-            unlinkedReportItem?.suggestedGroupName ||
-            buildSuggestedGroupName(csCode, externalId, s.full_name) ||
-            linkedReportItem?.zaloGroupName ||
-            linkedReportItem?.lineGroupName ||
-            null;
-
-          // Authoritative Zalo relation resolution:
-          // Check s.zalo_contact_relations (if included on student), account relation map, and careReport.linkedItems where zaloGroupName is non-empty
-          const inlineZaloRel = Array.isArray(s.zalo_contact_relations)
-            ? s.zalo_contact_relations.find((r: any) => r.relation_status === 'FRIEND') ??
-              s.zalo_contact_relations[0]
-            : null;
-          const accZaloRel = zaloRelByStudent.get(studentId) ?? inlineZaloRel;
-          const reportHasZaloGroup = Boolean(
-            linkedReportItem?.zaloLinked && linkedReportItem?.zaloGroupName?.trim(),
-          );
-
-          let zaloRelation: ChannelRelationBadge | null = null;
-          if (accZaloRel) {
-            const groupName = accZaloRel.zalo_group?.name || linkedReportItem?.zaloGroupName;
-            const friendName =
-              accZaloRel.friendDisplayName ||
-              accZaloRel.display_name ||
-              groupName ||
-              'Đã gắn Zalo';
-            const accId = Number(
-              accZaloRel.zalo_account_id ?? linkedReportItem?.zaloAccountId ?? 0,
-            );
-            zaloRelation = {
-              relationId: accZaloRel.id ?? null,
-              accountId: accId,
-              accountName:
-                accZaloRel.zalo_account?.display_name ||
-                zaloAccNameMap.get(accId) ||
-                `Tài khoản Zalo #${accId}`,
-              targetType:
-                accZaloRel.target_type === 'GROUP' || Boolean(accZaloRel.zalo_group || groupName)
-                  ? 'GROUP'
-                  : 'USER',
-              groupId: accZaloRel.zalo_group_id ?? accZaloRel.zalo_group?.id ?? null,
-              externalTargetId:
-                accZaloRel.zalo_group?.zalo_group_id ||
-                accZaloRel.friend_zalo_uid ||
-                accZaloRel.friendZaloUid ||
-                null,
-              displayName: groupName || friendName,
-              newlyLinked: Boolean(linkedReportItem?.newlyLinked),
-            };
-          } else if (reportHasZaloGroup && linkedReportItem) {
-            const accId = Number(linkedReportItem.zaloAccountId ?? 0);
-            zaloRelation = {
-              relationId: null,
-              accountId: accId,
-              accountName: zaloAccNameMap.get(accId) || (accId ? `Zalo #${accId}` : 'Zalo'),
-              targetType: 'GROUP',
-              externalTargetId: linkedReportItem.zaloGroupId ?? null,
-              displayName: linkedReportItem.zaloGroupName!,
-              newlyLinked: Boolean(linkedReportItem.newlyLinked),
-            };
-          }
-
-          // Authoritative LINE relation resolution:
-          const inlineLineRel = Array.isArray(s.line_contact_relations)
-            ? s.line_contact_relations.find((r: any) => r.relation_status === 'FRIEND') ??
-              s.line_contact_relations[0]
-            : null;
-          const accLineRel = lineRelByStudent.get(studentId) ?? inlineLineRel;
-          const reportHasLineGroup = Boolean(
-            linkedReportItem?.lineLinked && linkedReportItem?.lineGroupName?.trim(),
-          );
-
-          let lineRelation: ChannelRelationBadge | null = null;
-          if (accLineRel) {
-            const groupName = accLineRel.line_group?.name || linkedReportItem?.lineGroupName;
-            const friendName =
-              accLineRel.display_name || groupName || 'Đã gắn LINE';
-            const accId = Number(
-              accLineRel.line_account_id ?? linkedReportItem?.lineAccountId ?? 0,
-            );
-            lineRelation = {
-              relationId: accLineRel.id ?? null,
-              accountId: accId,
-              accountName:
-                accLineRel.line_account?.display_name ||
-                lineAccNameMap.get(accId) ||
-                `Tài khoản LINE #${accId}`,
-              targetType:
-                accLineRel.target_type === 'GROUP' || Boolean(accLineRel.line_group || groupName)
-                  ? 'GROUP'
-                  : 'USER',
-              groupId: accLineRel.line_group_id ?? accLineRel.line_group?.id ?? null,
-              externalTargetId:
-                accLineRel.line_group?.line_group_id || accLineRel.friend_line_uid || null,
-              displayName: groupName || friendName,
-              newlyLinked: Boolean(linkedReportItem?.newlyLinked),
-            };
-          } else if (reportHasLineGroup && linkedReportItem) {
-            const accId = Number(linkedReportItem.lineAccountId ?? 0);
-            lineRelation = {
-              relationId: null,
-              accountId: accId,
-              accountName: lineAccNameMap.get(accId) || (accId ? `LINE #${accId}` : 'LINE'),
-              targetType: 'GROUP',
-              externalTargetId: linkedReportItem.lineGroupId ?? null,
-              displayName: linkedReportItem.lineGroupName!,
-              newlyLinked: Boolean(linkedReportItem.newlyLinked),
-            };
-          }
-
-          return {
-            id: studentId,
-            external_id: externalId,
-            full_name: s.full_name,
-            phone: s.phone || null,
-            email: s.email || null,
-            cs_id: csId ? Number(csId) : null,
-            cs_name: csName,
-            cs_code: csCode,
-            cs_display: csDisplay,
-            suggested_group_name: suggestedGroupName,
-            zaloLinked: Boolean(zaloRelation),
-            zaloRelation,
-            lineLinked: Boolean(lineRelation),
-            lineRelation,
-            newlyLinked: Boolean(linkedReportItem?.newlyLinked),
-          };
-        },
-      );
+      const rows: StudentCoverageRow[] = [...(reportRes?.linkedItems || []), ...(reportRes?.unlinkedItems || [])].map(item => {
+        const linked = 'zaloLinked' in item ? item : null;
+        const relationFor = (platform: 'ZALO' | 'LINE'): ChannelRelationBadge | null => {
+          const lists = platform === 'ZALO' ? zaloAccRelationsLists : lineAccRelationsLists;
+          const accountField = platform === 'ZALO' ? 'zalo_account_id' : 'line_account_id';
+          const groupField = platform === 'ZALO' ? 'zalo_group_id' : 'line_group_id';
+          const accountKey = platform === 'ZALO' ? 'zalo_account' : 'line_account';
+          const groupKey = platform === 'ZALO' ? 'zalo_group' : 'line_group';
+          if (!(platform === 'ZALO' ? linked?.zaloLinked : linked?.lineLinked)) return null;
+          const reportedAccount = platform === 'ZALO' ? linked?.zaloAccountId : linked?.lineAccountId;
+          const candidates = lists.flat().filter((r: any) => Number(r.student_id ?? r.student?.id) === item.studentId && r.relation_status === 'FRIEND' && r[accountField] === reportedAccount);
+          const rel = candidates.find((r: any) => r.program_type === item.programType) || candidates.find((r: any) => r.program_type === 'ALL' && r.target_type === 'USER' && !r[groupField]);
+          if (!rel) return null;
+          const acc = (platform === 'ZALO' ? safeZaloAccs : safeLineAccs).find(a => a.id === rel[accountField]);
+          return { relationId: rel.id, accountId: rel[accountField], accountName: rel[accountKey]?.display_name || acc?.display_name || platform,
+            targetType: rel.target_type === 'GROUP' || rel[groupField] ? 'GROUP' : 'USER', groupId: rel[groupField],
+            externalTargetId: rel[groupKey]?.[groupField] || rel[platform === 'ZALO' ? 'friend_zalo_uid' : 'friend_line_uid'],
+            displayName: rel[groupKey]?.name || rel.display_name || 'Liên hệ', newlyLinked: linked?.newlyLinked };
+        };
+        const zaloRelation = relationFor('ZALO'); const lineRelation = relationFor('LINE');
+        return { id: item.studentId, rowKey: item.studentId + ':' + item.programType + ':' + item.csId, program_type: item.programType,
+          warning: linked ? (linked.warnings || []).join('; ') : ('reason' in item ? item.reason : ''), external_id: item.studentExternalId,
+          full_name: item.studentName, phone: item.studentPhone || null, email: item.studentEmail || null,
+          cs_id: item.csId, cs_name: item.csName, cs_code: item.csCode, cs_display: [item.csName, item.csCode].filter(Boolean).join(' · ') || 'Chưa phân công CVHT',
+          suggested_group_name: item.suggestedGroupName || null, zaloLinked: Boolean(zaloRelation), zaloRelation, lineLinked: Boolean(lineRelation), lineRelation, newlyLinked: linked?.newlyLinked || false };
+      });
 
       setStudents(rows);
+    } catch (error: any) {
+      setLoadError(error?.response?.data?.error?.message || 'Không tải được liên kết học viên. Hãy làm mới trang.');
     } finally {
       setLoading(false);
     }
@@ -572,6 +359,7 @@ export const OmnichannelStudentLinksPage: React.FC<{ initialTab?: string }> = ({
             selectedGroupItem.name || `Nhóm Zalo #${selectedGroupItem.zalo_group_id}`;
           await zaloApi.createStudentLink({
             student_id: linkModalStudent.id,
+            program_type: linkModalStudent.program_type,
             zalo_account_id: linkModalAccountId,
             zalo_group_id: selectedGroupItem.id,
             target_type: 'GROUP',
@@ -580,7 +368,7 @@ export const OmnichannelStudentLinksPage: React.FC<{ initialTab?: string }> = ({
             relation_status: 'FRIEND',
           });
           toast.success(
-            `Đã gắn Nhóm Zalo "${groupName}" cho học viên ${linkModalStudent.full_name}`,
+            `Đã gắn Nhóm Zalo "${groupName}" cho học viên ${linkModalStudent.full_name} · {linkModalStudent.program_type === 'KAIWA' ? 'Kaiwa' : 'JLPT'}`,
           );
         } else {
           if (!selectedFriendItem) {
@@ -595,6 +383,7 @@ export const OmnichannelStudentLinksPage: React.FC<{ initialTab?: string }> = ({
             'Bạn bè Zalo';
           await zaloApi.createStudentLink({
             student_id: linkModalStudent.id,
+            program_type: linkModalStudent.program_type,
             zalo_account_id: linkModalAccountId,
             target_type: 'USER',
             friend_zalo_uid: selectedFriendItem.zalo_uid_in_nick || undefined,
@@ -616,6 +405,7 @@ export const OmnichannelStudentLinksPage: React.FC<{ initialTab?: string }> = ({
             selectedGroupItem.name || `Nhóm LINE #${selectedGroupItem.line_group_id}`;
           await lineApi.createLink({
             student_id: linkModalStudent.id,
+            program_type: linkModalStudent.program_type,
             line_account_id: linkModalAccountId,
             line_group_id: selectedGroupItem.id,
             target_type: 'GROUP',
@@ -639,6 +429,7 @@ export const OmnichannelStudentLinksPage: React.FC<{ initialTab?: string }> = ({
             'Bạn bè LINE';
           await lineApi.createLink({
             student_id: linkModalStudent.id,
+            program_type: linkModalStudent.program_type,
             line_account_id: linkModalAccountId,
             target_type: 'USER',
             friend_line_uid: selectedFriendItem.line_uid_in_nick,
@@ -675,17 +466,17 @@ export const OmnichannelStudentLinksPage: React.FC<{ initialTab?: string }> = ({
     const confirmMsg = `Bạn có chắc muốn gỡ liên kết ${platform} ("${rel.displayName}") khỏi học viên ${student.full_name}?`;
     if (!window.confirm(confirmMsg)) return;
 
-    const key = `${platform}-${student.id}`;
+    const key = `${platform}-${student.rowKey}`;
     setUnlinkingKey(key);
     try {
       let relationId = rel.relationId;
       if (!relationId) {
         if (platform === 'ZALO') {
           const links = await zaloApi.listStudentLinks(student.id);
-          relationId = links[0]?.id;
+          relationId = links.find((r: any) => r.program_type === student.program_type && r.zalo_account_id === rel.accountId)?.id;
         } else {
           const res = await lineApi.listLinksByStudent(student.id);
-          relationId = res.items?.[0]?.id;
+          relationId = res.items?.find((r: any) => r.program_type === student.program_type && r.line_account_id === rel.accountId)?.id;
         }
       }
 
@@ -734,7 +525,7 @@ export const OmnichannelStudentLinksPage: React.FC<{ initialTab?: string }> = ({
     }
   };
 
-  const handleCopySuggestedName = (studentId: number, groupName: string) => {
+  const handleCopySuggestedName = (studentId: string, groupName: string) => {
     navigator.clipboard.writeText(groupName);
     setCopiedId(studentId);
     toast.success(`Đã sao chép tên nhóm chuẩn: "${groupName}"`);
@@ -786,6 +577,7 @@ export const OmnichannelStudentLinksPage: React.FC<{ initialTab?: string }> = ({
       if (filterTab === 'UNLINKED_LINE' && s.lineLinked) return false;
 
       // CS dropdown filter
+      if (programFilter !== 'ALL' && s.program_type !== programFilter) return false;
       if (selectedCsFilter !== 'ALL' && s.cs_display !== selectedCsFilter) {
         return false;
       }
@@ -812,11 +604,11 @@ export const OmnichannelStudentLinksPage: React.FC<{ initialTab?: string }> = ({
       }
       return true;
     });
-  }, [students, filterTab, selectedCsFilter, searchQuery]);
+  }, [students, filterTab, selectedCsFilter, searchQuery, programFilter]);
 
   useEffect(() => {
     setPage(1);
-  }, [filterTab, selectedCsFilter, searchQuery]);
+  }, [filterTab, selectedCsFilter, searchQuery, programFilter]);
 
   const totalPages = Math.max(1, Math.ceil(filteredStudents.length / pageSize));
   const safePage = Math.min(page, totalPages);
@@ -860,9 +652,10 @@ export const OmnichannelStudentLinksPage: React.FC<{ initialTab?: string }> = ({
     <PageContainer>
       <PageHeader
         title="Liên kết Học viên với Nhóm Chăm sóc (Zalo & LINE)"
-        description="Tự động đối chiếu và gắn Nhóm Chăm sóc Zalo/LINE cho từng học viên theo tên nhóm, hoặc chọn gắn thủ công ngay trên danh sách."
+        description="Tự động đối chiếu và gắn Nhóm Chăm sóc Zalo/LINE theo học viên, chương trình và CVHT, hoặc chọn gắn thủ công ngay trên danh sách."
         actions={
           <div className="flex flex-wrap items-center gap-2">
+            <CareGroupRulesButton onSaved={() => void loadWorkspaceData()} />
             <Button
               variant="outline"
               size="sm"
@@ -888,52 +681,9 @@ export const OmnichannelStudentLinksPage: React.FC<{ initialTab?: string }> = ({
       />
 
       <div className="space-y-4">
-        {/* Collapsible / Concise Instruction Card */}
-        <div className="rounded-2xl border border-blue-200/80 bg-gradient-to-r from-blue-50/90 via-indigo-50/50 to-emerald-50/70 p-3.5 shadow-2xs">
-          <div className="flex items-start justify-between gap-3">
-            <div className="flex items-start gap-2.5">
-              <Info className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
-              <div className="text-xs text-slate-800 leading-relaxed">
-                <div className="font-bold text-slate-900 flex items-center gap-2">
-                  <span>Hướng dẫn đặt tên Nhóm Chăm sóc để hệ thống tự động nhận diện</span>
-                </div>
-                {showGuide && (
-                  <p className="mt-1 text-slate-700">
-                    Cách đặt tên nhóm trên Zalo / LINE để hệ thống tự động nhận diện:{' '}
-                    <strong className="font-mono bg-white border border-blue-200 text-blue-900 px-2 py-0.5 rounded-md">
-                      [Số thứ tự CSKH] - [Mã học viên] [Tên học viên]
-                    </strong>{' '}
-                    (Ví dụ:{' '}
-                    <strong className="font-mono bg-emerald-100/80 border border-emerald-300 text-emerald-900 px-2 py-0.5 rounded-md">
-                      01 - HV_001 Nguyễn Văn An
-                    </strong>{' '}
-                    — trong đó <code className="font-mono font-bold text-blue-700">01</code> là mã
-                    của nhân viên <code className="font-mono font-bold text-blue-700">CVHT01</code>,{' '}
-                    <code className="font-mono font-bold text-emerald-700">HV_001</code> là Mã học
-                    viên). Bạn có thể bấm nút <strong>Sao chép</strong> ở cột Tên nhóm chuẩn bên
-                    dưới để đặt tên nhóm trên Zalo/LINE.
-                  </p>
-                )}
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => setShowGuide((v) => !v)}
-              className="text-xs font-semibold text-blue-700 hover:text-blue-900 flex items-center gap-1 shrink-0 px-2 py-1 rounded-lg hover:bg-blue-100/60 transition-colors"
-            >
-              {showGuide ? (
-                <>
-                  <span>Thu gọn</span>
-                  <ChevronUp className="w-3.5 h-3.5" />
-                </>
-              ) : (
-                <>
-                  <span>Xem hướng dẫn</span>
-                  <ChevronDown className="w-3.5 h-3.5" />
-                </>
-              )}
-            </button>
-          </div>
+        {loadError && <div role="alert" className="rounded-xl border border-danger/30 bg-surface p-4 text-sm text-danger">{loadError}<Button variant="outline" size="sm" onClick={() => void loadWorkspaceData()}>Thử lại</Button></div>}
+        <div className="rounded-xl border border-border bg-surface p-4 text-sm text-text-secondary">
+          Mỗi dòng là một học viên theo chương trình và CVHT phụ trách. Tên gợi ý áp dụng cấu hình hiện tại. Ghi chú trình độ ở cuối tên giúp nhận diện nhóm JLPT, không dùng để chọn nhóm. Nếu có nhiều nhóm cùng khớp, hãy chọn thủ công. Liên kết thủ công được giữ khi đồng bộ.
         </div>
 
         {/* Live Progress Banner when syncingCareGroups === true */}
@@ -970,12 +720,12 @@ export const OmnichannelStudentLinksPage: React.FC<{ initialTab?: string }> = ({
             }`}
           >
             <div className="flex items-center justify-between text-xs font-semibold text-text-secondary">
-              <span>Tổng số học viên</span>
+              <span>Hồ sơ theo chương trình</span>
               <Users className="w-4 h-4 text-blue-600" />
             </div>
             <div className="mt-2 flex items-baseline gap-2">
               <span className="text-2xl font-bold text-text-primary">{totalCount}</span>
-              <span className="text-xs text-text-muted">học viên</span>
+              <span className="text-xs text-text-muted">hồ sơ chương trình</span>
             </div>
             <div className="mt-1 text-[11px] text-text-muted">
               Bấm để xem toàn bộ danh sách
@@ -999,7 +749,7 @@ export const OmnichannelStudentLinksPage: React.FC<{ initialTab?: string }> = ({
             <div className="mt-2 flex items-baseline gap-2">
               <span className="text-2xl font-bold text-emerald-700">{linkedCount}</span>
               <span className="text-xs text-emerald-700">
-                / {totalCount} học viên (
+                / {totalCount} hồ sơ (
                 {totalCount > 0 ? Math.round((linkedCount / totalCount) * 100) : 0}%)
               </span>
             </div>
@@ -1026,7 +776,7 @@ export const OmnichannelStudentLinksPage: React.FC<{ initialTab?: string }> = ({
             </div>
             <div className="mt-2 flex items-baseline gap-2">
               <span className="text-2xl font-bold text-amber-700">{unlinkedCount}</span>
-              <span className="text-xs text-amber-800">học viên chưa có nhóm</span>
+              <span className="text-xs text-amber-800">hồ sơ chưa liên kết</span>
             </div>
             <div className="mt-1 text-[11px] text-amber-800/80">
               Bấm để lọc danh sách cần gắn nhóm ngay
@@ -1089,23 +839,9 @@ export const OmnichannelStudentLinksPage: React.FC<{ initialTab?: string }> = ({
               ))}
             </div>
 
-            {/* CSKH Dropdown Filter */}
-            <div className="flex items-center gap-2">
-              <label className="text-xs font-semibold text-text-secondary whitespace-nowrap">
-                Nhân viên CVHT:
-              </label>
-              <select
-                value={selectedCsFilter}
-                onChange={(e) => setSelectedCsFilter(e.target.value)}
-                className="px-3 py-1.5 text-xs font-semibold rounded-xl border border-border bg-surface-muted/60 focus:bg-surface focus:outline-none"
-              >
-                <option value="ALL">Tất cả nhân viên CVHT</option>
-                {csOptions.map((cs) => (
-                  <option key={cs} value={cs}>
-                    {cs}
-                  </option>
-                ))}
-              </select>
+            <div className="grid w-full grid-cols-1 gap-3 sm:grid-cols-2 lg:w-auto">
+              <Select label="Chương trình" value={programFilter} onChange={e => setProgramFilter(e.target.value)} options={[{value:'ALL',label:'Tất cả chương trình'},{value:'KAIWA',label:'Kaiwa'},{value:'JLPT',label:'JLPT'}]} />
+              <Select label="Nhân viên CVHT" value={selectedCsFilter} onChange={e => setSelectedCsFilter(e.target.value)} options={[{value:'ALL',label:'Tất cả nhân viên CVHT'},...csOptions.map(cs=>({value:cs,label:cs}))]} />
             </div>
           </div>
 
@@ -1125,21 +861,22 @@ export const OmnichannelStudentLinksPage: React.FC<{ initialTab?: string }> = ({
         {/* One Unified Table */}
         <div className="bg-surface rounded-2xl border border-border overflow-hidden shadow-2xs">
           <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
+            <table data-table="native" className="w-full table-fixed min-w-[1080px] text-left border-collapse">
+              <colgroup><col style={{width:'10%'}} /><col style={{width:'16%'}} /><col style={{width:'14%'}} /><col style={{width:'22%'}} /><col style={{width:'19%'}} /><col style={{width:'19%'}} /></colgroup>
               <thead>
                 <tr className="bg-surface-muted/70 border-b border-border text-[11px] font-bold text-text-muted uppercase">
-                  <th className="py-3.5 px-4">Mã HV</th>
-                  <th className="py-3.5 px-4">Học viên</th>
-                  <th className="py-3.5 px-4">Nhân viên CVHT</th>
-                  <th className="py-3.5 px-4">Tên nhóm chuẩn gợi ý</th>
-                  <th className="py-3.5 px-4">Nhóm / Tài khoản Zalo</th>
-                  <th className="py-3.5 px-4">Nhóm / Tài khoản LINE</th>
+                  <th scope="col" className="py-3.5 px-4">Mã HV</th>
+                  <th scope="col" className="py-3.5 px-4">Học viên</th>
+                  <th scope="col" className="py-3.5 px-4">Nhân viên CVHT</th>
+                  <th scope="col" className="py-3.5 px-4">Chương trình / Tên nhóm gợi ý</th>
+                  <th scope="col" className="py-3.5 px-4">Nhóm / Tài khoản Zalo</th>
+                  <th scope="col" className="py-3.5 px-4">Nhóm / Tài khoản LINE</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border/60 text-xs">
                 {loading ? (
                   <tr>
-                    <td colSpan={6} className="py-12 text-center text-text-muted">
+                    <td data-align="center" colSpan={6} className="py-12 text-center text-text-muted">
                       <div className="inline-flex items-center gap-2">
                         <Loader2 className="w-4 h-4 animate-spin text-primary" />
                         <span>Đang tải danh sách liên kết học viên...</span>
@@ -1148,21 +885,21 @@ export const OmnichannelStudentLinksPage: React.FC<{ initialTab?: string }> = ({
                   </tr>
                 ) : filteredStudents.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="py-12 text-center text-text-muted">
+                    <td data-align="center" colSpan={6} className="py-12 text-center text-text-muted">
                       Không tìm thấy học viên nào phù hợp với bộ lọc hiện tại.
                     </td>
                   </tr>
                 ) : (
                   paginatedStudents.map((st) => (
-                    <tr key={st.id} className="hover:bg-surface-muted/40 transition-colors">
+                    <tr key={st.rowKey} className="hover:bg-surface-muted/40 transition-colors">
                       {/* 1. Mã HV */}
-                      <td className="py-3.5 px-4 whitespace-nowrap">
+                      <td data-align="center" data-wrap="nowrap" className="py-3.5 px-4 whitespace-nowrap">
                         {st.external_id ? (
                           <span className="font-mono font-bold text-primary px-2.5 py-1 rounded-lg bg-primary/10 border border-primary/20">
                             {st.external_id}
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-50 border border-amber-200 text-amber-800 text-[11px] font-medium">
+                          <span className="inline-flex shrink-0 items-center gap-1 px-2 py-0.5 rounded-md bg-amber-50 border border-amber-200 text-amber-800 text-[11px] font-medium">
                             <AlertCircle className="w-3 h-3" />
                             Chưa có mã
                           </span>
@@ -1170,7 +907,7 @@ export const OmnichannelStudentLinksPage: React.FC<{ initialTab?: string }> = ({
                       </td>
 
                       {/* 2. Học viên */}
-                      <td className="py-3.5 px-4">
+                      <td data-align="left" data-wrap="normal" className="py-3.5 px-4">
                         <div className="font-bold text-text-primary">{st.full_name}</div>
                         <div className="text-[11px] text-text-muted mt-0.5">
                           {st.phone || <span className="italic">Chưa cập nhật SĐT</span>}
@@ -1178,29 +915,31 @@ export const OmnichannelStudentLinksPage: React.FC<{ initialTab?: string }> = ({
                       </td>
 
                       {/* 3. Nhân viên CVHT */}
-                      <td className="py-3.5 px-4 whitespace-nowrap">
-                        <div className="inline-flex items-center gap-1.5 text-text-secondary font-medium">
+                      <td data-align="center" data-wrap="normal" className="py-3.5 px-4">
+                        <div className="mx-auto flex min-w-0 items-center justify-center gap-1.5 text-text-secondary font-medium">
                           <UserCheck className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                          <span>{st.cs_display}</span>
+                          <span className="min-w-0 [overflow-wrap:anywhere]">{st.cs_display}</span>
                         </div>
                       </td>
 
                       {/* 4. Tên nhóm chuẩn gợi ý */}
-                      <td className="py-3.5 px-4">
+                      <td data-align="left" data-wrap="normal" className="py-3.5 px-4">
+                        <div className="mb-2"><Badge size="sm">{st.program_type === 'KAIWA' ? 'Kaiwa' : 'JLPT'}</Badge></div>
+                        {st.warning && <p className="mb-2 text-xs leading-5 text-warning">{st.warning}</p>}
                         {st.suggested_group_name ? (
-                          <div className="inline-flex items-center gap-1.5 bg-surface-muted border border-border rounded-lg px-2.5 py-1">
-                            <code className="font-mono font-semibold text-text-primary text-[11px]">
+                          <div className="flex min-w-0 items-start gap-1.5 bg-surface-muted border border-border rounded-lg px-2.5 py-1">
+                            <code className="min-w-0 flex-1 break-words font-mono font-semibold text-text-primary text-[11px]">
                               {st.suggested_group_name}
                             </code>
                             <button
                               type="button"
                               onClick={() =>
-                                handleCopySuggestedName(st.id, st.suggested_group_name!)
+                                handleCopySuggestedName(st.rowKey, st.suggested_group_name!)
                               }
                               className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface border border-border hover:bg-primary/10 text-text-secondary hover:text-primary font-semibold text-[11px] transition-colors"
                               title="Sao chép tên này để đặt tên nhóm Zalo/LINE"
                             >
-                              {copiedId === st.id ? (
+                              {copiedId === st.rowKey ? (
                                 <>
                                   <Check className="w-3 h-3 text-emerald-600" />
                                   Đã chép
@@ -1215,19 +954,19 @@ export const OmnichannelStudentLinksPage: React.FC<{ initialTab?: string }> = ({
                           </div>
                         ) : (
                           <span className="text-text-muted italic text-[11px]">
-                            Cần cập nhật Mã HV để tạo tên nhóm chuẩn
+                            Cần mã học viên và mã CVHT để tạo tên gợi ý
                           </span>
                         )}
                       </td>
 
                       {/* 5. Nhóm / Tài khoản Zalo */}
-                      <td className="py-3.5 px-4">
+                      <td data-align="left" data-wrap="normal" className="py-3.5 px-4">
                         {st.zaloLinked && st.zaloRelation ? (
                           <div className="space-y-1">
                             <div className="flex items-center gap-1.5 flex-wrap">
                               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-700 font-semibold text-[11px]">
                                 <CheckCircle2 className="w-3.5 h-3.5 shrink-0 text-blue-600" />
-                                <span className="truncate max-w-[200px]">
+                                <span title={String(st.zaloRelation.displayName ?? '')} className="truncate max-w-[200px]">
                                   {st.zaloRelation.displayName}
                                 </span>
                               </span>
@@ -1250,7 +989,7 @@ export const OmnichannelStudentLinksPage: React.FC<{ initialTab?: string }> = ({
 
                               <button
                                 type="button"
-                                disabled={unlinkingKey === `ZALO-${st.id}`}
+                                disabled={unlinkingKey === `ZALO-${st.rowKey}`}
                                 onClick={() => handleUnlinkChannel(st, 'ZALO')}
                                 className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-rose-200 bg-rose-50/60 hover:bg-rose-100 text-rose-700 text-[11px] font-medium transition-colors disabled:opacity-50"
                                 title="Gỡ liên kết Zalo này"
@@ -1286,13 +1025,13 @@ export const OmnichannelStudentLinksPage: React.FC<{ initialTab?: string }> = ({
                       </td>
 
                       {/* 6. Nhóm / Tài khoản LINE */}
-                      <td className="py-3.5 px-4">
+                      <td data-align="left" data-wrap="normal" className="py-3.5 px-4">
                         {st.lineLinked && st.lineRelation ? (
                           <div className="space-y-1">
                             <div className="flex items-center gap-1.5 flex-wrap">
                               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/15 border border-emerald-500/25 text-emerald-800 font-semibold text-[11px]">
                                 <CheckCircle2 className="w-3.5 h-3.5 shrink-0 text-[#06C755]" />
-                                <span className="truncate max-w-[200px]">
+                                <span title={String(st.lineRelation.displayName ?? '')} className="truncate max-w-[200px]">
                                   {st.lineRelation.displayName}
                                 </span>
                               </span>
@@ -1315,7 +1054,7 @@ export const OmnichannelStudentLinksPage: React.FC<{ initialTab?: string }> = ({
 
                               <button
                                 type="button"
-                                disabled={unlinkingKey === `LINE-${st.id}`}
+                                disabled={unlinkingKey === `LINE-${st.rowKey}`}
                                 onClick={() => handleUnlinkChannel(st, 'LINE')}
                                 className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-rose-200 bg-rose-50/60 hover:bg-rose-100 text-rose-700 text-[11px] font-medium transition-colors disabled:opacity-50"
                                 title="Gỡ liên kết LINE này"
@@ -1378,7 +1117,7 @@ export const OmnichannelStudentLinksPage: React.FC<{ initialTab?: string }> = ({
               setPageSize(newSize);
               setPage(1);
             }}
-            recordLabel="học viên"
+            recordLabel="hồ sơ chương trình"
           />
         </div>
       </div>
@@ -1389,7 +1128,7 @@ export const OmnichannelStudentLinksPage: React.FC<{ initialTab?: string }> = ({
         onClose={() => setLinkModalOpen(false)}
         title={
           linkModalStudent
-            ? `Gắn Liên kết ${linkModalPlatform === 'ZALO' ? 'Zalo' : 'LINE'} cho Học viên: ${linkModalStudent.full_name}`
+            ? `Liên kết ${linkModalPlatform === 'ZALO' ? 'Zalo' : 'LINE'} · ${linkModalStudent.program_type === 'KAIWA' ? 'Kaiwa' : 'JLPT'} · ${linkModalStudent.full_name}`
             : 'Gắn Liên kết cho Học viên'
         }
         size="lg"
@@ -1408,7 +1147,7 @@ export const OmnichannelStudentLinksPage: React.FC<{ initialTab?: string }> = ({
                   )}
                 </div>
                 <div className="text-text-muted mt-0.5">
-                  SĐT: {linkModalStudent.phone || 'Chưa có'} · CSKH: {linkModalStudent.cs_display}
+                  SĐT: {linkModalStudent.phone || 'Chưa có'} · CVHT: {linkModalStudent.cs_display}
                 </div>
               </div>
               {linkModalStudent.suggested_group_name && (
@@ -1586,7 +1325,7 @@ export const OmnichannelStudentLinksPage: React.FC<{ initialTab?: string }> = ({
                       }`}
                     >
                       <div className="min-w-0">
-                        <div className="text-xs font-bold text-text-primary truncate">
+                        <div title={String(displayName ?? '')} className="text-xs font-bold text-text-primary truncate">
                           {displayName}
                         </div>
                         <div className="text-[11px] text-text-muted mt-0.5">
@@ -1656,7 +1395,7 @@ export const OmnichannelStudentLinksPage: React.FC<{ initialTab?: string }> = ({
               />
             </div>
             <div className="p-2.5 rounded-xl bg-surface-muted text-[11px] font-mono break-all flex items-center justify-between gap-2 border border-border">
-              <span className="truncate">{deepLinkModal.deepLinkUrl}</span>
+              <span title={String(deepLinkModal.deepLinkUrl ?? '')} className="truncate">{deepLinkModal.deepLinkUrl}</span>
               <button
                 type="button"
                 onClick={() => {

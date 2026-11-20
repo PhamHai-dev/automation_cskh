@@ -456,7 +456,7 @@ export const StudentStudyReportPage: React.FC = () => {
     return (
       <>
         <tr>
-          <td
+          <td data-align="center"
             colSpan={2}
             className="bg-[#FFE599] border border-slate-400 px-3 py-2 font-bold text-slate-900 text-sm text-left"
           >
@@ -464,14 +464,14 @@ export const StudentStudyReportPage: React.FC = () => {
           </td>
         </tr>
         <tr className="bg-[#FFE599] font-bold text-slate-900 text-center">
-          <td className="border border-slate-400 px-3 py-2 w-[34%]">Nội dung</td>
-          <td className="border border-slate-400 px-3 py-2 w-[66%]">Nhận xét</td>
+          <td data-align="center" className="border border-slate-400 px-3 py-2 w-[34%]">Nội dung</td>
+          <td data-align="center" className="border border-slate-400 px-3 py-2 w-[66%]">Nhận xét</td>
         </tr>
         <tr>
-          <td className="border border-slate-400 px-3 py-2 font-medium text-slate-800 align-middle">
+          <td data-align="left" className="border border-slate-400 px-3 py-2 font-medium text-slate-800 align-middle">
             Chuẩn bị bài mới
           </td>
-          <td className="border border-slate-400 p-1.5">
+          <td data-align="left" className="border border-slate-400 p-1.5">
             <textarea
               rows={2}
               value={data.preparation}
@@ -487,10 +487,10 @@ export const StudentStudyReportPage: React.FC = () => {
           </td>
         </tr>
         <tr>
-          <td className="border border-slate-400 px-3 py-2 font-medium text-slate-800 align-middle">
+          <td data-align="left" className="border border-slate-400 px-3 py-2 font-medium text-slate-800 align-middle">
             Mức độ tương tác trong lớp
           </td>
-          <td className="border border-slate-400 p-1.5">
+          <td data-align="left" className="border border-slate-400 p-1.5">
             <textarea
               rows={2}
               value={data.interaction}
@@ -506,10 +506,10 @@ export const StudentStudyReportPage: React.FC = () => {
           </td>
         </tr>
         <tr>
-          <td className="border border-slate-400 px-3 py-2 font-medium text-slate-800 align-middle">
+          <td data-align="left" className="border border-slate-400 px-3 py-2 font-medium text-slate-800 align-middle">
             Khả năng tiếp thu trong lớp
           </td>
-          <td className="border border-slate-400 p-1.5">
+          <td data-align="left" className="border border-slate-400 p-1.5">
             <textarea
               rows={2}
               value={data.comprehension}
@@ -536,7 +536,7 @@ export const StudentStudyReportPage: React.FC = () => {
     return (
       <>
         <tr>
-          <td
+          <td data-align="center"
             colSpan={2}
             className="bg-[#FFE599] border border-slate-400 px-3 py-2 font-bold text-slate-900 text-sm text-left"
           >
@@ -544,13 +544,13 @@ export const StudentStudyReportPage: React.FC = () => {
           </td>
         </tr>
         <tr className="bg-[#FFE599] font-bold text-slate-900 text-center">
-          <td rowSpan={2} className="border border-slate-400 px-3 py-2 align-middle w-[34%]">
+          <td data-align="center" rowSpan={2} className="border border-slate-400 px-3 py-2 align-middle w-[34%]">
             Nội dung
           </td>
-          <td className="border border-slate-400 px-3 py-2 w-[66%]">Nhận xét</td>
+          <td data-align="center" className="border border-slate-400 px-3 py-2 w-[66%]">Nhận xét</td>
         </tr>
         <tr className="bg-[#FFE599]">
-          <td className="border border-slate-400 px-3 py-1.5">
+          <td data-align="left" className="border border-slate-400 px-3 py-1.5">
             <div className="flex items-center gap-2 text-xs font-bold text-slate-900">
               <span className="shrink-0">Ngày từ:</span>
               <input
@@ -565,13 +565,13 @@ export const StudentStudyReportPage: React.FC = () => {
         </tr>
 
         <tr>
-          <td
+          <td data-align="left"
             rowSpan={3}
             className="border border-slate-400 px-3 py-2 font-medium text-slate-800 align-middle"
           >
             Độ chuyên cần
           </td>
-          <td className="border border-slate-400 px-3 py-1.5">
+          <td data-align="left" className="border border-slate-400 px-3 py-1.5">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="text-xs text-slate-800">
                 Học viên xin nghỉ có phép (buổi):
@@ -587,7 +587,7 @@ export const StudentStudyReportPage: React.FC = () => {
           </td>
         </tr>
         <tr>
-          <td className="border border-slate-400 px-3 py-1.5">
+          <td data-align="left" className="border border-slate-400 px-3 py-1.5">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="text-xs text-slate-800">
                 Học viên nghỉ không phép (buổi):
@@ -603,7 +603,7 @@ export const StudentStudyReportPage: React.FC = () => {
           </td>
         </tr>
         <tr>
-          <td className="border border-slate-400 px-3 py-1.5">
+          <td data-align="left" className="border border-slate-400 px-3 py-1.5">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="text-xs text-slate-800">Giáo viên xin nghỉ (buổi):</span>
               <input
@@ -618,10 +618,10 @@ export const StudentStudyReportPage: React.FC = () => {
         </tr>
 
         <tr>
-          <td className="border border-slate-400 px-3 py-2 font-medium text-slate-800 align-middle">
+          <td data-align="left" className="border border-slate-400 px-3 py-2 font-medium text-slate-800 align-middle">
             Chuẩn bị bài mới
           </td>
-          <td className="border border-slate-400 p-1.5">
+          <td data-align="left" className="border border-slate-400 p-1.5">
             <textarea
               rows={2}
               value={data.preparation}
@@ -633,10 +633,10 @@ export const StudentStudyReportPage: React.FC = () => {
         </tr>
 
         <tr>
-          <td className="border border-slate-400 px-3 py-2 font-medium text-slate-800 align-middle">
+          <td data-align="left" className="border border-slate-400 px-3 py-2 font-medium text-slate-800 align-middle">
             Hoàn thành bài tập về nhà
           </td>
-          <td className="border border-slate-400 px-3 py-1.5">
+          <td data-align="left" className="border border-slate-400 px-3 py-1.5">
             <div className="flex items-center gap-1.5">
               <input
                 type="text"
@@ -651,10 +651,10 @@ export const StudentStudyReportPage: React.FC = () => {
         </tr>
 
         <tr>
-          <td className="border border-slate-400 px-3 py-2 font-medium text-slate-800 align-middle">
+          <td data-align="left" className="border border-slate-400 px-3 py-2 font-medium text-slate-800 align-middle">
             Mức độ tương tác trong lớp
           </td>
-          <td className="border border-slate-400 p-1.5">
+          <td data-align="left" className="border border-slate-400 p-1.5">
             <textarea
               rows={2}
               value={data.interaction}
@@ -666,10 +666,10 @@ export const StudentStudyReportPage: React.FC = () => {
         </tr>
 
         <tr>
-          <td className="border border-slate-400 px-3 py-2 font-medium text-slate-800 align-middle">
+          <td data-align="left" className="border border-slate-400 px-3 py-2 font-medium text-slate-800 align-middle">
             Khả năng tiếp thu trong lớp
           </td>
-          <td className="border border-slate-400 p-1.5">
+          <td data-align="left" className="border border-slate-400 p-1.5">
             <textarea
               rows={2}
               value={data.comprehension}
@@ -681,13 +681,13 @@ export const StudentStudyReportPage: React.FC = () => {
         </tr>
 
         <tr>
-          <td className="border border-slate-400 px-3 py-2 font-medium text-slate-800 align-middle">
+          <td data-align="left" className="border border-slate-400 px-3 py-2 font-medium text-slate-800 align-middle">
             <div>Điểm mạnh - Tiến bộ</div>
             <div className="text-[11px] text-slate-500 font-normal">
               (Từ vựng / ngữ pháp / phát âm / phản xạ)
             </div>
           </td>
-          <td className="border border-slate-400 p-1.5">
+          <td data-align="left" className="border border-slate-400 p-1.5">
             <textarea
               rows={2}
               value={data.strengths}
@@ -699,13 +699,13 @@ export const StudentStudyReportPage: React.FC = () => {
         </tr>
 
         <tr>
-          <td className="border border-slate-400 px-3 py-2 font-medium text-slate-800 align-middle">
+          <td data-align="left" className="border border-slate-400 px-3 py-2 font-medium text-slate-800 align-middle">
             <div>Điểm hạn chế</div>
             <div className="text-[11px] text-slate-500 font-normal">
               (Từ vựng / ngữ pháp / phát âm / phản xạ)
             </div>
           </td>
-          <td className="border border-slate-400 p-1.5">
+          <td data-align="left" className="border border-slate-400 p-1.5">
             <textarea
               rows={2}
               value={data.weaknesses}
@@ -717,10 +717,10 @@ export const StudentStudyReportPage: React.FC = () => {
         </tr>
 
         <tr>
-          <td className="border border-slate-400 px-3 py-2 font-medium text-slate-800 align-middle">
+          <td data-align="left" className="border border-slate-400 px-3 py-2 font-medium text-slate-800 align-middle">
             Nhận xét bổ sung (nếu có)
           </td>
-          <td className="border border-slate-400 p-1.5">
+          <td data-align="left" className="border border-slate-400 p-1.5">
             <textarea
               rows={2}
               value={data.additional_notes}
@@ -739,7 +739,7 @@ export const StudentStudyReportPage: React.FC = () => {
     return (
       <>
         <tr>
-          <td
+          <td data-align="center"
             colSpan={2}
             className="bg-[#FFE599] border border-slate-400 px-3 py-2.5 font-extrabold text-slate-900 text-sm text-center uppercase"
           >
@@ -747,13 +747,13 @@ export const StudentStudyReportPage: React.FC = () => {
           </td>
         </tr>
         <tr>
-          <td
+          <td data-align="left"
             rowSpan={4}
             className="border border-slate-400 px-3 py-2 font-semibold text-slate-800 align-middle w-[34%]"
           >
             Kết quả kiểm tra
           </td>
-          <td className="border border-slate-400 px-3 py-1.5 w-[66%]">
+          <td data-align="left" className="border border-slate-400 px-3 py-1.5 w-[66%]">
             <div className="flex flex-col sm:flex-row sm:items-center gap-2">
               <span className="w-36 shrink-0 text-xs font-medium text-slate-800">Từ vựng:</span>
               <input
@@ -767,7 +767,7 @@ export const StudentStudyReportPage: React.FC = () => {
           </td>
         </tr>
         <tr>
-          <td className="border border-slate-400 px-3 py-1.5">
+          <td data-align="left" className="border border-slate-400 px-3 py-1.5">
             <div className="flex flex-col sm:flex-row sm:items-center gap-2">
               <span className="w-36 shrink-0 text-xs font-medium text-slate-800">Ngữ pháp:</span>
               <input
@@ -781,7 +781,7 @@ export const StudentStudyReportPage: React.FC = () => {
           </td>
         </tr>
         <tr>
-          <td className="border border-slate-400 px-3 py-1.5">
+          <td data-align="left" className="border border-slate-400 px-3 py-1.5">
             <div className="flex flex-col sm:flex-row sm:items-center gap-2">
               <span className="w-36 shrink-0 text-xs font-medium text-slate-800">Ngữ âm:</span>
               <input
@@ -795,7 +795,7 @@ export const StudentStudyReportPage: React.FC = () => {
           </td>
         </tr>
         <tr>
-          <td className="border border-slate-400 px-3 py-1.5">
+          <td data-align="left" className="border border-slate-400 px-3 py-1.5">
             <div className="flex flex-col sm:flex-row sm:items-center gap-2">
               <span className="w-36 shrink-0 text-xs font-medium text-slate-800">
                 Độ trôi chảy:
@@ -811,7 +811,7 @@ export const StudentStudyReportPage: React.FC = () => {
           </td>
         </tr>
         <tr>
-          <td colSpan={2} className="border border-slate-400 px-3 py-2 bg-slate-50">
+          <td data-align="center" colSpan={2} className="border border-slate-400 px-3 py-2 bg-slate-50">
             <div className="flex items-center gap-2 font-bold text-slate-900 text-xs">
               <span>--&gt; Điểm:</span>
               <input
@@ -826,10 +826,10 @@ export const StudentStudyReportPage: React.FC = () => {
           </td>
         </tr>
         <tr>
-          <td className="border border-slate-400 px-3 py-2 font-medium text-slate-800 align-middle">
+          <td data-align="left" className="border border-slate-400 px-3 py-2 font-medium text-slate-800 align-middle">
             Nhận xét bổ sung (nếu có)
           </td>
-          <td className="border border-slate-400 p-1.5">
+          <td data-align="left" className="border border-slate-400 p-1.5">
             <textarea
               rows={2}
               value={data.additional_notes}
@@ -1209,10 +1209,10 @@ export const StudentStudyReportPage: React.FC = () => {
           disabled={isReadonlyForCs}
           className="max-w-5xl mx-auto bg-white rounded-xl border border-slate-400 shadow-soft overflow-hidden mb-10 disabled:opacity-90"
         >
-          <table className="w-full border-collapse text-xs text-slate-900">
+          <table data-table="report" className="w-full border-collapse text-xs text-slate-900">
             <tbody>
               <tr>
-                <td
+                <td data-align="center"
                   colSpan={2}
                   className="bg-[#B6D7A8] border border-slate-400 py-4 px-4 text-center font-extrabold text-lg tracking-wide text-slate-900 uppercase"
                 >
@@ -1225,7 +1225,7 @@ export const StudentStudyReportPage: React.FC = () => {
               </tr>
 
               <tr>
-                <td
+                <td data-align="center"
                   colSpan={2}
                   className="border border-slate-400 px-4 py-2 font-extrabold text-sm text-slate-900 bg-slate-50 uppercase"
                 >
@@ -1233,32 +1233,32 @@ export const StudentStudyReportPage: React.FC = () => {
                 </td>
               </tr>
               <tr>
-                <td colSpan={2} className="border border-slate-400 px-4 py-2 text-xs">
-                  <span className="font-semibold text-slate-700 inline-block w-48">
+                <td data-align="left" colSpan={2} className="border border-slate-400 px-4 py-2 text-xs">
+                  <span className="mb-1 block font-semibold text-slate-700 sm:mb-0 sm:inline-block sm:w-48">
                     - Họ tên học viên:
                   </span>
                   <strong className="text-slate-900 text-sm">{student.full_name}</strong>
                 </td>
               </tr>
               <tr>
-                <td colSpan={2} className="border border-slate-400 px-4 py-2 text-xs">
-                  <span className="font-semibold text-slate-700 inline-block w-48">
+                <td data-align="left" colSpan={2} className="border border-slate-400 px-4 py-2 text-xs">
+                  <span className="mb-1 block font-semibold text-slate-700 sm:mb-0 sm:inline-block sm:w-48">
                     - Mã học viên:
                   </span>
                   <strong className="font-mono text-slate-900">{studentCode}</strong>
                 </td>
               </tr>
               <tr>
-                <td colSpan={2} className="border border-slate-400 px-4 py-2 text-xs">
-                  <span className="font-semibold text-slate-700 inline-block w-48">
+                <td data-align="left" colSpan={2} className="border border-slate-400 px-4 py-2 text-xs">
+                  <span className="mb-1 block font-semibold text-slate-700 sm:mb-0 sm:inline-block sm:w-48">
                     - Khóa học:
                   </span>
                   <strong className="text-slate-900">{courseCode}</strong>
                 </td>
               </tr>
               <tr>
-                <td colSpan={2} className="border border-slate-400 px-4 py-2 text-xs">
-                  <span className="font-semibold text-slate-700 inline-block w-48">
+                <td data-align="left" colSpan={2} className="border border-slate-400 px-4 py-2 text-xs">
+                  <span className="mb-1 block font-semibold text-slate-700 sm:mb-0 sm:inline-block sm:w-48">
                     - Giáo viên giảng dạy:
                   </span>
                   <strong className="text-slate-900">{teacher}</strong>
@@ -1266,10 +1266,10 @@ export const StudentStudyReportPage: React.FC = () => {
               </tr>
 
               <tr>
-                <td className="bg-[#C9DAF8] border border-slate-400 px-3 py-2.5 font-bold text-slate-900 align-middle w-[34%]">
+                <td data-align="left" data-wrap="normal" className="bg-[#C9DAF8] border border-slate-400 px-3 py-2.5 font-bold text-slate-900 align-middle w-[34%]">
                   Thông tin trao đổi với HV
                 </td>
-                <td className="border border-slate-400 p-1.5 w-[66%]">
+                <td data-align="left" data-wrap="normal" className="border border-slate-400 p-1.5 w-[66%]">
                   <textarea
                     rows={2}
                     value={report.exchange_with_student}

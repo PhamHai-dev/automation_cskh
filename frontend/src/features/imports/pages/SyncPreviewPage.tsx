@@ -998,10 +998,10 @@ export const SyncPreviewPage: React.FC = () => {
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse text-xs">
+            <table data-table="native" className="w-full text-left border-collapse text-xs">
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-50/80 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
-                  <th className="py-3 pl-4 pr-2 w-10">
+                  <th scope="col" className="py-3 pl-4 pr-2 w-10">
                     <input
                       type="checkbox"
                       checked={
@@ -1016,12 +1016,12 @@ export const SyncPreviewPage: React.FC = () => {
                       className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
                     />
                   </th>
-                  <th className="py-3 px-3 w-20">Dòng</th>
-                  <th className="py-3 px-3 w-32">Mã lớp</th>
-                  <th className="py-3 px-3 w-36">Mã HV</th>
-                  <th className="py-3 px-3 w-48">Họ và tên</th>
-                  <th className="py-3 px-3 w-40">Phân loại</th>
-                  <th className="py-3 pl-3 pr-4">
+                  <th scope="col" className="py-3 px-3 w-20">Dòng</th>
+                  <th scope="col" className="py-3 px-3 w-32">Mã lớp</th>
+                  <th scope="col" className="py-3 px-3 w-36">Mã HV</th>
+                  <th scope="col" className="py-3 px-3 w-48">Họ và tên</th>
+                  <th scope="col" className="py-3 px-3 w-40">Phân loại</th>
+                  <th scope="col" className="py-3 pl-3 pr-4">
                     Chi tiết thay đổi (Trước → Sau) &amp; Cảnh báo Validate
                   </th>
                 </tr>
@@ -1029,7 +1029,7 @@ export const SyncPreviewPage: React.FC = () => {
               <tbody className="divide-y divide-slate-100">
                 {filteredItems.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="py-12 text-center text-slate-500">
+                    <td data-align="center" colSpan={7} className="py-12 text-center text-slate-500">
                       Không có dòng dữ liệu nào trong phân loại này.
                     </td>
                   </tr>
@@ -1051,7 +1051,7 @@ export const SyncPreviewPage: React.FC = () => {
                             : 'hover:bg-slate-50/70'
                         }`}
                       >
-                        <td className="py-3.5 pl-4 pr-2 align-top">
+                        <td data-align="center" data-wrap="nowrap" className="py-3.5 pl-4 pr-2 align-top">
                           <input
                             type="checkbox"
                             disabled={isInvalid}
@@ -1060,10 +1060,10 @@ export const SyncPreviewPage: React.FC = () => {
                             className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer mt-0.5"
                           />
                         </td>
-                        <td className="py-3.5 px-3 align-top font-mono font-semibold text-slate-600">
+                        <td data-align="center" data-wrap="nowrap" className="py-3.5 px-3 align-top font-mono font-semibold text-slate-600">
                           #{item.rowNumber}
                         </td>
-                        <td className="py-3.5 px-3 align-top">
+                        <td data-align="center" data-wrap="nowrap" className="py-3.5 px-3 align-top">
                           {item.classCode ? (
                             <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-blue-50 text-blue-800 border border-blue-200 font-mono font-bold text-[11px]">
                               {item.classCode}
@@ -1072,7 +1072,7 @@ export const SyncPreviewPage: React.FC = () => {
                             <span className="text-slate-400">—</span>
                           )}
                         </td>
-                        <td className="py-3.5 px-3 align-top">
+                        <td data-align="center" data-wrap="nowrap" className="py-3.5 px-3 align-top">
                           <div className="font-mono font-bold text-slate-900">
                             {item.externalId || '—'}
                           </div>
@@ -1082,7 +1082,7 @@ export const SyncPreviewPage: React.FC = () => {
                             </div>
                           )}
                         </td>
-                        <td className="py-3.5 px-3 align-top">
+                        <td data-align="left" data-wrap="normal" className="py-3.5 px-3 align-top">
                           <div className="font-bold text-slate-900">
                             {displayStudentName}
                           </div>
@@ -1094,10 +1094,10 @@ export const SyncPreviewPage: React.FC = () => {
                             </div>
                           )}
                         </td>
-                        <td className="py-3.5 px-3 align-top">
+                        <td data-align="center" data-wrap="nowrap" className="py-3.5 px-3 align-top">
                           {renderClassificationBadge(item.classification)}
                         </td>
-                        <td className="py-3.5 pl-3 pr-4 align-top space-y-2">
+                        <td data-align="left" data-wrap="normal" className="py-3.5 pl-3 pr-4 align-top space-y-2">
                           {item.fieldDiffs && item.fieldDiffs.length > 0 && (
                             <div className="space-y-1.5">
                               {item.fieldDiffs.map((diff, dIdx) => (

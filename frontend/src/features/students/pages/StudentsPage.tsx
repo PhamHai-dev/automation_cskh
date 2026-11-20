@@ -1034,7 +1034,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
     ...(isAdminOrManage
       ? [
           {
-            key: 'select',
+            align: 'center' as const, wrap: false, key: 'select',
             header: (
               <div className="flex items-center justify-center">
                 <input
@@ -1067,7 +1067,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
         ]
       : []),
     {
-      key: 'stt',
+      align: 'center' as const, wrap: false, key: 'stt',
       header: '#',
       width: '52px',
       className: `${
@@ -1080,7 +1080,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
       ),
     },
     {
-      key: 'external_id',
+      align: 'center' as const, wrap: false, key: 'external_id',
       header: 'Mã học viên',
       width: '132px',
       className: `${
@@ -1093,7 +1093,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
       ),
     },
     {
-      key: 'full_name',
+      align: 'left' as const, wrap: true, key: 'full_name',
       header: 'Họ và tên',
       width: '210px',
       className: `${
@@ -1115,7 +1115,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
       ),
     },
     {
-      key: 'program_type',
+      align: 'center' as const, wrap: false, key: 'program_type',
       header: 'Khóa',
       cell: (item) => {
         const enr = item.enrollments?.[0];
@@ -1135,8 +1135,8 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
       },
     },
     {
-      key: 'cs_staff_code',
-      header: 'CVHT',
+      align: 'center' as const, wrap: false, key: 'cs_staff_code',
+      header: 'CSKH',
       cell: (item) => {
         const enr = item.enrollments?.[0];
         const code =
@@ -1218,7 +1218,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
       },
     },
     {
-      key: 'paid_at',
+      align: 'center' as const, wrap: false, key: 'paid_at',
       header: 'Ngày nộp học phí',
       cell: (item) => {
         const enr = item.enrollments?.[0];
@@ -1231,7 +1231,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
       },
     },
     {
-      key: 'sale_name',
+      align: 'left' as const, wrap: true, key: 'sale_name',
       header: 'Sale phụ trách',
       cell: (item) => {
         const enr = item.enrollments?.[0];
@@ -1245,7 +1245,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
       },
     },
     {
-      key: 'student_source_status',
+      align: 'center' as const, wrap: false, key: 'student_source_status',
       header: 'Trạng thái HV',
       cell: (item) => {
         const enr = item.enrollments?.[0];
@@ -1258,7 +1258,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
       },
     },
     {
-      key: 'gender',
+      align: 'center' as const, wrap: false, key: 'gender',
       header: 'Giới tính',
       cell: (item) => (
         <span className="text-slate-600 text-xs whitespace-nowrap">
@@ -1267,7 +1267,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
       ),
     },
     {
-      key: 'phone',
+      align: 'center' as const, wrap: false, key: 'phone',
       header: 'Số điện thoại',
       cell: (item) => (
         <span className="font-mono text-slate-700 text-xs whitespace-nowrap">
@@ -1276,7 +1276,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
       ),
     },
     {
-      key: 'email',
+      align: 'left' as const, wrap: true, key: 'email',
       header: 'Email',
       cell: (item) => (
         <span className="text-slate-600 text-xs max-w-[160px] truncate block" title={item.email || ''}>
@@ -1285,7 +1285,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
       ),
     },
     {
-      key: 'course_content',
+      align: 'left' as const, wrap: true, key: 'course_content',
       header: 'Nội dung khóa',
       cell: (item) => {
         const enr = item.enrollments?.[0];
@@ -1296,14 +1296,14 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
             ? '—'
             : raw;
         return (
-          <span className="text-slate-700 text-xs whitespace-nowrap max-w-[180px] truncate block">
+          <span title={String(displayVal ?? '')} className="text-slate-700 text-xs whitespace-nowrap max-w-[180px] truncate block">
             {displayVal}
           </span>
         );
       },
     },
     {
-      key: 'tuition_fee',
+      align: 'right' as const, wrap: false, key: 'tuition_fee',
       header: 'Học phí thực nộp',
       cell: (item) => {
         const enr = item.enrollments?.[0];
@@ -1318,7 +1318,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
           ? `${Number(val).toLocaleString('vi-VN')}đ`
           : val;
         return (
-          <span className="text-slate-700 text-xs whitespace-nowrap max-w-[180px] truncate block">
+          <span title={String(displayVal ?? '')} className="text-slate-700 text-xs whitespace-nowrap max-w-[180px] truncate block">
             {displayVal}
           </span>
         );
@@ -1328,7 +1328,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
 
   // --- CỘT THAO TÁC CUỐI BẢNG ---
   const actionColumn: Column<Student> = {
-    key: 'action',
+    align: 'center' as const, wrap: false, key: 'action',
     header: 'Thao tác',
     className: 'text-right sticky right-0 z-20 border-l border-border/60 shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.06)]',
     cell: (item) => {
@@ -1382,7 +1382,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
     },
   };
   const packageColumn: Column<Student> = {
-    key: 'package_name',
+    align: 'left' as const, wrap: true, key: 'package_name',
     header: 'Gói học',
     cell: (item) => {
       const enr = item.enrollments?.[0];
@@ -1398,7 +1398,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
   const tab1Columns: Column<Student>[] = [
     ...commonColumnsAtoI,
     {
-      key: 'payment_status',
+      align: 'center' as const, wrap: false, key: 'payment_status',
       header: 'Trạng thái thanh toán',
       cell: (item) => {
         const enr = item.enrollments?.[0];
@@ -1414,7 +1414,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
     },
     packageColumn,
     {
-      key: 'jlpt_course_code',
+      align: 'center' as const, wrap: false, key: 'jlpt_course_code',
       header: 'Mã khóa học',
       cell: (item) => {
         const enr = item.enrollments?.[0];
@@ -1428,7 +1428,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
       },
     },
     {
-      key: 'course_teacher_type',
+      align: 'center' as const, wrap: false, key: 'course_teacher_type',
       header: 'Khóa học',
       cell: (item) => {
         const enr = item.enrollments?.[0];
@@ -1441,7 +1441,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
       },
     },
     {
-      key: 'level',
+      align: 'center' as const, wrap: false, key: 'level',
       header: 'Trình độ',
       cell: (item) => {
         const enr = item.enrollments?.[0];
@@ -1454,7 +1454,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
       },
     },
     {
-      key: 'total_sessions',
+      align: 'right' as const, wrap: false, key: 'total_sessions',
       header: 'Tổng số buổi',
       cell: (item) => {
         const enr = item.enrollments?.[0];
@@ -1466,7 +1466,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
       },
     },
     {
-      key: 'class_model',
+      align: 'center' as const, wrap: false, key: 'class_model',
       header: 'Mô hình lớp',
       cell: (item) => {
         const enr = item.enrollments?.[0];
@@ -1490,7 +1490,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
       },
     },
     {
-      key: 'class_code',
+      align: 'center' as const, wrap: false, key: 'class_code',
       header: 'Mã lớp',
       cell: (item) => {
         const enr = item.enrollments?.[0];
@@ -1510,7 +1510,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
       },
     },
     {
-      key: 'sales_note',
+      align: 'left' as const, wrap: true, key: 'sales_note',
       header: 'Ghi chú sale',
       cell: (item) => {
         const enr = item.enrollments?.[0];
@@ -1526,16 +1526,16 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
       },
     },
     {
-      key: 'birth_year',
-      header: 'Năm sinh',
+      align: 'center' as const, wrap: false, key: 'date_of_birth',
+      header: 'Ngày sinh',
       cell: (item) => (
         <span className="text-slate-600 text-xs whitespace-nowrap">
-          {item.birth_year ?? '—'}
+          {item.date_of_birth ? new Date(item.date_of_birth).toLocaleDateString('vi-VN') : '—'}
         </span>
       ),
     },
     {
-      key: 'occupation',
+      align: 'left' as const, wrap: true, key: 'occupation',
       header: 'Nghề nghiệp',
       cell: (item) => (
         <span className="text-slate-600 text-xs whitespace-nowrap">
@@ -1544,7 +1544,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
       ),
     },
     {
-      key: 'remaining_sessions',
+      align: 'right' as const, wrap: false, key: 'remaining_sessions',
       header: 'Số buổi còn lại',
       cell: (item) => {
         const enr = item.enrollments?.[0];
@@ -1637,7 +1637,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
       },
     },
     {
-      key: 'start_date',
+      align: 'center' as const, wrap: false, key: 'start_date',
       header: 'Ngày bắt đầu học',
       cell: (item) => {
         const enr = item.enrollments?.[0];
@@ -1649,7 +1649,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
       },
     },
     {
-      key: 'status',
+      align: 'center' as const, wrap: false, key: 'status',
       header: 'Trạng thái',
       cell: (item) => {
         const enr = item.enrollments?.[0];
@@ -1670,7 +1670,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
       },
     },
     {
-      key: 'expected_start_date',
+      align: 'center' as const, wrap: false, key: 'expected_start_date',
       header: 'Ngày KG dự kiến',
       cell: (item) => {
         const enr = item.enrollments?.[0];
@@ -1690,7 +1690,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
       },
     },
     {
-      key: 'end_date',
+      align: 'center' as const, wrap: false, key: 'end_date',
       header: 'Ngày bảo lưu/kết thúc',
       cell: (item) => {
         const enr = item.enrollments?.[0];
@@ -1706,17 +1706,17 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
       },
     },
     {
-      key: 'active_state',
+      align: 'center' as const, wrap: false, key: 'active_state',
       header: 'Tình trạng',
       cell: (item: Student) => <span className="text-slate-700 text-xs whitespace-nowrap">{item.enrollments?.[0]?.program_metadata?.active_state ?? '—'}</span>,
     },
     {
-      key: 'latest_class_code',
+      align: 'center' as const, wrap: false, key: 'latest_class_code',
       header: 'Mã lớp gần nhất',
       cell: (item: Student) => <span className="text-slate-700 text-xs whitespace-nowrap">{item.enrollments?.[0]?.program_metadata?.latest_class_code ?? '—'}</span>,
     },
     {
-      key: 'start_time',
+      align: 'center' as const, wrap: false, key: 'start_time',
       header: 'Giờ học',
       cell: (item) => {
         const ec = item.enrollments?.[0]?.enrollment_classes?.[0];
@@ -1733,8 +1733,8 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
       },
     },
     {
-      key: 'schedule_pattern',
-      header: 'Buổi học',
+      align: 'center' as const, wrap: false, key: 'schedule_pattern',
+      header: 'Lịch học',
       cell: (item) => {
         const ec = item.enrollments?.[0]?.enrollment_classes?.[0];
         const schedules = ec?.class?.class_schedules || [];
@@ -1748,7 +1748,25 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
       },
     },
     {
-      key: 'teacher_name',
+      align: 'right' as const, wrap: false, key: 'duration_minutes',
+      header: 'Thời lượng',
+      cell: (item) => {
+        const ec = item.enrollments?.[0]?.enrollment_classes?.[0];
+        const schedules = ec?.class?.class_schedules || [];
+        const durations = schedules
+          .map((s) => (s.duration_minutes ? `${s.duration_minutes}p` : null))
+          .filter(Boolean);
+        const displayDuration =
+          durations.length > 0 ? Array.from(new Set(durations)).join(', ') : '—';
+        return (
+          <span className="text-slate-600 text-xs whitespace-nowrap">
+            {displayDuration}
+          </span>
+        );
+      },
+    },
+    {
+      align: 'left' as const, wrap: true, key: 'teacher_name',
       header: 'Giáo viên',
       cell: (item) => {
         const ec = item.enrollments?.[0]?.enrollment_classes?.[0];
@@ -1761,7 +1779,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
       },
     },
     {
-      key: 'teacher_code',
+      align: 'center' as const, wrap: false, key: 'teacher_code',
       header: 'Mã giáo viên',
       cell: (item) => {
         const ec = item.enrollments?.[0]?.enrollment_classes?.[0];
@@ -1775,7 +1793,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
       },
     },
     {
-      key: 'class_name',
+      align: 'left' as const, wrap: true, key: 'class_name',
       header: 'Tên lớp',
       cell: (item) => {
         const ec = item.enrollments?.[0]?.enrollment_classes?.[0];
@@ -1791,7 +1809,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
       },
     },
     {
-      key: 'attended_prev',
+      align: 'right' as const, wrap: false, key: 'attended_prev',
       header: 'Tổng số buổi đã học năm trước',
       cell: (item) => {
         const enr = item.enrollments?.[0];
@@ -1873,8 +1891,8 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
       },
     },
     {
-      key: 'attended_this_year',
-      header: `Đã học ${new Date().getFullYear()}`,
+      align: 'right' as const, wrap: false, key: 'attended_this_year',
+      header: 'Đã học 2026',
       cell: (item) => {
         const enr = item.enrollments?.[0];
         const ec = enr?.enrollment_classes?.[0];
@@ -1909,7 +1927,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
     ...commonColumnsAtoI,
     packageColumn,
     {
-      key: 'study_report_url',
+      align: 'center' as const, wrap: false, key: 'study_report_url',
       header: 'Báo cáo học tập',
       cell: (item: Student) => {
         const enr = item.enrollments?.[0];
@@ -1938,7 +1956,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
       },
     },
     {
-      key: 'exchange_info',
+      align: 'left' as const, wrap: true, key: 'exchange_info',
       header: 'Trao đổi với học viên',
       cell: (item) => {
         const enr = item.enrollments?.[0];
@@ -1955,7 +1973,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
       },
     },
     {
-      key: 'callback_note',
+      align: 'left' as const, wrap: true, key: 'callback_note',
       header: 'Lịch hẹn gọi',
       cell: (item) => {
         const enr = item.enrollments?.[0];
@@ -1974,7 +1992,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
       },
     },
     {
-      key: 'hot_issue_note',
+      align: 'left' as const, wrap: true, key: 'hot_issue_note',
       header: 'Điểm nóng',
       cell: (item) => {
         const enr = item.enrollments?.[0];
@@ -2002,7 +2020,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
           : `Nội dung CS sau buổi ${sessionNum}`;
 
       return {
-        key: `care_session_${sessionNum}`,
+        align: 'center' as const, wrap: false, key: `care_session_${sessionNum}`,
         header: (
           <div
             key={`head-sess-${sessionNum}`}
@@ -2030,7 +2048,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
 
     // --- CÁC CỘT ĐẶC THÙ CỦA KHÓA JLPT (Đọc/Ghi trực tiếp program_metadata; tự ẩn khi lọc Kaiwa nhưng vẫn bật lại được) ---
     {
-      key: 'satisfaction_score_b18',
+      align: 'right' as const, wrap: false, key: 'satisfaction_score_b18',
       header: 'Điểm hài lòng (B18)',
       cell: (item: Student) => {
         const enr = item.enrollments?.[0];
@@ -2048,7 +2066,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
       },
     },
     {
-      key: 'exam_registration',
+      align: 'center' as const, wrap: false, key: 'exam_registration',
       header: 'Tình trạng đăng ký thi',
       cell: (item: Student) => {
         const enr = item.enrollments?.[0];
@@ -2066,7 +2084,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
       },
     },
     {
-      key: 'exam_score',
+      align: 'right' as const, wrap: false, key: 'exam_score',
       header: 'Điểm thi thật',
       cell: (item: Student) => {
         const enr = item.enrollments?.[0];
@@ -2083,7 +2101,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
       },
     },
     {
-      key: 'exam_result',
+      align: 'center' as const, wrap: false, key: 'exam_result',
       header: 'Tình trạng thi',
       cell: (item: Student) => {
         const enr = item.enrollments?.[0];
@@ -2099,7 +2117,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
       },
     },
     ...Array.from({ length: 7 }, (_, index) => ({
-      key: `test_score_l${index + 1}`,
+      align: 'right' as const, wrap: false, key: `test_score_l${index + 1}`,
       header: `Kiểm tra lần ${index + 1}`,
       cell: (item: Student) => {
         const enr = item.enrollments?.[0];
@@ -2116,7 +2134,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
       },
     })),
     ...Array.from({ length: 3 }, (_, index) => ({
-      key: `special_support_l${index + 1}`,
+      align: 'left' as const, wrap: true, key: `special_support_l${index + 1}`,
       header: `HT đặc biệt lần ${index + 1}`,
       cell: (item: Student) => {
         const enr = item.enrollments?.[0];
@@ -2134,7 +2152,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
       },
     })),
     {
-      key: 'renewal_note',
+      align: 'left' as const, wrap: true, key: 'renewal_note',
       header: 'Tái tục',
       cell: (item: Student) => {
         const enr = item.enrollments?.[0];
@@ -2150,7 +2168,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
       },
     },
     {
-      key: 'latest_class_code',
+      align: 'center' as const, wrap: false, key: 'latest_class_code',
       header: 'Mã lớp gần nhất',
       cell: (item: Student) => {
         const enr = item.enrollments?.[0];
@@ -2168,7 +2186,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
 
     // --- CÁC CỘT CUỐI (BD ➔ BH) ---
     {
-      key: 'post_course_care',
+      align: 'left' as const, wrap: true, key: 'post_course_care',
       header: 'Chăm sóc sau kết thúc',
       cell: (item) => {
         const enr = item.enrollments?.[0];
@@ -2185,7 +2203,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
       },
     },
     {
-      key: 'handed_over_at',
+      align: 'center' as const, wrap: false, key: 'handed_over_at',
       header: 'Ngày bàn giao',
       cell: (item) => {
         const enr = item.enrollments?.[0];
@@ -2197,7 +2215,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
       },
     },
     {
-      key: 'paid_month',
+      align: 'center' as const, wrap: false, key: 'paid_month',
       header: 'Tháng nộp học phí',
       cell: (item) => {
         const enr = item.enrollments?.[0];
@@ -2221,7 +2239,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
       },
     },
     {
-      key: 'account_created_at',
+      align: 'center' as const, wrap: false, key: 'account_created_at',
       header: 'Ngày tạo tài khoản',
       cell: (item) => {
         const enr = item.enrollments?.[0];

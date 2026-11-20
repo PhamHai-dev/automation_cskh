@@ -1,3 +1,4 @@
+import { careGroupLinksRepository } from '../omnichannel/care-group-links.repository';
 /**
  * line.service.ts — Business logic for the Hybrid LINE module:
  *   - Account CRUD (OA & PERSONAL), QR Login, OA Token update
@@ -10,6 +11,7 @@
  */
 
 import crypto from 'node:crypto';
+import { z } from 'zod';
 import { prisma } from '../../prisma/client';
 import { decryptJson, encryptJson } from '../../shared/crypto/aes-gcm';
 import { lineRepository } from './line-repository';
@@ -881,6 +883,7 @@ export class LineService {
   }
 
   async createOrUpdateLink(input: {
+    program_type?: 'ALL' | 'KAIWA' | 'JLPT';
     student_id: number;
     line_account_id?: number;
     line_group_id?: number | null;
@@ -892,6 +895,13 @@ export class LineService {
     ownerUserId?: number;
   }) {
     const relationStatus = input.relation_status ?? 'FRIEND';
+    const validated = z.object({
+      student_id: z.number().int().positive(), program_type: z.enum(['ALL', 'KAIWA', 'JLPT']).optional(),
+      line_account_id: z.number().int().positive().optional(), line_group_id: z.number().int().positive().nullable().optional(),
+      target_type: z.enum(['USER', 'GROUP']).optional(), relation_status: z.enum(['FRIEND', 'STRANGER', 'UNKNOWN', 'BLOCKED']).optional(),
+      friend_line_uid: z.string().max(64).nullable().optional(), display_name: z.string().max(200).nullable().optional(),
+    }).safeParse(input);
+    if (!validated.success) throw Object.assign(new Error('Thông tin liên kết LINE không hợp lệ'), { statusCode: 422 });
 
     let resolvedGroup: {
       id: number;
@@ -931,21 +941,32 @@ export class LineService {
     }
 
     const isGroupLink = resolvedGroup != null || input.target_type === 'GROUP';
+    if (!isGroupLink && /^[cC]/.test(input.friend_line_uid || '')) throw Object.assign(new Error('UID nhóm LINE phải được liên kết bằng nhóm và chương trình'), { statusCode: 422 });
+    const programType = input.program_type ?? (isGroupLink ? null : 'ALL');
+    if (!programType || !['ALL', 'KAIWA', 'JLPT'].includes(programType) || (isGroupLink && (programType === 'ALL' || !resolvedGroup))) {
+      throw Object.assign(new Error('Chọn chương trình KAIWA/JLPT và nhóm hợp lệ'), { statusCode: 422 });
+    }
+    if (input.ownerUserId !== undefined) {
+      const enrollment = await prisma.enrollment.findFirst({ where: { student_id: input.student_id, cs_id: input.ownerUserId, ...(programType !== 'ALL' ? { program_type: programType } : {}) }, select: { id: true } });
+      if (!enrollment) throw Object.assign(new Error('Học viên không thuộc chương trình do bạn phụ trách'), { statusCode: 403 });
+    }
     const targetType = isGroupLink ? 'GROUP' : 'USER';
     const lineGroupId = resolvedGroup ? resolvedGroup.id : null;
     const friendLineUid = resolvedGroup ? resolvedGroup.line_group_id : (input.friend_line_uid ?? null);
     const displayName = resolvedGroup ? (input.display_name || resolvedGroup.name || null) : (input.display_name ?? null);
     const avatarUrl = resolvedGroup ? (input.avatar_url ?? resolvedGroup.avatar_url ?? null) : (input.avatar_url ?? null);
 
-    const relation = await prisma.lineContactRelation.upsert({
+    const relation = await careGroupLinksRepository.selectManualLine({
       where: {
         student_id_line_account_id: {
+          program_type: programType,
           student_id: input.student_id,
           line_account_id: effectiveAccountId,
         },
       },
       create: {
         student_id: input.student_id,
+        program_type: programType,
         line_account_id: effectiveAccountId,
         relation_status: relationStatus,
         target_type: targetType,
@@ -975,7 +996,7 @@ export class LineService {
           select: { id: true, line_group_id: true, name: true, avatar_url: true, member_count: true },
         },
       },
-    });
+    }, input.ownerUserId ?? 0);
 
     if (!isGroupLink && friendLineUid && relationStatus === 'FRIEND') {
       await prisma.student
@@ -1048,6 +1069,8 @@ export class LineService {
       }
     }
 
+    if (resolvedGroup && existing.program_type === 'ALL') throw Object.assign(new Error('Liên kết cũ chưa có chương trình. Hãy tạo liên kết nhóm Kaiwa/JLPT từ danh sách học viên.'), { statusCode: 422 });
+    if (resolvedGroup && data.new_line_account_id && resolvedGroup.line_account_id !== data.new_line_account_id) throw Object.assign(new Error('Nhóm không thuộc tài khoản được chọn'), { statusCode: 422 });
     const groupPatchFields = resolvedGroup
       ? {
           target_type: 'GROUP',

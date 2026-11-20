@@ -88,53 +88,53 @@ export const ImportHistoryTable: React.FC = () => {
 
       <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
         <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200 text-xs text-left">
+          <table data-table="native" className="min-w-full divide-y divide-gray-200 text-xs text-left">
             <thead className="bg-gray-50 text-gray-700 font-bold">
               <tr>
-                <th className="px-4 py-3">Mã đợt</th>
-                <th className="px-4 py-3">Tên file</th>
-                <th className="px-4 py-3">Loại import</th>
-                <th className="px-4 py-3">Người thực hiện</th>
-                <th className="px-4 py-3">Thời gian</th>
-                <th className="px-4 py-3 text-center">Tổng</th>
-                <th className="px-4 py-3 text-center">Thành công</th>
-                <th className="px-4 py-3 text-center">Thất bại</th>
-                <th className="px-4 py-3">Trạng thái</th>
-                <th className="px-4 py-3 text-right">Báo cáo lỗi</th>
+                <th scope="col" className="px-4 py-3">Mã đợt</th>
+                <th scope="col" className="px-4 py-3">Tên file</th>
+                <th scope="col" className="px-4 py-3">Loại import</th>
+                <th scope="col" className="px-4 py-3">Người thực hiện</th>
+                <th scope="col" className="px-4 py-3">Thời gian</th>
+                <th scope="col" className="px-4 py-3 text-center">Tổng</th>
+                <th scope="col" className="px-4 py-3 text-center">Thành công</th>
+                <th scope="col" className="px-4 py-3 text-center">Thất bại</th>
+                <th scope="col" className="px-4 py-3">Trạng thái</th>
+                <th scope="col" className="px-4 py-3 ">Báo cáo lỗi</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 bg-white">
               {loading && batches.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="px-4 py-8 text-center text-gray-500">
+                  <td data-align="center" colSpan={10} className="px-4 py-8 text-center text-gray-500">
                     Đang tải danh sách lịch sử...
                   </td>
                 </tr>
               ) : batches.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="px-4 py-8 text-center text-gray-400">
+                  <td data-align="center" colSpan={10} className="px-4 py-8 text-center text-gray-400">
                     Chưa có đợt import nào trong hệ thống.
                   </td>
                 </tr>
               ) : (
                 batches.map((batch) => (
                   <tr key={batch.id} className="hover:bg-gray-50/50 transition">
-                    <td className="px-4 py-3 font-mono font-bold text-gray-800">#{batch.id}</td>
-                    <td className="px-4 py-3 font-medium text-gray-900 max-w-[200px] truncate" title={batch.file_name}>
+                    <td data-align="center" data-wrap="nowrap" className="px-4 py-3 font-mono font-bold text-gray-800">#{batch.id}</td>
+                    <td data-align="left" data-wrap="normal" className="px-4 py-3 font-medium text-gray-900 max-w-[200px] truncate" title={batch.file_name}>
                       {batch.file_name}
                     </td>
-                    <td className="px-4 py-3">{getImportTypeBadge(batch.import_type)}</td>
-                    <td className="px-4 py-3 text-gray-600">
+                    <td data-align="center" data-wrap="nowrap" className="px-4 py-3">{getImportTypeBadge(batch.import_type)}</td>
+                    <td data-align="left" data-wrap="normal" className="px-4 py-3 text-gray-600">
                       {batch.uploaded_by?.name || batch.uploaded_by?.email}
                     </td>
-                    <td className="px-4 py-3 text-gray-500 whitespace-nowrap">
+                    <td data-align="center" data-wrap="nowrap" className="px-4 py-3 text-gray-500 whitespace-nowrap">
                       {new Date(batch.created_at).toLocaleString('vi-VN')}
                     </td>
-                    <td className="px-4 py-3 text-center font-semibold text-gray-800">{batch.total_rows}</td>
-                    <td className="px-4 py-3 text-center font-bold text-green-600">{batch.success_rows}</td>
-                    <td className="px-4 py-3 text-center font-bold text-red-600">{batch.failed_rows}</td>
-                    <td className="px-4 py-3">{getStatusBadge(batch.status)}</td>
-                    <td className="px-4 py-3 text-right">
+                    <td data-align="right" data-wrap="nowrap" className="px-4 py-3 text-center font-semibold text-gray-800">{batch.total_rows}</td>
+                    <td data-align="right" data-wrap="nowrap" className="px-4 py-3 text-center font-bold text-green-600">{batch.success_rows}</td>
+                    <td data-align="right" data-wrap="nowrap" className="px-4 py-3 text-center font-bold text-red-600">{batch.failed_rows}</td>
+                    <td data-align="center" data-wrap="nowrap" className="px-4 py-3">{getStatusBadge(batch.status)}</td>
+                    <td data-align="center" data-wrap="nowrap" className="px-4 py-3 text-right">
                       {batch.failed_rows > 0 ? (
                         <Button
                           variant="ghost"

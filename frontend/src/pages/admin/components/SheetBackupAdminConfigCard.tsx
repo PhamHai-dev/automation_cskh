@@ -938,13 +938,13 @@ export const SheetBackupAdminConfigCard: React.FC = () => {
               {/* Column table */}
               <div className="border border-border/80 rounded-xl overflow-hidden">
                 <div className="max-h-[560px] overflow-auto">
-                  <table className="w-full text-xs border-collapse">
+                  <table data-table="native" className="w-full text-xs border-collapse">
                     <thead className="sticky top-0 z-10 bg-slate-50 border-b border-border">
                       <tr className="text-left text-[11px] uppercase tracking-wider text-text-muted font-semibold">
-                        <th className="px-3 py-2.5 w-[110px]">Trạng thái</th>
-                        <th className="px-3 py-2.5 w-[190px]">Vị trí cột Excel</th>
-                        <th className="px-3 py-2.5">Tiêu đề cột trên Sheet</th>
-                        <th className="px-3 py-2.5 w-[340px]">Trường dữ liệu Web &amp; Nhóm</th>
+                        <th scope="col" className="px-3 py-2.5 w-[110px]">Trạng thái</th>
+                        <th scope="col" className="px-3 py-2.5 w-[190px]">Vị trí cột Excel</th>
+                        <th scope="col" className="px-3 py-2.5">Tiêu đề cột trên Sheet</th>
+                        <th scope="col" className="px-3 py-2.5 w-[340px]">Trường dữ liệu Web &amp; Nhóm</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -958,7 +958,7 @@ export const SheetBackupAdminConfigCard: React.FC = () => {
                               c.enabled ? 'bg-white' : 'bg-slate-50/60'
                             } ${conflict ? 'bg-rose-50/60' : ''}`}
                           >
-                            <td className="px-3 py-2.5">
+                            <td data-align="center" data-wrap="nowrap" className="px-3 py-2.5">
                               <label
                                 className={`inline-flex items-center gap-2 ${
                                   locked ? 'cursor-not-allowed' : isAdmin ? 'cursor-pointer' : 'cursor-not-allowed'
@@ -988,7 +988,7 @@ export const SheetBackupAdminConfigCard: React.FC = () => {
                               </label>
                             </td>
 
-                            <td className="px-3 py-2.5">
+                            <td data-align="center" data-wrap="nowrap" className="px-3 py-2.5">
                               <ColInputCell
                                 col={c.col}
                                 defaultCol={c.defaultCol}
@@ -998,7 +998,7 @@ export const SheetBackupAdminConfigCard: React.FC = () => {
                               />
                             </td>
 
-                            <td className="px-3 py-2.5">
+                            <td data-align="left" data-wrap="normal" className="px-3 py-2.5">
                               <input
                                 type="text"
                                 value={c.title}
@@ -1017,7 +1017,7 @@ export const SheetBackupAdminConfigCard: React.FC = () => {
                               </div>
                             </td>
 
-                            <td className="px-3 py-2.5">
+                            <td data-align="left" data-wrap="normal" className="px-3 py-2.5">
                               <div className="flex flex-wrap items-center gap-1.5">
                                 <code className="px-1.5 py-0.5 bg-slate-100 border border-slate-200 rounded font-mono text-[11px] font-bold text-slate-700">
                                   {c.fieldKey}
@@ -1045,7 +1045,7 @@ export const SheetBackupAdminConfigCard: React.FC = () => {
 
                       {visibleColumns.length === 0 && (
                         <tr>
-                          <td colSpan={4} className="px-3 py-8 text-center text-xs text-text-muted">
+                          <td data-align="center" colSpan={4} className="px-3 py-8 text-center text-xs text-text-muted">
                             Không có cột nào khớp bộ lọc tìm kiếm / nhóm hiện tại.
                           </td>
                         </tr>

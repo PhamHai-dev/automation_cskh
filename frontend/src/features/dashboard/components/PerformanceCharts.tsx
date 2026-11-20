@@ -45,28 +45,28 @@ export const CSLeaderboard: React.FC<{ data: PerformancePayload['cs_leaderboard'
 
   return (
     <div className="overflow-x-auto rounded-xl border border-border/70">
-      <table className="w-full text-left text-sm">
+      <table data-table="native" className="w-full text-left text-sm">
         <thead>
           <tr className="bg-surface-muted/80 border-b border-border">
-            <th className="py-2.5 px-3 font-semibold text-text-secondary">#</th>
-            <th className="py-2.5 px-3 font-semibold text-text-secondary">CSKH</th>
-            <th className="py-2.5 px-3 font-semibold text-text-secondary text-right">Ghi danh</th>
-            <th className="py-2.5 px-3 font-semibold text-text-secondary text-right">Log CSKH</th>
-            <th className="py-2.5 px-3 font-semibold text-text-secondary text-right">% Tích cực</th>
-            <th className="py-2.5 px-3 font-semibold text-text-secondary text-right">NV hoàn thành</th>
+            <th scope="col" className="py-2.5 px-3 font-semibold text-text-secondary">#</th>
+            <th scope="col" className="py-2.5 px-3 font-semibold text-text-secondary">CSKH</th>
+            <th scope="col" className="py-2.5 px-3 font-semibold text-text-secondary ">Ghi danh</th>
+            <th scope="col" className="py-2.5 px-3 font-semibold text-text-secondary ">Lượt chăm sóc</th>
+            <th scope="col" className="py-2.5 px-3 font-semibold text-text-secondary ">Tỷ lệ tích cực</th>
+            <th scope="col" className="py-2.5 px-3 font-semibold text-text-secondary ">Nhiệm vụ hoàn thành</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-border/60">
           {data.map((r, idx) => (
             <tr key={r.cs_id} className="hover:bg-slate-50/60">
-              <td className="py-2.5 px-3 text-text-muted font-bold">{idx + 1}</td>
-              <td className="py-2.5 px-3 font-medium text-text-primary">{r.cs_name}</td>
-              <td className="py-2.5 px-3 text-right text-text-secondary">{r.total_enrollments}</td>
-              <td className="py-2.5 px-3 text-right text-text-secondary font-semibold">{r.total_logs}</td>
-              <td className="py-2.5 px-3 text-right">
+              <td data-align="center" data-wrap="nowrap" className="py-2.5 px-3 text-text-muted font-bold">{idx + 1}</td>
+              <td data-align="left" data-wrap="normal" className="py-2.5 px-3 font-medium text-text-primary">{r.cs_name}</td>
+              <td data-align="right" data-wrap="nowrap" className="py-2.5 px-3 text-right text-text-secondary">{r.total_enrollments}</td>
+              <td data-align="right" data-wrap="nowrap" className="py-2.5 px-3 text-right text-text-secondary font-semibold">{r.total_logs}</td>
+              <td data-align="right" data-wrap="nowrap" className="py-2.5 px-3 text-right">
                 <PillPct value={r.positive_pct} tone="good" />
               </td>
-              <td className="py-2.5 px-3 text-right">
+              <td data-align="right" data-wrap="nowrap" className="py-2.5 px-3 text-right">
                 <span className="text-text-secondary">
                   {r.tasks_done}/{r.tasks_total}
                 </span>

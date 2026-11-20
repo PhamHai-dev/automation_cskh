@@ -55,25 +55,25 @@ export const CarePivotTable: React.FC<CarePivotTableProps> = ({ data, loading })
       </div>
 
       <div className="overflow-x-auto rounded-xl border border-border/70">
-        <table className="w-full text-left text-xs border-collapse min-w-[1120px]">
+        <table data-table="native" className="w-full text-left text-xs border-collapse min-w-[1120px]">
           <thead>
             <tr className="border-b border-border bg-surface-muted/80">
-              <th className="py-2.5 px-3 font-semibold text-text-secondary sticky left-0 bg-surface-muted z-10 whitespace-nowrap">Mốc chăm sóc</th>
-              {buckets.map((bucket) => <th key={bucket} className="py-2.5 px-2 font-semibold text-text-primary text-center min-w-[112px]">{META[bucket].label}</th>)}
-              <th className="py-2.5 px-3 font-bold text-text-primary text-center min-w-[90px]">Tổng</th>
+              <th scope="col" className="py-2.5 px-3 font-semibold text-text-secondary sticky left-0 bg-surface-muted z-10 whitespace-nowrap">Mốc chăm sóc</th>
+              {buckets.map((bucket) => <th scope="col" key={bucket} className="py-2.5 px-2 font-semibold text-text-primary text-center min-w-[112px]">{META[bucket].label}</th>)}
+              <th scope="col" className="py-2.5 px-3 font-bold text-text-primary text-center min-w-[90px]">Tổng</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border/60">
             {data.rows.map((row) => (
               <tr key={row.session_number} className="hover:bg-slate-50/60">
-                <td className="py-3 px-3 font-bold text-text-primary sticky left-0 bg-white z-10 shadow-[1px_0_0_0_rgba(226,232,240,1)] whitespace-nowrap">Sau buổi {row.session_number}<div className="text-[10px] font-normal text-text-muted mt-0.5">{row.response_rate.toFixed(1)}% phản hồi</div></td>
+                <td data-align="center" data-wrap="nowrap" className="py-3 px-3 font-bold text-text-primary sticky left-0 bg-white z-10 shadow-[1px_0_0_0_rgba(226,232,240,1)] whitespace-nowrap">Sau buổi {row.session_number}<div className="text-[10px] font-normal text-text-muted mt-0.5">{row.response_rate.toFixed(1)}% phản hồi</div></td>
                 {buckets.map((bucket) => {
                   const count = row.counts[bucket] || 0;
                   const intensity = count / maxCell;
                   const shown = mode === 'count' ? String(count) : `${row.total_enrollments ? ((count / row.total_enrollments) * 100).toFixed(0) : 0}%`;
-                  return <td key={bucket} className={`py-3 px-2 text-center font-semibold ${META[bucket].alert ? 'text-red-700' : 'text-text-primary'}`} style={{ backgroundColor: count ? heatColor(META[bucket].color, intensity) : undefined, color: count && intensity > 0.65 ? '#fff' : undefined }}>{count ? shown : <span className="text-text-muted">—</span>}</td>;
+                  return <td data-align="right" data-wrap="nowrap" key={bucket} className={`py-3 px-2 text-center font-semibold ${META[bucket].alert ? 'text-red-700' : 'text-text-primary'}`} style={{ backgroundColor: count ? heatColor(META[bucket].color, intensity) : undefined, color: count && intensity > 0.65 ? '#fff' : undefined }}>{count ? shown : <span className="text-text-muted">—</span>}</td>;
                 })}
-                <td className="py-3 px-3 text-center font-bold text-text-primary bg-slate-100/70">{row.total_enrollments}</td>
+                <td data-align="right" data-wrap="nowrap" className="py-3 px-3 text-center font-bold text-text-primary bg-slate-100/70">{row.total_enrollments}</td>
               </tr>
             ))}
           </tbody>

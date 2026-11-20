@@ -469,63 +469,63 @@ export const TeacherStudentInfoPage: React.FC = () => {
             </div>
           ) : (
             <div className="w-full overflow-x-auto select-none">
-              <table className="w-full text-xs text-left border-collapse">
+              <table data-table="native" className="w-full text-xs text-left border-collapse">
                 <thead>
                   <tr className="bg-surface-muted/90 text-text-secondary border-b border-border/80 text-[11px] font-bold">
-                    <th className="sticky left-0 z-30 px-2 py-3 border-r border-border/60 bg-slate-100 text-text-secondary text-center w-10 min-w-[40px] max-w-[40px] whitespace-nowrap">
+                    <th scope="col" className="sticky left-0 z-30 px-2 py-3 border-r border-border/60 bg-slate-100 text-text-secondary text-center w-10 min-w-[40px] max-w-[40px] whitespace-nowrap">
                       #
                     </th>
                     {/* Cột Mã HV - sticky left 40px */}
-                    <th className="sticky left-10 z-30 px-3 py-3 border-r border-border/60 bg-slate-100 text-text-secondary text-left w-[110px] min-w-[110px] max-w-[110px] whitespace-nowrap overflow-hidden">
+                    <th scope="col" className="sticky left-10 z-30 px-3 py-3 border-r border-border/60 bg-slate-100 text-text-secondary w-[110px] min-w-[110px] max-w-[110px] whitespace-nowrap ">
                       Mã HV
                     </th>
                     {/* Cột Họ tên HV - sticky left 150px */}
-                    <th className="sticky left-[150px] z-30 px-3 py-3 border-r-2 border-border/80 bg-slate-100 text-text-secondary text-left w-[175px] min-w-[175px] max-w-[175px] whitespace-nowrap shadow-[2px_0_4px_-1px_rgba(0,0,0,0.06)] overflow-hidden">
+                    <th scope="col" className="sticky left-[150px] z-30 px-3 py-3 border-r-2 border-border/80 bg-slate-100 text-text-secondary w-[175px] min-w-[175px] max-w-[175px] whitespace-nowrap shadow-[2px_0_4px_-1px_rgba(0,0,0,0.06)] ">
                       Họ tên HV
                     </th>
                     {/* Lớp học */}
-                    <th className="px-3 py-3 border-r border-border/60 text-left min-w-[125px] whitespace-nowrap">
+                    <th scope="col" className="px-3 py-3 border-r border-border/60 min-w-[125px] whitespace-nowrap">
                       Lớp học
                     </th>
                     {/* Khóa học */}
-                    <th className="px-3 py-3 border-r border-border/60 text-center min-w-[95px] whitespace-nowrap">
+                    <th scope="col" className="px-3 py-3 border-r border-border/60 text-center min-w-[95px] whitespace-nowrap">
                       Khóa học
                     </th>
                     {/* Trình độ */}
-                    <th className="px-3 py-3 border-r border-border/60 text-center min-w-[95px] whitespace-nowrap">
+                    <th scope="col" className="px-3 py-3 border-r border-border/60 text-center min-w-[95px] whitespace-nowrap">
                       Trình độ
                     </th>
                     {/* Tổng buổi */}
-                    <th className="px-3 py-3 border-r border-border/60 text-center min-w-[85px] whitespace-nowrap">
+                    <th scope="col" className="px-3 py-3 border-r border-border/60 text-center min-w-[85px] whitespace-nowrap">
                       Tổng buổi
                     </th>
                     {/* Ghi chú */}
-                    <th className="px-3 py-3 border-r border-border/60 text-left min-w-[150px] whitespace-nowrap">
+                    <th scope="col" className="px-3 py-3 border-r border-border/60 min-w-[150px] whitespace-nowrap">
                       Ghi chú
                     </th>
                     {/* Ngày bắt đầu */}
-                    <th className="px-3 py-3 border-r border-border/60 text-center min-w-[105px] whitespace-nowrap">
+                    <th scope="col" className="px-3 py-3 border-r border-border/60 text-center min-w-[105px] whitespace-nowrap">
                       Ngày bắt đầu
                     </th>
                     {/* CVHT phụ trách */}
-                    <th className="px-3 py-3 border-r border-border/60 text-center min-w-[115px] whitespace-nowrap">
+                    <th scope="col" className="px-3 py-3 border-r border-border/60 text-center min-w-[115px] whitespace-nowrap">
                       CVHT phụ trách
                     </th>
                     {/* Ngày học */}
-                    <th className="px-3 py-3 border-r border-border/60 text-center min-w-[120px] whitespace-nowrap">
+                    <th scope="col" className="px-3 py-3 border-r border-border/60 text-center min-w-[120px] whitespace-nowrap">
                       Ngày học
                     </th>
                     {/* Giờ học */}
-                    <th className="px-3 py-3 border-r border-border/60 text-center min-w-[105px] whitespace-nowrap">
+                    <th scope="col" className="px-3 py-3 border-r border-border/60 text-center min-w-[105px] whitespace-nowrap">
                       Giờ học
                     </th>
                     {/* Báo cáo học tập */}
-                    <th className="px-3 py-3 border-r-2 border-border/80 text-center min-w-[150px] whitespace-nowrap bg-amber-50/60 text-amber-900">
+                    <th scope="col" className="px-3 py-3 border-r-2 border-border/80 text-center min-w-[150px] whitespace-nowrap bg-amber-50/60 text-amber-900">
                       Báo cáo học tập
                     </th>
                     {/* Các cột động: Buổi 1 .. Buổi N */}
                     {sessionIndices.map((k) => (
-                      <th
+                      <th scope="col"
                         key={k}
                         className="px-2.5 py-3 bg-teal-50/70 text-teal-950 border-r border-border/60 text-center min-w-[145px] whitespace-nowrap"
                       >
@@ -547,19 +547,19 @@ export const TeacherStudentInfoPage: React.FC = () => {
                         }`}
                       >
                         {/* Cột # (STT) */}
-                        <td className={`sticky left-0 z-20 ${stickyBg} px-2 py-2.5 border-r border-border/60 text-center text-text-muted font-bold w-10 min-w-[40px]`}>
+                        <td data-align="center" data-wrap="nowrap" className={`sticky left-0 z-20 ${stickyBg} px-2 py-2.5 border-r border-border/60 text-center text-text-muted font-bold w-10 min-w-[40px]`}>
                           {(safePage - 1) * pageSize + rIdx + 1}
                         </td>
 
                         {/* Cột Mã HV */}
-                        <td
+                        <td data-align="center" data-wrap="nowrap"
                           className={`sticky left-10 z-20 ${stickyBg} px-3 py-2.5 border-r border-border/60 font-mono font-bold text-text-primary whitespace-nowrap w-[110px] min-w-[110px] max-w-[110px] overflow-hidden`}
                         >
                           {row.studentCode || `HV_${row.studentId}`}
                         </td>
 
                         {/* Cột Họ tên HV */}
-                        <td
+                        <td data-align="left" data-wrap="normal"
                           className={`sticky left-[150px] z-20 ${stickyBg} px-3 py-2.5 border-r-2 border-border/80 font-bold text-text-primary w-[175px] min-w-[175px] max-w-[175px] shadow-[2px_0_4px_-1px_rgba(0,0,0,0.06)] overflow-hidden`}
                         >
                           <div
@@ -571,7 +571,7 @@ export const TeacherStudentInfoPage: React.FC = () => {
                         </td>
 
                         {/* Lớp học */}
-                        <td className="px-3 py-2.5 border-r border-border/60 text-text-primary whitespace-nowrap">
+                        <td data-align="left" data-wrap="normal" className="px-3 py-2.5 border-r border-border/60 text-text-primary whitespace-nowrap">
                           {(() => {
                             const cCode = formatClassCode(row.classCode, row.classId);
                             const cName =
@@ -582,7 +582,7 @@ export const TeacherStudentInfoPage: React.FC = () => {
                               <>
                                 <div className="font-semibold text-text-primary">{cName}</div>
                                 {cCode && cCode !== '—' && cCode !== cName && (
-                                  <div className="font-mono text-[10px] text-text-muted truncate max-w-[130px]">
+                                  <div title={String(cCode ?? '')} className="font-mono text-[10px] text-text-muted truncate max-w-[130px]">
                                     {cCode}
                                   </div>
                                 )}
@@ -592,22 +592,22 @@ export const TeacherStudentInfoPage: React.FC = () => {
                         </td>
 
                         {/* Khóa học */}
-                        <td className="px-3 py-2.5 border-r border-border/60 text-center font-semibold text-text-secondary whitespace-nowrap">
+                        <td data-align="center" data-wrap="nowrap" className="px-3 py-2.5 border-r border-border/60 text-center font-semibold text-text-secondary whitespace-nowrap">
                           {row.courseType || '—'}
                         </td>
 
                         {/* Trình độ */}
-                        <td className="px-3 py-2.5 border-r border-border/60 text-center font-semibold text-teal-800 whitespace-nowrap">
+                        <td data-align="center" data-wrap="nowrap" className="px-3 py-2.5 border-r border-border/60 text-center font-semibold text-teal-800 whitespace-nowrap">
                           {row.level || '—'}
                         </td>
 
                         {/* Tổng buổi */}
-                        <td className="px-3 py-2.5 border-r border-border/60 text-center font-bold text-text-primary whitespace-nowrap">
+                        <td data-align="right" data-wrap="nowrap" className="px-3 py-2.5 border-r border-border/60 text-center font-bold text-text-primary whitespace-nowrap">
                           {row.totalSessions || 0}
                         </td>
 
                         {/* Ghi chú */}
-                        <td className="px-3 py-2.5 border-r border-border/60 text-text-secondary max-w-[180px]">
+                        <td data-align="left" data-wrap="normal" className="px-3 py-2.5 border-r border-border/60 text-text-secondary max-w-[180px]">
                           {(() => {
                             const cleaned = cleanNoteText(row.note);
                             return (
@@ -619,12 +619,12 @@ export const TeacherStudentInfoPage: React.FC = () => {
                         </td>
 
                         {/* Ngày bắt đầu */}
-                        <td className="px-3 py-2.5 border-r border-border/60 text-center text-text-secondary whitespace-nowrap">
+                        <td data-align="center" data-wrap="nowrap" className="px-3 py-2.5 border-r border-border/60 text-center text-text-secondary whitespace-nowrap">
                           {formatDateDMY(row.startDate)}
                         </td>
 
                         {/* CVHT phụ trách */}
-                        <td className="px-3 py-2.5 border-r border-border/60 text-center whitespace-nowrap">
+                        <td data-align="center" data-wrap="nowrap" className="px-3 py-2.5 border-r border-border/60 text-center whitespace-nowrap">
                           {row.csCode || row.csName ? (
                             <span
                               className="inline-block font-mono font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded px-2 py-0.5 text-[11px]"
@@ -638,17 +638,17 @@ export const TeacherStudentInfoPage: React.FC = () => {
                         </td>
 
                         {/* Ngày học */}
-                        <td className="px-3 py-2.5 border-r border-border/60 text-center text-text-primary whitespace-nowrap font-semibold">
+                        <td data-align="center" data-wrap="nowrap" className="px-3 py-2.5 border-r border-border/60 text-center text-text-primary whitespace-nowrap font-semibold">
                           {row.scheduleDays || '—'}
                         </td>
 
                         {/* Giờ học */}
-                        <td className="px-3 py-2.5 border-r border-border/60 text-center font-mono text-text-secondary whitespace-nowrap">
+                        <td data-align="center" data-wrap="nowrap" className="px-3 py-2.5 border-r border-border/60 text-center font-mono text-text-secondary whitespace-nowrap">
                           {formatScheduleTimeDisplay(row.scheduleTime) || row.scheduleTime || '—'}
                         </td>
 
                         {/* Báo cáo học tập */}
-                        <td className="px-2.5 py-2 border-r-2 border-border/80 text-center whitespace-nowrap bg-amber-50/25">
+                        <td data-align="center" data-wrap="nowrap" className="px-2.5 py-2 border-r-2 border-border/80 text-center whitespace-nowrap bg-amber-50/25">
                           <button
                             type="button"
                             onClick={() =>
@@ -662,7 +662,7 @@ export const TeacherStudentInfoPage: React.FC = () => {
                             className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-900 font-semibold text-xs border border-amber-200/80 transition-colors max-w-[150px]"
                             title={`Mở Báo cáo học tập của ${row.studentName}`}
                           >
-                            <span className="truncate">{row.studentName}</span>
+                            <span title={String(row.studentName ?? '')} className="truncate">{row.studentName}</span>
                             <ExternalLink className="w-3 h-3 shrink-0 text-amber-700" />
                           </button>
                         </td>
@@ -686,7 +686,7 @@ export const TeacherStudentInfoPage: React.FC = () => {
                               attId != null && !!savedAttendanceIds[attId];
 
                             return (
-                              <td
+                              <td data-cell-layout="custom" data-align="center" data-wrap="nowrap"
                                 key={k}
                                 className="border-r border-border/60 p-1.5 align-top bg-teal-50/15 min-w-[145px]"
                               >
@@ -748,7 +748,7 @@ export const TeacherStudentInfoPage: React.FC = () => {
                                 };
 
                             return (
-                              <td
+                              <td data-cell-layout="custom" data-align="center" data-wrap="nowrap"
                                 key={k}
                                 className="border-r border-border/60 p-1.5 align-top bg-slate-50/50 min-w-[145px]"
                                 title="Học viên chưa học buổi này nên ô bị khóa"
@@ -780,7 +780,7 @@ export const TeacherStudentInfoPage: React.FC = () => {
 
                           // Trường hợp 3: Chưa có buổi học thứ k (!cell)
                           return (
-                            <td
+                            <td data-cell-layout="custom" data-align="center" data-wrap="nowrap"
                               key={k}
                               className="border-r border-border/60 p-1.5 align-top bg-slate-50/25 min-w-[145px]"
                             >

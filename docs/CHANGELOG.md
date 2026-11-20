@@ -1,5 +1,62 @@
 # Project Changelog
 
+## 2026-11-20 — Sửa lỗi API 500 do database lệch migration
+
+- Áp dụng migration index/history và chuẩn hóa gói học đã có, bổ sung `course_code`; bỏ UTF-8 BOM gây MySQL syntax error ở migration index chưa áp dụng. Thêm migration chuyển backup config legacy sang per-program, giữ bảng/cấu hình cũ, bổ sung index/FK. Có snapshot và kiểm tra bảo toàn dữ liệu trước/sau.
+- Giữ 2.390 enrollments, 129 package cũ, 9 sync configs, 3 backup configs; bảo toàn 1.268 mã khóa học JLPT, chuẩn hóa 1.070 liên kết gói theo quyết định 17/11. Không đổi field ghi danh khác hoặc reset DB.
+- Sửa Promise cleanup ở queryCache để request lỗi không sinh thêm unhandled rejection; thêm 2 tests, sửa sandbox fixture backup cho đúng guard hiện hành.
+- 32 GET thật Admin/CS trả 200, 7 trang browser tải dữ liệu không lỗi 500; 28 frontend tests và 9 backend tests pass, frontend build/typecheck và Prisma format/validate pass.
+
+## 2026-11-20 — Tách phạm vi nhóm lớp và danh bạ
+
+- Sửa bảng nhóm tự co giãn theo dữ liệu: tỷ lệ cột cố định chung hai view, tên/metadata căn trái trên, số căn phải, nút hành động giữ vị trí theo grid; kiểm tra tên/mã dài, nhiều liên kết và scroll tablet/mobile bằng phép đo DOM.
+- Nhóm Lớp Đa kênh chỉ chứa nhóm đã liên kết học viên có lớp; bổ sung lớp/học viên cụ thể trong bảng, không lấy toàn bộ nhóm sync vào trang này.
+- Danh bạ đa kênh có Danh sách bạn bè và Danh sách nhóm và cộng đồng. Toàn bộ nhóm Zalo/LINE đồng bộ nằm ở mục nhóm, kể cả chưa liên kết; giữ các thao tác bạn bè, hộp thư, đổi tên và quản lý liên kết tại đúng ngữ cảnh.
+- Thêm API đọc owner-scoped `/omnichannel/groups`, validation, scope học viên/lớp, lọc trước phân trang và response tối thiểu. Không sửa schema, không thay dữ liệu liên kết khi xem/làm mới, không gọi matcher từ nút đồng bộ danh bạ nhóm.
+- 16 backend integration tests và browser fixture 1440/768/390 pass; đọc DB/API local xác nhận 7 nhóm tổng/1 nhóm liên kết lớp.
+
+## 2026-11-20 — Gộp hộp thư Zalo/LINE
+
+- Thu gọn bộ lọc: bỏ header phụ, control 32–36px, gap 8px; thu loại/trạng thái vào Bộ lọc bổ sung có badge đếm. Giữ lọc khi thu lại, reset ở cạnh số kết quả. Kiểm tra browser 3 viewport và 26 tests pass.
+- Thay ba màn hình hộp thư bằng một giao diện chung; lọc theo nền tảng/tài khoản, giữ liên kết `/zalo/chat`, `/line/chat` và query mở hội thoại. Xóa hai page chat riêng để không phát sinh lệch giao diện.
+- Chuẩn hóa danh sách, header, bubble, ngày/giờ, composer nhiều dòng và mobile back. Gom các bộ lọc vào một FilterBar (tìm kiếm, nền tảng/tài khoản, loại/trạng thái kết hợp, reset), bỏ vùng lọc trên header và nút “Nhắn từ danh bạ Zalo”. Cảm xúc/bình chọn Zalo nằm theo hội thoại, giữ ghi chú phản hồi miễn phí riêng LINE OA. Thông tin hội thoại qua modal chung.
+- Giữ bản nháp khi gửi lỗi, chặn gửi trùng và response cũ sau chuyển hội thoại; tách lỗi tải từng provider. 26 tests pass; browser fixture 9 tổ hợp nền tảng/viewport và các tình huống realtime, deep link, retry, race pass; frontend build/typecheck pass. Lint bị thiếu cấu hình có sẵn.
+- Ghi nhận giới hạn quote và dữ liệu reactions/poll của history Zalo trong STATUS; không thay API/backend hoặc gửi tin thật khi kiểm thử.
+
+## 2026-11-20 — Căn giữa nhân viên, bỏ cột Giới hạn sử dụng
+
+- Căn giữa giá trị Nhân viên CSKH trên bảng đa kênh. Bỏ hẳn cột Giới hạn sử dụng ở mọi loại tài khoản và bộ lọc theo yêu cầu chốt của người dùng.
+- Giữ chức năng cài đặt và KPI OA dùng số liệu thực tế. Kiểm chứng bố cục 5 cột trên desktop/tablet/mobile, frontend tests và build/typecheck.
+
+## 2026-11-20 — LINE đồng bộ tên hồ sơ chính chủ
+
+- Tên LINE thật ghi đè tên tạm thiết lập khi login/restore; giữ tên đã lưu nếu provider không có tên. Contact sync làm mới tên/MID/avatar và gửi profile qua event status hiện có.
+- Bảng tài khoản cập nhật profile từ realtime; form thiết lập giải thích tên tạm. Không thêm field hoặc endpoint.
+- Thêm 5 regression cases; 66/66 tests backend và typecheck/build pass. Account LINE hiện tại đã được cập nhật qua phiên lưu; SDK thật xác nhận tên DB khớp hồ sơ LINE, browser kiểm chứng render và realtime profile.
+
+## 2026-11-20 — Zalo “Chưa xác định” sau QR
+
+- Sửa frontend nhận trạng thái pool lowercase (`connected`, `disconnected`, `qr_pending`, `connecting`) thành enum UI dùng chung tại API boundary, áp dụng cho bảng tài khoản/danh bạ/liên kết/chat. Giữ trạng thái vô hiệu hóa/hạn chế đã lưu và không coi offline là active.
+- Khôi phục nhãn “Đã kết nối”, số tài khoản kết nối và các nút đồng bộ/ngắt sau đăng nhập. Thêm 4 regression tests; browser fixture nhãn/actions pass; không cần quét lại hoặc restart backend.
+
+## 2026-11-20 — Audit bố cục và căn cột toàn project
+
+- Chuẩn hóa 38 bảng HTML và 155 định nghĩa cột ở 32 file frontend: mọi header căn giữa, body theo kiểu dữ liệu. Bổ sung contract align/wrap bắt buộc cho DataTable và CSS table dùng chung; guard tự động rà cả bảng viết riêng.
+- Sửa nhóm flex/nút/icon trong ô, kiểm soát wrap, không ghim ngang che bảng trên điện thoại; sửa scroll modal, label/value báo cáo học tập và nhãn trường. Thêm title cho 20 nội dung ellipsis.
+- 17 frontend tests, typecheck/build và browser fixture QA desktop/tablet/mobile pass. Giới hạn hạ tầng ESLint/DB local được ghi trong báo cáo audit; không chạy migration hoặc thay rule nghiệp vụ.
+
+## 2026-11-20 — Chuẩn hóa bảng tài khoản Zalo/LINE
+
+- Thống nhất nhãn trạng thái, cấu trúc thông tin tài khoản và căn cột trên trang đa kênh; dùng DataTable/Badge/Card/HorizontalTabs chung. Giữ ID/SĐT rõ ràng, nút thao tác đồng kích thước và có aria-label/title.
+- Tách tiêu đề và hàng thao tác, sửa KPI/filter/search responsive, bổ sung báo lỗi tải từng nền tảng và nút thử lại. Bỏ giới hạn tra cứu ghi cứng và câu khẳng định chống khóa khỏi tổng quan; không thay cấu hình giới hạn thực tế.
+- Browser fixture QA pass ở 1440/1280/768/390px cùng loading/empty/error/search/filter/action visibility. Frontend typecheck/build pass; lint chưa chạy được vì thiếu config sẵn có.
+
+## 2026-11-20 — LINE 404 sau quét QR
+
+- Dùng standard HTTPS Thrift thay cho gateway `/enc` đang trả empty 404 (linejs #280), áp dụng QR, restore session và Talk; giữ TLS/Letter Sealing, không retry gửi tin.
+- Giữ request timeout khi kết hợp cancellation, bật HTTP/2 cho PUSH và sửa native Request/proxy compatibility; hủy dispatcher cùng connection. Khai báo dependency trực tiếp `undici@7.30.1`.
+- Thêm 4 regression cases; 65/65 tests liên quan và backend typecheck/build pass. Kiểm chứng SDK thật với token giả và loopback HTTP/2 duplex trực tiếp/qua proxy. Đăng nhập QR/PIN và trao đổi tin nhắn trên điện thoại vẫn cần kiểm chứng sau sửa.
+
 ## 2026-11-19 — Zalo/LINE QR, listener và realtime
 
 - Tạo ảnh QR LINE nội bộ với `qrcode@1.5.4`, truyền lỗi/timeout về UI, hủy transport và chặn callback của phiên QR cũ. Không chuyển URL đăng nhập sang dịch vụ tạo ảnh ngoài.
@@ -270,3 +327,10 @@
 - Tổ chức lại `docs/` theo nhóm `product/`, `architecture/`, `ui/`, `api/`, `delivery/`, `phases/`, `decisions/`, `templates/`, `data/` để giảm file rải ở root.
 - Bỏ `CLAUDE.md`; `Agent.md` + `.antigravityrules` là entrypoint cho AI coding trong project này.
 - Gộp checklist chuẩn bị và pre-code vào `docs/delivery/checklists.md`.
+# 2026-11-20 — Tách nhóm chăm sóc Kaiwa/JLPT
+
+- Thêm `program_type` và unique scope theo chương trình cho quan hệ Zalo/LINE; migration giữ nguyên dữ liệu legacy.
+- Thêm engine mẫu tên và AppSetting có audit, preview, optimistic update; Admin/Manage mới được lưu.
+- Matcher tạo coverage theo học viên + chương trình + CSKH, giữ manual, báo trùng để chọn thủ công, không dùng trình độ để chọn nhóm.
+- Cô lập automation send target theo chương trình và kiểm tra lại group relation ngay trước gửi.
+- Đồng bộ bảng Liên kết học viên/Danh bạ nhóm, filter chương trình và responsive table contract; QA local không gửi tin thật.

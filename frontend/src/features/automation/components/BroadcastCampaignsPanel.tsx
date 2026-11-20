@@ -737,7 +737,7 @@ export const BroadcastCampaignsPanel: React.FC<BroadcastCampaignsPanelProps> = (
 
   const columns: Column<BroadcastCampaign>[] = [
     {
-      header: 'Tên chiến dịch & Nội dung mẫu',
+      align: 'left' as const, wrap: true, header: 'Chiến dịch / Nội dung mẫu',
       cell: (item) => {
         const meta = item.message_metadata;
         const urgency = meta?.urgency ?? 0;
@@ -774,7 +774,7 @@ export const BroadcastCampaignsPanel: React.FC<BroadcastCampaignsPanelProps> = (
               )}
             </div>
             {item.description && (
-              <div className="text-xs text-text-secondary mt-0.5 line-clamp-1">
+              <div title={String(item.description ?? '')} className="text-xs text-text-secondary mt-0.5 line-clamp-1">
                 {item.description}
               </div>
             )}
@@ -786,7 +786,7 @@ export const BroadcastCampaignsPanel: React.FC<BroadcastCampaignsPanelProps> = (
       },
     },
     {
-      header: 'Kênh & Chế độ phát',
+      align: 'center' as const, wrap: false, header: 'Kênh & Chế độ phát',
       cell: (item) => {
         const modeLabel =
           BROADCAST_CHANNEL_MODE_LABELS[item.channel_mode] || item.channel_mode;
@@ -837,7 +837,7 @@ export const BroadcastCampaignsPanel: React.FC<BroadcastCampaignsPanelProps> = (
       },
     },
     {
-      header: 'Tiến độ gửi (sent / total)',
+      align: 'right' as const, wrap: false, header: 'Đã gửi / Tổng số',
       cell: (item) => {
         const total = Math.max(Number(item.total_recipients) || 0, 0);
         const sent = Math.max(Number(item.sent_count) || 0, 0);
@@ -899,7 +899,7 @@ export const BroadcastCampaignsPanel: React.FC<BroadcastCampaignsPanelProps> = (
       },
     },
     {
-      header: 'Trạng thái',
+      align: 'center' as const, wrap: false, header: 'Trạng thái',
       cell: (item) => {
         const st = BROADCAST_STATUS_LABELS[item.status] || {
           label: item.status,
@@ -913,7 +913,7 @@ export const BroadcastCampaignsPanel: React.FC<BroadcastCampaignsPanelProps> = (
       },
     },
     {
-      header: 'Thao tác',
+      align: 'center' as const, wrap: false, header: 'Thao tác',
       className: 'text-right',
       cell: (item) => {
         const isBusy = actionLoadingId === item.id;
@@ -1339,7 +1339,7 @@ export const BroadcastCampaignsPanel: React.FC<BroadcastCampaignsPanelProps> = (
                       }`}
                     >
                       <div className="text-xs font-bold text-text-primary">{opt.title}</div>
-                      <div className="text-[11px] text-text-muted mt-0.5 line-clamp-1">
+                      <div title={String(opt.desc ?? '')} className="text-[11px] text-text-muted mt-0.5 line-clamp-1">
                         {opt.desc}
                       </div>
                     </button>
@@ -1960,7 +1960,7 @@ export const BroadcastCampaignsPanel: React.FC<BroadcastCampaignsPanelProps> = (
                         ) : (
                           <FileText className="w-4 h-4 text-primary" />
                         )}
-                        <span className="font-semibold truncate max-w-[180px]">
+                        <span title={String(att.filename ?? '')} className="font-semibold truncate max-w-[180px]">
                           {att.filename}
                         </span>
                         {att.size > 0 && (

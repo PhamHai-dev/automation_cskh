@@ -1,22 +1,23 @@
 import { apiClient } from '../../../api/client';
-import type { ZaloAccount, CreateZaloAccountDTO, UpdateZaloAccountDTO, QrLoginResult, ZaloFriend, ZaloGroupInfo } from '../types/zalo.types';
+import type { ZaloAccount, ZaloAccountStatus, CreateZaloAccountDTO, UpdateZaloAccountDTO, QrLoginResult, ZaloFriend, ZaloGroupInfo } from '../types/zalo.types';
+import { normalizeZaloAccount, normalizeZaloStatus } from '../utils/zaloAccountStatus';
 
 export const zaloApi = {
   listAccounts: async (): Promise<ZaloAccount[]> => {
     const res = await apiClient.get('/zalo/accounts');
-    return res.data.data;
+    return (res.data.data as ZaloAccount[]).map(normalizeZaloAccount);
   },
   getAccount: async (id: number): Promise<ZaloAccount> => {
     const res = await apiClient.get(`/zalo/accounts/${id}`);
-    return res.data.data;
+    return normalizeZaloAccount(res.data.data);
   },
   createAccount: async (data: CreateZaloAccountDTO): Promise<ZaloAccount> => {
     const res = await apiClient.post('/zalo/accounts', data);
-    return res.data.data;
+    return normalizeZaloAccount(res.data.data);
   },
   updateAccount: async (id: number, data: UpdateZaloAccountDTO): Promise<ZaloAccount> => {
     const res = await apiClient.patch(`/zalo/accounts/${id}`, data);
-    return res.data.data;
+    return normalizeZaloAccount(res.data.data);
   },
   removeAccount: async (id: number): Promise<{ deleted: boolean }> => {
     const res = await apiClient.delete(`/zalo/accounts/${id}`);
@@ -33,9 +34,16 @@ export const zaloApi = {
     const res = await apiClient.post(`/zalo/accounts/${accountId}/qr-login/complete`, data);
     return res.data.data;
   },
-  getStatus: async (accountId: number): Promise<{ status: string; liveStatus: string | null }> => {
+  getStatus: async (accountId: number): Promise<{ status: ZaloAccountStatus; liveStatus: ZaloAccountStatus | null }> => {
     const res = await apiClient.get(`/zalo/accounts/${accountId}/status`);
-    return res.data.data;
+    const result = res.data.data;
+    const status = normalizeZaloStatus(result.status) ?? 'ERROR';
+    return {
+      status,
+      liveStatus: status === 'DISABLED' || status === 'BANNED'
+        ? status
+        : normalizeZaloStatus(result.liveStatus),
+    };
   },
   getFriends: async (accountId: number): Promise<ZaloFriend[]> => {
     const res = await apiClient.get(`/zalo/accounts/${accountId}/friends`);
@@ -104,6 +112,7 @@ export const zaloApi = {
   },
 
   createStudentLink: async (data: {
+    program_type?: 'ALL' | 'KAIWA' | 'JLPT';
     student_id: number;
     zalo_account_id: number;
     zalo_group_id?: number | null;

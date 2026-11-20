@@ -191,7 +191,7 @@ export const AutomationWorkflowsPage: React.FC = () => {
 
   const columns: Column<AutomationWorkflow>[] = [
     {
-      header: 'Kịch bản tự động',
+      align: 'left' as const, wrap: true, header: 'Kịch bản tự động',
       cell: (item) => (
         <button
           className="text-left flex items-start gap-3 group"
@@ -212,7 +212,7 @@ export const AutomationWorkflowsPage: React.FC = () => {
       ),
     },
     {
-      header: 'Cụm trigger',
+      align: 'center' as const, wrap: false, header: 'Điều kiện kích hoạt',
       cell: (item) => (
         <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-text-secondary">
           <ListChecks className="w-3.5 h-3.5 text-primary" />
@@ -221,7 +221,7 @@ export const AutomationWorkflowsPage: React.FC = () => {
       ),
     },
     {
-      header: isAdminOrManage ? 'Học viên áp dụng' : 'Học viên của bạn',
+      align: 'right' as const, wrap: false, header: isAdminOrManage ? 'Học viên áp dụng' : 'Học viên của bạn',
       cell: (item) => (
         <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-text-secondary">
           <Users className="w-3.5 h-3.5 text-primary" />
@@ -232,7 +232,7 @@ export const AutomationWorkflowsPage: React.FC = () => {
     ...(isAdminOrManage
       ? [
           {
-            header: 'CSKH được phân quyền',
+            align: 'left' as const, wrap: true, header: 'CSKH được phân quyền',
             cell: (item: AutomationWorkflow) => {
               const assignedUsers = item.assigned_cs_users ?? [];
               if (assignedUsers.length === 0) {
@@ -261,7 +261,7 @@ export const AutomationWorkflowsPage: React.FC = () => {
         ]
       : []),
     {
-      header: 'Trạng thái',
+      align: 'center' as const, wrap: false, header: 'Trạng thái',
       cell: (item) => (
         <span
           className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold ${
@@ -280,11 +280,11 @@ export const AutomationWorkflowsPage: React.FC = () => {
       ),
     },
     {
-      header: 'Cập nhật',
+      align: 'center' as const, wrap: false, header: 'Cập nhật',
       cell: (item) => new Date(item.updated_at).toLocaleDateString('vi-VN'),
     },
     {
-      header: 'Thao tác',
+      align: 'center' as const, wrap: false, header: 'Thao tác',
       className: 'text-right',
       cell: (item) =>
         isAdminOrManage ? (

@@ -1,4 +1,5 @@
 node_modules/
+/scratch/db-recovery-*/
 dist/
 build/
 .env

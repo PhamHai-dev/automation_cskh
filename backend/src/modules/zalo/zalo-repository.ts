@@ -68,7 +68,7 @@ export class ZaloRepository {
   async findContactRelation(studentId: number, zaloAccountId: number) {
     return prisma.zaloContactRelation.findUnique({
       where: {
-        student_id_zalo_account_id: { student_id: studentId, zalo_account_id: zaloAccountId },
+        student_id_zalo_account_id: { student_id: studentId, zalo_account_id: zaloAccountId, program_type: 'ALL' },
       },
     });
   }
@@ -81,7 +81,7 @@ export class ZaloRepository {
   }) {
     return prisma.zaloContactRelation.upsert({
       where: {
-        student_id_zalo_account_id: { student_id: studentId, zalo_account_id: zaloAccountId },
+        student_id_zalo_account_id: { student_id: studentId, zalo_account_id: zaloAccountId, program_type: 'ALL' },
       },
       create: { student_id: studentId, zalo_account_id: zaloAccountId, ...data },
       update: data,

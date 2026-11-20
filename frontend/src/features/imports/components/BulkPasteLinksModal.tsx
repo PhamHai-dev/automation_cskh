@@ -462,22 +462,22 @@ export const BulkPasteLinksModal: React.FC<BulkPasteLinksModalProps> = ({
             </div>
 
             <div className="max-h-60 overflow-y-auto rounded-xl border border-slate-200">
-              <table className="w-full text-left border-collapse text-xs">
+              <table data-table="native" className="w-full text-left border-collapse text-xs">
                 <thead className="bg-slate-50 border-b border-slate-200 sticky top-0">
                   <tr className="text-[11px] font-semibold text-slate-500 uppercase">
-                    <th className="py-2 px-3 w-14">Dòng</th>
-                    <th className="py-2 px-3">Mã HV / Lớp / GV</th>
-                    <th className="py-2 px-3">Link Google Sheet</th>
-                    <th className="py-2 px-3">Trạng thái kiểm tra</th>
+                    <th scope="col" className="py-2 px-3 w-14">Dòng</th>
+                    <th scope="col" className="py-2 px-3">Mã HV / Lớp / GV</th>
+                    <th scope="col" className="py-2 px-3">Link Google Sheet</th>
+                    <th scope="col" className="py-2 px-3">Trạng thái kiểm tra</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {validationResult.items.map((item) => (
                     <tr key={item.lineNumber} className="hover:bg-slate-50/70">
-                      <td className="py-2 px-3 font-mono text-slate-500">
+                      <td data-align="center" data-wrap="nowrap" className="py-2 px-3 font-mono text-slate-500">
                         #{item.lineNumber}
                       </td>
-                      <td className="py-2 px-3 font-semibold text-slate-800">
+                      <td data-align="left" data-wrap="normal" className="py-2 px-3 font-semibold text-slate-800">
                         {item.studentExternalId || item.classCode ? (
                           <span>
                             {item.studentExternalId || item.classCode}
@@ -489,10 +489,10 @@ export const BulkPasteLinksModal: React.FC<BulkPasteLinksModalProps> = ({
                           </span>
                         )}
                       </td>
-                      <td className="py-2 px-3 font-mono text-[11px] text-slate-600 truncate max-w-[260px]">
+                      <td data-align="left" data-wrap="normal" className="py-2 px-3 font-mono text-[11px] text-slate-600 truncate max-w-[260px]">
                         {item.spreadsheetUrl || item.rawLine}
                       </td>
-                      <td className="py-2 px-3">
+                      <td data-align="center" data-wrap="nowrap" className="py-2 px-3">
                         {item.status === 'VALID' ? (
                           <span className="inline-flex items-center gap-1 text-emerald-700 font-semibold">
                             <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />

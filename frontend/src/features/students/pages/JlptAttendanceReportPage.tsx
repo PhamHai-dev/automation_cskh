@@ -298,129 +298,129 @@ export const JlptChuyenCanTable: React.FC<JlptChuyenCanTableProps> = ({
 
   return (
     <div className="w-full overflow-x-auto">
-      <table className="w-full text-xs text-left border-collapse">
+      <table data-table="native" className="w-full text-xs text-left border-collapse">
         <thead>
           {/* Row 1: Group Headers (giống dòng 3 sheet Chuyên cần HV) */}
           <tr className="bg-slate-100 text-text-secondary border-b border-border/80 text-[11px] font-bold uppercase tracking-wider text-center">
-            <th
+            <th scope="colgroup"
               colSpan={3}
               className="sticky left-0 z-30 bg-slate-100 border-r-2 border-border/80 px-3 py-2 text-slate-800 shadow-[2px_0_4px_-1px_rgba(0,0,0,0.06)]"
             >
               Học viên
             </th>
-            <th
+            <th scope="colgroup"
               colSpan={3}
               className="bg-blue-50/80 text-blue-900 border-r border-border/80 px-3 py-2"
             >
               A. CHUYÊN CẦN
             </th>
-            <th
+            <th scope="colgroup"
               colSpan={2}
               className="bg-indigo-50/80 text-indigo-900 border-r border-border/80 px-3 py-2"
             >
               B. BÀI TẬP VỀ NHÀ
             </th>
-            <th
+            <th scope="colgroup"
               colSpan={4}
               className="bg-amber-50/80 text-amber-900 border-r border-border/80 px-3 py-2"
             >
               C. CẢNH BÁO LIÊN TIẾP
             </th>
-            <th colSpan={4} className="bg-slate-100 border-r border-border/80 px-3 py-2" />
-            <th colSpan={7} className="bg-teal-50/70 text-teal-900 px-3 py-2" />
+            <th scope="colgroup" colSpan={4} className="bg-slate-100 border-r border-border/80 px-3 py-2" />
+            <th scope="colgroup" colSpan={7} className="bg-teal-50/70 text-teal-900 px-3 py-2" />
           </tr>
 
           {/* Row 2: 22 Column Headers (giống dòng 4 sheet Chuyên cần HV) */}
           <tr className="bg-surface-muted/90 text-text-secondary border-b border-border/80 text-[11px] font-bold text-center">
-            <th className="sticky left-0 z-30 px-2 py-3 border-r border-border/60 bg-slate-100 w-10 min-w-[40px] max-w-[40px] whitespace-nowrap">
+            <th scope="col" className="sticky left-0 z-30 px-2 py-3 border-r border-border/60 bg-slate-100 w-10 min-w-[40px] max-w-[40px] whitespace-nowrap">
               #
             </th>
             {/* 1. Mã lớp */}
-            <th className="sticky left-10 z-30 px-3 py-3 border-r border-border/60 bg-slate-100 text-left w-[115px] min-w-[115px] max-w-[115px] whitespace-nowrap">
+            <th scope="col" className="sticky left-10 z-30 px-3 py-3 border-r border-border/60 bg-slate-100 w-[115px] min-w-[115px] max-w-[115px] whitespace-nowrap">
               Mã lớp
             </th>
             {/* 2. Họ và tên */}
-            <th className="sticky left-[155px] z-30 px-3 py-3 border-r-2 border-border/80 bg-slate-100 text-left w-[185px] min-w-[185px] max-w-[185px] whitespace-nowrap shadow-[2px_0_4px_-1px_rgba(0,0,0,0.06)]">
+            <th scope="col" className="sticky left-[155px] z-30 px-3 py-3 border-r-2 border-border/80 bg-slate-100 w-[185px] min-w-[185px] max-w-[185px] whitespace-nowrap shadow-[2px_0_4px_-1px_rgba(0,0,0,0.06)]">
               Họ và tên
             </th>
             {/* 3. Số buổi tham gia */}
-            <th className="px-3 py-3 border-r border-border/60 min-w-[110px] whitespace-nowrap">
+            <th scope="col" className="px-3 py-3 border-r border-border/60 min-w-[110px] whitespace-nowrap">
               Số buổi tham gia
             </th>
             {/* 4. Tổng số buổi đã điểm danh */}
-            <th className="px-3 py-3 border-r border-border/60 min-w-[140px] whitespace-nowrap">
+            <th scope="col" className="px-3 py-3 border-r border-border/60 min-w-[140px] whitespace-nowrap">
               Tổng số buổi đã điểm danh
             </th>
             {/* 5. Tỷ lệ tham gia */}
-            <th className="px-3 py-3 border-r border-border/80 min-w-[105px] whitespace-nowrap">
+            <th scope="col" className="px-3 py-3 border-r border-border/80 min-w-[105px] whitespace-nowrap">
               Tỷ lệ tham gia
             </th>
             {/* 6. Điểm KT trung bình */}
-            <th className="px-3 py-3 border-r border-border/60 min-w-[120px] whitespace-nowrap">
+            <th scope="col" className="px-3 py-3 border-r border-border/60 min-w-[120px] whitespace-nowrap">
               Điểm KT trung bình
             </th>
             {/* 7. Số buổi đã làm bài */}
-            <th className="px-3 py-3 border-r border-border/80 min-w-[120px] whitespace-nowrap">
+            <th scope="col" className="px-3 py-3 border-r border-border/80 min-w-[120px] whitespace-nowrap">
               Số buổi đã làm bài
             </th>
             {/* 8. Chuỗi vắng liên tiếp tối đa */}
-            <th className="px-3 py-3 border-r border-border/60 min-w-[145px] whitespace-nowrap">
+            <th scope="col" className="px-3 py-3 border-r border-border/60 min-w-[145px] whitespace-nowrap">
               Chuỗi vắng liên tiếp tối đa
             </th>
             {/* 9. Cảnh báo vắng (≥2 buổi) */}
-            <th className="px-3 py-3 border-r border-border/60 min-w-[155px] whitespace-nowrap">
+            <th scope="col" className="px-3 py-3 border-r border-border/60 min-w-[155px] whitespace-nowrap">
               Cảnh báo vắng (≥2 buổi)
             </th>
             {/* 10. Chuỗi không làm bài liên tiếp tối đa */}
-            <th className="px-3 py-3 border-r border-border/60 min-w-[175px] whitespace-nowrap">
+            <th scope="col" className="px-3 py-3 border-r border-border/60 min-w-[175px] whitespace-nowrap">
               Chuỗi không làm bài liên tiếp tối đa
             </th>
             {/* 11. Cảnh báo không làm bài (≥2 buổi) */}
-            <th className="px-3 py-3 border-r border-border/80 min-w-[175px] whitespace-nowrap">
+            <th scope="col" className="px-3 py-3 border-r border-border/80 min-w-[175px] whitespace-nowrap">
               Cảnh báo không làm bài (≥2 buổi)
             </th>
             {/* 12. Thông tin trao đổi với HV */}
-            <th className="px-3 py-3 border-r border-border/60 text-left min-w-[210px] whitespace-nowrap">
+            <th scope="col" className="px-3 py-3 border-r border-border/60 min-w-[210px] whitespace-nowrap">
               Thông tin trao đổi với HV
             </th>
             {/* 13. Trạng Thái */}
-            <th className="px-3 py-3 border-r border-border/60 min-w-[115px] whitespace-nowrap">
-              Trạng Thái
+            <th scope="col" className="px-3 py-3 border-r border-border/60 min-w-[115px] whitespace-nowrap">
+              Trạng thái
             </th>
             {/* 14. CVHT */}
-            <th className="px-3 py-3 border-r border-border/60 min-w-[90px] whitespace-nowrap">
+            <th scope="col" className="px-3 py-3 border-r border-border/60 min-w-[90px] whitespace-nowrap">
               CVHT
             </th>
             {/* 15. Khoá */}
-            <th className="px-3 py-3 border-r border-border/80 min-w-[95px] whitespace-nowrap">
+            <th scope="col" className="px-3 py-3 border-r border-border/80 min-w-[95px] whitespace-nowrap">
               Khoá
             </th>
             {/* 16. KT gần nhất (đã qua) */}
-            <th className="px-3 py-3 border-r border-border/60 min-w-[115px] whitespace-nowrap">
+            <th scope="col" className="px-3 py-3 border-r border-border/60 min-w-[115px] whitespace-nowrap">
               KT gần nhất (đã qua)
             </th>
             {/* 17. Buổi KT gần nhất */}
-            <th className="px-3 py-3 border-r border-border/60 min-w-[110px] whitespace-nowrap">
+            <th scope="col" className="px-3 py-3 border-r border-border/60 min-w-[110px] whitespace-nowrap">
               Buổi KT gần nhất
             </th>
             {/* 18. Cách đây (buổi) */}
-            <th className="px-3 py-3 border-r border-border/60 min-w-[105px] whitespace-nowrap">
+            <th scope="col" className="px-3 py-3 border-r border-border/60 min-w-[105px] whitespace-nowrap">
               Cách đây (buổi)
             </th>
             {/* 19. KT tiếp theo */}
-            <th className="px-3 py-3 border-r border-border/60 min-w-[105px] whitespace-nowrap">
+            <th scope="col" className="px-3 py-3 border-r border-border/60 min-w-[105px] whitespace-nowrap">
               KT tiếp theo
             </th>
             {/* 20. Buổi KT tiếp theo */}
-            <th className="px-3 py-3 border-r border-border/60 min-w-[110px] whitespace-nowrap">
+            <th scope="col" className="px-3 py-3 border-r border-border/60 min-w-[110px] whitespace-nowrap">
               Buổi KT tiếp theo
             </th>
             {/* 21. Còn (buổi) */}
-            <th className="px-3 py-3 border-r border-border/60 min-w-[90px] whitespace-nowrap">
+            <th scope="col" className="px-3 py-3 border-r border-border/60 min-w-[90px] whitespace-nowrap">
               Còn (buổi)
             </th>
             {/* 22. Cảnh báo lịch KT */}
-            <th className="px-3 py-3 min-w-[230px] whitespace-nowrap">
+            <th scope="col" className="px-3 py-3 min-w-[230px] whitespace-nowrap">
               Cảnh báo lịch KT
             </th>
           </tr>
@@ -438,21 +438,21 @@ export const JlptChuyenCanTable: React.FC<JlptChuyenCanTableProps> = ({
                 }`}
               >
                 {/* # */}
-                <td
+                <td data-align="center" data-wrap="nowrap"
                   className={`sticky left-0 z-20 ${stickyBg} px-2 py-2.5 border-r border-border/60 text-center text-text-muted font-bold w-10 min-w-[40px]`}
                 >
                   {startIndex + rIdx + 1}
                 </td>
 
                 {/* 1. Mã lớp */}
-                <td
+                <td data-align="center" data-wrap="nowrap"
                   className={`sticky left-10 z-20 ${stickyBg} px-3 py-2.5 border-r border-border/60 font-mono font-bold text-indigo-700 whitespace-nowrap w-[115px] min-w-[115px] max-w-[115px] overflow-hidden`}
                 >
                   {row.class_code || '—'}
                 </td>
 
                 {/* 2. Họ và tên */}
-                <td
+                <td data-align="left" data-wrap="normal"
                   className={`sticky left-[155px] z-20 ${stickyBg} px-3 py-2.5 border-r-2 border-border/80 w-[185px] min-w-[185px] max-w-[185px] shadow-[2px_0_4px_-1px_rgba(0,0,0,0.06)] overflow-hidden`}
                 >
                   <div className="flex items-center justify-between gap-1">
@@ -482,12 +482,12 @@ export const JlptChuyenCanTable: React.FC<JlptChuyenCanTableProps> = ({
                 </td>
 
                 {/* 3. Số buổi tham gia */}
-                <td className="px-2 py-2 border-r border-border/60 text-center">
+                <td data-align="right" data-wrap="nowrap" className="px-2 py-2 border-r border-border/60 text-center">
                   <InlineEditCell
                     value={row.attended_sessions}
                     type="number"
                     min={0}
-                    align="center"
+                    align="right"
                     disabled={row.is_readonly}
                     onSave={(val) =>
                       onUpdateRow(row, {
@@ -500,12 +500,12 @@ export const JlptChuyenCanTable: React.FC<JlptChuyenCanTableProps> = ({
                 </td>
 
                 {/* 4. Tổng số buổi đã điểm danh */}
-                <td className="px-2 py-2 border-r border-border/60 text-center">
+                <td data-align="right" data-wrap="nowrap" className="px-2 py-2 border-r border-border/60 text-center">
                   <InlineEditCell
                     value={row.total_marked_sessions}
                     type="number"
                     min={0}
-                    align="center"
+                    align="right"
                     disabled={row.is_readonly}
                     onSave={(val) =>
                       onUpdateRow(row, {
@@ -518,19 +518,19 @@ export const JlptChuyenCanTable: React.FC<JlptChuyenCanTableProps> = ({
                 </td>
 
                 {/* 5. Tỷ lệ tham gia */}
-                <td className="px-3 py-2.5 border-r border-border/80 text-center">
+                <td data-align="right" data-wrap="nowrap" className="px-3 py-2.5 border-r border-border/80 text-center">
                   {renderAttendanceRateCell(row.attendance_rate)}
                 </td>
 
                 {/* 6. Điểm KT trung bình */}
-                <td className="px-2 py-2 border-r border-border/60 text-center">
+                <td data-align="right" data-wrap="nowrap" className="px-2 py-2 border-r border-border/60 text-center">
                   <InlineEditCell
                     value={row.average_exam_score}
                     type="number"
                     step="0.1"
                     min={0}
                     max={100}
-                    align="center"
+                    align="right"
                     disabled={row.is_readonly}
                     onSave={(val) =>
                       onUpdateRow(row, {
@@ -543,12 +543,12 @@ export const JlptChuyenCanTable: React.FC<JlptChuyenCanTableProps> = ({
                 </td>
 
                 {/* 7. Số buổi đã làm bài */}
-                <td className="px-2 py-2 border-r border-border/80 text-center">
+                <td data-align="right" data-wrap="nowrap" className="px-2 py-2 border-r border-border/80 text-center">
                   <InlineEditCell
                     value={row.homework_completed_sessions}
                     type="number"
                     min={0}
-                    align="center"
+                    align="right"
                     disabled={row.is_readonly}
                     onSave={(val) =>
                       onUpdateRow(row, {
@@ -561,12 +561,12 @@ export const JlptChuyenCanTable: React.FC<JlptChuyenCanTableProps> = ({
                 </td>
 
                 {/* 8. Chuỗi vắng liên tiếp tối đa */}
-                <td className="px-2 py-2 border-r border-border/60 text-center">
+                <td data-align="right" data-wrap="nowrap" className="px-2 py-2 border-r border-border/60 text-center">
                   <InlineEditCell
                     value={row.max_consecutive_absent}
                     type="number"
                     min={0}
-                    align="center"
+                    align="right"
                     disabled={row.is_readonly}
                     onSave={(val) =>
                       onUpdateRow(row, {
@@ -579,7 +579,7 @@ export const JlptChuyenCanTable: React.FC<JlptChuyenCanTableProps> = ({
                 </td>
 
                 {/* 9. Cảnh báo vắng (≥2 buổi) */}
-                <td className="px-3 py-2.5 border-r border-border/60 text-center">
+                <td data-align="center" data-wrap="nowrap" className="px-3 py-2.5 border-r border-border/60 text-center">
                   {row.absent_warning ? (
                     <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-rose-50 text-rose-700 border border-rose-200 whitespace-nowrap">
                       {row.absent_warning}
@@ -590,12 +590,12 @@ export const JlptChuyenCanTable: React.FC<JlptChuyenCanTableProps> = ({
                 </td>
 
                 {/* 10. Chuỗi không làm bài liên tiếp tối đa */}
-                <td className="px-2 py-2 border-r border-border/60 text-center">
+                <td data-align="right" data-wrap="nowrap" className="px-2 py-2 border-r border-border/60 text-center">
                   <InlineEditCell
                     value={row.max_consecutive_no_homework}
                     type="number"
                     min={0}
-                    align="center"
+                    align="right"
                     disabled={row.is_readonly}
                     onSave={(val) =>
                       onUpdateRow(row, {
@@ -608,7 +608,7 @@ export const JlptChuyenCanTable: React.FC<JlptChuyenCanTableProps> = ({
                 </td>
 
                 {/* 11. Cảnh báo không làm bài (≥2 buổi) */}
-                <td className="px-3 py-2.5 border-r border-border/80 text-center">
+                <td data-align="center" data-wrap="nowrap" className="px-3 py-2.5 border-r border-border/80 text-center">
                   {row.no_homework_warning ? (
                     <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-50 text-amber-800 border border-amber-200 whitespace-nowrap">
                       {row.no_homework_warning}
@@ -619,7 +619,7 @@ export const JlptChuyenCanTable: React.FC<JlptChuyenCanTableProps> = ({
                 </td>
 
                 {/* 12. Thông tin trao đổi với HV */}
-                <td className="px-2.5 py-2 border-r border-border/60">
+                <td data-align="left" data-wrap="normal" className="px-2.5 py-2 border-r border-border/60">
                   <InlineEditCell
                     value={row.exchange_info}
                     multiline
@@ -634,7 +634,7 @@ export const JlptChuyenCanTable: React.FC<JlptChuyenCanTableProps> = ({
                 </td>
 
                 {/* 13. Trạng Thái */}
-                <td className="px-2 py-2 border-r border-border/60 text-center">
+                <td data-align="center" data-wrap="nowrap" className="px-2 py-2 border-r border-border/60 text-center">
                   <select
                     disabled={row.is_readonly}
                     value={row.status || 'STUDYING'}
@@ -657,7 +657,7 @@ export const JlptChuyenCanTable: React.FC<JlptChuyenCanTableProps> = ({
                 </td>
 
                 {/* 14. CVHT */}
-                <td className="px-3 py-2.5 border-r border-border/60 text-center">
+                <td data-align="center" data-wrap="nowrap" className="px-3 py-2.5 border-r border-border/60 text-center">
                   <span
                     className="inline-block font-mono font-bold text-[11px] text-blue-800 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded whitespace-nowrap"
                     title={row.cs_name || row.cvht_code}
@@ -667,24 +667,24 @@ export const JlptChuyenCanTable: React.FC<JlptChuyenCanTableProps> = ({
                 </td>
 
                 {/* 15. Khoá */}
-                <td className="px-3 py-2.5 border-r border-border/80 text-center font-mono font-semibold text-teal-800 whitespace-nowrap">
+                <td data-align="center" data-wrap="nowrap" className="px-3 py-2.5 border-r border-border/80 text-center font-mono font-semibold text-teal-800 whitespace-nowrap">
                   {row.course_track || '—'}
                 </td>
 
                 {/* 16. KT gần nhất (đã qua) */}
-                <td className="px-3 py-2.5 border-r border-border/60 text-center font-semibold text-text-primary whitespace-nowrap">
+                <td data-align="left" data-wrap="normal" className="px-3 py-2.5 border-r border-border/60 text-center font-semibold text-text-primary whitespace-nowrap">
                   {row.last_exam_name || '—'}
                 </td>
 
                 {/* 17. Buổi KT gần nhất */}
-                <td className="px-3 py-2.5 border-r border-border/60 text-center font-mono text-text-secondary whitespace-nowrap">
+                <td data-align="right" data-wrap="nowrap" className="px-3 py-2.5 border-r border-border/60 text-center font-mono text-text-secondary whitespace-nowrap">
                   {row.last_exam_session !== null && row.last_exam_session !== undefined
                     ? row.last_exam_session
                     : '—'}
                 </td>
 
                 {/* 18. Cách đây (buổi) */}
-                <td className="px-3 py-2.5 border-r border-border/60 text-center font-mono text-text-secondary whitespace-nowrap">
+                <td data-align="right" data-wrap="nowrap" className="px-3 py-2.5 border-r border-border/60 text-center font-mono text-text-secondary whitespace-nowrap">
                   {row.sessions_since_last_exam !== null &&
                   row.sessions_since_last_exam !== undefined
                     ? row.sessions_since_last_exam
@@ -692,19 +692,19 @@ export const JlptChuyenCanTable: React.FC<JlptChuyenCanTableProps> = ({
                 </td>
 
                 {/* 19. KT tiếp theo */}
-                <td className="px-3 py-2.5 border-r border-border/60 text-center font-semibold text-indigo-700 whitespace-nowrap">
+                <td data-align="left" data-wrap="normal" className="px-3 py-2.5 border-r border-border/60 text-center font-semibold text-indigo-700 whitespace-nowrap">
                   {row.next_exam_name || '—'}
                 </td>
 
                 {/* 20. Buổi KT tiếp theo */}
-                <td className="px-3 py-2.5 border-r border-border/60 text-center font-mono text-text-secondary whitespace-nowrap">
+                <td data-align="right" data-wrap="nowrap" className="px-3 py-2.5 border-r border-border/60 text-center font-mono text-text-secondary whitespace-nowrap">
                   {row.next_exam_session !== null && row.next_exam_session !== undefined
                     ? row.next_exam_session
                     : '—'}
                 </td>
 
                 {/* 21. Còn (buổi) */}
-                <td className="px-3 py-2.5 border-r border-border/60 text-center font-mono font-bold text-text-primary whitespace-nowrap">
+                <td data-align="right" data-wrap="nowrap" className="px-3 py-2.5 border-r border-border/60 text-center font-mono font-bold text-text-primary whitespace-nowrap">
                   {row.sessions_until_next_exam !== null &&
                   row.sessions_until_next_exam !== undefined
                     ? row.sessions_until_next_exam
@@ -712,7 +712,7 @@ export const JlptChuyenCanTable: React.FC<JlptChuyenCanTableProps> = ({
                 </td>
 
                 {/* 22. Cảnh báo lịch KT */}
-                <td className="px-3 py-2.5 text-center whitespace-nowrap">
+                <td data-align="center" data-wrap="nowrap" className="px-3 py-2.5 text-center whitespace-nowrap">
                   {renderExamWarningBadge(row.exam_schedule_warning)}
                 </td>
               </tr>

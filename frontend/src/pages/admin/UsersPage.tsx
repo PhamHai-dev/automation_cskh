@@ -181,7 +181,7 @@ export const UsersPage: React.FC = () => {
 
   const columns: Column<User>[] = [
     {
-      header: 'Mã NV / ID',
+      align: 'center' as const, wrap: false, header: 'Mã nhân viên / ID',
       cell: (item) => {
         const displayCode = item.code || item.staff_code;
         return displayCode ? (
@@ -194,7 +194,7 @@ export const UsersPage: React.FC = () => {
       },
     },
     {
-      header: 'Họ tên & Email',
+      align: 'left' as const, wrap: true, header: 'Họ và tên / Email',
       cell: (item) => (
         <div className="flex items-center space-x-3">
           <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-xs">
@@ -211,7 +211,7 @@ export const UsersPage: React.FC = () => {
       ),
     },
     {
-      header: 'Vai trò',
+      align: 'center' as const, wrap: false, header: 'Vai trò',
       cell: (item) => (
         <div className="flex flex-wrap gap-1">
           {item.roles.map((role) => (
@@ -223,7 +223,7 @@ export const UsersPage: React.FC = () => {
       ),
     },
     {
-      header: 'Trạng thái',
+      align: 'center' as const, wrap: false, header: 'Trạng thái',
       cell: (item) => (
         <Badge variant={item.active ? 'success' : 'danger'}>
           {item.active ? 'Đang hoạt động' : 'Đã khóa'}
@@ -231,7 +231,7 @@ export const UsersPage: React.FC = () => {
       ),
     },
     {
-      header: 'Lần đăng nhập cuối',
+      align: 'center' as const, wrap: false, header: 'Lần đăng nhập cuối',
       cell: (item) => (
         <span className="text-xs text-slate-500">
           {item.last_login_at ? new Date(item.last_login_at).toLocaleString('vi-VN') : 'Chưa từng đăng nhập'}
@@ -239,7 +239,7 @@ export const UsersPage: React.FC = () => {
       ),
     },
     {
-      header: 'Thao tác',
+      align: 'center' as const, wrap: false, header: 'Thao tác',
       className: 'text-right',
       cell: (item) => (
         <div className="flex justify-end items-center gap-1">

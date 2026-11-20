@@ -6,7 +6,7 @@ import { prisma } from '../../src/prisma/client';
 import { setupIo, closeIo, emitToAccount } from '../../src/shared/realtime/socket-singleton';
 import { registerZaloSocketHandlers } from '../../src/modules/zalo/zalo-socket';
 import { registerLineSocketHandlers, emitLineMessage } from '../../src/modules/line/line-socket';
-import { LinePersonalAdapter } from '../../src/modules/line/line-personal.adapter';
+import { LinePersonalAdapter, createProxyFetch } from '../../src/modules/line/line-personal.adapter';
 import { lineRepository } from '../../src/modules/line/line-repository';
 import { LineAccountPool } from '../../src/modules/line/line-pool';
 import { lineWebhookHandler } from '../../src/modules/line/line-webhook.handler';
@@ -103,6 +103,127 @@ describe('LINE QR, SDK payload and receive stream recovery', () => {
   beforeEach(() => {
     jest.restoreAllMocks();
     jest.spyOn(lineRepository, 'updateAccount').mockResolvedValue({ id: 1, status: 'ACTIVE' } as any);
+  });
+
+  it.each(['Tên đặt lúc thiết lập', 'LINE CSKH 1 - Hải Yến'])('uses the LINE profile instead of setup name %s on login', async (setupName) => {
+    const adapter = new LinePersonalAdapter(1);
+    jest.spyOn(lineRepository, 'findAccountById').mockResolvedValue({ id: 1, display_name: setupName } as any);
+    jest.spyOn(adapter, 'startPollingListener').mockImplementation(() => {});
+    jest.spyOn(adapter, 'syncFriends').mockResolvedValue({ synced: 0 });
+    jest.spyOn(adapter, 'syncGroups').mockResolvedValue({ synced: 0 });
+    await (adapter as any).finalizeConnectedClient({ authToken: 'test-only',
+      getMyProfile: async () => ({ mid: 'u-self', displayName: 'Tên thật trên LINE' }) });
+    expect(lineRepository.updateAccount).toHaveBeenCalledWith(1, expect.objectContaining({ display_name: 'Tên thật trên LINE' }));
+    adapter.disconnect();
+  });
+
+  it('keeps the setup name when the LINE profile is unavailable', async () => {
+    const adapter = new LinePersonalAdapter(1);
+    jest.spyOn(lineRepository, 'findAccountById').mockResolvedValue({ id: 1, display_name: 'Tên thiết lập' } as any);
+    jest.spyOn(adapter, 'startPollingListener').mockImplementation(() => {});
+    jest.spyOn(adapter, 'syncFriends').mockResolvedValue({ synced: 0 });
+    jest.spyOn(adapter, 'syncGroups').mockResolvedValue({ synced: 0 });
+    await (adapter as any).finalizeConnectedClient({ authToken: 'test-only', getMyProfile: async () => { throw new Error('network'); } });
+    expect(lineRepository.updateAccount).toHaveBeenCalledWith(1, expect.objectContaining({ display_name: 'Tên thiết lập' }));
+    adapter.disconnect();
+  });
+
+  it('refreshes the account name during contact sync and ignores a profile from an old connection', async () => {
+    const adapter = new LinePersonalAdapter(1);
+    adapter.client = { getMyProfile: async () => ({ displayName: 'Tên vừa đổi trên LINE', mid: 'u-self' }) };
+    await adapter.syncFriends();
+    expect(lineRepository.updateAccount).toHaveBeenCalledWith(1, expect.objectContaining({ display_name: 'Tên vừa đổi trên LINE' }));
+    (lineRepository.updateAccount as jest.Mock).mockClear();
+    let resolveProfile!: (profile: any) => void;
+    adapter.client = { getMyProfile: () => new Promise((resolve) => { resolveProfile = resolve; }) };
+    const pending = adapter.syncProfile();
+    adapter.disconnect();
+    resolveProfile({ displayName: 'Tên của phiên cũ' });
+    await pending;
+    expect(lineRepository.updateAccount).not.toHaveBeenCalled();
+  });
+
+  it('does not clear the saved name when a profile contains an empty display name', async () => {
+    const adapter = new LinePersonalAdapter(1);
+    adapter.client = { getMyProfile: async () => ({ displayName: '  ', mid: 'u-self' }) };
+    await adapter.syncProfile();
+    expect(lineRepository.updateAccount).toHaveBeenCalledWith(1, { line_mid: 'u-self' });
+    adapter.disconnect();
+  });
+
+  it('uses standard HTTPS Talk transport for both QR and saved-session login', async () => {
+    const qrAdapter = new LinePersonalAdapter(1);
+    const savedAdapter = new LinePersonalAdapter(2, { authToken: 'test-only-token' });
+    const options: any[] = [];
+    const sdk = {
+      loginWithQR: (callbacks: any, init: any) => {
+        options.push(init);
+        callbacks.onReceiveQRUrl('line://transport-regression');
+        return new Promise(() => {});
+      },
+      loginWithAuthToken: async (_token: string, init: any) => {
+        options.push(init);
+        return {};
+      },
+    };
+    jest.spyOn(qrAdapter as any, 'loadLineJs').mockResolvedValue(sdk);
+    jest.spyOn(savedAdapter as any, 'loadLineJs').mockResolvedValue(sdk);
+    jest.spyOn(savedAdapter as any, 'finalizeConnectedClient').mockResolvedValue(undefined);
+    try {
+      await qrAdapter.startQrLogin();
+      expect(await savedAdapter.connectWithSavedSession()).toBe(true);
+      expect(options).toHaveLength(2);
+      for (const init of options) expect(init.legy).toEqual({ encrypted: false });
+    } finally { qrAdapter.disconnect(); savedAdapter.disconnect(); }
+  });
+
+  it.each(['provider', 'disconnect'])('cancels native SDK Requests on %s abort', async (source) => {
+    const adapter = new LinePersonalAdapter(1);
+    (adapter as any).advanceEpoch();
+    const options = (adapter as any).buildInitOptions();
+    const controller = new AbortController();
+    let started!: () => void;
+    const received = new Promise<void>((resolve) => { started = resolve; });
+    const server = http.createServer((_req, _res) => { started(); });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    try {
+      const request = new Request(`http://127.0.0.1:${(server.address() as any).port}/S4`, {
+        method: 'POST', body: 'test-thrift-body', signal: controller.signal,
+      });
+      const pending = options.fetch(request);
+      const rejected = expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+      await received;
+      if (source === 'provider') controller.abort();
+      else adapter.disconnect();
+      await rejected;
+    } finally {
+      adapter.disconnect();
+      server.closeAllConnections();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
+  it('passes native SDK Requests through a configured proxy without Request-brand errors', async () => {
+    const lifecycle = new AbortController();
+    const proxy = http.createServer();
+    let connected!: () => void;
+    const received = new Promise<void>((resolve) => { connected = resolve; });
+    proxy.on('connect', (_req, socket) => {
+      connected();
+      socket.end('HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n');
+    });
+    await new Promise<void>((resolve) => proxy.listen(0, '127.0.0.1', resolve));
+    try {
+      const transport = createProxyFetch(`http://127.0.0.1:${(proxy.address() as any).port}`, lifecycle.signal)!;
+      const pending = transport(new Request('https://line.invalid/S4'));
+      const rejected = expect(pending).rejects.toThrow('fetch failed');
+      await received;
+      await rejected;
+    } finally {
+      lifecycle.abort();
+      proxy.closeAllConnections();
+      await new Promise<void>((resolve) => proxy.close(() => resolve()));
+    }
   });
 
   it('rejects initialization failure promptly instead of returning an empty pending QR', async () => {
