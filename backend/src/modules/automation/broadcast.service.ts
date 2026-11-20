@@ -212,7 +212,7 @@ export class BroadcastService {
 
     const allowedPrograms = new Set((student.enrollments || []).map((e: any) => e.program_type).filter((p: string) => ['KAIWA', 'JLPT'].includes(p)));
     relations = relations.filter(r => (r.program_type === 'ALL' && r.target_type === 'USER' && !r.zalo_group_id && !r.line_group_id) || (allowedPrograms.size === 1 && allowedPrograms.has(r.program_type)));
-    const groupTargets = relations.filter(r => r.target_type === 'GROUP');
+    const groupTargets = relations.filter(r => r.relation_status === 'FRIEND' && r.target_type === 'GROUP');
     if (groupTargets.length > 1) return null;
     const validRelations = relations.filter(
       (r) =>
@@ -318,7 +318,7 @@ export class BroadcastService {
 
     const allowedPrograms = new Set((student.enrollments || []).map((e: any) => e.program_type).filter((p: string) => ['KAIWA', 'JLPT'].includes(p)));
     relations = relations.filter(r => (r.program_type === 'ALL' && r.target_type === 'USER' && !r.zalo_group_id && !r.line_group_id) || (allowedPrograms.size === 1 && allowedPrograms.has(r.program_type)));
-    const groupTargets = relations.filter(r => r.target_type === 'GROUP');
+    const groupTargets = relations.filter(r => r.relation_status === 'FRIEND' && r.target_type === 'GROUP');
     if (groupTargets.length > 1) return null;
     const validRelations = relations.filter(
       (r) =>

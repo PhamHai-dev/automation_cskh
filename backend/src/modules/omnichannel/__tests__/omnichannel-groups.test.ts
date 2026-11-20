@@ -70,7 +70,7 @@ test.each([
   db.user.findUnique.mockResolvedValue({ id: 11, active: true, roles });
   await request(app).get(url).set('Authorization', auth()).expect(200);
   const relation = db.zaloGroup.findMany.mock.calls[0][0].select.zalo_contact_relations;
-  expect(relation.where).toEqual({ target_type: 'GROUP', student: { enrollments: { some: expectedScope } } });
+  expect(relation.where).toEqual({ target_type: 'GROUP', relation_status: 'FRIEND', student: { enrollments: { some: expectedScope } } });
   expect(relation.select.student.select.enrollments.where).toEqual(expectedScope);
 });
 

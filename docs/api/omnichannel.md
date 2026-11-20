@@ -2,6 +2,8 @@
 
 ## Program-specific care groups and configurable naming
 
+- Nhóm lớp chỉ dùng quan hệ GROUP trạng thái FRIEND. Quan hệ UNKNOWN bị tạm ngưng do trùng hoặc thay lựa chọn không được hiển thị thành nhóm lớp. Dedupe metadata theo học viên + chương trình + lớp.
+
 - Liên kết nhóm phân biệt KAIWA/JLPT bằng `program_type` trên ZaloContactRelation/LineContactRelation; unique student + account + program. `ALL` giữ liên kết cá nhân/legacy, GROUP legacy không tự coi là đúng cho cả hai chương trình; cần xác nhận. Không xóa/đổi nhóm cũ khi migrate hoặc lưu quy tắc.
 - Mẫu mặc định Kaiwa: `{csNumber} - {studentId} {studentName}`. JLPT: `{csNumber} - {studentId} {studentName} {level}`. `{level}` chỉ nhận diện hậu tố JLPT trong danh sách ghi chú cấu hình, không so với Enrollment.level và không chọn một nhóm N3/N4 theo trình độ. Có nhiều ứng viên cùng CS + mã HV + chương trình thì báo mơ hồ, không chọn nhóm đầu. Chỉ match trên tài khoản của CS đang phụ trách; liên kết MANUAL không bị auto ghi đè.
 - `GET /api/v1/omnichannel/care-group-rules`: ADMIN/MANAGE/CS đọc `{data:{kaiwaTemplate,jlptTemplate,jlptNotes,enabled,updatedAt}}`. Cấu hình toàn hệ thống, lưu AppSetting, có audit. `PUT` chỉ ADMIN/MANAGE, body config + `expectedUpdatedAt` để chống ghi đè, trả 409 nếu phiên bản đã đổi; không tự sync/link/rename/send khi lưu.

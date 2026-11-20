@@ -140,6 +140,8 @@ Không có blocker kỹ thuật cho Phase 7.
 
 ## Program-scoped care groups — 2026-11-20
 
+- Sau khi ghép commit remote `f1c410b`: giữ thay đổi cột học viên/CVHT và căn chỉnh bảng. Đã backup 2.374 students, 2.390 enrollments, 1.363 class_schedules trước migration remote `20261120032000_align_excel_web_columns` (thêm birth_year; bỏ các trường ngoài contract theo remote). Snapshot `scratch/db-recovery-2026-11-20/before-remote-column-migration.json` được giữ local; DB có 26 migrations.
+
 - Đã tách liên kết nhóm Zalo/LINE theo `student + account + program_type`: Kaiwa và JLPT không ghi đè nhau. Liên kết `ALL` chỉ dùng cho USER cá nhân dùng chung; GROUP legacy được đánh dấu cần xác định chương trình.
 - Matcher đọc mẫu tên từ AppSetting: Kaiwa mặc định `{csNumber} - {studentId} {studentName}`, JLPT thêm `{level}` ở cuối. Ghi chú N1–N5 chỉ nhận diện hậu tố; không so với `Enrollment.level` và không dùng để tự chọn nhóm. Nhiều nhóm cùng CS + mã HV + chương trình chuyển sang chọn thủ công.
 - Admin/Manage có hộp thoại cấu hình, xem trước và optimistic version; lưu có audit, không tự đổi tên nhóm, gửi tin hoặc chạy đồng bộ. Bảng Liên kết học viên và Danh bạ nhóm có lọc Kaiwa/JLPT, dòng theo chương trình, cảnh báo legacy/trùng và căn chỉnh cố định responsive.

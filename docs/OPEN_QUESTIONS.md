@@ -33,6 +33,10 @@ AI không được tự quyết các mục `WAITING_USER` nếu quyết định 
 
 ## Cách đóng câu hỏi
 
+### Q-016 — Trùng nhóm chăm sóc JLPT
+
+- `RESOLVED` ngày 2026-11-20: người dùng chọn “Báo trùng, chọn thủ công”. Nhiều nhóm cùng CVHT + mã học viên + chương trình không được tự chọn theo N3/N4 hoặc nhóm đầu tiên. Trình độ chỉ là ghi chú nhận diện JLPT. ADMIN/MANAGE cấu hình mẫu tên và danh sách ghi chú; GROUP lưu riêng KAIWA/JLPT.
+
 Khi người dùng xác nhận:
 
 1. đổi trạng thái thành `RESOLVED`;

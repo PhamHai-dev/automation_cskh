@@ -24,7 +24,7 @@ export const omnichannelRepository = {
         select: { program_type: true, enrollment_classes: { select: { class: { select: { id: true, class_code: true, class_name: true } } } } },
       },
     } as const;
-    const relationWhere = { target_type: 'GROUP', student: { enrollments: { some: enrollmentWhere } } };
+    const relationWhere = { target_type: 'GROUP', relation_status: 'FRIEND' as const, student: { enrollments: { some: enrollmentWhere } } };
     const [zalo, line] = await Promise.all([
       zaloAccountIds.length ? prisma.zaloGroup.findMany({
         where: { zalo_account_id: { in: zaloAccountIds } },
