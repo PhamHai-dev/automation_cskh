@@ -1,4 +1,4 @@
-import { PrismaClient, ImportBatch, ImportRow, ImportBatchStatus, ImportRowStatus, ImportType, AttendanceStatus, AttendanceSource, EnrollmentStatus, EnrollmentClassStatus, ClassModelType, AttendanceSourceType, ReconciliationState } from '@prisma/client';
+import { Prisma, PrismaClient, ImportBatch, ImportRow, ImportBatchStatus, ImportRowStatus, ImportType, AttendanceStatus, AttendanceSource, EnrollmentStatus, EnrollmentClassStatus, ClassModelType, AttendanceSourceType, ReconciliationState } from '@prisma/client';
 import { prisma } from '../../prisma/client';
 import { normalizeDateOnly } from '../attendance/attendance.utils';
 
@@ -344,13 +344,20 @@ export class ImportsRepository {
     });
   }
 
-  async createClassIfNotExist(className: string, level?: string, model_type: ClassModelType = ClassModelType.ONE_TO_ONE) {
-    const existing = await this.findClassByNameOrCode(className);
+  async createClassIfNotExist(
+    className: string,
+    level?: string,
+    model_type: ClassModelType = ClassModelType.ONE_TO_ONE,
+    sourceClassCode?: string | null
+  ) {
+    const filters: Prisma.ClassWhereInput[] = [{ class_name: className }];
+    if (sourceClassCode) filters.unshift({ class_code: sourceClassCode });
+    const existing = await this.db.class.findFirst({ where: { OR: filters } });
     if (existing) return existing;
     return this.db.class.create({
       data: {
         class_name: className,
-        class_code: className,
+        class_code: sourceClassCode === undefined ? className : sourceClassCode,
         level: level || null,
         model_type,
         attendance_source: AttendanceSourceType.LEARNING_SYSTEM,

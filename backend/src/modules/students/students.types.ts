@@ -6,6 +6,7 @@ export interface CreateStudentDTO {
   phone?: string;
   email?: string;
   date_of_birth?: string | Date;
+  birth_year?: number;
   occupation?: string;
   zalo_uid?: string;
   line_uid?: string;
@@ -41,7 +42,6 @@ export interface CreateStudentDTO {
   teacher_code?: string;
   start_time?: string;
   schedule_pattern?: string;
-  duration_minutes?: number | string;
 
   // Care & Reports info
   study_report_url?: string;
@@ -64,6 +64,7 @@ export interface UpdateStudentDTO {
   phone?: string;
   email?: string;
   date_of_birth?: string | Date;
+  birth_year?: number;
   occupation?: string;
   zalo_uid?: string;
   line_uid?: string;
@@ -99,7 +100,6 @@ export interface UpdateStudentDTO {
   teacher_code?: string;
   start_time?: string;
   schedule_pattern?: string;
-  duration_minutes?: number | string;
 
   // Care & Reports info
   study_report_url?: string;

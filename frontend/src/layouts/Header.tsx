@@ -33,7 +33,7 @@ const ROLE_DISPLAY_NAMES: Record<
 > = {
   ADMIN: { label: 'Quản trị viên', variant: 'danger' },
   MANAGE: { label: 'Quản lý nhóm', variant: 'warning' },
-  CS: { label: 'Nhân viên CSKH', variant: 'info' },
+  CS: { label: 'Nhân viên CVHT', variant: 'info' },
   TEACHER: { label: 'Giáo viên', variant: 'accent' },
 };
 

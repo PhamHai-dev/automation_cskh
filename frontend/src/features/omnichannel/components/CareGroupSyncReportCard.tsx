@@ -36,7 +36,7 @@ function formatCsLabel(csName?: string | null, csCode?: string | null): string {
     if (name.toUpperCase().includes(code.toUpperCase())) return name;
     return `${name} - ${code}`;
   }
-  return name || code || 'Chưa phân công CSKH';
+  return name || code || 'Chưa phân công CVHT';
 }
 
 export const CareGroupSyncReportCard: React.FC<CareGroupSyncReportCardProps> = ({
@@ -353,7 +353,7 @@ export const CareGroupSyncReportCard: React.FC<CareGroupSyncReportCardProps> = (
                     <tr>
                       <th className="py-2.5 px-3">Mã học viên</th>
                       <th className="py-2.5 px-3">Họ và tên</th>
-                      <th className="py-2.5 px-3">CSKH phụ trách</th>
+                      <th className="py-2.5 px-3">CVHT phụ trách</th>
                       <th className="py-2.5 px-3">Tên nhóm chuẩn (Bấm Sao chép để đặt tên nhóm)</th>
                       <th className="py-2.5 px-3">Trạng thái</th>
                     </tr>
@@ -433,7 +433,7 @@ export const CareGroupSyncReportCard: React.FC<CareGroupSyncReportCardProps> = (
                     <tr>
                       <th className="py-2.5 px-3">Mã học viên</th>
                       <th className="py-2.5 px-3">Họ và tên</th>
-                      <th className="py-2.5 px-3">CSKH phụ trách</th>
+                      <th className="py-2.5 px-3">CVHT phụ trách</th>
                       <th className="py-2.5 px-3">Tên nhóm chuẩn (Bấm Sao chép để đặt tên nhóm)</th>
                       <th className="py-2.5 px-3">Trạng thái</th>
                     </tr>

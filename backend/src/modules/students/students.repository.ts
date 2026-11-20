@@ -79,10 +79,10 @@ async function resolveCreateCsId(
   if (requestedCsId === undefined) return actor.id;
   const csId = Number(requestedCsId);
   if (allowedCsIds !== undefined && !allowedCsIds.includes(csId)) {
-    throw new AppError(403, 'Bạn không được gán học viên cho tài khoản CSKH ngoài phạm vi phụ trách');
+    throw new AppError(403, 'Bạn không được gán học viên cho tài khoản CVHT ngoài phạm vi phụ trách');
   }
   if (!(await isCsRoleUser(csId))) {
-    throw new AppError(400, 'Tài khoản được gán làm CSKH phụ trách phải có vai trò CS');
+    throw new AppError(400, 'Tài khoản được gán làm CVHT phụ trách phải có vai trò CS');
   }
   return csId;
 }
@@ -95,7 +95,7 @@ async function resolveCreateCsId(
  */
 async function authorizeUpdatedCsId(csId: number, tx: any, allowedCsIds: number[] | undefined): Promise<void> {
   if (allowedCsIds !== undefined && !allowedCsIds.includes(Number(csId))) {
-    throw new AppError(403, 'CSKH không được chuyển học viên sang tài khoản CSKH khác');
+    throw new AppError(403, 'CVHT không được chuyển học viên sang tài khoản CVHT khác');
   }
   const user = await tx.user.findUnique({
     where: { id: Number(csId) },
@@ -103,7 +103,7 @@ async function authorizeUpdatedCsId(csId: number, tx: any, allowedCsIds: number[
   });
   const roles = user && Array.isArray(user.roles) ? (user.roles as string[]) : [];
   if (!user || !user.active || !roles.includes('CS')) {
-    throw new AppError(400, 'CSKH được gán phải là tài khoản CS đang hoạt động');
+    throw new AppError(400, 'CVHT được gán phải là tài khoản CS đang hoạt động');
   }
 }
 
@@ -602,7 +602,7 @@ export class StudentsRepository {
             const label =
               code && name
                 ? `${code} - ${name}`
-                : code || name || `CSKH #${csId}`;
+                : code || name || `CVHT #${csId}`;
             csOptionsMap.set(key, { value: key, label });
           }
         }
@@ -803,6 +803,7 @@ export class StudentsRepository {
           phone: data.phone ? String(data.phone).trim() : undefined,
           email: data.email ? String(data.email).trim() : undefined,
           date_of_birth: dob,
+          birth_year: data.birth_year,
           occupation: data.occupation || undefined,
           zalo_uid: data.zalo_uid || undefined,
           line_uid: data.line_uid || undefined,
@@ -895,10 +896,6 @@ export class StudentsRepository {
               class_id: classObj.id,
               start_time: data.start_time || null,
               schedule_pattern: data.schedule_pattern,
-              duration_minutes:
-                data.duration_minutes !== undefined && data.duration_minutes !== ''
-                  ? Number(data.duration_minutes)
-                  : null,
             },
           });
         }
@@ -1009,7 +1006,7 @@ export class StudentsRepository {
     // B.5/D9: reject an out-of-scope cs_id before opening the transaction; the
     // CS-role check on the target runs inside the transaction below.
     if (allowedCsIds !== undefined && data.cs_id !== undefined && !allowedCsIds.includes(Number(data.cs_id))) {
-      throw new AppError(403, 'CSKH không được chuyển học viên sang tài khoản CSKH khác');
+      throw new AppError(403, 'CVHT không được chuyển học viên sang tài khoản CVHT khác');
     }
 
     return prisma.$transaction(async (tx) => {
@@ -1072,7 +1069,7 @@ export class StudentsRepository {
       // A class/schedule/teacher edit affects every enrollment in that class.
       // Reject it when any affected enrollment is outside the actor's scope.
       const targetClass = enrollment.enrollment_classes?.[0]?.class;
-      const editsClass = ['class_name', 'start_time', 'schedule_pattern', 'duration_minutes', 'teacher_name', 'teacher_code']
+      const editsClass = ['class_name', 'start_time', 'schedule_pattern', 'teacher_name', 'teacher_code']
         .some(key => data[key as keyof UpdateStudentDTO] !== undefined);
       if (allowedCsIds !== undefined && editsClass && targetClass) {
         const outsideScope = await tx.enrollmentClass.findFirst({
@@ -1096,6 +1093,7 @@ export class StudentsRepository {
           ...(data.phone !== undefined ? { phone: data.phone ? String(data.phone).trim() : null } : {}),
           ...(data.email !== undefined ? { email: data.email ? String(data.email).trim() : null } : {}),
           ...(data.date_of_birth !== undefined ? { date_of_birth: dob || null } : {}),
+          ...(data.birth_year !== undefined ? { birth_year: data.birth_year } : {}),
           ...(data.occupation !== undefined ? { occupation: data.occupation || null } : {}),
           ...(data.zalo_uid !== undefined ? { zalo_uid: data.zalo_uid || null } : {}),
           ...(data.line_uid !== undefined ? { line_uid: data.line_uid || null } : {}),
@@ -1200,18 +1198,12 @@ export class StudentsRepository {
             });
           }
           const sched = ec.class.class_schedules?.[0];
-          if (sched && (data.start_time !== undefined || data.schedule_pattern !== undefined || data.duration_minutes !== undefined)) {
+          if (sched && (data.start_time !== undefined || data.schedule_pattern !== undefined)) {
             await tx.classSchedule.update({
               where: { id: sched.id },
               data: {
                 ...(data.start_time !== undefined ? { start_time: data.start_time || null } : {}),
                 ...(data.schedule_pattern !== undefined ? { schedule_pattern: data.schedule_pattern } : {}),
-                ...(data.duration_minutes !== undefined
-                  ? {
-                      duration_minutes:
-                        data.duration_minutes === '' ? null : Number(data.duration_minutes),
-                    }
-                  : {}),
               },
             });
           } else if (!sched && data.schedule_pattern) {
@@ -1220,10 +1212,6 @@ export class StudentsRepository {
                 class_id: ec.class.id,
                 start_time: data.start_time || null,
                 schedule_pattern: data.schedule_pattern,
-                duration_minutes:
-                  data.duration_minutes !== undefined && data.duration_minutes !== ''
-                    ? Number(data.duration_minutes)
-                    : null,
               },
             });
           }

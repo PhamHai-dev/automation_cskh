@@ -156,9 +156,8 @@ export const ATTENDANCE_COLS = {
   fullName: 3, // C - Tên học viên
   status: 4, // D - Trạng thái
   startTime: 5, // E - Giờ học
-  cvht: 7, // G - CVHT (mã CSKH phụ trách)
+  cvht: 7, // G - CVHT (mã CVHT phụ trách)
   schedulePattern: 8, // H - Lịch học
-  durationMinutes: 9, // I - Thời lượng buổi học
   teacherCode: 10, // J - Mã GV
   totalSessions: 11, // K - Tổng số buổi
   attendedTotal: 12, // L - Số buổi đã học (CÔNG THỨC, chỉ cập nhật cached result)
@@ -2420,7 +2419,7 @@ export class SheetBackupService {
       }
 
       // --- Các block tháng nằm trong phạm vi ghi ---
-      const sessionHours = (Number(schedule?.duration_minutes) || 30) / 60;
+      const sessionHours = 0.5;
       for (const block of blocks) {
         const mk = `${block.year}-${block.month}`;
         if (!monthSet.has(mk)) continue;

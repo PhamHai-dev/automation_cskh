@@ -829,7 +829,7 @@ export class DashboardRepository {
           status: true,
           teacher_id: true,
           class_schedule: {
-            select: { start_time: true, duration_minutes: true },
+            select: { start_time: true },
           },
           class: {
             select: {

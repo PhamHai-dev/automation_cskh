@@ -1115,7 +1115,6 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
               end_date: enr.end_date,
               start_time: formatScheduleTimeDisplay(schedule?.start_time),
               schedule_pattern: schedule?.schedule_pattern || '',
-              duration_minutes: schedule?.duration_minutes || 0,
               teacher_name: mainTeacher?.name || '—',
               teacher_code:
                 (mainTeacher as any)?.code ||
@@ -1165,7 +1164,6 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
             end_date: enr.end_date,
             start_time: '',
             schedule_pattern: '',
-            duration_minutes: 0,
             teacher_name: 'Chưa xếp GV',
             teacher_code: '—',
             class_name: 'Chưa xếp lớp',
@@ -1218,7 +1216,6 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
             end_date: st.end_date || null,
             start_time: formatScheduleTimeDisplay(schedule?.start_time),
             schedule_pattern: schedule?.schedule_pattern || '',
-            duration_minutes: schedule?.duration_minutes || 0,
             teacher_name: mainTeacher?.name || '—',
             teacher_code: (mainTeacher as any)?.code || '—',
             class_name: cleanedClassName,

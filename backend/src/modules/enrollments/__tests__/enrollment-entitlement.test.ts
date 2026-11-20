@@ -152,7 +152,6 @@ describe('enrollment entitlement calculator (Q-002)', () => {
       enrollment_classes: [{
         attendance: [{
           ...final(AttendanceStatus.ATTENDED),
-          duration_minutes: 180,
           teacher_raw_value: '0.5X',
         } as AttendanceEntitlementInput],
       }],

@@ -9,10 +9,10 @@ import { ArrowRight, Check, Eye, EyeOff, GraduationCap, Lock, Mail, ShieldCheck,
 
 const DEMO_ACCOUNTS = [
   { label: 'Quản trị viên', role: 'ADMIN', email: 'admin@gmail.com', icon: ShieldCheck },
-  { label: 'Quản lý CSKH', role: 'MANAGE', email: 'manage@gmail.com', icon: ShieldCheck },
-  { label: 'CSKH 1', role: 'CS', email: 'cskh1@gmail.com', icon: UserRound },
-  { label: 'CSKH 2', role: 'CS', email: 'cskh2@gmail.com', icon: UserRound },
-  { label: 'CSKH 3', role: 'CS', email: 'cskh3@gmail.com', icon: UserRound },
+  { label: 'Quản lý CVHT', role: 'MANAGE', email: 'manage@gmail.com', icon: ShieldCheck },
+  { label: 'CVHT 1', role: 'CS', email: 'cskh1@gmail.com', icon: UserRound },
+  { label: 'CVHT 2', role: 'CS', email: 'cskh2@gmail.com', icon: UserRound },
+  { label: 'CVHT 3', role: 'CS', email: 'cskh3@gmail.com', icon: UserRound },
   { label: 'Giáo viên', role: 'TEACHER', email: 'teacher@gmail.com', icon: GraduationCap },
 ] as const;
 

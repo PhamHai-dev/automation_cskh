@@ -242,7 +242,7 @@ export class EnrollmentsService {
     const targetRoles =
       targetCsUser && Array.isArray(targetCsUser.roles) ? (targetCsUser.roles as string[]) : [];
     if (!targetCsUser || !targetCsUser.active || !targetRoles.includes('CS')) {
-      throw new CustomError('Tài khoản CSKH đích không hợp lệ hoặc đã ngừng hoạt động', 400);
+      throw new CustomError('Tài khoản CVHT đích không hợp lệ hoặc đã ngừng hoạt động', 400);
     }
 
     const enrollments = await this.repository.findManyByIds(uniqueIds);

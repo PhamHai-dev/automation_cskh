@@ -28,7 +28,7 @@ interface User {
 const ROLE_LABELS: Record<string, string> = {
   ADMIN: 'Quản trị viên',
   MANAGE: 'Quản lý nhóm',
-  CS: 'Nhân viên CSKH',
+  CS: 'Nhân viên CVHT',
   TEACHER: 'Giáo viên',
 };
 
@@ -337,7 +337,7 @@ export const UsersPage: React.FC = () => {
                 <option value="">Tất cả vai trò</option>
                 <option value="ADMIN">Quản trị viên (ADMIN)</option>
                 <option value="MANAGE">Quản lý nhóm (MANAGE)</option>
-                <option value="CS">Nhân viên CSKH (CS)</option>
+                <option value="CS">Nhân viên CVHT (CS)</option>
                 <option value="TEACHER">Giáo viên (TEACHER)</option>
               </select>
             </div>
@@ -381,22 +381,22 @@ export const UsersPage: React.FC = () => {
             </div>
             <div>
               <Input
-                label="Mã nhân viên / Mã CSKH"
+                label="Mã nhân viên / Mã CVHT"
                 value={formData.code}
                 onChange={(e) => {
                   const val = e.target.value;
                   setFormData({ ...formData, code: val, staff_code: val.toUpperCase() });
                 }}
-                placeholder={formData.roles.includes('CS') ? 'Tự động: CSKH01...' : 'Tùy chọn'}
+                placeholder={formData.roles.includes('CS') ? 'Tự động: CVHT01...' : 'Tùy chọn'}
               />
             </div>
           </div>
           {formData.roles.includes('CS') && (
             <div className="text-[11px] text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-1.5">
-              Định dạng hiển thị chuẩn CSKH:{' '}
+              Định dạng hiển thị chuẩn CVHT:{' '}
               <strong>
                 {formData.name.trim() || 'Họ và tên'} -{' '}
-                {formData.code.trim().toUpperCase() || 'CSKHxx (tự động cấp từ 01)'}
+                {formData.code.trim().toUpperCase() || 'CVHTxx (tự động cấp từ 01)'}
               </strong>
             </div>
           )}

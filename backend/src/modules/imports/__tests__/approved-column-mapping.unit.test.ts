@@ -10,7 +10,7 @@ import {
 } from '../sheet-sync.parser';
 
 describe('approved workbook column mappings', () => {
-  it('maps Kaiwa Tổng (isKaiwaMasterOnly) cols A..AH and BF, BG, BJ, BY without reading AI..BD', () => {
+  it('maps only approved Kaiwa Tổng profile/class columns and ignores care and discarded columns', () => {
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet('Tổng');
     ws.getRow(2).values = Array.from({ length: 77 }, (_, i) => i + 1);
@@ -41,10 +41,6 @@ describe('approved workbook column mappings', () => {
     expect(row.programMetadata.tuition_fee).toBeUndefined();
     expect(row.attendedPreviousYears).toBe(0);
     expect(row.programMetadata.attended_previous_years_raw).toBeUndefined();
-    expect(row.endHoldWeek).toBe(5);
-    expect(row.endHoldYear).toBe(2026);
-    expect(row.renewalDeadline).toBe('2026-03-01');
-    expect(row.handoverMonth).toBe(4);
     expect(row.schedulePattern).toBe('24');
     expect(row.careLogs).toEqual([]);
     expect(row.programMetadata.second_schedule).toBeUndefined();
@@ -85,7 +81,7 @@ describe('approved workbook column mappings', () => {
     expect(row.packageCode).toBe('CKAI451030JP');
     expect(row.programMetadata.attended_previous_years_raw).toBe('LÂM QUỐC HÙNG - Kaiwa 5 (24/06/2024) - 001');
     expect(row.attendedPreviousYears).toBe(0);
-    expect(row.totalAttended).toBe(54);
+    expect(row.totalAttended).toBeNull();
     expect(row.studyReportUrl).toBe('https://docs.google.com/spreadsheets/d/1x1kTestSheetId/edit');
     expect(row.exchangeInfo).toBe('Trao đổi tiến độ tốt');
     expect(row.callbackNote).toBe('Gọi lại thứ 6');
@@ -93,8 +89,6 @@ describe('approved workbook column mappings', () => {
     expect(row.postCourseCare).toBe('Đã chăm sóc sau kết thúc');
     expect(row.handedOverAt).toBe('2024-03-26');
     expect(row.accountCreatedAt).toBe('2024-03-27');
-    expect(row.endHoldWeek).toBeNull();
-    expect(row.endHoldYear).toBeNull();
     expect(row.careLogs).toHaveLength(2);
     expect(row.careLogs[0].after_session_number).toBe(1);
     expect(row.careLogs[1].after_session_number).toBe(90);
@@ -109,7 +103,7 @@ describe('approved workbook column mappings', () => {
       expect(careRows[0].isKaiwaCareOnly).toBe(true);
       expect(careRows[0].externalId).toBe('420267559');
       expect(careRows[0].programMetadata.attended_previous_years_raw).toContain('LÂM QUỐC HÙNG');
-      expect(careRows[0].totalAttended).toBe(54);
+      expect(careRows[0].totalAttended).toBeNull();
       expect(careRows[0].studyReportUrl).toContain('https://docs.google.com/spreadsheets/d/');
     }
 
@@ -129,7 +123,7 @@ describe('approved workbook column mappings', () => {
     }
   }, 30000);
 
-  it('lets JLPT Chấm buổi override Điểm học tập attendance', () => {
+  it('uses aggregate JLPT cells only for reconciliation, not profile attendance persistence', () => {
     const wb = new ExcelJS.Workbook();
     const dht = wb.addWorksheet('Điểm học tập');
     dht.getCell('A3').value = 'J001';
@@ -149,7 +143,8 @@ describe('approved workbook column mappings', () => {
     master.getRow(3).getCell(11).value = 4000000;
     master.getRow(3).getCell(17).value = 'N4VIP16';
     const [row] = parseJlptSheetRows(wb, 'Data JLPT_Inhouse', 'Setting', 2);
-    expect(row.totalAttended).toBe(6);
+    expect(row.totalAttended).toBeNull();
+    expect(row.remainingSessions).toBeNull();
     expect(row.attendedPreviousYears).toBe(0);
     expect(row.classModel).toBe('1-n');
     expect(row.level).toBeNull();
@@ -157,9 +152,5 @@ describe('approved workbook column mappings', () => {
     expect(row.courseCode).toBe('N4VIP16');
     expect(row.courseContent).toBeNull();
     expect(row.programMetadata.tuition_fee).toBe(4000000);
-    expect(row.endHoldWeek).toBeNull();
-    expect(row.endHoldYear).toBeNull();
-    expect(row.handoverMonth).toBeNull();
-    expect(row.renewalDeadline).toBeNull();
   });
 });

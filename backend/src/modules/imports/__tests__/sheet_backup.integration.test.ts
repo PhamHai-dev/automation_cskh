@@ -197,7 +197,6 @@ describe('Program Sheet Backup (2-Sheet JLPT & KAIWA + Admin Column Config) Inte
         class_id: cls.id,
         schedule_pattern: 'T2-T4-T6',
         start_time: '20:00',
-        duration_minutes: 50,
         active: true,
       },
     });

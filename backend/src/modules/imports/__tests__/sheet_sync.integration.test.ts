@@ -158,9 +158,7 @@ describe('Google Sheet Sync & CVHT Scope Integration', () => {
 
       const settings = parseJlptSettingsSheet(wb, 'Setting');
       expect(settings.get('N5VIP16')?.totalSessions).toBe(38);
-      expect(settings.get('N5VIP16')?.durationMinutes).toBe(90);
       expect(settings.get('N4VIP16')?.totalSessions).toBe(35);
-      expect(settings.get('N4VIP16')?.durationMinutes).toBe(120);
       expect(settings.get('N3VIP110')?.totalSessions).toBe(42);
 
       const rows = parseJlptSheetRows(wb, 'Data JLPT_Inhouse', 'Setting', 2, 50);

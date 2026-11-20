@@ -7,17 +7,12 @@ export interface ProgramMetadata {
   active_state?: string | null;
   satisfaction_score_b18?: string | null;
   exam_registration?: string | null;
+  exam_status?: string | null;
   exam_score?: string | number | null;
   exam_result?: string | null;
   test_scores?: Record<string, string | number | null>;
   special_support?: Record<string, string | null>;
   renewal_note?: string | null;
-  handover_month?: string | null;
-  end_week?: string | number | null;
-  end_year?: string | number | null;
-  hold_week?: string | number | null;
-  hold_year?: string | number | null;
-  renewal_deadline?: string | null;
   first_class_exam?: string | null;
   first_class_test?: string | null;
   first_class_special_support?: string | null;
@@ -25,7 +20,6 @@ export interface ProgramMetadata {
   latest_class_code?: string | null;
   tuition_fee?: string | number | null;
   paid_month?: string | null;
-  end_course_care?: string | null;
   attended_previous_years_raw?: string | number | null;
 }
 
@@ -115,7 +109,7 @@ export interface Enrollment {
       model_type?: string;
       level?: string;
       class_teachers?: Array<{ teacher?: { name: string }; teacher_code?: string }>;
-      class_schedules?: Array<{ schedule_pattern: string; start_time?: string; duration_minutes?: number }>;
+      class_schedules?: Array<{ schedule_pattern: string; start_time?: string }>;
       class_sessions?: Array<{ id: number; session_date: string; session_number: number; start_time?: string; end_time?: string; status: string }>;
     };
     attendance?: Array<{

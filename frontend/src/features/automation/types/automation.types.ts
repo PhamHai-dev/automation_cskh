@@ -70,7 +70,7 @@ export const TEMPLATE_VARIABLES = [
   { key: 'teacher_name', label: 'Tên giáo viên' },
   { key: 'attendance_status', label: 'Trạng thái điểm danh' },
   { key: 'remaining_sessions', label: 'Số buổi còn lại' },
-  { key: 'cs_name', label: 'Tên CSKH phụ trách' },
+  { key: 'cs_name', label: 'Tên CVHT phụ trách' },
 ];
 
 export interface AssignableCsUser {
@@ -225,7 +225,7 @@ export const BROADCAST_TEMPLATE_VARIABLES = [
   { key: 'class_name', label: 'Tên lớp', sample: 'IELTS Intensive K18' },
   { key: 'enrollment_package', label: 'Tên gói học', sample: 'IELTS 6.5 Cam Kết' },
   { key: 'remaining_sessions', label: 'Số buổi còn lại', sample: '12' },
-  { key: 'cs_name', label: 'Tên CSKH phụ trách', sample: 'Trần Thu Hà' },
+  { key: 'cs_name', label: 'Tên CVHT phụ trách', sample: 'Trần Thu Hà' },
   { key: 'teacher_name', label: 'Tên giáo viên', sample: 'Ms. Lan Hương' },
 ];
 

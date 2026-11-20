@@ -36,7 +36,7 @@ const TAB_META: Record<ImportTabValue, { label: string; subtitle: string }> = {
   },
   approval: {
     label: 'Phê duyệt nhập liệu',
-    subtitle: 'Xét duyệt các yêu cầu tạo mới và điều chuyển học viên từ nhân viên CSKH',
+    subtitle: 'Xét duyệt các yêu cầu tạo mới và điều chuyển học viên từ nhân viên CVHT',
   },
   history: {
     label: 'Lịch sử nhập',

@@ -10,6 +10,7 @@ export interface Student {
   phone?: string | null;
   email?: string | null;
   date_of_birth?: string | null;
+  birth_year?: number | null;
   parent_name?: string | null;
   parent_phone?: string | null;
   school?: string | null;
@@ -30,6 +31,7 @@ export interface CreateStudentDTO {
   phone?: string;
   email?: string;
   date_of_birth?: string;
+  birth_year?: number;
   parent_name?: string;
   parent_phone?: string;
   school?: string;
@@ -60,7 +62,6 @@ export interface CreateStudentDTO {
   status?: string;
   start_time?: string;
   schedule_pattern?: string;
-  duration_minutes?: number | string;
 
   // 4. Care & Reports (AK -> BH)
   study_report_url?: string;

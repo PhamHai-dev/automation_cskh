@@ -121,7 +121,7 @@ export const AutoAttendanceConfigCard: React.FC = () => {
       if (data.attended_count > 0) {
         toast.success(`Đã tự động điểm danh thành công ${data.attended_count} lượt học viên!`);
       } else if (data.issues_created > 0) {
-        toast.warning(`Đã tạo ${data.issues_created} cảnh báo thiếu giờ học cho CSKH phụ trách!`);
+        toast.warning(`Đã tạo ${data.issues_created} cảnh báo thiếu giờ học cho CVHT phụ trách!`);
       } else {
         toast.info('Đã quét xong: Chưa có lớp học nào đến giờ điểm danh trong chu kỳ này.');
       }
@@ -400,7 +400,7 @@ export const AutoAttendanceConfigCard: React.FC = () => {
               5
             </div>
             <div>
-              <strong className="text-text-primary font-semibold">Cảnh báo thiếu giờ học:</strong> Nếu lớp có lịch học trong ngày nhưng chưa khai báo giờ bắt đầu, hệ thống sẽ tạo nhắc việc cho nhân viên CSKH phụ trách để bổ sung giờ học.
+              <strong className="text-text-primary font-semibold">Cảnh báo thiếu giờ học:</strong> Nếu lớp có lịch học trong ngày nhưng chưa khai báo giờ bắt đầu, hệ thống sẽ tạo nhắc việc cho nhân viên CVHT phụ trách để bổ sung giờ học.
             </div>
           </div>
         </CardContent>

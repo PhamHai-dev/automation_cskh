@@ -85,7 +85,8 @@ export const FIELD_LABELS: Record<string, string> = {
   occupation: 'Nghề nghiệp',
   external_id: 'Mã học viên',
   status: 'Trạng thái',
-  cs_id: 'CSKH phụ trách',
+  cs_id: 'CVHT phụ trách',
+  birth_year: 'Năm sinh',
   viewer_cs_id: 'CSKH xem (Read-only)',
   level: 'Trình độ',
   program_type: 'Chương trình học',
@@ -639,7 +640,7 @@ export function enrichAuditLogItem(
   } else if (row.action === 'REASSIGN_CS') {
     const fromCs = formatFieldValue('cs_id', beforeObj.cs_id, ctx) || `#${beforeObj.cs_id ?? '?'}`;
     const toCs = formatFieldValue('cs_id', afterObj.cs_id, ctx) || `#${afterObj.cs_id ?? '?'}`;
-    summary = `Chuyển CSKH phụ trách từ ${fromCs} sang ${toCs}`;
+    summary = `Chuyển CVHT phụ trách từ ${fromCs} sang ${toCs}`;
   } else if (row.action === 'REVOKE_CS_VIEWER') {
     const viewerCs = formatFieldValue('viewer_cs_id', beforeObj.viewer_cs_id, ctx) || `#${beforeObj.viewer_cs_id ?? '?'}`;
     summary = `Thu hồi quyền xem của ${viewerCs}`;

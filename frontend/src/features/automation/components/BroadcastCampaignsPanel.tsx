@@ -1456,7 +1456,7 @@ export const BroadcastCampaignsPanel: React.FC<BroadcastCampaignsPanelProps> = (
                         onChange={(e) => setStudentCsFilter(e.target.value)}
                         className="h-10 px-3 rounded-xl border border-border bg-surface text-xs font-medium text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
                       >
-                        <option value="ALL">Tất cả CSKH phụ trách</option>
+                        <option value="ALL">Tất cả CVHT phụ trách</option>
                         {csOptions.map((cs) => (
                           <option key={cs} value={cs}>
                             CSKH: {cs}

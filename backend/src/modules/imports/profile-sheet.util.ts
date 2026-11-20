@@ -135,20 +135,15 @@ const KAIWA_PROFILE_COLS = buildCols([
   [14, 'enr.total_sessions', 'Tổng số buổi', G.class],
   [15, 'enr.class_model', 'Mô hình lớp', G.class],
   [16, 'enr.sales_note', 'Ghi chú sale', G.profile],
-  [17, 'student.date_of_birth', 'DOB', G.profile],
+  [17, 'student.birth_year', 'Năm sinh', G.profile],
   [18, 'student.occupation', 'Nghề nghiệp', G.profile],
   [19, 'cvht.staff_code', 'CVHT', G.class],
   [20, 'stats.remaining_sessions', 'Số buổi còn lại', G.attendance, { isFormulaPreserved: true }],
   [21, 'enr.start_date', 'Ngày bắt đầu học', G.class],
   [22, 'enr.status_label', 'Trạng thái', G.class],
   [23, 'enr.end_date', 'Ngày kết thúc/Bảo lưu', G.class],
-  [24, 'schedule.start_time', 'Giờ học (1)', G.class],
-  [25, 'schedule.schedule_pattern', 'Lịch học (1)', G.class],
-  [26, 'schedule.duration_minutes', 'Thời lượng buổi học (1)', G.class],
-  [27, 'keep.start_time_2', 'Giờ học (2)', G.class, NO_DB],
-  [28, 'keep.schedule_pattern_2', 'Lịch học (2)', G.class, NO_DB],
-  [29, 'keep.duration_minutes_2', 'Thời lượng buổi học (2)', G.class, NO_DB],
-  [30, 'keep.loop_pattern', 'Vòng lặp', G.class, NO_DB],
+  [24, 'schedule.start_time', 'Giờ học', G.class],
+  [25, 'schedule.schedule_pattern', 'Buổi học', G.class],
   [31, 'keep.study_days_note', 'Ngày học', G.class, NO_DB],
   [32, 'teacher.name', 'Giáo viên', G.class],
   [33, 'teacher.code', 'Mã GV', G.class],
@@ -196,13 +191,8 @@ const KAIWA_ATTENDANCE_COLS = buildCols([
   [10, 'enr.start_date', 'Ngày bắt đầu học', G.class],
   [11, 'enr.status_label', 'Trạng thái', G.class],
   [12, 'enr.end_date', 'Ngày kết thúc/Bảo lưu', G.class],
-  [13, 'schedule.start_time', 'Giờ học (1)', G.class],
-  [14, 'schedule.schedule_pattern', 'Lịch học (1)', G.class],
-  [15, 'schedule.duration_minutes', 'Thời lượng buổi học (1)', G.class],
-  [16, 'keep.start_time_2', 'Giờ học (2)', G.class, NO_DB],
-  [17, 'keep.schedule_pattern_2', 'Lịch học (2)', G.class, NO_DB],
-  [18, 'keep.duration_minutes_2', 'Thời lượng buổi học (2)', G.class, NO_DB],
-  [19, 'keep.loop_pattern', 'Vòng lặp', G.class, NO_DB],
+  [13, 'schedule.start_time', 'Giờ học', G.class],
+  [14, 'schedule.schedule_pattern', 'Buổi học', G.class],
   [20, 'keep.study_days_note', 'Ngày học', G.class, NO_DB],
   [21, 'teacher.name', 'Giáo viên', G.class],
   [22, 'teacher.code', 'Mã GV', G.class],
@@ -281,8 +271,7 @@ const JLPT_ATTENDANCE_COLS = buildCols([
   [5, 'schedule.start_time', 'Giờ học', G.class],
   [6, 'keep.col_f', 'Cột phụ F (ẩn)', G.class, { ...NO_DB, enabled: false }],
   [7, 'cvht.staff_code', 'CVHT', G.class],
-  [8, 'schedule.schedule_pattern', 'Lịch học', G.class],
-  [9, 'schedule.duration_minutes', 'Thời lượng buổi học', G.class],
+  [8, 'schedule.schedule_pattern', 'Buổi học', G.class],
   [10, 'teacher.code', 'Mã GV', G.class],
   [11, 'enr.total_sessions', 'Tổng số buổi', G.class],
   [12, 'stats.attended_all_time', 'Số buổi đã học', G.attendance, { isFormulaPreserved: true }],
@@ -693,8 +682,7 @@ function fmtScheduleTimeRange(schedule: any): string {
   if (start.includes('-')) return start;
   const match = start.match(/^(\d{1,2}):(\d{2})$/);
   if (!match) return start;
-  const dur = Number(schedule?.duration_minutes) || 30;
-  const totalMin = parseInt(match[1], 10) * 60 + parseInt(match[2], 10) + dur;
+  const totalMin = parseInt(match[1], 10) * 60 + parseInt(match[2], 10) + 30;
   const endH = Math.floor((totalMin % 1440) / 60);
   const endM = totalMin % 60;
   return `${pad2(parseInt(match[1], 10))}:${match[2]} - ${pad2(endH)}:${pad2(endM)}`;
@@ -726,6 +714,7 @@ export function resolveBackupFieldValue(
     case 'student.phone': { const p = maskPhone(student?.phone, maskSensitiveData); return p ? ok(p) : none; }
     case 'student.email': { const e = maskEmail(student?.email, maskSensitiveData); return e ? ok(e) : none; }
     case 'student.date_of_birth': { const d = fmtDate(student?.date_of_birth); return d ? ok(d) : none; }
+    case 'student.birth_year': return student?.birth_year === null || student?.birth_year === undefined ? none : ok(Number(student.birth_year));
     case 'student.occupation': return okText(student?.occupation);
 
     // --- enrollment ---
@@ -766,8 +755,6 @@ export function resolveBackupFieldValue(
     case 'schedule.start_time': return okText(schedule?.start_time);
     case 'schedule.time_range': { const tr = fmtScheduleTimeRange(schedule); return tr ? ok(tr) : none; }
     case 'schedule.schedule_pattern': return okText(schedule?.schedule_pattern);
-    case 'schedule.duration_minutes':
-      return schedule?.duration_minutes === null || schedule?.duration_minutes === undefined ? none : ok(Number(schedule.duration_minutes));
     case 'teacher.name': return okText(teacher?.name);
     case 'teacher.code': return okText(teacher?.code ?? teacher?.name);
     case 'cvht.staff_code': return okText(csStaffCode);
@@ -788,9 +775,7 @@ export function resolveBackupFieldValue(
   if (key.startsWith('care.')) {
     const n = Number(key.slice(5));
     if (!Number.isFinite(n)) return none;
-    let content = careByMilestone?.get(n);
-    if (!content && n === 29) content = careByMilestone?.get(27);
-    if (!content && n === 45) content = careByMilestone?.get(40);
+    const content = careByMilestone?.get(n);
     return content ? ok(content) : none;
   }
 

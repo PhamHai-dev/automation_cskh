@@ -65,7 +65,6 @@ export interface StudentRow {
   end_date?: string | null;         // Cột L: Ngày kết thúc/Bảo lưu
   start_time?: string | null;       // Cột M: Giờ học (1)
   schedule_pattern?: string | null; // Cột N: Lịch học (1)
-  duration_minutes?: number | null; // Cột O: Thời lượng buổi học (1)
   teacher_name?: string | null;     // Cột U: Giáo viên
   teacher_code?: string | null;     // Cột V: Mã GV
   class_name: string;               // Cột W: Tên lớp
@@ -3905,13 +3904,8 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
                 </th>
                 )}
                 {isColVisible('schedule_pattern') && (
-                <th className="px-3 py-3 border-r border-border/60 whitespace-nowrap min-w-[75px]">
-                  Lịch học
-                </th>
-                )}
-                {isColVisible('duration_minutes') && (
-                <th className="px-3 py-3 border-r-2 border-border/80 text-center whitespace-nowrap min-w-[80px]">
-                  Thời lượng
+                <th className="px-3 py-3 border-r-2 border-border/80 whitespace-nowrap min-w-[75px]">
+                  Buổi học
                 </th>
                 )}
 
@@ -4138,11 +4132,6 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
                       {isColVisible('schedule_pattern') && (
                       <td className="px-3 py-2.5 border-r border-border/60 font-semibold text-blue-700 whitespace-nowrap">
                         {st.schedule_pattern || '—'}
-                      </td>
-                      )}
-                      {isColVisible('duration_minutes') && (
-                      <td className="px-3 py-2.5 border-r-2 border-border/80 text-center text-text-muted whitespace-nowrap">
-                        {st.duration_minutes ? `${st.duration_minutes}p` : '—'}
                       </td>
                       )}
 

@@ -531,8 +531,7 @@ export class DashboardService {
     const upcoming_sessions: HomeUpcomingSessionItem[] = pickedSessions.map((s) => {
       const sessionDate = formatSessionDateYMD(s.session_date);
       const startTime = normalizeHHMM(s.start_time || s.class_schedule?.start_time) || '08:00';
-      const durationMin = s.class_schedule?.duration_minutes || 90;
-      const endTime = normalizeHHMM(s.end_time) || addMinutesToHHMM(startTime, durationMin);
+      const endTime = normalizeHHMM(s.end_time) || addMinutesToHHMM(startTime, 90);
       const modelType = formatClassModel(s.class.model_type);
       const mainClassTeacher = s.class.class_teachers[0]?.teacher?.name || null;
       const teacherName =

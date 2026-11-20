@@ -168,6 +168,7 @@ model Student {
   phone         String?
   email         String?
   date_of_birth DateTime? @db.Date
+  birth_year    Int?
   occupation    String?
   zalo_uid      String?
   line_uid      String?
@@ -241,10 +242,6 @@ model Enrollment {
   post_course_care            String?          @db.Text
   start_date                  DateTime?        @db.Date
   end_date                    DateTime?        @db.Date
-  end_hold_week               Int?
-  end_hold_year               Int?
-  handover_month              Int?
-  renewal_deadline            DateTime?        @db.Date
   status                      EnrollmentStatus @default(NOT_STARTED)
   auto_message_enabled        Boolean          @default(true)
   attended_previous_years     Int?             @default(0)
@@ -409,7 +406,6 @@ model ClassSchedule {
   class_id         Int
   schedule_pattern String
   start_time       String? // e.g., "19:00"
-  duration_minutes Int?
   valid_from       DateTime? @db.Date
   valid_to         DateTime? @db.Date
   active           Boolean   @default(true)

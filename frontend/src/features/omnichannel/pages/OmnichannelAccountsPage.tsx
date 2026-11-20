@@ -193,7 +193,7 @@ export const OmnichannelAccountsPage: React.FC<{ initialChannel?: ChannelFilterT
         uidOrMid: z.zalo_uid,
         phone: z.zalo_phone,
         avatarUrl: z.avatar_url,
-        csName: z.cs?.full_name || z.cs?.name || (z.cs_id ? `CSKH #${z.cs_id}` : 'Chưa gán'),
+        csName: z.cs?.full_name || z.cs?.name || (z.cs_id ? `CVHT #${z.cs_id}` : 'Chưa gán'),
         csCode,
         status: st,
         statusLabel: ZALO_STATUS_LABELS[st] || st,
@@ -219,7 +219,7 @@ export const OmnichannelAccountsPage: React.FC<{ initialChannel?: ChannelFilterT
         uidOrMid: l.basic_id || l.line_mid,
         phone: l.line_phone,
         avatarUrl: l.avatar_url,
-        csName: l.cs?.full_name || l.cs?.name || (l.cs_id ? `CSKH #${l.cs_id}` : 'Chưa gán'),
+        csName: l.cs?.full_name || l.cs?.name || (l.cs_id ? `CVHT #${l.cs_id}` : 'Chưa gán'),
         csCode,
         status: st,
         statusLabel: LINE_STATUS_LABELS[st] || st,
@@ -598,7 +598,7 @@ export const OmnichannelAccountsPage: React.FC<{ initialChannel?: ChannelFilterT
           <Input
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Tìm theo tên tài khoản, SĐT, nhân viên CSKH..."
+            placeholder="Tìm theo tên tài khoản, SĐT, nhân viên CVHT..."
           />
         </div>
       </div>
@@ -610,7 +610,7 @@ export const OmnichannelAccountsPage: React.FC<{ initialChannel?: ChannelFilterT
             <thead>
               <tr className="bg-gray-50/90 border-b border-gray-200 text-[11px] font-bold text-gray-500 uppercase tracking-wider">
                 <th className="py-3.5 px-4">Tài khoản & Kênh</th>
-                <th className="py-3.5 px-4">Nhân viên CSKH</th>
+                <th className="py-3.5 px-4">Nhân viên CVHT</th>
                 <th className="py-3.5 px-4">Trạng thái</th>
                 <th className="py-3.5 px-4">Kết nối mạng</th>
                 <th className="py-3.5 px-4">Giới hạn bảo vệ tài khoản</th>

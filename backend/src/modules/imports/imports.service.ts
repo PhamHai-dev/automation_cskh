@@ -17,7 +17,6 @@ import {
   inferCareLogOutcome,
   normalizeExternalId,
   normalizePhone,
-  parseJlptAttendedSessions,
   parseJlptSettingsSheet,
 } from './sheet-sync.parser';
 
@@ -225,9 +224,6 @@ export class ImportsService {
         suggestedMapping['paid_at'] = colLetter;
       } else if (lower === 'mã lớp') {
         suggestedMapping['class_code'] = colLetter;
-        if (!suggestedMapping['class_name']) {
-          suggestedMapping['class_name'] = colLetter;
-        }
       } else if (lower.includes('tên lớp') || lower === 'lớp' || lower.includes('lớp học') || lower.startsWith('lớp')) {
         suggestedMapping['class_name'] = colLetter;
       } else if (lower.includes('báo cáo học tập')) {
@@ -1793,7 +1789,6 @@ export class ImportsService {
       }
 
       const jlptSettingsMap = parseJlptSettingsSheet(workbook);
-      const jlptAttendedMap = parseJlptAttendedSessions(workbook);
       const isJlptSheet = Boolean(
         worksheet.name.toLowerCase().includes('jlpt') ||
         workbook.getWorksheet('Data JLPT_Inhouse')
@@ -1881,10 +1876,9 @@ export class ImportsService {
           const endDate = this.parseExcelDate(getColVal('end_date'));
           const paidAt = this.parseExcelDate(getColVal('paid_at'));
           const remainingSessionsRaw = parseInt(getColVal('remaining_sessions') || '', 10);
-          const jlptAttended = extId ? jlptAttendedMap.get(extId) : undefined;
           const remainingSessions = !isNaN(remainingSessionsRaw)
             ? remainingSessionsRaw
-            : (jlptAttended !== undefined ? Math.max(0, totalSessions - jlptAttended) : totalSessions);
+            : null;
 
           // 4. Create Enrollment
           const saleRaw = getColVal('sale_name');
@@ -1896,7 +1890,9 @@ export class ImportsService {
 
           const courseContent = getColVal('course_content');
           const programMetadata: Record<string, any> = {};
-          if (courseContent) programMetadata.tuition_fee = courseContent;
+          if (detectedProgramType === 'JLPT' && courseContent) {
+            programMetadata.tuition_fee = courseContent;
+          }
 
           const enrollment = await this.repo.createEnrollment({
             external_id: extId || undefined,
@@ -1909,7 +1905,7 @@ export class ImportsService {
             sale_id: saleId,
             sale_name: saleRaw,
             student_source_status: getColVal('student_source_status'),
-            course_content: courseContent,
+            course_content: detectedProgramType === 'KAIWA' ? courseContent : null,
             payment_status: getColVal('payment_status'),
             course_teacher_type: getColVal('course_teacher_type'),
             level: detectedProgramType === 'JLPT' ? null : getColVal('level'),
@@ -1931,8 +1927,15 @@ export class ImportsService {
           });
 
           // 5. Class & EnrollmentClass
-          const className = getColVal('class_name') || getColVal('class_code') || `Lớp ${student.full_name}`;
-          const cls = await this.repo.createClassIfNotExist(className, getColVal('level') || undefined, classifyClassModel(getColVal('class_model')));
+          const sourceClassName = getColVal('class_name');
+          const sourceClassCode = getColVal('class_code');
+          const className = sourceClassName || `Lớp nhập ${extId || student.id}-${r}`;
+          const cls = await this.repo.createClassIfNotExist(
+            className,
+            getColVal('level') || undefined,
+            classifyClassModel(getColVal('class_model')),
+            sourceClassCode
+          );
 
           await this.repo.createEnrollmentClass({
             enrollment_id: enrollment.id,

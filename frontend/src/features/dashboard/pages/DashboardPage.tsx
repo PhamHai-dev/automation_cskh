@@ -255,7 +255,7 @@ const DashboardPage: React.FC = () => {
           </div>
 
           <ChartCard
-            title="Ghi danh theo CSKH"
+            title="Ghi danh theo CVHT"
             description="Số lượng học viên phụ trách của từng CSKH"
             onExport={() => downloadCSV('enrollment-by-cs', overview.enrollment_by_cs as unknown as Record<string, unknown>[])}
           >

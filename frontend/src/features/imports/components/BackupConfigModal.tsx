@@ -469,7 +469,7 @@ export const BackupConfigModal: React.FC<BackupConfigModalProps> = ({
             csUsers.length > 0 && (
               <div className="sm:col-span-2">
                 <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1">
-                  Nhân viên CSKH phụ trách
+                  Nhân viên CVHT phụ trách
                 </label>
                 <select
                   value={csUserId}

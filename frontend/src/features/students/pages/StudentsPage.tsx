@@ -246,8 +246,10 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
   const activeTab: 'students' | 'care_reports' =
     mode ?? (searchParams.get('tab') === 'care_reports' ? 'care_reports' : 'students');
 
-  // Care milestones state (mặc định các mốc chuẩn: 1, 3, 10, 15)
-  const [configuredMilestones, setConfiguredMilestones] = useState<number[]>([1, 3, 10, 15]);
+  // Care milestones state (theo đúng các mốc nguồn Kaiwa/JLPT)
+  const [configuredMilestones, setConfiguredMilestones] = useState<number[]>([
+    1, 3, 10, 15, 20, 25, 29, 30, 35, 40, 45, 55, 59, 60, 89, 90,
+  ]);
   const [isAddMilestoneModalOpen, setIsAddMilestoneModalOpen] = useState(false);
   const [newMilestoneInput, setNewMilestoneInput] = useState<number | ''>('');
   const [addingMilestone, setAddingMilestone] = useState(false);
@@ -374,6 +376,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
     phone: '',
     email: '',
     date_of_birth: '',
+    birth_year: undefined,
     parent_name: '',
     parent_phone: '',
     school: '',
@@ -406,7 +409,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
     status: 'STUDYING',
     start_time: '20h00',
     schedule_pattern: '246',
-    duration_minutes: 30,
 
     // 4. Báo cáo & CSKH
     study_report_url: '',
@@ -629,7 +631,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
           const label =
             code && name
               ? `${code} - ${name}`
-              : code || name || `CSKH #${csId}`;
+              : code || name || `CVHT #${csId}`;
           map.set(key, { value: key, label });
         }
       });
@@ -882,6 +884,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
         date_of_birth: student.date_of_birth
           ? new Date(student.date_of_birth).toISOString().split('T')[0]
           : '',
+        birth_year: student.birth_year ?? undefined,
         parent_name: student.parent_name || '',
         parent_phone: student.parent_phone || '',
         school: student.school || '',
@@ -917,7 +920,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
         status: enr?.status || 'STUDYING',
         start_time: sched?.start_time || '20h00',
         schedule_pattern: sched?.schedule_pattern || '246',
-        duration_minutes: sched?.duration_minutes ?? 30,
 
         // 4. Báo cáo & CSKH
         study_report_url: enr?.study_report_url || '',
@@ -958,6 +960,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
       const payload: CreateStudentDTO = {
         ...formData,
         date_of_birth: formData.date_of_birth || undefined,
+        birth_year: formData.birth_year ? Number(formData.birth_year) : undefined,
         paid_at: formData.paid_at || undefined,
         attended_previous_years:
           formData.attended_previous_years !== '' && formData.attended_previous_years !== undefined
@@ -1133,7 +1136,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
     },
     {
       key: 'cs_staff_code',
-      header: 'CSKH',
+      header: 'CVHT',
       cell: (item) => {
         const enr = item.enrollments?.[0];
         const code =
@@ -1304,10 +1307,10 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
       header: 'Học phí thực nộp',
       cell: (item) => {
         const enr = item.enrollments?.[0];
-        const rawCourse = cleanNoteText(enr?.course_content);
         const rawVal =
-          enr?.program_metadata?.tuition_fee ??
-          (/^\d+(?:\.\d+)?$/.test(rawCourse) ? rawCourse : null);
+          (enr?.program_type || '').toUpperCase() === 'JLPT'
+            ? enr?.program_metadata?.tuition_fee
+            : null;
         const val = rawVal !== null && rawVal !== undefined ? String(rawVal).trim() : '';
         const displayVal = !val || val === '-'
           ? '—'
@@ -1495,7 +1498,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
         const rawCode =
           ec?.class?.class_code ||
           enr?.program_metadata?.latest_class_code ||
-          ec?.class?.class_name ||
           '';
         const code = rawCode ? formatClassCode(rawCode, ec?.class?.id) : '—';
         return code !== '—' ? (
@@ -1524,11 +1526,11 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
       },
     },
     {
-      key: 'date_of_birth',
-      header: 'Ngày sinh',
+      key: 'birth_year',
+      header: 'Năm sinh',
       cell: (item) => (
         <span className="text-slate-600 text-xs whitespace-nowrap">
-          {item.date_of_birth ? new Date(item.date_of_birth).toLocaleDateString('vi-VN') : '—'}
+          {item.birth_year ?? '—'}
         </span>
       ),
     },
@@ -1679,8 +1681,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
           ? /^\d{4}-\d{2}-\d{2}/.test(String(raw))
             ? new Date(String(raw)).toLocaleDateString('vi-VN')
             : String(raw)
-          : enr?.handed_over_at
-          ? new Date(enr.handed_over_at).toLocaleDateString('vi-VN')
           : null;
         return (
           <span className="text-slate-600 text-xs whitespace-nowrap">
@@ -1734,7 +1734,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
     },
     {
       key: 'schedule_pattern',
-      header: 'Lịch học',
+      header: 'Buổi học',
       cell: (item) => {
         const ec = item.enrollments?.[0]?.enrollment_classes?.[0];
         const schedules = ec?.class?.class_schedules || [];
@@ -1743,24 +1743,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
         return (
           <span className="font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded text-xs whitespace-nowrap">
             {displayPattern}
-          </span>
-        );
-      },
-    },
-    {
-      key: 'duration_minutes',
-      header: 'Thời lượng',
-      cell: (item) => {
-        const ec = item.enrollments?.[0]?.enrollment_classes?.[0];
-        const schedules = ec?.class?.class_schedules || [];
-        const durations = schedules
-          .map((s) => (s.duration_minutes ? `${s.duration_minutes}p` : null))
-          .filter(Boolean);
-        const displayDuration =
-          durations.length > 0 ? Array.from(new Set(durations)).join(', ') : '—';
-        return (
-          <span className="text-slate-600 text-xs whitespace-nowrap">
-            {displayDuration}
           </span>
         );
       },
@@ -1892,7 +1874,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
     },
     {
       key: 'attended_this_year',
-      header: 'Đã học 2026',
+      header: `Đã học ${new Date().getFullYear()}`,
       cell: (item) => {
         const enr = item.enrollments?.[0];
         const ec = enr?.enrollment_classes?.[0];
@@ -2015,12 +1997,8 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
     // --- DYNAMIC CARE SESSION COLUMNS (AO ➔ BC: Buổi 1, Buổi N...) ---
     ...activeMilestones.map((sessionNum) => {
       const label =
-        programFilter === 'JLPT'
-          ? sessionNum === 40
-            ? 'Cuối khóa (B40)'
-            : `Sau buổi ${sessionNum}`
-          : programFilter === 'KAIWA' && sessionNum === 27
-          ? 'Buổi 27-29'
+        programFilter === 'JLPT' && sessionNum === 40
+          ? 'Nội dung CS cuối khóa (B40)'
           : `Nội dung CS sau buổi ${sessionNum}`;
 
       return {
@@ -2404,11 +2382,11 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
           </select>
         </div>
 
-        {/* 6. CSKH phụ trách (CHỈ hiển thị khi ADMIN / MANAGE, ẩn hoàn toàn khi CS) */}
+        {/* 6. CVHT phụ trách (CHỈ hiển thị khi ADMIN / MANAGE, ẩn hoàn toàn khi CS) */}
         {isAdminOrManage && (
           <div>
             <label className="block text-[11px] font-semibold text-text-secondary uppercase tracking-wider mb-1.5">
-              CSKH phụ trách
+              CVHT phụ trách
             </label>
             <select
               value={csFilter}
@@ -2418,8 +2396,8 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
               }}
               className="w-full h-9 px-3 border border-border rounded-xl text-sm bg-white text-text-primary focus:outline-none focus:ring-2 focus:ring-primary shadow-xs transition cursor-pointer"
             >
-              <option value="">Tất cả CSKH phụ trách</option>
-              <option value="UNASSIGNED">Chưa phân công CSKH</option>
+              <option value="">Tất cả CVHT phụ trách</option>
+              <option value="UNASSIGNED">Chưa phân công CVHT</option>
               {csOptions.map((opt) => (
                 <option key={opt.value} value={opt.value}>
                   {opt.label}
@@ -2593,7 +2571,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
         >
           <div className="space-y-4 text-xs">
             <p className="text-text-secondary">
-              Nhập số thứ tự buổi học bạn muốn bổ sung vào bảng chăm sóc (ví dụ: <strong>3</strong>, <strong>5</strong>, <strong>10</strong>, <strong>15</strong>...). Cột này sẽ được lưu chung trên hệ thống để toàn bộ CSKH/Admin cùng thấy.
+              Nhập số thứ tự buổi học bạn muốn bổ sung vào bảng chăm sóc (ví dụ: <strong>3</strong>, <strong>5</strong>, <strong>10</strong>, <strong>15</strong>...). Cột này sẽ được lưu chung trên hệ thống để toàn bộ CVHT/Admin cùng thấy.
             </p>
 
             <div>
@@ -2687,11 +2665,9 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
                   <strong className="text-slate-900">{viewingStudent.email || '—'}</strong>
                 </div>
                 <div>
-                  <span className="text-slate-500 block">Ngày sinh:</span>
+                  <span className="text-slate-500 block">Năm sinh:</span>
                   <strong className="text-slate-900">
-                    {viewingStudent.date_of_birth
-                      ? new Date(viewingStudent.date_of_birth).toLocaleDateString('vi-VN')
-                      : '—'}
+                    {viewingStudent.birth_year ?? '—'}
                   </strong>
                 </div>
                 <div>
@@ -3046,11 +3022,18 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
                   <div>
-                    <label className="block font-medium text-slate-700 mb-1">Ngày sinh (DOB)</label>
+                    <label className="block font-medium text-slate-700 mb-1">Năm sinh</label>
                     <Input
-                      type="date"
-                      value={formData.date_of_birth || ''}
-                      onChange={(e) => setFormData({ ...formData, date_of_birth: e.target.value })}
+                      type="number"
+                      min={1900}
+                      max={2100}
+                      value={formData.birth_year || ''}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          birth_year: e.target.value ? Number(e.target.value) : undefined,
+                        })
+                      }
                     />
                   </div>
                   <div>
@@ -3434,13 +3417,13 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
                   </div>
                 </div>
 
-                {/* 3 Cột chuẩn hóa: Giờ học, Lịch học, Thời lượng */}
+                {/* 2 cột chuẩn hóa: Giờ học, Buổi học */}
                 <div className="p-3.5 bg-blue-50/50 rounded-xl border border-blue-200/80">
                   <h5 className="font-bold text-blue-900 mb-2.5 flex items-center gap-1.5">
                     <Clock className="w-4 h-4 text-blue-600" />
-                    <span>Khung thời gian & Lịch học trong tuần</span>
+                    <span>Khung thời gian & Buổi học trong tuần</span>
                   </h5>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <label className="block font-medium text-slate-700 mb-1">Giờ học</label>
                       <Input
@@ -3451,26 +3434,13 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
                     </div>
                     <div>
                       <label className="block font-medium text-slate-700 mb-1">
-                        Lịch học (Thứ)
+                        Buổi học
                       </label>
                       <Input
                         placeholder="Ví dụ: 246, 357, Thứ 2-4-6..."
                         value={formData.schedule_pattern || ''}
                         onChange={(e) =>
                           setFormData({ ...formData, schedule_pattern: e.target.value })
-                        }
-                      />
-                    </div>
-                    <div>
-                      <label className="block font-medium text-slate-700 mb-1">
-                        Thời lượng (phút)
-                      </label>
-                      <Input
-                        type="number"
-                        placeholder="Ví dụ: 30, 45, 60..."
-                        value={formData.duration_minutes || ''}
-                        onChange={(e) =>
-                          setFormData({ ...formData, duration_minutes: e.target.value })
                         }
                       />
                     </div>

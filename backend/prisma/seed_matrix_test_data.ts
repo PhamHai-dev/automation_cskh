@@ -128,7 +128,6 @@ async function seedMatrixTestData() {
         create: {
           schedule_pattern: '2,4,6',
           start_time: '08:00',
-          duration_minutes: 90,
         },
       },
     },
@@ -159,7 +158,6 @@ async function seedMatrixTestData() {
         create: {
           schedule_pattern: '3,5,7',
           start_time: '20:00',
-          duration_minutes: 45,
         },
       },
     },

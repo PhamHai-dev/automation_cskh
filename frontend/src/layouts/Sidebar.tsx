@@ -270,7 +270,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               allowedRoles: ['ADMIN', 'MANAGE', 'CS'],
             },
             {
-              name: 'Ánh xạ CSKH & Kết nối',
+              name: 'Ánh xạ CVHT & Kết nối',
               tab: 'connection',
               allowedRoles: ['ADMIN', 'MANAGE', 'CS'],
             },

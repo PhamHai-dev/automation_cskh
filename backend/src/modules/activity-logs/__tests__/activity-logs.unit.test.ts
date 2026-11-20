@@ -102,7 +102,7 @@ describe('activity-logs module unit tests', () => {
       expect(diffs).toEqual([
         {
           field: 'cs_id',
-          label: 'CSKH phụ trách',
+          label: 'CVHT phụ trách',
           before: 'CVHT01 - Trần Thị Hải Yến',
           after: 'CVHT02 - Nguyễn Thu Hà',
         },

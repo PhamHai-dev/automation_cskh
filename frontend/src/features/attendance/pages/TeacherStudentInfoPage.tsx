@@ -507,9 +507,9 @@ export const TeacherStudentInfoPage: React.FC = () => {
                     <th className="px-3 py-3 border-r border-border/60 text-center min-w-[105px] whitespace-nowrap">
                       Ngày bắt đầu
                     </th>
-                    {/* CSKH phụ trách */}
+                    {/* CVHT phụ trách */}
                     <th className="px-3 py-3 border-r border-border/60 text-center min-w-[115px] whitespace-nowrap">
-                      CSKH phụ trách
+                      CVHT phụ trách
                     </th>
                     {/* Ngày học */}
                     <th className="px-3 py-3 border-r border-border/60 text-center min-w-[120px] whitespace-nowrap">
@@ -623,7 +623,7 @@ export const TeacherStudentInfoPage: React.FC = () => {
                           {formatDateDMY(row.startDate)}
                         </td>
 
-                        {/* CSKH phụ trách */}
+                        {/* CVHT phụ trách */}
                         <td className="px-3 py-2.5 border-r border-border/60 text-center whitespace-nowrap">
                           {row.csCode || row.csName ? (
                             <span

@@ -132,7 +132,7 @@ async function main() {
 
   const manageUser = await prisma.user.create({
     data: {
-      name: 'Quản lý CSKH',
+      name: 'Quản lý CVHT',
       email: 'manage@gmail.com',
       password_hash: passwordHash,
       roles: ['MANAGE'],
@@ -472,7 +472,6 @@ async function main() {
             class_id: learningClass.id,
             schedule_pattern: row.schedulePattern || '246',
             start_time: row.startTime || '19:30',
-            duration_minutes: row.durationMinutes || 90,
             valid_from: startDateObj,
             valid_to: endDateObj,
             active: true,

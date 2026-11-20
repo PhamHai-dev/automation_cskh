@@ -102,8 +102,6 @@ export async function loadOptimizedWorkbook(
 
 export interface JlptSettingCourse {
   code: string;
-  durationHours: number | null;
-  durationMinutes: number | null;
   totalSessions: number;
 }
 
@@ -123,6 +121,7 @@ export interface NormalizedSheetRow {
   phone: string | null;
   email: string | null;
   dateOfBirth: string | null; // ISO date YYYY-MM-DD
+  birthYear: number | null;
   occupation: string | null;
   saleName: string | null;
   studentSourceStatus: string | null;
@@ -138,10 +137,6 @@ export interface NormalizedSheetRow {
   totalSessions: number;
   totalAttended: number | null;
   remainingSessions: number | null;
-  endHoldWeek: number | null;
-  endHoldYear: number | null;
-  handoverMonth: number | null;
-  renewalDeadline: string | null;
   attendedPreviousYears: number;
   classModel: string | null;
   salesNote: string | null;
@@ -151,7 +146,6 @@ export interface NormalizedSheetRow {
   status: EnrollmentStatus;
   startTime: string | null;
   schedulePattern: string | null;
-  durationMinutes: number | null;
   teacherName: string | null;
   teacherCode: string | null;
   classCode: string | null;
@@ -623,7 +617,7 @@ export function inferCareLogOutcome(text: string): CareLogOutcome {
 }
 
 /**
- * Parse JLPT Setting sheet to get course duration and total sessions
+ * Parse JLPT Setting sheet to get the configured total sessions per course.
  */
 export function parseJlptSettingsSheet(workbook: ExcelJS.Workbook, settingSheetName = 'Setting'): Map<string, JlptSettingCourse> {
   const map = new Map<string, JlptSettingCourse>();
@@ -637,21 +631,13 @@ export function parseJlptSettingsSheet(workbook: ExcelJS.Workbook, settingSheetN
     const code = String(rawCode).trim().toUpperCase();
     if (!code || code === 'MÃ KHOÁ' || code === 'MÃ KHÓA') continue;
 
-    const rawDuration = extractCellValue(row.getCell(4).value);
     const rawTotal = extractCellValue(row.getCell(5).value);
-
-    const durationHours = rawDuration !== null && rawDuration !== '' && !Number.isNaN(Number(rawDuration))
-      ? Number(rawDuration)
-      : null;
-    const durationMinutes = durationHours && durationHours > 0 ? Math.round(durationHours * 60) : null;
     const totalSessions = rawTotal !== null && rawTotal !== '' && !Number.isNaN(Number(rawTotal)) && Number(rawTotal) > 0
       ? Math.round(Number(rawTotal))
       : 35;
 
     map.set(code, {
       code,
-      durationHours,
-      durationMinutes,
       totalSessions,
     });
   }
@@ -660,7 +646,8 @@ export function parseJlptSettingsSheet(workbook: ExcelJS.Workbook, settingSheetN
 }
 
 /**
- * Parse JLPT attended sessions per student external_id from 'Điểm học tập' or 'Chấm buổi'
+ * Parse aggregate JLPT attended-session values for reconciliation/reporting only.
+ * These values must never be treated as the source of truth for persisted attendance.
  */
 export function parseJlptAttendedSessions(workbook: ExcelJS.Workbook): Map<string, number> {
   const attendedByExtId = new Map<string, number>();
@@ -719,7 +706,6 @@ export function parseJlptSheetRows(
   if (!ws) return [];
 
   const settingsMap = parseJlptSettingsSheet(workbook, settingSheetName);
-  const attendedMap = parseJlptAttendedSessions(workbook);
 
   const results: NormalizedSheetRow[] = [];
   const syncKeyCounter = new Map<string, number>();
@@ -770,12 +756,10 @@ export function parseJlptSheetRows(
     const courseSetting = settingsMap.get(settingLookupKey);
 
     const totalSessions = courseSetting?.totalSessions || 38;
-    const durationMinutes = courseSetting?.durationMinutes ?? null;
 
-    const attendedSessions = attendedMap.get(externalId);
-    const remainingSessions = attendedSessions !== undefined
-      ? Math.max(0, totalSessions - attendedSessions)
-      : totalSessions;
+    // Attendance aggregates from Chấm buổi are reconciliation-only. Daily finalized
+    // Attendance records on Web remain the source of truth for learned/remaining totals.
+    const remainingSessions = null;
 
     const startDate = formatIsoDateOnly(parseSheetDate(row.getCell(18).value));
     const rawStatus = cellText(row.getCell(19));
@@ -785,7 +769,7 @@ export function parseJlptSheetRows(
     const teacherName = cellText(row.getCell(22)) || null;
     const classCode = cleanClassIdentifier(cellText(row.getCell(23)));
     const rawClassName = cleanClassIdentifier(cellText(row.getCell(24)));
-    const className = rawClassName || classCode || null;
+    const className = rawClassName || null;
     const hasAssignedClass = Boolean(classCode || className);
     const status = mapEnrollmentStatus(rawStatus, hasAssignedClass);
 
@@ -793,7 +777,7 @@ export function parseJlptSheetRows(
     const callbackNote = cellText(row.getCell(26)) || null;
     const satisfactionScoreB18 = cellText(row.getCell(27)) || undefined;
     const examScore = extractCellValue(row.getCell(28).value);
-    const examResultCol29 = cellText(row.getCell(29));
+    const examStatus = cellText(row.getCell(29)) || undefined;
     const hotIssueNote = cellText(row.getCell(30)) || null;
 
     // Care logs: Col 31..35 -> session 1, 15, 25, 30, 35; Col 36 -> session 40 (cuối khóa)
@@ -817,7 +801,6 @@ export function parseJlptSheetRows(
       }
     }
 
-    const endCourseCare = cellText(row.getCell(36)) || undefined;
     const postCourseCare = cellText(row.getCell(37)) || null;
 
     // Test scores Col 38..44 (l1..l7)
@@ -842,11 +825,9 @@ export function parseJlptSheetRows(
     const latestClassCode = cellText(row.getCell(49)) || undefined;
     const paidMonth = cellText(row.getCell(50)) || undefined;
     const examRegistration = cellText(row.getCell(51)) || undefined;
-    const examResultCol52 = cellText(row.getCell(52));
-    const examResult = examResultCol29 || examResultCol52 || undefined;
+    const examResult = cellText(row.getCell(52)) || undefined;
 
     const programMetadata: Record<string, any> = {};
-    if (sourcePackageCode) programMetadata.package_code = sourcePackageCode;
     if (expectedStartDate) programMetadata.expected_start_date = expectedStartDate;
     if (activeState) programMetadata.active_state = activeState;
     if (satisfactionScoreB18) programMetadata.satisfaction_score_b18 = satisfactionScoreB18;
@@ -854,6 +835,7 @@ export function parseJlptSheetRows(
     if (examScore !== null && examScore !== undefined && String(examScore).trim() !== '') {
       programMetadata.exam_score = examScore;
     }
+    if (examStatus) programMetadata.exam_status = examStatus;
     if (examResult) programMetadata.exam_result = examResult;
     if (Object.keys(testScores).length > 0) programMetadata.test_scores = testScores;
     if (Object.keys(specialSupport).length > 0) programMetadata.special_support = specialSupport;
@@ -863,7 +845,6 @@ export function parseJlptSheetRows(
       programMetadata.tuition_fee = rawTuition;
     }
     if (paidMonth) programMetadata.paid_month = paidMonth;
-    if (endCourseCare) programMetadata.end_course_care = endCourseCare;
 
     const baseKey = `JLPT::${externalId}::${packageCode}::${classCode || paidAt || `r${r}`}`;
     const prevCount = syncKeyCounter.get(baseKey) || 0;
@@ -880,6 +861,7 @@ export function parseJlptSheetRows(
       phone,
       email,
       dateOfBirth: null,
+      birthYear: null,
       occupation: null,
       saleName,
       studentSourceStatus,
@@ -893,12 +875,8 @@ export function parseJlptSheetRows(
       courseTeacherType: null,
       level,
       totalSessions,
-      totalAttended: attendedSessions ?? null,
+      totalAttended: null,
       remainingSessions,
-      endHoldWeek: null,
-      endHoldYear: null,
-      handoverMonth: null,
-      renewalDeadline: null,
       attendedPreviousYears: 0,
       classModel,
       salesNote,
@@ -908,7 +886,6 @@ export function parseJlptSheetRows(
       status,
       startTime,
       schedulePattern,
-      durationMinutes,
       teacherName,
       teacherCode: teacherName,
       classCode,
@@ -918,7 +895,7 @@ export function parseJlptSheetRows(
       studyReportUrl: null,
       hotIssueNote,
       postCourseCare,
-      handedOverAt: expectedStartDate,
+      handedOverAt: null,
       careLogs,
       programMetadata,
     });
@@ -994,14 +971,9 @@ export function parseKaiwaSheetRows(
           ? Math.round(Number(rawAttPrevText))
           : 0;
 
-      const rawAttended = extractCellValue(row.getCell(36).value);
-      const totalAttended =
-        rawAttended !== null &&
-        rawAttended !== undefined &&
-        rawAttended !== '' &&
-        !Number.isNaN(Number(rawAttended))
-          ? Math.round(Number(rawAttended))
-          : null;
+      // AJ is an aggregate total and is intentionally ignored here. Daily attendance
+      // imports are authoritative; aggregate mismatches are surfaced as warnings only.
+      const totalAttended = null;
 
       const studyReportUrl = extractCellHyperlink(row.getCell(37)) || null;
       const exchangeInfo = cellText(row.getCell(38)) || null;
@@ -1062,6 +1034,7 @@ export function parseKaiwaSheetRows(
         phone: null,
         email: null,
         dateOfBirth: null,
+        birthYear: null,
         occupation: null,
         saleName: null,
         studentSourceStatus: null,
@@ -1076,10 +1049,6 @@ export function parseKaiwaSheetRows(
         totalSessions: 30,
         totalAttended,
         remainingSessions: null,
-        endHoldWeek: null,
-        endHoldYear: null,
-        handoverMonth: null,
-        renewalDeadline: null,
         attendedPreviousYears,
         classModel: null,
         salesNote: null,
@@ -1089,7 +1058,6 @@ export function parseKaiwaSheetRows(
         status: EnrollmentStatus.STUDYING,
         startTime: null,
         schedulePattern: null,
-        durationMinutes: null,
         teacherName: null,
         teacherCode: null,
         classCode: null,
@@ -1109,8 +1077,9 @@ export function parseKaiwaSheetRows(
       continue;
     }
 
-    // 'Tổng' (isChamSocLayout === false): Only read cols A..AH (1..34) and BF(58), BG(59), BJ(62), BY(77)
-    // Do NOT read AI..BD (35..56)
+    // 'Tổng' is the Kaiwa profile/class source of truth. Read approved profile fields
+    // from A..X plus Buổi học (AE), Giáo viên (AF/AG), and Tên lớp (AH).
+    // Do NOT read care/report fields AI..BH or ignored schedule fields Y..AC.
     const paidAt = formatIsoDateOnly(parseSheetDate(row.getCell(2).value));
     const saleName = cellText(row.getCell(3)) || null;
     const studentSourceStatus = cellText(row.getCell(4)) || null;
@@ -1122,10 +1091,6 @@ export function parseKaiwaSheetRows(
     const rawCourseContentText = rawCourseContent !== null && rawCourseContent !== undefined
       ? String(rawCourseContent).trim()
       : '';
-    const isNumericTuitionCell = /^\d+(?:\.\d+)?$/.test(rawCourseContentText);
-    const courseContent = rawCourseContentText && !isNumericTuitionCell
-      ? rawCourseContentText
-      : null;
 
     const paymentStatus = cellText(row.getCell(10)) || null;
     const courseTeacherType = cellText(row.getCell(12)) || null;
@@ -1138,7 +1103,7 @@ export function parseKaiwaSheetRows(
 
     const classModel = cellText(row.getCell(15)) || null;
     const salesNote = cleanSheetNote(cellText(row.getCell(16)));
-    const dateOfBirth = formatIsoDateOnly(parseSheetDate(row.getCell(17).value));
+    const birthYear = parseOptionalInteger(row.getCell(17).value);
     const occupation = cellText(row.getCell(18)) || null;
     const cvhtCode = extractCvhtCode(row.getCell(19).value, salesNote);
 
@@ -1152,32 +1117,14 @@ export function parseKaiwaSheetRows(
     const endDate = formatIsoDateOnly(parseSheetDate(row.getCell(23).value));
 
     const startTime = extractStartTime(row.getCell(24).value);
-    const sched1 = extractSchedulePattern(row.getCell(25).value);
-    const schedFallback = extractSchedulePattern(row.getCell(31).value);
-    const schedulePattern = sched1 || schedFallback || null;
-
-    const rawDur = extractCellValue(row.getCell(26).value);
-    let durationMinutes: number | null = null;
-    if (rawDur !== null && rawDur !== undefined && rawDur !== '' && !Number.isNaN(Number(rawDur))) {
-      const durNum = Number(rawDur);
-      durationMinutes = durNum > 0 && durNum <= 5 ? Math.round(durNum * 60) : Math.round(durNum);
-    }
+    const schedulePattern = extractSchedulePattern(row.getCell(31).value);
 
     const teacherName = cellText(row.getCell(32)) || null;
     const teacherCode = cellText(row.getCell(33)) || teacherName || null;
     const className = cleanClassIdentifier(cellText(row.getCell(34)));
     const status = mapEnrollmentStatus(rawStatus, Boolean(className));
 
-    // Approved Kaiwa Tổng mapping: BF/BG = end hold week/year, BJ = renewal deadline, BY = handover month.
-    const endHoldWeek = parseOptionalInteger(row.getCell(58).value);
-    const endHoldYear = parseOptionalInteger(row.getCell(59).value);
-    const renewalDeadline = formatIsoDateOnly(parseSheetDate(row.getCell(62).value));
-    const handoverMonth = parseOptionalInteger(row.getCell(77).value);
-
     const programMetadata: Record<string, any> = {};
-    if (isNumericTuitionCell) {
-      programMetadata.tuition_fee = rawCourseContent;
-    }
 
     const baseKey = `KAIWA::${externalId}::${packageCode}::${className || paidAt || `r${r}`}`;
     const prevCount = syncKeyCounter.get(baseKey) || 0;
@@ -1193,13 +1140,14 @@ export function parseKaiwaSheetRows(
       gender,
       phone,
       email,
-      dateOfBirth,
+      dateOfBirth: null,
+      birthYear,
       occupation,
       saleName,
       studentSourceStatus,
       rawStatusText: rawStatus || null,
       paidAt,
-      courseContent,
+      courseContent: rawCourseContentText || null,
       paymentStatus,
       packageCode,
       courseCode: null,
@@ -1208,10 +1156,6 @@ export function parseKaiwaSheetRows(
       totalSessions,
       totalAttended: null,
       remainingSessions,
-      endHoldWeek,
-      endHoldYear,
-      handoverMonth,
-      renewalDeadline,
       attendedPreviousYears: 0,
       classModel,
       salesNote,
@@ -1221,7 +1165,6 @@ export function parseKaiwaSheetRows(
       status,
       startTime,
       schedulePattern,
-      durationMinutes,
       teacherName,
       teacherCode,
       classCode: className,
@@ -1269,9 +1212,13 @@ export interface ParsedStudentAttendanceRow {
   rawStatusText: string | null;
   startTime: string | null;
   schedulePattern: string | null;
-  durationMinutes: number | null;
   cvhtCode: string | null;
   teacherCode: string | null;
+  sourceTotalSessions: number | null;
+  sourceTotalAttended: number | null;
+  sourceAbsentApproved: number | null;
+  sourceAbsentUnapproved: number | null;
+  sourceTeacherAbsent: number | null;
   entries: ParsedAttendanceEntry[];
   warnings: string[];
   errors: string[];
@@ -1427,7 +1374,7 @@ export function selectAttendanceDayCols(
 /**
  * Parse CSKH Attendance sheet:
  * - JLPT 'Chấm buổi': Parent row per class (Col 1 = Mã lớp, Col 2 = empty) + Child rows (Col 1 = Mã lớp, Col 2 = ID học viên).
- *   Child rows inherit startTime, durationMinutes, teacherCode, cvhtCode, and daily attendance marks from Parent row when Child cell is empty.
+ *   Child rows inherit startTime, teacherCode, cvhtCode, and daily attendance marks from Parent row when Child cell is empty.
  * - KAIWA '3.Chấm buổi': Col 1 = ID, Col 2 = Họ tên, Col 3 = Gói học, Col 11 = Trạng thái, Col 13 = Giờ học (1), Col 15 = Thời lượng (1), Col 22 = Mã GV, Col 23 = Tên lớp.
  */
 export function parseCskhAttendanceSheet(
@@ -1480,7 +1427,6 @@ export function parseCskhAttendanceSheet(
       rawStatusText: string | null;
       startTime: string | null;
       schedulePattern: string | null;
-      durationMinutes: number | null;
       cvhtCode: string | null;
       teacherCode: string | null;
       marksByCol: Map<number, string>;
@@ -1499,11 +1445,6 @@ export function parseCskhAttendanceSheet(
       const startTime = extractStartTime(row.getCell(5).value);
       const cvhtCode = extractCvhtCode(row.getCell(7).value);
       const schedulePattern = extractSchedulePattern(row.getCell(8).value);
-      const rawDur = extractCellValue(row.getCell(9).value);
-      const durationMinutes =
-        rawDur !== null && rawDur !== undefined && rawDur !== '' && !Number.isNaN(Number(rawDur))
-          ? Math.round(Number(rawDur))
-          : null;
       const teacherCode = cellText(row.getCell(10)) || null;
 
       if (!rawClassCode && !externalId && !studentName) continue;
@@ -1524,7 +1465,6 @@ export function parseCskhAttendanceSheet(
           rawStatusText: rawStatus,
           startTime,
           schedulePattern,
-          durationMinutes,
           cvhtCode,
           teacherCode,
           marksByCol: rowMarks,
@@ -1549,7 +1489,6 @@ export function parseCskhAttendanceSheet(
 
       const effectiveStartTime = startTime || parent?.startTime || null;
       const effectiveSchedule = schedulePattern || parent?.schedulePattern || null;
-      const effectiveDuration = durationMinutes ?? parent?.durationMinutes ?? null;
       const effectiveCvht = cvhtCode || parent?.cvhtCode || null;
       const effectiveTeacher = teacherCode || parent?.teacherCode || null;
 
@@ -1591,9 +1530,13 @@ export function parseCskhAttendanceSheet(
         rawStatusText: effectiveStatusText,
         startTime: effectiveStartTime,
         schedulePattern: effectiveSchedule,
-        durationMinutes: effectiveDuration,
         cvhtCode: effectiveCvht,
         teacherCode: effectiveTeacher,
+        sourceTotalSessions: parseOptionalInteger(row.getCell(11).value),
+        sourceTotalAttended: parseOptionalInteger(row.getCell(12).value),
+        sourceAbsentApproved: null,
+        sourceAbsentUnapproved: null,
+        sourceTeacherAbsent: null,
         entries,
         warnings: [],
         errors: rowErrors,
@@ -1613,7 +1556,12 @@ export function parseCskhAttendanceSheet(
       totalRowsScanned++;
 
       const packageCode = cellText(row.getCell(3)) || null;
+      const sourceTotalSessions = parseOptionalInteger(row.getCell(5).value);
       const rawStatus = cellText(row.getCell(11)) || null;
+      const sourceTotalAttended = parseOptionalInteger(row.getCell(25).value);
+      const sourceAbsentApproved = parseOptionalInteger(row.getCell(26).value);
+      const sourceAbsentUnapproved = parseOptionalInteger(row.getCell(27).value);
+      const sourceTeacherAbsent = parseOptionalInteger(row.getCell(28).value);
 
       if (allowedStatuses) {
         const normSt = (rawStatus || '').trim().toLowerCase();
@@ -1625,11 +1573,6 @@ export function parseCskhAttendanceSheet(
 
       const startTime = extractStartTime(row.getCell(13).value);
       const schedulePattern = extractSchedulePattern(row.getCell(14).value);
-      const rawDur = extractCellValue(row.getCell(15).value);
-      const durationMinutes =
-        rawDur !== null && rawDur !== undefined && rawDur !== '' && !Number.isNaN(Number(rawDur))
-          ? Math.round(Number(rawDur))
-          : null;
       const teacherCode = cellText(row.getCell(22)) || cellText(row.getCell(21)) || null;
       const className = cleanClassIdentifier(cellText(row.getCell(23)));
 
@@ -1669,9 +1612,13 @@ export function parseCskhAttendanceSheet(
         rawStatusText: rawStatus,
         startTime,
         schedulePattern,
-        durationMinutes,
         cvhtCode: null,
         teacherCode,
+        sourceTotalSessions,
+        sourceTotalAttended,
+        sourceAbsentApproved,
+        sourceAbsentUnapproved,
+        sourceTeacherAbsent,
         entries,
         warnings: [],
         errors: rowErrors,
@@ -1893,9 +1840,13 @@ export function parseTeacherAttendanceSheet(
             rawStatusText: 'Đang học',
             startTime: startTime || stu.startTime,
             schedulePattern: null,
-            durationMinutes: null,
             cvhtCode: stu.cvhtCode,
             teacherCode: teacherCode || null,
+            sourceTotalSessions: null,
+            sourceTotalAttended: null,
+            sourceAbsentApproved: null,
+            sourceAbsentUnapproved: null,
+            sourceTeacherAbsent: null,
             entries,
             warnings: [],
             errors: rowErrors,
@@ -1914,9 +1865,13 @@ export function parseTeacherAttendanceSheet(
           rawStatusText: 'Đang học',
           startTime,
           schedulePattern: null,
-          durationMinutes: null,
           cvhtCode: null,
           teacherCode: teacherCode || null,
+          sourceTotalSessions: null,
+          sourceTotalAttended: null,
+          sourceAbsentApproved: null,
+          sourceAbsentUnapproved: null,
+          sourceTeacherAbsent: null,
           entries,
           warnings: [],
           errors: rowErrors,
@@ -1972,9 +1927,13 @@ export function parseTeacherAttendanceSheet(
         rawStatusText: 'Đang học',
         startTime: startTime || info?.startTime || null,
         schedulePattern: null,
-        durationMinutes: null,
         cvhtCode: info?.cvhtCode || null,
         teacherCode: teacherCode || null,
+        sourceTotalSessions: null,
+        sourceTotalAttended: null,
+        sourceAbsentApproved: null,
+        sourceAbsentUnapproved: null,
+        sourceTeacherAbsent: null,
         entries,
         warnings: [],
         errors: rowErrors,

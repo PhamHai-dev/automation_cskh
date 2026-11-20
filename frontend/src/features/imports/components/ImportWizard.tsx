@@ -203,7 +203,7 @@ export const ImportWizard: React.FC<Props> = ({ onImportComplete }) => {
           <div className="text-left bg-white p-4 rounded-xl border border-border shadow-sm space-y-2">
             <label htmlFor="assigned-cs-select" className="block text-xs font-semibold text-text-primary flex items-center gap-1.5">
               <UserCheck className="w-4 h-4 text-primary" />
-              Gán học viên cho tài khoản CSKH:
+              Gán học viên cho tài khoản CVHT:
             </label>
             <select
               id="assigned-cs-select"
@@ -299,7 +299,7 @@ export const ImportWizard: React.FC<Props> = ({ onImportComplete }) => {
         </div>
         {selectedCsUser && (
           <Badge variant="info" className="text-xs py-1 px-3">
-            CSKH phụ trách: <b>{formatCsUserOption(selectedCsUser)}</b>
+            CVHT phụ trách: <b>{formatCsUserOption(selectedCsUser)}</b>
           </Badge>
         )}
       </div>

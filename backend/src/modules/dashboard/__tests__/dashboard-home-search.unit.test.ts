@@ -119,7 +119,7 @@ describe('DashboardService — getHome & globalSearch', () => {
             end_time: '23:59',
             status: ClassSessionStatus.SCHEDULED,
             teacher_id: 99,
-            class_schedule: { start_time: '00:00', duration_minutes: 90 },
+            class_schedule: { start_time: '00:00' },
             class: {
               class_name: 'Kaiwa Sơ cấp 1',
               class_code: 'class_0010',

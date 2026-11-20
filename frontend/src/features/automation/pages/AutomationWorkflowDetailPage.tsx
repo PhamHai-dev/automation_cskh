@@ -931,7 +931,7 @@ export const AutomationWorkflowDetailPage: React.FC = () => {
             <div className="border border-border/80 rounded-xl divide-y divide-border/60 max-h-64 overflow-y-auto">
               {csUsers.length === 0 ? (
                 <div className="p-4 text-xs text-text-muted text-center">
-                  Không có tài khoản CSKH nào đang hoạt động.
+                  Không có tài khoản CVHT nào đang hoạt động.
                 </div>
               ) : (
                 csUsers.map((cs) => {
@@ -1293,7 +1293,7 @@ export const AutomationWorkflowDetailPage: React.FC = () => {
                     <th className="px-3 py-2 w-8"></th>
                     <th className="px-3 py-2 font-semibold">Học viên</th>
                     <th className="px-3 py-2 font-semibold">Gói / Lớp / GV</th>
-                    <th className="px-3 py-2 font-semibold">CSKH phụ trách</th>
+                    <th className="px-3 py-2 font-semibold">CVHT phụ trách</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/60">

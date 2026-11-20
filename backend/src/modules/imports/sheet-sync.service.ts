@@ -2231,7 +2231,7 @@ export class SheetSyncService {
         discoveredReportLinks.push({
           externalId: row.externalId,
           studentName: row.fullName,
-          classCode: row.classCode || row.className,
+          classCode: row.classCode,
           packageCode: row.packageCode,
           programType: row.programType,
           studyReportUrl: row.studyReportUrl,
@@ -2436,7 +2436,7 @@ export class SheetSyncService {
           rowNumber: row.rowNumber,
           externalId: row.externalId,
           studentName: row.fullName,
-          classCode: row.classCode || row.className,
+          classCode: row.classCode,
           programType: row.programType,
           entityType: 'StudentEnrollment',
           action: 'INVALID',
@@ -2456,7 +2456,7 @@ export class SheetSyncService {
           rowNumber: row.rowNumber,
           externalId: row.externalId,
           studentName: row.fullName,
-          classCode: row.classCode || row.className,
+          classCode: row.classCode,
           programType: row.programType,
           entityType: 'StudentEnrollment',
           action: 'CREATE',
@@ -2892,8 +2892,65 @@ export class SheetSyncService {
         }
       }
 
+      const reconciliationWarnings: string[] = [];
+      if (flowType === 'CSKH_ATTENDANCE') {
+        const effectiveAttendance = (ec?.attendance || []).filter((att: any) =>
+          !att.deleted_at &&
+          (att.reconciliation_state === ReconciliationState.MATCHED ||
+            att.reconciliation_state === ReconciliationState.RESOLVED)
+        );
+        const countStatus = (...statuses: AttendanceStatus[]) =>
+          effectiveAttendance.filter((att: any) => statuses.includes(att.status)).length;
+        const comparisons: Array<{ label: string; sheet: number | null; web: number }> = [
+          { label: 'Tổng số buổi', sheet: row.sourceTotalSessions, web: Number(matchedEnr.total_sessions || 0) },
+          { label: 'Số buổi đã học', sheet: row.sourceTotalAttended, web: countStatus(AttendanceStatus.ATTENDED) },
+          {
+            label: 'Nghỉ có phép',
+            sheet: row.sourceAbsentApproved,
+            web: countStatus(AttendanceStatus.ABSENT_APPROVED_A, AttendanceStatus.LEAVE_B),
+          },
+          {
+            label: 'Nghỉ không phép',
+            sheet: row.sourceAbsentUnapproved,
+            web: countStatus(AttendanceStatus.ABSENT_UNAPPROVED_C),
+          },
+          {
+            label: 'Giáo viên nghỉ',
+            sheet: row.sourceTeacherAbsent,
+            web: countStatus(AttendanceStatus.TEACHER_ABSENT_D),
+          },
+        ];
+        for (const comparison of comparisons) {
+          if (comparison.sheet !== null && comparison.sheet !== comparison.web) {
+            reconciliationWarnings.push(
+              `${comparison.label}: Sheet ${comparison.sheet}, Web ${comparison.web} — chỉ cảnh báo, không ghi đè.`
+            );
+          }
+        }
+        itemWarnings.push(...reconciliationWarnings);
+      }
+
       if (fieldDiffs.length === 0) {
-        unchangedCount++;
+        if (reconciliationWarnings.length > 0) {
+          items.push({
+            itemKey: `${itemKey}::RECONCILIATION`,
+            rowNumber: row.rowNumber,
+            externalId: row.externalId,
+            studentName: student.full_name || row.studentName,
+            classCode: row.classCode || ec?.class?.class_code || null,
+            programType,
+            entityType: 'Attendance',
+            action: 'UPDATE',
+            defaultSelected: false,
+            summaryText: `Đối chiếu tổng hợp điểm danh: ${reconciliationWarnings.length} chênh lệch (không ghi đè Web)`,
+            fieldDiffs: [],
+            warnings: itemWarnings,
+            errors: [],
+            _payload: { reconciliationOnly: true },
+          });
+        } else {
+          unchangedCount++;
+        }
         continue;
       }
 
@@ -3467,6 +3524,26 @@ export class SheetSyncService {
     }
 
     for (const item of session.items) {
+      // Aggregate values from Sheets are reconciliation-only and must never mutate Web data.
+      if (item._payload?.reconciliationOnly === true) {
+        await prisma.googleSheetSyncRunItem.create({
+          data: {
+            run_id: run.id,
+            row_number: item.rowNumber,
+            external_id: item.externalId,
+            student_name: item.studentName,
+            class_code: item.classCode,
+            entity_type: item.entityType,
+            action: item.action,
+            status: 'SKIPPED',
+            summary_text: item.summaryText,
+            field_diffs: item.fieldDiffs as unknown as Prisma.InputJsonValue,
+            warnings: item.warnings as unknown as Prisma.InputJsonValue,
+          },
+        });
+        continue;
+      }
+
       // In AUTO mode or when selectedSet is not provided: skip INVALID items, apply CREATE/UPDATE/CONFLICT
       const isSelected = selectedSet ? selectedSet.has(item.itemKey) : item.defaultSelected;
 
@@ -3938,6 +4015,7 @@ export class SheetSyncService {
         ...(row.phone ? { phone: row.phone } : {}),
         ...(row.email ? { email: row.email } : {}),
         ...(dobDate ? { date_of_birth: dobDate } : {}),
+        ...(row.birthYear !== null ? { birth_year: row.birthYear } : {}),
         ...(row.occupation ? { occupation: row.occupation } : {}),
       },
       create: {
@@ -3947,6 +4025,7 @@ export class SheetSyncService {
         phone: row.phone,
         email: row.email,
         date_of_birth: dobDate,
+        birth_year: row.birthYear,
         occupation: row.occupation,
         note: row.salesNote,
       },
@@ -3983,6 +4062,8 @@ export class SheetSyncService {
                 gender: existingStudent.gender,
                 phone: existingStudent.phone,
                 email: existingStudent.email,
+                date_of_birth: existingStudent.date_of_birth,
+                birth_year: existingStudent.birth_year,
                 occupation: existingStudent.occupation,
               }
             : null,
@@ -4041,6 +4122,7 @@ export class SheetSyncService {
           : handedOverObj;
 
     const preserveCareFields = Boolean(row.isKaiwaMasterOnly && existingEnrollment);
+    const preserveAttendanceAggregates = Boolean(existingEnrollment);
 
     const enrollmentPayload = {
       external_id: row.externalId,
@@ -4060,7 +4142,7 @@ export class SheetSyncService {
       course_teacher_type: row.courseTeacherType,
       level: row.level,
       total_sessions: row.totalSessions,
-      total_attended: preserveCareFields ? (existingEnrollment as any).total_attended : row.totalAttended,
+      total_attended: preserveAttendanceAggregates ? (existingEnrollment as any).total_attended : null,
       class_model: row.classModel,
       sales_note: row.salesNote,
       study_report_url: preserveCareFields
@@ -4072,15 +4154,13 @@ export class SheetSyncService {
       post_course_care: preserveCareFields ? existingEnrollment!.post_course_care : row.postCourseCare,
       start_date: startDateObj,
       end_date: endDateObj,
-      end_hold_week: row.endHoldWeek,
-      end_hold_year: row.endHoldYear,
-      handover_month: row.handoverMonth,
-      renewal_deadline: row.renewalDeadline ? new Date(row.renewalDeadline) : null,
       status: row.status,
       attended_previous_years: preserveCareFields
         ? existingEnrollment!.attended_previous_years
         : row.attendedPreviousYears,
-      external_remaining_sessions: row.remainingSessions,
+      external_remaining_sessions: preserveAttendanceAggregates
+        ? existingEnrollment!.external_remaining_sessions
+        : null,
       handed_over_at: effectiveHandedOverAt,
       ...(!preserveCareFields && accountCreatedObj ? { account_created_at: accountCreatedObj } : {}),
       external_synced_at: new Date(),
@@ -4099,14 +4179,20 @@ export class SheetSyncService {
 
     // 5. Class, Schedule, Teacher & EnrollmentClass
     if (row.className || row.classCode || row.schedulePattern) {
-      const resolvedClassName = row.className || row.classCode || `Lớp ${row.fullName}`;
-      const resolvedClassCode = row.classCode || resolvedClassName;
-      let cls = await prisma.class.findFirst({
-        where: {
-          OR: [{ class_code: resolvedClassCode }, { class_name: resolvedClassName }],
-        },
-        include: { class_schedules: true, class_teachers: true },
-      });
+      // JLPT W (code) and X (name) are independent. A generated internal name may
+      // satisfy the non-null DB field, but source code/name are never copied together.
+      const generatedClassName = `Lớp nhập ${row.externalId}-${row.rowNumber}`;
+      const resolvedClassName = row.className || generatedClassName;
+      const resolvedClassCode = row.classCode || null;
+      const identityFilters: Prisma.ClassWhereInput[] = [];
+      if (resolvedClassCode) identityFilters.push({ class_code: resolvedClassCode });
+      if (row.className) identityFilters.push({ class_name: row.className });
+      let cls = identityFilters.length > 0
+        ? await prisma.class.findFirst({
+            where: { OR: identityFilters },
+            include: { class_schedules: true, class_teachers: true },
+          })
+        : null;
 
       if (!cls) {
         cls = await prisma.class.create({
@@ -4128,7 +4214,6 @@ export class SheetSyncService {
             class_id: cls.id,
             schedule_pattern: row.schedulePattern,
             start_time: row.startTime,
-            duration_minutes: row.durationMinutes,
             valid_from: startDateObj,
             valid_to: endDateObj,
             active: true,
@@ -4242,6 +4327,8 @@ export class SheetSyncService {
         gender: student.gender,
         phone: student.phone,
         email: student.email,
+        date_of_birth: student.date_of_birth,
+        birth_year: student.birth_year,
         occupation: student.occupation,
       },
       enrollmentId: savedEnrollment.id,
@@ -4799,7 +4886,7 @@ export class SheetSyncService {
             {
               externalId: row.externalId,
               studentName: row.fullName,
-              classCode: row.classCode || row.className,
+              classCode: row.classCode,
               packageCode: row.packageCode,
               programType: row.programType,
               studyReportUrl: row.studyReportUrl,
@@ -4839,7 +4926,7 @@ export class SheetSyncService {
             rowNumber: row.rowNumber,
             externalId: row.externalId,
             studentName: row.fullName,
-            classCode: row.classCode || row.className,
+            classCode: row.classCode,
             programType: row.programType,
             entityType: 'StudentEnrollment',
             action: existedBefore ? 'UPDATE' : 'CREATE',
@@ -4871,7 +4958,7 @@ export class SheetSyncService {
               row_number: row.rowNumber,
               external_id: row.externalId,
               student_name: row.fullName,
-              class_code: row.classCode || row.className,
+              class_code: row.classCode,
               entity_type: 'StudentEnrollment',
               entity_id: String(applied.enrollmentId),
               action: !applied.beforeSnapshot.existed ? 'CREATE' : 'UPDATE',

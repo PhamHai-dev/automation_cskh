@@ -919,11 +919,11 @@ export const GoogleSheetSyncPanel: React.FC = () => {
         cvht_mapping: draft.cvht_mapping,
         default_cs_id: draft.default_cs_id,
       });
-      toast.success(`Đã lưu cấu hình ánh xạ CSKH cho ${code}`);
+      toast.success(`Đã lưu cấu hình ánh xạ CVHT cho ${code}`);
     } catch (err: any) {
       toast.error(
         err.response?.data?.error?.message ||
-          `Không thể lưu ánh xạ CSKH cho ${code}`
+          `Không thể lưu ánh xạ CVHT cho ${code}`
       );
     } finally {
       setSavingCode(null);
@@ -1187,7 +1187,7 @@ export const GoogleSheetSyncPanel: React.FC = () => {
             title={
               serviceAccount?.clientEmail
                 ? 'Bấm để sao chép email Service Account'
-                : 'Bấm để mở trang Ánh xạ CSKH & Kết nối'
+                : 'Bấm để mở trang Ánh xạ CVHT & Kết nối'
             }
             className="bg-white rounded-xl border border-slate-200 px-3.5 py-1.5 flex items-center gap-2.5 shadow-2xs hover:bg-slate-50 transition-colors text-left cursor-pointer"
           >
@@ -1696,7 +1696,7 @@ export const GoogleSheetSyncPanel: React.FC = () => {
         </div>
       )}
 
-      {/* E. SUB-TAB 3: ÁNH XẠ CSKH & KẾT NỐI */}
+      {/* E. SUB-TAB 3: ÁNH XẠ CVHT & KẾT NỐI */}
       {activeSubTab === 'connection' && (
         <div className="data-connection grid grid-cols-1 xl:grid-cols-2 gap-5">
           {/* Card 1: Ánh xạ CVHT cho 2 file tổng */}
@@ -1704,11 +1704,11 @@ export const GoogleSheetSyncPanel: React.FC = () => {
             <div>
               <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
                 <ShieldCheck className="w-4 h-4 text-blue-600" />
-                <span>Ánh xạ Mã CSKH trong Sheet ➔ Tài khoản CSKH</span>
+                <span>Ánh xạ Mã CVHT trong Sheet ➔ Tài khoản CVHT</span>
               </h3>
               <p className="text-xs text-slate-500 mt-0.5">
-                Phân bổ tự động học viên về đúng nhân viên CSKH dựa trên cột
-                CVHT/CSKH trong File nguồn tổng JLPT &amp; Kaiwa
+                Phân bổ tự động học viên về đúng nhân viên CVHT dựa trên cột
+                CVHT trong File nguồn tổng JLPT &amp; Kaiwa
               </p>
             </div>
 
@@ -1824,7 +1824,7 @@ export const GoogleSheetSyncPanel: React.FC = () => {
                           }}
                           className="flex-1 h-8 px-2 border border-slate-200 rounded-lg text-xs font-medium bg-white text-slate-800 focus:outline-none"
                         >
-                          <option value="">-- Chọn CSKH mặc định --</option>
+                          <option value="">-- Chọn CVHT mặc định --</option>
                           {csUsers.map((u) => (
                             <option key={u.id} value={u.id}>
                               {u.name || u.email}{' '}

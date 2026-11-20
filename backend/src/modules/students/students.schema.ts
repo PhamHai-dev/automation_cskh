@@ -9,6 +9,7 @@ export const createStudentSchema = z.object({
     phone: z.string().optional(),
     email: z.string().email().optional().or(z.literal('')),
     date_of_birth: z.string().optional(),
+    birth_year: z.number().int().min(1900).max(2100).optional(),
     occupation: z.string().optional(),
     zalo_uid: z.string().optional(),
     line_uid: z.string().optional(),
@@ -42,7 +43,6 @@ export const createStudentSchema = z.object({
     teacher_code: z.string().optional(),
     start_time: z.string().optional(),
     schedule_pattern: z.string().optional(),
-    duration_minutes: z.union([z.number(), z.string()]).optional(),
 
     // Care & Reports fields
     study_report_url: z.string().optional(),
@@ -65,6 +65,7 @@ export const updateStudentSchema = z.object({
     phone: z.string().optional(),
     email: z.string().email().optional().or(z.literal('')),
     date_of_birth: z.string().optional(),
+    birth_year: z.number().int().min(1900).max(2100).optional(),
     occupation: z.string().optional(),
     zalo_uid: z.string().optional(),
     line_uid: z.string().optional(),
@@ -98,7 +99,6 @@ export const updateStudentSchema = z.object({
     teacher_code: z.string().optional(),
     start_time: z.string().optional(),
     schedule_pattern: z.string().optional(),
-    duration_minutes: z.union([z.number(), z.string()]).optional(),
 
     // Care & Reports fields
     study_report_url: z.string().optional(),

@@ -445,7 +445,7 @@ export const ChannelSecurityLimitsDialog: React.FC<ChannelSecurityLimitsDialogPr
 
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[11px]">
                         <div className="p-2 rounded-lg bg-white border border-amber-200 text-amber-800 font-medium">
-                          • <strong>Chạm mốc 80%</strong>: Nhắc nhân viên CSKH ưu tiên phản hồi
+                          • <strong>Chạm mốc 80%</strong>: Nhắc nhân viên CVHT ưu tiên phản hồi
                           trong cuộc trò chuyện đang mở
                         </div>
                         <div className="p-2 rounded-lg bg-white border border-orange-200 text-orange-800 font-medium">

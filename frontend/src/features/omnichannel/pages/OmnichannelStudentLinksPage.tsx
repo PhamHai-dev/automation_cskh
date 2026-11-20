@@ -266,7 +266,7 @@ export const OmnichannelStudentLinksPage: React.FC<{ initialTab?: string }> = ({
             csObj?.code ??
             null;
 
-          let csDisplay = 'Chưa phân công CSKH';
+          let csDisplay = 'Chưa phân công CVHT';
           if (csName && csCode) {
             csDisplay = csName.toUpperCase().includes(csCode.toUpperCase())
               ? csName
@@ -747,7 +747,7 @@ export const OmnichannelStudentLinksPage: React.FC<{ initialTab?: string }> = ({
   const csOptions = useMemo(() => {
     const map = new Map<string, string>();
     for (const s of students) {
-      if (s.cs_display && s.cs_display !== 'Chưa phân công CSKH') {
+      if (s.cs_display && s.cs_display !== 'Chưa phân công CVHT') {
         map.set(s.cs_display, s.cs_display);
       }
     }
@@ -1092,14 +1092,14 @@ export const OmnichannelStudentLinksPage: React.FC<{ initialTab?: string }> = ({
             {/* CSKH Dropdown Filter */}
             <div className="flex items-center gap-2">
               <label className="text-xs font-semibold text-text-secondary whitespace-nowrap">
-                Nhân viên CSKH:
+                Nhân viên CVHT:
               </label>
               <select
                 value={selectedCsFilter}
                 onChange={(e) => setSelectedCsFilter(e.target.value)}
                 className="px-3 py-1.5 text-xs font-semibold rounded-xl border border-border bg-surface-muted/60 focus:bg-surface focus:outline-none"
               >
-                <option value="ALL">Tất cả nhân viên CSKH</option>
+                <option value="ALL">Tất cả nhân viên CVHT</option>
                 {csOptions.map((cs) => (
                   <option key={cs} value={cs}>
                     {cs}
@@ -1116,7 +1116,7 @@ export const OmnichannelStudentLinksPage: React.FC<{ initialTab?: string }> = ({
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Tìm theo tên học viên, mã học viên, SĐT, tên nhân viên CSKH, tên nhóm..."
+              placeholder="Tìm theo tên học viên, mã học viên, SĐT, tên nhân viên CVHT, tên nhóm..."
               className="w-full pl-10 pr-4 py-2 text-xs rounded-xl border border-border bg-surface-muted/50 focus:bg-surface focus:outline-none focus:ring-2 focus:ring-primary/20"
             />
           </div>
@@ -1130,7 +1130,7 @@ export const OmnichannelStudentLinksPage: React.FC<{ initialTab?: string }> = ({
                 <tr className="bg-surface-muted/70 border-b border-border text-[11px] font-bold text-text-muted uppercase">
                   <th className="py-3.5 px-4">Mã HV</th>
                   <th className="py-3.5 px-4">Học viên</th>
-                  <th className="py-3.5 px-4">Nhân viên CSKH</th>
+                  <th className="py-3.5 px-4">Nhân viên CVHT</th>
                   <th className="py-3.5 px-4">Tên nhóm chuẩn gợi ý</th>
                   <th className="py-3.5 px-4">Nhóm / Tài khoản Zalo</th>
                   <th className="py-3.5 px-4">Nhóm / Tài khoản LINE</th>
@@ -1177,7 +1177,7 @@ export const OmnichannelStudentLinksPage: React.FC<{ initialTab?: string }> = ({
                         </div>
                       </td>
 
-                      {/* 3. Nhân viên CSKH */}
+                      {/* 3. Nhân viên CVHT */}
                       <td className="py-3.5 px-4 whitespace-nowrap">
                         <div className="inline-flex items-center gap-1.5 text-text-secondary font-medium">
                           <UserCheck className="w-3.5 h-3.5 text-blue-600 shrink-0" />

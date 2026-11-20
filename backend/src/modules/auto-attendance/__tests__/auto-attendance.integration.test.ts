@@ -81,7 +81,6 @@ describe('Auto Attendance Integration Tests', () => {
         class_id: cls.id,
         schedule_pattern: todayDayCode(),
         start_time: '00:01', // 00:01 + delay is definitely in the past
-        duration_minutes: 30,
         active: true,
         valid_from: new Date(Date.now() - 86400000),
         valid_to: new Date(Date.now() + 86400000 * 30),
