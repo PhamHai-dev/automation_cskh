@@ -33,6 +33,35 @@ export interface StudentsListParams {
   model?: string;
   payment?: string;
   sale?: string;
+  package_name?: string;
+  course_code?: string;
+  teacher_name?: string;
+  teacher_code?: string;
+  class_name?: string;
+  class_code?: string;
+  schedule_pattern?: string;
+  start_time?: string;
+  start_date_op?: 'EXACT' | 'RANGE';
+  start_date_exact?: string;
+  start_date_from?: string;
+  start_date_to?: string;
+  end_date_op?: 'EXACT' | 'RANGE';
+  end_date_exact?: string;
+  end_date_from?: string;
+  end_date_to?: string;
+  total_sessions_op?: 'EXACT' | 'RANGE';
+  total_sessions_exact?: number;
+  total_sessions_min?: number;
+  total_sessions_max?: number;
+  remaining_sessions_op?: 'EXACT' | 'RANGE';
+  remaining_sessions_exact?: number;
+  remaining_sessions_min?: number;
+  remaining_sessions_max?: number;
+  has_class?: boolean;
+  has_teacher?: boolean;
+  birth_year_min?: number;
+  birth_year_max?: number;
+  occupation?: string;
 }
 
 export const studentsApi = {
@@ -62,6 +91,10 @@ export const studentsApi = {
   update: async (id: number, data: UpdateStudentDTO): Promise<Student> => {
     const res = await apiClient.patch(`/students/${id}`, data);
     return res.data.data;
+  },
+
+  softDelete: async (id: number): Promise<void> => {
+    await apiClient.delete(`/students/${id}`);
   },
 
   getJlptAttendanceReport: async (

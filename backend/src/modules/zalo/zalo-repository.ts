@@ -90,7 +90,10 @@ export class ZaloRepository {
 
   async findContactsForAccount(zaloAccountId: number) {
     return prisma.zaloContactRelation.findMany({
-      where: { zalo_account_id: zaloAccountId },
+      where: {
+        zalo_account_id: zaloAccountId,
+        student: { deleted_at: null },
+      },
       include: {
         student: { select: { id: true, full_name: true, phone: true, email: true } },
       },
@@ -102,6 +105,7 @@ export class ZaloRepository {
       where: {
         zalo_account_id: zaloAccountId,
         relation_status: 'FRIEND',
+        student: { deleted_at: null },
       },
       include: {
         student: { select: { id: true, full_name: true, phone: true, email: true } },

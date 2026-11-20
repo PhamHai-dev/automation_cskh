@@ -25,5 +25,6 @@ router.patch(
 );
 router.patch('/:id', requireRoles(['ADMIN', 'MANAGE', 'CS', 'TEACHER']), controller.update);
 router.put('/:id', requireRoles(['ADMIN', 'MANAGE', 'CS', 'TEACHER']), controller.update);
+router.delete('/:id', requireRoles(['ADMIN']), controller.softDelete);
 
 export { router as studentsRouter };

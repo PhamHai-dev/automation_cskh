@@ -41,6 +41,18 @@ export class AttendanceService {
   }
 
   private async assertWriteScope(actor: AttendanceActor, side: AttendanceSide, classId: number, enrollmentClassId: number, sessionDate: Date) {
+    const activeEnrollmentClass = await prisma.enrollmentClass.findFirst({
+      where: {
+        id: enrollmentClassId,
+        class_id: classId,
+        enrollment: { student: { deleted_at: null } },
+      },
+      select: { id: true },
+    });
+    if (!activeEnrollmentClass) {
+      throw new AppError(404, 'Không tìm thấy ghi danh của học viên đang hoạt động');
+    }
+
     if (actor.roles.includes('ADMIN') || actor.roles.includes('MANAGE')) return;
     if (side === 'TEACHER') {
       // D8 (owner verdict 2026-10-26): fetch ALL of this teacher's assignment
@@ -58,7 +70,11 @@ export class AttendanceService {
       return;
     }
     const enrollmentClass = await prisma.enrollmentClass.findFirst({
-      where: { id: enrollmentClassId, class_id: classId, enrollment: { cs_id: actor.id } },
+      where: {
+        id: enrollmentClassId,
+        class_id: classId,
+        enrollment: { cs_id: actor.id, student: { deleted_at: null } },
+      },
       select: { id: true },
     });
     if (!enrollmentClass) throw new AppError(403, 'Bạn không phụ trách học viên này');

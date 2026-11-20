@@ -27,12 +27,20 @@ export interface UpdateCareTaskDTO {
 }
 
 export interface CareTaskFilterParams {
+  search?: string;
+  program_type?: 'KAIWA' | 'JLPT';
   status?: CareTaskStatus;
   priority?: CareTaskPriority;
   type?: CareTaskType;
   assigned_to_id?: number;
   enrollment_id?: number;
   due_filter?: 'overdue' | 'today' | 'this_week' | 'all';
+  due_from?: string;
+  due_to?: string;
+  created_from?: string;
+  created_to?: string;
+  page?: number;
+  pageSize?: number;
   limit?: number;
   offset?: number;
 }

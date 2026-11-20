@@ -60,7 +60,7 @@ export interface ClassListQueryOptions {
   programType?: string;
   status?: string;
   packageName?: string;
-  courseCategory?: 'KAIWA' | 'JNPT' | string;
+  courseCategory?: 'KAIWA' | 'JLPT' | string;
   courseLevel?: string;
   teacherName?: string;
   teacherCode?: string;

@@ -247,9 +247,10 @@ export const MyTeachingSessionsPage: React.FC<MyTeachingSessionsPageProps> = ({
   const [sessions, setSessions] = useState<any[]>([]);
   const [isLoadingSessions, setIsLoadingSessions] = useState(false);
 
-  // Tab 1 pagination
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [pageSize, setPageSize] = useState<number>(25);
+  const [scheduleTotalCount, setScheduleTotalCount] = useState<number>(0);
+  const [scheduleTotalPages, setScheduleTotalPages] = useState<number>(0);
 
   // Tab 2 (`pending`) & Tab 3 (`history`) specific states
   const [trackingStartDate, setTrackingStartDate] = useState<string>('');
@@ -387,12 +388,19 @@ export const MyTeachingSessionsPage: React.FC<MyTeachingSessionsPageProps> = ({
     };
   }, [anchorDate, dateRangeFilter, viewMode, getWeekBounds]);
 
-  // Load teacher list once for ADMIN/MANAGE
+  // ADMIN/MANAGE need selectable teacher accounts, not merely the first page of profiles.
+  // Filter on the server so unprovisioned profiles cannot fill the default 20-row page
+  // and leave the dropdown empty even when eligible teachers exist on later pages.
   useEffect(() => {
     if (!isPrivileged) return;
     teachersApi
-      .list()
-      .then((items) => setTeachers(items.filter((t) => t.active && t.user_id)))
+      .list({
+        page: 1,
+        pageSize: 200,
+        active: true,
+        account_status: 'ACTIVE_ACCOUNT',
+      })
+      .then((items) => setTeachers(items))
       .catch(() => toast.error('Không thể tải danh sách giáo viên'));
   }, [isPrivileged, toast]);
 
@@ -404,22 +412,7 @@ export const MyTeachingSessionsPage: React.FC<MyTeachingSessionsPageProps> = ({
       .catch(() => toast.error('Không thể tải danh sách lớp phụ trách'));
   }, [toast]);
 
-  // Map classId -> modelType from availableClasses + sessions so we can also client-filter pending/history by model
-  const classModelById = useMemo(() => {
-    const map = new Map<number, '1:1' | '1:2' | '1:n'>();
-    for (const cls of availableClasses) {
-      if (cls?.id) {
-        map.set(Number(cls.id), normalizeModelType(cls.model_type));
-      }
-    }
-    for (const s of sessions) {
-      const cid = s.class?.id || s.class_id;
-      if (cid && s.class?.model_type) {
-        map.set(Number(cid), normalizeModelType(s.class.model_type));
-      }
-    }
-    return map;
-  }, [availableClasses, sessions]);
+  // Class model labels come from the loaded class list; filter execution is backend-owned.
 
   // Load Tab 1 (`schedule`) sessions
   const loadSessions = useCallback(async () => {
@@ -434,14 +427,37 @@ export const MyTeachingSessionsPage: React.FC<MyTeachingSessionsPageProps> = ({
         startDate: start,
         endDate: end,
         ...(isPrivileged ? { teacherId: selectedTeacherId } : {}),
+        classId: selectedClassId,
+        search: debouncedSearch || undefined,
+        modelType: modelFilter === 'ALL' ? undefined : modelFilter,
+        completionState: completionFilter === 'ALL' ? undefined : completionFilter,
+        page: currentPage,
+        pageSize,
       });
-      setSessions(data || []);
+      setSessions(Array.isArray(data) ? data : data.items || []);
+      setScheduleTotalCount(Array.isArray(data) ? data.length : data.total || 0);
+      setScheduleTotalPages(Array.isArray(data) ? 1 : data.totalPages || 0);
     } catch (err: any) {
       toast.error(err.response?.data?.message || 'Không thể tải lịch dạy của bạn');
+      setSessions([]);
+      setScheduleTotalCount(0);
+      setScheduleTotalPages(0);
     } finally {
       setIsLoadingSessions(false);
     }
-  }, [calculateDates, hasContext, isPrivileged, selectedTeacherId, toast]);
+  }, [
+    calculateDates,
+    hasContext,
+    isPrivileged,
+    selectedTeacherId,
+    selectedClassId,
+    debouncedSearch,
+    modelFilter,
+    completionFilter,
+    currentPage,
+    pageSize,
+    toast,
+  ]);
 
   useEffect(() => {
     loadSessions();
@@ -460,6 +476,7 @@ export const MyTeachingSessionsPage: React.FC<MyTeachingSessionsPageProps> = ({
         startDate: trackingStartDate || undefined,
         endDate: trackingEndDate || undefined,
         search: debouncedSearch || undefined,
+        modelType: modelFilter === 'ALL' ? undefined : modelFilter,
       });
       setPendingCount(result.count);
     } catch {
@@ -497,6 +514,7 @@ export const MyTeachingSessionsPage: React.FC<MyTeachingSessionsPageProps> = ({
         startDate: trackingStartDate || undefined,
         endDate: trackingEndDate || undefined,
         search: debouncedSearch || undefined,
+        modelType: modelFilter === 'ALL' ? undefined : modelFilter,
         page: trackingPage,
         pageSize: trackingPageSize,
       };
@@ -641,82 +659,7 @@ export const MyTeachingSessionsPage: React.FC<MyTeachingSessionsPageProps> = ({
     };
   }, [enrichedSessions]);
 
-  // Apply search, class, model, and completion filters for Tab 1 (`schedule`)
-  const filteredSessions = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    return enrichedSessions.filter((item) => {
-      const clsId = item.session.class?.id || item.session.class_id;
-      if (selectedClassId && Number(clsId) !== Number(selectedClassId)) {
-        return false;
-      }
-      if (modelFilter !== 'ALL' && item.modelType !== modelFilter) {
-        return false;
-      }
-      if (completionFilter === 'COMPLETED' && !item.isFullyMarked) {
-        return false;
-      }
-      if (completionFilter === 'PENDING' && item.isFullyMarked) {
-        return false;
-      }
-      if (q) {
-        const clsName = (item.session.class?.class_name || '').toLowerCase();
-        const clsCode = formatClassCode(
-          item.session.class?.class_code,
-          item.session.class?.id
-        ).toLowerCase();
-        const level = (item.session.class?.level || '').toLowerCase();
-        const topic = (item.effectiveLessonTopic || '').toLowerCase();
-        const note = (item.effectiveTeacherNote || '').toLowerCase();
-        const studentMatch = item.enrollmentClasses.some((ec: any) => {
-          const st = ec.enrollment?.student;
-          const sName = (st?.full_name || '').toLowerCase();
-          const sCode = (st?.external_id || '').toLowerCase();
-          const sPhone = (st?.phone || '').toLowerCase();
-          const att = ec.attendance?.find(
-            (a: any) => a.class_session_id === item.session.id && !a.deleted_at
-          );
-          const sTopic = (att?.lesson_topic || '').toLowerCase();
-          const sNote = (att?.teacher_note || '').toLowerCase();
-          return (
-            sName.includes(q) ||
-            sCode.includes(q) ||
-            sPhone.includes(q) ||
-            sTopic.includes(q) ||
-            sNote.includes(q)
-          );
-        });
-        if (
-          !clsName.includes(q) &&
-          !clsCode.includes(q) &&
-          !level.includes(q) &&
-          !topic.includes(q) &&
-          !note.includes(q) &&
-          !studentMatch
-        ) {
-          return false;
-        }
-      }
-      return true;
-    });
-  }, [enrichedSessions, selectedClassId, modelFilter, completionFilter, searchQuery]);
 
-  // Apply client-side model filter on pendingItems & historyItems when modelFilter !== 'ALL'
-  const displayedPendingItems = useMemo(() => {
-    if (modelFilter === 'ALL') return pendingItems;
-    return pendingItems.filter((item) => {
-      const m = classModelById.get(Number(item.class?.id));
-      return !m || m === modelFilter;
-    });
-  }, [pendingItems, modelFilter, classModelById]);
-
-  const displayedHistoryItems = useMemo(() => {
-    if (modelFilter === 'ALL') return historyItems;
-    return historyItems.filter((item) => {
-      if (!item.class?.id) return true;
-      const m = classModelById.get(Number(item.class.id));
-      return !m || m === modelFilter;
-    });
-  }, [historyItems, modelFilter, classModelById]);
 
   // Active filter count & clear handler for `<FilterBar>`
   const activeFilterCount = useMemo(() => {
@@ -1158,24 +1101,24 @@ export const MyTeachingSessionsPage: React.FC<MyTeachingSessionsPageProps> = ({
     }));
   };
 
-  // Pagination calculation over filteredSessions (Tab 1)
-  const totalCount = filteredSessions.length;
-  const totalPages = Math.ceil(totalCount / pageSize) || 1;
+  // The backend applies search, class, model, completion, scope, and pagination
+  // before this page receives the schedule rows.
+  const filteredSessions = enrichedSessions;
+  const totalCount = scheduleTotalCount;
+  const totalPages = scheduleTotalPages || 1;
   const currentPageSafe = Math.min(currentPage, totalPages);
 
   useEffect(() => {
-    if (currentPage > totalPages) {
+    if (currentPage > totalPages && totalPages > 0) {
       setCurrentPage(1);
     }
   }, [currentPage, totalPages]);
 
-  const paginatedSessions = useMemo(() => {
-    const start = (currentPageSafe - 1) * pageSize;
-    return filteredSessions.slice(start, start + pageSize);
-  }, [filteredSessions, currentPageSafe, pageSize]);
-
+  const paginatedSessions = enrichedSessions;
   const startRecord = totalCount === 0 ? 0 : (currentPageSafe - 1) * pageSize + 1;
   const endRecord = Math.min(currentPageSafe * pageSize, totalCount);
+  const displayedPendingItems = pendingItems;
+  const displayedHistoryItems = historyItems;
 
   // Weekly calendar days for Timetable mode (Tab 1)
   const weekCalendar = useMemo(() => {

@@ -151,6 +151,54 @@ const formatAssignmentDate = (raw?: string | null): string => {
 
 type DetailedFilterMode = 'week' | 'month';
 type DetailedViewMode = 'matrix' | 'log';
+type ProgramFilter = 'ALL' | 'KAIWA' | 'JLPT';
+
+const readProgramFilter = (params: URLSearchParams): ProgramFilter => {
+  const raw = (params.get('program') || '').toUpperCase();
+  if (raw === 'KAIWA') return 'KAIWA';
+  // Giữ tương thích link cũ nhưng chỉ dùng JLPT trong state/contract hiện tại.
+  if (raw === 'JLPT' || raw === 'JNPT') return 'JLPT';
+  return 'ALL';
+};
+
+const readLearningFilters = (params: URLSearchParams): EnrollmentFilterState => {
+  const program = readProgramFilter(params);
+  return {
+    ...INITIAL_ENROLLMENT_FILTERS,
+    searchQuery: params.get('search') || '',
+    statusFilter: params.get('status') || '',
+    modelFilter: params.get('model') || '',
+    teacherName: params.get('teacher') || '',
+    teacherCode: params.get('teacherCode') || '',
+    packageName: params.get('package') || '',
+    courseCategory: program === 'ALL' ? 'ALL' : program,
+    courseLevel: program === 'KAIWA' ? params.get('level') || '' : '',
+    className: params.get('className') || '',
+    selectedSale: params.get('sale') || '',
+    schedulePattern: params.get('schedule') || '',
+    startTime: params.get('startTime') || '',
+    totalSessionsOp: params.get('totalOp') === 'EXACT' ? 'EXACT' : 'RANGE',
+    totalSessionsExact: params.get('totalExact') || '',
+    totalSessionsMin: params.get('totalMin') || '',
+    totalSessionsMax: params.get('totalMax') || '',
+    attendedSessionsOp: params.get('attendedOp') === 'EXACT' ? 'EXACT' : 'RANGE',
+    attendedSessionsExact: params.get('attendedExact') || '',
+    attendedSessionsMin: params.get('attendedMin') || '',
+    attendedSessionsMax: params.get('attendedMax') || '',
+    remainingSessionsOp: params.get('remainingOp') === 'EXACT' ? 'EXACT' : 'RANGE',
+    remainingSessionsExact: params.get('remainingExact') || '',
+    remainingSessionsMin: params.get('remainingMin') || '',
+    remainingSessionsMax: params.get('remainingMax') || '',
+    startDateOp: params.get('startDateOp') === 'EXACT' ? 'EXACT' : 'RANGE',
+    startDateExact: params.get('startDateExact') || '',
+    startDateFrom: params.get('startDateFrom') || '',
+    startDateTo: params.get('startDateTo') || '',
+    endDateOp: params.get('endDateOp') === 'EXACT' ? 'EXACT' : 'RANGE',
+    endDateExact: params.get('endDateExact') || '',
+    endDateFrom: params.get('endDateFrom') || '',
+    endDateTo: params.get('endDateTo') || '',
+  };
+};
 
 export interface ClassesPageProps {
   initialDisplayMode?: 'students' | 'classes';
@@ -252,22 +300,9 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
   };
 
   // Filters dùng chung cho cả 2 chế độ (đồng bộ với URL + EnrollmentFilterBar)
-  const [programFilter, setProgramFilter] = useState<'ALL' | 'KAIWA' | 'JLPT'>(() => {
-    const p = (searchParams.get('program') || '').toUpperCase();
-    return p === 'KAIWA' || p === 'JLPT' ? p : 'ALL';
-  });
-
-  const [filters, setFilters] = useState<EnrollmentFilterState>(() => ({
-    ...INITIAL_ENROLLMENT_FILTERS,
-    searchQuery: searchParams.get('search') || '',
-    statusFilter: searchParams.get('status') || '',
-    modelFilter: searchParams.get('model') || '',
-    teacherName: searchParams.get('teacher') || '',
-    packageName: searchParams.get('package') || '',
-    courseLevel: searchParams.get('level') || '',
-    className: searchParams.get('className') || '',
-    selectedSale: searchParams.get('sale') || '',
-  }));
+  const [programFilter, setProgramFilter] = useState<ProgramFilter>(() => readProgramFilter(searchParams));
+  const [filters, setFilters] = useState<EnrollmentFilterState>(() => readLearningFilters(searchParams));
+  const isApplyingFilterUrlRef = useRef(false);
 
   const [onlyScheduledOnDate, setOnlyScheduledOnDate] = useState<boolean>(
     () => searchParams.get('onlyScheduled') === '1' || searchParams.get('onlyScheduled') === 'true'
@@ -281,11 +316,14 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
   const debouncedSchedulePattern = useDebouncedValue(filters.schedulePattern.trim(), 300);
   const debouncedStartTime = useDebouncedValue(filters.startTime.trim(), 300);
 
-  // Sync external URL search change (e.g. Back/Forward)
+  // Khôi phục toàn bộ filter khi dùng Back/Forward hoặc mở link được chia sẻ.
   useEffect(() => {
-    const q = searchParams.get('search');
-    if (q !== null && q !== filters.searchQuery) {
-      setFilters((prev) => ({ ...prev, searchQuery: q }));
+    const nextProgram = readProgramFilter(searchParams);
+    const nextFilters = readLearningFilters(searchParams);
+    if (nextProgram !== programFilter || JSON.stringify(nextFilters) !== JSON.stringify(filters)) {
+      isApplyingFilterUrlRef.current = true;
+      setProgramFilter(nextProgram);
+      setFilters(nextFilters);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
@@ -1233,25 +1271,6 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
     return rows;
   }, [isTeacher, enrollments, classes]);
 
-  const activeMeta = isStudentsQueryMode ? enrollmentsMeta : classesMeta;
-
-  const programCounts = useMemo(() => {
-    if (enrollmentsMeta?.facets?.programCounts) {
-      return enrollmentsMeta.facets.programCounts;
-    }
-    if (classesMeta?.facets?.programCounts) {
-      return classesMeta.facets.programCounts;
-    }
-    let kaiwa = 0;
-    let jlpt = 0;
-    allStudentRows.forEach((s) => {
-      const pType = (s.program_type || '').toUpperCase();
-      if (pType === 'JLPT') jlpt++;
-      else kaiwa++;
-    });
-    return { all: activeMeta?.total ?? allStudentRows.length, kaiwa, jlpt };
-  }, [allStudentRows, enrollmentsMeta, classesMeta, activeMeta]);
-
   // Dynamic lists for EnrollmentFilterBar dropdowns (combining backend filterOptions with local data)
   const salesList = useMemo(() => {
     const set = new Set<string>([
@@ -1353,6 +1372,15 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
     return Array.from(set).filter(Boolean).sort((a, b) => a.localeCompare(b, 'vi-VN'));
   }, [classes, allStudentRows, enrollmentsMeta, classesMeta, filters.className]);
 
+  const handleProgramChange = (program: 'ALL' | 'KAIWA' | 'JLPT') => {
+    setProgramFilter(program);
+    setFilters((previous) => ({
+      ...previous,
+      courseCategory: program === 'ALL' ? 'ALL' : program,
+      courseLevel: program === 'KAIWA' ? previous.courseLevel : '',
+    }));
+  };
+
   const handleResetFilters = () => {
     setFilters(INITIAL_ENROLLMENT_FILTERS);
     setProgramFilter('ALL');
@@ -1438,7 +1466,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
         const isJlpt =
           students.some((s) => (s.program_type || '').toUpperCase() === 'JLPT') ||
           /\b(jlpt|jnpt|n[1-5])\b/i.test(`${c.class_name} ${c.level || ''}`);
-        if (filters.courseCategory === 'JNPT' && !isJlpt) return false;
+        if (filters.courseCategory === 'JLPT' && !isJlpt) return false;
         if (filters.courseCategory === 'KAIWA' && isJlpt) return false;
       }
 
@@ -1694,9 +1722,18 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
     statsAttendanceFilter,
   ]);
 
-  // Đồng bộ các trạng thái lọc chính của ClassesPage lên URL query params bên cạnh sessionStorage
+  // Đồng bộ toàn bộ trạng thái lọc lên URL để chia sẻ link và khôi phục bằng Back/Forward.
   useEffect(() => {
+    if (isApplyingFilterUrlRef.current) {
+      isApplyingFilterUrlRef.current = false;
+      return;
+    }
+
     const next = new URLSearchParams(searchParams);
+    const setOptionalParam = (name: string, value: string, defaultValue = '') => {
+      if (value && value !== defaultValue) next.set(name, value);
+      else next.delete(name);
+    };
     const defaultMode = initialDisplayMode || (isTeacher ? 'classes' : 'students');
     if (displayMode !== defaultMode) next.set('mode', displayMode);
     else next.delete('mode');
@@ -1707,23 +1744,37 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
     if (programFilter !== 'ALL') next.set('program', programFilter);
     else next.delete('program');
 
-    if (filters.searchQuery.trim()) next.set('search', filters.searchQuery.trim());
-    else next.delete('search');
-
-    if (filters.modelFilter) next.set('model', filters.modelFilter);
-    else next.delete('model');
-
-    if (!isTeacher && filters.teacherName) next.set('teacher', filters.teacherName);
-    else next.delete('teacher');
-
-    if (filters.courseLevel) next.set('level', filters.courseLevel);
-    else next.delete('level');
-
-    if (filters.packageName) next.set('package', filters.packageName);
-    else next.delete('package');
-
-    if (filters.statusFilter) next.set('status', filters.statusFilter);
-    else next.delete('status');
+    setOptionalParam('search', filters.searchQuery.trim());
+    setOptionalParam('model', filters.modelFilter);
+    setOptionalParam('teacher', !isTeacher ? filters.teacherName : '');
+    setOptionalParam('teacherCode', !isTeacher ? filters.teacherCode : '');
+    setOptionalParam('level', programFilter === 'KAIWA' ? filters.courseLevel : '');
+    setOptionalParam('package', filters.packageName);
+    setOptionalParam('status', filters.statusFilter);
+    setOptionalParam('className', filters.className);
+    setOptionalParam('sale', !isCSOnly && !isTeacher ? filters.selectedSale : '');
+    setOptionalParam('schedule', filters.schedulePattern);
+    setOptionalParam('startTime', filters.startTime);
+    setOptionalParam('totalOp', filters.totalSessionsOp, 'RANGE');
+    setOptionalParam('totalExact', filters.totalSessionsExact);
+    setOptionalParam('totalMin', filters.totalSessionsMin);
+    setOptionalParam('totalMax', filters.totalSessionsMax);
+    setOptionalParam('attendedOp', filters.attendedSessionsOp, 'RANGE');
+    setOptionalParam('attendedExact', filters.attendedSessionsExact);
+    setOptionalParam('attendedMin', filters.attendedSessionsMin);
+    setOptionalParam('attendedMax', filters.attendedSessionsMax);
+    setOptionalParam('remainingOp', filters.remainingSessionsOp, 'RANGE');
+    setOptionalParam('remainingExact', filters.remainingSessionsExact);
+    setOptionalParam('remainingMin', filters.remainingSessionsMin);
+    setOptionalParam('remainingMax', filters.remainingSessionsMax);
+    setOptionalParam('startDateOp', filters.startDateOp, 'RANGE');
+    setOptionalParam('startDateExact', filters.startDateExact);
+    setOptionalParam('startDateFrom', filters.startDateFrom);
+    setOptionalParam('startDateTo', filters.startDateTo);
+    setOptionalParam('endDateOp', filters.endDateOp, 'RANGE');
+    setOptionalParam('endDateExact', filters.endDateExact);
+    setOptionalParam('endDateFrom', filters.endDateFrom);
+    setOptionalParam('endDateTo', filters.endDateTo);
 
     const todayStr = toLocalDateString(new Date());
     if (selectedDate && selectedDate !== todayStr) next.set('date', selectedDate);
@@ -1752,14 +1803,10 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
     displayMode,
     initialDisplayMode,
     isTeacher,
+    isCSOnly,
     activeTab,
     programFilter,
-    filters.searchQuery,
-    filters.modelFilter,
-    filters.teacherName,
-    filters.courseLevel,
-    filters.packageName,
-    filters.statusFilter,
+    filters,
     selectedDate,
     onlyScheduledOnDate,
     currentPeriodDate,
@@ -3989,63 +4036,6 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
         title={isTeacher ? 'Điểm danh' : 'Lớp học & Điểm danh'}
         actions={
           <div className="flex flex-wrap items-center gap-2.5">
-            {/* Bộ chọn Chương trình (Tất cả | Giao tiếp Kaiwa | Luyện thi JLPT) kèm số đếm giống test_diem_danh */}
-            <div className="inline-flex items-center p-1 bg-slate-100 rounded-xl border border-slate-200/80 gap-1">
-              <button
-                type="button"
-                onClick={() => setProgramFilter('ALL')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                  programFilter === 'ALL'
-                    ? 'bg-white text-slate-900 shadow-xs border border-slate-200/80'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                <span>Tất cả</span>
-                <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-slate-200/80 text-slate-700 font-extrabold">
-                  {programCounts.all}
-                </span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setProgramFilter('KAIWA')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                  programFilter === 'KAIWA'
-                    ? 'bg-teal-600 text-white shadow-xs'
-                    : 'text-slate-600 hover:text-teal-700'
-                }`}
-              >
-                <span>Giao tiếp (Kaiwa)</span>
-                <span
-                  className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${
-                    programFilter === 'KAIWA'
-                      ? 'bg-teal-700 text-white'
-                      : 'bg-teal-100 text-teal-800'
-                  }`}
-                >
-                  {programCounts.kaiwa}
-                </span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setProgramFilter('JLPT')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                  programFilter === 'JLPT'
-                    ? 'bg-indigo-600 text-white shadow-xs'
-                    : 'text-slate-600 hover:text-indigo-700'
-                }`}
-              >
-                <span>Luyện thi (JLPT)</span>
-                <span
-                  className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${
-                    programFilter === 'JLPT'
-                      ? 'bg-indigo-700 text-white'
-                      : 'bg-indigo-100 text-indigo-800'
-                  }`}
-                >
-                  {programCounts.jlpt}
-                </span>
-              </button>
-            </div>
 
             {canManageClasses && (
               <Button
@@ -4074,86 +4064,6 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
         ]}
       />
 
-      {/* Thanh điều khiển Chế độ hiển thị (Theo Học viên | Theo Lớp học) & tùy chọn nhanh theo Tab */}
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2.5">
-        <div className="flex flex-wrap items-center gap-2.5">
-          <div
-            className="inline-flex h-9 p-1 bg-slate-100 rounded-xl border border-border gap-1"
-            role="tablist"
-            aria-label="Chế độ hiển thị Theo Học viên hoặc Theo Lớp học"
-          >
-            <button
-              type="button"
-              onClick={() => setDisplayMode('students')}
-              className={`px-3 h-full rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 whitespace-nowrap ${
-                displayMode === 'students'
-                  ? 'bg-primary text-white shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/70'
-              }`}
-            >
-              <Users className="w-3.5 h-3.5 shrink-0" />
-              <span>Theo Học viên</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setDisplayMode('classes')}
-              className={`px-3 h-full rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 whitespace-nowrap ${
-                displayMode === 'classes'
-                  ? 'bg-primary text-white shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/70'
-              }`}
-            >
-              <GraduationCap className="w-3.5 h-3.5 shrink-0" />
-              <span>Theo Lớp học</span>
-            </button>
-          </div>
-
-          {activeTab === 'quick' && (
-            <label className="inline-flex h-9 items-center gap-2 rounded-xl border border-border/80 bg-surface px-3 text-xs font-semibold text-text-secondary cursor-pointer hover:bg-slate-50 transition">
-              <input
-                type="checkbox"
-                checked={onlyScheduledOnDate}
-                onChange={(e) => setOnlyScheduledOnDate(e.target.checked)}
-                className="h-3.5 w-3.5 rounded border-slate-300 text-primary accent-primary focus:ring-primary"
-              />
-              <span>Chỉ có lịch / ca ngày đang chọn</span>
-            </label>
-          )}
-
-          {activeTab === 'detailed' && (
-            <label className="inline-flex h-9 items-center gap-2 rounded-xl border border-border/80 bg-surface px-3 text-xs font-semibold text-text-secondary cursor-pointer hover:bg-slate-50 transition">
-              <input
-                type="checkbox"
-                checked={onlyDaysWithSessions}
-                onChange={(e) => setOnlyDaysWithSessions(e.target.checked)}
-                className="h-3.5 w-3.5 rounded border-slate-300 text-primary accent-primary focus:ring-primary"
-              />
-              <span>Chỉ ngày có buổi học</span>
-            </label>
-          )}
-
-          {activeTab === 'stats' && (
-            <select
-              value={statsAttendanceFilter}
-              onChange={(e) => setStatsAttendanceFilter(e.target.value as '' | 'ATTENTION' | 'GOOD')}
-              aria-label="Lọc mức chuyên cần"
-              className="h-9 px-3 border border-border/80 rounded-xl text-xs font-semibold bg-surface text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/20 cursor-pointer"
-            >
-              <option value="">Tất cả mức chuyên cần</option>
-              <option value="ATTENTION">Cần chú ý (Vắng/Bảo lưu ≥ 2 buổi)</option>
-              <option value="GOOD">Đạt yêu cầu</option>
-            </select>
-          )}
-        </div>
-
-        {isFetching && !loading && (
-          <span className="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50/80 px-2.5 py-1 text-[11px] font-bold text-primary">
-            <span className="h-2 w-2 rounded-full bg-primary animate-ping" />
-            <span>Đang đồng bộ...</span>
-          </span>
-        )}
-      </div>
-
       {/* Bộ lọc Quản lý Điểm danh & Lớp học chuyên nghiệp 2 tầng (giống test_diem_danh) */}
       <EnrollmentFilterBar
         filters={filters}
@@ -4164,7 +4074,114 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
         teachersList={teachersList}
         teacherCodesList={teacherCodesList}
         classesList={classesList}
+        programFilter={programFilter}
+        onProgramChange={handleProgramChange}
+        resultCount={displayMode === 'students' ? totalStudentsCount : totalClassesCount}
         isCS={isCSOnly || isTeacher}
+        contextControls={
+          <>
+            {activeTab === 'quick' && (
+              <label
+                className={`group relative inline-flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-lg border transition focus-within:ring-2 focus-within:ring-primary/30 ${
+                  onlyScheduledOnDate
+                    ? 'border-primary bg-primary text-white shadow-xs'
+                    : 'border-border/80 bg-surface text-text-secondary hover:bg-surface-muted'
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  checked={onlyScheduledOnDate}
+                  onChange={(event) => setOnlyScheduledOnDate(event.target.checked)}
+                  className="sr-only"
+                  aria-label="Chỉ có lịch hoặc ca trong ngày đang chọn"
+                />
+                <CalendarDays className="h-4 w-4" aria-hidden="true" />
+                {onlyScheduledOnDate && (
+                  <Check className="absolute -bottom-0.5 -right-0.5 h-3.5 w-3.5 rounded-full bg-white p-0.5 text-primary" aria-hidden="true" />
+                )}
+                <span role="tooltip" className="pointer-events-none absolute left-1/2 top-full z-30 mt-2 hidden w-max max-w-[220px] -translate-x-1/2 rounded-lg bg-slate-900 px-2.5 py-1.5 text-[11px] font-semibold text-white shadow-lg group-hover:block group-focus-within:block">
+                  Chỉ có lịch / ca ngày đang chọn
+                </span>
+              </label>
+            )}
+
+            {activeTab === 'detailed' && (
+              <label
+                className={`group relative inline-flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-lg border transition focus-within:ring-2 focus-within:ring-primary/30 ${
+                  onlyDaysWithSessions
+                    ? 'border-primary bg-primary text-white shadow-xs'
+                    : 'border-border/80 bg-surface text-text-secondary hover:bg-surface-muted'
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  checked={onlyDaysWithSessions}
+                  onChange={(event) => setOnlyDaysWithSessions(event.target.checked)}
+                  className="sr-only"
+                  aria-label="Chỉ hiển thị ngày có buổi học"
+                />
+                <CalendarDays className="h-4 w-4" aria-hidden="true" />
+                {onlyDaysWithSessions && (
+                  <Check className="absolute -bottom-0.5 -right-0.5 h-3.5 w-3.5 rounded-full bg-white p-0.5 text-primary" aria-hidden="true" />
+                )}
+                <span role="tooltip" className="pointer-events-none absolute left-1/2 top-full z-30 mt-2 hidden w-max max-w-[220px] -translate-x-1/2 rounded-lg bg-slate-900 px-2.5 py-1.5 text-[11px] font-semibold text-white shadow-lg group-hover:block group-focus-within:block">
+                  Chỉ ngày có buổi học
+                </span>
+              </label>
+            )}
+
+            {activeTab === 'stats' && (
+              <select
+                value={statsAttendanceFilter}
+                onChange={(event) => setStatsAttendanceFilter(event.target.value as '' | 'ATTENTION' | 'GOOD')}
+                aria-label="Lọc mức chuyên cần"
+                className="h-9 rounded-lg border border-border/80 bg-surface px-2.5 text-[11px] font-semibold text-text-primary outline-none focus:ring-2 focus:ring-primary/20"
+              >
+                <option value="">Tất cả mức chuyên cần</option>
+                <option value="ATTENTION">Cần chú ý (Vắng/Bảo lưu ≥ 2 buổi)</option>
+                <option value="GOOD">Đạt yêu cầu</option>
+              </select>
+            )}
+
+            <div
+              className="inline-flex h-9 rounded-lg border border-border bg-surface-muted p-0.5"
+              role="tablist"
+              aria-label="Chế độ hiển thị Theo Học viên hoặc Theo Lớp học"
+            >
+              <button
+                type="button"
+                onClick={() => setDisplayMode('students')}
+                className={`flex h-full items-center justify-center gap-1.5 whitespace-nowrap rounded-md px-2.5 text-[11px] font-bold transition ${
+                  displayMode === 'students'
+                    ? 'bg-primary text-white shadow-xs'
+                    : 'text-text-secondary hover:bg-surface hover:text-text-primary'
+                }`}
+              >
+                <Users className="h-3.5 w-3.5" />
+                Theo Học viên
+              </button>
+              <button
+                type="button"
+                onClick={() => setDisplayMode('classes')}
+                className={`flex h-full items-center justify-center gap-1.5 whitespace-nowrap rounded-md px-2.5 text-[11px] font-bold transition ${
+                  displayMode === 'classes'
+                    ? 'bg-primary text-white shadow-xs'
+                    : 'text-text-secondary hover:bg-surface hover:text-text-primary'
+                }`}
+              >
+                <GraduationCap className="h-3.5 w-3.5" />
+                Theo Lớp học
+              </button>
+            </div>
+
+            {isFetching && !loading && (
+              <span className="inline-flex items-center gap-1.5 rounded-lg border border-primary/20 bg-primary/5 px-2 py-1 text-[10px] font-bold text-primary">
+                <span className="h-1.5 w-1.5 animate-ping rounded-full bg-primary" />
+                Đang đồng bộ...
+              </span>
+            )}
+          </>
+        }
       />
 
       {/* NỘI DUNG CHÍNH: THEO HỌC VIÊN (hoặc Tab 3 Thống kê) ⇄ THEO LỚP HỌC */}

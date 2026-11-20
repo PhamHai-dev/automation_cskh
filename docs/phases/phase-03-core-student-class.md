@@ -108,6 +108,10 @@ Không để frontend tự đoán cấu trúc Student/Enrollment/Class response.
 
 ## Implementation notes
 
+- Cập nhật 2026-11-20: bổ sung lưu trữ mềm Student (`deleted_at`, `deleted_by_id`) qua `DELETE /api/v1/students/{studentId}`, chỉ `ADMIN`.
+- Danh sách/chi tiết nghiệp vụ và các module liên quan chỉ đọc Student active; lịch sử Enrollment/Class/Attendance/Care/Messaging không bị xóa khỏi DB.
+- Trang Hồ sơ học viên bỏ nút chuyển CVHT ở header và từng dòng, bỏ sticky cột Thao tác, thêm icon lưu trữ có modal xác nhận cho Admin.
+
 ## Changes from original plan
 
 

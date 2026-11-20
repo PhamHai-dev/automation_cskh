@@ -1,7 +1,8 @@
 jest.mock('../../../prisma/client', () => ({
   prisma: {
     manageAssignment: { findMany: jest.fn() },
-    student: { findUnique: jest.fn(), findFirst: jest.fn(), findMany: jest.fn() },
+    student: { findUnique: jest.fn(), findFirst: jest.fn(), findMany: jest.fn(), updateMany: jest.fn() },
+    auditLog: { create: jest.fn() },
     $transaction: jest.fn(),
   },
 }));
@@ -40,12 +41,12 @@ describe('student actor scope', () => {
   });
 
   it('scopes student detail enrollments instead of returning another CS enrollment', async () => {
-    mockPrisma.student.findUnique.mockResolvedValue({ id: 42, enrollments: [{ id: 100, cs_id: 10 }] });
+    mockPrisma.student.findFirst.mockResolvedValue({ id: 42, enrollments: [{ id: 100, cs_id: 10 }] });
     const repository = new StudentsRepository();
     await repository.findById(42, csA);
 
-    expect(mockPrisma.student.findUnique).toHaveBeenCalledWith(expect.objectContaining({
-      where: { id: 42 },
+    expect(mockPrisma.student.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: 42, deleted_at: null },
       include: expect.objectContaining({
         enrollments: expect.objectContaining({
           where: {
@@ -98,5 +99,73 @@ describe('student actor scope', () => {
     expect(repository.findById).toHaveBeenNthCalledWith(1, 42, csA);
     expect(repository.findById).toHaveBeenNthCalledWith(2, 42, csA);
     expect(repository.update).toHaveBeenCalledWith(42, { enrollment_id: 100, full_name: 'Updated' }, csA);
+  });
+
+  it('allows only ADMIN to soft-delete and records the retained enrollment identities', async () => {
+    const repository = {
+      findById: jest.fn().mockResolvedValue({
+        id: 42,
+        full_name: 'Học viên A',
+        phone: '0901',
+        email: null,
+        external_id: 'HV42',
+        enrollments: [{ id: 100 }, { id: 101 }],
+      }),
+      softDelete: jest.fn().mockResolvedValue({ id: 42 }),
+    } as any;
+    const service = new StudentsService();
+    (service as any).repository = repository;
+
+    await expect(service.softDeleteStudent(42, csA)).rejects.toMatchObject({ status: 403 });
+    expect(repository.findById).not.toHaveBeenCalled();
+
+    await expect(service.softDeleteStudent(42, admin)).resolves.toEqual({ id: 42 });
+    expect(repository.findById).toHaveBeenCalledWith(42, admin);
+    expect(repository.softDelete).toHaveBeenCalledWith(42, admin.id);
+    expect(mockPrisma.auditLog.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        user_id: admin.id,
+        action: 'STUDENT_SOFT_DELETED',
+        entity_type: 'Student',
+        entity_id: '42',
+        before_data: expect.objectContaining({ enrollment_ids: [100, 101] }),
+        after_data: { archived: true, deleted_by_id: admin.id },
+      }),
+    });
+  });
+
+  it('soft-deletes atomically, cancels pending messages, and reports an archived student as not found', async () => {
+    const repository = new StudentsRepository();
+    const tx = {
+      student: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+      messageDelivery: { updateMany: jest.fn().mockResolvedValue({ count: 2 }) },
+      broadcastRecipient: { updateMany: jest.fn().mockResolvedValue({ count: 3 }) },
+    };
+    mockPrisma.$transaction.mockImplementation(async (callback: Function) => callback(tx));
+
+    await expect(repository.softDelete(42, admin.id)).resolves.toEqual({
+      id: 42,
+      archivedAt: expect.any(Date),
+      cancelledAutomationDeliveries: 2,
+      cancelledBroadcastRecipients: 3,
+    });
+    expect(tx.student.updateMany).toHaveBeenCalledWith({
+      where: { id: 42, deleted_at: null },
+      data: {
+        deleted_at: expect.any(Date),
+        deleted_by_id: admin.id,
+      },
+    });
+    expect(tx.messageDelivery.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ enrollment: { student_id: 42 } }),
+      data: expect.objectContaining({ status: 'CANCELLED' }),
+    }));
+    expect(tx.broadcastRecipient.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ student_id: 42 }),
+      data: expect.objectContaining({ status: 'CANCELLED' }),
+    }));
+
+    tx.student.updateMany.mockResolvedValueOnce({ count: 0 });
+    await expect(repository.softDelete(42, admin.id)).rejects.toMatchObject({ status: 404 });
   });
 });

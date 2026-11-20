@@ -22,6 +22,8 @@ export interface ReconciliationQueryParams {
   startDate?: string;
   endDate?: string;
   search?: string;
+  modelType?: '1:1' | '1:2' | '1:n';
+  programType?: 'KAIWA' | 'JLPT';
   state?: 'PENDING_CS' | 'PENDING_TEACHER';
 }
 
@@ -103,7 +105,17 @@ export const reconciliationApi = {
     return res.data.data;
   },
 
-  getTeacherSessions: async (params?: { startDate?: string; endDate?: string; teacherId?: number }): Promise<any[]> => {
+  getTeacherSessions: async (params?: {
+    startDate?: string;
+    endDate?: string;
+    teacherId?: number;
+    classId?: number;
+    search?: string;
+    modelType?: '1:1' | '1:2' | '1:n';
+    completionState?: 'PENDING' | 'COMPLETED';
+    page?: number;
+    pageSize?: number;
+  }): Promise<any> => {
     const res = await apiClient.get('/attendance-reconciliation/teacher-sessions', { params });
     return res.data.data;
   },
@@ -112,6 +124,9 @@ export const reconciliationApi = {
     teacherId?: number;
     classId?: number;
     search?: string;
+    programType?: 'KAIWA' | 'JLPT';
+    page?: number;
+    pageSize?: number;
   }): Promise<TeacherStudentInfoResponse> => {
     const res = await apiClient.get('/attendance-reconciliation/teacher-student-info', { params });
     return res.data.data;

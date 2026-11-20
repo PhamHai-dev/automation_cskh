@@ -1444,6 +1444,7 @@ export class SheetSyncService {
     }
 
     const students = await prisma.student.findMany({
+      where: { deleted_at: null },
       include: {
         enrollments: {
           include: {
@@ -2160,8 +2161,9 @@ export class SheetSyncService {
 
     const [allPackages, allStudents, allEnrollments, defaultCvht] = await Promise.all([
       prisma.package.findMany(),
-      prisma.student.findMany(),
+      prisma.student.findMany({ where: { deleted_at: null } }),
       prisma.enrollment.findMany({
+        where: { student: { deleted_at: null } },
         include: {
           package: true,
           cs: { select: { id: true, code: true, staff_code: true, name: true } },
@@ -2656,6 +2658,7 @@ export class SheetSyncService {
 
     // Load DB students, enrollments, classes, sessions, and attendances for comparison
     const students = await prisma.student.findMany({
+      where: { deleted_at: null },
       include: {
         enrollments: {
           where: { program_type: programType },
@@ -3038,6 +3041,7 @@ export class SheetSyncService {
 
       const allJlptStudents = await prisma.student.findMany({
         where: {
+          deleted_at: null,
           enrollments: {
             some: { program_type: 'JLPT' },
           },
@@ -3289,8 +3293,8 @@ export class SheetSyncService {
 
     // Locate target student & enrollment in DB
     let student = extId
-      ? await prisma.student.findUnique({
-          where: { external_id: extId },
+      ? await prisma.student.findFirst({
+          where: { external_id: extId, deleted_at: null },
           include: {
             enrollments: {
               include: {
@@ -3305,7 +3309,7 @@ export class SheetSyncService {
 
     if (!student && stuName) {
       student = await prisma.student.findFirst({
-        where: { full_name: stuName },
+        where: { full_name: stuName, deleted_at: null },
         include: {
           enrollments: {
             include: {
@@ -3796,6 +3800,9 @@ export class SheetSyncService {
       const existingStudent = await prisma.student.findUnique({
         where: { external_id: row.externalId },
       });
+      if (existingStudent?.deleted_at) {
+        throw new AppError(400, 'Học viên đã được lưu trữ, không thể đồng bộ');
+      }
       if (!existingStudent) {
         throw new AppError(
           400,
@@ -4005,6 +4012,9 @@ export class SheetSyncService {
     const existingStudent = await prisma.student.findUnique({
       where: { external_id: row.externalId },
     });
+    if (existingStudent?.deleted_at) {
+      throw new AppError(400, 'Học viên đã được lưu trữ, không thể đồng bộ');
+    }
     const dobDate = row.dateOfBirth ? new Date(row.dateOfBirth) : null;
 
     const student = await prisma.student.upsert({
@@ -4897,8 +4907,8 @@ export class SheetSyncService {
 
         // For KAIWA_CARE (1.Chăm sóc), skip students who do not exist on Web DB or have no Kaiwa enrollment
         if (row.isKaiwaCareOnly) {
-          const existingStu = await prisma.student.findUnique({
-            where: { external_id: row.externalId },
+          const existingStu = await prisma.student.findFirst({
+            where: { external_id: row.externalId, deleted_at: null },
             include: {
               enrollments: {
                 where: { program_type: 'KAIWA' },

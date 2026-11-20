@@ -116,7 +116,14 @@ export async function processDeliveryJob(job: Job<SendJobData>): Promise<void> {
         enrollment: {
           include: {
             student: {
-              select: { id: true, full_name: true, phone: true, zalo_uid: true, line_uid: true },
+              select: {
+                id: true,
+                full_name: true,
+                phone: true,
+                zalo_uid: true,
+                line_uid: true,
+                deleted_at: true,
+              },
             },
           },
         },
@@ -606,6 +613,10 @@ export async function checkMilestoneStillEligible(delivery: any): Promise<{ elig
  * Check all invariants before sending. Returns { shouldSend, skipReason }.
  */
 export async function checkInvariants(delivery: any): Promise<{ shouldSend: boolean; skipReason: string }> {
+  if (delivery.enrollment?.student?.deleted_at) {
+    return { shouldSend: false, skipReason: 'CANCELLED' };
+  }
+
   // S1a/S2c (mechanism B at send time): an ATTENDED-milestone delivery whose
   // enrollment no longer reaches step.session_number qualifying D1/K7 FINAL
   // ATTENDED rows must NOT send. Marked CANCELLED by the caller with a clear

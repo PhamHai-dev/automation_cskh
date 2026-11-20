@@ -27,6 +27,14 @@ function noteTaskIdempotencyKey(enrollmentId: number, type: CareTaskType, note: 
   return `auto-note:${type}:${enrollmentId}:${digest}`;
 }
 
+function utcStartOfDay(value?: string): Date | undefined {
+  return value ? new Date(`${value}T00:00:00.000Z`) : undefined;
+}
+
+function utcEndOfDay(value?: string): Date | undefined {
+  return value ? new Date(`${value}T23:59:59.999Z`) : undefined;
+}
+
 export class CareService {
   private repo: CareRepository;
 
@@ -156,15 +164,15 @@ export class CareService {
       assignedToIds = [filter.assigned_to_id];
     }
 
-    let dueBefore: Date | undefined;
-    let dueAfter: Date | undefined;
+    let dueBefore = utcEndOfDay(filter.due_to);
+    let dueAfter = utcStartOfDay(filter.due_from);
     const now = new Date();
 
     if (filter.due_filter === 'overdue') {
       dueBefore = now;
     } else if (filter.due_filter === 'today') {
       const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
-      const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
+      const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
       dueAfter = startOfDay;
       dueBefore = endOfDay;
     } else if (filter.due_filter === 'this_week') {
@@ -172,30 +180,34 @@ export class CareService {
       dueBefore = endOfWeek;
     }
 
+    const repositoryFilter = {
+      assignedToIds,
+      enrollmentIds: filter.enrollment_id ? [filter.enrollment_id] : undefined,
+      search: filter.search,
+      programType: filter.program_type,
+      status: filter.status,
+      priority: filter.priority,
+      type: filter.type,
+      dueBefore,
+      dueAfter,
+      createdBefore: utcEndOfDay(filter.created_to),
+      createdAfter: utcStartOfDay(filter.created_from),
+    };
+    const limit = filter.pageSize || filter.limit || 25;
+    const offset = filter.offset || 0;
+
     const [items, total] = await Promise.all([
-      this.repo.findCareTasks({
-        assignedToIds,
-        enrollmentIds: filter.enrollment_id ? [filter.enrollment_id] : undefined,
-        status: filter.status,
-        priority: filter.priority,
-        type: filter.type,
-        dueBefore,
-        dueAfter,
-        limit: filter.limit || 20,
-        offset: filter.offset || 0,
-      }),
-      this.repo.countCareTasks({
-        assignedToIds,
-        enrollmentIds: filter.enrollment_id ? [filter.enrollment_id] : undefined,
-        status: filter.status,
-        priority: filter.priority,
-        type: filter.type,
-        dueBefore,
-        dueAfter,
-      }),
+      this.repo.findCareTasks({ ...repositoryFilter, limit, offset }),
+      this.repo.countCareTasks(repositoryFilter),
     ]);
 
-    return { items, total };
+    return {
+      items,
+      total,
+      page: filter.page || Math.floor(offset / limit) + 1,
+      pageSize: limit,
+      totalPages: Math.max(1, Math.ceil(total / limit)),
+    };
   }
 
   async getCareTaskById(id: number, userId: number, roles: string[]) {

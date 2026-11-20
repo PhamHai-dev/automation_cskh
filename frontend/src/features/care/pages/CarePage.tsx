@@ -7,7 +7,10 @@ import { Badge } from '../../../components/ui/Badge';
 import { Modal } from '../../../components/ui/Modal';
 import { useToast } from '../../../components/ui/Toast';
 import { HorizontalTabs } from '../../../components/ui/HorizontalTabs';
+import { FilterBar, ActiveFilterChip } from '../../../components/common/FilterBar';
+import { AdvancedFilterDrawer } from '../../../components/common/AdvancedFilterDrawer';
 import { useAuth } from '../../../contexts/AuthContext';
+import { useDebouncedValue } from '../../../hooks/useDebouncedValue';
 import { CareTaskList } from '../components/CareTaskList';
 import { CareTaskModal } from '../components/CareTaskModal';
 import { CareLogTimeline } from '../components/CareLogTimeline';
@@ -17,6 +20,8 @@ import {
   CareTask,
   CareLog,
   TaskFilterParams,
+  TaskPriority,
+  TaskType,
   CreateCareTaskDTO,
   UpdateCareTaskDTO,
   CreateCareLogDTO,
@@ -34,6 +39,8 @@ import {
   RefreshCw,
   ChevronLeft,
   ChevronRight,
+  Search,
+  SlidersHorizontal,
 } from 'lucide-react';
 
 type CareTab = 'tasks' | 'logs' | 'notifications';
@@ -118,7 +125,16 @@ export const CarePage: React.FC = () => {
   // Task State
   const [tasks, setTasks] = useState<CareTask[]>([]);
   const [tasksLoading, setTasksLoading] = useState(true);
+  const [taskSearch, setTaskSearch] = useState('');
+  const debouncedTaskSearch = useDebouncedValue(taskSearch.trim(), 300);
+  const [taskProgram, setTaskProgram] = useState<'ALL' | 'KAIWA' | 'JLPT'>('ALL');
   const [taskFilter, setTaskFilter] = useState<TaskFilterParams>({ status: 'PENDING' });
+  const [taskPage, setTaskPage] = useState(1);
+  const [taskPageSize, setTaskPageSize] = useState(25);
+  const [taskTotal, setTaskTotal] = useState(0);
+  const [taskTotalPages, setTaskTotalPages] = useState(1);
+  const [showTaskAdvancedFilters, setShowTaskAdvancedFilters] = useState(false);
+  const [taskAdvancedDraft, setTaskAdvancedDraft] = useState<TaskFilterParams>({});
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<CareTask | null>(null);
 
@@ -180,8 +196,17 @@ export const CarePage: React.FC = () => {
     if (isTeacherOnly) return;
     try {
       setTasksLoading(true);
-      const data = await careApi.listTasks(taskFilter);
-      setTasks(data);
+      const result = await careApi.listTasks({
+        ...taskFilter,
+        search: debouncedTaskSearch || undefined,
+        program_type: taskProgram === 'ALL' ? undefined : taskProgram,
+        page: taskPage,
+        pageSize: taskPageSize,
+      });
+      setTasks(result.items);
+      setTaskTotal(result.total);
+      setTaskTotalPages(result.totalPages);
+      if (taskPage > result.totalPages) setTaskPage(result.totalPages);
     } catch (err: any) {
       console.error('Failed to load tasks', err);
       toast.error('Không thể tải danh sách nhiệm vụ chăm sóc');
@@ -194,7 +219,7 @@ export const CarePage: React.FC = () => {
     if (activeTab === 'tasks' && !isTeacherOnly) {
       loadTasks();
     }
-  }, [taskFilter, activeTab, isTeacherOnly]);
+  }, [taskFilter, debouncedTaskSearch, taskProgram, taskPage, taskPageSize, activeTab, isTeacherOnly]);
 
   // Fetch logs
   const loadLogs = async (enrollmentId: number) => {
@@ -324,6 +349,88 @@ export const CarePage: React.FC = () => {
     }
   };
 
+  const taskAdvancedCount = (value: TaskFilterParams) =>
+    (value.priority ? 1 : 0) +
+    (value.type ? 1 : 0) +
+    (value.due_from || value.due_to ? 1 : 0) +
+    (value.created_from || value.created_to ? 1 : 0) +
+    (value.assigned_to_id ? 1 : 0) +
+    (value.enrollment_id ? 1 : 0);
+  const appliedTaskAdvancedCount = taskAdvancedCount(taskFilter);
+  const draftTaskAdvancedCount = taskAdvancedCount(taskAdvancedDraft);
+  const taskActiveCount =
+    (taskSearch.trim() ? 1 : 0) +
+    (taskProgram !== 'ALL' ? 1 : 0) +
+    (taskFilter.status ? 1 : 0) +
+    (taskFilter.due_filter ? 1 : 0) +
+    appliedTaskAdvancedCount;
+  const resetTaskPage = () => setTaskPage(1);
+  const updateTaskQuickFilter = (patch: Partial<TaskFilterParams>) => {
+    resetTaskPage();
+    setTaskFilter((current) => ({ ...current, ...patch }));
+  };
+  const openTaskAdvancedFilters = () => {
+    setTaskAdvancedDraft({
+      priority: taskFilter.priority,
+      type: taskFilter.type,
+      due_from: taskFilter.due_from,
+      due_to: taskFilter.due_to,
+      created_from: taskFilter.created_from,
+      created_to: taskFilter.created_to,
+      assigned_to_id: taskFilter.assigned_to_id,
+      enrollment_id: taskFilter.enrollment_id,
+    });
+    setShowTaskAdvancedFilters(true);
+  };
+  const applyTaskAdvancedFilters = () => {
+    resetTaskPage();
+    setTaskFilter((current) => ({
+      status: current.status,
+      due_filter: current.due_filter,
+      ...taskAdvancedDraft,
+    }));
+    setShowTaskAdvancedFilters(false);
+  };
+  const clearTaskAdvancedDraft = () => setTaskAdvancedDraft({});
+  const clearAllTaskFilters = () => {
+    setTaskSearch('');
+    setTaskProgram('ALL');
+    setTaskFilter({});
+    resetTaskPage();
+  };
+  const taskFilterChips: ActiveFilterChip[] = [
+    ...(taskSearch.trim()
+      ? [{ id: 'task-search', label: 'Tìm', value: taskSearch.trim(), onRemove: () => { setTaskSearch(''); resetTaskPage(); } }]
+      : []),
+    ...(taskProgram !== 'ALL'
+      ? [{ id: 'task-program', label: 'Ngữ cảnh', value: taskProgram, tone: taskProgram === 'KAIWA' ? 'kaiwa' as const : 'jlpt' as const, onRemove: () => { setTaskProgram('ALL'); resetTaskPage(); } }]
+      : []),
+    ...(taskFilter.status
+      ? [{ id: 'task-status', label: 'Trạng thái', value: taskFilter.status, onRemove: () => updateTaskQuickFilter({ status: undefined }) }]
+      : []),
+    ...(taskFilter.due_filter
+      ? [{ id: 'task-due', label: 'Thời hạn', value: taskFilter.due_filter, tone: 'warning' as const, onRemove: () => updateTaskQuickFilter({ due_filter: undefined }) }]
+      : []),
+    ...(taskFilter.priority
+      ? [{ id: 'task-priority', label: 'Ưu tiên', value: taskFilter.priority, onRemove: () => updateTaskQuickFilter({ priority: undefined }) }]
+      : []),
+    ...(taskFilter.type
+      ? [{ id: 'task-type', label: 'Loại việc', value: taskFilter.type, onRemove: () => updateTaskQuickFilter({ type: undefined }) }]
+      : []),
+    ...(taskFilter.due_from || taskFilter.due_to
+      ? [{ id: 'task-due-range', label: 'Khoảng hạn', value: `${taskFilter.due_from || '…'} → ${taskFilter.due_to || '…'}`, onRemove: () => updateTaskQuickFilter({ due_from: undefined, due_to: undefined }) }]
+      : []),
+    ...(taskFilter.created_from || taskFilter.created_to
+      ? [{ id: 'task-created-range', label: 'Ngày tạo', value: `${taskFilter.created_from || '…'} → ${taskFilter.created_to || '…'}`, onRemove: () => updateTaskQuickFilter({ created_from: undefined, created_to: undefined }) }]
+      : []),
+    ...(taskFilter.assigned_to_id
+      ? [{ id: 'task-assignee', label: 'Phụ trách', value: `#${taskFilter.assigned_to_id}`, onRemove: () => updateTaskQuickFilter({ assigned_to_id: undefined }) }]
+      : []),
+    ...(taskFilter.enrollment_id
+      ? [{ id: 'task-enrollment', label: 'Ghi danh', value: `#${taskFilter.enrollment_id}`, onRemove: () => updateTaskQuickFilter({ enrollment_id: undefined }) }]
+      : []),
+  ];
+
   const tabItems = isTeacherOnly
     ? [
         {
@@ -377,19 +484,164 @@ export const CarePage: React.FC = () => {
 
       {/* Content */}
       {activeTab === 'tasks' && !isTeacherOnly ? (
-        <CareTaskList
-          tasks={tasks}
-          loading={tasksLoading}
-          filter={taskFilter}
-          onFilterChange={setTaskFilter}
-          onComplete={handleCompleteTask}
-          onCancel={async (id) => setCancellingTaskId(id)}
-          onEdit={(task) => {
-            setEditingTask(task);
-            setIsTaskModalOpen(true);
-          }}
-          onRefresh={loadTasks}
-        />
+        <div className="space-y-3">
+          <FilterBar
+            variant="toolbar"
+            title="Tìm kiếm & lọc nhiệm vụ chăm sóc"
+            activeCount={taskActiveCount}
+            chips={taskFilterChips}
+            resultSummary={`${taskTotal.toLocaleString('vi-VN')} nhiệm vụ`}
+            onClear={clearAllTaskFilters}
+          >
+            <div className="relative min-w-[220px] flex-[1_1_320px] xl:max-w-[460px]">
+              <input
+                id="care-task-search"
+                type="search"
+                value={taskSearch}
+                onChange={(event) => {
+                  setTaskSearch(event.target.value);
+                  resetTaskPage();
+                }}
+                placeholder="Học viên, SĐT, lớp, tiêu đề, ghi chú..."
+                aria-label="Tìm nhiệm vụ chăm sóc"
+                className="h-9 w-full rounded-xl border border-border bg-white pl-9 pr-3 text-xs font-semibold text-text-primary shadow-xs outline-none transition focus:ring-2 focus:ring-primary"
+              />
+              <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" aria-hidden="true" />
+            </div>
+
+            <select
+              id="care-task-program-filter"
+              value={taskProgram}
+              onChange={(event) => {
+                setTaskProgram(event.target.value as 'ALL' | 'KAIWA' | 'JLPT');
+                resetTaskPage();
+              }}
+              aria-label="Lọc nhiệm vụ theo ngữ cảnh chương trình"
+              className="h-9 min-w-[140px] shrink-0 cursor-pointer rounded-xl border border-border bg-white px-3 text-xs font-semibold text-text-primary shadow-xs outline-none transition focus:ring-2 focus:ring-primary"
+            >
+              <option value="ALL">Tất cả chương trình</option>
+              <option value="KAIWA">Kaiwa</option>
+              <option value="JLPT">JLPT</option>
+            </select>
+
+            <select
+              id="care-task-status-filter"
+              value={taskFilter.status || ''}
+              onChange={(event) => updateTaskQuickFilter({ status: event.target.value ? event.target.value as any : undefined })}
+              aria-label="Lọc nhiệm vụ theo trạng thái"
+              className="h-9 min-w-[132px] shrink-0 cursor-pointer rounded-xl border border-border bg-white px-3 text-xs font-semibold text-text-primary shadow-xs outline-none transition focus:ring-2 focus:ring-primary"
+            >
+              <option value="">Tất cả trạng thái</option>
+              <option value="PENDING">Đang chờ</option>
+              <option value="DONE">Đã xong</option>
+              <option value="CANCELLED">Đã hủy</option>
+            </select>
+
+            <select
+              id="care-task-due-filter"
+              value={taskFilter.due_filter || ''}
+              onChange={(event) => updateTaskQuickFilter({ due_filter: event.target.value ? event.target.value as any : undefined })}
+              aria-label="Lọc nhiệm vụ theo thời hạn"
+              className="h-9 min-w-[140px] shrink-0 cursor-pointer rounded-xl border border-border bg-white px-3 text-xs font-semibold text-text-primary shadow-xs outline-none transition focus:ring-2 focus:ring-primary"
+            >
+              <option value="">Tất cả thời hạn</option>
+              <option value="overdue">Quá hạn</option>
+              <option value="today">Hạn hôm nay</option>
+              <option value="this_week">7 ngày tới</option>
+            </select>
+
+            <Button
+              type="button"
+              variant={showTaskAdvancedFilters ? 'primary' : 'outline'}
+              size="sm"
+              onClick={openTaskAdvancedFilters}
+              className="h-9 shrink-0 gap-1.5 px-3 text-xs font-bold"
+              leftIcon={<SlidersHorizontal className="h-4 w-4" />}
+            >
+              Bộ lọc
+              {appliedTaskAdvancedCount > 0 && (
+                <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-400 px-1 text-[10px] font-black text-amber-950">
+                  {appliedTaskAdvancedCount}
+                </span>
+              )}
+            </Button>
+          </FilterBar>
+
+          <AdvancedFilterDrawer
+            open={showTaskAdvancedFilters}
+            onClose={() => setShowTaskAdvancedFilters(false)}
+            onApply={applyTaskAdvancedFilters}
+            onReset={clearTaskAdvancedDraft}
+            activeCount={draftTaskAdvancedCount}
+            applyLabel={`Áp dụng${draftTaskAdvancedCount ? ` • ${draftTaskAdvancedCount} điều kiện` : ''}`}
+            title="Bộ lọc nhiệm vụ nâng cao"
+            description="Lọc theo loại việc, độ ưu tiên, thời gian, người phụ trách hoặc mã ghi danh."
+          >
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div>
+                <label htmlFor="care-task-type-advanced" className="mb-1.5 block text-[11px] font-bold uppercase tracking-wider text-text-secondary">Loại nhiệm vụ</label>
+                <select id="care-task-type-advanced" value={taskAdvancedDraft.type || ''} onChange={(event) => setTaskAdvancedDraft((current) => ({ ...current, type: event.target.value ? event.target.value as TaskType : undefined }))} className="h-9 w-full rounded-xl border border-border bg-white px-3 text-sm shadow-xs outline-none focus:ring-2 focus:ring-primary">
+                  <option value="">Tất cả loại việc</option>
+                  <option value="CALLBACK">Hẹn gọi lại</option>
+                  <option value="HOT_ISSUE">Điểm nóng</option>
+                  <option value="FOLLOW_UP">Theo dõi</option>
+                  <option value="AUTO_ATTENDANCE">Điểm danh tự động</option>
+                  <option value="SCHEDULE_DATA_ISSUE">Lỗi dữ liệu lịch</option>
+                </select>
+              </div>
+              <div>
+                <label htmlFor="care-task-priority-advanced" className="mb-1.5 block text-[11px] font-bold uppercase tracking-wider text-text-secondary">Độ ưu tiên</label>
+                <select id="care-task-priority-advanced" value={taskAdvancedDraft.priority || ''} onChange={(event) => setTaskAdvancedDraft((current) => ({ ...current, priority: event.target.value ? event.target.value as TaskPriority : undefined }))} className="h-9 w-full rounded-xl border border-border bg-white px-3 text-sm shadow-xs outline-none focus:ring-2 focus:ring-primary">
+                  <option value="">Tất cả mức độ</option>
+                  <option value="URGENT">Khẩn cấp</option>
+                  <option value="HIGH">Cao</option>
+                  <option value="NORMAL">Bình thường</option>
+                  <option value="LOW">Thấp</option>
+                </select>
+              </div>
+              {[
+                ['due_from', 'Hạn từ ngày'],
+                ['due_to', 'Hạn đến ngày'],
+                ['created_from', 'Tạo từ ngày'],
+                ['created_to', 'Tạo đến ngày'],
+              ].map(([key, label]) => (
+                <div key={key}>
+                  <label htmlFor={`care-task-${key}`} className="mb-1.5 block text-[11px] font-bold uppercase tracking-wider text-text-secondary">{label}</label>
+                  <input id={`care-task-${key}`} type="date" value={String(taskAdvancedDraft[key as keyof TaskFilterParams] || '')} onChange={(event) => setTaskAdvancedDraft((current) => ({ ...current, [key]: event.target.value || undefined }))} className="h-9 w-full rounded-xl border border-border bg-white px-3 text-sm shadow-xs outline-none focus:ring-2 focus:ring-primary" />
+                </div>
+              ))}
+              <div>
+                <label htmlFor="care-task-assignee-id" className="mb-1.5 block text-[11px] font-bold uppercase tracking-wider text-text-secondary">ID người phụ trách</label>
+                <input id="care-task-assignee-id" type="number" min="1" value={taskAdvancedDraft.assigned_to_id || ''} onChange={(event) => setTaskAdvancedDraft((current) => ({ ...current, assigned_to_id: event.target.value ? Number(event.target.value) : undefined }))} className="h-9 w-full rounded-xl border border-border bg-white px-3 text-sm shadow-xs outline-none focus:ring-2 focus:ring-primary" />
+              </div>
+              <div>
+                <label htmlFor="care-task-enrollment-id" className="mb-1.5 block text-[11px] font-bold uppercase tracking-wider text-text-secondary">Mã ghi danh</label>
+                <input id="care-task-enrollment-id" type="number" min="1" value={taskAdvancedDraft.enrollment_id || ''} onChange={(event) => setTaskAdvancedDraft((current) => ({ ...current, enrollment_id: event.target.value ? Number(event.target.value) : undefined }))} className="h-9 w-full rounded-xl border border-border bg-white px-3 text-sm shadow-xs outline-none focus:ring-2 focus:ring-primary" />
+              </div>
+            </div>
+          </AdvancedFilterDrawer>
+
+          <CareTaskList
+            tasks={tasks}
+            loading={tasksLoading}
+            page={taskPage}
+            pageSize={taskPageSize}
+            total={taskTotal}
+            totalPages={taskTotalPages}
+            onPageChange={setTaskPage}
+            onPageSizeChange={(nextPageSize) => {
+              setTaskPageSize(nextPageSize);
+              resetTaskPage();
+            }}
+            onComplete={handleCompleteTask}
+            onCancel={async (id) => setCancellingTaskId(id)}
+            onEdit={(task) => {
+              setEditingTask(task);
+              setIsTaskModalOpen(true);
+            }}
+            onRefresh={loadTasks}
+          />
+        </div>
       ) : activeTab === 'logs' && !isTeacherOnly ? (
         <div className="space-y-6">
           {/* Search Enrollment Bar */}

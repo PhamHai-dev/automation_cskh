@@ -87,8 +87,10 @@ export const TeacherDashboardPage: React.FC = () => {
 
     if (profileResult.status === 'fulfilled') setProfile(profileResult.value);
     if (sessionsResult.status === 'fulfilled') {
+      const sessionData = sessionsResult.value;
+      const sessionItems = Array.isArray(sessionData) ? sessionData : sessionData.items || [];
       setSessions(
-        [...(sessionsResult.value || [])].sort(
+        [...sessionItems].sort(
           (first, second) => sessionTimestamp(first) - sessionTimestamp(second)
         )
       );

@@ -125,6 +125,35 @@ export interface StudentListQueryOptions {
   model?: string;
   payment?: string;
   sale?: string;
+  packageName?: string;
+  courseCode?: string;
+  teacherName?: string;
+  teacherCode?: string;
+  className?: string;
+  classCode?: string;
+  schedulePattern?: string;
+  startTime?: string;
+  startDateOp?: 'EXACT' | 'RANGE';
+  startDateExact?: string;
+  startDateFrom?: string;
+  startDateTo?: string;
+  endDateOp?: 'EXACT' | 'RANGE';
+  endDateExact?: string;
+  endDateFrom?: string;
+  endDateTo?: string;
+  totalSessionsOp?: 'EXACT' | 'RANGE';
+  totalSessionsExact?: number;
+  totalSessionsMin?: number;
+  totalSessionsMax?: number;
+  remainingSessionsOp?: 'EXACT' | 'RANGE';
+  remainingSessionsExact?: number;
+  remainingSessionsMin?: number;
+  remainingSessionsMax?: number;
+  hasClass?: boolean;
+  hasTeacher?: boolean;
+  birthYearMin?: number;
+  birthYearMax?: number;
+  occupation?: string;
 }
 
 export interface StudentListMeta {

@@ -1,5 +1,20 @@
 # Project Changelog
 
+## 2026-11-20 — Phân cụm lại sidebar staff
+
+- Giữ kiểu sidebar hiện tại nhưng phân lại tám cụm nghiệp vụ: Tổng quan, Chăm sóc khách hàng, Đào tạo, Giáo viên, Đa kênh, Tự động hóa & Chiến dịch, Dữ liệu và Quản trị hệ thống.
+- ADMIN thấy toàn bộ menu; MANAGE ẩn hai mục quản trị chỉ dành cho ADMIN; CS ẩn Gói học và toàn bộ nhóm Giáo viên. Không gian giáo viên riêng giữ nguyên.
+- Thêm `/teachers/schedule` và `/teachers/tasks` cho ADMIN/MANAGE, tái sử dụng lịch dạy/việc cần xử lý hiện có với bộ chọn giáo viên bắt buộc.
+- Đồng bộ breadcrumb theo nhóm mới; giữ `/imports` hoạt động nhưng không đưa vào sidebar.
+
+## 2026-11-20 — Lưu trữ mềm học viên & tinh gọn cột Thao tác
+
+- Bỏ nút `Chuyển CVHT` cạnh `Thêm học viên mới`, bỏ nút `Đổi CVHT` từng dòng và bỏ cố định cột Thao tác.
+- Thêm icon xóa cho ADMIN cùng modal xác nhận; API lưu trữ mềm Student, ghi actor/timestamp và AuditLog, giữ nguyên toàn bộ dữ liệu quan hệ trong DB.
+- Loại Student đã lưu trữ khỏi Student/Enrollment/Class/Attendance/Care/Dashboard, import điểm danh, Zalo/LINE và automation/delivery đang chờ.
+- Bổ sung OpenAPI, API docs, Prisma schema và migration `20261120045500_add_student_soft_delete`; migration đã được áp dụng riêng ngày 2026-11-20 sau khi xác định database thiếu cột làm `GET /api/v1/students` trả `500`. API sau sửa trả `200`; các migration cũ đang chờ không bị chạy kèm.
+- Prisma format/validate, backend typecheck, 22/22 targeted backend tests và frontend production build đạt. Import/Sheet Sync từ chối mã học viên đã lưu trữ thay vì cập nhật/phục hồi/tạo trùng; tạo liên kết Zalo/LINE cũng yêu cầu Student active. Prisma generate chuẩn bị khóa DLL nên đã generate typings bằng `--no-engine`; build còn cảnh báo chunk lớn hiện hữu. Browser QA/lint chưa hoàn tất.
+
 ## 2026-11-19 — Zalo/LINE QR, listener và realtime
 
 - Tạo ảnh QR LINE nội bộ với `qrcode@1.5.4`, truyền lỗi/timeout về UI, hủy transport và chặn callback của phiên QR cũ. Không chuyển URL đăng nhập sang dịch vụ tạo ảnh ngoài.

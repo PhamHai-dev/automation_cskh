@@ -1,5 +1,21 @@
 # Project Status
 
+## Phân cụm sidebar staff — 2026-11-20
+
+- Sidebar ADMIN được phân thành tám cụm: Tổng quan, Chăm sóc khách hàng, Đào tạo, Giáo viên, Đa kênh, Tự động hóa & Chiến dịch, Dữ liệu và Quản trị hệ thống.
+- MANAGE dùng cùng cấu trúc nhưng không có Người dùng & Phân quyền/Cấu hình hệ thống; CS không có Gói học và nhóm Giáo viên. Sidebar tài khoản chỉ có TEACHER giữ nguyên.
+- Thêm route `/teachers/schedule` và `/teachers/tasks` cho ADMIN/MANAGE; cả hai tái sử dụng màn hình hiện có và bắt buộc chọn giáo viên trước khi tải dữ liệu.
+- Route `/imports` vẫn hoạt động nhưng không xuất hiện trong sidebar theo quyết định sản phẩm.
+
+## Lưu trữ mềm học viên & chỉnh cột Thao tác — 2026-11-20
+
+- Trang Hồ sơ học viên đã bỏ nút `Chuyển CVHT` ở header và nút `Đổi CVHT` từng dòng; cột Thao tác không còn sticky.
+- Chỉ ADMIN thấy icon xóa và phải xác nhận. Backend `DELETE /api/v1/students/{studentId}` lưu `deleted_at/deleted_by_id`, không xóa Enrollment/Class/Attendance/Care/Messaging.
+- Các truy vấn product, dashboard, import điểm danh, Zalo/LINE và automation đã lọc Student lưu trữ; worker không lấy delivery đang chờ của học viên đã lưu trữ.
+- Import/Sheet Sync phát hiện mã học viên đã lưu trữ, đánh dấu lỗi hoặc từ chối thay vì cập nhật/phục hồi/tạo trùng; API tạo liên kết Zalo/LINE cũng kiểm tra Student active cho mọi vai trò.
+- Migration `20261120045500_add_student_soft_delete` đã được áp dụng riêng và đánh dấu hoàn tất ngày 2026-11-20 để sửa lỗi `GET /api/v1/students` trả `500` do database thiếu `deleted_at/deleted_by_id`; không chạy gộp các migration cũ đang chờ.
+- Xác minh sau sửa: đăng nhập ADMIN thành công; `GET /api/v1/students?page=1&pageSize=25` trả `200` với 25/2383 bản ghi; backend typecheck pass. Ba migration cũ `20261113064500_add_activity_history_indexes`, `20261117024000_unify_enrollment_package`, `20261120032000_align_excel_web_columns` vẫn chưa áp dụng.
+
 ## Zalo/LINE: sửa kết nối và kiểm thử product — 2026-11-19
 
 - Đã chạy product local với MySQL hiện có, tắt worker/scheduler gửi tin. Không thay schema, migration hoặc dữ liệu nghiệp vụ.

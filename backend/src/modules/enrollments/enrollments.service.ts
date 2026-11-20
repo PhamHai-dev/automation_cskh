@@ -167,7 +167,9 @@ export class EnrollmentsService {
       throw new CustomError('CS can only create enrollments assigned to themselves', 403);
     }
 
-    const student = await prisma.student.findUnique({ where: { id: data.student_id } });
+    const student = await prisma.student.findFirst({
+      where: { id: data.student_id, deleted_at: null },
+    });
     if (!student) throw new CustomError('Student not found', 404);
 
     const created = await this.repository.create(data);

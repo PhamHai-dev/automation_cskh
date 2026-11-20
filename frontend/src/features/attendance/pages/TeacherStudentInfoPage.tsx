@@ -12,13 +12,11 @@ import {
 } from 'lucide-react';
 import { PageContainer } from '../../../components/common/PageContainer';
 import { PageHeader } from '../../../components/common/PageHeader';
-import { FilterBar } from '../../../components/common/FilterBar';
+import { FilterBar, ActiveFilterChip } from '../../../components/common/FilterBar';
 import { PaginationFooter } from '../../../components/common/Pagination';
 import { Card } from '../../../components/ui/Card';
 import { Button } from '../../../components/ui/Button';
 import { Badge } from '../../../components/ui/Badge';
-import { Input } from '../../../components/ui/Input';
-import { Select } from '../../../components/ui/Select';
 import { useToast } from '../../../components/ui/Toast';
 import { useAuth } from '../../../contexts/AuthContext';
 import { useDebouncedValue } from '../../../hooks/useDebouncedValue';
@@ -107,10 +105,10 @@ export const TeacherStudentInfoPage: React.FC = () => {
   const [selectedTeacherId, setSelectedTeacherId] = useState<number | undefined>();
   const hasContext = !isPrivileged || !!selectedTeacherId;
 
-  // Filters
   const [classes, setClasses] = useState<Class[]>([]);
   const [classId, setClassId] = useState<number | undefined>();
   const [search, setSearch] = useState('');
+  const [programType, setProgramType] = useState<'ALL' | 'KAIWA' | 'JLPT'>('ALL');
   const debouncedSearch = useDebouncedValue(search.trim(), 300);
 
   // Data state
@@ -119,9 +117,10 @@ export const TeacherStudentInfoPage: React.FC = () => {
   const [maxTotalSessions, setMaxTotalSessions] = useState(30);
   const [loading, setLoading] = useState(false);
 
-  // Pagination state (standard 25 · 50 · 100 · 200)
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
+  const [total, setTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(0);
 
   // Column display controls — mặc định hiển thị đầy đủ số buổi của toàn khóa (Buổi 1 .. Buổi N)
   const [showFullPackage, setShowFullPackage] = useState(true);
@@ -150,6 +149,8 @@ export const TeacherStudentInfoPage: React.FC = () => {
     async (silent = false) => {
       if (!hasContext) {
         setRows([]);
+        setTotal(0);
+        setTotalPages(0);
         setMaxRecordedSessions(0);
         setMaxTotalSessions(30);
         return;
@@ -160,9 +161,14 @@ export const TeacherStudentInfoPage: React.FC = () => {
           teacherId: isPrivileged ? selectedTeacherId : undefined,
           classId,
           search: debouncedSearch || undefined,
+          programType: programType === 'ALL' ? undefined : programType,
+          page,
+          pageSize,
         });
         const items = res?.items || [];
         setRows(items);
+        setTotal(res?.total || 0);
+        setTotalPages(res?.totalPages || 0);
         setMaxRecordedSessions(res?.maxRecordedSessions || 0);
         setMaxTotalSessions(res?.maxTotalSessions || 30);
 
@@ -185,17 +191,16 @@ export const TeacherStudentInfoPage: React.FC = () => {
         if (!silent) setLoading(false);
       }
     },
-    [hasContext, isPrivileged, selectedTeacherId, classId, debouncedSearch, toast]
+    [hasContext, isPrivileged, selectedTeacherId, classId, debouncedSearch, programType, page, pageSize, toast]
   );
 
   useEffect(() => {
     loadData();
   }, [loadData]);
 
-  // Reset to page 1 when filters change
   useEffect(() => {
     setPage(1);
-  }, [selectedTeacherId, classId, debouncedSearch]);
+  }, [selectedTeacherId, classId, debouncedSearch, programType]);
 
   // Listen to global attendance updates
   useEffect(() => {
@@ -220,19 +225,13 @@ export const TeacherStudentInfoPage: React.FC = () => {
     [totalDisplayedColumns]
   );
 
-  // Pagination calculation
-  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
-  const safePage = Math.min(page, totalPages);
-  const paginatedRows = useMemo(
-    () => rows.slice((safePage - 1) * pageSize, safePage * pageSize),
-    [rows, safePage, pageSize]
-  );
-  const startRecord = rows.length === 0 ? 0 : (safePage - 1) * pageSize + 1;
-  const endRecord = Math.min(safePage * pageSize, rows.length);
+  const safePage = totalPages > 0 ? Math.min(page, totalPages) : 1;
+  const startRecord = total === 0 ? 0 : (safePage - 1) * pageSize + 1;
+  const endRecord = Math.min((safePage - 1) * pageSize + rows.length, total);
 
   const activeFiltersCount = useMemo(
-    () => [search.trim(), classId].filter(Boolean).length,
-    [search, classId]
+    () => [search.trim(), programType !== 'ALL', classId].filter(Boolean).length,
+    [search, programType, classId]
   );
 
   const handleSaveLesson = async (
@@ -284,8 +283,38 @@ export const TeacherStudentInfoPage: React.FC = () => {
   const resetFilters = () => {
     setClassId(undefined);
     setSearch('');
+    setProgramType('ALL');
     setPage(1);
   };
+
+  const selectedClassLabel = useMemo(() => {
+    const selectedClass = classes.find((item) => item.id === classId);
+    return selectedClass
+      ? cleanClassIdentifier(selectedClass.class_name) || selectedClass.class_name
+      : classId
+        ? `#${classId}`
+        : '';
+  }, [classId, classes]);
+
+  const activeFilterChips = useMemo<ActiveFilterChip[]>(() => {
+    const chips: ActiveFilterChip[] = [];
+    if (search.trim()) {
+      chips.push({ id: 'search', label: 'Tìm kiếm', value: search.trim(), onRemove: () => setSearch('') });
+    }
+    if (programType !== 'ALL') {
+      chips.push({
+        id: 'program',
+        label: 'Chương trình',
+        value: programType === 'KAIWA' ? 'Kaiwa' : 'JLPT',
+        tone: programType === 'KAIWA' ? 'kaiwa' : 'jlpt',
+        onRemove: () => setProgramType('ALL'),
+      });
+    }
+    if (classId) {
+      chips.push({ id: 'class', label: 'Lớp', value: selectedClassLabel, onRemove: () => setClassId(undefined) });
+    }
+    return chips;
+  }, [search, programType, classId, selectedClassLabel]);
 
   return (
     <PageContainer>
@@ -301,59 +330,87 @@ export const TeacherStudentInfoPage: React.FC = () => {
       />
 
       <FilterBar
-        title="Tìm kiếm & Lọc nhanh"
+        variant="toolbar"
+        title="Bộ lọc học viên giáo viên"
         activeCount={activeFiltersCount}
+        chips={activeFilterChips}
         onClear={resetFilters}
-        gridClassName={`grid grid-cols-1 ${
-          isPrivileged ? 'sm:grid-cols-3' : 'sm:grid-cols-2'
-        } gap-3.5 items-end`}
       >
-        {isPrivileged && (
-          <Select
-            id="student-info-teacher-select"
-            label="Giáo viên phụ trách"
-            value={selectedTeacherId || ''}
-            onChange={(event) =>
-              setSelectedTeacherId(
-                event.target.value ? Number(event.target.value) : undefined
-              )
-            }
-            options={[
-              { value: '', label: 'Chọn giáo viên...' },
-              ...teachers.map((teacher) => ({
-                value: teacher.user_id!,
-                label: `${teacher.name} · ${teacher.code}`,
-              })),
-            ]}
+        <div className="relative min-w-[240px] flex-1 xl:min-w-[320px]">
+          <label htmlFor="student-info-search" className="sr-only">
+            Tìm học viên
+          </label>
+          <input
+            id="student-info-search"
+            type="search"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Tên, mã HV, SĐT, email, khóa, gói, lớp..."
+            className="h-9 w-full rounded-xl border border-border bg-white pl-9 pr-3 text-xs font-medium text-text-primary shadow-xs transition focus:outline-none focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:bg-surface-muted"
+            disabled={!hasContext}
           />
+          <Search className="absolute left-3 top-2.5 h-4 w-4 text-text-muted" aria-hidden="true" />
+        </div>
+
+        <div className="w-[138px] shrink-0">
+          <label htmlFor="student-info-program" className="sr-only">
+            Chương trình
+          </label>
+          <select
+            id="student-info-program"
+            value={programType}
+            onChange={(event) => setProgramType(event.target.value as 'ALL' | 'KAIWA' | 'JLPT')}
+            disabled={!hasContext}
+            className="h-9 w-full cursor-pointer rounded-xl border border-border bg-white px-3 text-xs font-semibold text-text-primary shadow-xs transition focus:outline-none focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:bg-surface-muted"
+          >
+            <option value="ALL">Tất cả chương trình</option>
+            <option value="KAIWA">Kaiwa</option>
+            <option value="JLPT">JLPT</option>
+          </select>
+        </div>
+
+        {isPrivileged && (
+          <div className="min-w-[210px] flex-1 xl:max-w-[270px]">
+            <label htmlFor="student-info-teacher-select" className="sr-only">
+              Giáo viên phụ trách
+            </label>
+            <select
+              id="student-info-teacher-select"
+              value={selectedTeacherId || ''}
+              onChange={(event) =>
+                setSelectedTeacherId(event.target.value ? Number(event.target.value) : undefined)
+              }
+              className="h-9 w-full cursor-pointer rounded-xl border border-border bg-white px-3 text-xs font-semibold text-text-primary shadow-xs transition focus:outline-none focus:ring-2 focus:ring-primary"
+            >
+              <option value="">Chọn giáo viên...</option>
+              {teachers.map((teacher) => (
+                <option key={teacher.id} value={teacher.user_id!}>
+                  {teacher.name} · {teacher.code}
+                </option>
+              ))}
+            </select>
+          </div>
         )}
 
-        <Input
-          id="student-info-search"
-          label="Tìm học viên"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Tên, mã HV hoặc mã lớp..."
-          leftIcon={<Search className="h-4 w-4" />}
-          disabled={!hasContext}
-        />
-
-        <Select
-          id="student-info-class"
-          label="Lớp học"
-          value={classId || ''}
-          onChange={(e) =>
-            setClassId(e.target.value ? Number(e.target.value) : undefined)
-          }
-          options={[
-            { value: '', label: 'Tất cả lớp phụ trách' },
-            ...classes.map((c) => ({
-              value: c.id,
-              label: c.class_name,
-            })),
-          ]}
-          disabled={!hasContext}
-        />
+        <div className="min-w-[190px] flex-1 xl:max-w-[270px]">
+          <label htmlFor="student-info-class" className="sr-only">
+            Lớp học
+          </label>
+          <select
+            id="student-info-class"
+            value={classId || ''}
+            onChange={(event) => setClassId(event.target.value ? Number(event.target.value) : undefined)}
+            disabled={!hasContext}
+            className="h-9 w-full cursor-pointer rounded-xl border border-border bg-white px-3 text-xs font-semibold text-text-primary shadow-xs transition focus:outline-none focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:bg-surface-muted"
+          >
+            <option value="">Tất cả lớp phụ trách</option>
+            {classes.map((item) => (
+              <option key={item.id} value={item.id}>
+                {cleanClassIdentifier(item.class_name) || item.class_name}
+              </option>
+            ))}
+          </select>
+        </div>
       </FilterBar>
 
       {!hasContext ? (
@@ -378,10 +435,10 @@ export const TeacherStudentInfoPage: React.FC = () => {
               <span className="inline-flex items-center gap-1.5 rounded-lg border border-border/80 bg-surface px-2.5 py-1.5 shadow-2xs">
                 <span>Hiển thị:</span>
                 <span className="font-extrabold text-primary">
-                  {paginatedRows.length}
+                  {rows.length}
                 </span>
                 <span className="text-text-muted">
-                  / {rows.length} học viên
+                  / {total} học viên
                 </span>
               </span>
 
@@ -535,7 +592,7 @@ export const TeacherStudentInfoPage: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {paginatedRows.map((row, rIdx) => {
+                  {rows.map((row, rIdx) => {
                     const stickyBg =
                       rIdx % 2 === 1 ? 'bg-slate-50' : 'bg-surface';
 
@@ -816,7 +873,7 @@ export const TeacherStudentInfoPage: React.FC = () => {
             <PaginationFooter
               startRecord={startRecord}
               endRecord={endRecord}
-              totalCount={rows.length}
+              totalCount={total}
               pageSize={pageSize}
               currentPage={safePage}
               totalPages={totalPages}

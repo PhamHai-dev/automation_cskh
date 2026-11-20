@@ -159,7 +159,11 @@ export class EnrollmentsRepository {
     const includeProgram = opts?.includeProgramType ?? true;
     const includeStatus = opts?.includeStatus ?? true;
 
-    const andClauses: any[] = [];
+    const andClauses: any[] = [
+      // Archived students remain in the database for audit/history, but no
+      // product-facing enrollment query may expose or mutate their records.
+      { student: { deleted_at: null } },
+    ];
 
     // 1. Mandatory scope (owner cs_id OR readonly viewer in cs_viewers)
     if (typeof scopeCsIds === 'number') {
@@ -305,7 +309,77 @@ export class EnrollmentsRepository {
       });
     }
 
-    // 7. Teacher name / code / Class name / Schedule pattern / Start time
+    // 7. Program-aware course category and Kaiwa level. Keep these predicates
+    // inside the scoped AND tree so they run before pagination and can never widen access.
+    if (filters?.courseCategory === 'KAIWA') {
+      andClauses.push({
+        OR: [
+          { program_type: 'KAIWA' },
+          { course_content: { contains: 'kaiwa' } },
+          { level: { contains: 'kaiwa' } },
+          {
+            enrollment_classes: {
+              some: {
+                class: {
+                  OR: [
+                    { level: { contains: 'kaiwa' } },
+                    { class_name: { contains: 'kaiwa' } },
+                  ],
+                },
+              },
+            },
+          },
+        ],
+      });
+    } else if (filters?.courseCategory === 'JLPT') {
+      andClauses.push({
+        OR: [
+          { program_type: 'JLPT' },
+          { course_content: { contains: 'jlpt' } },
+          { course_content: { contains: 'jnpt' } },
+          { level: { contains: 'jlpt' } },
+          { level: { contains: 'jnpt' } },
+          {
+            enrollment_classes: {
+              some: {
+                class: {
+                  OR: [
+                    { level: { contains: 'jlpt' } },
+                    { level: { contains: 'jnpt' } },
+                    { class_name: { contains: 'jlpt' } },
+                    { class_name: { contains: 'jnpt' } },
+                  ],
+                },
+              },
+            },
+          },
+        ],
+      });
+    }
+
+    if (filters?.courseLevel && filters.courseLevel.trim()) {
+      const courseLevel = filters.courseLevel.trim();
+      andClauses.push({
+        OR: [
+          { level: { contains: courseLevel } },
+          { course_content: { contains: courseLevel } },
+          {
+            enrollment_classes: {
+              some: {
+                class: {
+                  OR: [
+                    { level: { contains: courseLevel } },
+                    { class_name: { contains: courseLevel } },
+                  ],
+                },
+              },
+            },
+          },
+        ],
+      });
+    }
+
+    // 8. Teacher name / code / Class name / Schedule pattern / Start time
     if (filters?.teacherName && filters.teacherName.trim()) {
       const tName = filters.teacherName.trim();
       andClauses.push({
@@ -529,56 +603,8 @@ export class EnrollmentsRepository {
   ): boolean {
     if (!filters) return true;
 
-    const ec = enr.enrollment_classes?.[0];
-    const cls = ec?.class;
-    const levelStr = String(enr.level || cls?.level || '').toLowerCase();
-    const contentStr = String(enr.course_content || '').toLowerCase();
-    const classNameStr = String(cls?.class_name || '').toLowerCase();
-
-    if (filters.courseCategory === 'KAIWA') {
-      const isKaiwa =
-        levelStr.includes('kaiwa') ||
-        contentStr.includes('kaiwa') ||
-        classNameStr.includes('kaiwa');
-      if (!isKaiwa) return false;
-    } else if (filters.courseCategory === 'JNPT') {
-      const isJnpt =
-        levelStr.includes('jnpt') ||
-        levelStr.includes('jlpt') ||
-        /\bn[1-6]\b/i.test(levelStr) ||
-        contentStr.includes('jnpt') ||
-        contentStr.includes('jlpt') ||
-        /\bn[1-6]\b/i.test(contentStr) ||
-        classNameStr.includes('jnpt') ||
-        classNameStr.includes('jlpt');
-      if (!isJnpt) return false;
-    }
-
-    if (filters.courseLevel && filters.courseLevel.trim()) {
-      const target = filters.courseLevel.trim().toLowerCase();
-      let matchesLevel =
-        levelStr.includes(target) ||
-        contentStr.includes(target) ||
-        classNameStr.includes(target);
-
-      if (!matchesLevel && target.startsWith('jnpt ')) {
-        const num = target.replace('jnpt ', '').trim();
-        matchesLevel =
-          levelStr.includes(`n${num}`) ||
-          contentStr.includes(`n${num}`) ||
-          levelStr.includes(`jlpt ${num}`) ||
-          contentStr.includes(`jlpt ${num}`);
-      } else if (!matchesLevel && target.startsWith('n')) {
-        const num = target.replace('n', '').trim();
-        matchesLevel =
-          levelStr.includes(`jnpt ${num}`) ||
-          contentStr.includes(`jnpt ${num}`) ||
-          levelStr.includes(`jlpt ${num}`) ||
-          contentStr.includes(`jlpt ${num}`);
-      }
-
-      if (!matchesLevel) return false;
-    }
+    // Category/level are translated to Prisma in buildWhereClause. This helper only
+    // computes attendance-derived values that do not have a persisted scalar source.
 
     const hasAttendedFilter =
       (filters.attendedSessionsOp === 'EXACT' && filters.attendedSessionsExact !== undefined) ||
@@ -663,9 +689,7 @@ export class EnrollmentsRepository {
     const include = buildEnrollmentIncludes(sessionRange);
 
     const needsInMemoryFilter = Boolean(
-      filters?.courseCategory ||
-        filters?.courseLevel ||
-        filters?.attendedSessionsExact !== undefined ||
+      filters?.attendedSessionsExact !== undefined ||
         filters?.attendedSessionsMin !== undefined ||
         filters?.attendedSessionsMax !== undefined ||
         filters?.remainingSessionsExact !== undefined ||
@@ -717,9 +741,7 @@ export class EnrollmentsRepository {
     });
 
     const needsInMemoryFilter = Boolean(
-      filters?.courseCategory ||
-        filters?.courseLevel ||
-        filters?.attendedSessionsExact !== undefined ||
+      filters?.attendedSessionsExact !== undefined ||
         filters?.attendedSessionsMin !== undefined ||
         filters?.attendedSessionsMax !== undefined ||
         filters?.remainingSessionsExact !== undefined ||
@@ -866,8 +888,8 @@ export class EnrollmentsRepository {
   }
 
   async findById(id: number) {
-    return prisma.enrollment.findUnique({
-      where: { id },
+    return prisma.enrollment.findFirst({
+      where: { id, student: { deleted_at: null } },
       include: {
         student: true,
         package: true,
@@ -885,7 +907,7 @@ export class EnrollmentsRepository {
 
   async findManyByIds(ids: number[]) {
     return prisma.enrollment.findMany({
-      where: { id: { in: ids } },
+      where: { id: { in: ids }, student: { deleted_at: null } },
       include: {
         student: true,
         package: true,

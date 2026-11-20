@@ -25,6 +25,7 @@ export const ACTION_LABELS: Record<string, string> = {
   TRANSFER_CLASS: 'Chuyển lớp học',
   STUDENT_CREATED: 'Thêm hồ sơ học viên',
   STUDENT_UPDATED: 'Cập nhật hồ sơ học viên',
+  STUDENT_SOFT_DELETED: 'Lưu trữ hồ sơ học viên',
   STUDENT_ACCESS_DENIED: 'Từ chối truy cập hồ sơ HV',
 
   // Care
@@ -84,6 +85,9 @@ export const FIELD_LABELS: Record<string, string> = {
   date_of_birth: 'Ngày sinh',
   occupation: 'Nghề nghiệp',
   external_id: 'Mã học viên',
+  archived: 'Đã lưu trữ',
+  deleted_at: 'Thời điểm lưu trữ',
+  deleted_by_id: 'Người lưu trữ',
   status: 'Trạng thái',
   cs_id: 'CVHT phụ trách',
   birth_year: 'Năm sinh',

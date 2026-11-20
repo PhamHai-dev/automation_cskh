@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 import { PageContainer } from '../../../components/common/PageContainer';
 import { PageHeader } from '../../../components/common/PageHeader';
-import { FilterBar } from '../../../components/common/FilterBar';
+import { FilterBar, ActiveFilterChip } from '../../../components/common/FilterBar';
 import { DataTable, Column } from '../../../components/common/DataTable';
 import { Button } from '../../../components/ui/Button';
 import { Badge } from '../../../components/ui/Badge';
@@ -95,7 +95,7 @@ const historyActionLabels: Record<
   ReconciliationHistoryAction,
   { label: string; variant: 'success' | 'warning' | 'danger' | 'info' | 'neutral' | 'accent' }
 > = {
-  ATTENDANCE_CS_MARK: { label: 'CSKH ghi nhận', variant: 'info' },
+  ATTENDANCE_CS_MARK: { label: 'CVHT ghi nhận', variant: 'info' },
   ATTENDANCE_BULK_APPROVED: { label: 'Duyệt theo GV', variant: 'success' },
   ATTENDANCE_CONFLICT_RESOLVED: { label: 'Phân xử lệch', variant: 'danger' },
 };
@@ -123,6 +123,10 @@ export const AttendanceReconciliationPage: React.FC = () => {
   // Filters (shared across tabs)
   const [search, setSearch] = useState(() => searchParams.get('search') || '');
   const [appliedSearch, setAppliedSearch] = useState(() => searchParams.get('search') || '');
+  const [programType, setProgramType] = useState<'ALL' | 'KAIWA' | 'JLPT'>(() => {
+    const value = (searchParams.get('programType') || '').toUpperCase();
+    return value === 'KAIWA' || value === 'JLPT' ? value : 'ALL';
+  });
   const [classId, setClassId] = useState<number | undefined>(() => {
     const cid = Number(searchParams.get('classId'));
     return cid > 0 ? cid : undefined;
@@ -144,13 +148,72 @@ export const AttendanceReconciliationPage: React.FC = () => {
       .catch(() => {});
   }, []);
 
-  // Sync filters to URL
+  const currentUrlFilterSignatureRef = React.useRef('');
+  currentUrlFilterSignatureRef.current = JSON.stringify({
+    activeTab,
+    search,
+    programType,
+    classId,
+    startDate,
+    endDate,
+    pendingFilter,
+  });
+  const skipUrlWriteAfterRestoreRef = React.useRef(false);
+
+  // Restore external URL changes (Back/Forward or links shared by another user).
   useEffect(() => {
+    const queryValue = (key: string) => searchParams.get(key) || '';
+    const tabParam = queryValue('tab');
+    const nextTab: ReconciliationTab =
+      tabParam === 'pending' || tabParam === 'history' ? tabParam : 'conflicts';
+    const programParam = queryValue('programType').toUpperCase();
+    const nextProgram: 'ALL' | 'KAIWA' | 'JLPT' =
+      programParam === 'KAIWA' || programParam === 'JLPT' ? programParam : 'ALL';
+    const parsedClassId = Number(queryValue('classId'));
+    const nextClassId = parsedClassId > 0 ? parsedClassId : undefined;
+    const pendingParam = queryValue('pendingFilter');
+    const nextPending: PendingFilter =
+      pendingParam === 'PENDING_CS' || pendingParam === 'PENDING_TEACHER'
+        ? pendingParam
+        : 'all';
+    const nextSignature = JSON.stringify({
+      activeTab: nextTab,
+      search: queryValue('search'),
+      programType: nextProgram,
+      classId: nextClassId,
+      startDate: queryValue('startDate'),
+      endDate: queryValue('endDate'),
+      pendingFilter: nextPending,
+    });
+
+    if (nextSignature === currentUrlFilterSignatureRef.current) return;
+    skipUrlWriteAfterRestoreRef.current = true;
+    setActiveTab(nextTab);
+    setSearch(queryValue('search'));
+    setAppliedSearch(queryValue('search').trim());
+    setProgramType(nextProgram);
+    setClassId(nextClassId);
+    setStartDate(queryValue('startDate'));
+    setEndDate(queryValue('endDate'));
+    setPendingFilter(nextPending);
+    setConflictPage(1);
+    setPendingPage(1);
+    setHistoryPage(1);
+  }, [searchParams]);
+
+  // Sync local filter state to URL after quick filters change.
+  useEffect(() => {
+    if (skipUrlWriteAfterRestoreRef.current) {
+      skipUrlWriteAfterRestoreRef.current = false;
+      return;
+    }
     const next = new URLSearchParams(searchParams);
     if (activeTab !== 'conflicts') next.set('tab', activeTab);
     else next.delete('tab');
     if (search.trim()) next.set('search', search.trim());
     else next.delete('search');
+    if (programType !== 'ALL') next.set('programType', programType);
+    else next.delete('programType');
     if (classId) next.set('classId', String(classId));
     else next.delete('classId');
     if (startDate) next.set('startDate', startDate);
@@ -162,7 +225,7 @@ export const AttendanceReconciliationPage: React.FC = () => {
     if (next.toString() !== searchParams.toString()) {
       setSearchParams(next, { replace: true });
     }
-  }, [activeTab, search, classId, startDate, endDate, pendingFilter, searchParams, setSearchParams]);
+  }, [activeTab, search, programType, classId, startDate, endDate, pendingFilter, searchParams, setSearchParams]);
 
   // Stats (KPI cards, independent of pagination)
   const [stats, setStats] = useState<ReconciliationStats>({
@@ -216,11 +279,12 @@ export const AttendanceReconciliationPage: React.FC = () => {
   const baseFilters = useMemo(() => {
     const f: Record<string, any> = {};
     if (appliedSearch) f.search = appliedSearch;
+    if (programType !== 'ALL') f.programType = programType;
     if (classId) f.classId = classId;
     if (startDate) f.startDate = startDate;
     if (endDate) f.endDate = endDate;
     return f;
-  }, [appliedSearch, classId, startDate, endDate]);
+  }, [appliedSearch, programType, classId, startDate, endDate]);
 
   const loadStats = useCallback(async () => {
     try {
@@ -371,11 +435,11 @@ export const AttendanceReconciliationPage: React.FC = () => {
         status: csStatus,
         note: csNote.trim() || undefined,
       });
-      toast.success('Đã ghi nhận điểm danh CSKH thành công!');
+      toast.success('Đã ghi nhận điểm danh CVHT thành công!');
       setIsCSMarkModalOpen(false);
       await refreshAll();
     } catch (err: any) {
-      toast.error(err.response?.data?.message || 'Lỗi khi ghi nhận điểm danh CSKH');
+      toast.error(err.response?.data?.message || 'Lỗi khi ghi nhận điểm danh CVHT');
     } finally {
       setIsSubmitting(false);
     }
@@ -484,13 +548,13 @@ export const AttendanceReconciliationPage: React.FC = () => {
         },
       },
       {
-        header: 'CSKH ghi nhận',
+        header: 'CVHT ghi nhận',
         cell: (r) => {
           const cfg = r.cs_status ? statusLabels[r.cs_status] : null;
           return (
             <div className="bg-blue-50/70 border border-blue-200/80 rounded-xl p-2.5">
               <div className="flex items-center gap-1.5 mb-1">
-                <span className="text-[11px] font-bold text-blue-800">Ý kiến CSKH:</span>
+                <span className="text-[11px] font-bold text-blue-800">Ý kiến CVHT:</span>
                 {cfg ? (
                   <Badge variant={cfg.variant} size="sm">
                     {cfg.chipLabel}
@@ -503,7 +567,7 @@ export const AttendanceReconciliationPage: React.FC = () => {
                 <div className="text-xs text-text-secondary italic">"{r.cs_note}"</div>
               )}
               <div className="text-[10px] text-text-muted mt-1">
-                Bởi: {r.cs_user?.name || r.enrollment_class?.enrollment?.cs?.name || 'CSKH'}
+                Bởi: {r.cs_user?.name || r.enrollment_class?.enrollment?.cs?.name || 'CVHT'}
               </div>
             </div>
           );
@@ -530,7 +594,7 @@ export const AttendanceReconciliationPage: React.FC = () => {
               onClick={() => handleOpenCSMark(r)}
               className="whitespace-nowrap"
             >
-              Ghi nhận CSKH
+              Ghi nhận CVHT
             </Button>
           ),
       },
@@ -593,7 +657,7 @@ export const AttendanceReconciliationPage: React.FC = () => {
     };
 
     const csReportColumn: Column<AttendanceRecord> = {
-      header: 'Điểm danh CSKH',
+      header: 'Điểm danh CVHT',
       cell: (r) => {
         const cfg = r.cs_status ? statusLabels[r.cs_status] : null;
         return cfg ? (
@@ -651,7 +715,7 @@ export const AttendanceReconciliationPage: React.FC = () => {
                 pendingItems.length > 0 && selectedPendingIds.length === pendingItems.length
               }
               onChange={toggleSelectAllPending}
-              aria-label="Chọn tất cả chờ CSKH"
+              aria-label="Chọn tất cả chờ CVHT"
             />
           ),
           width: '40px',
@@ -699,7 +763,7 @@ export const AttendanceReconciliationPage: React.FC = () => {
             </Badge>
           ) : r.reconciliation_state === 'PENDING_CS' ? (
             <Badge variant="warning" size="sm" dot>
-              Chờ CSKH chấm
+              Chờ CVHT chấm
             </Badge>
           ) : (
             <Badge variant="info" size="sm" dot>
@@ -881,31 +945,104 @@ export const AttendanceReconciliationPage: React.FC = () => {
 
   const pendingFilterButtons: { value: PendingFilter; label: string; count: number }[] = [
     { value: 'all', label: 'Tất cả', count: stats.pendingCsCount + stats.pendingTeacherCount },
-    { value: 'PENDING_CS', label: 'Chờ CSKH', count: stats.pendingCsCount },
+    { value: 'PENDING_CS', label: 'Chờ CVHT', count: stats.pendingCsCount },
     { value: 'PENDING_TEACHER', label: 'Chờ GV', count: stats.pendingTeacherCount },
   ];
 
   const activeFiltersCount = useMemo(
     () =>
       (search.trim() ? 1 : 0) +
+      (programType !== 'ALL' ? 1 : 0) +
       (classId ? 1 : 0) +
-      (startDate ? 1 : 0) +
-      (endDate ? 1 : 0) +
+      (startDate || endDate ? 1 : 0) +
       (activeTab === 'pending' && pendingFilter !== 'all' ? 1 : 0),
-    [search, classId, startDate, endDate, activeTab, pendingFilter]
+    [search, programType, classId, startDate, endDate, activeTab, pendingFilter]
   );
 
-  const handleResetFilters = () => {
-    setSearch('');
-    setAppliedSearch('');
-    setClassId(undefined);
-    setStartDate('');
-    setEndDate('');
-    setPendingFilter('all');
+  const resetListPages = () => {
     setConflictPage(1);
     setPendingPage(1);
     setHistoryPage(1);
   };
+
+  const handleResetFilters = () => {
+    setSearch('');
+    setAppliedSearch('');
+    setProgramType('ALL');
+    setClassId(undefined);
+    setStartDate('');
+    setEndDate('');
+    setPendingFilter('all');
+    resetListPages();
+  };
+
+  const selectedClassLabel = useMemo(() => {
+    const selectedClass = classesList.find((item) => item.id === classId);
+    if (!selectedClass) return classId ? `#${classId}` : '';
+    const cleaned = cleanClassIdentifier(selectedClass.class_name) || selectedClass.class_name;
+    const code = formatClassCode(selectedClass.class_code, selectedClass.id);
+    return code && code !== '—' && code !== cleaned ? `${cleaned} (${code})` : cleaned;
+  }, [classId, classesList]);
+
+  const activeFilterChips = useMemo<ActiveFilterChip[]>(() => {
+    const chips: ActiveFilterChip[] = [];
+    if (search.trim()) {
+      chips.push({
+        id: 'search',
+        label: 'Tìm kiếm',
+        value: search.trim(),
+        onRemove: () => {
+          setSearch('');
+          setAppliedSearch('');
+          resetListPages();
+        },
+      });
+    }
+    if (programType !== 'ALL') {
+      chips.push({
+        id: 'program',
+        label: 'Chương trình',
+        value: programType === 'KAIWA' ? 'Kaiwa' : 'JLPT',
+        tone: programType === 'KAIWA' ? 'kaiwa' : 'jlpt',
+        onRemove: () => {
+          setProgramType('ALL');
+          resetListPages();
+        },
+      });
+    }
+    if (classId) {
+      chips.push({
+        id: 'class',
+        label: 'Lớp',
+        value: selectedClassLabel,
+        onRemove: () => {
+          setClassId(undefined);
+          resetListPages();
+        },
+      });
+    }
+    if (activeTab === 'pending' && pendingFilter !== 'all') {
+      chips.push({
+        id: 'pending-state',
+        label: 'Trạng thái',
+        value: pendingFilter === 'PENDING_CS' ? 'Chờ CVHT duyệt' : 'Chờ GV điểm danh',
+        tone: 'warning',
+        onRemove: () => {
+          setPendingFilter('all');
+          setPendingPage(1);
+        },
+      });
+    }
+    if (startDate || endDate) {
+      chips.push({
+        id: 'date-range',
+        label: 'Ngày học',
+        value: `${startDate || 'Từ đầu'} – ${endDate || 'Đến nay'}`,
+        onRemove: () => handleDateChange('', ''),
+      });
+    }
+    return chips;
+  }, [search, programType, classId, selectedClassLabel, activeTab, pendingFilter, startDate, endDate]);
 
   return (
     <PageContainer>
@@ -920,44 +1057,59 @@ export const AttendanceReconciliationPage: React.FC = () => {
         className="mb-4"
       />
 
-      {/* Bộ lọc chuẩn Design System */}
       <FilterBar
-        title="Bộ lọc & Tìm kiếm"
+        variant="toolbar"
+        title="Bộ lọc đối soát điểm danh"
         activeCount={activeFiltersCount}
+        chips={activeFilterChips}
         onClear={handleResetFilters}
-        gridClassName={`grid grid-cols-1 sm:grid-cols-2 ${
-          activeTab === 'pending' ? 'lg:grid-cols-5' : 'lg:grid-cols-4'
-        } gap-3.5 items-end`}
       >
-        <div>
-          <label className="block text-[11px] font-semibold text-text-secondary uppercase tracking-wider mb-1.5">
-            Tìm kiếm học viên / lớp học
+        <div className="relative min-w-[240px] flex-1 xl:min-w-[300px]">
+          <label htmlFor="reconciliation-search" className="sr-only">
+            Tìm kiếm học viên hoặc lớp học
           </label>
-          <div className="relative">
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Tên học viên, mã HV, SĐT, tên lớp..."
-              className="w-full h-9 pl-9 pr-3 border border-border rounded-xl text-xs font-medium bg-white text-text-primary focus:outline-none focus:ring-2 focus:ring-primary shadow-xs transition"
-            />
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
-          </div>
+          <input
+            id="reconciliation-search"
+            type="search"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Tên, mã HV, SĐT, email, khóa, gói, lớp..."
+            className="h-9 w-full rounded-xl border border-border bg-white pl-9 pr-3 text-xs font-medium text-text-primary shadow-xs transition focus:outline-none focus:ring-2 focus:ring-primary"
+          />
+          <Search className="absolute left-3 top-2.5 h-4 w-4 text-text-muted" aria-hidden="true" />
         </div>
 
-        <div>
-          <label className="block text-[11px] font-semibold text-text-secondary uppercase tracking-wider mb-1.5">
+        <div className="w-[138px] shrink-0">
+          <label htmlFor="reconciliation-program-filter" className="sr-only">
+            Chương trình
+          </label>
+          <select
+            id="reconciliation-program-filter"
+            value={programType}
+            onChange={(event) => {
+              setProgramType(event.target.value as 'ALL' | 'KAIWA' | 'JLPT');
+              resetListPages();
+            }}
+            className="h-9 w-full cursor-pointer rounded-xl border border-border bg-white px-3 text-xs font-semibold text-text-primary shadow-xs transition focus:outline-none focus:ring-2 focus:ring-primary"
+          >
+            <option value="ALL">Tất cả chương trình</option>
+            <option value="KAIWA">Kaiwa</option>
+            <option value="JLPT">JLPT</option>
+          </select>
+        </div>
+
+        <div className="min-w-[190px] flex-1 xl:max-w-[270px]">
+          <label htmlFor="reconciliation-class-filter" className="sr-only">
             Lớp học
           </label>
           <select
+            id="reconciliation-class-filter"
             value={classId ?? ''}
-            onChange={(e) => {
-              setClassId(e.target.value ? Number(e.target.value) : undefined);
-              setConflictPage(1);
-              setPendingPage(1);
-              setHistoryPage(1);
+            onChange={(event) => {
+              setClassId(event.target.value ? Number(event.target.value) : undefined);
+              resetListPages();
             }}
-            className="w-full h-9 px-3 border border-border rounded-xl text-xs font-semibold bg-white text-text-primary focus:outline-none focus:ring-2 focus:ring-primary shadow-xs transition cursor-pointer"
+            className="h-9 w-full cursor-pointer rounded-xl border border-border bg-white px-3 text-xs font-semibold text-text-primary shadow-xs transition focus:outline-none focus:ring-2 focus:ring-primary"
           >
             <option value="">Tất cả lớp học</option>
             {classesList.map((cls) => {
@@ -974,49 +1126,55 @@ export const AttendanceReconciliationPage: React.FC = () => {
         </div>
 
         {activeTab === 'pending' && (
-          <div>
-            <label className="block text-[11px] font-semibold text-text-secondary uppercase tracking-wider mb-1.5">
-              Phân loại chờ đối soát
+          <div className="w-[190px] shrink-0">
+            <label htmlFor="reconciliation-pending-filter" className="sr-only">
+              Trạng thái chờ đối soát
             </label>
             <select
+              id="reconciliation-pending-filter"
               value={pendingFilter}
-              onChange={(e) => {
-                setPendingFilter(e.target.value as PendingFilter);
+              onChange={(event) => {
+                setPendingFilter(event.target.value as PendingFilter);
                 setPendingPage(1);
               }}
-              className="w-full h-9 px-3 border border-border rounded-xl text-xs font-semibold bg-white text-text-primary focus:outline-none focus:ring-2 focus:ring-primary shadow-xs transition cursor-pointer"
+              className="h-9 w-full cursor-pointer rounded-xl border border-border bg-white px-3 text-xs font-semibold text-text-primary shadow-xs transition focus:outline-none focus:ring-2 focus:ring-primary"
             >
               <option value="all">
-                Tất cả trạng thái chờ ({stats.pendingCsCount + stats.pendingTeacherCount})
+                Tất cả trạng thái ({stats.pendingCsCount + stats.pendingTeacherCount})
               </option>
-              <option value="PENDING_CS">Chờ CSKH duyệt ({stats.pendingCsCount})</option>
+              <option value="PENDING_CS">Chờ CVHT duyệt ({stats.pendingCsCount})</option>
               <option value="PENDING_TEACHER">Chờ GV điểm danh ({stats.pendingTeacherCount})</option>
             </select>
           </div>
         )}
 
-        <div>
-          <label className="block text-[11px] font-semibold text-text-secondary uppercase tracking-wider mb-1.5">
+        <div className="w-[145px] shrink-0">
+          <label htmlFor="reconciliation-start-date" className="sr-only">
             Từ ngày
           </label>
           <input
+            id="reconciliation-start-date"
             type="date"
             value={startDate}
-            onChange={(e) => handleDateChange(e.target.value, endDate)}
-            className="w-full h-9 px-3 border border-border rounded-xl text-xs font-semibold bg-white text-text-primary focus:outline-none focus:ring-2 focus:ring-primary shadow-xs transition"
+            max={endDate || undefined}
+            onChange={(event) => handleDateChange(event.target.value, endDate)}
+            className="h-9 w-full rounded-xl border border-border bg-white px-3 text-xs font-semibold text-text-primary shadow-xs transition focus:outline-none focus:ring-2 focus:ring-primary"
+            title="Từ ngày"
           />
         </div>
 
-        <div>
-          <label className="block text-[11px] font-semibold text-text-secondary uppercase tracking-wider mb-1.5">
+        <div className="w-[145px] shrink-0">
+          <label htmlFor="reconciliation-end-date" className="sr-only">
             Đến ngày
           </label>
           <input
+            id="reconciliation-end-date"
             type="date"
             value={endDate}
             min={startDate || undefined}
-            onChange={(e) => handleDateChange(startDate, e.target.value)}
-            className="w-full h-9 px-3 border border-border rounded-xl text-xs font-semibold bg-white text-text-primary focus:outline-none focus:ring-2 focus:ring-primary shadow-xs transition"
+            onChange={(event) => handleDateChange(startDate, event.target.value)}
+            className="h-9 w-full rounded-xl border border-border bg-white px-3 text-xs font-semibold text-text-primary shadow-xs transition focus:outline-none focus:ring-2 focus:ring-primary"
+            title="Đến ngày"
           />
         </div>
       </FilterBar>
@@ -1035,7 +1193,7 @@ export const AttendanceReconciliationPage: React.FC = () => {
                   ? 'border-rose-400 bg-rose-50 text-rose-800 shadow-2xs ring-1 ring-rose-300'
                   : 'border-rose-200/80 bg-rose-50/40 text-rose-700 hover:bg-rose-50'
               }`}
-              title="Xem các buổi GV và CSKH chấm lệch nhau"
+              title="Xem các buổi GV và CVHT chấm lệch nhau"
             >
               <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />
               <span>Lệch điểm danh:</span>
@@ -1054,10 +1212,10 @@ export const AttendanceReconciliationPage: React.FC = () => {
                   ? 'border-amber-400 bg-amber-50 text-amber-800 shadow-2xs ring-1 ring-amber-300'
                   : 'border-amber-200/80 bg-amber-50/40 text-amber-700 hover:bg-amber-50'
               }`}
-              title="GV đã báo — đang chờ CSKH xác nhận"
+              title="GV đã báo — đang chờ CVHT xác nhận"
             >
               <CheckCircle2 className="w-3.5 h-3.5 text-amber-600" />
-              <span>Chờ CSKH duyệt:</span>
+              <span>Chờ CVHT duyệt:</span>
               <strong className="font-extrabold text-amber-900">{stats.pendingCsCount}</strong>
             </button>
 
@@ -1073,7 +1231,7 @@ export const AttendanceReconciliationPage: React.FC = () => {
                   ? 'border-sky-400 bg-sky-50 text-sky-800 shadow-2xs ring-1 ring-sky-300'
                   : 'border-sky-200/80 bg-sky-50/40 text-sky-700 hover:bg-sky-50'
               }`}
-              title="CSKH đã ghi nhận — đang chờ GV điểm danh"
+              title="CVHT đã ghi nhận — đang chờ GV điểm danh"
             >
               <UserRoundX className="w-3.5 h-3.5 text-sky-600" />
               <span>Chờ GV chấm:</span>
@@ -1147,7 +1305,7 @@ export const AttendanceReconciliationPage: React.FC = () => {
             columns={conflictColumns}
             data={conflicts}
             isLoading={isLoading}
-            emptyMessage="Hiện tại không có buổi học nào bị lệch điểm danh giữa Giáo viên và CSKH."
+            emptyMessage="Hiện tại không có buổi học nào bị lệch điểm danh giữa Giáo viên và CVHT."
             serverPagination
             total={conflictTotal}
             page={conflictPage}
@@ -1281,7 +1439,7 @@ export const AttendanceReconciliationPage: React.FC = () => {
 
               <div className="border border-blue-500/30 bg-blue-500/5 rounded-xl p-3">
                 <div className="flex items-center justify-between mb-1">
-                  <span className="text-xs font-bold text-blue-700">CSKH GHI NHẬN</span>
+                  <span className="text-xs font-bold text-blue-700">CVHT GHI NHẬN</span>
                   <Button
                     size="sm"
                     variant="outline"
@@ -1353,11 +1511,11 @@ export const AttendanceReconciliationPage: React.FC = () => {
         )}
       </Modal>
 
-      {/* MODAL 2: Ghi nhận điểm danh CSKH */}
+      {/* MODAL 2: Ghi nhận điểm danh CVHT */}
       <Modal
         isOpen={isCSMarkModalOpen}
         onClose={() => setIsCSMarkModalOpen(false)}
-        title="Ghi nhận điểm danh CSKH"
+        title="Ghi nhận điểm danh CVHT"
         footer={
           <div className="flex items-center justify-end gap-3 w-full">
             <Button
@@ -1429,7 +1587,7 @@ export const AttendanceReconciliationPage: React.FC = () => {
 
           <div>
             <label className="block text-xs font-semibold text-text-primary mb-1">
-              Trạng thái điểm danh CSKH
+              Trạng thái điểm danh CVHT
             </label>
             <Select
               value={csStatus}
@@ -1446,7 +1604,7 @@ export const AttendanceReconciliationPage: React.FC = () => {
 
           <div>
             <label className="block text-xs font-semibold text-text-primary mb-1">
-              Ghi chú của CSKH
+              Ghi chú của CVHT
             </label>
             <Textarea
               placeholder="Ghi chú thêm nếu có..."

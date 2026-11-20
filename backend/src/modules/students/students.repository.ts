@@ -152,7 +152,25 @@ export class StudentsRepository {
       Boolean(includeStatus && options.status && options.status.trim()) ||
       Boolean(normalizedModel) ||
       Boolean(normalizedPayment) ||
-      Boolean(options.sale && options.sale.trim());
+      Boolean(options.sale && options.sale.trim()) ||
+      Boolean(options.packageName && options.packageName.trim()) ||
+      Boolean(options.courseCode && options.courseCode.trim()) ||
+      Boolean(options.teacherName && options.teacherName.trim()) ||
+      Boolean(options.teacherCode && options.teacherCode.trim()) ||
+      Boolean(options.className && options.className.trim()) ||
+      Boolean(options.classCode && options.classCode.trim()) ||
+      Boolean(options.schedulePattern && options.schedulePattern.trim()) ||
+      Boolean(options.startTime && options.startTime.trim()) ||
+      Boolean(options.startDateExact || options.startDateFrom || options.startDateTo) ||
+      Boolean(options.endDateExact || options.endDateFrom || options.endDateTo) ||
+      options.totalSessionsExact !== undefined ||
+      options.totalSessionsMin !== undefined ||
+      options.totalSessionsMax !== undefined ||
+      options.remainingSessionsExact !== undefined ||
+      options.remainingSessionsMin !== undefined ||
+      options.remainingSessionsMax !== undefined ||
+      options.hasClass !== undefined ||
+      options.hasTeacher !== undefined;
 
     // Keep exact legacy structure when only scope/csId/programType are used
     if (!hasAdvanced) {
@@ -358,6 +376,144 @@ export class StudentsRepository {
       });
     }
 
+    if (options.packageName && options.packageName.trim()) {
+      const packageName = options.packageName.trim();
+      andClauses.push({
+        package: {
+          OR: [
+            { name: { contains: packageName } },
+            { code: { contains: packageName } },
+          ],
+        },
+      });
+    }
+
+    if (options.courseCode && options.courseCode.trim()) {
+      andClauses.push({ course_code: { contains: options.courseCode.trim() } });
+    }
+
+    if (options.teacherName && options.teacherName.trim()) {
+      andClauses.push({
+        enrollment_classes: {
+          some: {
+            class: {
+              class_teachers: {
+                some: { active: true, teacher: { name: { contains: options.teacherName.trim() } } },
+              },
+            },
+          },
+        },
+      });
+    }
+
+    if (options.teacherCode && options.teacherCode.trim()) {
+      andClauses.push({
+        enrollment_classes: {
+          some: {
+            class: {
+              class_teachers: {
+                some: { active: true, teacher: { code: { contains: options.teacherCode.trim() } } },
+              },
+            },
+          },
+        },
+      });
+    }
+
+    if ((options.className && options.className.trim()) || (options.classCode && options.classCode.trim())) {
+      const classPredicates: any[] = [];
+      if (options.className?.trim()) {
+        classPredicates.push({ class_name: { contains: options.className.trim() } });
+      }
+      if (options.classCode?.trim()) {
+        classPredicates.push({ class_code: { contains: options.classCode.trim() } });
+      }
+      andClauses.push({
+        enrollment_classes: { some: { class: { OR: classPredicates } } },
+      });
+    }
+
+    if (options.schedulePattern && options.schedulePattern.trim()) {
+      andClauses.push({
+        enrollment_classes: {
+          some: {
+            class: {
+              class_schedules: {
+                some: { active: true, schedule_pattern: { contains: options.schedulePattern.trim() } },
+              },
+            },
+          },
+        },
+      });
+    }
+
+    if (options.startTime && options.startTime.trim()) {
+      andClauses.push({
+        enrollment_classes: {
+          some: {
+            class: {
+              class_schedules: {
+                some: { active: true, start_time: { contains: options.startTime.trim() } },
+              },
+            },
+          },
+        },
+      });
+    }
+
+    if (options.startDateOp === 'EXACT' && options.startDateExact) {
+      andClauses.push({ start_date: new Date(`${options.startDateExact}T00:00:00.000Z`) });
+    } else if (options.startDateFrom || options.startDateTo) {
+      const dateCondition: any = {};
+      if (options.startDateFrom) dateCondition.gte = new Date(`${options.startDateFrom}T00:00:00.000Z`);
+      if (options.startDateTo) dateCondition.lte = new Date(`${options.startDateTo}T00:00:00.000Z`);
+      andClauses.push({ start_date: dateCondition });
+    }
+
+    if (options.endDateOp === 'EXACT' && options.endDateExact) {
+      andClauses.push({ end_date: new Date(`${options.endDateExact}T00:00:00.000Z`) });
+    } else if (options.endDateFrom || options.endDateTo) {
+      const dateCondition: any = {};
+      if (options.endDateFrom) dateCondition.gte = new Date(`${options.endDateFrom}T00:00:00.000Z`);
+      if (options.endDateTo) dateCondition.lte = new Date(`${options.endDateTo}T00:00:00.000Z`);
+      andClauses.push({ end_date: dateCondition });
+    }
+
+    if (options.totalSessionsOp === 'EXACT' && options.totalSessionsExact !== undefined) {
+      andClauses.push({ total_sessions: options.totalSessionsExact });
+    } else if (options.totalSessionsMin !== undefined || options.totalSessionsMax !== undefined) {
+      const numberCondition: any = {};
+      if (options.totalSessionsMin !== undefined) numberCondition.gte = options.totalSessionsMin;
+      if (options.totalSessionsMax !== undefined) numberCondition.lte = options.totalSessionsMax;
+      andClauses.push({ total_sessions: numberCondition });
+    }
+
+    if (options.remainingSessionsOp === 'EXACT' && options.remainingSessionsExact !== undefined) {
+      andClauses.push({ external_remaining_sessions: options.remainingSessionsExact });
+    } else if (options.remainingSessionsMin !== undefined || options.remainingSessionsMax !== undefined) {
+      const numberCondition: any = {};
+      if (options.remainingSessionsMin !== undefined) numberCondition.gte = options.remainingSessionsMin;
+      if (options.remainingSessionsMax !== undefined) numberCondition.lte = options.remainingSessionsMax;
+      andClauses.push({ external_remaining_sessions: numberCondition });
+    }
+
+    if (options.hasClass !== undefined) {
+      andClauses.push({
+        enrollment_classes: options.hasClass ? { some: {} } : { none: {} },
+      });
+    }
+
+    if (options.hasTeacher !== undefined) {
+      const teacherAssignment = {
+        class: { class_teachers: { some: { active: true } } },
+      };
+      andClauses.push({
+        enrollment_classes: options.hasTeacher
+          ? { some: teacherAssignment }
+          : { none: teacherAssignment },
+      });
+    }
+
     return andClauses.length === 1 ? andClauses[0] : { AND: andClauses };
   }
 
@@ -370,10 +526,15 @@ export class StudentsRepository {
     const hasEnrollmentFilter = Object.keys(enrollmentFilter).length > 0;
     const hasSearch = Boolean(options.search && options.search.trim());
     const hasGender = Boolean(options.gender && options.gender.trim());
+    const hasBirthYear = options.birthYearMin !== undefined || options.birthYearMax !== undefined;
+    const hasOccupation = Boolean(options.occupation && options.occupation.trim());
 
-    if (!hasSearch && !hasGender) {
+    if (!hasSearch && !hasGender && !hasBirthYear && !hasOccupation) {
+      const activeStudentClause = { deleted_at: null };
       return {
-        where: hasEnrollmentFilter ? { enrollments: { some: enrollmentFilter } } : undefined,
+        where: hasEnrollmentFilter
+          ? { AND: [activeStudentClause, { enrollments: { some: enrollmentFilter } }] }
+          : activeStudentClause,
         enrollmentFilter: hasEnrollmentFilter ? enrollmentFilter : undefined,
       };
     }
@@ -384,6 +545,15 @@ export class StudentsRepository {
     }
     if (hasGender) {
       andClauses.push({ gender: options.gender!.trim() });
+    }
+    if (hasBirthYear) {
+      const yearCondition: any = {};
+      if (options.birthYearMin !== undefined) yearCondition.gte = options.birthYearMin;
+      if (options.birthYearMax !== undefined) yearCondition.lte = options.birthYearMax;
+      andClauses.push({ birth_year: yearCondition });
+    }
+    if (hasOccupation) {
+      andClauses.push({ occupation: { contains: options.occupation!.trim() } });
     }
     if (hasSearch) {
       const q = options.search!.trim();
@@ -426,8 +596,13 @@ export class StudentsRepository {
       });
     }
 
+    const activeStudentClause = { deleted_at: null };
+
     return {
-      where: andClauses.length === 1 ? andClauses[0] : { AND: andClauses },
+      where:
+        andClauses.length === 0
+          ? activeStudentClause
+          : { AND: [activeStudentClause, ...andClauses] },
       enrollmentFilter: hasEnrollmentFilter ? enrollmentFilter : undefined,
     };
   }
@@ -644,8 +819,8 @@ export class StudentsRepository {
       if (accessibleClassIds.length === 0) {
         throw new AppError(403, 'Bạn không phụ trách học viên này');
       }
-      const student = await prisma.student.findUnique({
-        where: { id },
+      const student = await prisma.student.findFirst({
+        where: { id, deleted_at: null },
         include: {
           enrollments: {
             where: {
@@ -703,8 +878,8 @@ export class StudentsRepository {
 
     // Only enrollment details inside the existing student-list scope are exposed.
     const allowedCsIds = await getStudentCsScope(actor);
-    const student = await prisma.student.findUnique({
-      where: { id },
+    const student = await prisma.student.findFirst({
+      where: { id, deleted_at: null },
       include: {
         enrollments: {
           ...(allowedCsIds !== undefined
@@ -773,13 +948,13 @@ export class StudentsRepository {
 
   async findByPhone(phone: string) {
     return prisma.student.findFirst({
-      where: { phone }
+      where: { phone, deleted_at: null }
     });
   }
 
   async findByEmail(email: string) {
     return prisma.student.findFirst({
-      where: { email }
+      where: { email, deleted_at: null }
     });
   }
 
@@ -1331,6 +1506,7 @@ export class StudentsRepository {
     }
 
     const studentWhere: any = {
+      deleted_at: null,
       ...(options.student_id ? { id: Number(options.student_id) } : {}),
       enrollments: {
         some: enrollmentScopeFilter,
@@ -1545,8 +1721,8 @@ export class StudentsRepository {
     }
 
     return prisma.$transaction(async (tx) => {
-      const student = await tx.student.findUnique({
-        where: { id: studentId },
+      const student = await tx.student.findFirst({
+        where: { id: studentId, deleted_at: null },
       });
       if (!student) {
         throw new AppError(404, 'Không tìm thấy học viên');
@@ -1692,6 +1868,53 @@ export class StudentsRepository {
         isReadonly: false,
         thresholds: DEFAULT_JLPT_ATTENDANCE_THRESHOLDS,
       });
+    });
+  }
+
+  async softDelete(id: number, actorId: number) {
+    return prisma.$transaction(async (tx) => {
+      const archivedAt = new Date();
+      const result = await tx.student.updateMany({
+        where: { id, deleted_at: null },
+        data: {
+          deleted_at: archivedAt,
+          deleted_by_id: actorId,
+        },
+      });
+
+      if (result.count === 0) {
+        throw new AppError(404, 'Không tìm thấy học viên đang hoạt động');
+      }
+
+      const [automationDeliveries, broadcastRecipients] = await Promise.all([
+        tx.messageDelivery.updateMany({
+          where: {
+            enrollment: { student_id: id },
+            status: { in: ['SCHEDULED', 'QUEUED', 'FAILED'] },
+          },
+          data: {
+            status: 'CANCELLED',
+            error_message: 'Học viên đã được lưu trữ',
+          },
+        }),
+        tx.broadcastRecipient.updateMany({
+          where: {
+            student_id: id,
+            status: { in: ['SCHEDULED', 'QUEUED', 'FAILED'] },
+          },
+          data: {
+            status: 'CANCELLED',
+            error_message: 'Học viên đã được lưu trữ',
+          },
+        }),
+      ]);
+
+      return {
+        id,
+        archivedAt,
+        cancelledAutomationDeliveries: automationDeliveries.count,
+        cancelledBroadcastRecipients: broadcastRecipients.count,
+      };
     });
   }
 }

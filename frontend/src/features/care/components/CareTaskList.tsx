@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { CareTask, TaskFilterParams, TaskPriority, TaskType, TaskStatus } from '../types/care.types';
+import React from 'react';
+import { CareTask, TaskPriority, TaskType, TaskStatus } from '../types/care.types';
 import { Badge } from '../../../components/ui/Badge';
 import { Button } from '../../../components/ui/Button';
 import { XCircle, Edit, Calendar, AlertCircle, Clock, Check, ChevronLeft, ChevronRight } from 'lucide-react';
@@ -7,8 +7,12 @@ import { XCircle, Edit, Calendar, AlertCircle, Clock, Check, ChevronLeft, Chevro
 interface CareTaskListProps {
   tasks: CareTask[];
   loading?: boolean;
-  filter: TaskFilterParams;
-  onFilterChange: (newFilter: TaskFilterParams) => void;
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+  onPageChange: (page: number) => void;
+  onPageSizeChange: (pageSize: number) => void;
   onComplete: (taskId: number) => Promise<void>;
   onCancel: (taskId: number) => Promise<void>;
   onEdit: (task: CareTask) => void;
@@ -19,6 +23,8 @@ const TYPE_BADGES: Record<TaskType, { label: string; variant: 'info' | 'success'
   CALLBACK: { label: 'Hẹn gọi lại', variant: 'info' },
   HOT_ISSUE: { label: 'Điểm nóng', variant: 'danger' },
   FOLLOW_UP: { label: 'Theo dõi', variant: 'neutral' },
+  AUTO_ATTENDANCE: { label: 'Điểm danh tự động', variant: 'warning' },
+  SCHEDULE_DATA_ISSUE: { label: 'Lỗi dữ liệu lịch', variant: 'danger' },
 };
 
 const PRIORITY_BADGES: Record<TaskPriority, { label: string; variant: 'info' | 'success' | 'warning' | 'danger' | 'neutral' }> = {
@@ -37,121 +43,25 @@ const STATUS_BADGES: Record<TaskStatus, { label: string; variant: 'info' | 'succ
 export const CareTaskList: React.FC<CareTaskListProps> = ({
   tasks,
   loading = false,
-  filter,
-  onFilterChange,
+  page,
+  pageSize,
+  total,
+  totalPages,
+  onPageChange,
+  onPageSizeChange,
   onComplete,
   onCancel,
   onEdit,
   onRefresh: _onRefresh,
 }) => {
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(25);
-
-  useEffect(() => {
-    setPage(1);
-  }, [filter.status, filter.due_filter, filter.priority, filter.type, tasks.length]);
-
-  const totalPages = Math.max(1, Math.ceil(tasks.length / pageSize));
-  const safePage = Math.min(page, totalPages);
-  const startIdx = tasks.length === 0 ? 0 : (safePage - 1) * pageSize + 1;
-  const endIdx = Math.min(safePage * pageSize, tasks.length);
-  const paginatedTasks = tasks.slice((safePage - 1) * pageSize, safePage * pageSize);
+  const safePage = Math.min(page, Math.max(1, totalPages));
+  const startIdx = total === 0 ? 0 : (safePage - 1) * pageSize + 1;
+  const endIdx = Math.min(safePage * pageSize, total);
 
   return (
     <div className="space-y-4">
-      {/* Filter Toolbar */}
-      <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex flex-wrap gap-4 items-center justify-between">
-        <div className="flex flex-wrap gap-2 items-center">
-          {/* Quick status tabs */}
-          <button
-            onClick={() => onFilterChange({ ...filter, status: undefined })}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition ${
-              filter.status === undefined
-                ? 'bg-blue-600 text-white shadow-sm'
-                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-            }`}
-          >
-            Tất cả
-          </button>
-          <button
-            onClick={() => onFilterChange({ ...filter, status: 'PENDING' })}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition ${
-              filter.status === 'PENDING'
-                ? 'bg-amber-600 text-white shadow-sm'
-                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-            }`}
-          >
-            Đang chờ
-          </button>
-          <button
-            onClick={() => onFilterChange({ ...filter, status: 'DONE' })}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition ${
-              filter.status === 'DONE'
-                ? 'bg-emerald-600 text-white shadow-sm'
-                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-            }`}
-          >
-            Đã xong
-          </button>
-
-          <div className="h-4 w-px bg-gray-300 mx-1 hidden sm:block" />
-
-          {/* Due filter */}
-          <select
-            value={filter.due_filter || ''}
-            onChange={(e) =>
-              onFilterChange({
-                ...filter,
-                due_filter: (e.target.value as any) || undefined,
-              })
-            }
-            className="px-3 py-1.5 border border-gray-300 rounded-lg text-xs bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
-          >
-            <option value="">Tất cả thời hạn</option>
-            <option value="overdue">Quá hạn</option>
-            <option value="today">Hạn hôm nay</option>
-            <option value="this_week">Hạn trong tuần</option>
-          </select>
-
-          {/* Priority filter */}
-          <select
-            value={filter.priority || ''}
-            onChange={(e) =>
-              onFilterChange({
-                ...filter,
-                priority: (e.target.value as any) || undefined,
-              })
-            }
-            className="px-3 py-1.5 border border-gray-300 rounded-lg text-xs bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
-          >
-            <option value="">Tất cả độ ưu tiên</option>
-            <option value="URGENT">Khẩn cấp</option>
-            <option value="HIGH">Cao</option>
-            <option value="NORMAL">Bình thường</option>
-            <option value="LOW">Thấp</option>
-          </select>
-
-          {/* Type filter */}
-          <select
-            value={filter.type || ''}
-            onChange={(e) =>
-              onFilterChange({
-                ...filter,
-                type: (e.target.value as any) || undefined,
-              })
-            }
-            className="px-3 py-1.5 border border-gray-300 rounded-lg text-xs bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
-          >
-            <option value="">Tất cả loại việc</option>
-            <option value="CALLBACK">Hẹn gọi lại</option>
-            <option value="HOT_ISSUE">Điểm nóng</option>
-            <option value="FOLLOW_UP">Theo dõi</option>
-          </select>
-        </div>
-
-        <div className="text-xs text-gray-500 font-medium">
-          Tổng số: <span className="font-semibold text-gray-800">{tasks.length}</span> nhiệm vụ
-        </div>
+      <div className="flex items-center justify-end px-1 text-xs font-semibold text-text-muted">
+        Tổng số: <span className="ml-1 font-black text-text-primary">{total.toLocaleString('vi-VN')}</span> nhiệm vụ
       </div>
 
       {/* Task List / Table */}
@@ -167,7 +77,7 @@ export const CareTaskList: React.FC<CareTaskListProps> = ({
         </div>
       ) : (
         <div className="space-y-3">
-          {paginatedTasks.map((task) => {
+          {tasks.map((task) => {
             const isOverdue =
               task.status === 'PENDING' && task.due_at && new Date(task.due_at) < new Date();
             const typeConfig = TYPE_BADGES[task.type] || { label: task.type, variant: 'neutral' };
@@ -287,10 +197,7 @@ export const CareTaskList: React.FC<CareTaskListProps> = ({
                   <span>Mỗi trang:</span>
                   <select
                     value={pageSize}
-                    onChange={(e) => {
-                      setPageSize(Number(e.target.value));
-                      setPage(1);
-                    }}
+                    onChange={(e) => onPageSizeChange(Number(e.target.value))}
                     className="bg-white border border-gray-300 rounded-lg px-2 py-1 text-xs font-semibold text-gray-800"
                   >
                     <option value={25}>25</option>
@@ -303,7 +210,7 @@ export const CareTaskList: React.FC<CareTaskListProps> = ({
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    onClick={() => onPageChange(Math.max(1, safePage - 1))}
                     disabled={safePage <= 1}
                     className="h-7 px-2"
                   >
@@ -315,7 +222,7 @@ export const CareTaskList: React.FC<CareTaskListProps> = ({
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                    onClick={() => onPageChange(Math.min(totalPages, safePage + 1))}
                     disabled={safePage >= totalPages}
                     className="h-7 px-2"
                   >

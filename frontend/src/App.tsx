@@ -85,6 +85,26 @@ function App() {
 
               <Route path="/teachers" element={<TeachersPage />} />
               <Route path="/giao-vien" element={<Navigate to="/teachers" replace />} />
+              <Route
+                path="/teachers/schedule"
+                element={
+                  <MyTeachingSessionsPage
+                    initialMainTab="schedule"
+                    pageTitle="Lịch dạy"
+                    showMainTabs={false}
+                  />
+                }
+              />
+              <Route
+                path="/teachers/tasks"
+                element={
+                  <MyTeachingSessionsPage
+                    initialMainTab="pending"
+                    pageTitle="Việc cần xử lý"
+                    showMainTabs={false}
+                  />
+                }
+              />
 
               <Route path="/imports/approval-queue" element={<ImportApprovalQueuePage />} />
               <Route path="/nhap-xuat/hang-doi-phe-duyet" element={<Navigate to="/imports/approval-queue" replace />} />

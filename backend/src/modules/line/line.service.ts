@@ -728,6 +728,7 @@ export class LineService {
     const ownerId = opts?.ownerUserId ?? opts?.csId;
 
     const where: any = {
+      deleted_at: null,
       line_contact_relations: {
         none: {
           relation_status: 'FRIEND',
@@ -779,13 +780,14 @@ export class LineService {
     const items = await prisma.lineContactRelation.findMany({
       where: {
         line_account_id: accountId,
+        student: { deleted_at: null },
         ...(search
           ? {
               OR: [
                 { display_name: { contains: search } },
                 { friend_line_uid: { contains: search } },
-                { student: { full_name: { contains: search } } },
-                { student: { phone: { contains: search } } },
+                { student: { deleted_at: null, full_name: { contains: search } } },
+                { student: { deleted_at: null, phone: { contains: search } } },
               ],
             }
           : {}),
@@ -891,6 +893,16 @@ export class LineService {
     friend_line_uid?: string | null;
     ownerUserId?: number;
   }) {
+    const activeStudent = await prisma.student.findFirst({
+      where: { id: input.student_id, deleted_at: null },
+      select: { id: true },
+    });
+    if (!activeStudent) {
+      const err: any = new Error('Học viên không tồn tại hoặc đã được lưu trữ');
+      err.statusCode = 404;
+      throw err;
+    }
+
     const relationStatus = input.relation_status ?? 'FRIEND';
 
     let resolvedGroup: {
@@ -1170,6 +1182,7 @@ export class LineService {
 
     const students = await prisma.student.findMany({
       where: {
+        deleted_at: null,
         phone: { not: null },
         ...(opts?.csId
           ? { enrollments: { some: { cs_id: opts.csId } } }

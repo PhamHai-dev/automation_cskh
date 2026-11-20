@@ -1,5 +1,5 @@
 import { prisma } from '../../prisma/client';
-import { AttendanceStatus, ReconciliationState, AttendanceSource, Prisma } from '@prisma/client';
+import { AttendanceStatus, ReconciliationState, AttendanceSource, Prisma, ClassModelType } from '@prisma/client';
 import ExcelJS from 'exceljs';
 import { runAttendancePostCommit } from './attendance-lifecycle';
 import { findEffectiveAssignment, isTeacherAssignmentEffectiveInRange } from './teacher-assignment';
@@ -39,6 +39,8 @@ export interface ReconciliationQuery {
   startDate?: string;
   endDate?: string;
   search?: string;
+  programType?: 'KAIWA' | 'JLPT';
+  modelType?: '1:1' | '1:2' | '1:n';
   state?: string;
 }
 
@@ -51,12 +53,21 @@ interface TeacherSessionsQuery {
   startDate?: string;
   endDate?: string;
   teacherId?: number;
+  classId?: number;
+  search?: string;
+  modelType?: '1:1' | '1:2' | '1:n';
+  completionState?: 'PENDING' | 'COMPLETED';
+  page?: number;
+  pageSize?: number;
 }
 
 export interface TeacherStudentInfoQuery {
   teacherId?: number;
   classId?: number;
   search?: string;
+  programType?: 'KAIWA' | 'JLPT';
+  page?: number;
+  pageSize?: number;
 }
 
 export interface UpdateTeacherLessonDTO {
@@ -186,17 +197,20 @@ export class ReconciliationService {
   }
 
   /** Build the shared reconciliation filter and enforce role-owned data scope. */
-  private buildScopeWhere(
+  private async buildScopeWhere(
     query: ReconciliationQuery,
     actor?: Actor,
     stateFilter?: ReconciliationState | ReconciliationState[]
-  ): Prisma.AttendanceWhereInput {
+  ): Promise<Prisma.AttendanceWhereInput> {
     const where: Prisma.AttendanceWhereInput = {};
+    const andConditions: Prisma.AttendanceWhereInput[] = [];
 
     if (stateFilter) {
-      where.AND = Array.isArray(stateFilter)
-        ? { OR: stateFilter.map((state) => this.pendingStateWhere(state)) }
-        : this.pendingStateWhere(stateFilter);
+      andConditions.push(
+        Array.isArray(stateFilter)
+          ? { OR: stateFilter.map((state) => this.pendingStateWhere(state)) }
+          : this.pendingStateWhere(stateFilter)
+      );
     }
 
     const classSessionWhere: Prisma.ClassSessionWhereInput = {};
@@ -208,38 +222,89 @@ export class ReconciliationService {
       };
     }
 
+    const classWhere: Prisma.ClassWhereInput = {};
+    if (query.modelType) {
+      classWhere.model_type = query.modelType === '1:1'
+        ? ClassModelType.ONE_TO_ONE
+        : query.modelType === '1:2'
+          ? ClassModelType.ONE_TO_TWO
+          : ClassModelType.ONE_TO_N;
+    }
+
     if (actor?.roles.includes('TEACHER') && !this.isPrivileged(actor)) {
       if (query.teacherId && query.teacherId !== actor.id) {
         throw new AppError(403, 'Bạn không được xem dữ liệu của giáo viên khác');
       }
-      classSessionWhere.class = {
-        class_teachers: { some: { active: true, teacher: { active: true, user_id: actor.id } } },
+      classWhere.class_teachers = {
+        some: { active: true, teacher: { active: true, user_id: actor.id } },
       };
     } else if (query.teacherId) {
-      classSessionWhere.class = {
-        class_teachers: { some: { active: true, teacher: { active: true, user_id: query.teacherId } } },
+      classWhere.class_teachers = {
+        some: { active: true, teacher: { active: true, user_id: query.teacherId } },
       };
     }
 
+    if (Object.keys(classWhere).length > 0) classSessionWhere.class = classWhere;
     if (Object.keys(classSessionWhere).length > 0) where.class_session = classSessionWhere;
 
     const enrollmentWhere: Prisma.EnrollmentWhereInput = {};
-    if (actor && this.isScopedToOwnCS(actor)) enrollmentWhere.cs_id = actor.id;
-    else if (query.csId) enrollmentWhere.cs_id = query.csId;
-
-    if (query.search) {
-      enrollmentWhere.student = {
-        OR: [
-          { full_name: { contains: query.search } },
-          { external_id: { contains: query.search } },
-          { phone: { contains: query.search } },
-        ],
-      };
+    if (actor && this.isScopedToOwnCS(actor)) {
+      enrollmentWhere.cs_id = actor.id;
+    } else if (actor?.roles.includes('MANAGE') && !actor.roles.includes('ADMIN')) {
+      const manageScope = await this.resolveManageScope(actor);
+      enrollmentWhere.cs_id = query.csId || { in: manageScope };
+      if (query.csId && !manageScope.includes(query.csId)) {
+        throw new AppError(403, 'Bạn không được xem dữ liệu CVHT ngoài nhóm phụ trách');
+      }
+    } else if (query.csId) {
+      enrollmentWhere.cs_id = query.csId;
     }
+    if (query.programType) enrollmentWhere.program_type = query.programType;
 
     if (Object.keys(enrollmentWhere).length > 0) {
       where.enrollment_class = { enrollment: enrollmentWhere };
     }
+
+    if (query.search) {
+      const studentSearch: Prisma.StudentWhereInput = {
+        OR: [
+          { full_name: { contains: query.search } },
+          { external_id: { contains: query.search } },
+          { phone: { contains: query.search } },
+          { email: { contains: query.search } },
+        ],
+      };
+      andConditions.push({
+        OR: [
+          { enrollment_class: { enrollment: { student: studentSearch } } },
+          { enrollment_class: { enrollment: { course_code: { contains: query.search } } } },
+          {
+            enrollment_class: {
+              enrollment: {
+                package: {
+                  OR: [
+                    { name: { contains: query.search } },
+                    { code: { contains: query.search } },
+                  ],
+                },
+              },
+            },
+          },
+          {
+            enrollment_class: {
+              class: {
+                OR: [
+                  { class_name: { contains: query.search } },
+                  { class_code: { contains: query.search } },
+                ],
+              },
+            },
+          },
+        ],
+      });
+    }
+
+    if (andConditions.length > 0) where.AND = andConditions;
     return where;
   }
 
@@ -494,7 +559,7 @@ export class ReconciliationService {
     const limit = Math.min(100, Math.max(1, query.pageSize || query.limit || 20));
     const skip = (page - 1) * limit;
 
-    const where = this.buildScopeWhere(query, actor, ReconciliationState.CONFLICT);
+    const where = await this.buildScopeWhere(query, actor, ReconciliationState.CONFLICT);
 
     const [total, items] = await Promise.all([
       prisma.attendance.count({ where }),
@@ -502,7 +567,10 @@ export class ReconciliationService {
         where,
         skip,
         take: limit,
-        orderBy: { class_session: { session_date: 'desc' } },
+        orderBy: [
+          { class_session: { session_date: 'desc' } },
+          { id: 'desc' },
+        ],
         include: {
           enrollment_class: {
             include: {
@@ -549,7 +617,7 @@ export class ReconciliationService {
       ? (query.state as ReconciliationState)
       : [ReconciliationState.PENDING_CS, ReconciliationState.PENDING_TEACHER];
 
-    const where = this.buildScopeWhere(query, actor, stateFilter);
+    const where = await this.buildScopeWhere(query, actor, stateFilter);
 
     const [total, items] = await Promise.all([
       prisma.attendance.count({ where }),
@@ -557,7 +625,10 @@ export class ReconciliationService {
         where,
         skip,
         take: limit,
-        orderBy: { class_session: { session_date: 'desc' } },
+        orderBy: [
+          { class_session: { session_date: 'desc' } },
+          { id: 'desc' },
+        ],
         include: {
           enrollment_class: {
             include: {
@@ -599,8 +670,10 @@ export class ReconciliationService {
     const mappedItems = this.withAssignedTeachers(items);
 
     // Separate pending counts (independent of pagination) for KPI cards.
-    const pendingCsWhere = this.buildScopeWhere(query, actor, ReconciliationState.PENDING_CS);
-    const pendingTeacherWhere = this.buildScopeWhere(query, actor, ReconciliationState.PENDING_TEACHER);
+    const [pendingCsWhere, pendingTeacherWhere] = await Promise.all([
+      this.buildScopeWhere(query, actor, ReconciliationState.PENDING_CS),
+      this.buildScopeWhere(query, actor, ReconciliationState.PENDING_TEACHER),
+    ]);
     const [pendingCsCount, pendingTeacherCount] = await Promise.all([
       prisma.attendance.count({ where: pendingCsWhere }),
       prisma.attendance.count({ where: pendingTeacherWhere }),
@@ -622,9 +695,11 @@ export class ReconciliationService {
    * Independent of list pagination so numbers always match the tab totals.
    */
   async getStats(query: ReconciliationQuery, actor?: Actor) {
-    const conflictWhere = this.buildScopeWhere(query, actor, ReconciliationState.CONFLICT);
-    const pendingCsWhere = this.buildScopeWhere(query, actor, ReconciliationState.PENDING_CS);
-    const pendingTeacherWhere = this.buildScopeWhere(query, actor, ReconciliationState.PENDING_TEACHER);
+    const [conflictWhere, pendingCsWhere, pendingTeacherWhere] = await Promise.all([
+      this.buildScopeWhere(query, actor, ReconciliationState.CONFLICT),
+      this.buildScopeWhere(query, actor, ReconciliationState.PENDING_CS),
+      this.buildScopeWhere(query, actor, ReconciliationState.PENDING_TEACHER),
+    ]);
 
     const [conflictCount, pendingCsCount, pendingTeacherCount] = await Promise.all([
       prisma.attendance.count({ where: conflictWhere }),
@@ -653,7 +728,7 @@ export class ReconciliationService {
     const skip = (page - 1) * limit;
 
     // 1. Attendance ids within the actor's scope + search/session-date filters.
-    const attendanceWhere = this.buildScopeWhere(query, actor);
+    const attendanceWhere = await this.buildScopeWhere(query, actor);
     const scopedAttendances = await prisma.attendance.findMany({
       where: attendanceWhere,
       select: { id: true },
@@ -684,7 +759,7 @@ export class ReconciliationService {
         where: logWhere,
         skip,
         take: limit,
-        orderBy: { created_at: 'desc' },
+        orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
         include: { user: { select: { id: true, name: true, email: true } } },
       }),
     ]);
@@ -744,14 +819,17 @@ export class ReconciliationService {
     this.assertTeacherTrackingContext(query, actor);
     const page = Math.max(1, query.page || 1);
     const limit = Math.min(100, Math.max(1, query.pageSize || query.limit || 20));
-    const where = this.buildScopeWhere(query, actor, ReconciliationState.PENDING_TEACHER);
+    const where = await this.buildScopeWhere(query, actor, ReconciliationState.PENDING_TEACHER);
     const [total, records] = await Promise.all([
       prisma.attendance.count({ where }),
       prisma.attendance.findMany({
         where,
         skip: (page - 1) * limit,
         take: limit,
-        orderBy: { class_session: { session_date: 'desc' } },
+        orderBy: [
+          { class_session: { session_date: 'desc' } },
+          { id: 'desc' },
+        ],
         select: {
           id: true,
           reconciliation_state: true,
@@ -789,7 +867,7 @@ export class ReconciliationService {
 
   async getTeacherTrackingCount(query: ReconciliationQuery, actor: Actor) {
     this.assertTeacherTrackingContext(query, actor);
-    const where = this.buildScopeWhere(query, actor, ReconciliationState.PENDING_TEACHER);
+    const where = await this.buildScopeWhere(query, actor, ReconciliationState.PENDING_TEACHER);
     return { count: await prisma.attendance.count({ where }) };
   }
 
@@ -797,8 +875,9 @@ export class ReconciliationService {
     this.assertTeacherTrackingContext(query, actor);
     const page = Math.max(1, query.page || 1);
     const limit = Math.min(100, Math.max(1, query.pageSize || query.limit || 20));
+    const scopedAttendanceWhere = await this.buildScopeWhere(query, actor);
     const scoped = await prisma.attendance.findMany({
-      where: this.buildScopeWhere(query, actor),
+      where: scopedAttendanceWhere,
       select: { id: true },
     });
     const entityIds = scoped.map(({ id }) => String(id));
@@ -819,7 +898,7 @@ export class ReconciliationService {
         where,
         skip: (page - 1) * limit,
         take: limit,
-        orderBy: { created_at: 'desc' },
+        orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
         include: { user: { select: { name: true, email: true } } },
       }),
     ]);
@@ -1103,10 +1182,8 @@ export class ReconciliationService {
       throw new AppError(404, 'Không tìm thấy hồ sơ giáo viên đang hoạt động');
     }
 
-    // D8 (owner verdict 2026-10-26): do NOT pre-filter active:true at the DB
-    // query — fetch all of the teacher's assignment rows (selecting active,
-    // start_date, end_date) and let the helper decide which classes/sessions
-    // fall inside an effective window.
+    // D8 (owner verdict 2026-10-26): fetch all assignment rows and let the
+    // helper decide which classes/sessions fall inside the effective window.
     const classTeachers = await prisma.classTeacher.findMany({
       where: { teacher_id: teacherId },
       select: { class_id: true, active: true, start_date: true, end_date: true },
@@ -1114,7 +1191,6 @@ export class ReconciliationService {
 
     const rangeStart = query.startDate ? new Date(`${query.startDate}T00:00:00.000Z`) : null;
     const rangeEnd = query.endDate ? new Date(`${query.endDate}T00:00:00.000Z`) : null;
-
     const byClass = new Map<number, typeof classTeachers>();
     for (const ct of classTeachers) {
       if (!isTeacherAssignmentEffectiveInRange(ct, rangeStart, rangeEnd)) continue;
@@ -1122,42 +1198,96 @@ export class ReconciliationService {
       list.push(ct);
       byClass.set(ct.class_id, list);
     }
-    const classIds = Array.from(byClass.keys());
-    if (classIds.length === 0) return [];
+    let classIds = Array.from(byClass.keys());
+    if (query.classId !== undefined) {
+      classIds = classIds.filter((classId) => classId === query.classId);
+    }
+    const page = Math.max(1, query.page || 1);
+    const pageSize = Math.min(100, Math.max(1, query.pageSize || 25));
+    if (classIds.length === 0) {
+      return { items: [], total: 0, page, pageSize, totalPages: 0 };
+    }
 
     const dateFilter: Prisma.DateTimeFilter = {};
     if (rangeStart) dateFilter.gte = rangeStart;
     if (rangeEnd) dateFilter.lte = rangeEnd;
 
-    const sessions = await prisma.classSession.findMany({
-      where: {
-        class_id: { in: classIds },
-        ...(rangeStart || rangeEnd ? { session_date: dateFilter } : {}),
-      },
-      orderBy: [{ session_date: 'desc' }, { start_time: 'asc' }],
-      include: {
-        class: {
-          include: {
-            enrollment_classes: {
-              where: { status: 'ACTIVE' },
-              include: {
-                enrollment: {
-                  include: {
-                    student: true,
-                    cs: { select: { id: true, name: true, phone: true } },
-                  },
+    const classWhere: Prisma.ClassWhereInput = {
+      id: { in: classIds },
+      ...(query.modelType ? {
+        model_type: query.modelType === '1:1'
+          ? ClassModelType.ONE_TO_ONE
+          : query.modelType === '1:2'
+            ? ClassModelType.ONE_TO_TWO
+            : ClassModelType.ONE_TO_N,
+      } : {}),
+    };
+    const search = query.search?.trim();
+    const searchOr: Prisma.ClassSessionWhereInput[] = search ? [
+      { class: { class_name: { contains: search } } },
+      { class: { class_code: { contains: search } } },
+      { class: { level: { contains: search } } },
+      { class: { enrollment_classes: { some: { status: 'ACTIVE', enrollment: { student: { OR: [
+        { full_name: { contains: search } },
+        { external_id: { contains: search } },
+        { phone: { contains: search } },
+      ] } } } } } },
+      { class: { enrollment_classes: { some: { status: 'ACTIVE', attendance: { some: { lesson_topic: { contains: search } } } } } } },
+      { class: { enrollment_classes: { some: { status: 'ACTIVE', attendance: { some: { teacher_note: { contains: search } } } } } } },
+    ] : [];
+
+    const where: Prisma.ClassSessionWhereInput = {
+      class_id: { in: classIds },
+      ...(rangeStart || rangeEnd ? { session_date: dateFilter } : {}),
+      ...(searchOr.length > 0 ? { OR: searchOr } : {}),
+      ...(Object.keys(classWhere).length > 1 ? { class: classWhere } : {}),
+    };
+    const include = {
+      class: {
+        include: {
+          enrollment_classes: {
+            where: { status: 'ACTIVE' as const },
+            include: {
+              enrollment: {
+                include: {
+                  student: true,
+                  cs: { select: { id: true, name: true, phone: true } },
                 },
-                attendance: true,
               },
+              attendance: true,
             },
           },
         },
       },
-    });
+    } as const;
 
-    return sessions.filter((s) =>
-      findEffectiveAssignment(byClass.get(s.class_id) ?? [], s.session_date) !== null
+    const allMatching = await prisma.classSession.findMany({
+      where,
+      orderBy: [{ session_date: 'desc' }, { start_time: 'asc' }, { id: 'desc' }],
+      include,
+    });
+    const scoped = allMatching.filter((session) =>
+      findEffectiveAssignment(byClass.get(session.class_id) ?? [], session.session_date) !== null
     );
+    const filtered = scoped.filter((session) => {
+      if (!query.completionState) return true;
+      const enrollments = session.class.enrollment_classes;
+      const marked = enrollments.filter((ec: any) =>
+        ec.attendance?.some((attendance: any) =>
+          Number(attendance.class_session_id) === Number(session.id) && !attendance.deleted_at && attendance.teacher_status
+        )
+      ).length;
+      const complete = enrollments.length > 0 && marked === enrollments.length;
+      return query.completionState === 'COMPLETED' ? complete : !complete;
+    });
+    const items = filtered.slice((page - 1) * pageSize, page * pageSize);
+    return {
+      items,
+      total: filtered.length,
+      page,
+      pageSize,
+      totalPages: Math.ceil(filtered.length / pageSize),
+    };
   }
 
   private formatScheduleDays(schedules: Array<{ schedule_pattern?: string | null }>): string {
@@ -1242,84 +1372,104 @@ export class ReconciliationService {
       classIds = classIds.filter((id) => id === query.classId);
     }
     if (classIds.length === 0) {
-      return { items: [], maxRecordedSessions: 0, maxTotalSessions: 0 };
+      const page = Math.max(1, query.page || 1);
+      const pageSize = Math.min(200, Math.max(1, query.pageSize || 25));
+      return {
+        items: [],
+        total: 0,
+        page,
+        pageSize,
+        totalPages: 0,
+        maxRecordedSessions: 0,
+        maxTotalSessions: 0,
+      };
     }
 
-    const enrollmentClasses = await prisma.enrollmentClass.findMany({
-      where: {
-        class_id: { in: classIds },
-        status: { in: ['ACTIVE', 'PLANNED', 'COMPLETED'] },
-      },
-      include: {
-        enrollment: {
-          include: {
-            student: true,
-            package: true,
-            cs: {
-              select: {
-                id: true,
-                name: true,
-                email: true,
-                code: true,
-                staff_code: true,
+    const page = Math.max(1, query.page || 1);
+    const pageSize = Math.min(200, Math.max(1, query.pageSize || 25));
+    const enrollmentClassWhere: Prisma.EnrollmentClassWhereInput = {
+      class_id: { in: classIds },
+      status: { in: ['ACTIVE', 'PLANNED', 'COMPLETED'] },
+      ...(query.programType
+        ? { enrollment: { program_type: query.programType } }
+        : {}),
+    };
+    if (query.search) {
+      enrollmentClassWhere.AND = [
+        {
+          OR: [
+            { enrollment: { student: { full_name: { contains: query.search } } } },
+            { enrollment: { student: { external_id: { contains: query.search } } } },
+            { enrollment: { student: { phone: { contains: query.search } } } },
+            { enrollment: { student: { email: { contains: query.search } } } },
+            { enrollment: { course_code: { contains: query.search } } },
+            {
+              enrollment: {
+                package: {
+                  OR: [
+                    { name: { contains: query.search } },
+                    { code: { contains: query.search } },
+                  ],
+                },
+              },
+            },
+            { class: { class_name: { contains: query.search } } },
+            { class: { class_code: { contains: query.search } } },
+          ],
+        },
+      ];
+    }
+
+    const [total, enrollmentClasses] = await Promise.all([
+      prisma.enrollmentClass.count({ where: enrollmentClassWhere }),
+      prisma.enrollmentClass.findMany({
+        where: enrollmentClassWhere,
+        include: {
+          enrollment: {
+            include: {
+              student: true,
+              package: true,
+              cs: {
+                select: {
+                  id: true,
+                  name: true,
+                  email: true,
+                  code: true,
+                  staff_code: true,
+                },
               },
             },
           },
-        },
-        class: {
-          include: {
-            class_schedules: {
-              where: { active: true },
-              orderBy: { id: 'asc' },
-            },
-            class_sessions: {
-              where: { status: { not: 'CANCELLED' } },
-              orderBy: [
-                { session_date: 'asc' },
-                { start_time: 'asc' },
-                { session_number: 'asc' },
-              ],
+          class: {
+            include: {
+              class_schedules: {
+                where: { active: true },
+                orderBy: { id: 'asc' },
+              },
+              class_sessions: {
+                where: { status: { not: 'CANCELLED' } },
+                orderBy: [
+                  { session_date: 'asc' },
+                  { start_time: 'asc' },
+                  { session_number: 'asc' },
+                ],
+              },
             },
           },
+          attendance: {
+            where: { deleted_at: null },
+            include: { class_session: true },
+          },
         },
-        attendance: {
-          where: { deleted_at: null },
-          include: { class_session: true },
-        },
-      },
-      orderBy: [{ class_id: 'asc' }, { id: 'asc' }],
-    });
+        orderBy: [{ class_id: 'asc' }, { id: 'asc' }],
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+    ]);
 
-    const searchTerm = query.search?.trim().toLowerCase();
-    const filteredECs = searchTerm
-      ? enrollmentClasses.filter((ec) => {
-          const student = ec.enrollment?.student;
-          const cls = ec.class;
-          const haystack = [
-            student?.full_name,
-            student?.external_id,
-            student?.phone,
-            cls?.class_name,
-            cls?.class_code,
-          ]
-            .filter(Boolean)
-            .join(' ')
-            .toLowerCase();
-          return haystack.includes(searchTerm);
-        })
-      : enrollmentClasses;
+    const filteredECs = enrollmentClasses;
 
-    const statusPriority: Record<string, number> = {
-      ACTIVE: 0,
-      PLANNED: 1,
-      COMPLETED: 2,
-    };
-    filteredECs.sort((a, b) => {
-      const pa = statusPriority[a.status] ?? 9;
-      const pb = statusPriority[b.status] ?? 9;
-      if (pa !== pb) return pa - pb;
-      return a.id - b.id;
-    });
+
 
     const rows = filteredECs.map((ec) => {
       const enrollment = ec.enrollment;
@@ -1473,7 +1623,15 @@ export class ReconciliationService {
       ...rows.map((r) => Math.max(r.sessions.length, r.totalSessions || 0))
     );
 
-    return { items: rows, maxRecordedSessions, maxTotalSessions };
+    return {
+      items: rows,
+      total,
+      page,
+      pageSize,
+      totalPages: Math.ceil(total / pageSize),
+      maxRecordedSessions,
+      maxTotalSessions,
+    };
   }
 
   /**

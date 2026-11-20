@@ -45,19 +45,22 @@ Base: `/api/v1/classes/{classId}/sessions/{sessionId}/attendance`
 
 Base: `/api/v1/attendance-reconciliation`.
 
-### Danh sách
+### Danh sách và bộ lọc backend
 
-- `GET /teacher-sessions?startDate&endDate&teacherId`: TEACHER xem lớp của mình; ADMIN/MANAGE có thể chọn giáo viên. Trả ClassSession và toàn bộ EnrollmentClass `ACTIVE`, kể cả chưa có Attendance.
-- `GET /pending?page&pageSize&classId&csId&teacherId&state&startDate&endDate&search`: CS/MANAGE/ADMIN; trả hàng chờ trong data scope, có thể lọc `state=PENDING_CS|PENDING_TEACHER`. Mỗi hàng kèm `assigned_teachers` là danh sách giáo viên active được phân công cho lớp, gồm mã/tên/email; đây là giáo viên phụ trách, không phải tài khoản đã thao tác nhập điểm danh.
+- `GET /teacher-sessions?startDate&endDate&teacherId&classId&search&modelType&completionState&page&pageSize`: TEACHER xem lớp của mình; ADMIN/MANAGE có thể chọn giáo viên. Search, lớp, mô hình, trạng thái hoàn thành và pagination được áp dụng backend trước khi trả dữ liệu. Trả `{ items, total, page, pageSize, totalPages }`, mỗi item là ClassSession kèm toàn bộ EnrollmentClass `ACTIVE`, kể cả chưa có Attendance.
+- `GET /pending?page&pageSize&classId&csId&teacherId&state&startDate&endDate&search&programType`: trả hàng chờ trong data scope; `state=PENDING_CS|PENDING_TEACHER`, `programType=KAIWA|JLPT` (`JNPT` chỉ là alias input cũ và được chuẩn hóa thành `JLPT`).
+- `GET /conflicts`, `GET /stats` và `GET /history` nhận cùng các bộ lọc có ý nghĩa. Search bao phủ tên/mã/SĐT/email học viên, mã khóa học, tên/mã gói và tên/mã lớp.
+- Scope và filter được gộp trong cùng Prisma predicate trước count, sort và pagination: ADMIN không giới hạn; CS thường chỉ thấy Enrollment có `cs_id` của mình; MANAGE thấy chính mình và thành viên các nhóm CS được giao; TEACHER chỉ thấy lớp được phân công trên luồng teacher tracking. Filter người dùng chỉ thu hẹp, không mở rộng scope.
+- List, count, KPI và history dùng chung predicate theo scope; danh sách dùng stable sort theo ngày rồi ID.
+- Mỗi hàng pending kèm `assigned_teachers` là danh sách giáo viên active được phân công cho lớp, gồm mã/tên/email; đây là giáo viên phụ trách, không phải tài khoản đã thao tác nhập điểm danh.
 - `PENDING_CS` chỉ hợp lệ khi `teacher_status` đã có và `cs_status` chưa có; `PENDING_TEACHER` chỉ hợp lệ khi `cs_status` đã có và `teacher_status` chưa có. Bản ghi chưa có ý kiến từ cả hai bên không thuộc danh sách chờ.
-- `GET /conflicts?...`: CS/MANAGE/ADMIN; trả `CONFLICT` trong data scope.
 
 ### Ghi ý kiến và phân xử
 
-- `POST /{attendanceId}/teacher-mark`: body `{ status, rawValue?, lessonTopic?, note? }`. TEACHER chỉ ghi lớp được phân công; ADMIN/MANAGE có thể thao tác hỗ trợ.
-- `POST /{attendanceId}/cs-mark`: body `{ status, rawValue?, note? }`. CS chỉ ghi Enrollment được gán; ADMIN/MANAGE theo quyền hỗ trợ.
+- `POST /{attendanceId}/teacher-mark`: body `{ status, rawValue?, lessonTopic?, note? }`. TEACHER chỉ ghi lớp được phân công; quyền điểm danh hộ thuộc ADMIN, không thuộc MANAGE.
+- `POST /{attendanceId}/cs-mark`: body `{ status, rawValue?, note? }`. CS chỉ ghi Enrollment được gán; MANAGE chỉ ghi trong phạm vi self + nhóm CS được giao; ADMIN không giới hạn.
 - `POST /bulk-approve`: body `{ attendanceIds }`. Chỉ nhận row `PENDING_CS`; toàn bộ ID phải tồn tại và cùng nằm trong scope, nếu không trả `403/409` và không duyệt một phần.
-- `POST /{attendanceId}/resolve-conflict`: body `{ finalStatus, resolutionNote }`; lý do không được rỗng. CS phụ trách được phân xử trong scope, ADMIN/MANAGE được phân xử mọi trường hợp.
+- `POST /{attendanceId}/resolve-conflict`: body `{ finalStatus, resolutionNote }`; lý do không được rỗng và chỉ ADMIN có quyền phân xử.
 
 ### Import workbook điểm danh
 

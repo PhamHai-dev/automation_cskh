@@ -1032,7 +1032,7 @@ export class ImportsService {
         }
       }
 
-      const student = externalId ? await prisma.student.findUnique({
+      const matchedStudent = externalId ? await prisma.student.findUnique({
         where: { external_id: externalId },
         include: {
           enrollments: {
@@ -1042,6 +1042,9 @@ export class ImportsService {
           },
         },
       }) : null;
+      const archivedStudent = matchedStudent?.deleted_at ? matchedStudent : null;
+      const student = matchedStudent && !matchedStudent.deleted_at ? matchedStudent : null;
+      if (archivedStudent) errors.push('Học viên đã được lưu trữ, không thể nhập hoặc cập nhật');
       const pkg = packageCode ? await prisma.package.findUnique({ where: { code: packageCode } }) : null;
       const enrollment = student?.enrollments[0];
       if (student && student.enrollments.length > 1) errors.push('Có nhiều ghi danh cùng ID + Gói học');
@@ -1454,7 +1457,12 @@ export class ImportsService {
           const snap: any = item.snapshot;
 
           // 1. Student
-          let student = await tx.student.findUnique({ where: { external_id: item.externalId } });
+          let student = await tx.student.findUnique({
+            where: { external_id: item.externalId },
+          });
+          if (student?.deleted_at) {
+            throw new AppError(409, 'Học viên đã được lưu trữ, không thể nhập hoặc cập nhật');
+          }
           if (!student) {
             student = await tx.student.create({
               data: {
@@ -2499,7 +2507,7 @@ export class ImportsService {
     const saleId = saleRecord ? saleRecord.id : null;
     const saleName = snapshot?.sale_name ? String(snapshot.sale_name).trim() : null;
 
-    const existing = await prisma.student.findUnique({
+    const matchedStudent = await prisma.student.findUnique({
       where: { external_id: before.external_id },
       include: {
         enrollments: {
@@ -2508,6 +2516,10 @@ export class ImportsService {
         },
       },
     });
+    if (matchedStudent?.deleted_at) {
+      throw new AppError(409, 'Học viên đã được lưu trữ, không thể phê duyệt yêu cầu nhập');
+    }
+    const existing = matchedStudent;
 
     if (existing && existing.enrollments.length > 0) {
       // Approved transfer of existing enrollment

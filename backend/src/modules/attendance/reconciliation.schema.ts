@@ -45,6 +45,8 @@ export const ReconciliationQuerySchema = z.object({
   startDate: isoDate.optional(),
   endDate: isoDate.optional(),
   search: z.string().trim().max(100).optional(),
+  modelType: z.enum(['1:1', '1:2', '1:n']).optional(),
+  programType: z.enum(['KAIWA', 'JLPT', 'JNPT']).transform((value) => value === 'JNPT' ? 'JLPT' : value).optional(),
   state: z.enum(['PENDING_CS', 'PENDING_TEACHER']).optional(),
 }).refine(
   ({ startDate, endDate }) => !startDate || !endDate || startDate <= endDate,
@@ -61,6 +63,8 @@ export const HistoryQuerySchema = z.object({
   startDate: isoDate.optional(),
   endDate: isoDate.optional(),
   search: z.string().trim().max(100).optional(),
+  modelType: z.enum(['1:1', '1:2', '1:n']).optional(),
+  programType: z.enum(['KAIWA', 'JLPT', 'JNPT']).transform((value) => value === 'JNPT' ? 'JLPT' : value).optional(),
 }).refine(
   ({ startDate, endDate }) => !startDate || !endDate || startDate <= endDate,
   { message: 'startDate phải nhỏ hơn hoặc bằng endDate', path: ['endDate'] },
@@ -70,6 +74,12 @@ export const TeacherSessionsQuerySchema = z.object({
   startDate: isoDate.optional(),
   endDate: isoDate.optional(),
   teacherId: z.coerce.number().int().positive().optional(),
+  classId: z.coerce.number().int().positive().optional(),
+  search: z.string().trim().max(100).optional(),
+  modelType: z.enum(['1:1', '1:2', '1:n']).optional(),
+  completionState: z.enum(['PENDING', 'COMPLETED']).optional(),
+  page: z.coerce.number().int().positive().optional(),
+  pageSize: z.coerce.number().int().min(1).max(100).optional(),
 }).refine(
   ({ startDate, endDate }) => !startDate || !endDate || startDate <= endDate,
   { message: 'startDate phải nhỏ hơn hoặc bằng endDate', path: ['endDate'] },
@@ -95,7 +105,12 @@ export const AttendanceImportConfirmSchema = z.object({
 export const TeacherStudentInfoQuerySchema = z.object({
   teacherId: z.coerce.number().int().positive().optional(),
   classId: z.coerce.number().int().positive().optional(),
-  search: z.string().optional(),
+  search: z.string().trim().max(100).optional(),
+  programType: z.enum(['KAIWA', 'JLPT', 'JNPT'])
+    .transform((value) => value === 'JNPT' ? 'JLPT' : value)
+    .optional(),
+  page: z.coerce.number().int().positive().optional(),
+  pageSize: z.coerce.number().int().min(1).max(200).optional(),
 });
 
 export const UpdateTeacherLessonSchema = z.object({

@@ -6,6 +6,7 @@ import {
   CreateCareTaskDTO,
   UpdateCareTaskDTO,
   TaskFilterParams,
+  CareTaskListResult,
   AttendanceNotificationItem,
 } from '../types/care.types';
 
@@ -22,9 +23,20 @@ export const careApi = {
   },
 
   // Care Tasks
-  listTasks: async (params?: TaskFilterParams): Promise<CareTask[]> => {
+  listTasks: async (params?: TaskFilterParams): Promise<CareTaskListResult> => {
     const res = await apiClient.get('/care-tasks', { params });
-    return res.data.data;
+    const items: CareTask[] = res.data.data || [];
+    const meta = res.data.meta || {};
+    return {
+      items,
+      total: typeof meta.total === 'number' ? meta.total : items.length,
+      page: typeof meta.page === 'number' ? meta.page : params?.page || 1,
+      pageSize: typeof meta.pageSize === 'number' ? meta.pageSize : params?.pageSize || 25,
+      totalPages:
+        typeof meta.totalPages === 'number'
+          ? meta.totalPages
+          : Math.max(1, Math.ceil(items.length / (params?.pageSize || 25))),
+    };
   },
 
   getTask: async (id: number): Promise<CareTask> => {

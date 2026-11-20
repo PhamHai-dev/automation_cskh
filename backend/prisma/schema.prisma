@@ -61,6 +61,7 @@ model User {
   enrollment_cs_viewers            EnrollmentCsViewer[]       @relation("EnrollmentCsViewerUser")
   enrollment_cs_transfers_received EnrollmentCsViewer[]       @relation("EnrollmentCsTransferredTo")
   enrollment_cs_transfers_made     EnrollmentCsViewer[]       @relation("EnrollmentCsTransferredBy")
+  soft_deleted_students            Student[]                  @relation("StudentSoftDeleter")
 
   @@map("users")
 }
@@ -173,9 +174,12 @@ model Student {
   zalo_uid      String?
   line_uid      String?
   note          String?   @db.Text
+  deleted_at    DateTime?
+  deleted_by_id Int?
   created_at    DateTime  @default(now())
   updated_at    DateTime  @updatedAt
 
+  deleted_by             User?                 @relation("StudentSoftDeleter", fields: [deleted_by_id], references: [id])
   enrollments            Enrollment[]
   zalo_contact_relations ZaloContactRelation[]
   line_contact_relations LineContactRelation[]
@@ -185,6 +189,8 @@ model Student {
   @@index([phone])
   @@index([email])
   @@index([gender])
+  @@index([deleted_at])
+  @@index([deleted_by_id])
   @@map("students")
 }
 

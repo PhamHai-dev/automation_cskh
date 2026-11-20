@@ -7,6 +7,7 @@ export class AttendanceRepository {
     return prisma.attendance.findMany({
       where: {
         class_session: { id: sessionId, class_id: classId },
+        enrollment_class: { enrollment: { student: { deleted_at: null } } },
         deleted_at: null,
       },
       include: {
@@ -27,7 +28,11 @@ export class AttendanceRepository {
 
   async findById(attendanceId: number) {
     return prisma.attendance.findFirst({
-      where: { id: attendanceId, deleted_at: null },
+      where: {
+        id: attendanceId,
+        deleted_at: null,
+        enrollment_class: { enrollment: { student: { deleted_at: null } } },
+      },
       include: {
         enrollment_class: { include: { enrollment: true } },
         class_session: true,
@@ -41,6 +46,7 @@ export class AttendanceRepository {
       where: {
         enrollment_class_id: enrollmentClassId,
         class_session_id: classSessionId,
+        enrollment_class: { enrollment: { student: { deleted_at: null } } },
         deleted_at: null,
       },
     });
@@ -482,7 +488,11 @@ export class AttendanceRepository {
   async countByStatus(classId: number) {
     return prisma.attendance.groupBy({
       by: ['status'],
-      where: { class_session: { class_id: classId }, deleted_at: null },
+      where: {
+        class_session: { class_id: classId },
+        enrollment_class: { enrollment: { student: { deleted_at: null } } },
+        deleted_at: null,
+      },
       _count: true,
     });
   }

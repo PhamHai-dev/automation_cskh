@@ -26,7 +26,9 @@ export class DashboardRepository {
    * aggregate queries to guarantee consistent filtering.
    */
   private enrollmentWhere(csIds: number[] | null, filter: DashboardFilterParams): any {
-    const where: any = {};
+    const where: any = {
+      student: { deleted_at: null },
+    };
 
     if (csIds !== null) {
       if (filter.cs_id && csIds.includes(filter.cs_id)) {
@@ -89,11 +91,19 @@ export class DashboardRepository {
 
   // --- Attendance Stats ---
   async getAttendanceStats(csIds: number[] | null, filter: DashboardFilterParams) {
-    const where: any = {};
+    const where: any = {
+      deleted_at: null,
+      enrollment_class: {
+        enrollment: {
+          student: { deleted_at: null },
+        },
+      },
+    };
 
     if (csIds !== null) {
       where.enrollment_class = {
         enrollment: {
+          student: { deleted_at: null },
           cs_id: { in: csIds },
         },
       };
@@ -156,7 +166,9 @@ export class DashboardRepository {
 
   // --- Care Outcomes Pivot Matrix ---
   async getCareLogsForPivot(csIds: number[] | null, filter: DashboardFilterParams) {
-    const where: any = {};
+    const where: any = {
+      enrollment: { student: { deleted_at: null } },
+    };
 
     if (csIds !== null) {
       if (filter.cs_id && csIds.includes(filter.cs_id)) {
@@ -169,7 +181,10 @@ export class DashboardRepository {
     }
 
     if (filter.package_id) {
-      where.enrollment = { package_id: filter.package_id };
+      where.enrollment = {
+        student: { deleted_at: null },
+        package_id: filter.package_id,
+      };
     }
 
     if (filter.date_from || filter.date_to) {
@@ -236,7 +251,9 @@ export class DashboardRepository {
 
   // --- Tasks Overview ---
   async getTasksOverview(csIds: number[] | null, csIdFilter?: number) {
-    const where: any = {};
+    const where: any = {
+      enrollment: { student: { deleted_at: null } },
+    };
 
     if (csIds !== null) {
       if (csIdFilter && csIds.includes(csIdFilter)) {
@@ -583,7 +600,9 @@ export class DashboardRepository {
 
   // --- Performance: tasks grouped by type ---
   async getTasksByType(csIds: number[] | null, csIdFilter?: number) {
-    const where: any = {};
+    const where: any = {
+      enrollment: { student: { deleted_at: null } },
+    };
     if (csIds !== null) {
       where.assigned_to_id = csIdFilter && csIds.includes(csIdFilter) ? csIdFilter : { in: csIds };
     } else if (csIdFilter) {
@@ -610,7 +629,9 @@ export class DashboardRepository {
 
   // --- Performance: task completion for the current calendar month ---
   async getTaskCompletion(csIds: number[] | null, csIdFilter?: number) {
-    const where: any = {};
+    const where: any = {
+      enrollment: { student: { deleted_at: null } },
+    };
     if (csIds !== null) {
       where.assigned_to_id = csIdFilter && csIds.includes(csIdFilter) ? csIdFilter : { in: csIds };
     } else if (csIdFilter) {
@@ -638,25 +659,38 @@ export class DashboardRepository {
     const scopeIds = csIds ?? (await this.db.enrollment.findMany({ select: { cs_id: true }, distinct: ['cs_id'] })).map((r) => r.cs_id);
     if (scopeIds.length === 0) return [];
 
+    const activeEnrollmentWhere = {
+      cs_id: { in: scopeIds },
+      student: { deleted_at: null },
+    };
+    const activeCareWhere = {
+      cs_id: { in: scopeIds },
+      enrollment: { student: { deleted_at: null } },
+    };
+    const activeTaskWhere = {
+      assigned_to_id: { in: scopeIds },
+      enrollment: { student: { deleted_at: null } },
+    };
+
     const [enrollGroups, logGroups, positiveGroups, taskGroups] = await Promise.all([
       this.db.enrollment.groupBy({
         by: ['cs_id'],
-        where: { cs_id: { in: scopeIds } },
+        where: activeEnrollmentWhere,
         _count: { id: true },
       }),
       this.db.careLog.groupBy({
         by: ['cs_id'],
-        where: { cs_id: { in: scopeIds } },
+        where: activeCareWhere,
         _count: { id: true },
       }),
       this.db.careLog.groupBy({
         by: ['cs_id'],
-        where: { cs_id: { in: scopeIds }, outcome: CareLogOutcome.POSITIVE },
+        where: { ...activeCareWhere, outcome: CareLogOutcome.POSITIVE },
         _count: { id: true },
       }),
       this.db.careTask.groupBy({
         by: ['assigned_to_id', 'status'],
-        where: { assigned_to_id: { in: scopeIds } },
+        where: activeTaskWhere,
         _count: { id: true },
       }),
     ]);
@@ -707,14 +741,20 @@ export class DashboardRepository {
   // =====================================================================
 
   async getHomeRawData(csIds: number[] | null, sinceDate: Date, sessionWindowStart: Date) {
-    const enrollWhere: any = csIds !== null ? { cs_id: { in: csIds } } : {};
+    const enrollWhere: any = {
+      student: { deleted_at: null },
+      ...(csIds !== null ? { cs_id: { in: csIds } } : {}),
+    };
     const classWhere: any = {
       active: true,
       ...(csIds !== null
         ? {
             enrollment_classes: {
               some: {
-                enrollment: { cs_id: { in: csIds } },
+                enrollment: {
+                  cs_id: { in: csIds },
+                  student: { deleted_at: null },
+                },
               },
             },
           }
@@ -725,15 +765,17 @@ export class DashboardRepository {
       class_session: {
         session_date: { gte: sinceDate },
       },
-      ...(csIds !== null
-        ? {
-            enrollment_class: {
-              enrollment: { cs_id: { in: csIds } },
-            },
-          }
-        : {}),
+      enrollment_class: {
+        enrollment: {
+          student: { deleted_at: null },
+          ...(csIds !== null ? { cs_id: { in: csIds } } : {}),
+        },
+      },
     };
-    const taskScopeWhere: any = csIds !== null ? { assigned_to_id: { in: csIds } } : {};
+    const taskScopeWhere: any = {
+      enrollment: { student: { deleted_at: null } },
+      ...(csIds !== null ? { assigned_to_id: { in: csIds } } : {}),
+    };
     const sessionWhere: any = {
       status: { not: ClassSessionStatus.CANCELLED },
       session_date: { gte: sessionWindowStart },
@@ -848,6 +890,7 @@ export class DashboardRepository {
               enrollment_classes: {
                 where: {
                   status: { in: [EnrollmentClassStatus.ACTIVE, EnrollmentClassStatus.PLANNED] },
+                  enrollment: { student: { deleted_at: null } },
                 },
                 select: { id: true },
               },
@@ -942,6 +985,7 @@ export class DashboardRepository {
     return this.db.student.findMany({
       where: {
         ...scopeWhere,
+        deleted_at: null,
         OR: [
           { full_name: { contains: q } },
           { external_id: { contains: q } },
@@ -1077,14 +1121,21 @@ function pad(n: number): string {
 }
 
 function buildCareLogWhere(csIds: number[] | null, filter: DashboardFilterParams): any {
-  const where: any = {};
+  const where: any = {
+    enrollment: { student: { deleted_at: null } },
+  };
   if (csIds !== null) {
     if (filter.cs_id && csIds.includes(filter.cs_id)) where.cs_id = filter.cs_id;
     else where.cs_id = { in: csIds };
   } else if (filter.cs_id) {
     where.cs_id = filter.cs_id;
   }
-  if (filter.package_id) where.enrollment = { package_id: filter.package_id };
+  if (filter.package_id) {
+    where.enrollment = {
+      student: { deleted_at: null },
+      package_id: filter.package_id,
+    };
+  }
   if (filter.date_from || filter.date_to) {
     where.created_at = {};
     if (filter.date_from) where.created_at.gte = new Date(filter.date_from);
@@ -1095,14 +1146,15 @@ function buildCareLogWhere(csIds: number[] | null, filter: DashboardFilterParams
 
 function buildAttendanceWhere(csIds: number[] | null, filter: DashboardFilterParams): any {
   const where: any = { deleted_at: null };
-  const enrollmentFilter: any = {};
+  const enrollmentFilter: any = {
+    student: { deleted_at: null },
+  };
 
   if (csIds !== null) enrollmentFilter.cs_id = { in: csIds };
   else if (filter.cs_id) enrollmentFilter.cs_id = filter.cs_id;
   if (filter.package_id) enrollmentFilter.package_id = filter.package_id;
 
-  const ec: any = {};
-  if (Object.keys(enrollmentFilter).length) ec.enrollment = enrollmentFilter;
+  const ec: any = { enrollment: enrollmentFilter };
 
   const cs: any = {};
   if (filter.class_id) cs.class_id = filter.class_id;
@@ -1111,7 +1163,7 @@ function buildAttendanceWhere(csIds: number[] | null, filter: DashboardFilterPar
     if (filter.date_from) cs.session_date.gte = new Date(filter.date_from);
     if (filter.date_to) cs.session_date.lte = new Date(filter.date_to);
   }
-  if (Object.keys(ec).length) where.enrollment_class = ec;
+  where.enrollment_class = ec;
   if (Object.keys(cs).length) where.class_session = cs;
   return where;
 }

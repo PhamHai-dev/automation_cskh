@@ -221,6 +221,39 @@ export class StudentsService {
     }
   }
 
+  async softDeleteStudent(id: number, actor: AuthUser) {
+    if (!actor.roles.includes('ADMIN')) {
+      throw new CustomError('Chỉ Quản trị viên được xóa học viên', 403);
+    }
+
+    const existing = await this.repository.findById(id, actor);
+    if (!existing) {
+      throw new CustomError('Không tìm thấy học viên', 404);
+    }
+
+    const result = await this.repository.softDelete(id, actor.id);
+    await recordAuditLogSafe({
+      userId: actor.id,
+      action: 'STUDENT_SOFT_DELETED',
+      entityType: 'Student',
+      entityId: id,
+      beforeData: {
+        full_name: existing.full_name,
+        phone: existing.phone ?? null,
+        email: existing.email ?? null,
+        external_id: existing.external_id ?? null,
+        enrollment_ids: Array.isArray(existing.enrollments)
+          ? existing.enrollments.map((enrollment: any) => enrollment.id)
+          : [],
+      },
+      afterData: {
+        archived: true,
+        deleted_by_id: actor.id,
+      },
+    });
+    return result;
+  }
+
   async getJlptAttendanceReport(options: JlptAttendanceReportQueryOptions) {
     return this.repository.getJlptAttendanceReport(options);
   }

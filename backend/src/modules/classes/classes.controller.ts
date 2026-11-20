@@ -66,9 +66,11 @@ export class ClassesController {
       const packageName = parseStr(q.package_name);
       const courseCategoryRaw = parseStr(q.course_category)?.toUpperCase();
       const courseCategory =
-        courseCategoryRaw === 'KAIWA' || courseCategoryRaw === 'JNPT'
-          ? courseCategoryRaw
-          : undefined;
+        courseCategoryRaw === 'KAIWA'
+          ? 'KAIWA'
+          : courseCategoryRaw === 'JLPT' || courseCategoryRaw === 'JNPT'
+            ? 'JLPT'
+            : undefined;
       const courseLevel = parseStr(q.course_level) || parseStr(q.level);
       const teacherName = parseStr(q.teacher_name);
       const teacherCode = parseStr(q.teacher_code);

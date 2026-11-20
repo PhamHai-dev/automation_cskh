@@ -124,6 +124,8 @@ Student (
   occupation?,
   zalo_uid?,
   note?,
+  deleted_at?,                         -- null = active; khác null = đã lưu trữ khỏi product UI
+  deleted_by_id? -> User,              -- actor ADMIN thực hiện lưu trữ; ON DELETE SET NULL
   created_at,
   updated_at
 )
@@ -132,6 +134,8 @@ Student (
 **Map từ Sheet 1:** Họ tên HV, Giới tính, SĐT, Email, DOB, Nghề nghiệp.
 
 > Một Student có thể có nhiều Enrollment nếu cùng một người mua/học nhiều gói ở các thời điểm khác nhau.
+
+**Lưu trữ mềm:** Student đã lưu trữ vẫn giữ nguyên toàn bộ Enrollment và các quan hệ lớp, điểm danh, chăm sóc, messaging. Các truy vấn product/automation bắt buộc lọc `Student.deleted_at IS NULL`; audit/history trong DB không bị xóa.
 
 ### 3.3. Enrollment — một lần/gói học của Student
 

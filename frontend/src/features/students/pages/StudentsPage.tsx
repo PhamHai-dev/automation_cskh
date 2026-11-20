@@ -19,7 +19,8 @@ import { ReassignCsModal } from '../components/ReassignCsModal';
 import { getEnrollmentPackageLabel } from '../../enrollments/utils/enrollmentDisplay';
 import { PageContainer } from '../../../components/common/PageContainer';
 import { PageHeader } from '../../../components/common/PageHeader';
-import { FilterBar } from '../../../components/common/FilterBar';
+import { FilterBar, ActiveFilterChip } from '../../../components/common/FilterBar';
+import { AdvancedFilterDrawer } from '../../../components/common/AdvancedFilterDrawer';
 import { DataTable, Column } from '../../../components/common/DataTable';
 import { Button } from '../../../components/ui/Button';
 import { Input } from '../../../components/ui/Input';
@@ -54,6 +55,8 @@ import {
   ChevronRight,
   ArrowRightLeft,
   Lock,
+  Trash2,
+  SlidersHorizontal,
 } from 'lucide-react';
 
 const GENDER_LABELS: Record<string, string> = {
@@ -61,6 +64,99 @@ const GENDER_LABELS: Record<string, string> = {
   FEMALE: 'Nữ',
   OTHER: 'Khác',
 };
+
+type StudentExtendedFilterState = {
+  packageName: string;
+  courseCode: string;
+  teacherName: string;
+  teacherCode: string;
+  className: string;
+  classCode: string;
+  schedulePattern: string;
+  startTime: string;
+  startDateFrom: string;
+  startDateTo: string;
+  endDateFrom: string;
+  endDateTo: string;
+  totalSessionsMin: string;
+  totalSessionsMax: string;
+  remainingSessionsMin: string;
+  remainingSessionsMax: string;
+  hasClass: '' | 'true' | 'false';
+  hasTeacher: '' | 'true' | 'false';
+  birthYearMin: string;
+  birthYearMax: string;
+  occupation: string;
+};
+
+const EMPTY_STUDENT_EXTENDED_FILTERS: StudentExtendedFilterState = {
+  packageName: '',
+  courseCode: '',
+  teacherName: '',
+  teacherCode: '',
+  className: '',
+  classCode: '',
+  schedulePattern: '',
+  startTime: '',
+  startDateFrom: '',
+  startDateTo: '',
+  endDateFrom: '',
+  endDateTo: '',
+  totalSessionsMin: '',
+  totalSessionsMax: '',
+  remainingSessionsMin: '',
+  remainingSessionsMax: '',
+  hasClass: '',
+  hasTeacher: '',
+  birthYearMin: '',
+  birthYearMax: '',
+  occupation: '',
+};
+
+const pickExtendedFilters = (state: StudentExtendedFilterState): StudentExtendedFilterState => ({
+  packageName: state.packageName,
+  courseCode: state.courseCode,
+  teacherName: state.teacherName,
+  teacherCode: state.teacherCode,
+  className: state.className,
+  classCode: state.classCode,
+  schedulePattern: state.schedulePattern,
+  startTime: state.startTime,
+  startDateFrom: state.startDateFrom,
+  startDateTo: state.startDateTo,
+  endDateFrom: state.endDateFrom,
+  endDateTo: state.endDateTo,
+  totalSessionsMin: state.totalSessionsMin,
+  totalSessionsMax: state.totalSessionsMax,
+  remainingSessionsMin: state.remainingSessionsMin,
+  remainingSessionsMax: state.remainingSessionsMax,
+  hasClass: state.hasClass,
+  hasTeacher: state.hasTeacher,
+  birthYearMin: state.birthYearMin,
+  birthYearMax: state.birthYearMax,
+  occupation: state.occupation,
+});
+
+const countExtendedFilterGroups = (state: StudentExtendedFilterState): number =>
+  (state.packageName ? 1 : 0) +
+  (state.courseCode ? 1 : 0) +
+  (state.teacherName ? 1 : 0) +
+  (state.teacherCode ? 1 : 0) +
+  (state.className ? 1 : 0) +
+  (state.classCode ? 1 : 0) +
+  (state.schedulePattern ? 1 : 0) +
+  (state.startTime ? 1 : 0) +
+  (state.startDateFrom || state.startDateTo ? 1 : 0) +
+  (state.endDateFrom || state.endDateTo ? 1 : 0) +
+  (state.totalSessionsMin || state.totalSessionsMax ? 1 : 0) +
+  (state.remainingSessionsMin || state.remainingSessionsMax ? 1 : 0) +
+  (state.hasClass ? 1 : 0) +
+  (state.hasTeacher ? 1 : 0) +
+  (state.birthYearMin || state.birthYearMax ? 1 : 0) +
+  (state.occupation ? 1 : 0);
+
+const optionalNumber = (value: string): number | undefined =>
+  value.trim() === '' ? undefined : Number(value);
 
 const ENROLLMENT_STATUS_LABELS: Record<
   string,
@@ -235,6 +331,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
   const toast = useToast();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const isAdmin = Boolean(user?.roles?.includes('ADMIN'));
   const isAdminOrManage = Boolean(
     user?.roles?.some((r) => r === 'ADMIN' || r === 'MANAGE'),
   );
@@ -278,17 +375,153 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
   const [cvhtFilter, setCvhtFilter] = useState(() => searchParams.get('cvht') || '');
   const [saleFilter, setSaleFilter] = useState(() => searchParams.get('sale') || '');
   const [genderFilter, setGenderFilter] = useState(() => searchParams.get('gender') || '');
+  const [extendedFilters, setExtendedFilters] = useState<StudentExtendedFilterState>(() => ({
+    packageName: searchParams.get('package') || '',
+    courseCode: searchParams.get('courseCode') || '',
+    teacherName: searchParams.get('teacher') || '',
+    teacherCode: searchParams.get('teacherCode') || '',
+    className: searchParams.get('class') || '',
+    classCode: searchParams.get('classCode') || '',
+    schedulePattern: searchParams.get('schedule') || '',
+    startTime: searchParams.get('startTime') || '',
+    startDateFrom: searchParams.get('startFrom') || '',
+    startDateTo: searchParams.get('startTo') || '',
+    endDateFrom: searchParams.get('endFrom') || '',
+    endDateTo: searchParams.get('endTo') || '',
+    totalSessionsMin: searchParams.get('totalMin') || '',
+    totalSessionsMax: searchParams.get('totalMax') || '',
+    remainingSessionsMin: searchParams.get('remainingMin') || '',
+    remainingSessionsMax: searchParams.get('remainingMax') || '',
+    hasClass: (searchParams.get('hasClass') || '') as '' | 'true' | 'false',
+    hasTeacher: (searchParams.get('hasTeacher') || '') as '' | 'true' | 'false',
+    birthYearMin: searchParams.get('birthYearMin') || '',
+    birthYearMax: searchParams.get('birthYearMax') || '',
+    occupation: searchParams.get('occupation') || '',
+  }));
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
+  const [advancedFilterDraft, setAdvancedFilterDraft] = useState({
+    model: modelFilter,
+    payment: paymentFilter,
+    sale: saleFilter,
+    gender: genderFilter,
+    cvht: cvhtFilter,
+    ...extendedFilters,
+  });
+  const openAdvancedStudentFilters = () => {
+    setAdvancedFilterDraft({
+      model: modelFilter,
+      payment: paymentFilter,
+      sale: saleFilter,
+      gender: genderFilter,
+      cvht: cvhtFilter,
+      ...extendedFilters,
+    });
+    setShowAdvancedFilters(true);
+  };
+  const closeAdvancedStudentFilters = () => setShowAdvancedFilters(false);
+  const applyAdvancedStudentFilters = () => {
+    setModelFilter(advancedFilterDraft.model);
+    setPaymentFilter(advancedFilterDraft.payment);
+    setSaleFilter(advancedFilterDraft.sale);
+    setGenderFilter(advancedFilterDraft.gender);
+    setCvhtFilter(advancedFilterDraft.cvht);
+    setExtendedFilters(pickExtendedFilters(advancedFilterDraft));
+    if (advancedFilterDraft.cvht) setCsFilter('');
+    setShowAdvancedFilters(false);
+  };
+  const clearAdvancedStudentDraft = () => {
+    setAdvancedFilterDraft({
+      model: '',
+      payment: '',
+      sale: '',
+      gender: '',
+      cvht: '',
+      ...EMPTY_STUDENT_EXTENDED_FILTERS,
+    });
+  };
   const [page, setPage] = useState<number>(() => Math.max(1, Number(searchParams.get('page')) || 1));
   const [pageSize, setPageSize] = useState<number>(() => {
     const ps = Number(searchParams.get('pageSize'));
     return [25, 50, 100, 200].includes(ps) ? ps : 25;
   });
+  const currentUrlFilterSignatureRef = React.useRef('');
+  currentUrlFilterSignatureRef.current = JSON.stringify({
+    search: searchTerm,
+    program: programFilter,
+    status: statusFilter,
+    model: modelFilter,
+    payment: paymentFilter,
+    cs: csFilter,
+    cvht: cvhtFilter,
+    sale: saleFilter,
+    gender: genderFilter,
+    extended: extendedFilters,
+  });
+  const skipPageResetAfterUrlRestoreRef = React.useRef(false);
+  const skipUrlWriteAfterRestoreRef = React.useRef(false);
 
   // Sync external URL changes (e.g. Back/Forward or global search link)
   useEffect(() => {
-    const q = searchParams.get('search') || '';
-    if (q !== searchTerm) setSearchTerm(q);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const queryValue = (key: string) => searchParams.get(key) || '';
+    const nextProgram = queryValue('program').toUpperCase();
+    const normalizedProgram = nextProgram === 'KAIWA' || nextProgram === 'JLPT' ? nextProgram : 'ALL';
+    const nextExtended: StudentExtendedFilterState = {
+      packageName: queryValue('package'),
+      courseCode: queryValue('courseCode'),
+      teacherName: queryValue('teacher'),
+      teacherCode: queryValue('teacherCode'),
+      className: queryValue('class'),
+      classCode: queryValue('classCode'),
+      schedulePattern: queryValue('schedule'),
+      startTime: queryValue('startTime'),
+      startDateFrom: queryValue('startFrom'),
+      startDateTo: queryValue('startTo'),
+      endDateFrom: queryValue('endFrom'),
+      endDateTo: queryValue('endTo'),
+      totalSessionsMin: queryValue('totalMin'),
+      totalSessionsMax: queryValue('totalMax'),
+      remainingSessionsMin: queryValue('remainingMin'),
+      remainingSessionsMax: queryValue('remainingMax'),
+      hasClass: queryValue('hasClass') as '' | 'true' | 'false',
+      hasTeacher: queryValue('hasTeacher') as '' | 'true' | 'false',
+      birthYearMin: queryValue('birthYearMin'),
+      birthYearMax: queryValue('birthYearMax'),
+      occupation: queryValue('occupation'),
+    };
+    const nextUrlFilterSignature = JSON.stringify({
+      search: queryValue('search'),
+      program: normalizedProgram,
+      status: queryValue('status'),
+      model: queryValue('model'),
+      payment: queryValue('payment'),
+      cs: queryValue('cs'),
+      cvht: queryValue('cvht'),
+      sale: queryValue('sale'),
+      gender: queryValue('gender'),
+      extended: nextExtended,
+    });
+    if (nextUrlFilterSignature !== currentUrlFilterSignatureRef.current) {
+      skipPageResetAfterUrlRestoreRef.current = true;
+    }
+    skipUrlWriteAfterRestoreRef.current = true;
+
+    setSearchTerm((current) => current === queryValue('search') ? current : queryValue('search'));
+    setProgramFilter((current) => current === normalizedProgram ? current : normalizedProgram);
+    setStatusFilter((current) => current === queryValue('status') ? current : queryValue('status'));
+    setModelFilter((current) => current === queryValue('model') ? current : queryValue('model'));
+    setPaymentFilter((current) => current === queryValue('payment') ? current : queryValue('payment'));
+    setCsFilter((current) => current === queryValue('cs') ? current : queryValue('cs'));
+    setCvhtFilter((current) => current === queryValue('cvht') ? current : queryValue('cvht'));
+    setSaleFilter((current) => current === queryValue('sale') ? current : queryValue('sale'));
+    setGenderFilter((current) => current === queryValue('gender') ? current : queryValue('gender'));
+    setExtendedFilters((current) =>
+      JSON.stringify(current) === JSON.stringify(nextExtended) ? current : nextExtended,
+    );
+    const nextPage = Math.max(1, Number(queryValue('page')) || 1);
+    const requestedPageSize = Number(queryValue('pageSize'));
+    const nextPageSize = [25, 50, 100, 200].includes(requestedPageSize) ? requestedPageSize : 25;
+    setPage((current) => current === nextPage ? current : nextPage);
+    setPageSize((current) => current === nextPageSize ? current : nextPageSize);
   }, [searchParams]);
 
   // Reset page to 1 when any filter or debounced search changes
@@ -296,6 +529,10 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
   useEffect(() => {
     if (isFirstFilterRenderRef.current) {
       isFirstFilterRenderRef.current = false;
+      return;
+    }
+    if (skipPageResetAfterUrlRestoreRef.current) {
+      skipPageResetAfterUrlRestoreRef.current = false;
       return;
     }
     setPage(1);
@@ -309,10 +546,15 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
     cvhtFilter,
     saleFilter,
     genderFilter,
+    extendedFilters,
   ]);
 
   // Sync filters and pagination to URL
   useEffect(() => {
+    if (skipUrlWriteAfterRestoreRef.current) {
+      skipUrlWriteAfterRestoreRef.current = false;
+      return;
+    }
     const next = new URLSearchParams(searchParams);
     next.delete('tab');
     if (searchTerm.trim()) next.set('search', searchTerm.trim());
@@ -333,6 +575,33 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
     else next.delete('sale');
     if (genderFilter) next.set('gender', genderFilter);
     else next.delete('gender');
+    const extendedUrlEntries: Array<[string, string]> = [
+      ['package', extendedFilters.packageName],
+      ['courseCode', extendedFilters.courseCode],
+      ['teacher', extendedFilters.teacherName],
+      ['teacherCode', extendedFilters.teacherCode],
+      ['class', extendedFilters.className],
+      ['classCode', extendedFilters.classCode],
+      ['schedule', extendedFilters.schedulePattern],
+      ['startTime', extendedFilters.startTime],
+      ['startFrom', extendedFilters.startDateFrom],
+      ['startTo', extendedFilters.startDateTo],
+      ['endFrom', extendedFilters.endDateFrom],
+      ['endTo', extendedFilters.endDateTo],
+      ['totalMin', extendedFilters.totalSessionsMin],
+      ['totalMax', extendedFilters.totalSessionsMax],
+      ['remainingMin', extendedFilters.remainingSessionsMin],
+      ['remainingMax', extendedFilters.remainingSessionsMax],
+      ['hasClass', extendedFilters.hasClass],
+      ['hasTeacher', extendedFilters.hasTeacher],
+      ['birthYearMin', extendedFilters.birthYearMin],
+      ['birthYearMax', extendedFilters.birthYearMax],
+      ['occupation', extendedFilters.occupation],
+    ];
+    extendedUrlEntries.forEach(([key, value]) => {
+      if (value) next.set(key, value);
+      else next.delete(key);
+    });
     if (page > 1) next.set('page', String(page));
     else next.delete('page');
     if (pageSize !== 25) next.set('pageSize', String(pageSize));
@@ -352,6 +621,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
     cvhtFilter,
     saleFilter,
     genderFilter,
+    extendedFilters,
     page,
     pageSize,
     isAdminOrManage,
@@ -366,6 +636,8 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
   const [submitting, setSubmitting] = useState(false);
   const [reassignTargetStudents, setReassignTargetStudents] = useState<Student[] | null>(null);
   const [selectedStudentIds, setSelectedStudentIds] = useState<number[]>([]);
+  const [deleteTargetStudent, setDeleteTargetStudent] = useState<Student | null>(null);
+  const [deletingStudent, setDeletingStudent] = useState(false);
 
   // Form states
   const initialFormData: CreateStudentDTO = {
@@ -453,6 +725,31 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
       cvht: parsedCvht,
       sale: saleFilter || undefined,
       gender: genderFilter || undefined,
+      package_name: extendedFilters.packageName || undefined,
+      course_code: extendedFilters.courseCode || undefined,
+      teacher_name: extendedFilters.teacherName || undefined,
+      teacher_code: extendedFilters.teacherCode || undefined,
+      class_name: extendedFilters.className || undefined,
+      class_code: extendedFilters.classCode || undefined,
+      schedule_pattern: extendedFilters.schedulePattern || undefined,
+      start_time: extendedFilters.startTime || undefined,
+      start_date_op: extendedFilters.startDateFrom || extendedFilters.startDateTo ? 'RANGE' as const : undefined,
+      start_date_from: extendedFilters.startDateFrom || undefined,
+      start_date_to: extendedFilters.startDateTo || undefined,
+      end_date_op: extendedFilters.endDateFrom || extendedFilters.endDateTo ? 'RANGE' as const : undefined,
+      end_date_from: extendedFilters.endDateFrom || undefined,
+      end_date_to: extendedFilters.endDateTo || undefined,
+      total_sessions_op: extendedFilters.totalSessionsMin || extendedFilters.totalSessionsMax ? 'RANGE' as const : undefined,
+      total_sessions_min: optionalNumber(extendedFilters.totalSessionsMin),
+      total_sessions_max: optionalNumber(extendedFilters.totalSessionsMax),
+      remaining_sessions_op: extendedFilters.remainingSessionsMin || extendedFilters.remainingSessionsMax ? 'RANGE' as const : undefined,
+      remaining_sessions_min: optionalNumber(extendedFilters.remainingSessionsMin),
+      remaining_sessions_max: optionalNumber(extendedFilters.remainingSessionsMax),
+      has_class: extendedFilters.hasClass ? extendedFilters.hasClass === 'true' : undefined,
+      has_teacher: extendedFilters.hasTeacher ? extendedFilters.hasTeacher === 'true' : undefined,
+      birth_year_min: optionalNumber(extendedFilters.birthYearMin),
+      birth_year_max: optionalNumber(extendedFilters.birthYearMax),
+      occupation: extendedFilters.occupation || undefined,
     };
   }, [
     page,
@@ -466,6 +763,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
     cvhtFilter,
     saleFilter,
     genderFilter,
+    extendedFilters,
     isAdminOrManage,
   ]);
 
@@ -691,16 +989,61 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
 
   const paginatedStudents = filteredStudents;
 
+  const appliedAdvancedFiltersCount =
+    (modelFilter ? 1 : 0) +
+    (paymentFilter ? 1 : 0) +
+    (saleFilter ? 1 : 0) +
+    (genderFilter ? 1 : 0) +
+    (isAdminOrManage && cvhtFilter ? 1 : 0) +
+    countExtendedFilterGroups(extendedFilters);
+  const draftAdvancedFiltersCount =
+    (advancedFilterDraft.model ? 1 : 0) +
+    (advancedFilterDraft.payment ? 1 : 0) +
+    (advancedFilterDraft.sale ? 1 : 0) +
+    (advancedFilterDraft.gender ? 1 : 0) +
+    (isAdminOrManage && advancedFilterDraft.cvht ? 1 : 0) +
+    countExtendedFilterGroups(advancedFilterDraft);
   const activeFiltersCount =
+    appliedAdvancedFiltersCount +
     (searchTerm.trim() ? 1 : 0) +
     (programFilter !== 'ALL' ? 1 : 0) +
     (statusFilter ? 1 : 0) +
-    (modelFilter ? 1 : 0) +
-    (paymentFilter ? 1 : 0) +
-    (isAdminOrManage && csFilter ? 1 : 0) +
-    (isAdminOrManage && cvhtFilter ? 1 : 0) +
-    (saleFilter ? 1 : 0) +
-    (genderFilter ? 1 : 0);
+    (isAdminOrManage && csFilter ? 1 : 0);
+
+  const studentFilterChips = useMemo<ActiveFilterChip[]>(() => {
+    const chips: ActiveFilterChip[] = [];
+    const clearExtended = (...fields: (keyof StudentExtendedFilterState)[]) => {
+      setExtendedFilters((previous) => {
+        const next = { ...previous };
+        fields.forEach((field) => { next[field] = EMPTY_STUDENT_EXTENDED_FILTERS[field] as never; });
+        return next;
+      });
+    };
+    const rangeLabel = (minimum: string, maximum: string) =>
+      minimum && maximum ? `${minimum}–${maximum}` : minimum ? `≥ ${minimum}` : `≤ ${maximum}`;
+
+    if (searchTerm.trim()) chips.push({ id: 'search', label: 'Tìm kiếm', value: searchTerm.trim(), onRemove: () => setSearchTerm('') });
+    if (programFilter !== 'ALL') chips.push({ id: 'program', label: 'Chương trình', value: programFilter === 'KAIWA' ? 'Kaiwa' : 'JLPT', tone: programFilter === 'KAIWA' ? 'kaiwa' : 'jlpt', onRemove: () => setProgramFilter('ALL') });
+    if (statusFilter) chips.push({ id: 'status', label: 'Trạng thái', value: statusFilter, onRemove: () => setStatusFilter('') });
+    if (modelFilter) chips.push({ id: 'model', label: 'Mô hình', value: modelFilter, onRemove: () => setModelFilter('') });
+    if (paymentFilter) chips.push({ id: 'payment', label: 'Học phí', value: paymentFilter, tone: programFilter === 'JLPT' ? 'jlpt' : 'neutral', onRemove: () => setPaymentFilter('') });
+    if (isAdminOrManage && csFilter) chips.push({ id: 'cs', label: 'CVHT', value: csOptions.find((option) => option.value === csFilter)?.label || csFilter, onRemove: () => setCsFilter('') });
+    if (isAdminOrManage && cvhtFilter) chips.push({ id: 'cvht', label: 'CVHT nhanh', value: cvhtFilter, onRemove: () => setCvhtFilter('') });
+    if (saleFilter) chips.push({ id: 'sale', label: 'Sale', value: saleFilter, onRemove: () => setSaleFilter('') });
+    if (genderFilter) chips.push({ id: 'gender', label: 'Giới tính', value: genderFilter, onRemove: () => setGenderFilter('') });
+    if (extendedFilters.packageName) chips.push({ id: 'package', label: 'Gói học', value: extendedFilters.packageName, onRemove: () => clearExtended('packageName') });
+    if (extendedFilters.courseCode) chips.push({ id: 'course-code', label: 'Mã khóa học', value: extendedFilters.courseCode, onRemove: () => clearExtended('courseCode') });
+    if (extendedFilters.className || extendedFilters.classCode) chips.push({ id: 'class', label: 'Lớp', value: [extendedFilters.classCode, extendedFilters.className].filter(Boolean).join(' · '), onRemove: () => clearExtended('className', 'classCode') });
+    if (extendedFilters.teacherName || extendedFilters.teacherCode) chips.push({ id: 'teacher', label: 'Giáo viên', value: [extendedFilters.teacherCode, extendedFilters.teacherName].filter(Boolean).join(' · '), onRemove: () => clearExtended('teacherName', 'teacherCode') });
+    if (extendedFilters.schedulePattern || extendedFilters.startTime) chips.push({ id: 'schedule', label: 'Lịch học', value: [extendedFilters.schedulePattern, extendedFilters.startTime].filter(Boolean).join(' · '), onRemove: () => clearExtended('schedulePattern', 'startTime') });
+    if (extendedFilters.totalSessionsMin || extendedFilters.totalSessionsMax) chips.push({ id: 'total-sessions', label: 'Tổng buổi', value: rangeLabel(extendedFilters.totalSessionsMin, extendedFilters.totalSessionsMax), onRemove: () => clearExtended('totalSessionsMin', 'totalSessionsMax') });
+    if (extendedFilters.remainingSessionsMin || extendedFilters.remainingSessionsMax) chips.push({ id: 'remaining-sessions', label: 'Còn lại', value: rangeLabel(extendedFilters.remainingSessionsMin, extendedFilters.remainingSessionsMax), onRemove: () => clearExtended('remainingSessionsMin', 'remainingSessionsMax') });
+    if (extendedFilters.hasClass) chips.push({ id: 'has-class', label: 'Xếp lớp', value: extendedFilters.hasClass === 'true' ? 'Đã xếp' : 'Chưa xếp', onRemove: () => clearExtended('hasClass') });
+    if (extendedFilters.hasTeacher) chips.push({ id: 'has-teacher', label: 'Giáo viên', value: extendedFilters.hasTeacher === 'true' ? 'Đã có' : 'Chưa có', onRemove: () => clearExtended('hasTeacher') });
+    if (extendedFilters.birthYearMin || extendedFilters.birthYearMax) chips.push({ id: 'birth-year', label: 'Năm sinh', value: rangeLabel(extendedFilters.birthYearMin, extendedFilters.birthYearMax), onRemove: () => clearExtended('birthYearMin', 'birthYearMax') });
+    if (extendedFilters.occupation) chips.push({ id: 'occupation', label: 'Nghề nghiệp', value: extendedFilters.occupation, onRemove: () => clearExtended('occupation') });
+    return chips;
+  }, [searchTerm, programFilter, statusFilter, modelFilter, paymentFilter, csFilter, cvhtFilter, saleFilter, genderFilter, extendedFilters, isAdminOrManage, csOptions]);
 
   const handleResetFilters = () => {
     setSearchTerm('');
@@ -712,6 +1055,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
     setCvhtFilter('');
     setSaleFilter('');
     setGenderFilter('');
+    setExtendedFilters(EMPTY_STUDENT_EXTENDED_FILTERS);
     setPage(1);
   };
 
@@ -990,6 +1334,29 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
       toast.error(err.response?.data?.error?.message || 'Có lỗi xảy ra khi lưu học viên');
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleSoftDeleteStudent = async () => {
+    if (!deleteTargetStudent || !isAdmin) return;
+
+    try {
+      setDeletingStudent(true);
+      await studentsApi.softDelete(deleteTargetStudent.id);
+      const deletedId = deleteTargetStudent.id;
+      setDeleteTargetStudent(null);
+      setSelectedStudentIds((prev) => prev.filter((id) => id !== deletedId));
+      setViewingStudent((current) => (current?.id === deletedId ? null : current));
+      toast.success('Đã xóa học viên khỏi giao diện. Dữ liệu lịch sử vẫn được lưu trong hệ thống.');
+      fetchStudents();
+    } catch (err: any) {
+      toast.error(
+        err.response?.data?.error?.message ||
+          err.response?.data?.message ||
+          'Không thể xóa học viên',
+      );
+    } finally {
+      setDeletingStudent(false);
     }
   };
 
@@ -1330,7 +1697,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
   const actionColumn: Column<Student> = {
     key: 'action',
     header: 'Thao tác',
-    className: 'text-right sticky right-0 z-20 border-l border-border/60 shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.06)]',
+    className: 'text-right',
     cell: (item) => {
       const isReadonly = isStudentReadonlyForUser(item);
       return (
@@ -1346,20 +1713,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
           >
             <Eye className="w-4 h-4 text-blue-600" />
           </Button>
-          {isAdminOrManage && (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                setReassignTargetStudents([item]);
-              }}
-              className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 text-[11px] font-semibold transition-colors cursor-pointer"
-              title="Chuyển CVHT phụ trách"
-            >
-              <ArrowRightLeft className="w-3 h-3 shrink-0" />
-              <span>Đổi CVHT</span>
-            </button>
-          )}
           <Button
             variant="ghost"
             size="sm"
@@ -1377,6 +1730,20 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
           >
             <Edit className="w-4 h-4 text-slate-500 hover:text-blue-600" />
           </Button>
+          {isAdmin && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={(e) => {
+                e.stopPropagation();
+                setDeleteTargetStudent(item);
+              }}
+              title="Xóa học viên khỏi giao diện"
+              aria-label={`Xóa học viên ${item.full_name}`}
+            >
+              <Trash2 className="w-4 h-4 text-rose-600" />
+            </Button>
+          )}
         </div>
       );
     },
@@ -2244,27 +2611,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
         title={activeTab === 'care_reports' ? 'Báo cáo học tập & Chăm sóc' : 'Hồ sơ học viên'}
         actions={
           <div className="flex items-center gap-2">
-            {isAdminOrManage && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  if (selectedStudentObjects.length > 0) {
-                    setReassignTargetStudents(selectedStudentObjects);
-                  } else if (paginatedStudents.length > 0) {
-                    toast.info(
-                      'Hãy tích chọn học viên ở cột đầu bảng hoặc bấm nút "Đổi CVHT" trên dòng học viên cần chuyển.'
-                    );
-                  }
-                }}
-                leftIcon={<ArrowRightLeft className="w-4 h-4 text-indigo-600" />}
-                className="border-indigo-300 text-indigo-800 hover:bg-indigo-50 font-semibold"
-              >
-                {selectedStudentIds.length > 0
-                  ? `Chuyển CVHT (${selectedStudentIds.length})`
-                  : 'Chuyển CVHT'}
-              </Button>
-            )}
+
             {activeTab === 'care_reports' && (
               <Button
                 variant="outline"
@@ -2288,55 +2635,49 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
         }
       />
 
-      {/* Unified FilterBar */}
+      {/* Bộ lọc một hàng: điều kiện thường dùng ở ngoài, phần còn lại trong drawer */}
       <FilterBar
+        variant="toolbar"
         title="Tìm kiếm & Lọc học viên"
         activeCount={activeFiltersCount}
+        chips={studentFilterChips}
+        resultSummary={`${totalStudents.toLocaleString('vi-VN')} học viên`}
         onClear={handleResetFilters}
-        gridClassName="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-4 gap-3.5 items-end"
       >
         {/* 1. Tìm kiếm */}
-        <div>
-          <label className="block text-[11px] font-semibold text-text-secondary uppercase tracking-wider mb-1.5">
-            Tìm kiếm
-          </label>
-          <div className="relative">
-            <input
-              type="text"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Mã HV, Họ tên, SĐT, Email, Lớp học, GV..."
-              className="w-full h-9 pl-9 pr-3 border border-border rounded-xl text-sm bg-white text-text-primary focus:outline-none focus:ring-2 focus:ring-primary shadow-xs transition"
-            />
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
-          </div>
+        <div className="relative min-w-[220px] flex-[1_1_320px] xl:max-w-[460px]">
+          <input
+            type="text"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            placeholder="Mã HV, họ tên, SĐT, email, lớp, GV..."
+            aria-label="Tìm kiếm học viên"
+            className="h-9 w-full rounded-xl border border-border bg-white pl-9 pr-3 text-xs font-semibold text-text-primary shadow-xs outline-none transition focus:ring-2 focus:ring-primary"
+          />
+          <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
         </div>
 
         {/* 2. Chương trình */}
-        <div>
-          <label className="block text-[11px] font-semibold text-text-secondary uppercase tracking-wider mb-1.5">
-            Chương trình
-          </label>
+        <div className="min-w-[148px] shrink-0">
           <select
             value={programFilter}
             onChange={(e) => setProgramFilter(e.target.value as 'ALL' | 'KAIWA' | 'JLPT')}
-            className="w-full h-9 px-3 border border-border rounded-xl text-sm bg-white text-text-primary focus:outline-none focus:ring-2 focus:ring-primary shadow-xs transition cursor-pointer"
+            aria-label="Lọc theo chương trình"
+            className="h-9 w-full cursor-pointer rounded-xl border border-border bg-white px-3 text-xs font-semibold text-text-primary shadow-xs outline-none transition focus:ring-2 focus:ring-primary"
           >
             <option value="ALL">Tất cả chương trình ({programCounts.all})</option>
-            <option value="KAIWA">Giao tiếp (Kaiwa) ({programCounts.kaiwa})</option>
-            <option value="JLPT">Luyện thi (JLPT) ({programCounts.jlpt})</option>
+            <option value="KAIWA">Kaiwa ({programCounts.kaiwa})</option>
+            <option value="JLPT">JLPT ({programCounts.jlpt})</option>
           </select>
         </div>
 
         {/* 3. Trạng thái học */}
-        <div>
-          <label className="block text-[11px] font-semibold text-text-secondary uppercase tracking-wider mb-1.5">
-            Trạng thái học
-          </label>
+        <div className="min-w-[132px] shrink-0">
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
-            className="w-full h-9 px-3 border border-border rounded-xl text-sm bg-white text-text-primary focus:outline-none focus:ring-2 focus:ring-primary shadow-xs transition cursor-pointer"
+            aria-label="Lọc theo trạng thái học"
+            className="h-9 w-full cursor-pointer rounded-xl border border-border bg-white px-3 text-xs font-semibold text-text-primary shadow-xs outline-none transition focus:ring-2 focus:ring-primary"
           >
             <option value="">Tất cả trạng thái</option>
             <option value="STUDYING">Đang học</option>
@@ -2348,14 +2689,63 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
           </select>
         </div>
 
+        {/* 4. CVHT phụ trách là điều kiện nhanh cho ADMIN / MANAGE */}
+        {isAdminOrManage && (
+          <div className="min-w-[150px] shrink-0">
+            <select
+              value={csFilter}
+              onChange={(e) => {
+                setCsFilter(e.target.value);
+                if (e.target.value) setCvhtFilter('');
+              }}
+              aria-label="Lọc theo CVHT phụ trách"
+              className="h-9 w-full cursor-pointer rounded-xl border border-border bg-white px-3 text-xs font-semibold text-text-primary shadow-xs outline-none transition focus:ring-2 focus:ring-primary"
+            >
+              <option value="">Tất cả CVHT</option>
+              <option value="UNASSIGNED">Chưa phân công</option>
+              {csOptions.map((opt) => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        <Button
+          type="button"
+          variant={showAdvancedFilters ? 'primary' : 'outline'}
+          size="sm"
+          onClick={openAdvancedStudentFilters}
+          className="h-9 shrink-0 gap-1.5 px-3 text-xs font-bold"
+          leftIcon={<SlidersHorizontal className="h-4 w-4" />}
+        >
+          Bộ lọc
+          {appliedAdvancedFiltersCount > 0 && (
+            <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-400 px-1 text-[10px] font-black text-amber-950">
+              {appliedAdvancedFiltersCount}
+            </span>
+          )}
+        </Button>
+
+        <AdvancedFilterDrawer
+          open={showAdvancedFilters}
+          onClose={closeAdvancedStudentFilters}
+          onApply={applyAdvancedStudentFilters}
+          applyLabel={`Áp dụng${draftAdvancedFiltersCount > 0 ? ` • ${draftAdvancedFiltersCount} điều kiện` : ''}`}
+          activeCount={draftAdvancedFiltersCount}
+          onReset={clearAdvancedStudentDraft}
+          title="Bộ lọc học viên nâng cao"
+          description="Lọc theo mô hình, học phí, Sale, giới tính và mã CVHT."
+        >
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+
         {/* 4. Mô hình lớp */}
         <div>
           <label className="block text-[11px] font-semibold text-text-secondary uppercase tracking-wider mb-1.5">
             Mô hình lớp
           </label>
           <select
-            value={modelFilter}
-            onChange={(e) => setModelFilter(e.target.value)}
+            value={advancedFilterDraft.model}
+            onChange={(e) => setAdvancedFilterDraft((previous) => ({ ...previous, model: e.target.value }))}
             className="w-full h-9 px-3 border border-border rounded-xl text-sm bg-white text-text-primary focus:outline-none focus:ring-2 focus:ring-primary shadow-xs transition cursor-pointer"
           >
             <option value="">Tất cả mô hình</option>
@@ -2371,8 +2761,8 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
             Tình trạng học phí
           </label>
           <select
-            value={paymentFilter}
-            onChange={(e) => setPaymentFilter(e.target.value)}
+            value={advancedFilterDraft.payment}
+            onChange={(e) => setAdvancedFilterDraft((previous) => ({ ...previous, payment: e.target.value }))}
             className="w-full h-9 px-3 border border-border rounded-xl text-sm bg-white text-text-primary focus:outline-none focus:ring-2 focus:ring-primary shadow-xs transition cursor-pointer"
           >
             <option value="">Tất cả học phí</option>
@@ -2382,30 +2772,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
           </select>
         </div>
 
-        {/* 6. CVHT phụ trách (CHỈ hiển thị khi ADMIN / MANAGE, ẩn hoàn toàn khi CS) */}
-        {isAdminOrManage && (
-          <div>
-            <label className="block text-[11px] font-semibold text-text-secondary uppercase tracking-wider mb-1.5">
-              CVHT phụ trách
-            </label>
-            <select
-              value={csFilter}
-              onChange={(e) => {
-                setCsFilter(e.target.value);
-                if (e.target.value) setCvhtFilter('');
-              }}
-              className="w-full h-9 px-3 border border-border rounded-xl text-sm bg-white text-text-primary focus:outline-none focus:ring-2 focus:ring-primary shadow-xs transition cursor-pointer"
-            >
-              <option value="">Tất cả CVHT phụ trách</option>
-              <option value="UNASSIGNED">Chưa phân công CVHT</option>
-              {csOptions.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
+
 
         {/* 7. Sale phụ trách */}
         <div>
@@ -2413,8 +2780,8 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
             Sale phụ trách
           </label>
           <select
-            value={saleFilter}
-            onChange={(e) => setSaleFilter(e.target.value)}
+            value={advancedFilterDraft.sale}
+            onChange={(e) => setAdvancedFilterDraft((previous) => ({ ...previous, sale: e.target.value }))}
             className="w-full h-9 px-3 border border-border rounded-xl text-sm bg-white text-text-primary focus:outline-none focus:ring-2 focus:ring-primary shadow-xs transition cursor-pointer"
           >
             <option value="">Tất cả nhân viên Sale</option>
@@ -2432,8 +2799,8 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
             Giới tính
           </label>
           <select
-            value={genderFilter}
-            onChange={(e) => setGenderFilter(e.target.value)}
+            value={advancedFilterDraft.gender}
+            onChange={(e) => setAdvancedFilterDraft((previous) => ({ ...previous, gender: e.target.value }))}
             className="w-full h-9 px-3 border border-border rounded-xl text-sm bg-white text-text-primary focus:outline-none focus:ring-2 focus:ring-primary shadow-xs transition cursor-pointer"
           >
             <option value="">Tất cả giới tính</option>
@@ -2441,6 +2808,102 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
             <option value="FEMALE">Nữ</option>
             <option value="OTHER">Khác</option>
           </select>
+        </div>
+
+        <div className="col-span-full mt-1 border-t border-border/60 pt-3">
+          <p className="text-[11px] font-bold uppercase tracking-wider text-text-secondary">Khóa học & lớp</p>
+        </div>
+        {[
+          ['packageName', 'Gói học / mã gói', 'Tên hoặc mã gói học'],
+          ['courseCode', 'Mã khóa học', 'Ví dụ: JLPT-N3'],
+          ['className', 'Tên lớp', 'Nhập tên lớp'],
+          ['classCode', 'Mã lớp', 'Nhập mã lớp'],
+          ['teacherName', 'Tên giáo viên', 'Nhập tên giáo viên'],
+          ['teacherCode', 'Mã giáo viên', 'Ví dụ: GV01'],
+          ['schedulePattern', 'Lịch học', 'Ví dụ: 246, 357, LKCD'],
+          ['startTime', 'Giờ học', 'Ví dụ: 20:00'],
+        ].map(([field, label, placeholder]) => (
+          <div key={field}>
+            <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-text-secondary">{label}</label>
+            <input
+              value={advancedFilterDraft[field as keyof StudentExtendedFilterState]}
+              onChange={(event) => setAdvancedFilterDraft((previous) => ({ ...previous, [field]: event.target.value }))}
+              placeholder={placeholder}
+              className="h-9 w-full rounded-xl border border-border bg-white px-3 text-sm text-text-primary shadow-xs outline-none transition focus:ring-2 focus:ring-primary"
+            />
+          </div>
+        ))}
+
+        <div>
+          <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Tình trạng xếp lớp</label>
+          <select
+            value={advancedFilterDraft.hasClass}
+            onChange={(event) => setAdvancedFilterDraft((previous) => ({ ...previous, hasClass: event.target.value as '' | 'true' | 'false' }))}
+            className="h-9 w-full rounded-xl border border-border bg-white px-3 text-sm text-text-primary shadow-xs outline-none focus:ring-2 focus:ring-primary"
+          >
+            <option value="">Tất cả</option>
+            <option value="true">Đã xếp lớp</option>
+            <option value="false">Chưa xếp lớp</option>
+          </select>
+        </div>
+        <div>
+          <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Tình trạng giáo viên</label>
+          <select
+            value={advancedFilterDraft.hasTeacher}
+            onChange={(event) => setAdvancedFilterDraft((previous) => ({ ...previous, hasTeacher: event.target.value as '' | 'true' | 'false' }))}
+            className="h-9 w-full rounded-xl border border-border bg-white px-3 text-sm text-text-primary shadow-xs outline-none focus:ring-2 focus:ring-primary"
+          >
+            <option value="">Tất cả</option>
+            <option value="true">Đã có giáo viên</option>
+            <option value="false">Chưa có giáo viên</option>
+          </select>
+        </div>
+
+        <div className="col-span-full mt-1 border-t border-border/60 pt-3">
+          <p className="text-[11px] font-bold uppercase tracking-wider text-text-secondary">Tiến độ & thời gian</p>
+        </div>
+        {[
+          ['totalSessionsMin', 'Tổng buổi từ'],
+          ['totalSessionsMax', 'Tổng buổi đến'],
+          ['remainingSessionsMin', 'Buổi còn lại từ'],
+          ['remainingSessionsMax', 'Buổi còn lại đến'],
+          ['birthYearMin', 'Năm sinh từ'],
+          ['birthYearMax', 'Năm sinh đến'],
+        ].map(([field, label]) => (
+          <div key={field}>
+            <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-text-secondary">{label}</label>
+            <input
+              type="number"
+              value={advancedFilterDraft[field as keyof StudentExtendedFilterState]}
+              onChange={(event) => setAdvancedFilterDraft((previous) => ({ ...previous, [field]: event.target.value }))}
+              className="h-9 w-full rounded-xl border border-border bg-white px-3 text-sm text-text-primary shadow-xs outline-none transition focus:ring-2 focus:ring-primary"
+            />
+          </div>
+        ))}
+        {[
+          ['startDateFrom', 'Bắt đầu từ'],
+          ['startDateTo', 'Bắt đầu đến'],
+          ['endDateFrom', 'Kết thúc từ'],
+          ['endDateTo', 'Kết thúc đến'],
+        ].map(([field, label]) => (
+          <div key={field}>
+            <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-text-secondary">{label}</label>
+            <input
+              type="date"
+              value={advancedFilterDraft[field as keyof StudentExtendedFilterState]}
+              onChange={(event) => setAdvancedFilterDraft((previous) => ({ ...previous, [field]: event.target.value }))}
+              className="h-9 w-full rounded-xl border border-border bg-white px-3 text-sm text-text-primary shadow-xs outline-none transition focus:ring-2 focus:ring-primary"
+            />
+          </div>
+        ))}
+        <div className="col-span-full">
+          <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Nghề nghiệp</label>
+          <input
+            value={advancedFilterDraft.occupation}
+            onChange={(event) => setAdvancedFilterDraft((previous) => ({ ...previous, occupation: event.target.value }))}
+            placeholder="Nhập nghề nghiệp"
+            className="h-9 w-full rounded-xl border border-border bg-white px-3 text-sm text-text-primary shadow-xs outline-none transition focus:ring-2 focus:ring-primary"
+          />
         </div>
 
         {/* 9. Dải nút bấm nhanh CVHT phụ trách (1-click cho ADMIN / MANAGE) */}
@@ -2452,9 +2915,9 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
             <div className="inline-flex flex-wrap items-center gap-1.5">
               <button
                 type="button"
-                onClick={() => setCvhtFilter('')}
+                onClick={() => setAdvancedFilterDraft((previous) => ({ ...previous, cvht: '' }))}
                 className={`px-2.5 py-1 rounded-lg text-xs font-bold border transition cursor-pointer ${
-                  cvhtFilter === ''
+                  advancedFilterDraft.cvht === ''
                     ? 'bg-primary text-white border-primary shadow-2xs'
                     : 'bg-white text-slate-600 border-border hover:bg-slate-50'
                 }`}
@@ -2466,12 +2929,11 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
                   key={code}
                   type="button"
                   onClick={() => {
-                    const nextCode = code === cvhtFilter ? '' : code;
-                    setCvhtFilter(nextCode);
-                    if (nextCode) setCsFilter('');
+                    const nextCode = code === advancedFilterDraft.cvht ? '' : code;
+                    setAdvancedFilterDraft((previous) => ({ ...previous, cvht: nextCode }));
                   }}
                   className={`px-2.5 py-1 rounded-lg text-xs font-mono font-bold border transition cursor-pointer ${
-                    cvhtFilter === code
+                    advancedFilterDraft.cvht === code
                       ? 'bg-primary text-white border-primary shadow-2xs'
                       : 'bg-blue-50/70 text-blue-800 border-blue-200 hover:bg-blue-100'
                   }`}
@@ -2482,6 +2944,8 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
             </div>
           </div>
         )}
+          </div>
+        </AdvancedFilterDrawer>
       </FilterBar>
 
       {/* Thanh trạng thái hiển thị & tùy chọn cột */}
@@ -2561,6 +3025,52 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
           emptyMessage="Không tìm thấy học viên nào phù hợp với điều kiện lọc."
         />
       </div>
+
+      <Modal
+        isOpen={Boolean(deleteTargetStudent)}
+        onClose={() => !deletingStudent && setDeleteTargetStudent(null)}
+        title="Xóa học viên khỏi giao diện?"
+        description="Dữ liệu sẽ được lưu trữ, không bị xóa vĩnh viễn khỏi cơ sở dữ liệu."
+        size="sm"
+        closeOnOutsideClick={!deletingStudent}
+        footer={
+          <>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setDeleteTargetStudent(null)}
+              disabled={deletingStudent}
+            >
+              Hủy
+            </Button>
+            <Button
+              type="button"
+              variant="danger"
+              size="sm"
+              onClick={() => void handleSoftDeleteStudent()}
+              disabled={deletingStudent}
+              isLoading={deletingStudent}
+              leftIcon={!deletingStudent ? <Trash2 className="w-4 h-4" /> : undefined}
+            >
+              {deletingStudent ? 'Đang xóa...' : 'Xác nhận xóa'}
+            </Button>
+          </>
+        }
+      >
+        {deleteTargetStudent && (
+          <div className="space-y-3 text-sm">
+            <p className="text-text-primary">
+              Bạn sắp xóa học viên{' '}
+              <strong>{deleteTargetStudent.full_name}</strong>
+              {deleteTargetStudent.external_id ? ` (${deleteTargetStudent.external_id})` : ''} khỏi tất cả giao diện.
+            </p>
+            <div className="rounded-xl border border-amber-200 bg-amber-50/80 px-3 py-2.5 text-xs leading-relaxed text-amber-900">
+              Hồ sơ, ghi danh, lớp học, điểm danh và lịch sử chăm sóc vẫn được giữ nguyên trong cơ sở dữ liệu để tra cứu/audit khi cần.
+            </div>
+          </div>
+        )}
+      </Modal>
 
       {/* Modal Thêm Mốc Buổi Chăm Sóc */}
       {isAddMilestoneModalOpen && (

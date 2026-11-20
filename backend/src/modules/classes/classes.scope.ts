@@ -3,15 +3,43 @@ import { prisma } from '../../prisma/client';
 import { AuthUser } from '../../middlewares/auth.middleware';
 import { AppError } from '../../middlewares/error.middleware';
 
-/**
- * Returns list of accessible class IDs for user, or null if unrestricted (e.g. ADMIN, MANAGE, CS).
- * For a user with TEACHER role (and not ADMIN/MANAGE/CS):
- * Returns array of class IDs where the teacher is actively assigned (via ClassTeacher or ClassSession).
- */
 export async function getAccessibleClassIds(user: AuthUser): Promise<number[] | null> {
-  // ADMIN, MANAGE, and CS have broad staff access across all classes
-  if (user.roles.includes('ADMIN') || user.roles.includes('MANAGE') || user.roles.includes('CS')) {
+  if (user.roles.includes('ADMIN')) {
     return null;
+  }
+
+  if (user.roles.includes('MANAGE') || user.roles.includes('CS')) {
+    let allowedCsIds: number[];
+
+    if (user.roles.includes('MANAGE')) {
+      const assignments = await prisma.manageAssignment.findMany({
+        where: { manage_user_id: user.id },
+        include: { cs_group: { include: { members: true } } },
+      });
+      allowedCsIds = Array.from(
+        new Set([user.id, ...assignments.flatMap((assignment) =>
+          assignment.cs_group.members.map((member) => member.user_id),
+        )]),
+      );
+    } else {
+      allowedCsIds = [user.id];
+    }
+
+    const enrollmentClasses = await prisma.enrollmentClass.findMany({
+      where: {
+        enrollment: {
+          student: { deleted_at: null },
+          OR: [
+            { cs_id: { in: allowedCsIds } },
+            { cs_viewers: { some: { cs_id: { in: allowedCsIds } } } },
+          ],
+        },
+      },
+      select: { class_id: true },
+      distinct: ['class_id'],
+    });
+
+    return enrollmentClasses.map((item) => item.class_id);
   }
 
   if (user.roles.includes('TEACHER')) {

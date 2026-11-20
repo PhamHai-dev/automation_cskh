@@ -1,12 +1,13 @@
 import React, { useState, useMemo } from 'react';
 import {
   EnrollmentFilterState,
-  CourseCategory,
   FilterOperator,
+  INITIAL_ENROLLMENT_FILTERS,
   KAIWA_LEVEL_OPTIONS,
-  JNPT_LEVEL_OPTIONS,
 } from '../types/enrollmentFilter.types';
 import { Button } from '../../../components/ui/Button';
+import { ActiveFilterChip, ActiveFilterChips } from '../../../components/common/FilterBar';
+import { AdvancedFilterDrawer } from '../../../components/common/AdvancedFilterDrawer';
 import {
   Search,
   SlidersHorizontal,
@@ -27,8 +28,46 @@ export interface EnrollmentFilterBarProps {
   teachersList: string[];
   teacherCodesList: string[];
   classesList: string[];
+  programFilter?: 'ALL' | 'KAIWA' | 'JLPT';
+  onProgramChange?: (program: 'ALL' | 'KAIWA' | 'JLPT') => void;
+  resultCount?: number;
   isCS?: boolean;
+  contextControls?: React.ReactNode;
 }
+
+const countAdvancedFilters = (state: EnrollmentFilterState): number => {
+  let count = 0;
+
+  if (state.courseLevel) count++;
+  if (
+    (state.totalSessionsOp === 'EXACT' && state.totalSessionsExact !== '') ||
+    (state.totalSessionsOp === 'RANGE' && (state.totalSessionsMin !== '' || state.totalSessionsMax !== ''))
+  ) count++;
+  if (
+    (state.attendedSessionsOp === 'EXACT' && state.attendedSessionsExact !== '') ||
+    (state.attendedSessionsOp === 'RANGE' && (state.attendedSessionsMin !== '' || state.attendedSessionsMax !== ''))
+  ) count++;
+  if (
+    (state.remainingSessionsOp === 'EXACT' && state.remainingSessionsExact !== '') ||
+    (state.remainingSessionsOp === 'RANGE' && (state.remainingSessionsMin !== '' || state.remainingSessionsMax !== ''))
+  ) count++;
+  if (state.teacherName) count++;
+  if (state.teacherCode) count++;
+  if (state.className) count++;
+  if (state.selectedSale) count++;
+  if (
+    (state.startDateOp === 'EXACT' && state.startDateExact) ||
+    (state.startDateOp === 'RANGE' && (state.startDateFrom || state.startDateTo))
+  ) count++;
+  if (
+    (state.endDateOp === 'EXACT' && state.endDateExact) ||
+    (state.endDateOp === 'RANGE' && (state.endDateFrom || state.endDateTo))
+  ) count++;
+  if (state.schedulePattern) count++;
+  if (state.startTime) count++;
+
+  return count;
+};
 
 export const EnrollmentFilterBar: React.FC<EnrollmentFilterBarProps> = ({
   filters,
@@ -39,9 +78,34 @@ export const EnrollmentFilterBar: React.FC<EnrollmentFilterBarProps> = ({
   teachersList,
   teacherCodesList,
   classesList,
+  programFilter = 'ALL',
+  onProgramChange,
+  resultCount,
   isCS = false,
+  contextControls,
 }) => {
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [draftFilters, setDraftFilters] = useState<EnrollmentFilterState>(filters);
+
+  const advancedFilters = showAdvanced ? draftFilters : filters;
+  const openAdvancedFilters = () => {
+    setDraftFilters(filters);
+    setShowAdvanced(true);
+  };
+  const closeAdvancedFilters = () => {
+    setDraftFilters(filters);
+    setShowAdvanced(false);
+  };
+  const applyAdvancedFilters = () => {
+    onChange(() => draftFilters);
+    setShowAdvanced(false);
+  };
+  const setAdvancedField = <K extends keyof EnrollmentFilterState>(
+    field: K,
+    val: EnrollmentFilterState[K]
+  ) => {
+    setDraftFilters((previous) => ({ ...previous, [field]: val }));
+  };
 
   // Helper to update individual filter field
   const setField = <K extends keyof EnrollmentFilterState>(
@@ -51,154 +115,187 @@ export const EnrollmentFilterBar: React.FC<EnrollmentFilterBarProps> = ({
     onChange((prev) => ({ ...prev, [field]: val }));
   };
 
-  // Count active filters
-  const { totalActiveCount, advancedActiveCount } = useMemo(() => {
-    let advancedCount = 0;
-    let totalCount = 0;
+  const advancedActiveCount = useMemo(() => countAdvancedFilters(filters), [filters]);
+  const draftAdvancedActiveCount = useMemo(
+    () => countAdvancedFilters(draftFilters),
+    [draftFilters],
+  );
+  const totalActiveCount =
+    advancedActiveCount +
+    (filters.searchQuery ? 1 : 0) +
+    (filters.packageName ? 1 : 0) +
+    (filters.statusFilter ? 1 : 0) +
+    (filters.modelFilter ? 1 : 0);
 
-    if (filters.searchQuery) totalCount++;
-    if (filters.packageName) totalCount++;
-    if (filters.statusFilter) totalCount++;
-    if (filters.modelFilter) totalCount++;
+  const clearAdvancedDraft = () => {
+    setDraftFilters((previous) => ({
+      ...previous,
+      courseLevel: INITIAL_ENROLLMENT_FILTERS.courseLevel,
+      totalSessionsOp: INITIAL_ENROLLMENT_FILTERS.totalSessionsOp,
+      totalSessionsExact: INITIAL_ENROLLMENT_FILTERS.totalSessionsExact,
+      totalSessionsMin: INITIAL_ENROLLMENT_FILTERS.totalSessionsMin,
+      totalSessionsMax: INITIAL_ENROLLMENT_FILTERS.totalSessionsMax,
+      attendedSessionsOp: INITIAL_ENROLLMENT_FILTERS.attendedSessionsOp,
+      attendedSessionsExact: INITIAL_ENROLLMENT_FILTERS.attendedSessionsExact,
+      attendedSessionsMin: INITIAL_ENROLLMENT_FILTERS.attendedSessionsMin,
+      attendedSessionsMax: INITIAL_ENROLLMENT_FILTERS.attendedSessionsMax,
+      remainingSessionsOp: INITIAL_ENROLLMENT_FILTERS.remainingSessionsOp,
+      remainingSessionsExact: INITIAL_ENROLLMENT_FILTERS.remainingSessionsExact,
+      remainingSessionsMin: INITIAL_ENROLLMENT_FILTERS.remainingSessionsMin,
+      remainingSessionsMax: INITIAL_ENROLLMENT_FILTERS.remainingSessionsMax,
+      teacherName: INITIAL_ENROLLMENT_FILTERS.teacherName,
+      teacherCode: INITIAL_ENROLLMENT_FILTERS.teacherCode,
+      className: INITIAL_ENROLLMENT_FILTERS.className,
+      selectedSale: INITIAL_ENROLLMENT_FILTERS.selectedSale,
+      startDateOp: INITIAL_ENROLLMENT_FILTERS.startDateOp,
+      startDateExact: INITIAL_ENROLLMENT_FILTERS.startDateExact,
+      startDateFrom: INITIAL_ENROLLMENT_FILTERS.startDateFrom,
+      startDateTo: INITIAL_ENROLLMENT_FILTERS.startDateTo,
+      endDateOp: INITIAL_ENROLLMENT_FILTERS.endDateOp,
+      endDateExact: INITIAL_ENROLLMENT_FILTERS.endDateExact,
+      endDateFrom: INITIAL_ENROLLMENT_FILTERS.endDateFrom,
+      endDateTo: INITIAL_ENROLLMENT_FILTERS.endDateTo,
+      schedulePattern: INITIAL_ENROLLMENT_FILTERS.schedulePattern,
+      startTime: INITIAL_ENROLLMENT_FILTERS.startTime,
+    }));
+  };
 
-    if (filters.courseCategory !== 'ALL') {
-      advancedCount++;
-      totalCount++;
-    }
-    if (filters.courseLevel) {
-      advancedCount++;
-      totalCount++;
-    }
+  const hasAnyFilter = totalActiveCount > 0 || programFilter !== 'ALL';
 
-    // Total sessions
-    if (filters.totalSessionsOp === 'EXACT') {
-      if (filters.totalSessionsExact !== '') {
-        advancedCount++;
-        totalCount++;
+  const levelOptions = programFilter === 'KAIWA' ? KAIWA_LEVEL_OPTIONS : [];
+
+  const clearField = <K extends keyof EnrollmentFilterState>(field: K) => {
+    setField(field, INITIAL_ENROLLMENT_FILTERS[field]);
+  };
+
+  const activeChips = useMemo<ActiveFilterChip[]>(() => {
+    const chips: ActiveFilterChip[] = [];
+    const clearFields = (fields: (keyof EnrollmentFilterState)[]) => {
+      onChange((previous) => {
+        const next = { ...previous };
+        fields.forEach((field) => {
+          (next as Record<keyof EnrollmentFilterState, EnrollmentFilterState[keyof EnrollmentFilterState]>)[field] =
+            INITIAL_ENROLLMENT_FILTERS[field];
+        });
+        return next;
+      });
+    };
+    const formatRange = (minimum: string, maximum: string, unit = '') => {
+      if (minimum && maximum) return `${minimum}–${maximum}${unit}`;
+      if (minimum) return `≥ ${minimum}${unit}`;
+      return `≤ ${maximum}${unit}`;
+    };
+    const addNumericChip = (
+      id: string,
+      label: string,
+      operator: FilterOperator,
+      exact: string,
+      minimum: string,
+      maximum: string,
+      fields: (keyof EnrollmentFilterState)[],
+    ) => {
+      const value = operator === 'EXACT' && exact !== '' ? `= ${exact}` : formatRange(minimum, maximum);
+      if ((operator === 'EXACT' && exact !== '') || (operator === 'RANGE' && (minimum !== '' || maximum !== ''))) {
+        chips.push({ id, label, value, onRemove: () => clearFields(fields) });
       }
-    } else {
-      if (filters.totalSessionsMin !== '' || filters.totalSessionsMax !== '') {
-        advancedCount++;
-        totalCount++;
+    };
+    const addDateChip = (
+      id: string,
+      label: string,
+      operator: FilterOperator,
+      exact: string,
+      from: string,
+      to: string,
+      fields: (keyof EnrollmentFilterState)[],
+    ) => {
+      const value = operator === 'EXACT' && exact ? exact : formatRange(from, to);
+      if ((operator === 'EXACT' && exact) || (operator === 'RANGE' && (from || to))) {
+        chips.push({ id, label, value, onRemove: () => clearFields(fields) });
       }
-    }
+    };
 
-    // Attended sessions
-    if (filters.attendedSessionsOp === 'EXACT') {
-      if (filters.attendedSessionsExact !== '') {
-        advancedCount++;
-        totalCount++;
-      }
-    } else {
-      if (filters.attendedSessionsMin !== '' || filters.attendedSessionsMax !== '') {
-        advancedCount++;
-        totalCount++;
-      }
+    if (programFilter !== 'ALL') {
+      chips.push({
+        id: 'program',
+        label: 'Chương trình',
+        value: programFilter === 'KAIWA' ? 'Kaiwa' : 'JLPT',
+        tone: programFilter === 'KAIWA' ? 'kaiwa' : 'jlpt',
+        onRemove: () => onProgramChange?.('ALL'),
+      });
     }
-
-    // Remaining sessions
-    if (filters.remainingSessionsOp === 'EXACT') {
-      if (filters.remainingSessionsExact !== '') {
-        advancedCount++;
-        totalCount++;
-      }
-    } else {
-      if (filters.remainingSessionsMin !== '' || filters.remainingSessionsMax !== '') {
-        advancedCount++;
-        totalCount++;
-      }
-    }
-
-    if (filters.teacherName) {
-      advancedCount++;
-      totalCount++;
-    }
-    if (filters.teacherCode) {
-      advancedCount++;
-      totalCount++;
-    }
-    if (filters.className) {
-      advancedCount++;
-      totalCount++;
-    }
-    if (filters.selectedSale) {
-      advancedCount++;
-      totalCount++;
-    }
-
-    // Start date
-    if (filters.startDateOp === 'EXACT') {
-      if (filters.startDateExact) {
-        advancedCount++;
-        totalCount++;
-      }
-    } else {
-      if (filters.startDateFrom || filters.startDateTo) {
-        advancedCount++;
-        totalCount++;
-      }
-    }
-
-    // End date
-    if (filters.endDateOp === 'EXACT') {
-      if (filters.endDateExact) {
-        advancedCount++;
-        totalCount++;
-      }
-    } else {
-      if (filters.endDateFrom || filters.endDateTo) {
-        advancedCount++;
-        totalCount++;
-      }
-    }
-
-    if (filters.schedulePattern) {
-      advancedCount++;
-      totalCount++;
-    }
-    if (filters.startTime) {
-      advancedCount++;
-      totalCount++;
-    }
-
-    return { totalActiveCount: totalCount, advancedActiveCount: advancedCount };
-  }, [filters]);
-
-  const hasAnyFilter = totalActiveCount > 0;
-
-  // Level options based on current category
-  const levelOptions = useMemo(() => {
-    if (filters.courseCategory === 'KAIWA') return KAIWA_LEVEL_OPTIONS;
-    if (filters.courseCategory === 'JNPT') return JNPT_LEVEL_OPTIONS;
-    return [...KAIWA_LEVEL_OPTIONS, ...JNPT_LEVEL_OPTIONS];
-  }, [filters.courseCategory]);
+    if (filters.searchQuery) chips.push({ id: 'search', label: 'Tìm kiếm', value: filters.searchQuery, onRemove: () => clearField('searchQuery') });
+    if (filters.packageName) chips.push({ id: 'package', label: 'Gói học', value: filters.packageName, onRemove: () => clearField('packageName') });
+    if (filters.statusFilter) chips.push({ id: 'status', label: 'Trạng thái', value: filters.statusFilter, onRemove: () => clearField('statusFilter') });
+    if (filters.modelFilter) chips.push({ id: 'model', label: 'Mô hình', value: filters.modelFilter, onRemove: () => clearField('modelFilter') });
+    if (filters.courseLevel) chips.push({ id: 'level', label: 'Trình độ Kaiwa', value: filters.courseLevel, tone: 'kaiwa', onRemove: () => clearField('courseLevel') });
+    addNumericChip('total-sessions', 'Tổng số buổi', filters.totalSessionsOp, filters.totalSessionsExact, filters.totalSessionsMin, filters.totalSessionsMax, ['totalSessionsOp', 'totalSessionsExact', 'totalSessionsMin', 'totalSessionsMax']);
+    addNumericChip('attended-sessions', 'Số buổi đã học', filters.attendedSessionsOp, filters.attendedSessionsExact, filters.attendedSessionsMin, filters.attendedSessionsMax, ['attendedSessionsOp', 'attendedSessionsExact', 'attendedSessionsMin', 'attendedSessionsMax']);
+    addNumericChip('remaining-sessions', 'Số buổi còn lại', filters.remainingSessionsOp, filters.remainingSessionsExact, filters.remainingSessionsMin, filters.remainingSessionsMax, ['remainingSessionsOp', 'remainingSessionsExact', 'remainingSessionsMin', 'remainingSessionsMax']);
+    if (filters.teacherName) chips.push({ id: 'teacher', label: 'Giáo viên', value: filters.teacherName, onRemove: () => clearField('teacherName') });
+    if (filters.teacherCode) chips.push({ id: 'teacher-code', label: 'Mã GV', value: filters.teacherCode, onRemove: () => clearField('teacherCode') });
+    if (filters.className) chips.push({ id: 'class', label: 'Lớp', value: filters.className, onRemove: () => clearField('className') });
+    if (filters.selectedSale) chips.push({ id: 'sale', label: 'Sale', value: filters.selectedSale, onRemove: () => clearField('selectedSale') });
+    addDateChip('start-date', 'Ngày bắt đầu', filters.startDateOp, filters.startDateExact, filters.startDateFrom, filters.startDateTo, ['startDateOp', 'startDateExact', 'startDateFrom', 'startDateTo']);
+    addDateChip('end-date', 'Ngày kết thúc', filters.endDateOp, filters.endDateExact, filters.endDateFrom, filters.endDateTo, ['endDateOp', 'endDateExact', 'endDateFrom', 'endDateTo']);
+    if (filters.schedulePattern) chips.push({ id: 'schedule', label: 'Lịch học', value: filters.schedulePattern, onRemove: () => clearField('schedulePattern') });
+    if (filters.startTime) chips.push({ id: 'start-time', label: 'Giờ học', value: filters.startTime, onRemove: () => clearField('startTime') });
+    return chips;
+  }, [filters, onChange, onProgramChange, programFilter]);
 
   return (
-    <div className="mb-4 rounded-2xl border border-border/80 bg-surface p-3 sm:p-4 shadow-soft transition-all">
+    <section className="mb-3 rounded-2xl border border-border/80 bg-surface p-3 shadow-soft transition-all" aria-label="Tìm kiếm và lọc dữ liệu học tập">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2 border-b border-border/60 pb-2">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-wider text-text-secondary">Tìm kiếm & bộ lọc học tập</p>
+          <p className="mt-0.5 text-[11px] text-text-muted">Trường riêng Kaiwa/JLPT tự thay đổi theo chương trình đang chọn.</p>
+        </div>
+        {typeof resultCount === 'number' && <span className="text-xs font-semibold text-text-muted">{resultCount.toLocaleString('vi-VN')} kết quả</span>}
+      </div>
+
       {/* ------------------------------------------------------------- */}
-      {/* TẦNG 1: QUICK SEARCH & BASIC FILTERS                          */}
+      {/* TẦNG 1: ONE-LINE CONTEXT, SEARCH & BASIC FILTERS              */}
       {/* ------------------------------------------------------------- */}
-      <div className="flex flex-wrap items-center gap-2.5">
+      <div className="flex flex-wrap items-center gap-2 xl:flex-nowrap">
         {/* Search input: ID, Name, Phone, Email */}
-        <div className="relative min-w-[200px] flex-1">
+        <div className="relative min-w-[220px] flex-[1_1_260px] xl:max-w-[360px]">
           <input
             type="text"
-            placeholder="Tìm theo Mã HV, Họ tên, SĐT, Email..."
+            placeholder="Mã HV, họ tên, SĐT, email..."
             value={filters.searchQuery}
             onChange={(e) => setField('searchQuery', e.target.value)}
-            className="h-10 w-full rounded-xl border border-border/80 bg-surface pl-9 pr-3 text-xs font-semibold text-text-primary outline-none transition placeholder:text-text-muted focus:border-primary focus:ring-2 focus:ring-primary/20"
+            className="h-9 w-full rounded-xl border border-border/80 bg-surface pl-9 pr-3 text-xs font-semibold text-text-primary outline-none transition placeholder:text-text-muted focus:border-primary focus:ring-2 focus:ring-primary/20"
             aria-label="Tìm kiếm học viên"
           />
-          <Search className="absolute left-3 top-3 h-4 w-4 text-text-muted" aria-hidden="true" />
+          <Search className="absolute left-3 top-2.5 h-4 w-4 text-text-muted" aria-hidden="true" />
         </div>
 
+        {/* Ngữ cảnh chương trình đứng ngay sau tìm kiếm. */}
+        <div className="min-w-[132px] shrink-0">
+          <select
+            value={programFilter}
+            onChange={(event) => onProgramChange?.(event.target.value as 'ALL' | 'KAIWA' | 'JLPT')}
+            aria-label="Ngữ cảnh chương trình"
+            className="h-9 w-full rounded-xl border border-border/80 bg-surface px-3 text-xs font-bold text-text-primary outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20"
+          >
+            <option value="ALL">Tất cả chương trình</option>
+            <option value="KAIWA">Kaiwa</option>
+            <option value="JLPT">JLPT</option>
+          </select>
+        </div>
+
+        {contextControls && (
+          <div className="flex shrink-0 flex-wrap items-center gap-2 xl:flex-nowrap">
+            {contextControls}
+          </div>
+        )}
+
         {/* Tìm kiếm / Lọc Gói học */}
-        <div className="min-w-[150px] flex-initial">
+        <div className="min-w-[138px] flex-initial">
           <select
             value={filters.packageName}
             onChange={(e) => setField('packageName', e.target.value)}
             aria-label="Lọc theo Gói học"
-            className="h-10 w-full rounded-xl border border-border/80 bg-surface px-3 text-xs font-semibold text-text-primary outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20"
+            className="h-9 w-full rounded-xl border border-border/80 bg-surface px-3 text-xs font-semibold text-text-primary outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20"
           >
             <option value="">Tất cả Gói học</option>
             {packagesList.map((pkg) => (
@@ -210,12 +307,12 @@ export const EnrollmentFilterBar: React.FC<EnrollmentFilterBarProps> = ({
         </div>
 
         {/* Lọc Trạng thái ghi danh */}
-        <div className="min-w-[140px] flex-initial">
+        <div className="min-w-[128px] flex-initial">
           <select
             value={filters.statusFilter}
             onChange={(e) => setField('statusFilter', e.target.value)}
             aria-label="Lọc theo trạng thái"
-            className="h-10 w-full rounded-xl border border-border/80 bg-surface px-3 text-xs font-semibold text-text-primary outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20"
+            className="h-9 w-full rounded-xl border border-border/80 bg-surface px-3 text-xs font-semibold text-text-primary outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20"
           >
             <option value="">Tất cả trạng thái</option>
             <option value="STUDYING">Đang học</option>
@@ -229,12 +326,12 @@ export const EnrollmentFilterBar: React.FC<EnrollmentFilterBarProps> = ({
         </div>
 
         {/* Lọc Mô hình lớp */}
-        <div className="min-w-[125px] flex-initial">
+        <div className="min-w-[115px] flex-initial">
           <select
             value={filters.modelFilter}
             onChange={(e) => setField('modelFilter', e.target.value)}
             aria-label="Lọc theo mô hình"
-            className="h-10 w-full rounded-xl border border-border/80 bg-surface px-3 text-xs font-semibold text-text-primary outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20"
+            className="h-9 w-full rounded-xl border border-border/80 bg-surface px-3 text-xs font-semibold text-text-primary outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20"
           >
             <option value="">Tất cả mô hình</option>
             <option value="1:1">Mô hình 1:1</option>
@@ -248,8 +345,8 @@ export const EnrollmentFilterBar: React.FC<EnrollmentFilterBarProps> = ({
           type="button"
           variant={showAdvanced ? 'primary' : 'outline'}
           size="sm"
-          onClick={() => setShowAdvanced((prev) => !prev)}
-          className="h-10 shrink-0 gap-1.5 px-3 text-xs font-bold"
+          onClick={openAdvancedFilters}
+          className="h-9 shrink-0 gap-1.5 px-3 text-xs font-bold"
           leftIcon={<SlidersHorizontal className="h-4 w-4" />}
           rightIcon={showAdvanced ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
         >
@@ -268,19 +365,28 @@ export const EnrollmentFilterBar: React.FC<EnrollmentFilterBarProps> = ({
             variant="ghost"
             size="sm"
             onClick={onReset}
-            className="h-10 shrink-0 px-2.5 text-xs text-text-muted hover:text-danger"
+            className="h-9 shrink-0 px-2.5 text-xs text-text-muted hover:text-danger"
             leftIcon={<RotateCcw className="h-3.5 w-3.5" />}
           >
-            Xóa lọc ({totalActiveCount})
+            Xóa lọc ({totalActiveCount + (programFilter !== 'ALL' ? 1 : 0)})
           </Button>
         )}
       </div>
 
       {/* ------------------------------------------------------------- */}
-      {/* TẦNG 2: ADVANCED FILTERS PANEL (Mở rộng theo nhóm)            */}
+      {/* TẦNG 2: RESPONSIVE ADVANCED FILTER DRAWER                     */}
       {/* ------------------------------------------------------------- */}
-      {showAdvanced && (
-        <div className="mt-4 grid grid-cols-1 gap-4 border-t border-border/80 pt-4 lg:grid-cols-3">
+      <AdvancedFilterDrawer
+        open={showAdvanced}
+        onClose={closeAdvancedFilters}
+        onApply={applyAdvancedFilters}
+        applyLabel={`Áp dụng${draftAdvancedActiveCount > 0 ? ` • ${draftAdvancedActiveCount} điều kiện` : ''}`}
+        activeCount={draftAdvancedActiveCount}
+        onReset={clearAdvancedDraft}
+        title="Bộ lọc học tập nâng cao"
+        description="Lọc theo khóa học, tiến độ, giáo viên, lớp và thời gian học."
+      >
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
           {/* ========================================================= */}
           {/* KHỐI 1: KHÓA HỌC & TIẾN ĐỘ BUỔI HỌC                       */}
           {/* ========================================================= */}
@@ -291,47 +397,25 @@ export const EnrollmentFilterBar: React.FC<EnrollmentFilterBarProps> = ({
             </div>
 
             <div className="space-y-2.5">
-              {/* Lọc Khóa học: Kaiwa 1->6, JNPT 1->6 */}
-              <div>
-                <label className="mb-1 block text-[11px] font-semibold text-text-secondary">
-                  Trình độ / Khóa học cụ thể
-                </label>
-                <div className="flex gap-2">
+              {/* Ngữ cảnh chương trình được chọn ở hàng chính; Kaiwa có thêm trình độ độc lập. */}
+              {programFilter === 'KAIWA' && (
+                <div>
+                  <label className="mb-1 block text-[11px] font-semibold text-text-secondary">
+                    Trình độ Kaiwa
+                  </label>
                   <select
-                    value={filters.courseCategory}
-                    onChange={(e) => {
-                      setField('courseCategory', e.target.value as CourseCategory);
-                      setField('courseLevel', '');
-                    }}
-                    className="h-9 w-2/5 rounded-lg border border-border bg-surface px-2 text-xs font-semibold text-text-primary outline-none focus:border-primary"
-                    aria-label="Nhóm khóa học"
+                    value={advancedFilters.courseLevel}
+                    onChange={(e) => setAdvancedField('courseLevel', e.target.value)}
+                    className="h-9 w-full rounded-lg border border-border bg-surface px-2 text-xs font-semibold text-text-primary outline-none focus:border-primary"
+                    aria-label="Trình độ Kaiwa"
                   >
-                    <option value="ALL">Tất cả nhóm</option>
-                    <option value="KAIWA">Kaiwa (1–6)</option>
-                    <option value="JNPT">JNPT / JLPT</option>
-                  </select>
-
-                  <select
-                    value={filters.courseLevel}
-                    onChange={(e) => setField('courseLevel', e.target.value)}
-                    className="h-9 w-3/5 rounded-lg border border-border bg-surface px-2 text-xs font-semibold text-text-primary outline-none focus:border-primary"
-                    aria-label="Khóa học cụ thể"
-                  >
-                    <option value="">
-                      {filters.courseCategory === 'KAIWA'
-                        ? 'Tất cả Kaiwa 1–6'
-                        : filters.courseCategory === 'JNPT'
-                        ? 'Tất cả JNPT 1–6'
-                        : 'Chọn cấp độ cụ thể...'}
-                    </option>
+                    <option value="">Tất cả trình độ Kaiwa</option>
                     {levelOptions.map((opt) => (
-                      <option key={opt} value={opt}>
-                        {opt}
-                      </option>
+                      <option key={opt} value={opt}>{opt}</option>
                     ))}
                   </select>
                 </div>
-              </div>
+              )}
 
               {/* Lọc Tổng số buổi */}
               <div>
@@ -340,8 +424,8 @@ export const EnrollmentFilterBar: React.FC<EnrollmentFilterBarProps> = ({
                     Tổng số buổi
                   </label>
                   <select
-                    value={filters.totalSessionsOp}
-                    onChange={(e) => setField('totalSessionsOp', e.target.value as FilterOperator)}
+                    value={advancedFilters.totalSessionsOp}
+                    onChange={(e) => setAdvancedField('totalSessionsOp', e.target.value as FilterOperator)}
                     className="h-6 rounded-md border border-border/80 bg-surface px-1.5 text-[10px] font-bold text-text-secondary outline-none transition focus:border-primary"
                     aria-label="Toán tử Tổng số buổi"
                   >
@@ -350,13 +434,13 @@ export const EnrollmentFilterBar: React.FC<EnrollmentFilterBarProps> = ({
                   </select>
                 </div>
 
-                {filters.totalSessionsOp === 'EXACT' ? (
+                {advancedFilters.totalSessionsOp === 'EXACT' ? (
                   <input
                     type="number"
                     min="0"
                     placeholder="Nhập số buổi chính xác (vd: 30)"
-                    value={filters.totalSessionsExact}
-                    onChange={(e) => setField('totalSessionsExact', e.target.value)}
+                    value={advancedFilters.totalSessionsExact}
+                    onChange={(e) => setAdvancedField('totalSessionsExact', e.target.value)}
                     className="h-9 w-full rounded-lg border border-border bg-surface px-2.5 text-xs text-text-primary outline-none focus:border-primary"
                   />
                 ) : (
@@ -365,8 +449,8 @@ export const EnrollmentFilterBar: React.FC<EnrollmentFilterBarProps> = ({
                       type="number"
                       min="0"
                       placeholder="Tối thiểu"
-                      value={filters.totalSessionsMin}
-                      onChange={(e) => setField('totalSessionsMin', e.target.value)}
+                      value={advancedFilters.totalSessionsMin}
+                      onChange={(e) => setAdvancedField('totalSessionsMin', e.target.value)}
                       className="h-9 w-1/2 rounded-lg border border-border bg-surface px-2.5 text-xs text-text-primary outline-none focus:border-primary"
                     />
                     <span className="text-text-muted">—</span>
@@ -374,8 +458,8 @@ export const EnrollmentFilterBar: React.FC<EnrollmentFilterBarProps> = ({
                       type="number"
                       min="0"
                       placeholder="Tối đa"
-                      value={filters.totalSessionsMax}
-                      onChange={(e) => setField('totalSessionsMax', e.target.value)}
+                      value={advancedFilters.totalSessionsMax}
+                      onChange={(e) => setAdvancedField('totalSessionsMax', e.target.value)}
                       className="h-9 w-1/2 rounded-lg border border-border bg-surface px-2.5 text-xs text-text-primary outline-none focus:border-primary"
                     />
                   </div>
@@ -389,8 +473,8 @@ export const EnrollmentFilterBar: React.FC<EnrollmentFilterBarProps> = ({
                     Số buổi đã học
                   </label>
                   <select
-                    value={filters.attendedSessionsOp}
-                    onChange={(e) => setField('attendedSessionsOp', e.target.value as FilterOperator)}
+                    value={advancedFilters.attendedSessionsOp}
+                    onChange={(e) => setAdvancedField('attendedSessionsOp', e.target.value as FilterOperator)}
                     className="h-6 rounded-md border border-border/80 bg-surface px-1.5 text-[10px] font-bold text-text-secondary outline-none transition focus:border-primary"
                     aria-label="Toán tử Số buổi đã học"
                   >
@@ -399,13 +483,13 @@ export const EnrollmentFilterBar: React.FC<EnrollmentFilterBarProps> = ({
                   </select>
                 </div>
 
-                {filters.attendedSessionsOp === 'EXACT' ? (
+                {advancedFilters.attendedSessionsOp === 'EXACT' ? (
                   <input
                     type="number"
                     min="0"
                     placeholder="Nhập số buổi chính xác (vd: 10)"
-                    value={filters.attendedSessionsExact}
-                    onChange={(e) => setField('attendedSessionsExact', e.target.value)}
+                    value={advancedFilters.attendedSessionsExact}
+                    onChange={(e) => setAdvancedField('attendedSessionsExact', e.target.value)}
                     className="h-9 w-full rounded-lg border border-border bg-surface px-2.5 text-xs text-text-primary outline-none focus:border-primary"
                   />
                 ) : (
@@ -414,8 +498,8 @@ export const EnrollmentFilterBar: React.FC<EnrollmentFilterBarProps> = ({
                       type="number"
                       min="0"
                       placeholder="Tối thiểu"
-                      value={filters.attendedSessionsMin}
-                      onChange={(e) => setField('attendedSessionsMin', e.target.value)}
+                      value={advancedFilters.attendedSessionsMin}
+                      onChange={(e) => setAdvancedField('attendedSessionsMin', e.target.value)}
                       className="h-9 w-1/2 rounded-lg border border-border bg-surface px-2.5 text-xs text-text-primary outline-none focus:border-primary"
                     />
                     <span className="text-text-muted">—</span>
@@ -423,8 +507,8 @@ export const EnrollmentFilterBar: React.FC<EnrollmentFilterBarProps> = ({
                       type="number"
                       min="0"
                       placeholder="Tối đa"
-                      value={filters.attendedSessionsMax}
-                      onChange={(e) => setField('attendedSessionsMax', e.target.value)}
+                      value={advancedFilters.attendedSessionsMax}
+                      onChange={(e) => setAdvancedField('attendedSessionsMax', e.target.value)}
                       className="h-9 w-1/2 rounded-lg border border-border bg-surface px-2.5 text-xs text-text-primary outline-none focus:border-primary"
                     />
                   </div>
@@ -438,8 +522,8 @@ export const EnrollmentFilterBar: React.FC<EnrollmentFilterBarProps> = ({
                     Số buổi còn lại
                   </label>
                   <select
-                    value={filters.remainingSessionsOp}
-                    onChange={(e) => setField('remainingSessionsOp', e.target.value as FilterOperator)}
+                    value={advancedFilters.remainingSessionsOp}
+                    onChange={(e) => setAdvancedField('remainingSessionsOp', e.target.value as FilterOperator)}
                     className="h-6 rounded-md border border-border/80 bg-surface px-1.5 text-[10px] font-bold text-text-secondary outline-none transition focus:border-primary"
                     aria-label="Toán tử Số buổi còn lại"
                   >
@@ -448,12 +532,12 @@ export const EnrollmentFilterBar: React.FC<EnrollmentFilterBarProps> = ({
                   </select>
                 </div>
 
-                {filters.remainingSessionsOp === 'EXACT' ? (
+                {advancedFilters.remainingSessionsOp === 'EXACT' ? (
                   <input
                     type="number"
                     placeholder="Nhập số buổi chính xác (vd: 0, 5, -2...)"
-                    value={filters.remainingSessionsExact}
-                    onChange={(e) => setField('remainingSessionsExact', e.target.value)}
+                    value={advancedFilters.remainingSessionsExact}
+                    onChange={(e) => setAdvancedField('remainingSessionsExact', e.target.value)}
                     className="h-9 w-full rounded-lg border border-border bg-surface px-2.5 text-xs text-text-primary outline-none focus:border-primary"
                   />
                 ) : (
@@ -461,16 +545,16 @@ export const EnrollmentFilterBar: React.FC<EnrollmentFilterBarProps> = ({
                     <input
                       type="number"
                       placeholder="Tối thiểu"
-                      value={filters.remainingSessionsMin}
-                      onChange={(e) => setField('remainingSessionsMin', e.target.value)}
+                      value={advancedFilters.remainingSessionsMin}
+                      onChange={(e) => setAdvancedField('remainingSessionsMin', e.target.value)}
                       className="h-9 w-1/2 rounded-lg border border-border bg-surface px-2.5 text-xs text-text-primary outline-none focus:border-primary"
                     />
                     <span className="text-text-muted">—</span>
                     <input
                       type="number"
                       placeholder="Tối đa"
-                      value={filters.remainingSessionsMax}
-                      onChange={(e) => setField('remainingSessionsMax', e.target.value)}
+                      value={advancedFilters.remainingSessionsMax}
+                      onChange={(e) => setAdvancedField('remainingSessionsMax', e.target.value)}
                       className="h-9 w-1/2 rounded-lg border border-border bg-surface px-2.5 text-xs text-text-primary outline-none focus:border-primary"
                     />
                   </div>
@@ -495,8 +579,8 @@ export const EnrollmentFilterBar: React.FC<EnrollmentFilterBarProps> = ({
                   Giáo viên phụ trách
                 </label>
                 <select
-                  value={filters.teacherName}
-                  onChange={(e) => setField('teacherName', e.target.value)}
+                  value={advancedFilters.teacherName}
+                  onChange={(e) => setAdvancedField('teacherName', e.target.value)}
                   className="h-9 w-full rounded-lg border border-border bg-surface px-2 text-xs font-semibold text-text-primary outline-none focus:border-primary"
                 >
                   <option value="">Tất cả giáo viên</option>
@@ -514,8 +598,8 @@ export const EnrollmentFilterBar: React.FC<EnrollmentFilterBarProps> = ({
                   Mã giáo viên
                 </label>
                 <select
-                  value={filters.teacherCode}
-                  onChange={(e) => setField('teacherCode', e.target.value)}
+                  value={advancedFilters.teacherCode}
+                  onChange={(e) => setAdvancedField('teacherCode', e.target.value)}
                   className="h-9 w-full rounded-lg border border-border bg-surface px-2 text-xs font-semibold text-text-primary outline-none focus:border-primary"
                 >
                   <option value="">Tất cả mã GV</option>
@@ -533,8 +617,8 @@ export const EnrollmentFilterBar: React.FC<EnrollmentFilterBarProps> = ({
                   Tên lớp
                 </label>
                 <select
-                  value={filters.className}
-                  onChange={(e) => setField('className', e.target.value)}
+                  value={advancedFilters.className}
+                  onChange={(e) => setAdvancedField('className', e.target.value)}
                   className="h-9 w-full rounded-lg border border-border bg-surface px-2 text-xs font-semibold text-text-primary outline-none focus:border-primary"
                 >
                   <option value="">Tất cả lớp học</option>
@@ -553,8 +637,8 @@ export const EnrollmentFilterBar: React.FC<EnrollmentFilterBarProps> = ({
                     Nhân viên Sale phụ trách
                   </label>
                   <select
-                    value={filters.selectedSale}
-                    onChange={(e) => setField('selectedSale', e.target.value)}
+                    value={advancedFilters.selectedSale}
+                    onChange={(e) => setAdvancedField('selectedSale', e.target.value)}
                     className="h-9 w-full rounded-lg border border-border bg-surface px-2 text-xs font-semibold text-text-primary outline-none focus:border-primary"
                   >
                     <option value="">Tất cả Sale</option>
@@ -586,8 +670,8 @@ export const EnrollmentFilterBar: React.FC<EnrollmentFilterBarProps> = ({
                     Ngày bắt đầu học
                   </label>
                   <select
-                    value={filters.startDateOp}
-                    onChange={(e) => setField('startDateOp', e.target.value as FilterOperator)}
+                    value={advancedFilters.startDateOp}
+                    onChange={(e) => setAdvancedField('startDateOp', e.target.value as FilterOperator)}
                     className="h-6 rounded-md border border-border/80 bg-surface px-1.5 text-[10px] font-bold text-text-secondary outline-none transition focus:border-primary"
                     aria-label="Toán tử Ngày bắt đầu"
                   >
@@ -596,11 +680,11 @@ export const EnrollmentFilterBar: React.FC<EnrollmentFilterBarProps> = ({
                   </select>
                 </div>
 
-                {filters.startDateOp === 'EXACT' ? (
+                {advancedFilters.startDateOp === 'EXACT' ? (
                   <input
                     type="date"
-                    value={filters.startDateExact}
-                    onChange={(e) => setField('startDateExact', e.target.value)}
+                    value={advancedFilters.startDateExact}
+                    onChange={(e) => setAdvancedField('startDateExact', e.target.value)}
                     className="h-9 w-full rounded-lg border border-border bg-surface px-2.5 text-[11px] font-semibold text-text-primary outline-none focus:border-primary"
                     aria-label="Đúng ngày bắt đầu"
                   />
@@ -608,16 +692,16 @@ export const EnrollmentFilterBar: React.FC<EnrollmentFilterBarProps> = ({
                   <div className="flex items-center gap-2">
                     <input
                       type="date"
-                      value={filters.startDateFrom}
-                      onChange={(e) => setField('startDateFrom', e.target.value)}
+                      value={advancedFilters.startDateFrom}
+                      onChange={(e) => setAdvancedField('startDateFrom', e.target.value)}
                       className="h-9 w-1/2 rounded-lg border border-border bg-surface px-2 text-[11px] font-semibold text-text-primary outline-none focus:border-primary"
                       aria-label="Ngày bắt đầu từ"
                     />
                     <span className="text-text-muted">—</span>
                     <input
                       type="date"
-                      value={filters.startDateTo}
-                      onChange={(e) => setField('startDateTo', e.target.value)}
+                      value={advancedFilters.startDateTo}
+                      onChange={(e) => setAdvancedField('startDateTo', e.target.value)}
                       className="h-9 w-1/2 rounded-lg border border-border bg-surface px-2 text-[11px] font-semibold text-text-primary outline-none focus:border-primary"
                       aria-label="Ngày bắt đầu đến"
                     />
@@ -632,8 +716,8 @@ export const EnrollmentFilterBar: React.FC<EnrollmentFilterBarProps> = ({
                     Ngày kết thúc / Bảo lưu
                   </label>
                   <select
-                    value={filters.endDateOp}
-                    onChange={(e) => setField('endDateOp', e.target.value as FilterOperator)}
+                    value={advancedFilters.endDateOp}
+                    onChange={(e) => setAdvancedField('endDateOp', e.target.value as FilterOperator)}
                     className="h-6 rounded-md border border-border/80 bg-surface px-1.5 text-[10px] font-bold text-text-secondary outline-none transition focus:border-primary"
                     aria-label="Toán tử Ngày kết thúc"
                   >
@@ -642,11 +726,11 @@ export const EnrollmentFilterBar: React.FC<EnrollmentFilterBarProps> = ({
                   </select>
                 </div>
 
-                {filters.endDateOp === 'EXACT' ? (
+                {advancedFilters.endDateOp === 'EXACT' ? (
                   <input
                     type="date"
-                    value={filters.endDateExact}
-                    onChange={(e) => setField('endDateExact', e.target.value)}
+                    value={advancedFilters.endDateExact}
+                    onChange={(e) => setAdvancedField('endDateExact', e.target.value)}
                     className="h-9 w-full rounded-lg border border-border bg-surface px-2.5 text-[11px] font-semibold text-text-primary outline-none focus:border-primary"
                     aria-label="Đúng ngày kết thúc"
                   />
@@ -654,16 +738,16 @@ export const EnrollmentFilterBar: React.FC<EnrollmentFilterBarProps> = ({
                   <div className="flex items-center gap-2">
                     <input
                       type="date"
-                      value={filters.endDateFrom}
-                      onChange={(e) => setField('endDateFrom', e.target.value)}
+                      value={advancedFilters.endDateFrom}
+                      onChange={(e) => setAdvancedField('endDateFrom', e.target.value)}
                       className="h-9 w-1/2 rounded-lg border border-border bg-surface px-2 text-[11px] font-semibold text-text-primary outline-none focus:border-primary"
                       aria-label="Ngày kết thúc từ"
                     />
                     <span className="text-text-muted">—</span>
                     <input
                       type="date"
-                      value={filters.endDateTo}
-                      onChange={(e) => setField('endDateTo', e.target.value)}
+                      value={advancedFilters.endDateTo}
+                      onChange={(e) => setAdvancedField('endDateTo', e.target.value)}
                       className="h-9 w-1/2 rounded-lg border border-border bg-surface px-2 text-[11px] font-semibold text-text-primary outline-none focus:border-primary"
                       aria-label="Ngày kết thúc đến"
                     />
@@ -679,8 +763,8 @@ export const EnrollmentFilterBar: React.FC<EnrollmentFilterBarProps> = ({
                 <input
                   type="text"
                   placeholder="Nhập lịch học (vd: 246, 357, LKCD...)"
-                  value={filters.schedulePattern}
-                  onChange={(e) => setField('schedulePattern', e.target.value)}
+                  value={advancedFilters.schedulePattern}
+                  onChange={(e) => setAdvancedField('schedulePattern', e.target.value)}
                   className="h-9 w-full rounded-lg border border-border bg-surface px-2.5 text-xs text-text-primary outline-none placeholder:text-text-muted focus:border-primary"
                 />
               </div>
@@ -693,15 +777,16 @@ export const EnrollmentFilterBar: React.FC<EnrollmentFilterBarProps> = ({
                 <input
                   type="text"
                   placeholder="Nhập giờ học (vd: 20h00, 19:30...)"
-                  value={filters.startTime}
-                  onChange={(e) => setField('startTime', e.target.value)}
+                  value={advancedFilters.startTime}
+                  onChange={(e) => setAdvancedField('startTime', e.target.value)}
                   className="h-9 w-full rounded-lg border border-border bg-surface px-2.5 text-xs text-text-primary outline-none placeholder:text-text-muted focus:border-primary"
                 />
               </div>
             </div>
           </div>
         </div>
-      )}
-    </div>
+      </AdvancedFilterDrawer>
+      <ActiveFilterChips chips={activeChips} onClear={onReset} className="mt-3 border-t border-border/60 pt-3" />
+    </section>
   );
 };

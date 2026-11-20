@@ -48,6 +48,9 @@ Không được suy ra một Attendance event mới chỉ từ các số tổng 
 - `EnrollmentClass` = lịch sử Enrollment tham gia một hoặc nhiều Class.
 - Đang học chuyển lớp hoặc đi tiếp level trong cùng Enrollment → tạo record `EnrollmentClass` mới và giữ record cũ.
 - Mua gói/khóa độc lập mới → tạo `Enrollment` mới.
+- Xóa học viên trên sản phẩm là **lưu trữ mềm tại Student**, không xóa vật lý Student, Enrollment, EnrollmentClass, ClassSession, Attendance, CareLog, CareTask hoặc lịch sử nhắn tin.
+- Chỉ `ADMIN` được lưu trữ học viên. Backend bắt buộc kiểm tra role; ẩn icon trên UI chỉ là UX.
+- Student đã lưu trữ và dữ liệu liên quan không xuất hiện trong màn hình nghiệp vụ, tìm kiếm, dashboard, import match, Zalo/LINE linking hoặc automation gửi mới. Audit/historical DB data vẫn được giữ để truy vết.
 
 ## 5. Attendance identity — CHỐT
 

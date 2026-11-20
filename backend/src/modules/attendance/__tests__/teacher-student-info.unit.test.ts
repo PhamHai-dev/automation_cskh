@@ -4,9 +4,9 @@ jest.mock('../../../prisma/client', () => ({
     teacher: { findFirst: jest.fn() },
     classTeacher: { findMany: jest.fn() },
     classSession: { findFirst: jest.fn(), create: jest.fn(), findMany: jest.fn() },
-    enrollmentClass: { findMany: jest.fn(), findUnique: jest.fn() },
+    enrollmentClass: { count: jest.fn(), findMany: jest.fn(), findUnique: jest.fn() },
     attendance: { findFirst: jest.fn(), update: jest.fn(), upsert: jest.fn() },
-    student: { findUnique: jest.fn() },
+    student: { findUnique: jest.fn(), findFirst: jest.fn() },
     manageAssignment: { findMany: jest.fn() },
     auditLog: { create: jest.fn() },
     $transaction: jest.fn(),
@@ -48,13 +48,23 @@ const TEACHER = { id: 10, roles: ['TEACHER'] };
 const OTHER_TEACHER = { id: 99, roles: ['TEACHER'] };
 
 describe('TeacherStudentInfo schemas', () => {
-  it('parses TeacherStudentInfoQuerySchema with coerced numbers', () => {
+  it('parses TeacherStudentInfoQuerySchema with normalized program and coerced pagination', () => {
     const parsed = TeacherStudentInfoQuerySchema.parse({
       teacherId: '10',
       classId: '5',
       search: 'Nguyen',
+      programType: 'JNPT',
+      page: '2',
+      pageSize: '50',
     });
-    expect(parsed).toEqual({ teacherId: 10, classId: 5, search: 'Nguyen' });
+    expect(parsed).toEqual({
+      teacherId: 10,
+      classId: 5,
+      search: 'Nguyen',
+      programType: 'JLPT',
+      page: 2,
+      pageSize: 50,
+    });
   });
 
   it('parses UpdateTeacherLessonSchema and AddTeacherSessionColumnSchema', () => {
@@ -86,6 +96,7 @@ describe('ReconciliationService — Teacher Student Info (sheet Infoー情報)',
   beforeEach(() => {
     jest.clearAllMocks();
     service = new ReconciliationService();
+    mockPrisma.enrollmentClass.count.mockResolvedValue(0);
   });
 
   describe('getTeacherStudentInfo', () => {
@@ -127,6 +138,7 @@ describe('ReconciliationService — Teacher Student Info (sheet Infoー情報)',
       mockPrisma.classTeacher.findMany.mockResolvedValue([
         { class_id: 101, active: true, start_date: null, end_date: null },
       ]);
+      mockPrisma.enrollmentClass.count.mockResolvedValue(1);
       mockPrisma.enrollmentClass.findMany.mockResolvedValue([
         {
           id: 501,
@@ -240,6 +252,10 @@ describe('ReconciliationService — Teacher Student Info (sheet Infoー情報)',
 
       const res = await service.getTeacherStudentInfo(TEACHER, {});
 
+      expect(res.total).toBe(1);
+      expect(res.page).toBe(1);
+      expect(res.pageSize).toBe(25);
+      expect(res.totalPages).toBe(1);
       expect(res.maxRecordedSessions).toBe(3);
       expect(res.maxTotalSessions).toBe(5);
       expect(res.items).toHaveLength(1);
@@ -282,7 +298,6 @@ describe('ReconciliationService — Teacher Student Info (sheet Infoー情報)',
         isAttended: false,
         isUnlocked: false,
       });
-      // Session 3: Not marked yet -> locked
       expect(row.sessions[2]).toMatchObject({
         sessionIndex: 3,
         classSessionId: 1003,
@@ -290,6 +305,10 @@ describe('ReconciliationService — Teacher Student Info (sheet Infoー情報)',
         isAttended: false,
         isUnlocked: false,
       });
+      const listArgs = mockPrisma.enrollmentClass.findMany.mock.calls[0][0];
+      expect(mockPrisma.enrollmentClass.count).toHaveBeenCalledWith({ where: listArgs.where });
+      expect(listArgs.skip).toBe(0);
+      expect(listArgs.take).toBe(25);
     });
   });
 
@@ -514,7 +533,7 @@ describe('StudentsRepository — TEACHER study report access', () => {
 
   it('allows TEACHER to findById when student belongs to an accessible class', async () => {
     mockGetAccessibleClassIds.mockResolvedValue([101]);
-    mockPrisma.student.findUnique.mockResolvedValue({
+    mockPrisma.student.findFirst.mockResolvedValue({
       id: 201,
       full_name: 'Nguyễn Văn A',
       enrollments: [{ id: 301, enrollment_classes: [{ class_id: 101 }] }],
@@ -522,9 +541,9 @@ describe('StudentsRepository — TEACHER study report access', () => {
 
     const student = await repo.findById(201, TEACHER);
     expect(student?.id).toBe(201);
-    expect(mockPrisma.student.findUnique).toHaveBeenCalledWith(
+    expect(mockPrisma.student.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: 201 },
+        where: { id: 201, deleted_at: null },
         include: expect.objectContaining({
           enrollments: expect.objectContaining({
             where: {
@@ -538,7 +557,7 @@ describe('StudentsRepository — TEACHER study report access', () => {
 
   it('rejects TEACHER findById with 403 when student is not in any accessible class', async () => {
     mockGetAccessibleClassIds.mockResolvedValue([101]);
-    mockPrisma.student.findUnique.mockResolvedValue({
+    mockPrisma.student.findFirst.mockResolvedValue({
       id: 202,
       full_name: 'Trần Thị B',
       enrollments: [],

@@ -49,6 +49,7 @@ user.reset_password
 user.revoke_sessions
 
 student.view
+student.archive                -- chỉ ADMIN; soft delete/lưu trữ, không xóa dữ liệu liên quan
 enrollment.view
 enrollment.create
 enrollment.update
@@ -77,11 +78,13 @@ Quyền được cấp theo role. Nếu user có nhiều role, permission là **
 
 Có permission **không đồng nghĩa** được xem tất cả dữ liệu. Backend phải kiểm tra thêm data scope:
 
-- `ADMIN`: toàn bộ dữ liệu.
-- `MANAGE`: enrollment thuộc các CS trong `CSGroup` mà user được gán qua `ManageAssignment`.
-- `CS`: enrollment có `cs_id = currentUser.id`.
-- `TEACHER`: EnrollmentClass/Class thuộc lớp user được gán qua `ClassTeacher`.
+- `ADMIN`: toàn bộ dữ liệu; là role duy nhất được gọi API lưu trữ mềm Student.
+- `MANAGE`: enrollment thuộc chính mình hoặc các CS trong `CSGroup` được gán qua `ManageAssignment`; chỉ thấy lớp có ít nhất một enrollment thuộc phạm vi này.
+- `CS`: enrollment có `cs_id = currentUser.id` hoặc có grant trong `cs_viewers`; chỉ thấy lớp có ít nhất một enrollment thuộc phạm vi này.
+- `TEACHER`: EnrollmentClass/Class thuộc lớp user được gán qua `ClassTeacher` hoặc buổi dạy trong `ClassSession`.
+- Tổng số, facets và filter options phải dùng cùng data scope với danh sách; search/filter chỉ được thu hẹp scope.
 - User có nhiều role: scope được hợp theo các role hợp lệ cho endpoint; `ADMIN` luôn là full scope.
+- Student có `deleted_at` khác null bị loại khỏi product data scope của mọi role và không được dùng để cấp quyền nhìn thấy lớp; dữ liệu lịch sử chỉ còn trong DB/audit, không được tiếp tục xử lý nghiệp vụ.
 
 > Ví dụ: `MANAGE + TEACHER` có thể xem dữ liệu team CS mình quản lý **hoặc** lớp mình dạy, tùy endpoint; không được tự động thấy dữ liệu toàn công ty.
 

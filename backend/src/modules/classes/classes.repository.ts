@@ -122,10 +122,12 @@ export class ClassesRepository {
             enrollment_classes: {
               some: {
                 enrollment: {
+                  student: { deleted_at: null },
                   OR: [
                     { external_id: { contains: q } },
                     {
                       student: {
+                        deleted_at: null,
                         OR: [
                           { full_name: { contains: q } },
                           { external_id: { contains: q } },
@@ -237,7 +239,7 @@ export class ClassesRepository {
             },
           ],
         });
-      } else if (cat === 'JNPT' || cat === 'JLPT') {
+      } else if (cat === 'JLPT') {
         andClauses.push({
           OR: [
             { level: { contains: 'jlpt' } },
@@ -610,6 +612,7 @@ export class ClassesRepository {
           orderBy: [{ session_date: 'asc' }, { session_number: 'asc' }],
         },
         enrollment_classes: {
+          where: { enrollment: { student: { deleted_at: null } } },
           include: {
             enrollment: {
               include: {
@@ -663,7 +666,10 @@ export class ClassesRepository {
     if (isPaginated && typeof (prisma.enrollmentClass as any)?.count === 'function') {
       try {
         const countedStudents = await prisma.enrollmentClass.count({
-          where: where ? { class: where } : undefined,
+          where: {
+            ...(where ? { class: where } : {}),
+            enrollment: { student: { deleted_at: null } },
+          },
         });
         if (typeof countedStudents === 'number') totalStudentsCount = countedStudents;
       } catch {
@@ -721,6 +727,7 @@ export class ClassesRepository {
               },
             },
             enrollment_classes: {
+              where: { enrollment: { student: { deleted_at: null } } },
               select: {
                 enrollment: {
                   select: {
@@ -849,6 +856,7 @@ export class ClassesRepository {
           orderBy: [{ session_date: 'asc' }, { session_number: 'asc' }],
         },
         enrollment_classes: {
+          where: { enrollment: { student: { deleted_at: null } } },
           include: {
             enrollment: {
               include: {

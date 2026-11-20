@@ -12,7 +12,10 @@ export class CareRepository {
 
   async findCareLogsByEnrollmentId(enrollment_id: number) {
     return this.db.careLog.findMany({
-      where: { enrollment_id },
+      where: {
+        enrollment_id,
+        enrollment: { student: { deleted_at: null } },
+      },
       orderBy: [
         { after_session_number: 'desc' },
         { created_at: 'desc' },
@@ -53,8 +56,8 @@ export class CareRepository {
   // --- CareTask Methods ---
 
   async findCareTaskById(id: number) {
-    return this.db.careTask.findUnique({
-      where: { id },
+    return this.db.careTask.findFirst({
+      where: { id, enrollment: { student: { deleted_at: null } } },
       include: {
         enrollment: {
           include: {
@@ -69,48 +72,111 @@ export class CareRepository {
     });
   }
 
-  async findCareTasks(filter: {
+  private buildCareTaskWhere(filter: {
     enrollmentIds?: number[];
     assignedToIds?: number[];
+    search?: string;
+    programType?: 'KAIWA' | 'JLPT';
     status?: CareTaskStatus;
     priority?: CareTaskPriority;
     type?: CareTaskType;
     dueBefore?: Date;
     dueAfter?: Date;
+    createdBefore?: Date;
+    createdAfter?: Date;
+  }): Prisma.CareTaskWhereInput {
+    const and: Prisma.CareTaskWhereInput[] = [
+      { enrollment: { student: { deleted_at: null } } },
+    ];
+
+    if (filter.enrollmentIds) {
+      and.push({ enrollment_id: { in: filter.enrollmentIds } });
+    }
+    if (filter.assignedToIds) {
+      and.push({ assigned_to_id: { in: filter.assignedToIds } });
+    }
+    if (filter.search) {
+      and.push({
+        OR: [
+          { title: { contains: filter.search } },
+          { note: { contains: filter.search } },
+          { assigned_to: { name: { contains: filter.search } } },
+          { assigned_to: { email: { contains: filter.search } } },
+          { enrollment: { student: { full_name: { contains: filter.search } } } },
+          { enrollment: { student: { external_id: { contains: filter.search } } } },
+          { enrollment: { student: { phone: { contains: filter.search } } } },
+          { enrollment: { student: { email: { contains: filter.search } } } },
+          { enrollment: { package: { name: { contains: filter.search } } } },
+          { enrollment: { package: { code: { contains: filter.search } } } },
+          {
+            enrollment: {
+              enrollment_classes: {
+                some: {
+                  class: {
+                    OR: [
+                      { class_name: { contains: filter.search } },
+                      { class_code: { contains: filter.search } },
+                    ],
+                  },
+                },
+              },
+            },
+          },
+        ],
+      });
+    }
+    if (filter.programType) {
+      and.push({ enrollment: { program_type: filter.programType } });
+    }
+    if (filter.status) and.push({ status: filter.status });
+    if (filter.priority) and.push({ priority: filter.priority });
+    if (filter.type) and.push({ type: filter.type });
+    if (filter.dueBefore || filter.dueAfter) {
+      and.push({
+        due_at: {
+          ...(filter.dueBefore ? { lte: filter.dueBefore } : {}),
+          ...(filter.dueAfter ? { gte: filter.dueAfter } : {}),
+        },
+      });
+    }
+    if (filter.createdBefore || filter.createdAfter) {
+      and.push({
+        created_at: {
+          ...(filter.createdBefore ? { lte: filter.createdBefore } : {}),
+          ...(filter.createdAfter ? { gte: filter.createdAfter } : {}),
+        },
+      });
+    }
+
+    return { AND: and };
+  }
+
+  async findCareTasks(filter: {
+    enrollmentIds?: number[];
+    assignedToIds?: number[];
+    search?: string;
+    programType?: 'KAIWA' | 'JLPT';
+    status?: CareTaskStatus;
+    priority?: CareTaskPriority;
+    type?: CareTaskType;
+    dueBefore?: Date;
+    dueAfter?: Date;
+    createdBefore?: Date;
+    createdAfter?: Date;
     limit?: number;
     offset?: number;
   }) {
-    const where: any = {};
-
-    if (filter.enrollmentIds && filter.enrollmentIds.length > 0) {
-      where.enrollment_id = { in: filter.enrollmentIds };
-    }
-    if (filter.assignedToIds && filter.assignedToIds.length > 0) {
-      where.assigned_to_id = { in: filter.assignedToIds };
-    }
-    if (filter.status) {
-      where.status = filter.status;
-    }
-    if (filter.priority) {
-      where.priority = filter.priority;
-    }
-    if (filter.type) {
-      where.type = filter.type;
-    }
-    if (filter.dueBefore || filter.dueAfter) {
-      where.due_at = {};
-      if (filter.dueBefore) where.due_at.lte = filter.dueBefore;
-      if (filter.dueAfter) where.due_at.gte = filter.dueAfter;
-    }
+    const where = this.buildCareTaskWhere(filter);
 
     return this.db.careTask.findMany({
       where,
-      take: filter.limit || 20,
+      take: filter.limit || 25,
       skip: filter.offset || 0,
       orderBy: [
         { priority: 'desc' },
         { due_at: 'asc' },
         { created_at: 'desc' },
+        { id: 'asc' },
       ],
       include: {
         enrollment: {
@@ -129,36 +195,17 @@ export class CareRepository {
   async countCareTasks(filter: {
     enrollmentIds?: number[];
     assignedToIds?: number[];
+    search?: string;
+    programType?: 'KAIWA' | 'JLPT';
     status?: CareTaskStatus;
     priority?: CareTaskPriority;
     type?: CareTaskType;
     dueBefore?: Date;
     dueAfter?: Date;
+    createdBefore?: Date;
+    createdAfter?: Date;
   }): Promise<number> {
-    const where: any = {};
-
-    if (filter.enrollmentIds && filter.enrollmentIds.length > 0) {
-      where.enrollment_id = { in: filter.enrollmentIds };
-    }
-    if (filter.assignedToIds && filter.assignedToIds.length > 0) {
-      where.assigned_to_id = { in: filter.assignedToIds };
-    }
-    if (filter.status) {
-      where.status = filter.status;
-    }
-    if (filter.priority) {
-      where.priority = filter.priority;
-    }
-    if (filter.type) {
-      where.type = filter.type;
-    }
-    if (filter.dueBefore || filter.dueAfter) {
-      where.due_at = {};
-      if (filter.dueBefore) where.due_at.lte = filter.dueBefore;
-      if (filter.dueAfter) where.due_at.gte = filter.dueAfter;
-    }
-
-    return this.db.careTask.count({ where });
+    return this.db.careTask.count({ where: this.buildCareTaskWhere(filter) });
   }
 
   async createCareTask(data: {
@@ -247,8 +294,8 @@ export class CareRepository {
   }
 
   async findEnrollmentById(id: number) {
-    return this.db.enrollment.findUnique({
-      where: { id },
+    return this.db.enrollment.findFirst({
+      where: { id, student: { deleted_at: null } },
       include: {
         cs: true,
         cs_viewers: true,

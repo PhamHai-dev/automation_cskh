@@ -452,7 +452,7 @@ export async function syncAndMatchCareGroups(
     });
   }
 
-  const studentWhere: any = {};
+  const studentWhere: any = { deleted_at: null };
   if (options?.studentIds && options.studentIds.length > 0) {
     studentWhere.id = { in: options.studentIds };
   }

@@ -106,8 +106,8 @@ export class ImportsRepository {
 
   // Lookup helpers for validation & import
   async findStudentByExternalId(external_id: string) {
-    return this.db.student.findUnique({
-      where: { external_id },
+    return this.db.student.findFirst({
+      where: { external_id, deleted_at: null },
       include: {
         enrollments: {
           include: {
@@ -132,6 +132,7 @@ export class ImportsRepository {
 
     return this.db.student.findFirst({
       where: {
+        deleted_at: null,
         OR: conditions,
       },
       include: {
@@ -150,6 +151,7 @@ export class ImportsRepository {
     if (!phone && !email) return null;
     return this.db.student.findFirst({
       where: {
+        deleted_at: null,
         OR: [
           ...(phone ? [{ phone }] : []),
           ...(email ? [{ email }] : []),
@@ -181,6 +183,9 @@ export class ImportsRepository {
       const existing = await this.db.student.findUnique({
         where: { external_id: data.external_id },
       });
+      if (existing?.deleted_at) {
+        throw new Error(`Học viên [${data.external_id}] đã được lưu trữ, không thể nhập hoặc cập nhật`);
+      }
       if (existing) {
         return this.db.student.update({
           where: { id: existing.id },
@@ -608,7 +613,10 @@ export class ImportsRepository {
     const hasScope = Object.keys(enrollmentScope).length > 0;
 
     return this.db.student.findMany({
-      where: hasScope ? { enrollments: { some: enrollmentScope } } : undefined,
+      where: {
+        deleted_at: null,
+        ...(hasScope ? { enrollments: { some: enrollmentScope } } : {}),
+      },
       include: {
         enrollments: {
           where: hasScope ? enrollmentScope : undefined,
@@ -628,8 +636,13 @@ export class ImportsRepository {
   async getAllAttendances(filter?: { classIds?: number[]; cs_id?: number }) {
     return this.db.attendance.findMany({
       where: {
-        ...(filter?.classIds ? { enrollment_class: { class_id: { in: filter.classIds } } } : {}),
-        ...(filter?.cs_id ? { enrollment_class: { enrollment: { cs_id: filter.cs_id } } } : {}),
+        enrollment_class: {
+          enrollment: {
+            student: { deleted_at: null },
+            ...(filter?.cs_id ? { cs_id: filter.cs_id } : {}),
+          },
+          ...(filter?.classIds ? { class_id: { in: filter.classIds } } : {}),
+        },
       },
       include: {
         enrollment_class: {

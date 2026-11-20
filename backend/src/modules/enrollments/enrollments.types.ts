@@ -68,7 +68,7 @@ export interface EnrollmentListFilters {
   sale?: string;
   status?: string;
   packageName?: string;
-  courseCategory?: 'KAIWA' | 'JNPT' | string;
+  courseCategory?: 'KAIWA' | 'JLPT' | string;
   courseLevel?: string;
   teacherName?: string;
   teacherCode?: string;

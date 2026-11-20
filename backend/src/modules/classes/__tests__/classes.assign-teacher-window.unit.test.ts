@@ -241,3 +241,31 @@ describe('ClassesService & ClassesController endTeacherAssignment (D8 "Káº¿t thÃ
   });
 });
 
+describe('ClassesController list course_category normalization', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it.each(['JLPT', 'JNPT'])('normalizes %s input to canonical JLPT before service filtering', async (courseCategory) => {
+    const listSpy = jest
+      .spyOn(ClassesService.prototype, 'getClassesWithMeta')
+      .mockResolvedValue({
+        data: [],
+        meta: { page: 1, pageSize: 25, total: 0, totalPages: 0 },
+      });
+    const req: any = {
+      query: { course_category: courseCategory, page: '1', pageSize: '25' },
+      user: { id: 1, roles: ['ADMIN'] },
+    };
+    const res: any = { json: jest.fn() };
+    const next = jest.fn();
+
+    await new ClassesController().list(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(listSpy).toHaveBeenCalledWith(
+      req.user,
+      expect.objectContaining({ courseCategory: 'JLPT' }),
+    );
+  });
+});

@@ -469,7 +469,7 @@ export class BroadcastService {
     // 1. Resolve Student Targets
     if (studentIds.length > 0) {
       const students = await prisma.student.findMany({
-        where: { id: { in: studentIds } },
+        where: { id: { in: studentIds }, deleted_at: null },
         include: {
           enrollments: {
             orderBy: { updated_at: 'desc' },
@@ -954,6 +954,26 @@ export class BroadcastService {
           break;
         }
 
+        if (recipient.student_id) {
+          const activeStudent = await prisma.student.findFirst({
+            where: { id: recipient.student_id, deleted_at: null },
+            select: { id: true },
+          });
+          if (!activeStudent) {
+            await prisma.broadcastRecipient.updateMany({
+              where: {
+                id: recipient.id,
+                status: { in: ['SCHEDULED', 'QUEUED'] },
+              },
+              data: {
+                status: 'CANCELLED',
+                error_message: 'Học viên đã được lưu trữ',
+              },
+            });
+            continue;
+          }
+        }
+
         const accountKey = `${recipient.platform}:${recipient.zalo_account_id ?? recipient.line_account_id ?? 0}`;
         if (lastSendByAccount.has(accountKey) && process.env.NODE_ENV !== 'test') {
           const jitterMs = 600 + Math.floor(Math.random() * 600);
@@ -1357,7 +1377,10 @@ export class BroadcastService {
 
     const [students, zaloGroups, lineGroups, zaloAccounts, lineAccounts] = await Promise.all([
       prisma.student.findMany({
-        where: !isAdmin && userId ? { enrollments: { some: { cs_id: userId } } } : {},
+        where: {
+          deleted_at: null,
+          ...(!isAdmin && userId ? { enrollments: { some: { cs_id: userId } } } : {}),
+        },
         include: {
           enrollments: {
             orderBy: { updated_at: 'desc' },

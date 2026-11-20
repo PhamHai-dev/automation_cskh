@@ -137,6 +137,7 @@ router.get('/students/unlinked', async (req: Request, res: Response) => {
 
     // Students that have NO active FRIEND zalo_contact_relations on the current user's Zalo accounts
     const where: any = {
+      deleted_at: null,
       enrollments: {
         some: csWhere,
       },
@@ -214,16 +215,17 @@ router.get('/:accountId/students-linked', async (req: Request, res: Response) =>
       where: {
         zalo_account_id: accountId,
         relation_status: 'FRIEND',
-        ...(q
-          ? {
-              student: {
+        student: {
+          deleted_at: null,
+          ...(q
+            ? {
                 OR: [
                   { full_name: { contains: q } },
                   { phone: { contains: q } },
                 ],
-              },
-            }
-          : {}),
+              }
+            : {}),
+        },
       },
       include: {
         zalo_account: {
@@ -350,7 +352,11 @@ router.get('/students/:id/links', async (req: Request, res: Response) => {
     // CS: verify học viên thuộc mình
     if (role === 'CS') {
       const enrollment = await prisma.enrollment.findFirst({
-        where: { student_id: studentId, cs_id: userId },
+        where: {
+          student_id: studentId,
+          cs_id: userId,
+          student: { deleted_at: null },
+        },
         select: { id: true },
       });
       if (!enrollment) {
@@ -361,6 +367,7 @@ router.get('/students/:id/links', async (req: Request, res: Response) => {
     const relations = await prisma.zaloContactRelation.findMany({
       where: {
         student_id: studentId,
+        student: { deleted_at: null },
         zalo_account: { cs_id: userId },
       },
       include: {
@@ -449,6 +456,17 @@ router.post('/links', async (req: Request, res: Response) => {
       });
     }
 
+    const activeStudent = await prisma.student.findFirst({
+      where: { id: dto.student_id, deleted_at: null },
+      select: { id: true },
+    });
+    if (!activeStudent) {
+      return res.status(404).json({
+        success: false,
+        message: 'Học viên không tồn tại hoặc đã được lưu trữ',
+      });
+    }
+
     // Q-003 scope:
     // - CS: nick phải là của mình + học viên phải thuộc mình
     // - ADMIN/MANAGE: bất kỳ
@@ -463,7 +481,11 @@ router.post('/links', async (req: Request, res: Response) => {
     }
     if (role === 'CS') {
       const enrollment = await prisma.enrollment.findFirst({
-        where: { student_id: dto.student_id, cs_id: userId },
+        where: {
+          student_id: dto.student_id,
+          cs_id: userId,
+          student: { deleted_at: null },
+        },
         select: { id: true },
       });
       if (!enrollment) {
@@ -520,8 +542,8 @@ router.post('/links', async (req: Request, res: Response) => {
     // ─── Populate avatar + display_name from Friend table (best-effort, USER links only) ────
     if (!isGroupLink) {
       try {
-        const student = await prisma.student.findUnique({
-          where: { id: dto.student_id },
+        const student = await prisma.student.findFirst({
+          where: { id: dto.student_id, deleted_at: null },
           select: { phone: true },
         });
         if (student?.phone) {
@@ -737,8 +759,8 @@ router.patch('/links/:id', async (req: Request, res: Response) => {
     // ─── Populate avatar from Friend table for the new target (USER links only) ──────────
     if (!resolvedGroup && updated.target_type !== 'GROUP') {
       try {
-        const student = await prisma.student.findUnique({
-          where: { id: updated.student_id },
+        const student = await prisma.student.findFirst({
+          where: { id: updated.student_id, deleted_at: null },
           select: { phone: true },
         });
         if (student?.phone) {
@@ -797,13 +819,17 @@ router.post('/auto-suggest-links', async (req: Request, res: Response) => {
     const effectiveCsId = isAdmin ? dto.cs_id ?? undefined : userId;
 
     // Students owned by effective CS (or all for admin)
-    const studentWhere: any = effectiveCsId
-      ? { enrollments: { some: { cs_id: effectiveCsId } } }
-      : {};
+    const studentWhere: any = {
+      deleted_at: null,
+      ...(effectiveCsId
+        ? { enrollments: { some: { cs_id: effectiveCsId } } }
+        : {}),
+    };
 
     const students = await prisma.student.findMany({
       where: {
         ...studentWhere,
+        deleted_at: null,
         phone: { not: null },
       },
       select: { id: true, full_name: true, phone: true },

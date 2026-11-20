@@ -129,7 +129,10 @@ export class AutomationRepository {
     return prisma.automationEnrollment.findMany({
       where: {
         workflow_id: workflowId,
-        ...(csId !== undefined ? { enrollment: { cs_id: csId } } : {}),
+        enrollment: {
+          student: { deleted_at: null },
+          ...(csId !== undefined ? { cs_id: csId } : {}),
+        },
       },
       include: {
         enrollment: {
@@ -178,12 +181,13 @@ export class AutomationRepository {
     const enrolledIds = enrolledRows.map((e) => e.enrollment_id);
 
     const where: any = {
+      student: { deleted_at: null },
       ...(enrolledIds.length ? { id: { notIn: enrolledIds } } : {}),
       ...(q ? {
         OR: [
-          { student: { full_name: { contains: q } } },
-          { student: { phone: { contains: q } } },
-          { student: { email: { contains: q } } },
+          { student: { deleted_at: null, full_name: { contains: q } } },
+          { student: { deleted_at: null, phone: { contains: q } } },
+          { student: { deleted_at: null, email: { contains: q } } },
         ],
       } : {}),
       ...(options?.csId ? { cs_id: options.csId } : {}),
@@ -250,7 +254,12 @@ export class AutomationRepository {
         trigger_event: triggerEvent,
         workflow: {
           active: true,
-          enrollments: { some: { enrollment_id: enrollmentId } },
+          enrollments: {
+            some: {
+              enrollment_id: enrollmentId,
+              enrollment: { student: { deleted_at: null } },
+            },
+          },
         },
       },
       include: {
@@ -279,7 +288,12 @@ export class AutomationRepository {
         trigger_event: triggerEvent,
         workflow: {
           active: true,
-          enrollments: { some: { enrollment_id: enrollmentId } },
+          enrollments: {
+            some: {
+              enrollment_id: enrollmentId,
+              enrollment: { student: { deleted_at: null } },
+            },
+          },
         },
       },
       include: {
@@ -380,7 +394,10 @@ export class AutomationRepository {
     }
     const rows = await client.attendance.findMany({
       where: {
-        enrollment_class: { enrollment_id: enrollmentId },
+        enrollment_class: {
+          enrollment_id: enrollmentId,
+          enrollment: { student: { deleted_at: null } },
+        },
         status: 'ATTENDED',
         reconciliation_state: { in: ['MATCHED', 'RESOLVED'] },
         deleted_at: null,
@@ -512,7 +529,10 @@ export class AutomationRepository {
 
   async findPendingDeliveries() {
     return prisma.messageDelivery.findMany({
-      where: { status: { in: ['SCHEDULED', 'QUEUED'] } },
+      where: {
+        status: { in: ['SCHEDULED', 'QUEUED'] },
+        enrollment: { student: { deleted_at: null } },
+      },
       include: {
         enrollment: {
           include: {
@@ -566,9 +586,12 @@ export class AutomationRepository {
     const limit = options?.limit ?? 20;
     const where: Prisma.MessageDeliveryWhereInput = {
       automation_step: { workflow_id: workflowId },
+      enrollment: {
+        student: { deleted_at: null },
+        ...(options?.csId !== undefined ? { cs_id: options.csId } : {}),
+      },
       ...(options?.status ? { status: options.status as any } : {}),
       ...(options?.enrollmentId ? { enrollment_id: options.enrollmentId } : {}),
-      ...(options?.csId !== undefined ? { enrollment: { cs_id: options.csId } } : {}),
     };
 
     const [items, total] = await Promise.all([

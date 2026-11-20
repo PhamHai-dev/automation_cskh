@@ -241,6 +241,10 @@ export interface TeacherStudentInfoRow {
 
 export interface TeacherStudentInfoResponse {
   items: TeacherStudentInfoRow[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
   maxRecordedSessions: number;
   maxTotalSessions: number;
 }

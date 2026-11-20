@@ -1,6 +1,46 @@
 import { Request, Response, NextFunction } from 'express';
 import { CareService } from './care.service';
 import { CareTaskFilterParams, AttendanceNotificationFilterParams } from './care.types';
+import { CareTaskPriority, CareTaskStatus, CareTaskType } from '@prisma/client';
+import { AppError } from '../../middlewares/error.middleware';
+import {
+  parseIsoDateParam,
+  parseOptionalIntParam,
+  parsePaginationQuery,
+  parseSearchQuery,
+} from '../../shared/utils/query-validation';
+
+function parseCareTaskEnum<T extends string>(
+  raw: unknown,
+  paramName: string,
+  allowed: readonly T[],
+): T | undefined {
+  if (raw === undefined || raw === null || raw === '') return undefined;
+  const normalized = String(raw).trim().toUpperCase();
+  if (!allowed.includes(normalized as T)) {
+    throw new AppError(400, `Tham số ${paramName} không thuộc danh sách giá trị được hỗ trợ`);
+  }
+  return normalized as T;
+}
+
+function parsePositiveCareTaskId(raw: unknown, paramName: string): number | undefined {
+  const value = parseOptionalIntParam(raw, paramName);
+  if (value !== undefined && value <= 0) {
+    throw new AppError(400, `Tham số ${paramName} phải là số nguyên dương`);
+  }
+  return value;
+}
+
+function assertCareTaskDateRange(
+  from: string | undefined,
+  to: string | undefined,
+  fromParam: string,
+  toParam: string,
+): void {
+  if (from && to && from > to) {
+    throw new AppError(400, `Tham số ${fromParam} không được lớn hơn ${toParam}`);
+  }
+}
 
 export class CareController {
   private service: CareService;
@@ -38,19 +78,52 @@ export class CareController {
   getCareTasks = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const user = (req as any).user;
+      const pagination = parsePaginationQuery(req.query as Record<string, any>, 25);
+      const rawProgram = parseCareTaskEnum(
+        req.query.program_type,
+        'program_type',
+        ['KAIWA', 'JLPT', 'JNPT'] as const,
+      );
+      const dueFrom = parseIsoDateParam(req.query.due_from, 'due_from')?.dateStr;
+      const dueTo = parseIsoDateParam(req.query.due_to, 'due_to')?.dateStr;
+      const createdFrom = parseIsoDateParam(req.query.created_from, 'created_from')?.dateStr;
+      const createdTo = parseIsoDateParam(req.query.created_to, 'created_to')?.dateStr;
+      assertCareTaskDateRange(dueFrom, dueTo, 'due_from', 'due_to');
+      assertCareTaskDateRange(createdFrom, createdTo, 'created_from', 'created_to');
+
       const filter: CareTaskFilterParams = {
-        status: req.query.status as any,
-        priority: req.query.priority as any,
-        type: req.query.type as any,
-        assigned_to_id: req.query.assigned_to_id ? parseInt(req.query.assigned_to_id as string, 10) : undefined,
-        enrollment_id: req.query.enrollment_id ? parseInt(req.query.enrollment_id as string, 10) : undefined,
-        due_filter: req.query.due_filter as any,
-        limit: req.query.limit ? parseInt(req.query.limit as string, 10) : 20,
-        offset: req.query.offset ? parseInt(req.query.offset as string, 10) : 0,
+        search: parseSearchQuery(req.query.search, 100),
+        program_type: rawProgram === 'JNPT' ? 'JLPT' : rawProgram,
+        status: parseCareTaskEnum(req.query.status, 'status', Object.values(CareTaskStatus)),
+        priority: parseCareTaskEnum(req.query.priority, 'priority', Object.values(CareTaskPriority)),
+        type: parseCareTaskEnum(req.query.type, 'type', Object.values(CareTaskType)),
+        assigned_to_id: parsePositiveCareTaskId(req.query.assigned_to_id, 'assigned_to_id'),
+        enrollment_id: parsePositiveCareTaskId(req.query.enrollment_id, 'enrollment_id'),
+        due_filter: parseCareTaskEnum(
+          req.query.due_filter,
+          'due_filter',
+          ['OVERDUE', 'TODAY', 'THIS_WEEK', 'ALL'] as const,
+        )?.toLowerCase() as CareTaskFilterParams['due_filter'],
+        due_from: dueFrom,
+        due_to: dueTo,
+        created_from: createdFrom,
+        created_to: createdTo,
+        page: pagination.page,
+        pageSize: pagination.pageSize,
+        limit: pagination.pageSize,
+        offset: pagination.isPaginated ? pagination.skip : 0,
       };
 
       const result = await this.service.getCareTasks(filter, user.id, user.roles);
-      res.status(200).json({ data: result.items, meta: { total: result.total } });
+      res.status(200).json({
+        data: result.items,
+        meta: {
+          total: result.total,
+          page: result.page,
+          pageSize: result.pageSize,
+          totalPages: result.totalPages,
+        },
+      });
     } catch (err) {
       next(err);
     }

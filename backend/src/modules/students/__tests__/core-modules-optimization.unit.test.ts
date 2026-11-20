@@ -1,9 +1,9 @@
 jest.mock('../../../prisma/client', () => ({
   prisma: {
     manageAssignment: { findMany: jest.fn() },
-    student: { findMany: jest.fn(), findUnique: jest.fn() },
+    student: { findMany: jest.fn(), findUnique: jest.fn(), findFirst: jest.fn() },
     enrollment: { findMany: jest.fn(), findUnique: jest.fn() },
-    enrollmentClass: { count: jest.fn() },
+    enrollmentClass: { findMany: jest.fn(), count: jest.fn() },
     class: { findMany: jest.fn(), findUnique: jest.fn(), count: jest.fn(), findFirst: jest.fn(), update: jest.fn() },
     teacher: { findMany: jest.fn(), findUnique: jest.fn(), findFirst: jest.fn(), count: jest.fn() },
     package: { findMany: jest.fn(), count: jest.fn() },
@@ -57,7 +57,7 @@ describe('Query Validation & Security/Pagination across 5 modules', () => {
 
     it('StudentsRepository.findAll and findById never use user: true and omit heavy relations in findAll', async () => {
       mockPrisma.student.findMany.mockResolvedValue([]);
-      mockPrisma.student.findUnique.mockResolvedValue({
+      mockPrisma.student.findFirst.mockResolvedValue({
         id: 1,
         enrollments: [{ id: 10, cs_id: 5 }],
       });
@@ -92,7 +92,8 @@ describe('Query Validation & Security/Pagination across 5 modules', () => {
 
       // Verify teacher -> user select in findById
       await repo.findById(1, { id: 1, roles: ['ADMIN'] });
-      const findByIdArgs = mockPrisma.student.findUnique.mock.calls[0][0];
+      const findByIdArgs = mockPrisma.student.findFirst.mock.calls[0][0];
+      expect(findByIdArgs.where).toEqual({ id: 1, deleted_at: null });
       const findByIdUserInclude =
         findByIdArgs.include.enrollments.include.enrollment_classes.include.class.include.class_teachers.include.teacher.include.user;
       expect(findByIdUserInclude).toEqual({ select: EXPECTED_SAFE_USER_SELECT });
@@ -213,7 +214,10 @@ describe('Query Validation & Security/Pagination across 5 modules', () => {
       expect(callArgs.take).toBe(20);
       expect(callArgs.orderBy).toEqual([{ id: 'asc' }]);
 
-      const enrSome = callArgs.where.AND[0].enrollments.some;
+      const scopedEnrollmentClause = callArgs.where.AND.find(
+        (clause: any) => clause.enrollments?.some,
+      );
+      const enrSome = scopedEnrollmentClause.enrollments.some;
       expect(enrSome.AND).toEqual(
         expect.arrayContaining([
           {
@@ -262,15 +266,20 @@ describe('Query Validation & Security/Pagination across 5 modules', () => {
       expect(mockPrisma.student.findMany).toHaveBeenLastCalledWith(
         expect.objectContaining({
           where: {
-            enrollments: {
-              some: {
-                OR: [
-                  { cs_id: { in: [10] } },
-                  { cs_viewers: { some: { cs_id: { in: [10] } } } },
-                ],
-                program_type: 'JLPT',
+            AND: [
+              { deleted_at: null },
+              {
+                enrollments: {
+                  some: {
+                    OR: [
+                      { cs_id: { in: [10] } },
+                      { cs_viewers: { some: { cs_id: { in: [10] } } } },
+                    ],
+                    program_type: 'JLPT',
+                  },
+                },
               },
-            },
+            ],
           },
         }),
       );
@@ -284,7 +293,10 @@ describe('Query Validation & Security/Pagination across 5 modules', () => {
         cvht: 'CODE:CVHT02',
       });
       const advCall = mockPrisma.student.findMany.mock.calls[1][0];
-      expect(advCall.where.enrollments.some.AND).toEqual(
+      const advEnrollmentClause = advCall.where.AND.find(
+        (clause: any) => clause.enrollments?.some,
+      );
+      expect(advEnrollmentClause.enrollments.some.AND).toEqual(
         expect.arrayContaining([
           {
             status: { in: ['WAITING_CLASS', 'NOT_STARTED'] },
@@ -308,6 +320,67 @@ describe('Query Validation & Security/Pagination across 5 modules', () => {
               ],
             },
           },
+        ]),
+      );
+    });
+
+    it('applies business-field filters within CS scope before pagination', async () => {
+      mockPrisma.student.findMany.mockResolvedValue([]);
+      const repo = new StudentsRepository();
+
+      await repo.findAll({
+        actor: { id: 10, roles: ['CS'] },
+        isPaginated: true,
+        page: 2,
+        pageSize: 25,
+        packageName: 'Kaiwa Premium',
+        courseCode: 'JLPT-N3',
+        teacherName: 'Sato',
+        teacherCode: 'GV01',
+        className: 'Kaiwa tối',
+        classCode: 'L001',
+        schedulePattern: '246',
+        startTime: '20:00',
+        startDateOp: 'RANGE',
+        startDateFrom: '2026-01-01',
+        startDateTo: '2026-12-31',
+        totalSessionsOp: 'RANGE',
+        totalSessionsMin: 20,
+        totalSessionsMax: 60,
+        remainingSessionsOp: 'EXACT',
+        remainingSessionsExact: 5,
+        hasClass: true,
+        hasTeacher: true,
+        birthYearMin: 1990,
+        birthYearMax: 2010,
+        occupation: 'Sinh viên',
+      });
+
+      const call = mockPrisma.student.findMany.mock.calls[0][0];
+      expect(call.skip).toBe(25);
+      expect(call.take).toBe(25);
+      expect(call.where.AND).toEqual(
+        expect.arrayContaining([
+          { deleted_at: null },
+          { birth_year: { gte: 1990, lte: 2010 } },
+          { occupation: { contains: 'Sinh viên' } },
+        ]),
+      );
+      const enrollmentClause = call.where.AND.find((clause: any) => clause.enrollments?.some);
+      expect(enrollmentClause.enrollments.some.AND).toEqual(
+        expect.arrayContaining([
+          {
+            OR: [
+              { cs_id: { in: [10] } },
+              { cs_viewers: { some: { cs_id: { in: [10] } } } },
+            ],
+          },
+          { package: { OR: [{ name: { contains: 'Kaiwa Premium' } }, { code: { contains: 'Kaiwa Premium' } }] } },
+          { course_code: { contains: 'JLPT-N3' } },
+          { start_date: { gte: new Date('2026-01-01T00:00:00.000Z'), lte: new Date('2026-12-31T00:00:00.000Z') } },
+          { total_sessions: { gte: 20, lte: 60 } },
+          { external_remaining_sessions: 5 },
+          { enrollment_classes: { some: {} } },
         ]),
       );
     });
@@ -382,9 +455,14 @@ describe('Query Validation & Security/Pagination across 5 modules', () => {
 
       const findManyCall = mockPrisma.enrollment.findMany.mock.calls[0][0];
       expect(findManyCall.where).toEqual({
-        OR: [
-          { cs_id: 10 },
-          { cs_viewers: { some: { cs_id: 10 } } },
+        AND: [
+          { student: { deleted_at: null } },
+          {
+            OR: [
+              { cs_id: 10 },
+              { cs_viewers: { some: { cs_id: 10 } } },
+            ],
+          },
         ],
       });
       const classSessionsInclude =
@@ -513,7 +591,7 @@ describe('Query Validation & Security/Pagination across 5 modules', () => {
         programType: 'JLPT',
         status: 'STUDYING',
         packageName: 'Gói N3',
-        courseCategory: 'JNPT',
+        courseCategory: 'JLPT',
         courseLevel: 'N3',
         teacherName: 'Tanaka',
         teacherCode: 'GV_TNK',
@@ -543,8 +621,35 @@ describe('Query Validation & Security/Pagination across 5 modules', () => {
           { class_schedules: { some: { start_time: { contains: '19:30' } } } },
         ]),
       );
+      expect(classWhere.AND).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            OR: expect.arrayContaining([
+              expect.objectContaining({
+                enrollment_classes: expect.objectContaining({ some: expect.any(Object) }),
+              }),
+            ]),
+          }),
+        ]),
+      );
 
       const enrRepo = new EnrollmentsRepository();
+      const enrWhereCourse = enrRepo.buildWhereClause(10, undefined, {
+        courseCategory: 'JLPT',
+        courseLevel: 'N3',
+      });
+      expect(enrWhereCourse.AND).toEqual(
+        expect.arrayContaining([
+          { OR: [{ cs_id: 10 }, { cs_viewers: { some: { cs_id: 10 } } }] },
+          expect.objectContaining({
+            OR: expect.arrayContaining([{ program_type: 'JLPT' }]),
+          }),
+          expect.objectContaining({
+            OR: expect.arrayContaining([{ level: { contains: 'N3' } }]),
+          }),
+        ]),
+      );
+
       const enrWhereStudying = enrRepo.buildWhereClause(10, undefined, {
         status: 'STUDYING',
         search: 'Tanaka',
@@ -642,6 +747,87 @@ describe('Query Validation & Security/Pagination across 5 modules', () => {
           { model_type: 'ONE_TO_ONE' },
         ]),
       );
+    });
+
+    it('limits CS class list and metadata to classes containing an enrollment in the actor scope', async () => {
+      mockPrisma.enrollmentClass.findMany.mockResolvedValue([{ class_id: 201 }, { class_id: 202 }]);
+      mockPrisma.class.findMany.mockResolvedValue([]);
+      mockPrisma.class.count.mockResolvedValue(0);
+      mockPrisma.enrollmentClass.count.mockResolvedValue(0);
+
+      const service = new ClassesService();
+      await service.getClassesWithMeta(
+        { id: 10, roles: ['CS'], email: 'cvht@test.com' },
+        { isPaginated: true, page: 1, pageSize: 10, search: 'Lớp' },
+      );
+
+      expect(mockPrisma.enrollmentClass.findMany).toHaveBeenCalledWith({
+        where: {
+          enrollment: {
+            student: { deleted_at: null },
+            OR: [
+              { cs_id: { in: [10] } },
+              { cs_viewers: { some: { cs_id: { in: [10] } } } },
+            ],
+          },
+        },
+        select: { class_id: true },
+        distinct: ['class_id'],
+      });
+      expect(mockPrisma.class.findMany.mock.calls[0][0].where.AND).toEqual(
+        expect.arrayContaining([{ id: { in: [201, 202] } }]),
+      );
+      expect(mockPrisma.class.count.mock.calls[0][0].where.AND).toEqual(
+        expect.arrayContaining([{ id: { in: [201, 202] } }]),
+      );
+      expect(mockPrisma.enrollmentClass.count.mock.calls[0][0].where.class.AND).toEqual(
+        expect.arrayContaining([{ id: { in: [201, 202] } }]),
+      );
+      expect(mockPrisma.class.findMany.mock.calls[1][0].where).toEqual({
+        id: { in: [201, 202] },
+      });
+    });
+
+    it('keeps an empty CS class scope restrictive for rows, totals, and filter options', async () => {
+      mockPrisma.enrollmentClass.findMany.mockResolvedValue([]);
+      mockPrisma.class.findMany.mockResolvedValue([]);
+      mockPrisma.class.count.mockResolvedValue(0);
+      mockPrisma.enrollmentClass.count.mockResolvedValue(0);
+
+      const service = new ClassesService();
+      await service.getClassesWithMeta(
+        { id: 10, roles: ['CS'], email: 'cvht@test.com' },
+        { isPaginated: true, page: 1, pageSize: 10 },
+      );
+
+      expect(mockPrisma.class.findMany.mock.calls[0][0].where).toEqual({ id: { in: [] } });
+      expect(mockPrisma.class.count.mock.calls[0][0].where).toEqual({ id: { in: [] } });
+      expect(mockPrisma.enrollmentClass.count.mock.calls[0][0].where.class).toEqual({
+        id: { in: [] },
+      });
+      expect(mockPrisma.class.findMany.mock.calls[1][0].where).toEqual({ id: { in: [] } });
+    });
+
+    it('limits MANAGE class list to enrollments owned by self or assigned CS groups', async () => {
+      mockPrisma.manageAssignment.findMany.mockResolvedValue([
+        { cs_group: { members: [{ user_id: 31 }, { user_id: 32 }] } },
+      ]);
+      mockPrisma.enrollmentClass.findMany.mockResolvedValue([{ class_id: 301 }]);
+      mockPrisma.class.findMany.mockResolvedValue([]);
+      mockPrisma.class.count.mockResolvedValue(0);
+      mockPrisma.enrollmentClass.count.mockResolvedValue(0);
+
+      const service = new ClassesService();
+      await service.getClassesWithMeta(
+        { id: 20, roles: ['MANAGE'], email: 'manage@test.com' },
+        { isPaginated: true, page: 1, pageSize: 10 },
+      );
+
+      expect(mockPrisma.enrollmentClass.findMany.mock.calls[0][0].where.enrollment.OR).toEqual([
+        { cs_id: { in: [20, 31, 32] } },
+        { cs_viewers: { some: { cs_id: { in: [20, 31, 32] } } } },
+      ]);
+      expect(mockPrisma.class.findMany.mock.calls[0][0].where).toEqual({ id: { in: [301] } });
     });
   });
 

@@ -88,7 +88,7 @@ export class AttendanceImportService {
       where: {
         status: EnrollmentClassStatus.ACTIVE,
         enrollment: {
-          student: { external_id: input.externalId },
+          student: { external_id: input.externalId, deleted_at: null },
           status: { notIn: [EnrollmentStatus.FINISHED, EnrollmentStatus.CANCELLED] },
         },
         ...(input.classModel ? { class: { model_type: input.classModel } } : {}),

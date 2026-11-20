@@ -67,7 +67,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     !userRoles.includes('MANAGE') &&
     !userRoles.includes('CS');
   const [attendancePendingCount, setAttendancePendingCount] = useState(0);
-  const [hoveredPath, setHoveredPath] = useState<string | null>(null);
+  const [expandedSubmenus, setExpandedSubmenus] = useState<Record<string, boolean>>({});
 
   const loadAttendanceCount = useCallback(async () => {
     if (!isTeacherOnly) return;
@@ -102,72 +102,71 @@ export const Sidebar: React.FC<SidebarProps> = ({
       title: 'CHĂM SÓC KHÁCH HÀNG',
       items: [
         {
-          name: 'Hồ sơ Học viên',
+          name: 'Học viên',
           path: '/students',
           icon: <Users className="w-5 h-5 shrink-0" />,
           allowedRoles: ['ADMIN', 'MANAGE', 'CS'],
           end: true,
         },
         {
-          name: 'Báo cáo & Chăm sóc HV',
+          name: 'Báo cáo HV',
           path: '/students/care-reports',
           icon: <FileText className="w-5 h-5 shrink-0" />,
           allowedRoles: ['ADMIN', 'MANAGE', 'CS'],
         },
         {
-          name: isTeacherOnly ? 'Thông báo Điểm danh' : 'Nhiệm vụ & Chăm sóc',
+          name: 'Nhiệm vụ & Thông báo',
           path: '/care',
           icon: <HeartHandshake className="w-5 h-5 shrink-0" />,
-          allowedRoles: ['ADMIN', 'MANAGE', 'CS', 'TEACHER'],
+          allowedRoles: ['ADMIN', 'MANAGE', 'CS'],
         },
       ],
     },
     {
-      title: 'ĐÀO TẠO & LỚP HỌC',
+      title: 'ĐÀO TẠO',
       items: [
         {
-          name: 'Lớp học & Điểm danh',
-          path: isTeacherOnly ? '/classes' : '/enrollments',
+          name: 'Điểm danh & Lớp học',
+          path: '/enrollments',
           activePaths: ['/enrollments', '/classes'],
           icon: <GraduationCap className="w-5 h-5 shrink-0" />,
-          allowedRoles: ['ADMIN', 'MANAGE', 'CS', 'TEACHER'],
+          allowedRoles: ['ADMIN', 'MANAGE', 'CS'],
         },
         {
-          name: 'Đối soát Điểm danh',
+          name: 'Đối soát điểm danh',
           path: '/attendance/reconciliation',
           icon: <ClipboardCheck className="w-5 h-5 shrink-0" />,
           allowedRoles: ['ADMIN', 'MANAGE', 'CS'],
         },
         {
-          name: 'Gói học & Khóa học',
+          name: 'Gói học',
           path: '/packages',
           icon: <Package className="w-5 h-5 shrink-0" />,
-          allowedRoles: ['ADMIN', 'MANAGE'],
-        },
-        {
-          name: 'Danh sách Giáo viên',
-          path: '/teachers',
-          icon: <UserCheck className="w-5 h-5 shrink-0" />,
           allowedRoles: ['ADMIN', 'MANAGE'],
         },
       ],
     },
     {
-      title: 'LỊCH DẠY GIÁO VIÊN',
+      title: 'GIÁO VIÊN',
       items: [
         {
-          name: 'Lịch dạy & Theo dõi GV',
-          path: '/teacher/my-sessions',
-          activePaths: ['/teacher/my-sessions', '/teacher/attendance-tracking'],
-          icon: <CalendarCheck className="w-5 h-5 shrink-0" />,
-          allowedRoles: ['ADMIN', 'MANAGE', 'TEACHER'],
-          badge: isTeacherOnly ? attendancePendingCount : undefined,
+          name: 'Danh sách giáo viên',
+          path: '/teachers',
+          icon: <UserCheck className="w-5 h-5 shrink-0" />,
+          allowedRoles: ['ADMIN', 'MANAGE'],
+          end: true,
         },
         {
-          name: 'Thông tin HV & Buổi học',
-          path: '/teacher/student-info',
-          icon: <FileSpreadsheet className="w-5 h-5 shrink-0" />,
-          allowedRoles: ['ADMIN', 'MANAGE', 'TEACHER'],
+          name: 'Lịch dạy',
+          path: '/teachers/schedule',
+          icon: <CalendarCheck className="w-5 h-5 shrink-0" />,
+          allowedRoles: ['ADMIN', 'MANAGE'],
+        },
+        {
+          name: 'Việc cần xử lý',
+          path: '/teachers/tasks',
+          icon: <HeartHandshake className="w-5 h-5 shrink-0" />,
+          allowedRoles: ['ADMIN', 'MANAGE'],
         },
       ],
     },
@@ -219,38 +218,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
       ],
     },
     {
-      title: 'DỮ LIỆU & HỆ THỐNG',
+      title: 'DỮ LIỆU',
       items: [
-        {
-          name: 'Lịch sử hoạt động',
-          path: '/activity-logs',
-          activePaths: ['/activity-logs'],
-          icon: <History className="w-5 h-5 shrink-0" />,
-          allowedRoles: ['ADMIN', 'MANAGE', 'CS'],
-          end: true,
-          subItems: [
-            {
-              name: 'Thao tác trên Web',
-              tab: 'audit',
-              allowedRoles: ['ADMIN', 'MANAGE', 'CS'],
-            },
-            {
-              name: 'Lịch sử Đồng bộ',
-              tab: 'sync',
-              allowedRoles: ['ADMIN', 'MANAGE', 'CS'],
-            },
-            {
-              name: 'Lịch sử sao lưu',
-              tab: 'backup',
-              allowedRoles: ['ADMIN', 'MANAGE', 'CS'],
-            },
-            {
-              name: 'Lịch sử Đăng nhập',
-              tab: 'login',
-              allowedRoles: ['ADMIN', 'MANAGE'],
-            },
-          ],
-        },
         {
           name: 'Đồng bộ dữ liệu',
           path: '/data-sync',
@@ -286,23 +255,58 @@ export const Sidebar: React.FC<SidebarProps> = ({
             '/data-backup/connection',
           ],
           icon: <FileSpreadsheet className="w-5 h-5 shrink-0" />,
-          allowedRoles: ['ADMIN', 'MANAGE', 'CS', 'TEACHER'],
+          allowedRoles: ['ADMIN', 'MANAGE', 'CS'],
           end: false,
           subItems: [
             {
               name: 'Danh sách nguồn sao lưu',
               tab: 'configs',
-              allowedRoles: ['ADMIN', 'MANAGE', 'CS', 'TEACHER'],
+              allowedRoles: ['ADMIN', 'MANAGE', 'CS'],
             },
             {
               name: 'Lịch sử sao lưu',
               tab: 'history',
-              allowedRoles: ['ADMIN', 'MANAGE', 'CS', 'TEACHER'],
+              allowedRoles: ['ADMIN', 'MANAGE', 'CS'],
             },
             {
               name: 'Cấu hình & Kết nối',
               tab: 'connection',
               allowedRoles: ['ADMIN', 'MANAGE', 'CS'],
+            },
+          ],
+        },
+      ],
+    },
+    {
+      title: 'QUẢN TRỊ HỆ THỐNG',
+      items: [
+        {
+          name: 'Lịch sử hoạt động',
+          path: '/activity-logs',
+          activePaths: ['/activity-logs'],
+          icon: <History className="w-5 h-5 shrink-0" />,
+          allowedRoles: ['ADMIN', 'MANAGE', 'CS'],
+          end: true,
+          subItems: [
+            {
+              name: 'Thao tác trên Web',
+              tab: 'audit',
+              allowedRoles: ['ADMIN', 'MANAGE', 'CS'],
+            },
+            {
+              name: 'Lịch sử Đồng bộ',
+              tab: 'sync',
+              allowedRoles: ['ADMIN', 'MANAGE', 'CS'],
+            },
+            {
+              name: 'Lịch sử sao lưu',
+              tab: 'backup',
+              allowedRoles: ['ADMIN', 'MANAGE', 'CS'],
+            },
+            {
+              name: 'Lịch sử Đăng nhập',
+              tab: 'login',
+              allowedRoles: ['ADMIN', 'MANAGE'],
             },
           ],
         },
@@ -313,7 +317,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           allowedRoles: ['ADMIN'],
         },
         {
-          name: 'Cấu hình',
+          name: 'Cấu hình hệ thống',
           path: '/settings/config',
           icon: <Sliders className="w-5 h-5 shrink-0" />,
           allowedRoles: ['ADMIN'],
@@ -452,7 +456,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         );
                       })
                     );
-                  const isExpanded = isParentRouteActive || hoveredPath === item.path;
+                  const isExpanded = Boolean(expandedSubmenus[item.path]);
+                  const submenuId = `sidebar-submenu-${item.path.replace(/[^a-z0-9]+/gi, '-')}`;
                   const searchParams = new URLSearchParams(location.search);
                   const rawTab =
                     searchParams.get('tab') ||
@@ -466,24 +471,22 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       : defaultTab;
 
                   return (
-                    <div
-                      key={`${item.path}-${item.name}`}
-                      onMouseEnter={() => setHoveredPath(item.path)}
-                      onMouseLeave={() => setHoveredPath(null)}
-                      className="space-y-1"
-                    >
-                      <NavLink
-                        to={item.path}
-                        end={item.end}
-                        onClick={onMobileClose}
-                        className={({ isActive }) => {
-                          const matchedActive = isActive || isParentRouteActive;
-                          return `flex items-center gap-3 px-3 py-2.5 rounded-xl font-medium text-xs sm:text-sm transition-all duration-150 ${
-                            matchedActive
-                              ? 'bg-primary-soft text-primary font-semibold shadow-xs'
-                              : 'text-text-secondary hover:bg-surface-muted hover:text-text-primary'
-                          }`;
-                        }}
+                    <div key={`${item.path}-${item.name}`} className="space-y-1">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setExpandedSubmenus((current) => ({
+                            ...current,
+                            [item.path]: !current[item.path],
+                          }))
+                        }
+                        aria-expanded={isExpanded}
+                        aria-controls={submenuId}
+                        className={`flex w-full items-center gap-3 px-3 py-2.5 rounded-xl font-medium text-xs sm:text-sm text-left transition-all duration-150 ${
+                          isParentRouteActive
+                            ? 'bg-primary-soft text-primary font-semibold shadow-xs'
+                            : 'text-text-secondary hover:bg-surface-muted hover:text-text-primary'
+                        }`}
                       >
                         <span className="shrink-0">{item.icon}</span>
                         <span className="truncate flex-1">{item.name}</span>
@@ -492,9 +495,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
                             isExpanded ? 'rotate-180 text-primary' : 'text-text-muted'
                           }`}
                         />
-                      </NavLink>
+                      </button>
 
                       <div
+                        id={submenuId}
                         className={`overflow-hidden transition-all duration-200 ease-in-out ${
                           isExpanded
                             ? 'max-h-72 opacity-100 mt-1'

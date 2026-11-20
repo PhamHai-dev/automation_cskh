@@ -8,7 +8,12 @@ export type CareOutcome =
   | 'NEGATIVE_WANTS_TO_STOP'
   | 'NO_RESPONSE';
 
-export type TaskType = 'CALLBACK' | 'HOT_ISSUE' | 'FOLLOW_UP';
+export type TaskType =
+  | 'CALLBACK'
+  | 'HOT_ISSUE'
+  | 'FOLLOW_UP'
+  | 'AUTO_ATTENDANCE'
+  | 'SCHEDULE_DATA_ISSUE';
 export type TaskPriority = 'LOW' | 'NORMAL' | 'HIGH' | 'URGENT';
 export type TaskStatus = 'PENDING' | 'DONE' | 'CANCELLED';
 
@@ -91,14 +96,28 @@ export interface UpdateCareTaskDTO {
 }
 
 export interface TaskFilterParams {
+  search?: string;
+  program_type?: 'KAIWA' | 'JLPT';
   status?: TaskStatus;
   type?: TaskType;
   priority?: TaskPriority;
   assigned_to_id?: number;
   enrollment_id?: number;
   due_filter?: 'overdue' | 'today' | 'this_week';
-  limit?: number;
-  offset?: number;
+  due_from?: string;
+  due_to?: string;
+  created_from?: string;
+  created_to?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+export interface CareTaskListResult {
+  items: CareTask[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
 }
 
 export interface AttendanceNotificationItem {

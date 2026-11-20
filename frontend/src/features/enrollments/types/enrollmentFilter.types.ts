@@ -1,4 +1,4 @@
-export type CourseCategory = 'ALL' | 'KAIWA' | 'JNPT';
+export type CourseCategory = 'ALL' | 'KAIWA' | 'JLPT';
 
 export type FilterOperator = 'RANGE' | 'EXACT';
 
@@ -9,7 +9,7 @@ export interface EnrollmentFilterState {
   // 1. Gói học & Khóa học
   packageName: string;
   courseCategory: CourseCategory;
-  courseLevel: string; // Kaiwa 1..6, JNPT 1..6, etc.
+  courseLevel: string; // Chỉ áp dụng cho trình độ Kaiwa; JLPT không có nguồn level độc lập.
 
   // 2. Tiến độ buổi học
   totalSessionsOp: FilterOperator;
@@ -101,18 +101,4 @@ export const KAIWA_LEVEL_OPTIONS = [
   'Kaiwa 4',
   'Kaiwa 5',
   'Kaiwa 6',
-];
-
-export const JNPT_LEVEL_OPTIONS = [
-  'JNPT 1',
-  'JNPT 2',
-  'JNPT 3',
-  'JNPT 4',
-  'JNPT 5',
-  'JNPT 6',
-  'N1',
-  'N2',
-  'N3',
-  'N4',
-  'N5',
 ];

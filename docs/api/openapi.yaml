@@ -96,6 +96,175 @@ paths:
         '401': { description: Authentication required }
         '403': { description: Current user does not own the account }
         '409': { description: Account was disconnected manually and requires a new QR login }
+  /api/v1/students:
+    get:
+      summary: List students with scoped server-side filters and pagination
+      description: ADMIN, MANAGE and CS only. Filters are allowlisted and combined with the current user's enrollment data scope before pagination. Search, totals, facets and filter options use the same scope. Archived students are excluded. JLPT is canonical; legacy JNPT input is normalized by clients before use.
+      tags: [Students]
+      parameters:
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 200, default: 25 } }
+        - { name: search, in: query, description: Search student, contact, class, teacher or external identifiers., schema: { type: string, maxLength: 100 } }
+        - { name: program_type, in: query, schema: { type: string, enum: [KAIWA, JLPT] } }
+        - { name: cs_id, in: query, schema: { type: integer, minimum: 1 } }
+        - { name: cvht, in: query, description: CVHT code, ID-prefixed value, or UNASSIGNED., schema: { type: string } }
+        - { name: gender, in: query, schema: { type: string, enum: [MALE, FEMALE, OTHER] } }
+        - { name: status, in: query, schema: { type: string } }
+        - { name: model, in: query, schema: { type: string, enum: ['1:1', '1:2', '1:n'] } }
+        - { name: payment, in: query, schema: { type: string, enum: [PAID, DEBT, UNSET] } }
+        - { name: sale, in: query, schema: { type: string } }
+        - { name: package_name, in: query, schema: { type: string } }
+        - { name: course_code, in: query, schema: { type: string } }
+        - { name: teacher_name, in: query, schema: { type: string } }
+        - { name: teacher_code, in: query, schema: { type: string } }
+        - { name: class_name, in: query, schema: { type: string } }
+        - { name: class_code, in: query, schema: { type: string } }
+        - { name: schedule_pattern, in: query, schema: { type: string } }
+        - { name: start_time, in: query, schema: { type: string } }
+        - { name: start_date_op, in: query, schema: { $ref: '#/components/schemas/FilterOperator' } }
+        - { name: start_date_exact, in: query, schema: { type: string, format: date } }
+        - { name: start_date_from, in: query, schema: { type: string, format: date } }
+        - { name: start_date_to, in: query, schema: { type: string, format: date } }
+        - { name: end_date_op, in: query, schema: { $ref: '#/components/schemas/FilterOperator' } }
+        - { name: end_date_exact, in: query, schema: { type: string, format: date } }
+        - { name: end_date_from, in: query, schema: { type: string, format: date } }
+        - { name: end_date_to, in: query, schema: { type: string, format: date } }
+        - { name: total_sessions_op, in: query, schema: { $ref: '#/components/schemas/FilterOperator' } }
+        - { name: total_sessions_exact, in: query, schema: { type: integer, minimum: 0 } }
+        - { name: total_sessions_min, in: query, schema: { type: integer, minimum: 0 } }
+        - { name: total_sessions_max, in: query, schema: { type: integer, minimum: 0 } }
+        - { name: remaining_sessions_op, in: query, schema: { $ref: '#/components/schemas/FilterOperator' } }
+        - { name: remaining_sessions_exact, in: query, schema: { type: integer } }
+        - { name: remaining_sessions_min, in: query, schema: { type: integer } }
+        - { name: remaining_sessions_max, in: query, schema: { type: integer } }
+        - { name: has_class, in: query, schema: { type: boolean } }
+        - { name: has_teacher, in: query, schema: { type: boolean } }
+        - { name: birth_year_min, in: query, schema: { type: integer, minimum: 0 } }
+        - { name: birth_year_max, in: query, schema: { type: integer, minimum: 0 } }
+        - { name: occupation, in: query, schema: { type: string } }
+      responses:
+        '200':
+          description: Paginated student list and scoped filter metadata
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StudentListResponse' }
+        '400': { description: Invalid query parameters }
+        '401': { description: Authentication required }
+        '403': { description: Role or data-scope restriction }
+
+  /api/v1/students/{studentId}:
+    delete:
+      summary: Soft-delete a student profile (ADMIN only)
+      description: Archives the student from all product views by setting deleted_at and deleted_by_id. The Student row and all related enrollments, classes, attendance, care, and messaging history remain stored in the database.
+      tags: [Students]
+      parameters:
+        - { name: studentId, in: path, required: true, schema: { type: integer, minimum: 1 } }
+      responses:
+        '204': { description: Student archived successfully; no response body }
+        '400': { description: Invalid student ID }
+        '401': { description: Authentication required }
+        '403': { description: ADMIN role required }
+        '404': { description: Active student not found }
+
+  /api/v1/classes:
+    get:
+      summary: List classes with server-side learning filters and pagination
+      description: Filters are allowlisted and applied within the current user's data scope before pagination. ADMIN is unrestricted; CS sees classes containing an active enrollment it owns or can view; MANAGE sees classes containing an active enrollment owned by self or assigned CS groups; TEACHER sees assigned classes only. The same scope applies to totals, facets, and filter options, and archived students never grant class visibility. `JLPT` is canonical; legacy `JNPT` is accepted as an input alias and normalized to `JLPT`.
+      tags: [Classes]
+      parameters:
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 200, default: 25 } }
+        - { name: search, in: query, description: Search class, student, contact, teacher, or external identifiers., schema: { type: string, maxLength: 100 } }
+        - { name: program_type, in: query, schema: { type: string, enum: [KAIWA, JLPT] } }
+        - { name: status, in: query, schema: { type: string } }
+        - { name: package_name, in: query, schema: { type: string } }
+        - { name: course_category, in: query, description: Canonical values are KAIWA and JLPT. Legacy JNPT is accepted temporarily., schema: { type: string, enum: [KAIWA, JLPT, JNPT] } }
+        - { name: course_level, in: query, description: Independent level filter for Kaiwa only., schema: { type: string } }
+        - { name: teacher_name, in: query, schema: { type: string } }
+        - { name: teacher_code, in: query, schema: { type: string } }
+        - { name: class_name, in: query, schema: { type: string } }
+        - { name: model_filter, in: query, schema: { type: string, enum: ['1:1', '1:2', '1:n'] } }
+        - { name: schedule_pattern, in: query, schema: { type: string } }
+        - { name: start_time, in: query, schema: { type: string } }
+        - { name: sale, in: query, schema: { type: string } }
+        - { name: start_date_op, in: query, schema: { $ref: '#/components/schemas/FilterOperator' } }
+        - { name: start_date_exact, in: query, schema: { type: string, format: date } }
+        - { name: start_date_from, in: query, schema: { type: string, format: date } }
+        - { name: start_date_to, in: query, schema: { type: string, format: date } }
+        - { name: end_date_op, in: query, schema: { $ref: '#/components/schemas/FilterOperator' } }
+        - { name: end_date_exact, in: query, schema: { type: string, format: date } }
+        - { name: end_date_from, in: query, schema: { type: string, format: date } }
+        - { name: end_date_to, in: query, schema: { type: string, format: date } }
+        - { name: total_sessions_op, in: query, schema: { $ref: '#/components/schemas/FilterOperator' } }
+        - { name: total_sessions_exact, in: query, schema: { type: integer, minimum: 0 } }
+        - { name: total_sessions_min, in: query, schema: { type: integer, minimum: 0 } }
+        - { name: total_sessions_max, in: query, schema: { type: integer, minimum: 0 } }
+        - { name: remaining_sessions_op, in: query, schema: { $ref: '#/components/schemas/FilterOperator' } }
+        - { name: remaining_sessions_exact, in: query, schema: { type: integer, minimum: 0 } }
+        - { name: remaining_sessions_min, in: query, schema: { type: integer, minimum: 0 } }
+        - { name: remaining_sessions_max, in: query, schema: { type: integer, minimum: 0 } }
+      responses:
+        '200':
+          description: Paginated class list and filter metadata
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ClassListResponse' }
+        '400': { description: Invalid query parameters }
+        '401': { description: Authentication required }
+        '403': { description: Role or data-scope restriction }
+
+  /api/v1/enrollments:
+    get:
+      summary: List enrollments with server-side learning filters and pagination
+      description: Filters are allowlisted and applied within the current user's data scope before pagination. `JLPT` is canonical; legacy `JNPT` is accepted as an input alias and normalized to `JLPT`. JLPT has no independent course-level filter.
+      tags: [Enrollments]
+      parameters:
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 200, default: 25 } }
+        - { name: search, in: query, description: Search student, contact, class, teacher, or external identifiers., schema: { type: string, maxLength: 100 } }
+        - { name: program_type, in: query, schema: { type: string, enum: [KAIWA, JLPT] } }
+        - { name: cs_id, in: query, schema: { type: integer, minimum: 1 } }
+        - { name: sale, in: query, schema: { type: string } }
+        - { name: status, in: query, schema: { type: string } }
+        - { name: package_name, in: query, schema: { type: string } }
+        - { name: course_category, in: query, description: Canonical values are KAIWA and JLPT. Legacy JNPT is accepted temporarily., schema: { type: string, enum: [KAIWA, JLPT, JNPT] } }
+        - { name: course_level, in: query, description: Independent level filter for Kaiwa only., schema: { type: string } }
+        - { name: teacher_name, in: query, schema: { type: string } }
+        - { name: teacher_code, in: query, schema: { type: string } }
+        - { name: class_name, in: query, schema: { type: string } }
+        - { name: model_filter, in: query, schema: { type: string, enum: ['1:1', '1:2', '1:n'] } }
+        - { name: schedule_pattern, in: query, schema: { type: string } }
+        - { name: start_time, in: query, schema: { type: string } }
+        - { name: start_date_op, in: query, schema: { $ref: '#/components/schemas/FilterOperator' } }
+        - { name: start_date_exact, in: query, schema: { type: string, format: date } }
+        - { name: start_date_from, in: query, schema: { type: string, format: date } }
+        - { name: start_date_to, in: query, schema: { type: string, format: date } }
+        - { name: end_date_op, in: query, schema: { $ref: '#/components/schemas/FilterOperator' } }
+        - { name: end_date_exact, in: query, schema: { type: string, format: date } }
+        - { name: end_date_from, in: query, schema: { type: string, format: date } }
+        - { name: end_date_to, in: query, schema: { type: string, format: date } }
+        - { name: total_sessions_op, in: query, schema: { $ref: '#/components/schemas/FilterOperator' } }
+        - { name: total_sessions_exact, in: query, schema: { type: integer, minimum: 0 } }
+        - { name: total_sessions_min, in: query, schema: { type: integer, minimum: 0 } }
+        - { name: total_sessions_max, in: query, schema: { type: integer, minimum: 0 } }
+        - { name: attended_sessions_op, in: query, schema: { $ref: '#/components/schemas/FilterOperator' } }
+        - { name: attended_sessions_exact, in: query, schema: { type: integer, minimum: 0 } }
+        - { name: attended_sessions_min, in: query, schema: { type: integer, minimum: 0 } }
+        - { name: attended_sessions_max, in: query, schema: { type: integer, minimum: 0 } }
+        - { name: remaining_sessions_op, in: query, schema: { $ref: '#/components/schemas/FilterOperator' } }
+        - { name: remaining_sessions_exact, in: query, schema: { type: integer, minimum: 0 } }
+        - { name: remaining_sessions_min, in: query, schema: { type: integer, minimum: 0 } }
+        - { name: remaining_sessions_max, in: query, schema: { type: integer, minimum: 0 } }
+      responses:
+        '200':
+          description: Paginated enrollment list and filter metadata
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EnrollmentListResponse' }
+        '400': { description: Invalid query parameters }
+        '401': { description: Authentication required }
+        '403': { description: Role or data-scope restriction }
+
   /api/v1/teachers:
     get:
       summary: List teachers with server-side search, filters, and pagination
@@ -789,38 +958,31 @@ paths:
 
   /api/v1/care-tasks:
     get:
-      summary: List care tasks with filters
+      summary: List scoped care tasks with server-side search, filters and pagination
+      description: ADMIN, MANAGE and CS only. Role-derived assignee scope is combined with every allowlisted filter before stable sorting and pagination. MANAGE is limited to assigned CS groups; CS is limited to self. Archived students are excluded. JLPT is canonical; legacy JNPT input is normalized to JLPT.
       tags:
         - Care
       parameters:
-        - name: status
-          in: query
-          schema:
-            type: string
-        - name: priority
-          in: query
-          schema:
-            type: string
-        - name: type
-          in: query
-          schema:
-            type: string
-        - name: assigned_to_id
-          in: query
-          schema:
-            type: integer
-        - name: enrollment_id
-          in: query
-          schema:
-            type: integer
-        - name: due_filter
-          in: query
-          schema:
-            type: string
-            enum: [overdue, today, this_week, all]
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 200, default: 25 } }
+        - { name: search, in: query, description: Search title, note, student, contact, package, class or assignee., schema: { type: string, maxLength: 100 } }
+        - { name: program_type, in: query, schema: { type: string, enum: [KAIWA, JLPT, JNPT] } }
+        - { name: status, in: query, schema: { type: string, enum: [PENDING, DONE, CANCELLED] } }
+        - { name: priority, in: query, schema: { type: string, enum: [LOW, NORMAL, HIGH, URGENT] } }
+        - { name: type, in: query, schema: { type: string, enum: [CALLBACK, HOT_ISSUE, FOLLOW_UP, AUTO_ATTENDANCE, SCHEDULE_DATA_ISSUE] } }
+        - { name: assigned_to_id, in: query, schema: { type: integer, minimum: 1 } }
+        - { name: enrollment_id, in: query, schema: { type: integer, minimum: 1 } }
+        - { name: due_filter, in: query, schema: { type: string, enum: [overdue, today, this_week, all] } }
+        - { name: due_from, in: query, schema: { type: string, format: date } }
+        - { name: due_to, in: query, schema: { type: string, format: date } }
+        - { name: created_from, in: query, schema: { type: string, format: date } }
+        - { name: created_to, in: query, schema: { type: string, format: date } }
       responses:
         '200':
-          description: Care tasks list
+          description: Scoped CareTask page with total, page, pageSize and totalPages metadata
+        '400': { description: Invalid enum, ID, date or reversed range }
+        '401': { description: Authentication required }
+        '403': { description: Role or data-scope restriction }
     post:
       summary: Create new care task
       tags:
@@ -1121,6 +1283,29 @@ paths:
         '403':
           description: Admin role required
 
+  /api/v1/attendance-reconciliation/teacher-student-info:
+    get:
+      summary: List students and lesson sessions in selected teacher scope
+      description: >-
+        Search, program, class, role scope, count and pagination are applied server-side before
+        returning rows. JNPT is accepted only as a legacy alias and normalized to JLPT.
+      tags: [Attendance Reconciliation]
+      parameters:
+        - { name: teacherId, in: query, description: Required for ADMIN/MANAGE; TEACHER uses self, schema: { type: integer } }
+        - { name: classId, in: query, schema: { type: integer } }
+        - { name: search, in: query, schema: { type: string, maxLength: 100 } }
+        - { name: programType, in: query, description: JNPT is a legacy alias normalized to JLPT, schema: { type: string, enum: [KAIWA, JLPT, JNPT] } }
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 200, default: 25 } }
+      responses:
+        '200':
+          description: Paginated teacher student rows with session columns
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TeacherStudentInfoResponse' }
+        '400': { description: ADMIN/MANAGE has not selected a teacher }
+        '403': { description: Teacher attempted to access another teacher scope }
+
   /api/v1/attendance-reconciliation/teacher-sessions:
     get:
       summary: List teacher sessions and active students in actor scope
@@ -1129,6 +1314,12 @@ paths:
         - { name: startDate, in: query, required: true, schema: { type: string, format: date } }
         - { name: endDate, in: query, required: true, schema: { type: string, format: date } }
         - { name: teacherId, in: query, schema: { type: integer } }
+        - { name: classId, in: query, schema: { type: integer, minimum: 1 } }
+        - { name: search, in: query, schema: { type: string, maxLength: 100 } }
+        - { name: modelType, in: query, schema: { type: string, enum: ['1:1', '1:2', '1:n'] } }
+        - { name: completionState, in: query, schema: { type: string, enum: [PENDING, COMPLETED] } }
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 25 } }
       responses:
         '200':
           description: Sessions in scope
@@ -1140,7 +1331,7 @@ paths:
 
   /api/v1/attendance-reconciliation/teacher-tracking/pending:
     get:
-      summary: List PENDING_TEACHER items in selected teacher scope without CSKH opinion fields
+      summary: List PENDING_TEACHER items in selected teacher scope without CVHT opinion fields
       tags: [Attendance Reconciliation]
       parameters:
         - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
@@ -1154,7 +1345,6 @@ paths:
         '200': { description: Privacy-safe paginated teacher pending items }
         '400': { description: ADMIN/MANAGE has not selected a teacher }
         '403': { description: Teacher attempted to access another teacher scope }
-
   /api/v1/attendance-reconciliation/teacher-tracking/count:
     get:
       summary: Count PENDING_TEACHER items in teacher scope independently of pagination
@@ -1196,6 +1386,11 @@ paths:
   /api/v1/attendance-reconciliation/pending:
     get:
       summary: List pending attendance reconciliations in actor scope
+      description: >-
+        Search and allowlisted filters are combined with the actor scope before count and pagination.
+        ADMIN is unrestricted; plain CS sees enrollments owned by itself; MANAGE sees itself and members
+        of assigned CS groups. Search covers student name/code/phone/email, course code, package name/code,
+        and class name/code. JNPT is accepted only as a legacy alias and normalized to JLPT.
       tags: [Attendance Reconciliation]
       parameters:
         - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
@@ -1207,6 +1402,7 @@ paths:
         - { name: startDate, in: query, schema: { type: string, format: date } }
         - { name: endDate, in: query, schema: { type: string, format: date } }
         - { name: search, in: query, schema: { type: string, maxLength: 100 } }
+        - { name: programType, in: query, description: JNPT is a legacy alias normalized to JLPT, schema: { type: string, enum: [KAIWA, JLPT, JNPT] } }
       responses:
         '200':
           description: Paginated pending items
@@ -1217,6 +1413,7 @@ paths:
   /api/v1/attendance-reconciliation/conflicts:
     get:
       summary: List attendance conflicts in actor scope
+      description: Uses the same scoped predicate and search fields as the pending, stats, and history endpoints before pagination.
       tags: [Attendance Reconciliation]
       parameters:
         - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
@@ -1226,6 +1423,8 @@ paths:
         - { name: teacherId, in: query, schema: { type: integer } }
         - { name: startDate, in: query, schema: { type: string, format: date } }
         - { name: endDate, in: query, schema: { type: string, format: date } }
+        - { name: search, in: query, schema: { type: string, maxLength: 100 } }
+        - { name: programType, in: query, description: JNPT is a legacy alias normalized to JLPT, schema: { type: string, enum: [KAIWA, JLPT, JNPT] } }
       responses:
         '200':
           description: Paginated conflict items
@@ -1236,13 +1435,16 @@ paths:
   /api/v1/attendance-reconciliation/stats:
     get:
       summary: KPI counts for reconciliation header cards (independent of pagination)
+      description: Reuses the same actor-scoped, allowlisted predicate as the reconciliation lists.
       tags: [Attendance Reconciliation]
       parameters:
         - { name: classId, in: query, schema: { type: integer } }
         - { name: csId, in: query, schema: { type: integer } }
+        - { name: teacherId, in: query, schema: { type: integer } }
         - { name: startDate, in: query, schema: { type: string, format: date } }
         - { name: endDate, in: query, schema: { type: string, format: date } }
         - { name: search, in: query, schema: { type: string, maxLength: 100 } }
+        - { name: programType, in: query, description: JNPT is a legacy alias normalized to JLPT, schema: { type: string, enum: [KAIWA, JLPT, JNPT] } }
       responses:
         '200':
           description: Counts for conflict / pending CS / pending teacher
@@ -1253,16 +1455,20 @@ paths:
   /api/v1/attendance-reconciliation/history:
     get:
       summary: Paginated reconciliation history (changes made after the first attendance report)
-      description: 'Returns attendance audit changes scoped to the actor (CS sees only assigned students). Only post-first-mark actions are included: CS mark, bulk approve, conflict resolve.'
+      description: >-
+        Returns post-first-mark attendance audit changes after applying the same ADMIN/CS/MANAGE data
+        scope, search, program, class, and date predicates used by the reconciliation lists.
       tags: [Attendance Reconciliation]
       parameters:
         - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
         - { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
         - { name: classId, in: query, schema: { type: integer } }
         - { name: csId, in: query, schema: { type: integer } }
+        - { name: teacherId, in: query, schema: { type: integer } }
         - { name: startDate, in: query, schema: { type: string, format: date } }
         - { name: endDate, in: query, schema: { type: string, format: date } }
         - { name: search, in: query, schema: { type: string, maxLength: 100 } }
+        - { name: programType, in: query, description: JNPT is a legacy alias normalized to JLPT, schema: { type: string, enum: [KAIWA, JLPT, JNPT] } }
       responses:
         '200':
           description: Paginated history items
@@ -1421,6 +1627,42 @@ components:
       scheme: bearer
       bearerFormat: JWT
   schemas:
+    FilterOperator:
+      type: string
+      enum: [EXACT, RANGE]
+
+    ListMeta:
+      type: object
+      required: [page, pageSize, total, totalPages]
+      properties:
+        page: { type: integer, minimum: 1 }
+        pageSize: { type: integer, minimum: 1, maximum: 200 }
+        total: { type: integer, minimum: 0 }
+        totalPages: { type: integer, minimum: 0 }
+        facets: { type: object, additionalProperties: true }
+        filterOptions: { type: object, additionalProperties: true }
+
+    StudentListResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/Student' } }
+        meta: { $ref: '#/components/schemas/ListMeta' }
+
+    ClassListResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/Class' } }
+        meta: { $ref: '#/components/schemas/ListMeta' }
+
+    EnrollmentListResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/Enrollment' } }
+        meta: { $ref: '#/components/schemas/ListMeta' }
+
     ActivityActor:
       type: object
       required: [id, name, code, email, roles, displayLabel]
@@ -1985,6 +2227,48 @@ components:
             sessionDate: { type: string, format: date }
             startTime: { type: [string, 'null'] }
             endTime: { type: [string, 'null'] }
+
+    TeacherStudentInfoResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: object
+          required: [items, total, page, pageSize, totalPages, maxRecordedSessions, maxTotalSessions]
+          properties:
+            items:
+              type: array
+              description: Rows already filtered and paginated by the backend.
+              items:
+                type: object
+                required: [enrollmentClassId, studentId, studentName, classId, sessions]
+                properties:
+                  enrollmentClassId: { type: integer }
+                  enrollmentId: { type: integer }
+                  studentId: { type: integer }
+                  studentCode: { type: string }
+                  studentName: { type: string }
+                  classId: { type: integer }
+                  classCode: { type: string }
+                  className: { type: string }
+                  courseType: { type: string }
+                  level: { type: string }
+                  totalSessions: { type: integer }
+                  note: { type: string }
+                  startDate: { type: [string, 'null'], format: date }
+                  csCode: { type: string }
+                  csName: { type: string }
+                  scheduleDays: { type: string }
+                  scheduleTime: { type: string }
+                  studyReportUrl: { type: string }
+                  sessions: { type: array, items: { type: object, additionalProperties: true } }
+            total: { type: integer, minimum: 0 }
+            page: { type: integer, minimum: 1 }
+            pageSize: { type: integer, minimum: 1, maximum: 200 }
+            totalPages: { type: integer, minimum: 0 }
+            maxRecordedSessions: { type: integer, minimum: 0 }
+            maxTotalSessions: { type: integer, minimum: 0 }
+        meta: { type: [object, 'null'] }
 
     TeacherSessionListResponse:
       type: object
