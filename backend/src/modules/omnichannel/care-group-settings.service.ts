@@ -18,8 +18,8 @@ export const careGroupSettingsService = {
     }
   },
   preview(body: unknown) {
-    const parsed = z.object({ config: careGroupRulesSchema, groupName: z.string().trim().min(1).max(300) }).strict().safeParse(body);
+    const parsed = z.object({ config: careGroupRulesSchema, groupName: z.string().trim().min(1).max(300), studentName: z.string().trim().min(1).max(200) }).strict().safeParse(body);
     if (!parsed.success) throw new AppError(400, parsed.error.issues[0].message);
-    return classifyCareGroupName(parsed.data.groupName, parsed.data.config);
+    return classifyCareGroupName(parsed.data.groupName, parsed.data.config, parsed.data.studentName);
   },
 };

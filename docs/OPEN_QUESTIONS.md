@@ -35,7 +35,7 @@ AI không được tự quyết các mục `WAITING_USER` nếu quyết định 
 
 ### Q-016 — Trùng nhóm chăm sóc JLPT
 
-- `RESOLVED` ngày 2026-11-20: người dùng chọn “Báo trùng, chọn thủ công”. Nhiều nhóm cùng CVHT + mã học viên + chương trình không được tự chọn theo N3/N4 hoặc nhóm đầu tiên. Trình độ chỉ là ghi chú nhận diện JLPT. ADMIN/MANAGE cấu hình mẫu tên và danh sách ghi chú; GROUP lưu riêng KAIWA/JLPT.
+- `RESOLVED` ngày 2026-11-20: người dùng chọn “Báo trùng, chọn thủ công”. Nhiều nhóm cùng CVHT + mã học viên + chương trình không được tự chọn theo hậu tố hoặc nhóm đầu tiên. Người dùng làm rõ: hậu tố JLPT là nội dung tự do, không tương đồng với bất kỳ trường dữ liệu học viên nào; `VIPN4N5`, `N54Video` đều hợp lệ. So khớp phần lõi CSKH + mã + tên học viên; dùng tên đã biết để xác định điểm bắt đầu hậu tố. ADMIN/MANAGE cấu hình mẫu tên; danh sách ghi chú chỉ là ví dụ tùy chọn, không giới hạn nhận diện. GROUP lưu riêng KAIWA/JLPT.
 
 Khi người dùng xác nhận:
 

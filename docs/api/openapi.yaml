@@ -13,6 +13,18 @@ security:
   - bearerAuth: []
 
 paths:
+  /api/v1/line/accounts/{id}/status:
+    get:
+      tags: [LINE]
+      summary: Read stored and live LINE connection status for the account owner
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+      responses:
+        '200': { description: 'data contains accountId, status, liveStatus and disconnectReason; no credentials' }
+        '400': { description: Invalid account identifier }
+        '401': { description: Authentication required }
+        '403': { description: Owner required }
+        '404': { description: Account not found }
   /api/v1/zalo/care-groups/report:
     get:
       tags: [Omnichannel]
@@ -124,10 +136,11 @@ paths:
           application/json:
             schema:
               type: object
-              required: [config, groupName]
+              required: [config, groupName, studentName]
               properties:
                 config: { $ref: '#/components/schemas/CareGroupRules' }
                 groupName: { type: string, minLength: 1, maxLength: 300 }
+                studentName: { type: string, minLength: 1, maxLength: 200, description: 'Known full name locates the core boundary; suffix is not an enrollment attribute' }
       responses:
         '200': { description: 'data: classification or null; levelNote is not an identity key' }
         '400': { description: Invalid input }
@@ -1645,8 +1658,8 @@ components:
       required: [kaiwaTemplate, jlptTemplate, jlptNotes, enabled]
       properties:
         kaiwaTemplate: { type: string, maxLength: 200, description: 'Exactly one each of {csNumber}, {studentId}, {studentName}; no {level}' }
-        jlptTemplate: { type: string, maxLength: 200, description: 'Exactly one each of {csNumber}, {studentId}, {studentName}, {level}; level must be the final token' }
-        jlptNotes: { type: array, minItems: 1, maxItems: 50, items: { type: string, minLength: 1, maxLength: 40 } }
+        jlptTemplate: { type: string, maxLength: 200, description: 'Exactly one each of {csNumber}, {studentId}, {studentName}, {level}; level is a free-form trailing JLPT marker and is never matched to student data' }
+        jlptNotes: { type: array, maxItems: 50, items: { type: string, minLength: 1, maxLength: 40 }, description: 'Optional examples only; not a recognition allow-list' }
         enabled: { type: boolean }
     OmnichannelGroupAccount:
       type: object

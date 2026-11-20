@@ -27,7 +27,7 @@ import {
 
 import { careGroupLinksRepository } from '../omnichannel/care-group-links.repository';
 import { careGroupSettingsRepository } from '../omnichannel/care-group-settings.repository';
-import { classifyCareGroupName, suggestCareGroupName, type CareProgram } from '../omnichannel/care-group-rules';
+import { classifyCareGroupName, parseCareGroupIdentity, suggestCareGroupName, type CareProgram } from '../omnichannel/care-group-rules';
 
 const log = createLogger('StudentCareGroupMatcher');
 
@@ -533,8 +533,8 @@ export async function syncAndMatchCareGroups(
 
   // ── Step 3: Index Groups & Automatic Matching ─────────────────────────────
 
-  const indexedZalo = zaloGroups.map(group => ({ ...group, parsed: classifyCareGroupName(group.name, rules) }));
-  const indexedLine = lineGroups.map(group => ({ ...group, parsed: classifyCareGroupName(group.name, rules) }));
+  const indexedZalo = zaloGroups.map(group => ({ ...group, parsed: parseCareGroupIdentity(group.name, rules) }));
+  const indexedLine = lineGroups.map(group => ({ ...group, parsed: parseCareGroupIdentity(group.name, rules) }));
   let newlyLinkedZaloCount = 0;
   let newlyLinkedLineCount = 0;
   const linkedItems: LinkedStudentCareGroupItem[] = [];
@@ -556,8 +556,8 @@ export async function syncAndMatchCareGroups(
       const extId = student.external_id?.trim() || null;
       const suggestedGroupName = csCode && extId ? suggestCareGroupName(rules, programType, {
         csNumber: csCode.replace(/\D/g, ''), studentId: extId, studentName: student.full_name,
-        // Informational suggestion only: the level NEVER selects a candidate group.
-        level: enrollment.level,
+        // Do not copy Enrollment.level into a group name. The provider suffix is
+        // free-form and is only a JLPT marker, never a student matching key.
       }) : '';
       const warnings: string[] = [];
       let newlyLinked = false;
@@ -573,14 +573,21 @@ export async function syncAndMatchCareGroups(
         const allRelations: any[] = isZalo ? student.zalo_contact_relations : student.line_contact_relations;
         const ownedRelations = allRelations.filter(r => r[accountKey]?.cs_id === csId && r[accountKey]?.archived_at == null && (!restrictedAccountId || r[accountField] === restrictedAccountId));
         const exactRelations = ownedRelations.filter(r => r.program_type === programType);
-        const valid = (r: any) => r.relation_status === 'FRIEND' && (r[groupField] != null || Boolean(r[uidField]));
+        const autoProgramMismatch = (r: any) => r.matched_by === 'AUTO_GROUP_NAME' && r[groupField] != null &&
+          classifyCareGroupName(r[groupKey]?.name || r.display_name, rules, student.full_name)?.programType !== programType;
+        const valid = (r: any) => !autoProgramMismatch(r) && r.relation_status === 'FRIEND' && (r[groupField] != null || Boolean(r[uidField]));
+        const mismatched = exactRelations.filter(autoProgramMismatch);
+        if (mismatched.length) {
+          warnings.push(platform + ': liên kết tự động cũ sai chương trình; cần đối chiếu lại');
+          if (applyMatches && rules.enabled) for (const rel of mismatched) await careGroupLinksRepository.suspendAutomatic(platform, rel.id);
+        }
         const manual = exactRelations.filter(r => valid(r) && r.matched_by === 'MANUAL');
         if (manual.length > 1) { warnings.push(platform + ': có nhiều liên kết thủ công, cần kiểm tra'); return null; }
         if (manual.length === 1) return manual[0];
         if (ownedRelations.some(r => r.program_type === 'ALL' && (r.target_type === 'GROUP' || r[groupField] != null))) warnings.push(platform + ': liên kết nhóm cũ chưa xác định chương trình; cần chọn lại nhóm');
         const candidates: any[] = (isZalo ? indexedZalo : indexedLine).filter((g: any) =>
           !['DISABLED', 'BANNED'].includes(g[accountKey]?.status) && g[accountKey]?.cs_id === csId && g.parsed?.csCode === csCode &&
-          g.parsed?.studentId.toUpperCase() === extId?.toUpperCase() && g.parsed?.programType === programType);
+          g.parsed?.studentId.toUpperCase() === extId?.toUpperCase() && classifyCareGroupName(g.name, rules, student.full_name)?.programType === programType);
         const sharedUser = ownedRelations.find(r => valid(r) && r.program_type === 'ALL' && r.target_type === 'USER' && r[groupField] == null && (isZalo || !/^[cC]/.test(r.friend_line_uid || '')));
         if (candidates.length > 1) {
           warnings.push(platform + ': trùng ' + candidates.length + ' nhóm ' + programType + ', cần chọn thủ công');

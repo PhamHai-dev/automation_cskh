@@ -16,6 +16,7 @@ import { prisma } from '../../prisma/client';
 import { decryptJson, encryptJson } from '../../shared/crypto/aes-gcm';
 import { lineRepository } from './line-repository';
 import { linePool } from './line-pool';
+import { emitLineStatus } from './line-socket';
 import {
   lineRateLimiter,
   type LineCategoryLimit,
@@ -59,6 +60,7 @@ export class LineService {
   }
 
   async getAccount(accountId: number) {
+    if (!Number.isSafeInteger(accountId) || accountId <= 0) throw Object.assign(new Error('Mã tài khoản LINE không hợp lệ'), { statusCode: 400 });
     const account = await lineRepository.findAccountById(accountId);
     if (!account) {
       const err: any = new Error('LINE account not found');
@@ -143,8 +145,8 @@ export class LineService {
         await linePool.connectOaAccount(created.id, oaSession);
       } catch {
         await lineRepository.updateAccount(created.id, {
-          status: 'ACTIVE',
-          last_connected_at: new Date(),
+          status: 'NOT_LOGGED_IN', disconnect_reason: 'oa_connection_failed',
+          last_sync_error: 'Không xác minh được kết nối LINE OA. Hãy kiểm tra token và kết nối mạng.',
         });
       }
 
@@ -236,13 +238,15 @@ export class LineService {
       ...(displayName ? { display_name: displayName } : {}),
       encrypted_session_data: encryptJson(oaSession),
       webhook_secret: channelSecret,
-      status: 'ACTIVE',
+      status: 'CONNECTING',
     });
 
     try {
       await linePool.connectOaAccount(accountId, oaSession);
     } catch {
-      // ignore network error in offline/test env
+      await lineRepository.updateAccount(accountId, { status: 'NOT_LOGGED_IN', disconnect_reason: 'oa_connection_failed',
+        last_sync_error: 'Không xác minh được kết nối LINE OA. Hãy kiểm tra token và kết nối mạng.' });
+      emitLineStatus({ accountId, accountType: 'OA', status: 'NOT_LOGGED_IN', disconnectReason: 'oa_connection_failed', timestamp: new Date().toISOString() });
     }
 
     return lineRepository.findAccountById(accountId);
@@ -533,6 +537,7 @@ export class LineService {
 
   async syncFriends(accountId: number) {
     const account = await this.getAccount(accountId);
+    if (account.account_type === 'OA') throw Object.assign(new Error('Danh bạ LINE OA được cập nhật qua webhook; không hỗ trợ tải toàn bộ người theo dõi.'), { statusCode: 400 });
     await lineRateLimiter.consumeOrThrow(accountId, 'contact_sync', account.account_type);
     await linePool.ensureAccountReady(accountId);
 
@@ -581,6 +586,8 @@ export class LineService {
 
   async sendFriendRequest(accountId: number, targetMid: string) {
     const account = await this.getAccount(accountId);
+    if (account.account_type === 'OA') throw Object.assign(new Error('LINE OA không hỗ trợ gửi lời mời kết bạn.'), { statusCode: 400 });
+    if (!/^u[0-9a-f]{32}$/i.test(targetMid)) throw Object.assign(new Error('MID liên hệ LINE không hợp lệ'), { statusCode: 400 });
     await lineRateLimiter.consumeOrThrow(accountId, 'friend_action', account.account_type);
     await linePool.ensureAccountReady(accountId);
     const adapter = linePool.getPersonalAdapter(accountId);
@@ -588,11 +595,7 @@ export class LineService {
       return adapter.sendFriendRequest(targetMid);
     }
 
-    const friend = await lineRepository.upsertFriend(accountId, targetMid, {
-      friendship_status: 'friend',
-      relationship_kind: 'friend',
-    });
-    return { sent: true, friend };
+    throw Object.assign(new Error('Tài khoản LINE chưa kết nối để gửi lời mời kết bạn.'), { statusCode: 503 });
   }
 
   // ─── Groups ───────────────────────────────────────────────────────────────
@@ -618,6 +621,7 @@ export class LineService {
       throw Object.assign(new Error('Tài khoản LINE chưa kết nối để đồng bộ nhóm.'), { statusCode: 503 });
     } else {
       const oaAdapter = linePool.getOaAdapter(accountId);
+      if (!oaAdapter) throw Object.assign(new Error('Tài khoản LINE OA chưa kết nối để đồng bộ nhóm.'), { statusCode: 503 });
       const groups = await lineRepository.findGroupsByAccount(accountId);
       let synced = 0;
       if (oaAdapter) {
@@ -678,6 +682,9 @@ export class LineService {
   }
 
   async sendMessage(accountId: number, threadId: string, content: string) {
+    if (!threadId?.trim() || threadId.length > 128 || typeof content !== 'string' || !content.trim() || content.length > 5000) {
+      throw Object.assign(new Error('Đích gửi và nội dung tin nhắn không hợp lệ'), { statusCode: 400 });
+    }
     const conv = await lineRepository.findConversationByThread(accountId, threadId);
     const isGroup =
       conv?.thread_type === 'group' ||

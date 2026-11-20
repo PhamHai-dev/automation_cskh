@@ -7,6 +7,7 @@ import { errorMiddleware } from '../../../middlewares/error.middleware';
 import { omnichannelRouter } from '../omnichannel.routes';
 
 jest.mock('../../../prisma/client', () => ({ prisma: {
+  student: { findMany: jest.fn().mockResolvedValue([{ external_id: 'HV_001', full_name: 'Nguyễn Văn An' }]) },
   appSetting: { findUnique: jest.fn().mockResolvedValue(null) },
   user: { findUnique: jest.fn() }, manageAssignment: { findMany: jest.fn() },
   zaloAccount: { findMany: jest.fn() }, lineAccount: { findMany: jest.fn() },

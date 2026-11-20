@@ -1,5 +1,12 @@
 # Project Changelog
 
+## 2026-11-20 — Endpoint tài khoản và nhận diện hậu tố JLPT tự do
+
+- Hậu tố JLPT là ghi chú tự do, không so với trường học viên hay danh sách ví dụ cấu hình; ghép theo lõi CSKH + mã + tên đã biết. Bỏ sao chép trình độ hồ sơ vào gợi ý tên nhóm, giữ chọn thủ công khi trùng và tránh phân loại sai do khoảng trắng cuối.
+- Cập nhật preview/config UI và OpenAPI; xác minh liên kết tự động thật cho nhóm `02 - 420285164 Nguyễn Hoài Ngân VIPN4N5`.
+- Loại credential khỏi response tài khoản Zalo/LINE, che proxy, phản ánh kết nối live; thêm status LINE owner-scoped. Chặn thành công giả khi OA xác minh lỗi hoặc personal mất kết nối, validate ID/text và chặn QR/reconnect Zalo đã vô hiệu hóa. Sửa query tin mới nhất Zalo bằng tham số Prisma an toàn.
+- 128 backend tests, 28 frontend tests, typecheck/build và browser responsive ADMIN/CS đạt; 12 GET thật trả 200, kiểm tra 401/403 đạt. Integration test bổ sung bị chặn bởi schema DB test cũ, lint thiếu cấu hình/executable có sẵn; không gửi tin provider thật hoặc bật worker.
+
 ## 2026-11-20 — Sửa lỗi API 500 do database lệch migration
 
 - Áp dụng migration index/history và chuẩn hóa gói học đã có, bổ sung `course_code`; bỏ UTF-8 BOM gây MySQL syntax error ở migration index chưa áp dụng. Thêm migration chuyển backup config legacy sang per-program, giữ bảng/cấu hình cũ, bổ sung index/FK. Có snapshot và kiểm tra bảo toàn dữ liệu trước/sau.

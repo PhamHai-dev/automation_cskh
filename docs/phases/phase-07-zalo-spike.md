@@ -79,6 +79,12 @@ Theo yêu cầu tiếp tục của người dùng, đã chạy product và sửa
 
 ## Changes from original plan
 
+### Endpoint tài khoản và hậu tố JLPT tự do — 2026-11-20
+
+Theo người dùng làm rõ Q-016, hậu tố JLPT chỉ là dấu hiệu chương trình và không tương ứng với trường học viên. Matcher xác định phần lõi bằng CSKH + mã + tên đã biết, chấp nhận `VIPN4N5` khi hồ sơ ghi `N54Video`; không dùng danh sách ví dụ để giới hạn hậu tố hoặc lấy trình độ hồ sơ làm gợi ý. Giữ báo trùng/chọn thủ công. DB/API thật xác nhận nhóm của học viên `420285164` đã liên kết `JLPT/AUTO_GROUP_NAME`; preview và UI cấu hình được cập nhật.
+
+Audit endpoint Zalo/LINE: lọc credential/che proxy, kiểm tra trạng thái live, OA verification, ID/text validation, không báo sync/friend request thành công giả, chặn QR/reconnect tài khoản Zalo archived/disabled/banned, query tin mới nhất an toàn. 128 tests backend, 28 tests frontend, backend typecheck/frontend build/OpenAPI parse và browser ADMIN/CS desktop/tablet/mobile đạt; 12 GET thật trả 200, auth/owner trả 401/403. Một integration test bổ sung bị chặn bởi DB test thiếu `students.birth_year`, lint thiếu executable/config có sẵn. Không tạo migration, bật worker, gửi tin thật hay tạo QR mới; chưa nghiệm thu delivery hai chiều provider hoặc hoàn thành phase.
+
 ### Nhóm lớp và danh bạ — 2026-11-20
 
 Follow-up layout: bảng nhóm lớp/danh bạ giữ cùng tỷ lệ cột qua fixed layout; text căn trái/trên, số phải và action grid giữ vị trí theo nền tảng. Kiểm tra DOM chiều rộng, overflow, tên/mã dài, nhiều liên kết và dữ liệu thật local; không đổi API hoặc khởi động lại backend.

@@ -2,6 +2,13 @@
 
 Updated 2026-11-20. Changes restore the existing account ownership rule; ADMIN/MANAGE do not gain access to another user's LINE account.
 
+## Account endpoint audit — 2026-11-20
+
+- Account list/detail/lifecycle responses omit `encrypted_session_data` and `webhook_secret`, mask proxy credentials, and include `liveStatus` from the current pool. A stored ACTIVE account with no live adapter reports liveStatus NOT_LOGGED_IN. `GET /accounts/{id}/status` returns the same connection status without credentials.
+- Invalid account IDs or malformed/empty send payloads return 400 before provider calls. LINE sends accept text only in this endpoint; other content types return 400.
+- OA create/credentials/reconnect verify bot identity before reporting ACTIVE. Failed verification persists NOT_LOGGED_IN with `oa_connection_failed`; it does not fabricate a live adapter.
+- Friend requests and contact/group sync must have a ready adapter. A disconnected account returns 503 without inserting a friend or returning a fake success. OA friend requests are unsupported (400); follower contact sync is webhook-driven (400), not a recount of stored followers.
+
 ## Personal QR
 
 `POST /api/v1/line/accounts/{id}/qr-login` requires an authenticated ADMIN/MANAGE/CS who owns the account. OA accounts return 400. Response keeps the existing `{ data: result, ...result }` envelope; `result` contains `accountId`, `status`, `qrCode`, `qrUrl`, `pinCode`. QR image fields contain a locally generated PNG data URI. No external QR image service is used.

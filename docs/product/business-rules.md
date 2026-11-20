@@ -207,7 +207,16 @@ Quyết định tracking: Q-013 & Quyết định 32 (RESOLVED).
   - Re-upload khi dữ liệu đã phản ánh là `UNCHANGED`; commit ghi audit và không tạo duplicate Attendance.
 - **Định dạng file:** Sheet 1 profile và attendance workbook dùng luồng riêng; source phải phù hợp cấu trúc workbook đã chọn.
 
-## 20. Checklist khi business rule thay đổi
+## 20. Nhận diện nhóm chăm sóc Kaiwa/JLPT — CHỐT
+
+Nguồn: quyết định 37–38 và Q-016, người dùng làm rõ ngày 2026-11-20.
+
+- So khớp phần lõi CSKH + mã học viên + tên học viên trong phạm vi tài khoản sở hữu. Tên học viên đã biết xác định ranh giới giữa tên và hậu tố, không đoán theo từ cuối.
+- Kaiwa không có hậu tố; JLPT có hậu tố tự do không rỗng. Hậu tố chỉ đánh dấu JLPT, không gắn với `Enrollment.level`, gói học hoặc bất kỳ trường dữ liệu học viên nào. `VIPN4N5` vẫn khớp khi hồ sơ ghi `N54Video`.
+- Nhiều nhóm cùng lõi/chương trình phải báo trùng và chọn thủ công; không chọn theo hậu tố hay thứ tự. Giữ quyết định liên kết thủ công.
+- ADMIN/MANAGE cấu hình mẫu tên và xem trước. Danh sách hậu tố là ví dụ tùy chọn; không phải danh sách giá trị được phép. Lưu cấu hình không tự đổi tên nhóm hoặc gửi tin.
+
+## 21. Checklist khi business rule thay đổi
 
 Khi user chốt hoặc thay đổi business rule:
 1. Cập nhật file này.

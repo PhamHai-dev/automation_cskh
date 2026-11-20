@@ -42,7 +42,7 @@ test('CS cannot save or preview; unauthenticated/teacher cannot read', async () 
   expect(db.$transaction).not.toHaveBeenCalled();
 });
 test('preview recognizes JLPT without DB settings writes', async () => {
-  const res = await request(app).post(url + '/preview').set('Authorization', auth).send({ config: DEFAULT_CARE_GROUP_RULES, groupName: '01 - HV_001 Nguyễn Văn An N4' }).expect(200);
+  const res = await request(app).post(url + '/preview').set('Authorization', auth).send({ config: DEFAULT_CARE_GROUP_RULES, groupName: '01 - HV_001 Nguyễn Văn An N4', studentName: 'Nguyễn Văn An' }).expect(200);
   expect(res.body.data).toMatchObject({ programType: 'JLPT', studentId: 'HV_001', levelNote: 'N4' });
   expect(db.appSetting.findUnique).not.toHaveBeenCalled(); expect(db.$transaction).not.toHaveBeenCalled();
 });
@@ -55,7 +55,7 @@ test('stale settings and concurrent updates return 409 with no overwrite', async
   expect(db.auditLog.create).not.toHaveBeenCalled();
 });
 test('rejects invalid templates, unknown keys and missing version', async () => {
-  for (const payload of [DEFAULT_CARE_GROUP_RULES, { ...DEFAULT_CARE_GROUP_RULES, expectedUpdatedAt: null, extra: true }, { ...DEFAULT_CARE_GROUP_RULES, expectedUpdatedAt: null, jlptNotes: [] }]) {
+  for (const payload of [DEFAULT_CARE_GROUP_RULES, { ...DEFAULT_CARE_GROUP_RULES, expectedUpdatedAt: null, extra: true }, { ...DEFAULT_CARE_GROUP_RULES, expectedUpdatedAt: null, enabled: 'yes' }]) {
     await request(app).put(url).set('Authorization', auth).send(payload).expect(400);
   }
   expect(db.$transaction).not.toHaveBeenCalled();

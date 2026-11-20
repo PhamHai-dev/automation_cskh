@@ -1,5 +1,14 @@
 # Project Status
 
+## Endpoint tài khoản và hậu tố JLPT tự do — 2026-11-20
+
+- Bỏ giới hạn hậu tố theo danh sách N1–N5. Matcher đối chiếu lõi CSKH + mã + tên đã biết, phân loại JLPT bằng hậu tố không rỗng; không đọc `Enrollment.level` để chọn nhóm hoặc gợi ý tên. Khoảng trắng cuối không biến Kaiwa thành JLPT. Preview yêu cầu tên học viên để xác định ranh giới; danh sách hậu tố trong cấu hình chỉ là ví dụ tùy chọn.
+- Xác minh DB/API local: `02 - 420285164 Nguyễn Hoài Ngân VIPN4N5` đã có liên kết `JLPT/AUTO_GROUP_NAME` tới học viên `420285164`, report chỉ đọc trả đúng liên kết. Không sửa tên nhóm provider.
+- LINE account response loại session/webhook secret, che credential proxy; thêm status endpoint owner-scoped và lấy liveStatus từ adapter/listener thật. OA xác minh thất bại không lưu ACTIVE; sync/request không hỗ trợ hoặc mất kết nối trả lỗi, không tạo friend/sent giả. Validate ID và text trước SDK. Zalo chặn QR/reconnect tài khoản archived/disabled/banned, che session/proxy và không coi ACTIVE lưu DB là phiên live. Sửa lấy tin mới nhất theo timestamp/id bằng Prisma.join.
+- 128 tests trong 9 backend suites và 28 frontend tests pass; backend typecheck, frontend build và OpenAPI parse đạt. Browser fixture ADMIN/CS ở 1440/768/390 kiểm tra bảng, lọc, preview, hủy và quyền đạt. 12 GET thật list/detail/status/friends/groups/conversations trả 200; cả hai nền tảng trả 401 khi thiếu đăng nhập và 403 khi khác chủ tài khoản.
+- Sau hot reload, khôi phục đúng hai phiên đang dùng bằng session lưu: Zalo 8 live `connected`, LINE 13 live `ACTIVE`; không mở lại tài khoản Zalo 5 archived/disabled. Product tiếp tục chạy ở frontend 5173/backend 3000.
+- Một integration test bổ sung `care-group-sync-no-delete` bị chặn bởi DB test cũ thiếu `students.birth_year`; không đổi DB test trong task này. Backend lint thiếu executable, frontend lint thiếu config có sẵn. Worker vẫn tắt; không gửi tin thật hoặc tạo QR mới, nên chưa xác nhận delivery hai chiều với provider.
+
 ## Khôi phục tải dữ liệu do DB chưa migrate — 2026-11-20
 
 - Lỗi thật `/students?page=1&pageSize=25` là Prisma P2022 thiếu `enrollments.course_code`; cùng lỗi ảnh hưởng enrollment/class/dashboard/matcher. Hai migration 20261113/20261117 chưa áp dụng. Migration index có UTF-8 BOM khiến MySQL dừng ngay statement đầu; bỏ BOM, đánh dấu lần thất bại rolled-back rồi deploy lại thành công, không sửa nội dung nghiệp vụ migration.
@@ -143,7 +152,7 @@ Không có blocker kỹ thuật cho Phase 7.
 - Sau khi ghép commit remote `f1c410b`: giữ thay đổi cột học viên/CVHT và căn chỉnh bảng. Đã backup 2.374 students, 2.390 enrollments, 1.363 class_schedules trước migration remote `20261120032000_align_excel_web_columns` (thêm birth_year; bỏ các trường ngoài contract theo remote). Snapshot `scratch/db-recovery-2026-11-20/before-remote-column-migration.json` được giữ local; DB có 26 migrations.
 
 - Đã tách liên kết nhóm Zalo/LINE theo `student + account + program_type`: Kaiwa và JLPT không ghi đè nhau. Liên kết `ALL` chỉ dùng cho USER cá nhân dùng chung; GROUP legacy được đánh dấu cần xác định chương trình.
-- Matcher đọc mẫu tên từ AppSetting: Kaiwa mặc định `{csNumber} - {studentId} {studentName}`, JLPT thêm `{level}` ở cuối. Ghi chú N1–N5 chỉ nhận diện hậu tố; không so với `Enrollment.level` và không dùng để tự chọn nhóm. Nhiều nhóm cùng CS + mã HV + chương trình chuyển sang chọn thủ công.
+- Matcher đọc mẫu tên từ AppSetting: Kaiwa mặc định `{csNumber} - {studentId} {studentName}`, JLPT thêm hậu tố tự do ở cuối. `VIPN4N5`, `N54Video` và nội dung tương tự đều hợp lệ; hậu tố không so với `Enrollment.level` hay trường học viên nào. Match dùng lõi CSKH + mã + tên học viên đã biết để xác định ranh giới hậu tố. Nhiều nhóm cùng khóa chuyển sang chọn thủ công.
 - Admin/Manage có hộp thoại cấu hình, xem trước và optimistic version; lưu có audit, không tự đổi tên nhóm, gửi tin hoặc chạy đồng bộ. Bảng Liên kết học viên và Danh bạ nhóm có lọc Kaiwa/JLPT, dòng theo chương trình, cảnh báo legacy/trùng và căn chỉnh cố định responsive.
 - Automation trigger/worker/broadcast chỉ dùng liên kết đúng chương trình hoặc USER dùng chung; queued group target được kiểm tra lại trước gửi. Manual selection được bảo vệ trong transaction và không ghi đè bởi matcher.
 - Migration `20261120080000_program_scoped_care_groups` đã backup và áp dụng; giữ nguyên ID/dữ liệu quan hệ cũ. Prisma format/validate/migrate status, backend typecheck/build, frontend build, 105 backend tests, 28 frontend tests và browser QA 1440/768/390 pass. Không bật worker, không gửi tin thật; đã khôi phục phiên local Zalo 5/LINE 13.

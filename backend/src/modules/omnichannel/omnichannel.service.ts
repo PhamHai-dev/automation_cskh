@@ -5,7 +5,7 @@ import type { GroupListQuery } from './omnichannel.schema';
 import type { GroupAccount, GroupClassLink, OmnichannelGroup } from './omnichannel.types';
 
 import { careGroupSettingsRepository } from './care-group-settings.repository';
-import { classifyCareGroupName, type CareProgram } from './care-group-rules';
+import { classifyCareGroupName, parseCareGroupIdentity, type CareProgram } from './care-group-rules';
 
 interface LinkedStudent {
   id: number; external_id: string | null; full_name: string;
@@ -26,8 +26,12 @@ function classLinks(relations: { program_type: string; student: LinkedStudent }[
 export const omnichannelService = {
   async listGroups(actor: AuthUser, query: GroupListQuery) {
     const rules = await careGroupSettingsRepository.read();
-    const classification = (name: string | null, relations: { program_type: string }[]) => {
-      const parsed = classifyCareGroupName(name, rules);
+    const studentNames = await omnichannelRepository.listStudentNames(actor.id);
+    const namesById = new Map(studentNames.filter(s => s.external_id).map(s => [s.external_id!.toUpperCase(), s.full_name]));
+    const classification = (name: string | null, relations: { program_type: string; student: LinkedStudent }[]) => {
+      const identity = parseCareGroupIdentity(name, rules);
+      const knownName = identity ? namesById.get(identity.studentId.toUpperCase()) || relations.find(r => r.student.external_id?.toUpperCase() === identity.studentId.toUpperCase())?.student.full_name : null;
+      const parsed = classifyCareGroupName(name, rules, knownName);
       const programs = [...new Set(relations.map(r => r.program_type).filter(p => p !== 'ALL'))];
       return { programType: (programs.length === 1 ? programs[0] : programs.length > 1 ? null : parsed?.programType || null) as CareProgram | null, levelNote: parsed?.levelNote || null, needsProgramReview: relations.some(r => r.program_type === 'ALL') || programs.length > 1 };
     };

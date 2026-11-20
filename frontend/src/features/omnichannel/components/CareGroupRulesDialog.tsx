@@ -14,7 +14,8 @@ export function CareGroupRulesButton({ onSaved }: { onSaved: () => void }) {
   const [open, setOpen] = useState(false);
   const [config, setConfig] = useState<CareGroupRules | null>(null);
   const [notes, setNotes] = useState('');
-  const [name, setName] = useState('01 - HV_001 Nguyễn Văn An N4');
+  const [name, setName] = useState('01 - HV_001 Nguyễn Văn An VIPN4N5');
+  const [studentName, setStudentName] = useState('Nguyễn Văn An');
   const [result, setResult] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -39,7 +40,7 @@ export function CareGroupRulesButton({ onSaved }: { onSaved: () => void }) {
     if (!config) return;
     setBusy(true); setError(''); setResult('');
     try {
-      const data = await omnichannelApi.previewCareGroupRules(rules(), name);
+      const data = await omnichannelApi.previewCareGroupRules(rules(), name, studentName);
       setResult(data ? `${data.programType === 'KAIWA' ? 'Kaiwa' : 'JLPT'} · ${data.csCode} · ${data.studentId}${data.levelNote ? ' · Ghi chú: ' + data.levelNote : ''}` : 'Không khớp mẫu nào.');
     } catch (e) { setError(inboxError(e, 'Không kiểm tra được mẫu.')); }
     finally { setBusy(false); }
@@ -55,12 +56,13 @@ export function CareGroupRulesButton({ onSaved }: { onSaved: () => void }) {
           <label className="flex items-center gap-2"><input type="checkbox" checked={config.enabled} onChange={e => { setConfig({ ...config, enabled: e.target.checked }); setResult(''); }} />Tự động liên kết theo tên nhóm</label>
           <Input label="Mẫu tên nhóm Kaiwa" value={config.kaiwaTemplate} onChange={e => { setConfig({ ...config, kaiwaTemplate: e.target.value }); setResult(''); }} />
           <Input label="Mẫu tên nhóm JLPT" value={config.jlptTemplate} onChange={e => { setConfig({ ...config, jlptTemplate: e.target.value }); setResult(''); }} />
-          <p className="text-xs leading-5 text-text-secondary">Dùng mỗi trường đúng một lần: {'{csNumber}'}, {'{studentId}'}, {'{studentName}'}. JLPT thêm {'{level}'} ở cuối. Các trường phải có dấu hoặc khoảng trắng phân cách.</p>
-          <Input label="Ghi chú trình độ JLPT (phân cách bằng dấu phẩy)" value={notes} onChange={e => { setNotes(e.target.value); setResult(''); }} />
-          <p className="text-xs leading-5 text-text-secondary">Các ghi chú trên dùng để nhận diện tên nhóm JLPT. Tên không có ghi chú khớp sẽ được xét theo mẫu Kaiwa. Trình độ không được dùng để chọn nhóm cho học viên. Nhiều nhóm cùng khớp sẽ yêu cầu chọn thủ công.</p>
+          <p className="text-xs leading-5 text-text-secondary">Dùng mỗi trường đúng một lần: {'{csNumber}'}, {'{studentId}'}, {'{studentName}'}. JLPT thêm {'{level}'} ở cuối để giữ chỗ cho ghi chú tự do; biến mẫu này không lấy dữ liệu từ trường trình độ học viên. Các phần phải có dấu hoặc khoảng trắng phân cách.</p>
+          <Input label="Ví dụ hậu tố JLPT (tùy chọn, phân cách bằng dấu phẩy)" value={notes} onChange={e => { setNotes(e.target.value); setResult(''); }} />
+          <p className="text-xs leading-5 text-text-secondary">Danh sách này chỉ là ví dụ để hướng dẫn người dùng. Hậu tố thực tế có thể là bất kỳ nội dung nào, không cần trùng danh sách và không được so với trường dữ liệu học viên. Nhiều nhóm cùng khớp sẽ yêu cầu chọn thủ công.</p>
           <div className="space-y-3 rounded-xl border border-border p-4">
             <Input label="Tên nhóm để kiểm tra" value={name} onChange={e => { setName(e.target.value); setResult(''); }} />
-            <Button variant="outline" size="sm" disabled={busy || !name.trim()} onClick={() => void preview()}>Kiểm tra nhận diện</Button>
+            <Input label="Tên học viên tương ứng (chỉ để xác định phần lõi)" value={studentName} onChange={e => { setStudentName(e.target.value); setResult(''); }} />
+            <Button variant="outline" size="sm" disabled={busy || !name.trim() || !studentName.trim()} onClick={() => void preview()}>Kiểm tra nhận diện</Button>
             {result && <p role="status" className="break-words text-text-primary">{result}</p>}
           </div>
           <p className="text-xs leading-5 text-text-muted">Cấu hình dùng chung toàn hệ thống. Lưu không đổi tên nhóm trên Zalo/LINE, không gửi tin và không tự chạy đồng bộ.</p>

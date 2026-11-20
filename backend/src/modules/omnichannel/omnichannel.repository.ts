@@ -6,6 +6,9 @@ import { getStudentCsScope } from '../students/students.repository';
 const accountSelect = { id: true, display_name: true, status: true } as const;
 
 export const omnichannelRepository = {
+  async listStudentNames(ownerId: number) {
+    return prisma.student.findMany({ where: { enrollments: { some: { cs_id: ownerId } } }, select: { external_id: true, full_name: true } });
+  },
   async listAccounts(ownerId: number) {
     const where = { cs_id: ownerId, archived_at: null };
     const [zalo, line] = await Promise.all([

@@ -40,6 +40,25 @@ test('same student + account supports Kaiwa and JLPT without overwrite; N4 group
   expect(db.zaloContactRelation.upsert.mock.calls.map((c: any) => c[0].create.program_type).sort()).toEqual(['JLPT', 'KAIWA']);
   expect(report.linkedItems.find(r => r.programType === 'JLPT')?.zaloGroupId).toBe('group-2');
 });
+
+test.each(['zalo', 'line'])('%s matches arbitrary JLPT suffix independently of enrollment level and examples', async platform => {
+  const st = student();
+  st.external_id = '420285164'; st.full_name = 'Nguyễn Hoài Ngân';
+  st.enrollments = [{ ...st.enrollments[0], cs: { ...cs, code: 'CVHT02' }, level: 'N54Video' }];
+  db.student.findMany.mockResolvedValue([st]);
+  db.appSetting.findUnique.mockResolvedValue({ value: { ...DEFAULT_CARE_GROUP_RULES, jlptNotes: ['N54Video'] }, updated_at: new Date() });
+  db[platform + 'Group'].findMany.mockResolvedValue([
+    group(1, '02 - 420285164 Nguyễn Hoài Ngân VIPN4N5', platform),
+    group(2, '02 - 4202851640 Nguyễn Hoài Ngân VIPN4N5', platform),
+    group(3, '02 - 420285164 Nguyễn Hoài Nam VIPN4N5', platform),
+  ]);
+  const report = await syncAndMatchCareGroups({ csId: 6, silent: true });
+  expect(report.linkedStudentsCount).toBe(1);
+  expect(report.linkedItems[0]).toMatchObject({ programType: 'JLPT', studentExternalId: '420285164',
+    [platform === 'zalo' ? 'zaloGroupId' : 'lineGroupId']: 'group-1' });
+  expect(report.linkedItems[0].suggestedGroupName).toBe('02 - 420285164 Nguyễn Hoài Ngân [Ghi chú JLPT]');
+  expect(db[platform + 'ContactRelation'].upsert).toHaveBeenCalledTimes(1);
+});
 test.each(['zalo','line'])('%s duplicate JLPT notes require manual choice and disable previous auto link without deletion', async platform => {
   const st = student(); st[platform === 'zalo' ? 'zalo_contact_relations' : 'line_contact_relations'] = [relation(platform, 'JLPT', 'AUTO_GROUP_NAME')];
   db.student.findMany.mockResolvedValue([st]);

@@ -683,7 +683,7 @@ export const OmnichannelStudentLinksPage: React.FC<{ initialTab?: string }> = ({
       <div className="space-y-4">
         {loadError && <div role="alert" className="rounded-xl border border-danger/30 bg-surface p-4 text-sm text-danger">{loadError}<Button variant="outline" size="sm" onClick={() => void loadWorkspaceData()}>Thử lại</Button></div>}
         <div className="rounded-xl border border-border bg-surface p-4 text-sm text-text-secondary">
-          Mỗi dòng là một học viên theo chương trình và CVHT phụ trách. Tên gợi ý áp dụng cấu hình hiện tại. Ghi chú trình độ ở cuối tên giúp nhận diện nhóm JLPT, không dùng để chọn nhóm. Nếu có nhiều nhóm cùng khớp, hãy chọn thủ công. Liên kết thủ công được giữ khi đồng bộ.
+          Mỗi dòng là một học viên theo chương trình và CVHT phụ trách. Tên gợi ý áp dụng cấu hình hiện tại. Hậu tố tự do sau tên chỉ nhận diện nhóm JLPT, không đối chiếu với trường dữ liệu học viên. Nếu có nhiều nhóm cùng khớp, hãy chọn thủ công. Liên kết thủ công được giữ khi đồng bộ.
         </div>
 
         {/* Live Progress Banner when syncingCareGroups === true */}

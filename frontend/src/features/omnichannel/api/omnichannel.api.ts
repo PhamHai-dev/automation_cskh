@@ -314,7 +314,7 @@ function normalizeCategories(
 export const omnichannelApi = {
   getCareGroupRules: async (): Promise<CareGroupRules> => (await apiClient.get('/omnichannel/care-group-rules')).data.data,
   saveCareGroupRules: async (config: Omit<CareGroupRules, 'updatedAt'>, expectedUpdatedAt: string | null): Promise<CareGroupRules> => (await apiClient.put('/omnichannel/care-group-rules', { ...config, expectedUpdatedAt })).data.data,
-  previewCareGroupRules: async (config: Omit<CareGroupRules, 'updatedAt'>, groupName: string): Promise<{ programType: CareProgram; csCode: string; studentId: string; levelNote: string | null } | null> => (await apiClient.post('/omnichannel/care-group-rules/preview', { config, groupName })).data.data,
+  previewCareGroupRules: async (config: Omit<CareGroupRules, 'updatedAt'>, groupName: string, studentName: string): Promise<{ programType: CareProgram; csCode: string; studentId: string; levelNote: string | null } | null> => (await apiClient.post('/omnichannel/care-group-rules/preview', { config, groupName, studentName })).data.data,
   listGroups: async (params: { scope: 'all' | 'class-linked'; program?: 'ALL' | CareProgram; platform?: 'ALL' | 'ZALO' | 'LINE'; accountId?: number; search?: string; page?: number; pageSize?: number }, signal?: AbortSignal): Promise<GroupDirectoryResponse> => {
     const response = await apiClient.get('/omnichannel/groups', { params, signal });
     return response.data;

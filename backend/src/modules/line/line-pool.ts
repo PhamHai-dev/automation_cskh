@@ -88,6 +88,7 @@ export class LineAccountPool implements ILineDeliveryDispatcher {
     accountId: number,
     credentials: LineOaSessionData,
   ): Promise<LineOaAdapter> {
+    this.oaAdapters.delete(accountId);
     const adapter = new LineOaAdapter(accountId, credentials);
     const botInfo = await adapter.verifyAndFetchBotInfo();
 
@@ -208,11 +209,7 @@ export class LineAccountPool implements ILineDeliveryDispatcher {
       if (account.account_type === 'OA' || session.mode === 'OA') {
         const oaCreds = session as LineOaSessionData;
         if (!oaCreds.channelAccessToken || !oaCreds.channelSecret) return false;
-        const adapter = new LineOaAdapter(lineAccountId, oaCreds);
-        this.oaAdapters.set(lineAccountId, adapter);
-        if (account.status !== 'ACTIVE') {
-          await lineRepository.updateAccount(lineAccountId, { status: 'ACTIVE' });
-        }
+        await this.connectOaAccount(lineAccountId, oaCreds);
         return true;
       } else {
         const personalCreds = session as LinePersonalSessionData;
@@ -231,6 +228,11 @@ export class LineAccountPool implements ILineDeliveryDispatcher {
         return false;
       }
     } catch (err) {
+      if (account.account_type === 'OA') {
+        this.oaAdapters.delete(lineAccountId);
+        await lineRepository.updateAccount(lineAccountId, { status: 'NOT_LOGGED_IN', disconnect_reason: 'oa_connection_failed' }).catch(() => undefined);
+        emitLineStatus({ accountId: lineAccountId, accountType: 'OA', status: 'NOT_LOGGED_IN', disconnectReason: 'oa_connection_failed', timestamp: new Date().toISOString() });
+      }
       log.warn(`ensureAccountReady failed for LINE account ${lineAccountId}`, {
         error: err instanceof Error ? err.message : String(err),
       });

@@ -1,5 +1,9 @@
 # Zalo API
 
+## Account endpoint audit — 2026-11-20
+
+Account JSON responses omit encrypted sessions, mask proxy credentials and include an honest live connection state. Stored ACTIVE without an entry in the live pool reports disconnected. Invalid account IDs return 400. Conversation previews resolve the newest persisted message for every conversation in a page using individually bound SQL IDs, including deterministic ties by message ID.
+
 ## Frontend status normalization — 2026-11-20
 
 The current account/status HTTP responses can expose internal pool names in `liveStatus`: `connected`, `disconnected`, `qr_pending`, `connecting`. The frontend Zalo API boundary maps these to `ACTIVE`, `NOT_LOGGED_IN`, `QR_PENDING`, `CONNECTING` before consumers use labels, counters or action visibility. Existing uppercase values remain supported. Unknown/missing live status falls back to the stored account status; stored `DISABLED`/`BANNED` takes priority. This is compatibility handling for existing responses; backend routes and owner scope are unchanged.
