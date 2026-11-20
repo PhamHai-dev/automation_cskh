@@ -3904,13 +3904,8 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
                 </th>
                 )}
                 {isColVisible('schedule_pattern') && (
-                <th scope="col" className="px-3 py-3 border-r border-border/60 whitespace-nowrap min-w-[75px]">
-                  Lịch học
-                </th>
-                )}
-                {isColVisible('duration_minutes') && (
-                <th scope="col" className="px-3 py-3 border-r-2 border-border/80 text-center whitespace-nowrap min-w-[80px]">
-                  Thời lượng
+                <th scope="col" className="px-3 py-3 border-r-2 border-border/80 whitespace-nowrap min-w-[75px]">
+                  Buổi học
                 </th>
                 )}
 
@@ -4137,11 +4132,6 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
                       {isColVisible('schedule_pattern') && (
                       <td data-align="center" data-wrap="nowrap" className="px-3 py-2.5 border-r border-border/60 font-semibold text-blue-700 whitespace-nowrap">
                         {st.schedule_pattern || '—'}
-                      </td>
-                      )}
-                      {isColVisible('duration_minutes') && (
-                      <td data-align="right" data-wrap="nowrap" className="px-3 py-2.5 border-r-2 border-border/80 text-center text-text-muted whitespace-nowrap">
-                        {st.duration_minutes ? `${st.duration_minutes}p` : '—'}
                       </td>
                       )}
 

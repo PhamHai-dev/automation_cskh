@@ -1136,7 +1136,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
     },
     {
       align: 'center' as const, wrap: false, key: 'cs_staff_code',
-      header: 'CSKH',
+      header: 'CVHT',
       cell: (item) => {
         const enr = item.enrollments?.[0];
         const code =
@@ -1526,11 +1526,11 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
       },
     },
     {
-      align: 'center' as const, wrap: false, key: 'date_of_birth',
-      header: 'Ngày sinh',
+      align: 'center' as const, wrap: false, key: 'birth_year',
+      header: 'Năm sinh',
       cell: (item) => (
         <span className="text-slate-600 text-xs whitespace-nowrap">
-          {item.date_of_birth ? new Date(item.date_of_birth).toLocaleDateString('vi-VN') : '—'}
+          {item.birth_year ?? '—'}
         </span>
       ),
     },
@@ -1734,7 +1734,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
     },
     {
       align: 'center' as const, wrap: false, key: 'schedule_pattern',
-      header: 'Lịch học',
+      header: 'Buổi học',
       cell: (item) => {
         const ec = item.enrollments?.[0]?.enrollment_classes?.[0];
         const schedules = ec?.class?.class_schedules || [];
@@ -1743,24 +1743,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
         return (
           <span className="font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded text-xs whitespace-nowrap">
             {displayPattern}
-          </span>
-        );
-      },
-    },
-    {
-      align: 'right' as const, wrap: false, key: 'duration_minutes',
-      header: 'Thời lượng',
-      cell: (item) => {
-        const ec = item.enrollments?.[0]?.enrollment_classes?.[0];
-        const schedules = ec?.class?.class_schedules || [];
-        const durations = schedules
-          .map((s) => (s.duration_minutes ? `${s.duration_minutes}p` : null))
-          .filter(Boolean);
-        const displayDuration =
-          durations.length > 0 ? Array.from(new Set(durations)).join(', ') : '—';
-        return (
-          <span className="text-slate-600 text-xs whitespace-nowrap">
-            {displayDuration}
           </span>
         );
       },
@@ -1892,7 +1874,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
     },
     {
       align: 'right' as const, wrap: false, key: 'attended_this_year',
-      header: 'Đã học 2026',
+      header: `Đã học ${new Date().getFullYear()}`,
       cell: (item) => {
         const enr = item.enrollments?.[0];
         const ec = enr?.enrollment_classes?.[0];
