@@ -27,6 +27,8 @@ import { getEnrollmentPackageLabel } from '../../enrollments/utils/enrollmentDis
 import { DataTable, Column } from '../../../components/common/DataTable';
 import { Button } from '../../../components/ui/Button';
 import { Input } from '../../../components/ui/Input';
+import { Select } from '../../../components/ui/Select';
+import { FilterBar } from '../../../components/common/FilterBar';
 import { Modal } from '../../../components/ui/Modal';
 import { Badge } from '../../../components/ui/Badge';
 import { useToast } from '../../../components/ui/Toast';
@@ -763,13 +765,13 @@ export const BroadcastCampaignsPanel: React.FC<BroadcastCampaignsPanelProps> = (
               {attCount > 0 && (
                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
                   <Paperclip className="w-3 h-3" />
-                  <span>📎 {attCount} tệp</span>
+                  <span>{attCount} tệp</span>
                 </span>
               )}
               {linkCount > 0 && (
                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
                   <Link2 className="w-3 h-3" />
-                  <span>🔗 {linkCount} link</span>
+                  <span>{linkCount} link</span>
                 </span>
               )}
             </div>
@@ -862,7 +864,7 @@ export const BroadcastCampaignsPanel: React.FC<BroadcastCampaignsPanelProps> = (
                 {total > 0 ? `${Math.round(((sent + failed + skipped) / total) * 100)}%` : '0%'}
               </span>
             </div>
-            <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden flex border border-border/60">
+            <div className="w-full h-2 bg-surface-muted rounded-full overflow-hidden flex border border-border/60">
               {sentPct > 0 && (
                 <div
                   className="bg-emerald-500 h-full transition-all duration-300"
@@ -1086,45 +1088,26 @@ export const BroadcastCampaignsPanel: React.FC<BroadcastCampaignsPanelProps> = (
       </div>
 
       {/* ─── Filter & Action Bar ─────────────────────────────────────────────── */}
-      <div className="bg-surface rounded-2xl border border-border/80 p-4 shadow-soft flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 flex-1">
-          <div className="w-full sm:w-80">
+      <FilterBar showHeader={false} gridClassName="grid min-w-0 grid-cols-1 sm:grid-cols-2 2xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-end gap-3">
             <Input
+              label="Tìm chiến dịch"
               placeholder="Tìm theo tên chiến dịch, nội dung..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               leftIcon={<Search className="w-4 h-4 text-text-muted" />}
             />
-          </div>
+            <Select label="Trạng thái chiến dịch" value={statusFilter} onChange={event => setStatusFilter(event.target.value)} options={[
+              { value: 'ALL', label: 'Tất cả' },
+              { value: 'SCHEDULED', label: 'Đang hẹn giờ' },
+              { value: 'SENDING', label: 'Đang gửi' },
+              { value: 'COMPLETED', label: 'Hoàn thành' },
+              { value: 'PARTIAL_FAILED', label: 'Có tin lỗi' },
+            ]} />
 
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
-            {[
-              { key: 'ALL', label: 'Tất cả' },
-              { key: 'SCHEDULED', label: 'Đang hẹn giờ' },
-              { key: 'SENDING', label: 'Đang gửi' },
-              { key: 'COMPLETED', label: 'Hoàn thành' },
-              { key: 'PARTIAL_FAILED', label: 'Có tin lỗi' },
-            ].map((tab) => (
-              <button
-                key={tab.key}
-                type="button"
-                onClick={() => setStatusFilter(tab.key)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-colors border ${
-                  statusFilter === tab.key
-                    ? 'bg-primary text-white border-primary shadow-xs'
-                    : 'bg-surface-muted/70 text-text-secondary border-border/60 hover:bg-surface-muted'
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="flex items-center justify-end gap-2 shrink-0">
+        <div className="flex min-w-0 max-w-full flex-wrap items-center justify-end gap-2 sm:col-span-2 2xl:col-span-1">
           <Button
             variant="outline"
-            size="sm"
+            size="md"
             onClick={() => fetchCampaigns()}
             leftIcon={<RefreshCw className="w-4 h-4" />}
           >
@@ -1132,14 +1115,14 @@ export const BroadcastCampaignsPanel: React.FC<BroadcastCampaignsPanelProps> = (
           </Button>
           <Button
             variant="primary"
-            size="sm"
+            size="md"
             onClick={openCreateModal}
             leftIcon={<Plus className="w-4 h-4" />}
           >
-            Tạo chiến dịch gửi tin / hẹn giờ
+            Tạo chiến dịch
           </Button>
         </div>
-      </div>
+      </FilterBar>
 
       {/* ─── Campaigns DataTable ─────────────────────────────────────────────── */}
       <DataTable
@@ -1293,7 +1276,7 @@ export const BroadcastCampaignsPanel: React.FC<BroadcastCampaignsPanelProps> = (
                       type="datetime-local"
                       value={scheduledAt}
                       onChange={(e) => setScheduledAt(e.target.value)}
-                      className="px-3 py-1.5 text-xs font-semibold bg-white border border-amber-300 rounded-lg text-text-primary focus:outline-none focus:ring-2 focus:ring-amber-500/30"
+                      className="px-3 py-1.5 text-xs font-semibold bg-surface border border-amber-300 rounded-lg text-text-primary focus:outline-none focus:ring-2 focus:ring-amber-500/30"
                       required
                     />
                   </div>
@@ -1390,7 +1373,7 @@ export const BroadcastCampaignsPanel: React.FC<BroadcastCampaignsPanelProps> = (
                 <Users className="w-3.5 h-3.5" />
                 <span>Theo Học viên ({normalizedStudents.length})</span>
                 {selectedStudentIds.length > 0 && (
-                  <span className="px-1.5 py-0.5 rounded-full bg-white/20 text-[10px]">
+                  <span className="px-1.5 py-0.5 rounded-full bg-surface/20 text-[10px]">
                     Đã chọn {selectedStudentIds.length}
                   </span>
                 )}
@@ -1408,7 +1391,7 @@ export const BroadcastCampaignsPanel: React.FC<BroadcastCampaignsPanelProps> = (
                 <MessageSquare className="w-3.5 h-3.5" />
                 <span>Nhóm Zalo ({catalog.zaloGroups?.length ?? 0})</span>
                 {selectedZaloGroupIds.length > 0 && (
-                  <span className="px-1.5 py-0.5 rounded-full bg-white/20 text-[10px]">
+                  <span className="px-1.5 py-0.5 rounded-full bg-surface/20 text-[10px]">
                     Đã chọn {selectedZaloGroupIds.length}
                   </span>
                 )}
@@ -1426,7 +1409,7 @@ export const BroadcastCampaignsPanel: React.FC<BroadcastCampaignsPanelProps> = (
                 <MessageSquare className="w-3.5 h-3.5" />
                 <span>Nhóm LINE ({catalog.lineGroups?.length ?? 0})</span>
                 {selectedLineGroupIds.length > 0 && (
-                  <span className="px-1.5 py-0.5 rounded-full bg-white/20 text-[10px]">
+                  <span className="px-1.5 py-0.5 rounded-full bg-surface/20 text-[10px]">
                     Đã chọn {selectedLineGroupIds.length}
                   </span>
                 )}
@@ -1543,7 +1526,7 @@ export const BroadcastCampaignsPanel: React.FC<BroadcastCampaignsPanelProps> = (
                                     <span className="text-xs font-bold text-text-primary">
                                       {st.fullName}
                                     </span>
-                                    <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 font-mono text-[10px] font-semibold">
+                                    <span className="px-1.5 py-0.5 rounded bg-surface-muted text-text-secondary font-mono text-[10px] font-semibold">
                                       Mã HV: {st.externalId}
                                     </span>
                                     {st.className !== 'Chưa xếp lớp' && (
@@ -1564,7 +1547,7 @@ export const BroadcastCampaignsPanel: React.FC<BroadcastCampaignsPanelProps> = (
                                   className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
                                     st.zaloLinked
                                       ? 'bg-blue-50 text-blue-700 border-blue-200'
-                                      : 'bg-slate-100 text-slate-400 border-slate-200'
+                                      : 'bg-surface-muted text-text-muted border-border'
                                   }`}
                                   title={st.zaloTargetLabel}
                                 >
@@ -1574,7 +1557,7 @@ export const BroadcastCampaignsPanel: React.FC<BroadcastCampaignsPanelProps> = (
                                   className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
                                     st.lineLinked
                                       ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                      : 'bg-slate-100 text-slate-400 border-slate-200'
+                                      : 'bg-surface-muted text-text-muted border-border'
                                   }`}
                                   title={st.lineTargetLabel}
                                 >
@@ -1927,7 +1910,7 @@ export const BroadcastCampaignsPanel: React.FC<BroadcastCampaignsPanelProps> = (
                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
                       <Paperclip className="w-3 h-3" />
                       <span>
-                        📎 {selectedCampaign.message_metadata?.attachments?.length} tệp đính kèm
+                        {selectedCampaign.message_metadata?.attachments?.length} tệp đính kèm
                       </span>
                     </span>
                   )}
@@ -1935,7 +1918,7 @@ export const BroadcastCampaignsPanel: React.FC<BroadcastCampaignsPanelProps> = (
                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
                       <Link2 className="w-3 h-3" />
                       <span>
-                        🔗 {selectedCampaign.message_metadata?.links?.length} link / nút bấm
+                        {selectedCampaign.message_metadata?.links?.length} link / nút bấm
                       </span>
                     </span>
                   )}
@@ -2113,12 +2096,12 @@ export const BroadcastCampaignsPanel: React.FC<BroadcastCampaignsPanelProps> = (
                               )}
                               {rAtts > 0 && (
                                 <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">
-                                  📎 {rAtts} tệp
+                                  <Paperclip className="w-3 h-3 inline-block mr-1" />{rAtts} tệp
                                 </span>
                               )}
                               {rLinks > 0 && (
                                 <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                                  🔗 {rLinks} link
+                                  <Link2 className="w-3 h-3 inline-block mr-1" />{rLinks} link
                                 </span>
                               )}
                             </div>

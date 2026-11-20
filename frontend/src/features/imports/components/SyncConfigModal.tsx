@@ -473,7 +473,7 @@ export const SyncConfigModal: React.FC<SyncConfigModalProps> = ({
         {/* 1. Chọn Loại luồng & Chương trình */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="md:col-span-2">
-            <label className="block text-xs font-bold text-slate-800 mb-1.5">
+            <label className="block text-xs font-bold text-text-primary mb-1.5">
               Loại luồng dữ liệu <span className="text-rose-500">*</span>
             </label>
             <select
@@ -485,7 +485,7 @@ export const SyncConfigModal: React.FC<SyncConfigModalProps> = ({
                   programType
                 )
               }
-              className="w-full h-9 rounded-xl border border-slate-200 bg-white disabled:bg-slate-100 px-3 text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+              className="w-full h-9 rounded-xl border border-border bg-surface disabled:bg-surface-muted px-3 text-xs font-semibold text-text-primary focus:outline-none focus:ring-2 focus:ring-blue-500/20"
             >
               {FLOW_OPTIONS.map((opt) => (
                 <option key={opt.value} value={opt.value}>
@@ -493,13 +493,13 @@ export const SyncConfigModal: React.FC<SyncConfigModalProps> = ({
                 </option>
               ))}
             </select>
-            <p className="text-[11px] text-slate-500 mt-1">
+            <p className="text-[11px] text-text-muted mt-1">
               {FLOW_OPTIONS.find((f) => f.value === flowType)?.subtitle}
             </p>
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-slate-800 mb-1.5">
+            <label className="block text-xs font-bold text-text-primary mb-1.5">
               Chương trình <span className="text-rose-500">*</span>
             </label>
             <div className="grid grid-cols-2 gap-2">
@@ -516,7 +516,7 @@ export const SyncConfigModal: React.FC<SyncConfigModalProps> = ({
                         ? prog === 'JLPT'
                           ? 'bg-primary text-white border-primary shadow-xs'
                           : 'bg-primary text-white border-primary shadow-xs'
-                        : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                        : 'bg-surface text-text-secondary border-border hover:bg-surface-subtle'
                     }`}
                   >
                     {prog}
@@ -529,7 +529,7 @@ export const SyncConfigModal: React.FC<SyncConfigModalProps> = ({
 
         {/* Tên hiển thị */}
         <div>
-          <label className="block text-xs font-bold text-slate-800 mb-1.5">
+          <label className="block text-xs font-bold text-text-primary mb-1.5">
             Tên hiển thị nguồn đồng bộ
           </label>
           <Input
@@ -546,9 +546,9 @@ export const SyncConfigModal: React.FC<SyncConfigModalProps> = ({
         </div>
 
         {/* 2. Chọn Nguồn dữ liệu (2 Tabs: Google Sheet vs Local File) */}
-        <div className="rounded-2xl border border-slate-200 p-4 space-y-4 bg-slate-50/50">
+        <div className="rounded-2xl border border-border p-4 space-y-4 bg-surface-subtle/50">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <span className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+            <span className="text-xs font-bold text-text-primary uppercase tracking-wider">
               Nguồn kết nối dữ liệu
             </span>
             <div className="inline-flex rounded-xl bg-slate-200/70 p-1">
@@ -557,8 +557,8 @@ export const SyncConfigModal: React.FC<SyncConfigModalProps> = ({
                 onClick={() => setSourceType('GOOGLE_SHEET')}
                 className={`px-3 py-1.5 rounded-lg text-xs font-semibold inline-flex items-center gap-1.5 transition-all cursor-pointer ${
                   sourceType === 'GOOGLE_SHEET'
-                    ? 'bg-white text-emerald-700 shadow-2xs'
-                    : 'text-slate-600 hover:text-slate-900'
+                    ? 'bg-surface text-emerald-700 shadow-2xs'
+                    : 'text-text-secondary hover:text-text-primary'
                 }`}
               >
                 <FileSpreadsheet className="w-3.5 h-3.5" />
@@ -572,8 +572,8 @@ export const SyncConfigModal: React.FC<SyncConfigModalProps> = ({
                 }}
                 className={`px-3 py-1.5 rounded-lg text-xs font-semibold inline-flex items-center gap-1.5 transition-all cursor-pointer ${
                   sourceType === 'LOCAL_FILE'
-                    ? 'bg-white text-blue-700 shadow-2xs'
-                    : 'text-slate-600 hover:text-slate-900'
+                    ? 'bg-surface text-blue-700 shadow-2xs'
+                    : 'text-text-secondary hover:text-text-primary'
                 }`}
               >
                 <FolderOpen className="w-3.5 h-3.5" />
@@ -585,7 +585,7 @@ export const SyncConfigModal: React.FC<SyncConfigModalProps> = ({
           {sourceType === 'GOOGLE_SHEET' ? (
             <div className="space-y-3">
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                <label className="block text-xs font-semibold text-text-secondary mb-1">
                   Link Google Sheet <span className="text-rose-500">*</span>
                 </label>
                 <div className="flex items-center gap-2">
@@ -606,7 +606,7 @@ export const SyncConfigModal: React.FC<SyncConfigModalProps> = ({
                         'noopener,noreferrer'
                       )
                     }
-                    className="h-9 px-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-50 text-slate-700 font-semibold text-xs inline-flex items-center gap-1.5 shrink-0 cursor-pointer"
+                    className="h-9 px-3 rounded-xl border border-border bg-surface hover:bg-surface-subtle disabled:opacity-50 text-text-secondary font-semibold text-xs inline-flex items-center gap-1.5 shrink-0 cursor-pointer"
                   >
                     <ExternalLink className="w-3.5 h-3.5" />
                     <span>Mở Sheet</span>
@@ -622,7 +622,7 @@ export const SyncConfigModal: React.FC<SyncConfigModalProps> = ({
 
               <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
                 <div className="sm:col-span-4">
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  <label className="block text-xs font-semibold text-text-secondary mb-1">
                     Tên Sheet / Tab đọc dữ liệu
                   </label>
                   <Input
@@ -633,7 +633,7 @@ export const SyncConfigModal: React.FC<SyncConfigModalProps> = ({
                 </div>
 
                 <div className="sm:col-span-2">
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  <label className="block text-xs font-semibold text-text-secondary mb-1">
                     Dòng tiêu đề
                   </label>
                   <Input
@@ -646,12 +646,12 @@ export const SyncConfigModal: React.FC<SyncConfigModalProps> = ({
                 </div>
 
                 <div className="sm:col-span-6 flex items-end">
-                  <div className="w-full rounded-xl bg-white border border-slate-200 px-3.5 py-2 flex items-center justify-between gap-3">
+                  <div className="w-full rounded-xl bg-surface border border-border px-3.5 py-2 flex items-center justify-between gap-3">
                     <div>
-                      <div className="font-bold text-slate-800">
+                      <div className="font-bold text-text-primary">
                         Đồng bộ tự động định kỳ (Auto Sync)
                       </div>
-                      <div className="text-[11px] text-slate-500">
+                      <div className="text-[11px] text-text-muted">
                         Chạy tự động ngầm theo chu kỳ (không qua màn hình Preview)
                       </div>
                     </div>
@@ -662,7 +662,7 @@ export const SyncConfigModal: React.FC<SyncConfigModalProps> = ({
                         onChange={(e) =>
                           setSyncIntervalMinutes(Number(e.target.value))
                         }
-                        className="h-8 rounded-lg border border-slate-200 bg-slate-50 px-2 text-xs font-semibold text-slate-700"
+                        className="h-8 rounded-lg border border-border bg-surface-subtle px-2 text-xs font-semibold text-text-secondary"
                       >
                         <option value={10}>Mỗi 10 phút</option>
                         <option value={15}>Mỗi 15 phút</option>
@@ -679,7 +679,7 @@ export const SyncConfigModal: React.FC<SyncConfigModalProps> = ({
                         }`}
                       >
                         <span
-                          className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-xs transition ${
+                          className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-surface shadow-xs transition ${
                             enabled ? 'translate-x-5' : 'translate-x-0'
                           }`}
                         />
@@ -703,7 +703,7 @@ export const SyncConfigModal: React.FC<SyncConfigModalProps> = ({
 
               <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
                 <div className="sm:col-span-6">
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  <label className="block text-xs font-semibold text-text-secondary mb-1">
                     Chọn file Excel (.xlsx) từ máy tính
                   </label>
                   <div className="flex items-center gap-2">
@@ -733,7 +733,7 @@ export const SyncConfigModal: React.FC<SyncConfigModalProps> = ({
                 </div>
 
                 <div className="sm:col-span-4">
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  <label className="block text-xs font-semibold text-text-secondary mb-1">
                     Tên Sheet / Tab đọc dữ liệu
                   </label>
                   <Input
@@ -744,7 +744,7 @@ export const SyncConfigModal: React.FC<SyncConfigModalProps> = ({
                 </div>
 
                 <div className="sm:col-span-2">
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  <label className="block text-xs font-semibold text-text-secondary mb-1">
                     Dòng tiêu đề
                   </label>
                   <Input
@@ -761,8 +761,8 @@ export const SyncConfigModal: React.FC<SyncConfigModalProps> = ({
 
           {/* Nút chọn nhanh mẫu Sheet cho STUDENT_MASTER + KAIWA */}
           {flowType === 'STUDENT_MASTER' && programType === 'KAIWA' && (
-            <div className="pt-2 border-t border-slate-200/80 space-y-2">
-              <div className="text-[11px] font-bold text-slate-700">
+            <div className="pt-2 border-t border-border/80 space-y-2">
+              <div className="text-[11px] font-bold text-text-secondary">
                 Chọn nhanh mẫu Sheet Kaiwa:
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
@@ -775,13 +775,13 @@ export const SyncConfigModal: React.FC<SyncConfigModalProps> = ({
                   className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
                     sheetName.trim() === 'Tổng' && headerRow === 2
                       ? 'bg-indigo-50 border-indigo-400 text-indigo-900 shadow-2xs'
-                      : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                      : 'bg-surface border-border text-text-secondary hover:bg-surface-subtle'
                   }`}
                 >
                   <div className="font-bold text-xs">
                     Sheet &quot;Tổng&quot; (Dòng tiêu đề 2 — Hồ sơ &amp; Lớp học A..AH + BF,BG,BJ,BY)
                   </div>
-                  <div className="text-[11px] text-slate-500 mt-0.5">
+                  <div className="text-[11px] text-text-muted mt-0.5">
                     Đồng bộ mới &amp; cập nhật Hồ sơ học viên, Gói học, Lớp học
                   </div>
                 </button>
@@ -795,13 +795,13 @@ export const SyncConfigModal: React.FC<SyncConfigModalProps> = ({
                   className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
                     sheetName.trim() === '1.Chăm sóc' && headerRow === 3
                       ? 'bg-fuchsia-50 border-fuchsia-400 text-fuchsia-900 shadow-2xs'
-                      : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                      : 'bg-surface border-border text-text-secondary hover:bg-surface-subtle'
                   }`}
                 >
                   <div className="font-bold text-xs">
                     Sheet &quot;1.Chăm sóc&quot; (Dòng tiêu đề 3 — Báo cáo &amp; Chăm sóc AI..BH theo ID)
                   </div>
-                  <div className="text-[11px] text-slate-500 mt-0.5">
+                  <div className="text-[11px] text-text-muted mt-0.5">
                     Chỉ cập nhật cột Báo cáo &amp; Chăm sóc (AI..BH) khi khớp ID học viên
                   </div>
                 </button>
@@ -814,12 +814,12 @@ export const SyncConfigModal: React.FC<SyncConfigModalProps> = ({
           <summary>Phạm vi dữ liệu & tùy chọn nâng cao</summary>
           <div>
         {/* 3. Khối Cấu Hình Lọc Trước Khi Đồng Bộ (Dynamic Filter Section) */}
-        <div className="rounded-2xl border border-slate-200 p-4 space-y-4">
+        <div className="rounded-2xl border border-border p-4 space-y-4">
           <div className="flex items-center justify-between">
-            <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+            <h4 className="text-xs font-bold text-text-primary uppercase tracking-wider">
               Cấu hình lọc trước khi đồng bộ
             </h4>
-            <span className="text-[11px] text-slate-500">
+            <span className="text-[11px] text-text-muted">
               Hệ thống chỉ quét &amp; đồng bộ các dòng thỏa điều kiện dưới đây
             </span>
           </div>
@@ -829,7 +829,7 @@ export const SyncConfigModal: React.FC<SyncConfigModalProps> = ({
             <div className="space-y-4">
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <label className="text-xs font-semibold text-slate-700">
+                  <label className="text-xs font-semibold text-text-secondary">
                     Tình trạng nguồn / Active ({programType}):
                   </label>
                   <button
@@ -861,14 +861,14 @@ export const SyncConfigModal: React.FC<SyncConfigModalProps> = ({
                         className={`px-3 py-1.5 rounded-xl border text-xs font-semibold inline-flex items-center gap-1.5 transition-all cursor-pointer ${
                           checked
                             ? 'bg-violet-50 border-violet-300 text-violet-800'
-                            : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                            : 'bg-surface border-border text-text-secondary hover:bg-surface-subtle'
                         }`}
                       >
                         <span
                           className={`w-3.5 h-3.5 rounded flex items-center justify-center border ${
                             checked
                               ? 'bg-violet-600 border-violet-600 text-white'
-                              : 'border-slate-300 bg-white'
+                              : 'border-border-strong bg-surface'
                           }`}
                         >
                           {checked && <Check className="w-2.5 h-2.5" />}
@@ -884,7 +884,7 @@ export const SyncConfigModal: React.FC<SyncConfigModalProps> = ({
 
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <label className="text-xs font-semibold text-slate-700">
+                  <label className="text-xs font-semibold text-text-secondary">
                     Trạng thái học tập cần lọc:
                   </label>
                   <button
@@ -921,14 +921,14 @@ export const SyncConfigModal: React.FC<SyncConfigModalProps> = ({
                         className={`px-3 py-1.5 rounded-xl border text-xs font-semibold inline-flex items-center gap-1.5 transition-all cursor-pointer ${
                           checked
                             ? 'bg-blue-50 border-blue-300 text-blue-800'
-                            : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                            : 'bg-surface border-border text-text-secondary hover:bg-surface-subtle'
                         }`}
                       >
                         <span
                           className={`w-3.5 h-3.5 rounded flex items-center justify-center border ${
                             checked
                               ? 'bg-blue-600 border-blue-600 text-white'
-                              : 'border-slate-300 bg-white'
+                              : 'border-border-strong bg-surface'
                           }`}
                         >
                           {checked && <Check className="w-2.5 h-2.5" />}
@@ -948,13 +948,13 @@ export const SyncConfigModal: React.FC<SyncConfigModalProps> = ({
             <div className="space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  <label className="block text-xs font-semibold text-text-secondary mb-1">
                     Năm đồng bộ điểm danh <span className="text-rose-500">*</span>
                   </label>
                   <select
                     value={syncYear}
                     onChange={(e) => setSyncYear(Number(e.target.value))}
-                    className="w-full h-9 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-800"
+                    className="w-full h-9 rounded-xl border border-border bg-surface px-3 text-xs font-bold text-text-primary"
                   >
                     {AVAILABLE_YEARS.map((y) => (
                       <option key={y} value={y}>
@@ -966,7 +966,7 @@ export const SyncConfigModal: React.FC<SyncConfigModalProps> = ({
 
                 {flowType === 'TEACHER_ATTENDANCE' && (
                   <div className="sm:col-span-2">
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    <label className="block text-xs font-semibold text-text-secondary mb-1">
                       Mã giáo viên phụ trách (VD: GV505)
                     </label>
                     <Input
@@ -980,7 +980,7 @@ export const SyncConfigModal: React.FC<SyncConfigModalProps> = ({
 
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <label className="text-xs font-semibold text-slate-700">
+                  <label className="text-xs font-semibold text-text-secondary">
                     Tháng cần đồng bộ trong năm {syncYear}:
                   </label>
                   <button
@@ -1010,7 +1010,7 @@ export const SyncConfigModal: React.FC<SyncConfigModalProps> = ({
                         className={`h-8 rounded-lg border text-xs font-bold transition-all cursor-pointer ${
                           active
                             ? 'bg-blue-600 border-blue-600 text-white shadow-2xs'
-                            : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                            : 'bg-surface border-border text-text-secondary hover:bg-surface-subtle'
                         }`}
                       >
                         T{m}
@@ -1021,7 +1021,7 @@ export const SyncConfigModal: React.FC<SyncConfigModalProps> = ({
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-2">
+                <label className="block text-xs font-semibold text-text-secondary mb-2">
                   Lọc Trạng thái học viên:
                 </label>
                 <div className="flex flex-wrap gap-2">
@@ -1041,14 +1041,14 @@ export const SyncConfigModal: React.FC<SyncConfigModalProps> = ({
                         className={`px-3 py-1.5 rounded-xl border text-xs font-semibold inline-flex items-center gap-1.5 transition-all cursor-pointer ${
                           checked
                             ? 'bg-blue-50 border-blue-300 text-blue-800'
-                            : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                            : 'bg-surface border-border text-text-secondary hover:bg-surface-subtle'
                         }`}
                       >
                         <span
                           className={`w-3.5 h-3.5 rounded flex items-center justify-center border ${
                             checked
                               ? 'bg-blue-600 border-blue-600 text-white'
-                              : 'border-slate-300 bg-white'
+                              : 'border-border-strong bg-surface'
                           }`}
                         >
                           {checked && <Check className="w-2.5 h-2.5" />}
@@ -1076,7 +1076,7 @@ export const SyncConfigModal: React.FC<SyncConfigModalProps> = ({
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  <label className="block text-xs font-semibold text-text-secondary mb-1">
                     Mã học viên (Tùy chọn)
                   </label>
                   <Input
@@ -1084,14 +1084,14 @@ export const SyncConfigModal: React.FC<SyncConfigModalProps> = ({
                     onChange={(e) => setTargetStudentExternalId(e.target.value)}
                     placeholder={programType === 'JLPT' ? 'Để trống nếu đồng bộ cả lớp' : 'VD: 427901798'}
                   />
-                  <span className="text-[10px] text-slate-400">
+                  <span className="text-[10px] text-text-muted">
                     {programType === 'JLPT'
                       ? 'Để trống để khớp hàng loạt theo Mã lớp + Họ và tên'
                       : 'Kaiwa tự đọc được từ dòng 5 của sheet hoặc gắn cứng tại đây'}
                   </span>
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  <label className="block text-xs font-semibold text-text-secondary mb-1">
                     Tên học viên
                   </label>
                   <Input
@@ -1101,7 +1101,7 @@ export const SyncConfigModal: React.FC<SyncConfigModalProps> = ({
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  <label className="block text-xs font-semibold text-text-secondary mb-1">
                     Mã lớp
                   </label>
                   <Input

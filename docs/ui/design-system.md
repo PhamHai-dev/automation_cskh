@@ -139,6 +139,17 @@ States bắt buộc:
 
 Không viết button trực tiếp bằng class Tailwind lặp lại nếu `Button` đáp ứng được.
 
+### Quy chuẩn component và icon — rà soát 2026-11-20
+
+- Button `sm` 32px, `md` 40px, `lg` 44px; nút chỉ icon lần lượt 28/32/40px theo `icon-xs/icon-sm/icon`. Input/Select mặc định 40px, bộ lọc inbox được phép 32–36px như quy ước chuyên biệt. Hàng action dùng flex-wrap, không co chữ/icon để ép vừa một hàng; PageHeader tự chuyển hàng khi thiếu chỗ.
+- Icon chức năng dùng **Lucide**, nét mặc định 2, 16px ở button/form/tab, 20px ở điều hướng, 24px trở lên cho trạng thái rỗng/khối lớn. Icon không flex-shrink. Emoji chỉ dành cho nội dung tin nhắn/cảm xúc, không làm icon chức năng. Logo nhà cung cấp dùng catalog `BrandIcons.tsx`, giữ màu thương hiệu.
+- Màu nền/chữ/viền trung tính dùng `surface`, `text-*`, `border-*`; trạng thái dùng token semantic và Badge chung. Màu Zalo/LINE và nền mô phỏng riêng dùng token `zalo`, `line`, `zalo-preview`, `line-preview`. Không thay màu nội dung rich text, nhóm trạng thái điểm danh hoặc palette biểu đồ đã có ý nghĩa nghiệp vụ.
+- Token màu có kênh RGB trong `tokens.css`; Tailwind dùng `rgb(var(--color-*-rgb) / <alpha-value>)` để các lớp `/20`, `/50`, `/95` được sinh CSS và hiển thị đúng. `text-muted` dùng slate-500 để đọc rõ chữ nhỏ. Radius 8/12/16px và shadow-xs/soft tập trung ở theme.
+- Label trùng tên vẫn phải có ID khác nhau; Input/Select/Textarea dùng `useId`, liên kết label/feedback và `aria-invalid` khi lỗi. Không đổi dữ liệu hoặc field nghiệp vụ chỉ để căn giao diện.
+- Header có vùng breadcrumb co giãn; tìm kiếm hiển thị từ desktop, tên/email tài khoản từ màn hình rộng. Popup/menu phải được giới hạn theo cả chiều ngang và dọc viewport, bao gồm lúc mở gần cuối trang.
+- Modal dùng portal và layer 140 (trên drawer điểm danh 130), Toast layer 150. Header/footer không co, body cuộn trong `100dvh`; action được wrap. Có tên truy cập, Escape chỉ đóng modal trên cùng, focus giữ trong hộp thoại, khóa cuộn được giữ khi còn modal con.
+- Câu hướng dẫn chứa `strong`, `code`, link phải nằm trong cùng một span/block văn bản. Không đặt từng đoạn inline thành các flex item độc lập, vì sẽ chia câu thành cột và làm vỡ dòng.
+
 ## 6. Form controls
 
 Component chuẩn:

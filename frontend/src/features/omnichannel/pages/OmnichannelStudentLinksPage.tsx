@@ -794,7 +794,7 @@ export const OmnichannelStudentLinksPage: React.FC<{ initialTab?: string }> = ({
                 +{newlyLinkedZalo} Zalo
               </span>
               <span className="text-xs text-indigo-400">·</span>
-              <span className="inline-flex items-center px-2.5 py-0.5 rounded-lg bg-[#06C755] text-white text-xs font-bold">
+              <span className="inline-flex items-center px-2.5 py-0.5 rounded-lg bg-line text-white text-xs font-bold">
                 +{newlyLinkedLine} LINE
               </span>
             </div>
@@ -1030,7 +1030,7 @@ export const OmnichannelStudentLinksPage: React.FC<{ initialTab?: string }> = ({
                           <div className="space-y-1">
                             <div className="flex items-center gap-1.5 flex-wrap">
                               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/15 border border-emerald-500/25 text-emerald-800 font-semibold text-[11px]">
-                                <CheckCircle2 className="w-3.5 h-3.5 shrink-0 text-[#06C755]" />
+                                <CheckCircle2 className="w-3.5 h-3.5 shrink-0 text-line" />
                                 <span title={String(st.lineRelation.displayName ?? '')} className="truncate max-w-[200px]">
                                   {st.lineRelation.displayName}
                                 </span>
@@ -1082,7 +1082,7 @@ export const OmnichannelStudentLinksPage: React.FC<{ initialTab?: string }> = ({
                             <button
                               type="button"
                               onClick={() => openInlineLinkModal(st, 'LINE', 'GROUP')}
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-[#06C755] text-emerald-800 hover:text-white border border-emerald-200 font-semibold text-[11px] transition-all shadow-2xs"
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-line text-emerald-800 hover:text-white border border-emerald-200 font-semibold text-[11px] transition-all shadow-2xs"
                             >
                               <Plus className="w-3.5 h-3.5" />
                               Gắn nhóm LINE
@@ -1090,10 +1090,10 @@ export const OmnichannelStudentLinksPage: React.FC<{ initialTab?: string }> = ({
                             <button
                               type="button"
                               onClick={() => handleGenerateLineQr(st)}
-                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-surface-muted hover:bg-[#06C755]/15 text-text-secondary hover:text-emerald-800 border border-border font-semibold text-[11px] transition-colors"
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-surface-muted hover:bg-line/15 text-text-secondary hover:text-emerald-800 border border-border font-semibold text-[11px] transition-colors"
                               title="Tạo mã QR để Học viên / Phụ huynh quét liên kết LINE tự động"
                             >
-                              <QrCode className="w-3.5 h-3.5 text-[#06C755]" />
+                              <QrCode className="w-3.5 h-3.5 text-line" />
                               Mã QR
                             </button>
                           </div>
@@ -1171,7 +1171,7 @@ export const OmnichannelStudentLinksPage: React.FC<{ initialTab?: string }> = ({
                   linkModalTargetType === 'GROUP'
                     ? linkModalPlatform === 'ZALO'
                       ? 'bg-blue-600 text-white shadow-xs'
-                      : 'bg-[#06C755] text-white shadow-xs'
+                      : 'bg-line text-white shadow-xs'
                     : 'text-text-secondary hover:text-text-primary'
                 }`}
               >
@@ -1185,7 +1185,7 @@ export const OmnichannelStudentLinksPage: React.FC<{ initialTab?: string }> = ({
                   linkModalTargetType === 'USER'
                     ? linkModalPlatform === 'ZALO'
                       ? 'bg-blue-600 text-white shadow-xs'
-                      : 'bg-[#06C755] text-white shadow-xs'
+                      : 'bg-line text-white shadow-xs'
                     : 'text-text-secondary hover:text-text-primary'
                 }`}
               >
@@ -1391,7 +1391,7 @@ export const OmnichannelStudentLinksPage: React.FC<{ initialTab?: string }> = ({
                   deepLinkModal.deepLinkUrl,
                 )}`}
                 alt="LINE Deep Link QR"
-                className="w-48 h-48 rounded-xl border border-border p-2 bg-white"
+                className="w-48 h-48 rounded-xl border border-border p-2 bg-surface"
               />
             </div>
             <div className="p-2.5 rounded-xl bg-surface-muted text-[11px] font-mono break-all flex items-center justify-between gap-2 border border-border">

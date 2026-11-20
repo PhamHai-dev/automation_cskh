@@ -1,54 +1,108 @@
 :root {
   /* Brand Colors (Q-006: Primary #2563EB, Accent #14B8A6) */
-  --color-primary: #2563eb;
-  --color-primary-hover: #1d4ed8;
-  --color-primary-active: #1e40af;
-  --color-primary-soft: #eff6ff;
-  --color-primary-border: #bfdbfe;
+  --color-primary-rgb: 37 99 235;
+  --color-primary: rgb(var(--color-primary-rgb));
+  --color-primary-hover-rgb: 29 78 216;
+  --color-primary-hover: rgb(var(--color-primary-hover-rgb));
+  --color-primary-active-rgb: 30 64 175;
+  --color-primary-active: rgb(var(--color-primary-active-rgb));
+  --color-primary-soft-rgb: 239 246 255;
+  --color-primary-soft: rgb(var(--color-primary-soft-rgb));
+  --color-primary-border-rgb: 191 219 254;
+  --color-primary-border: rgb(var(--color-primary-border-rgb));
 
-  --color-accent: #14b8a6;
-  --color-accent-hover: #0d9488;
-  --color-accent-active: #0f766e;
-  --color-accent-soft: #f0fdfa;
-  --color-accent-border: #99f6e4;
+  --color-accent-rgb: 20 184 166;
+  --color-accent: rgb(var(--color-accent-rgb));
+  --color-accent-hover-rgb: 13 148 136;
+  --color-accent-hover: rgb(var(--color-accent-hover-rgb));
+  --color-accent-active-rgb: 15 118 110;
+  --color-accent-active: rgb(var(--color-accent-active-rgb));
+  --color-accent-soft-rgb: 240 253 250;
+  --color-accent-soft: rgb(var(--color-accent-soft-rgb));
+  --color-accent-border-rgb: 153 246 228;
+  --color-accent-border: rgb(var(--color-accent-border-rgb));
 
   /* Backgrounds & Surfaces */
-  --color-background: #f8fafc;
-  --color-surface: #ffffff;
-  --color-surface-muted: #f1f5f9;
-  --color-surface-subtle: #f8fafc;
+  --color-background-rgb: 248 250 252;
+  --color-background: rgb(var(--color-background-rgb));
+  --color-surface-rgb: 255 255 255;
+  --color-surface: rgb(var(--color-surface-rgb));
+  --color-surface-muted-rgb: 241 245 249;
+  --color-surface-muted: rgb(var(--color-surface-muted-rgb));
+  --color-surface-subtle-rgb: 248 250 252;
+  --color-surface-subtle: rgb(var(--color-surface-subtle-rgb));
 
   /* Typography (Slate Palette) */
-  --color-text-primary: #0f172a;
-  --color-text-secondary: #475569;
-  --color-text-muted: #94a3b8;
+  --color-text-primary-rgb: 15 23 42;
+  --color-text-primary: rgb(var(--color-text-primary-rgb));
+  --color-text-secondary-rgb: 71 85 105;
+  --color-text-secondary: rgb(var(--color-text-secondary-rgb));
+  --color-text-muted-rgb: 100 116 139;
+  --color-text-muted: rgb(var(--color-text-muted-rgb));
 
   /* Borders */
-  --color-border: #e2e8f0;
-  --color-border-strong: #cbd5e1;
-  --color-border-subtle: #f1f5f9;
+  --color-border-rgb: 226 232 240;
+  --color-border: rgb(var(--color-border-rgb));
+  --color-border-strong-rgb: 203 213 225;
+  --color-border-strong: rgb(var(--color-border-strong-rgb));
+  --color-border-subtle-rgb: 241 245 249;
+  --color-border-subtle: rgb(var(--color-border-subtle-rgb));
 
   /* Status Colors */
-  --color-success: #10b981;
-  --color-success-soft: #ecfdf5;
-  --color-success-border: #a7f3d0;
+  --color-success-rgb: 16 185 129;
+  --color-success: rgb(var(--color-success-rgb));
+  --color-success-soft-rgb: 236 253 245;
+  --color-success-soft: rgb(var(--color-success-soft-rgb));
+  --color-success-border-rgb: 167 243 208;
+  --color-success-border: rgb(var(--color-success-border-rgb));
 
-  --color-warning: #f59e0b;
-  --color-warning-soft: #fffbeb;
-  --color-warning-border: #fde68a;
+  --color-warning-rgb: 245 158 11;
+  --color-warning: rgb(var(--color-warning-rgb));
+  --color-warning-soft-rgb: 255 251 235;
+  --color-warning-soft: rgb(var(--color-warning-soft-rgb));
+  --color-warning-border-rgb: 253 230 138;
+  --color-warning-border: rgb(var(--color-warning-border-rgb));
 
-  --color-danger: #ef4444;
-  --color-danger-soft: #fef2f2;
-  --color-danger-border: #fecaca;
+  --color-danger-rgb: 239 68 68;
+  --color-danger: rgb(var(--color-danger-rgb));
+  --color-danger-soft-rgb: 254 242 242;
+  --color-danger-soft: rgb(var(--color-danger-soft-rgb));
+  --color-danger-border-rgb: 254 202 202;
+  --color-danger-border: rgb(var(--color-danger-border-rgb));
 
-  --color-info: #0ea5e9;
-  --color-info-soft: #f0f9ff;
-  --color-info-border: #bae6fd;
+  --color-info-rgb: 14 165 233;
+  --color-info: rgb(var(--color-info-rgb));
+  --color-info-soft-rgb: 240 249 255;
+  --color-info-soft: rgb(var(--color-info-soft-rgb));
+  --color-info-border-rgb: 186 230 253;
+  --color-info-border: rgb(var(--color-info-border-rgb));
+
+  --color-success-foreground-rgb: 4 120 87;
+  --color-success-foreground: rgb(var(--color-success-foreground-rgb));
+  --color-warning-foreground-rgb: 146 64 14;
+  --color-warning-foreground: rgb(var(--color-warning-foreground-rgb));
+  --color-danger-foreground-rgb: 185 28 28;
+  --color-danger-foreground: rgb(var(--color-danger-foreground-rgb));
+  --color-info-foreground-rgb: 3 105 161;
+  --color-info-foreground: rgb(var(--color-info-foreground-rgb));
+
+  /* Provider identity, used only where the platform is meaningful. */
+  --color-zalo-rgb: 0 104 255;
+  --color-zalo: rgb(var(--color-zalo-rgb));
+  --color-line-rgb: 6 199 85;
+  --color-line: rgb(var(--color-line-rgb));
+  --color-zalo-preview-rgb: 228 232 240;
+  --color-zalo-preview: rgb(var(--color-zalo-preview-rgb));
+  --color-line-preview-rgb: 140 171 217;
+  --color-line-preview: rgb(var(--color-line-preview-rgb));
 
   /* Debt / Warning Badge Colors */
-  --color-debt-text: #b91c1c;
-  --color-debt-bg: #fef2f2;
-  --color-debt-border: #fca5a5;
+  --color-debt-text-rgb: 185 28 28;
+  --color-debt-text: rgb(var(--color-debt-text-rgb));
+  --color-debt-bg-rgb: 254 242 242;
+  --color-debt-bg: rgb(var(--color-debt-bg-rgb));
+  --color-debt-border-rgb: 252 165 165;
+  --color-debt-border: rgb(var(--color-debt-border-rgb));
 
   /* Radius */
   --radius-sm: 6px;

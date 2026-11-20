@@ -36,7 +36,7 @@ export const CarePivotTable: React.FC<CarePivotTableProps> = ({ data, loading })
   );
 
   if (loading || !data) {
-    return <div className="bg-white rounded-2xl border border-border/80 p-6 shadow-soft animate-pulse"><div className="h-40 bg-slate-100 rounded" /></div>;
+    return <div className="bg-surface rounded-2xl border border-border/80 p-6 shadow-soft animate-pulse"><div className="h-40 bg-surface-muted rounded" /></div>;
   }
 
   return (
@@ -47,7 +47,7 @@ export const CarePivotTable: React.FC<CarePivotTableProps> = ({ data, loading })
         </div>
         <div className="inline-flex rounded-lg border border-border bg-surface-muted p-0.5">
           {(['count', 'percent'] as const).map((value) => (
-            <button key={value} type="button" onClick={() => setMode(value)} className={`px-3 py-1 text-xs font-semibold rounded-md transition ${mode === value ? 'bg-white text-primary shadow-sm' : 'text-text-muted hover:text-text-primary'}`}>
+            <button key={value} type="button" onClick={() => setMode(value)} className={`px-3 py-1 text-xs font-semibold rounded-md transition ${mode === value ? 'bg-surface text-primary shadow-sm' : 'text-text-muted hover:text-text-primary'}`}>
               {value === 'count' ? 'Số lượng' : 'Tỷ lệ %'}
             </button>
           ))}
@@ -65,15 +65,15 @@ export const CarePivotTable: React.FC<CarePivotTableProps> = ({ data, loading })
           </thead>
           <tbody className="divide-y divide-border/60">
             {data.rows.map((row) => (
-              <tr key={row.session_number} className="hover:bg-slate-50/60">
-                <td data-align="center" data-wrap="nowrap" className="py-3 px-3 font-bold text-text-primary sticky left-0 bg-white z-10 shadow-[1px_0_0_0_rgba(226,232,240,1)] whitespace-nowrap">Sau buổi {row.session_number}<div className="text-[10px] font-normal text-text-muted mt-0.5">{row.response_rate.toFixed(1)}% phản hồi</div></td>
+              <tr key={row.session_number} className="hover:bg-surface-subtle/60">
+                <td data-align="center" data-wrap="nowrap" className="py-3 px-3 font-bold text-text-primary sticky left-0 bg-surface z-10 shadow-[1px_0_0_0_rgba(226,232,240,1)] whitespace-nowrap">Sau buổi {row.session_number}<div className="text-[10px] font-normal text-text-muted mt-0.5">{row.response_rate.toFixed(1)}% phản hồi</div></td>
                 {buckets.map((bucket) => {
                   const count = row.counts[bucket] || 0;
                   const intensity = count / maxCell;
                   const shown = mode === 'count' ? String(count) : `${row.total_enrollments ? ((count / row.total_enrollments) * 100).toFixed(0) : 0}%`;
                   return <td data-align="right" data-wrap="nowrap" key={bucket} className={`py-3 px-2 text-center font-semibold ${META[bucket].alert ? 'text-red-700' : 'text-text-primary'}`} style={{ backgroundColor: count ? heatColor(META[bucket].color, intensity) : undefined, color: count && intensity > 0.65 ? '#fff' : undefined }}>{count ? shown : <span className="text-text-muted">—</span>}</td>;
                 })}
-                <td data-align="right" data-wrap="nowrap" className="py-3 px-3 text-center font-bold text-text-primary bg-slate-100/70">{row.total_enrollments}</td>
+                <td data-align="right" data-wrap="nowrap" className="py-3 px-3 text-center font-bold text-text-primary bg-surface-muted/70">{row.total_enrollments}</td>
               </tr>
             ))}
           </tbody>

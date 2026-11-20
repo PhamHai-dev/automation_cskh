@@ -65,7 +65,7 @@ export const ImportHistoryTable: React.FC = () => {
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center">
-        <h2 className="text-base font-bold text-gray-900">
+        <h2 className="text-base font-bold text-text-primary">
           Lịch sử các đợt Import ({total} đợt)
         </h2>
         <Button
@@ -86,10 +86,10 @@ export const ImportHistoryTable: React.FC = () => {
         </div>
       )}
 
-      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+      <div className="bg-surface border border-border rounded-xl overflow-hidden shadow-sm">
         <div className="overflow-x-auto">
           <table data-table="native" className="min-w-full divide-y divide-gray-200 text-xs text-left">
-            <thead className="bg-gray-50 text-gray-700 font-bold">
+            <thead className="bg-surface-subtle text-text-secondary font-bold">
               <tr>
                 <th scope="col" className="px-4 py-3">Mã đợt</th>
                 <th scope="col" className="px-4 py-3">Tên file</th>
@@ -103,34 +103,34 @@ export const ImportHistoryTable: React.FC = () => {
                 <th scope="col" className="px-4 py-3 ">Báo cáo lỗi</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-200 bg-white">
+            <tbody className="divide-y divide-gray-200 bg-surface">
               {loading && batches.length === 0 ? (
                 <tr>
-                  <td data-align="center" colSpan={10} className="px-4 py-8 text-center text-gray-500">
+                  <td data-align="center" colSpan={10} className="px-4 py-8 text-center text-text-muted">
                     Đang tải danh sách lịch sử...
                   </td>
                 </tr>
               ) : batches.length === 0 ? (
                 <tr>
-                  <td data-align="center" colSpan={10} className="px-4 py-8 text-center text-gray-400">
+                  <td data-align="center" colSpan={10} className="px-4 py-8 text-center text-text-muted">
                     Chưa có đợt import nào trong hệ thống.
                   </td>
                 </tr>
               ) : (
                 batches.map((batch) => (
-                  <tr key={batch.id} className="hover:bg-gray-50/50 transition">
-                    <td data-align="center" data-wrap="nowrap" className="px-4 py-3 font-mono font-bold text-gray-800">#{batch.id}</td>
-                    <td data-align="left" data-wrap="normal" className="px-4 py-3 font-medium text-gray-900 max-w-[200px] truncate" title={batch.file_name}>
+                  <tr key={batch.id} className="hover:bg-surface-subtle/50 transition">
+                    <td data-align="center" data-wrap="nowrap" className="px-4 py-3 font-mono font-bold text-text-primary">#{batch.id}</td>
+                    <td data-align="left" data-wrap="normal" className="px-4 py-3 font-medium text-text-primary max-w-[200px] truncate" title={batch.file_name}>
                       {batch.file_name}
                     </td>
                     <td data-align="center" data-wrap="nowrap" className="px-4 py-3">{getImportTypeBadge(batch.import_type)}</td>
-                    <td data-align="left" data-wrap="normal" className="px-4 py-3 text-gray-600">
+                    <td data-align="left" data-wrap="normal" className="px-4 py-3 text-text-secondary">
                       {batch.uploaded_by?.name || batch.uploaded_by?.email}
                     </td>
-                    <td data-align="center" data-wrap="nowrap" className="px-4 py-3 text-gray-500 whitespace-nowrap">
+                    <td data-align="center" data-wrap="nowrap" className="px-4 py-3 text-text-muted whitespace-nowrap">
                       {new Date(batch.created_at).toLocaleString('vi-VN')}
                     </td>
-                    <td data-align="right" data-wrap="nowrap" className="px-4 py-3 text-center font-semibold text-gray-800">{batch.total_rows}</td>
+                    <td data-align="right" data-wrap="nowrap" className="px-4 py-3 text-center font-semibold text-text-primary">{batch.total_rows}</td>
                     <td data-align="right" data-wrap="nowrap" className="px-4 py-3 text-center font-bold text-green-600">{batch.success_rows}</td>
                     <td data-align="right" data-wrap="nowrap" className="px-4 py-3 text-center font-bold text-red-600">{batch.failed_rows}</td>
                     <td data-align="center" data-wrap="nowrap" className="px-4 py-3">{getStatusBadge(batch.status)}</td>
@@ -147,7 +147,7 @@ export const ImportHistoryTable: React.FC = () => {
                           Tải lỗi
                         </Button>
                       ) : (
-                        <span className="text-gray-400">—</span>
+                        <span className="text-text-muted">—</span>
                       )}
                     </td>
                   </tr>
@@ -158,14 +158,14 @@ export const ImportHistoryTable: React.FC = () => {
         </div>
 
         {/* Thanh phân trang chuẩn */}
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 border-t border-gray-200 bg-gray-50/70 text-xs text-gray-600">
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 border-t border-border bg-surface-subtle/70 text-xs text-text-secondary">
           <div className="flex flex-wrap items-center gap-2">
             <span>
-              Hiển thị <strong className="text-gray-900">{startRow}</strong> -{' '}
-              <strong className="text-gray-900">{endRow}</strong> /{' '}
-              <strong className="text-gray-900">{total}</strong> dòng
+              Hiển thị <strong className="text-text-primary">{startRow}</strong> -{' '}
+              <strong className="text-text-primary">{endRow}</strong> /{' '}
+              <strong className="text-text-primary">{total}</strong> dòng
             </span>
-            <span className="text-gray-400">•</span>
+            <span className="text-text-muted">•</span>
             <label className="flex items-center gap-1.5">
               <span>Mỗi trang:</span>
               <select
@@ -174,7 +174,7 @@ export const ImportHistoryTable: React.FC = () => {
                   setPageSize(Number(e.target.value));
                   setPage(1);
                 }}
-                className="bg-white border border-gray-300 rounded-lg px-2 py-1 text-xs text-gray-800 focus:outline-none focus:ring-1 focus:ring-primary"
+                className="bg-surface border border-border-strong rounded-lg px-2 py-1 text-xs text-text-primary focus:outline-none focus:ring-1 focus:ring-primary"
               >
                 <option value={25}>25</option>
                 <option value={50}>50</option>
@@ -193,7 +193,7 @@ export const ImportHistoryTable: React.FC = () => {
             >
               Trước
             </Button>
-            <span className="px-2 font-medium text-gray-800">
+            <span className="px-2 font-medium text-text-primary">
               Trang {page} / {totalPages}
             </span>
             <Button

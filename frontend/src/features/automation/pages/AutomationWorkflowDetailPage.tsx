@@ -29,6 +29,7 @@ import { useToast } from '../../../components/ui/Toast';
 import { useAuth } from '../../../contexts/AuthContext';
 import {
   Plus,
+  Mail,
   Trash2,
   Pencil,
   ArrowLeft,
@@ -522,7 +523,7 @@ export const AutomationWorkflowDetailPage: React.FC = () => {
               className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold ${
                 workflow.active
                   ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                  : 'bg-slate-100 text-slate-500 border border-slate-200'
+                  : 'bg-surface-muted text-text-muted border border-border'
               }`}
             >
               <span
@@ -675,7 +676,7 @@ export const AutomationWorkflowDetailPage: React.FC = () => {
                             <span
                               className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
                                 step.channel.startsWith('LINE_')
-                                  ? 'bg-[#06C755]/15 text-[#06C755] border border-[#06C755]/30'
+                                  ? 'bg-line/15 text-line border border-line/30'
                                   : 'bg-blue-50 text-blue-700 border border-blue-200'
                               }`}
                             >
@@ -687,7 +688,7 @@ export const AutomationWorkflowDetailPage: React.FC = () => {
                               </span>
                             )}
                             {isInactive && (
-                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-500 border border-slate-200">
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-surface-muted text-text-muted border border-border">
                                 Đang tắt
                               </span>
                             )}
@@ -709,11 +710,11 @@ export const AutomationWorkflowDetailPage: React.FC = () => {
                               className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full border transition-colors disabled:opacity-50 ${
                                 step.active
                                   ? 'bg-emerald-500 border-emerald-500'
-                                  : 'bg-slate-200 border-slate-300'
+                                  : 'bg-slate-200 border-border-strong'
                               }`}
                             >
                               <span
-                                className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${
+                                className={`inline-block h-3.5 w-3.5 transform rounded-full bg-surface shadow transition-transform ${
                                   step.active ? 'translate-x-[18px]' : 'translate-x-[3px]'
                                 }`}
                               />
@@ -797,7 +798,7 @@ export const AutomationWorkflowDetailPage: React.FC = () => {
                           <div className="text-[11px] text-text-muted flex flex-wrap items-center gap-1.5">
                             <span>SĐT: {en.enrollment?.student?.phone || '—'}</span>
                             {en.enrollment?.student?.email && (
-                              <span>📧 {en.enrollment.student.email}</span>
+                              <span className="inline-flex items-center gap-1.5"><Mail className="w-4 h-4" />{en.enrollment.student.email}</span>
                             )}
                             {en.enrollment?.cs && <span>• CVHT: {en.enrollment.cs.name}</span>}
                             {en.enrollment && getEnrollmentPackageLabel(en.enrollment) !== '—' && (
@@ -1288,7 +1289,7 @@ export const AutomationWorkflowDetailPage: React.FC = () => {
               </div>
             ) : (
               <table data-table="native" className="w-full text-left text-sm">
-                <thead className="bg-slate-100 text-[10px] uppercase tracking-wide text-text-muted sticky top-0 z-20 shadow-2xs">
+                <thead className="bg-surface-muted text-[10px] uppercase tracking-wide text-text-muted sticky top-0 z-20 shadow-2xs">
                   <tr>
                     <th scope="col" className="px-3 py-2 w-8"><span className="sr-only">Chọn học viên</span></th>
                     <th scope="col" className="px-3 py-2 font-semibold">Học viên</th>

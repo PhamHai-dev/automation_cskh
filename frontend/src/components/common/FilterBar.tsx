@@ -32,10 +32,10 @@ export const FilterBar: React.FC<FilterBarProps> = ({
 
   return (
     <div
-      className={`${variant === 'embedded' ? 'bg-surface' : 'mb-6 bg-surface p-4 sm:p-5 rounded-2xl border border-border/80 shadow-soft'} transition-all ${className}`}
+      className={`filter-bar min-w-0 ${variant === 'embedded' ? 'bg-surface' : 'mb-6 bg-surface p-4 sm:p-5 rounded-2xl border border-border/80 shadow-soft'} transition-all ${className}`}
     >
-      {showHeader && <div className="flex items-center justify-between pb-3 mb-3 border-b border-border/60">
-        <div className="flex items-center gap-2 text-xs font-bold text-text-secondary uppercase tracking-wider">
+      {showHeader && <div className="flex flex-wrap items-center justify-between gap-2 pb-3 mb-3 border-b border-border/60">
+        <div className="flex min-w-0 flex-wrap items-center gap-2 text-xs font-bold text-text-secondary uppercase tracking-wider">
           <Filter className="w-3.5 h-3.5 text-primary" />
           <span>{title}</span>
           {activeCount > 0 && (
@@ -57,7 +57,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
         )}
       </div>}
 
-      <div className={gridClassName}>
+      <div className={`min-w-0 [&>*]:min-w-0 ${gridClassName}`}>
         {children}
       </div>
     </div>

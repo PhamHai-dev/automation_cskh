@@ -130,7 +130,7 @@ export const AttendanceExcelImportPanel: React.FC = () => {
             ['Điểm danh cập nhật', result.updatedAttendances],
             ['Bỏ qua', result.skipped],
           ].map(([name, count]) => (
-            <div key={String(name)} className="rounded-xl border border-border bg-white p-4">
+            <div key={String(name)} className="rounded-xl border border-border bg-surface p-4">
               <span className="text-xs text-text-muted">{name}</span>
               <strong className="mt-1 block text-2xl text-text-primary">{count}</strong>
             </div>
@@ -256,7 +256,7 @@ export const AttendanceExcelImportPanel: React.FC = () => {
               id="attendance-import-source"
               value={source}
               onChange={(event) => setSource(event.target.value as AttendanceImportSource)}
-              className="mt-1 w-full rounded-lg border border-border bg-white px-3 py-2"
+              className="mt-1 w-full rounded-lg border border-border bg-surface px-3 py-2"
             >
               <option value="CSKH">CSKH — Sheet 3 Chấm buổi</option>
               <option value="TEACHER">Giáo viên — Lịch dạy</option>
@@ -271,7 +271,7 @@ export const AttendanceExcelImportPanel: React.FC = () => {
               max="2100"
               value={year}
               onChange={(event) => setYear(Number(event.target.value))}
-              className="mt-1 w-full rounded-lg border border-border bg-white px-3 py-2"
+              className="mt-1 w-full rounded-lg border border-border bg-surface px-3 py-2"
             />
           </label>
           <label className="text-sm font-semibold text-text-secondary">
@@ -281,7 +281,7 @@ export const AttendanceExcelImportPanel: React.FC = () => {
               type="file"
               accept=".xlsx"
               onChange={(event) => setFile(event.target.files?.[0] || null)}
-              className="mt-1 block w-full rounded-lg border border-border bg-white p-1.5"
+              className="mt-1 block w-full rounded-lg border border-border bg-surface p-1.5"
             />
           </label>
           <div className="md:col-span-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-primary/20 bg-primary/5 p-4 text-sm text-text-secondary">
@@ -310,7 +310,7 @@ export const AttendanceExcelImportPanel: React.FC = () => {
                   setPreviewPage(1);
                 }}
                 className={`rounded-xl border p-3 text-left ${
-                  filter === key ? 'border-primary bg-primary/5' : 'border-border bg-white'
+                  filter === key ? 'border-primary bg-primary/5' : 'border-border bg-surface'
                 }`}
               >
                 <span className="text-xs text-text-muted">{label[key]}</span>
@@ -391,7 +391,7 @@ export const AttendanceExcelImportPanel: React.FC = () => {
                                 [item.id]: event.target.value as AttendanceImportAction,
                               }))
                             }
-                            className="rounded border border-border bg-white p-1"
+                            className="rounded border border-border bg-surface p-1"
                           >
                             <option value="SKIP">Bỏ qua</option>
                             <option value="KEEP_DATABASE">Giữ hệ thống</option>

@@ -606,12 +606,12 @@ export const SyncPreviewPage: React.FC = () => {
   if (loading || !previewData) {
     return (
       <PageContainer>
-        <div className="bg-white rounded-2xl border border-slate-200 p-16 flex flex-col items-center justify-center text-center space-y-3">
+        <div className="bg-surface rounded-2xl border border-border p-16 flex flex-col items-center justify-center text-center space-y-3">
           <RefreshCw className="w-8 h-8 text-blue-600 animate-spin" />
-          <div className="text-sm font-bold text-slate-900">
+          <div className="text-sm font-bold text-text-primary">
             Đang phân tích dữ liệu nguồn &amp; kiểm tra Validate ({code})...
           </div>
-          <p className="text-xs text-slate-500 max-w-md">
+          <p className="text-xs text-text-muted max-w-md">
             Hệ thống đang đối chiếu từng dòng trên Sheet với cơ sở dữ liệu hiện
             tại để hiển thị chi tiết Trước → Sau trước khi bạn xác nhận lưu.
           </p>
@@ -633,20 +633,20 @@ export const SyncPreviewPage: React.FC = () => {
     <PageContainer>
       <div className="space-y-5 pb-24">
         {/* 1. Top Breadcrumb & Header */}
-        <div className="bg-white rounded-2xl border border-slate-200/90 p-5 shadow-xs space-y-4">
+        <div className="bg-surface rounded-2xl border border-border/90 p-5 shadow-xs space-y-4">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="space-y-1.5">
               <button
                 type="button"
                 onClick={() => navigate('/data-sync')}
-                className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-blue-600 transition-colors cursor-pointer"
+                className="inline-flex items-center gap-1.5 text-xs font-semibold text-text-secondary hover:text-blue-600 transition-colors cursor-pointer"
               >
                 <ArrowLeft className="w-3.5 h-3.5" />
                 <span>Quay lại Danh sách nguồn đồng bộ</span>
               </button>
 
               <div className="flex flex-wrap items-center gap-2.5">
-                <h1 className="text-xl font-bold text-slate-900">
+                <h1 className="text-xl font-bold text-text-primary">
                   Xem trước khi đồng bộ: {cfg.name}
                 </h1>
                 <span
@@ -665,8 +665,8 @@ export const SyncPreviewPage: React.FC = () => {
                 </span>
               </div>
 
-              <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500">
-                <span className="inline-flex items-center gap-1 font-medium text-slate-700">
+              <div className="flex flex-wrap items-center gap-3 text-xs text-text-muted">
+                <span className="inline-flex items-center gap-1 font-medium text-text-secondary">
                   <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
                   Tab đọc: <strong>{cfg.sheet_name}</strong> (Tiêu đề dòng {cfg.header_row || 2})
                 </span>
@@ -675,23 +675,23 @@ export const SyncPreviewPage: React.FC = () => {
                   Bộ lọc đang áp dụng:{' '}
                   {cfg.code === 'KAIWA_CARE' ||
                   (cfg.sheet_name || '').trim() === '1.Chăm sóc' ? (
-                    <strong className="text-slate-800">
+                    <strong className="text-text-primary">
                       Cập nhật Chăm sóc AI..BH theo ID HV khớp
                     </strong>
                   ) : flowType === 'STUDENT_MASTER' ? (
-                    <strong className="text-slate-800">
+                    <strong className="text-text-primary">
                       Trạng thái ({enrollmentStatuses.join(', ') || 'Tất cả'})
                     </strong>
                   ) : flowType === 'CSKH_ATTENDANCE' ||
                     flowType === 'TEACHER_ATTENDANCE' ? (
-                    <strong className="text-slate-800">
+                    <strong className="text-text-primary">
                       Năm {syncYear} •{' '}
                       {selectedMonths.length === 12
                         ? 'Tất cả 12 tháng'
                         : `Tháng ${selectedMonths.join(', ')}`}
                     </strong>
                   ) : (
-                    <strong className="text-slate-800">
+                    <strong className="text-text-primary">
                       {cfg.program_type === 'JLPT' &&
                       !cfg.target_student_external_id
                         ? `Khớp hàng loạt Lớp + Tên (${cfg.target_class_code || 'Tất cả lớp'})`
@@ -728,16 +728,16 @@ export const SyncPreviewPage: React.FC = () => {
 
           {/* Quick Filter Bar right on Preview Page */}
           {!isCompactFilterMode && showQuickFilterEditor && (
-            <div className="pt-3 border-t border-slate-200 bg-slate-50/70 rounded-xl p-3.5 space-y-3 text-xs">
+            <div className="pt-3 border-t border-border bg-surface-subtle/70 rounded-xl p-3.5 space-y-3 text-xs">
               {(flowType === 'CSKH_ATTENDANCE' ||
                 flowType === 'TEACHER_ATTENDANCE') && (
                 <div className="flex flex-wrap items-center gap-4">
                   <div className="flex items-center gap-2">
-                    <span className="font-bold text-slate-700">Năm:</span>
+                    <span className="font-bold text-text-secondary">Năm:</span>
                     <select
                       value={syncYear}
                       onChange={(e) => setSyncYear(Number(e.target.value))}
-                      className="h-8 rounded-lg border border-slate-200 bg-white px-2.5 font-bold text-slate-800"
+                      className="h-8 rounded-lg border border-border bg-surface px-2.5 font-bold text-text-primary"
                     >
                       {[2024, 2025, 2026, 2027].map((y) => (
                         <option key={y} value={y}>
@@ -748,7 +748,7 @@ export const SyncPreviewPage: React.FC = () => {
                   </div>
 
                   <div className="flex flex-wrap items-center gap-1.5">
-                    <span className="font-bold text-slate-700 mr-1">Tháng:</span>
+                    <span className="font-bold text-text-secondary mr-1">Tháng:</span>
                     {ALL_MONTHS.map((m) => {
                       const active = selectedMonths.includes(m);
                       return (
@@ -765,7 +765,7 @@ export const SyncPreviewPage: React.FC = () => {
                           className={`px-2 py-1 rounded-md border text-[11px] font-bold cursor-pointer ${
                             active
                               ? 'bg-blue-600 border-blue-600 text-white'
-                              : 'bg-white border-slate-200 text-slate-600'
+                              : 'bg-surface border-border text-text-secondary'
                           }`}
                         >
                           T{m}
@@ -778,7 +778,7 @@ export const SyncPreviewPage: React.FC = () => {
 
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex flex-wrap items-center gap-1.5">
-                  <span className="font-bold text-slate-700 mr-1">
+                  <span className="font-bold text-text-secondary mr-1">
                     Trạng thái học:
                   </span>
                   {ENROLLMENT_STATUS_OPTIONS.map((st) => {
@@ -797,7 +797,7 @@ export const SyncPreviewPage: React.FC = () => {
                         className={`px-2.5 py-1 rounded-lg border text-[11px] font-semibold cursor-pointer ${
                           active
                             ? 'bg-blue-50 border-blue-300 text-blue-800'
-                            : 'bg-white border-slate-200 text-slate-600'
+                            : 'bg-surface border-border text-text-secondary'
                         }`}
                       >
                         {st}
@@ -843,12 +843,12 @@ export const SyncPreviewPage: React.FC = () => {
               className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer ${
                 activeTab === 'ALL'
                   ? 'bg-slate-900 text-white border-slate-900 shadow-sm'
-                  : 'bg-white text-slate-800 border-slate-200 hover:bg-slate-50'
+                  : 'bg-surface text-text-primary border-border hover:bg-surface-subtle'
               }`}
             >
               <div
                 className={`text-[11px] font-semibold ${
-                  activeTab === 'ALL' ? 'text-slate-300' : 'text-slate-500'
+                  activeTab === 'ALL' ? 'text-slate-300' : 'text-text-muted'
                 }`}
               >
                 Tất cả phát hiện
@@ -945,14 +945,14 @@ export const SyncPreviewPage: React.FC = () => {
             </button>
           </div>
 
-          <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500 px-1">
+          <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-text-muted px-1">
             <div>
               Tổng số dòng đã quét:{' '}
-              <strong className="text-slate-800">{sum.totalRowsScanned}</strong>{' '}
+              <strong className="text-text-primary">{sum.totalRowsScanned}</strong>{' '}
               • Không thay đổi:{' '}
-              <strong className="text-slate-700">{sum.unchangedCount}</strong> •{' '}
+              <strong className="text-text-secondary">{sum.unchangedCount}</strong> •{' '}
               Đã lọc bỏ theo cấu hình:{' '}
-              <strong className="text-slate-700">{sum.filteredOutCount}</strong>
+              <strong className="text-text-secondary">{sum.filteredOutCount}</strong>
             </div>
             <div className="flex items-center gap-2">
               <button
@@ -966,7 +966,7 @@ export const SyncPreviewPage: React.FC = () => {
               <button
                 type="button"
                 onClick={handleDeselectAll}
-                className="text-slate-600 font-semibold hover:underline cursor-pointer"
+                className="text-text-secondary font-semibold hover:underline cursor-pointer"
               >
                 Bỏ chọn tất cả
               </button>
@@ -975,20 +975,20 @@ export const SyncPreviewPage: React.FC = () => {
         </div>
 
         {/* 4. Search & Table of Changes */}
-        <div className="bg-white rounded-2xl border border-slate-200/90 shadow-xs overflow-hidden">
-          <div className="p-3.5 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3 bg-slate-50/50">
+        <div className="bg-surface rounded-2xl border border-border/90 shadow-xs overflow-hidden">
+          <div className="p-3.5 border-b border-border flex flex-wrap items-center justify-between gap-3 bg-surface-subtle/50">
             <div className="relative w-72 max-w-full">
-              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <Search className="w-3.5 h-3.5 text-text-muted absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Tìm theo Mã HV, Họ tên, Mã lớp..."
-                className="w-full h-8 rounded-lg border border-slate-200 bg-white pl-8 pr-3 text-xs text-slate-800 focus:outline-none focus:border-blue-500"
+                className="w-full h-8 rounded-lg border border-border bg-surface pl-8 pr-3 text-xs text-text-primary focus:outline-none focus:border-blue-500"
               />
             </div>
 
-            <div className="text-xs text-slate-600">
+            <div className="text-xs text-text-secondary">
               Đã tích chọn:{' '}
               <strong className="text-blue-600 font-bold">
                 {selectedKeys.size}
@@ -1000,7 +1000,7 @@ export const SyncPreviewPage: React.FC = () => {
           <div className="overflow-x-auto">
             <table data-table="native" className="w-full text-left border-collapse text-xs">
               <thead>
-                <tr className="border-b border-slate-200 bg-slate-50/80 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+                <tr className="border-b border-border bg-surface-subtle/80 text-[11px] font-semibold text-text-muted uppercase tracking-wider">
                   <th scope="col" className="py-3 pl-4 pr-2 w-10">
                     <input
                       type="checkbox"
@@ -1013,7 +1013,7 @@ export const SyncPreviewPage: React.FC = () => {
                           ? handleSelectAllValid()
                           : handleDeselectAll()
                       }
-                      className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                      className="rounded border-border-strong text-blue-600 focus:ring-blue-500 cursor-pointer"
                     />
                   </th>
                   <th scope="col" className="py-3 px-3 w-20">Dòng</th>
@@ -1029,7 +1029,7 @@ export const SyncPreviewPage: React.FC = () => {
               <tbody className="divide-y divide-slate-100">
                 {filteredItems.length === 0 ? (
                   <tr>
-                    <td data-align="center" colSpan={7} className="py-12 text-center text-slate-500">
+                    <td data-align="center" colSpan={7} className="py-12 text-center text-text-muted">
                       Không có dòng dữ liệu nào trong phân loại này.
                     </td>
                   </tr>
@@ -1048,7 +1048,7 @@ export const SyncPreviewPage: React.FC = () => {
                             ? 'bg-rose-50/30'
                             : isChecked
                             ? 'bg-blue-50/20 hover:bg-blue-50/40'
-                            : 'hover:bg-slate-50/70'
+                            : 'hover:bg-surface-subtle/70'
                         }`}
                       >
                         <td data-align="center" data-wrap="nowrap" className="py-3.5 pl-4 pr-2 align-top">
@@ -1057,10 +1057,10 @@ export const SyncPreviewPage: React.FC = () => {
                             disabled={isInvalid}
                             checked={isChecked}
                             onChange={() => toggleRowKey(item)}
-                            className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer mt-0.5"
+                            className="rounded border-border-strong text-blue-600 focus:ring-blue-500 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer mt-0.5"
                           />
                         </td>
-                        <td data-align="center" data-wrap="nowrap" className="py-3.5 px-3 align-top font-mono font-semibold text-slate-600">
+                        <td data-align="center" data-wrap="nowrap" className="py-3.5 px-3 align-top font-mono font-semibold text-text-secondary">
                           #{item.rowNumber}
                         </td>
                         <td data-align="center" data-wrap="nowrap" className="py-3.5 px-3 align-top">
@@ -1069,25 +1069,25 @@ export const SyncPreviewPage: React.FC = () => {
                               {item.classCode}
                             </span>
                           ) : (
-                            <span className="text-slate-400">—</span>
+                            <span className="text-text-muted">—</span>
                           )}
                         </td>
                         <td data-align="center" data-wrap="nowrap" className="py-3.5 px-3 align-top">
-                          <div className="font-mono font-bold text-slate-900">
+                          <div className="font-mono font-bold text-text-primary">
                             {item.externalId || '—'}
                           </div>
                           {item.packageCode && (
-                            <div className="text-[11px] text-slate-500 mt-0.5 font-mono">
+                            <div className="text-[11px] text-text-muted mt-0.5 font-mono">
                               {item.packageCode}
                             </div>
                           )}
                         </td>
                         <td data-align="left" data-wrap="normal" className="py-3.5 px-3 align-top">
-                          <div className="font-bold text-slate-900">
+                          <div className="font-bold text-text-primary">
                             {displayStudentName}
                           </div>
                           {(item.sourceStatus || item.enrollmentStatus) && (
-                            <div className="text-[11px] text-slate-500 mt-0.5">
+                            <div className="text-[11px] text-text-muted mt-0.5">
                               {[item.sourceStatus, item.enrollmentStatus]
                                 .filter(Boolean)
                                 .join(' • ')}
@@ -1105,7 +1105,7 @@ export const SyncPreviewPage: React.FC = () => {
                                   key={dIdx}
                                   className="flex flex-wrap items-center gap-1.5 text-xs leading-relaxed"
                                 >
-                                  <span className="font-semibold text-slate-700">
+                                  <span className="font-semibold text-text-secondary">
                                     [{diff.fieldLabel || diff.field}]:
                                   </span>
                                   {item.classification !== 'CREATE' && (
@@ -1113,7 +1113,7 @@ export const SyncPreviewPage: React.FC = () => {
                                       <span className="line-through text-red-600 bg-red-50 px-1.5 py-0.5 rounded">
                                         {formatDiffVal(diff.before)}
                                       </span>
-                                      <span className="text-slate-400">→</span>
+                                      <span className="text-text-muted">→</span>
                                     </>
                                   )}
                                   <span className="text-emerald-700 bg-emerald-50 font-semibold px-1.5 py-0.5 rounded">
@@ -1156,7 +1156,7 @@ export const SyncPreviewPage: React.FC = () => {
         </div>
 
         {/* 5. Sticky Action Bar Footer */}
-        <div className="fixed bottom-0 left-0 right-0 z-30 bg-white/95 backdrop-blur border-t border-slate-200 px-6 py-3.5 shadow-lg">
+        <div className="fixed bottom-0 left-0 right-0 z-30 bg-surface/95 backdrop-blur border-t border-border px-6 py-3.5 shadow-lg">
           <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3">
             <Button
               variant="outline"
@@ -1168,9 +1168,9 @@ export const SyncPreviewPage: React.FC = () => {
             </Button>
 
             <div className="flex items-center gap-3">
-              <span className="text-xs text-slate-600 hidden sm:inline">
+              <span className="text-xs text-text-secondary hidden sm:inline">
                 Sẵn sàng cập nhật{' '}
-                <strong className="text-slate-900">{selectedKeys.size}</strong>{' '}
+                <strong className="text-text-primary">{selectedKeys.size}</strong>{' '}
                 mục hợp lệ (đã tự động chặn {sum.invalidCount} mục lỗi Validate)
               </span>
               <Button

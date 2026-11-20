@@ -432,16 +432,16 @@ export const BackupConfigModal: React.FC<BackupConfigModalProps> = ({
     >
       <div className="data-form space-y-5">
         {/* 1. Loại nguồn & Tên sổ */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3.5 rounded-xl bg-slate-50 border border-slate-200/80">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3.5 rounded-xl bg-surface-subtle border border-border/80">
           <div>
-            <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1">
+            <label className="block text-[11px] font-bold uppercase tracking-wider text-text-muted mb-1">
               Loại sổ &amp; Chương trình
             </label>
             <select
               value={programType}
               disabled={isEditing}
               onChange={(e) => handleProgramTypeChange(e.target.value)}
-              className="w-full h-9 px-2.5 rounded-lg border border-slate-300 bg-white text-xs font-semibold text-slate-800 disabled:bg-slate-100 disabled:text-slate-500"
+              className="w-full h-9 px-2.5 rounded-lg border border-border-strong bg-surface text-xs font-semibold text-text-primary disabled:bg-surface-muted disabled:text-text-muted"
             >
               {PROGRAM_TYPE_OPTIONS.map((opt) => (
                 <option key={opt.value} value={opt.value}>
@@ -452,7 +452,7 @@ export const BackupConfigModal: React.FC<BackupConfigModalProps> = ({
           </div>
 
           <div>
-            <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1">
+            <label className="block text-[11px] font-bold uppercase tracking-wider text-text-muted mb-1">
               Tên hiển thị sổ sao lưu
             </label>
             <Input
@@ -468,13 +468,13 @@ export const BackupConfigModal: React.FC<BackupConfigModalProps> = ({
             (programType === 'KAIWA' || programType === 'JLPT') &&
             csUsers.length > 0 && (
               <div className="sm:col-span-2">
-                <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1">
+                <label className="block text-[11px] font-bold uppercase tracking-wider text-text-muted mb-1">
                   Nhân viên CVHT phụ trách
                 </label>
                 <select
                   value={csUserId}
                   onChange={(e) => setCsUserId(e.target.value ? Number(e.target.value) : '')}
-                  className="w-full h-9 px-2.5 rounded-lg border border-slate-300 bg-white text-xs font-semibold text-slate-800"
+                  className="w-full h-9 px-2.5 rounded-lg border border-border-strong bg-surface text-xs font-semibold text-text-primary"
                 >
                   {csUsers.map((u) => (
                     <option key={u.id} value={u.id}>
@@ -488,9 +488,9 @@ export const BackupConfigModal: React.FC<BackupConfigModalProps> = ({
         </div>
 
         {/* 2. Đích kết nối dữ liệu sao lưu (2 Tabs giống cấu hình trang Đồng bộ) */}
-        <div className="rounded-2xl border border-slate-200 p-4 space-y-4 bg-slate-50/50">
+        <div className="rounded-2xl border border-border p-4 space-y-4 bg-surface-subtle/50">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <span className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+            <span className="text-xs font-bold text-text-primary uppercase tracking-wider">
               Nguồn kết nối dữ liệu sao lưu
             </span>
             <div className="inline-flex rounded-xl bg-slate-200/70 p-1">
@@ -499,8 +499,8 @@ export const BackupConfigModal: React.FC<BackupConfigModalProps> = ({
                 onClick={() => setActiveDestTab('GOOGLE_SHEET')}
                 className={`px-3 py-1.5 rounded-lg text-xs font-semibold inline-flex items-center gap-1.5 transition-all cursor-pointer ${
                   activeDestTab === 'GOOGLE_SHEET'
-                    ? 'bg-white text-emerald-700 shadow-2xs'
-                    : 'text-slate-600 hover:text-slate-900'
+                    ? 'bg-surface text-emerald-700 shadow-2xs'
+                    : 'text-text-secondary hover:text-text-primary'
                 }`}
               >
                 <FileSpreadsheet className="w-3.5 h-3.5" />
@@ -511,8 +511,8 @@ export const BackupConfigModal: React.FC<BackupConfigModalProps> = ({
                 onClick={() => setActiveDestTab('LOCAL_SERVER')}
                 className={`px-3 py-1.5 rounded-lg text-xs font-semibold inline-flex items-center gap-1.5 transition-all cursor-pointer ${
                   activeDestTab === 'LOCAL_SERVER'
-                    ? 'bg-white text-blue-700 shadow-2xs'
-                    : 'text-slate-600 hover:text-slate-900'
+                    ? 'bg-surface text-blue-700 shadow-2xs'
+                    : 'text-text-secondary hover:text-text-primary'
                 }`}
               >
                 <HardDrive className="w-3.5 h-3.5" />
@@ -524,7 +524,7 @@ export const BackupConfigModal: React.FC<BackupConfigModalProps> = ({
           {activeDestTab === 'GOOGLE_SHEET' ? (
             <div className="space-y-3">
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                <label className="block text-xs font-semibold text-text-secondary mb-1">
                   Link Google Sheet đích
                 </label>
                 <div className="flex items-center gap-2">
@@ -546,7 +546,7 @@ export const BackupConfigModal: React.FC<BackupConfigModalProps> = ({
                         'noopener,noreferrer'
                       )
                     }
-                    className="h-9 px-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-50 text-slate-700 font-semibold text-xs inline-flex items-center gap-1.5 shrink-0 cursor-pointer"
+                    className="h-9 px-3 rounded-xl border border-border bg-surface hover:bg-surface-subtle disabled:opacity-50 text-text-secondary font-semibold text-xs inline-flex items-center gap-1.5 shrink-0 cursor-pointer"
                   >
                     <ExternalLink className="w-3.5 h-3.5" />
                     <span>Mở Sheet</span>
@@ -554,10 +554,10 @@ export const BackupConfigModal: React.FC<BackupConfigModalProps> = ({
                 </div>
               </div>
 
-              <div className="rounded-xl bg-white border border-slate-200 px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-600">
+              <div className="rounded-xl bg-surface border border-border px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2 text-[11px] text-text-secondary">
                 <span>
                   Hệ thống tự động ghi file chuẩn{' '}
-                  <code className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-800 font-mono font-semibold">
+                  <code className="px-1.5 py-0.5 rounded bg-surface-muted text-text-primary font-mono font-semibold">
                     {previewRelativePath}
                   </code>{' '}
                   trước, sau đó đẩy các ô thay đổi (delta) lên Google Sheet.
@@ -586,14 +586,14 @@ export const BackupConfigModal: React.FC<BackupConfigModalProps> = ({
 
               <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
                 <div className="sm:col-span-5">
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  <label className="block text-xs font-semibold text-text-secondary mb-1">
                     Phân vùng thư mục con (Whitelist)
                   </label>
                   <select
                     value={subfolder}
                     disabled={!canManage}
                     onChange={(e) => setSubfolder(e.target.value)}
-                    className="w-full h-9 px-3 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-800 disabled:bg-slate-100 disabled:text-slate-500"
+                    className="w-full h-9 px-3 rounded-xl border border-border bg-surface text-xs font-semibold text-text-primary disabled:bg-surface-muted disabled:text-text-muted"
                   >
                     {ALLOWED_SUBFOLDERS.map((sf) => (
                       <option key={sf.value} value={sf.value}>
@@ -604,7 +604,7 @@ export const BackupConfigModal: React.FC<BackupConfigModalProps> = ({
                 </div>
 
                 <div className="sm:col-span-7">
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  <label className="block text-xs font-semibold text-text-secondary mb-1">
                     Tên file chuẩn trên máy chủ (chỉ nhận chữ, số, _, -)
                   </label>
                   <div className="flex items-center">
@@ -614,43 +614,43 @@ export const BackupConfigModal: React.FC<BackupConfigModalProps> = ({
                       disabled={!canManage}
                       onChange={(e) => setFileBaseName(e.target.value)}
                       placeholder="hoc_vien_kaiwa_CVHT01"
-                      className="w-full h-9 px-3 rounded-l-xl border border-r-0 border-slate-200 bg-white text-xs font-mono text-slate-800 disabled:bg-slate-100 disabled:text-slate-500 focus:outline-none focus:border-blue-500"
+                      className="w-full h-9 px-3 rounded-l-xl border border-r-0 border-border bg-surface text-xs font-mono text-text-primary disabled:bg-surface-muted disabled:text-text-muted focus:outline-none focus:border-blue-500"
                     />
-                    <span className="h-9 px-3 inline-flex items-center rounded-r-xl border border-slate-200 bg-slate-100 text-xs font-mono font-bold text-slate-600">
+                    <span className="h-9 px-3 inline-flex items-center rounded-r-xl border border-border bg-surface-muted text-xs font-mono font-bold text-text-secondary">
                       .xlsx
                     </span>
                   </div>
                 </div>
               </div>
 
-              <div className="rounded-xl bg-white border border-slate-200 px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2 text-[11px]">
-                <div className="text-slate-600">
+              <div className="rounded-xl bg-surface border border-border px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2 text-[11px]">
+                <div className="text-text-secondary">
                   Đường dẫn lưu chuẩn:{' '}
-                  <code className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-800 font-mono font-semibold">
+                  <code className="px-1.5 py-0.5 rounded bg-surface-muted text-text-primary font-mono font-semibold">
                     {previewRelativePath}
                   </code>
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2">
-                  <label className="inline-flex items-center gap-1.5 cursor-pointer font-semibold text-slate-700">
+                  <label className="inline-flex items-center gap-1.5 cursor-pointer font-semibold text-text-secondary">
                     <input
                       type="checkbox"
                       checked={keepDailySnapshots}
                       disabled={!canManage}
                       onChange={(e) => setKeepDailySnapshots(e.target.checked)}
-                      className="rounded border-slate-300 text-blue-600"
+                      className="rounded border-border-strong text-blue-600"
                     />
                     <span>Lưu thêm bản lịch sử theo ngày (_YYYY-MM-DD.xlsx)</span>
                   </label>
 
                   {keepDailySnapshots && (
                     <div className="inline-flex items-center gap-1">
-                      <span className="text-slate-500">Giữ tối đa:</span>
+                      <span className="text-text-muted">Giữ tối đa:</span>
                       <select
                         value={maxSnapshots}
                         disabled={!canManage}
                         onChange={(e) => setMaxSnapshots(Number(e.target.value))}
-                        className="h-7 px-2 rounded-lg border border-slate-200 bg-slate-50 text-[11px] font-bold text-slate-700"
+                        className="h-7 px-2 rounded-lg border border-border bg-surface-subtle text-[11px] font-bold text-text-secondary"
                       >
                         <option value={7}>7 bản</option>
                         <option value={14}>14 bản</option>
@@ -668,20 +668,20 @@ export const BackupConfigModal: React.FC<BackupConfigModalProps> = ({
           <summary>Cấu hình nâng cao · Các Sheet trong tệp</summary>
           <div>
         {/* 3. Cấu hình các Sheet bên trong File */}
-        <div className="p-3.5 rounded-xl border border-slate-200 space-y-3">
-          <div className="font-bold text-slate-900">
+        <div className="p-3.5 rounded-xl border border-border space-y-3">
+          <div className="font-bold text-text-primary">
             Cấu hình các Sheet (Tab) được ghi trong File &amp; Google Sheet
           </div>
 
           {/* Sheet 1: Hồ sơ */}
           {!isTeacher && (
-            <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-center p-2.5 rounded-lg bg-slate-50 border border-slate-200/80">
-              <label className="sm:col-span-4 inline-flex items-center gap-2 font-semibold text-slate-800 cursor-pointer">
+            <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-center p-2.5 rounded-lg bg-surface-subtle border border-border/80">
+              <label className="sm:col-span-4 inline-flex items-center gap-2 font-semibold text-text-primary cursor-pointer">
                 <input
                   type="checkbox"
                   checked={profileEnabled}
                   onChange={(e) => setProfileEnabled(e.target.checked)}
-                  className="rounded border-slate-300 text-blue-600"
+                  className="rounded border-border-strong text-blue-600"
                 />
                 <span>Sheet 1 (Hồ sơ / Tổng hợp)</span>
               </label>
@@ -692,11 +692,11 @@ export const BackupConfigModal: React.FC<BackupConfigModalProps> = ({
                   disabled={!profileEnabled}
                   onChange={(e) => setProfileSheetName(e.target.value)}
                   placeholder="Tên Sheet 1"
-                  className="w-full h-8 px-2.5 rounded-lg border border-slate-300 bg-white text-xs font-medium disabled:bg-slate-100"
+                  className="w-full h-8 px-2.5 rounded-lg border border-border-strong bg-surface text-xs font-medium disabled:bg-surface-muted"
                 />
               </div>
               <div className="sm:col-span-3 flex items-center gap-1.5">
-                <span className="text-[11px] text-slate-500 shrink-0">Header dòng:</span>
+                <span className="text-[11px] text-text-muted shrink-0">Header dòng:</span>
                 <input
                   type="number"
                   min={1}
@@ -704,15 +704,15 @@ export const BackupConfigModal: React.FC<BackupConfigModalProps> = ({
                   value={profileHeaderRow}
                   disabled={!profileEnabled}
                   onChange={(e) => setProfileHeaderRow(Math.max(1, Number(e.target.value) || 2))}
-                  className="w-16 h-8 px-2 rounded-lg border border-slate-300 bg-white text-xs font-mono font-bold text-center"
+                  className="w-16 h-8 px-2 rounded-lg border border-border-strong bg-surface text-xs font-mono font-bold text-center"
                 />
               </div>
             </div>
           )}
 
           {/* Sheet 2: Chấm buổi / Lịch dạy / Báo cáo */}
-          <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-center p-2.5 rounded-lg bg-slate-50 border border-slate-200/80">
-            <div className="sm:col-span-4 font-semibold text-slate-800 flex items-center gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-center p-2.5 rounded-lg bg-surface-subtle border border-border/80">
+            <div className="sm:col-span-4 font-semibold text-text-primary flex items-center gap-2">
               <Check className="w-4 h-4 text-emerald-600 shrink-0" />
               <span>
                 {isTeacher
@@ -728,31 +728,31 @@ export const BackupConfigModal: React.FC<BackupConfigModalProps> = ({
                 value={sheetName}
                 onChange={(e) => setSheetName(e.target.value)}
                 placeholder="Tên Sheet điểm danh"
-                className="w-full h-8 px-2.5 rounded-lg border border-slate-300 bg-white text-xs font-medium"
+                className="w-full h-8 px-2.5 rounded-lg border border-border-strong bg-surface text-xs font-medium"
               />
             </div>
             <div className="sm:col-span-3 flex items-center gap-1.5">
-              <span className="text-[11px] text-slate-500 shrink-0">Header dòng:</span>
+              <span className="text-[11px] text-text-muted shrink-0">Header dòng:</span>
               <input
                 type="number"
                 min={1}
                 max={20}
                 value={headerRow}
                 onChange={(e) => setHeaderRow(Math.max(1, Number(e.target.value) || 2))}
-                className="w-16 h-8 px-2 rounded-lg border border-slate-300 bg-white text-xs font-mono font-bold text-center"
+                className="w-16 h-8 px-2 rounded-lg border border-border-strong bg-surface text-xs font-mono font-bold text-center"
               />
             </div>
           </div>
 
           {/* Sheet 3: Điểm danh chốt */}
           {!isTeacher && !isSpecialSingleOrDual && (
-            <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-center p-2.5 rounded-lg bg-slate-50 border border-slate-200/80">
-              <label className="sm:col-span-4 inline-flex items-center gap-2 font-semibold text-slate-800 cursor-pointer">
+            <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-center p-2.5 rounded-lg bg-surface-subtle border border-border/80">
+              <label className="sm:col-span-4 inline-flex items-center gap-2 font-semibold text-text-primary cursor-pointer">
                 <input
                   type="checkbox"
                   checked={finalEnabled}
                   onChange={(e) => setFinalEnabled(e.target.checked)}
-                  className="rounded border-slate-300 text-blue-600"
+                  className="rounded border-border-strong text-blue-600"
                 />
                 <span>Sheet 3 (Điểm danh chốt)</span>
               </label>
@@ -763,11 +763,11 @@ export const BackupConfigModal: React.FC<BackupConfigModalProps> = ({
                   disabled={!finalEnabled}
                   onChange={(e) => setFinalSheetName(e.target.value)}
                   placeholder="Điểm danh chốt"
-                  className="w-full h-8 px-2.5 rounded-lg border border-slate-300 bg-white text-xs font-medium disabled:bg-slate-100"
+                  className="w-full h-8 px-2.5 rounded-lg border border-border-strong bg-surface text-xs font-medium disabled:bg-surface-muted"
                 />
               </div>
               <div className="sm:col-span-3 flex items-center gap-1.5">
-                <span className="text-[11px] text-slate-500 shrink-0">Header dòng:</span>
+                <span className="text-[11px] text-text-muted shrink-0">Header dòng:</span>
                 <input
                   type="number"
                   min={1}
@@ -775,7 +775,7 @@ export const BackupConfigModal: React.FC<BackupConfigModalProps> = ({
                   value={finalHeaderRow}
                   disabled={!finalEnabled}
                   onChange={(e) => setFinalHeaderRow(Math.max(1, Number(e.target.value) || 2))}
-                  className="w-16 h-8 px-2 rounded-lg border border-slate-300 bg-white text-xs font-mono font-bold text-center"
+                  className="w-16 h-8 px-2 rounded-lg border border-border-strong bg-surface text-xs font-mono font-bold text-center"
                 />
               </div>
             </div>
@@ -787,8 +787,8 @@ export const BackupConfigModal: React.FC<BackupConfigModalProps> = ({
 
         {/* 4. Năm sao lưu & Lịch chạy tự động */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div className="p-3.5 rounded-xl border border-slate-200 space-y-2">
-            <label className="block font-bold text-slate-900">
+          <div className="p-3.5 rounded-xl border border-border space-y-2">
+            <label className="block font-bold text-text-primary">
               Phạm vi Năm điểm danh mặc định
             </label>
             <select
@@ -796,7 +796,7 @@ export const BackupConfigModal: React.FC<BackupConfigModalProps> = ({
               onChange={(e) =>
                 setBackupYear(e.target.value === 'ALL' ? null : Number(e.target.value))
               }
-              className="w-full h-9 px-2.5 rounded-lg border border-slate-300 bg-white text-xs font-semibold text-slate-800"
+              className="w-full h-9 px-2.5 rounded-lg border border-border-strong bg-surface text-xs font-semibold text-text-primary"
             >
               <option value="ALL">Tất cả các năm</option>
               {yearsList.map((y) => (
@@ -805,23 +805,23 @@ export const BackupConfigModal: React.FC<BackupConfigModalProps> = ({
                 </option>
               ))}
             </select>
-            <p className="text-[11px] text-slate-500">
+            <p className="text-[11px] text-text-muted">
               Với sổ Admin Master, hệ thống tự động ghi vào tab <code className="font-mono">Điểm danh chốt &lt;Năm&gt;</code>.
             </p>
           </div>
 
-          <div className="p-3.5 rounded-xl border border-slate-200 space-y-2">
+          <div className="p-3.5 rounded-xl border border-border space-y-2">
             <div className="flex items-center justify-between">
-              <span className="font-bold text-slate-900 flex items-center gap-1.5">
+              <span className="font-bold text-text-primary flex items-center gap-1.5">
                 <Clock className="w-3.5 h-3.5 text-blue-600" />
                 <span>Chạy sao lưu tự động</span>
               </span>
-              <label className="inline-flex items-center gap-1.5 cursor-pointer font-semibold text-slate-700">
+              <label className="inline-flex items-center gap-1.5 cursor-pointer font-semibold text-text-secondary">
                 <input
                   type="checkbox"
                   checked={enabled}
                   onChange={(e) => setEnabled(e.target.checked)}
-                  className="rounded border-slate-300 text-emerald-600"
+                  className="rounded border-border-strong text-emerald-600"
                 />
                 <span>{enabled ? 'Đang BẬT' : 'Đang TẮT'}</span>
               </label>
@@ -839,7 +839,7 @@ export const BackupConfigModal: React.FC<BackupConfigModalProps> = ({
                     className={`px-2 py-1 rounded-lg text-[11px] font-mono font-bold border transition-colors cursor-pointer ${
                       active
                         ? 'bg-blue-600 text-white border-blue-600'
-                        : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                        : 'bg-surface text-text-secondary border-border hover:bg-surface-subtle'
                     } disabled:opacity-50`}
                   >
                     {slot}
@@ -855,7 +855,7 @@ export const BackupConfigModal: React.FC<BackupConfigModalProps> = ({
                 disabled={!enabled}
                 onChange={(e) => setCustomTime(e.target.value)}
                 placeholder="Thêm giờ (VD: 14:00)"
-                className="h-7 px-2 rounded-lg border border-slate-200 text-xs font-mono flex-1"
+                className="h-7 px-2 rounded-lg border border-border text-xs font-mono flex-1"
               />
               <Button
                 variant="outline"
@@ -870,16 +870,16 @@ export const BackupConfigModal: React.FC<BackupConfigModalProps> = ({
         </div>
 
         {/* 5. Bảo mật */}
-        <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="p-3.5 rounded-xl bg-surface-subtle border border-border/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <label className="inline-flex items-center gap-2 cursor-pointer">
             <input
               type="checkbox"
               checked={requirePrivateSheet}
               onChange={(e) => setRequirePrivateSheet(e.target.checked)}
-              className="rounded border-slate-300 text-blue-600"
+              className="rounded border-border-strong text-blue-600"
             />
-            <Lock className="w-3.5 h-3.5 text-slate-600 shrink-0" />
-            <span className="font-semibold text-slate-800">
+            <Lock className="w-3.5 h-3.5 text-text-secondary shrink-0" />
+            <span className="font-semibold text-text-primary">
               Chặn ghi nếu Google Sheet đang mở Public (Anyone with link)
             </span>
           </label>
@@ -889,10 +889,10 @@ export const BackupConfigModal: React.FC<BackupConfigModalProps> = ({
               type="checkbox"
               checked={maskSensitiveData}
               onChange={(e) => setMaskSensitiveData(e.target.checked)}
-              className="rounded border-slate-300 text-blue-600"
+              className="rounded border-border-strong text-blue-600"
             />
             <ShieldCheck className="w-3.5 h-3.5 text-teal-600 shrink-0" />
-            <span className="font-semibold text-slate-800">
+            <span className="font-semibold text-text-primary">
               Che một phần SĐT &amp; Email học viên
             </span>
           </label>

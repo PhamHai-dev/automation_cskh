@@ -1,5 +1,11 @@
 # Project Changelog
 
+## 2026-11-20 — Đồng bộ component, icon và bố cục toàn frontend
+
+- Sửa header tablet, action học viên/campaign/pending reconciliation, menu cột gần đáy viewport, toast mobile, icon flex bị co, câu hướng dẫn QR và ô PIN LINE trên màn hình nhỏ.
+- Thống nhất component/Button/form/modal, token màu trung tính/trạng thái/provider, hỗ trợ Tailwind opacity modifiers và catalog icon Lucide/logo. Modal chung có portal, cuộn theo 100dvh, focus/keyboard và khóa cuộn lồng nhau; form có ID riêng/feedback đúng control.
+- Rà 48 trang/tab × 4 viewport và kiểm thử modal/menu/login thêm 320px; 31 tests và frontend build/typecheck đạt. Browser fixture xác nhận inbox/group/account/loading/error, không gửi tin thật. Lint chưa chạy được vì thiếu config có sẵn; không thay API/DB/backend.
+
 ## 2026-11-20 — Endpoint tài khoản và nhận diện hậu tố JLPT tự do
 
 - Hậu tố JLPT là ghi chú tự do, không so với trường học viên hay danh sách ví dụ cấu hình; ghép theo lõi CSKH + mã + tên đã biết. Bỏ sao chép trình độ hồ sơ vào gợi ý tên nhóm, giữ chọn thủ công khi trùng và tránh phân loại sai do khoảng trắng cuối.

@@ -146,7 +146,7 @@ export const EnrollmentSearchSelect: React.FC<EnrollmentSearchSelectProps> = ({
   return (
     <div ref={containerRef} className="relative">
       <div className="relative flex items-center">
-        <Search className="w-4 h-4 text-slate-400 absolute left-3 pointer-events-none" />
+        <Search className="w-4 h-4 text-text-muted absolute left-3 pointer-events-none" />
         <input
           ref={inputRef}
           type="text"
@@ -162,13 +162,13 @@ export const EnrollmentSearchSelect: React.FC<EnrollmentSearchSelectProps> = ({
           }}
           onKeyDown={handleKeyDown}
           placeholder={placeholder}
-          className="w-full pl-9 pr-16 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none disabled:bg-slate-100 disabled:text-slate-500 disabled:cursor-not-allowed"
+          className="w-full pl-9 pr-16 py-2 border border-border-strong rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none disabled:bg-surface-muted disabled:text-text-muted disabled:cursor-not-allowed"
         />
         {value != null && !disabled && (
           <button
             type="button"
             onClick={handleClear}
-            className="absolute right-2 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-semibold text-slate-500 hover:text-rose-600 hover:bg-rose-50 cursor-pointer"
+            className="absolute right-2 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-semibold text-text-muted hover:text-rose-600 hover:bg-rose-50 cursor-pointer"
             title="Xóa lựa chọn"
           >
             <X className="w-3 h-3" />
@@ -178,16 +178,16 @@ export const EnrollmentSearchSelect: React.FC<EnrollmentSearchSelectProps> = ({
       </div>
 
       {open && !disabled && (
-        <div className="absolute z-30 mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-lg overflow-hidden">
+        <div className="absolute z-30 mt-1 w-full bg-surface border border-border rounded-lg shadow-lg overflow-hidden">
           <div className="max-h-60 overflow-y-auto">
             {loading ? (
-              <div className="px-3 py-3 text-xs text-slate-400">Đang tải danh sách ghi danh...</div>
+              <div className="px-3 py-3 text-xs text-text-muted">Đang tải danh sách ghi danh...</div>
             ) : loadError ? (
               <div className="px-3 py-3 text-xs text-rose-500">
                 Không tải được danh sách ghi danh. (Bạn cần quyền ADMIN/MANAGE/CS)
               </div>
             ) : filtered.length === 0 ? (
-              <div className="px-3 py-3 text-xs text-slate-400">
+              <div className="px-3 py-3 text-xs text-text-muted">
                 {isFetching ? 'Đang tìm kiếm học viên...' : 'Không tìm thấy học viên / ghi danh phù hợp.'}
               </div>
             ) : (
@@ -198,11 +198,11 @@ export const EnrollmentSearchSelect: React.FC<EnrollmentSearchSelectProps> = ({
                   onClick={() => handleSelect(enr)}
                   onMouseEnter={() => setHighlighted(idx)}
                   className={`w-full text-left px-3 py-2 text-xs flex items-center justify-between gap-2 cursor-pointer ${
-                    idx === highlighted ? 'bg-blue-50 text-blue-800' : 'text-slate-700 hover:bg-slate-50'
+                    idx === highlighted ? 'bg-blue-50 text-blue-800' : 'text-text-secondary hover:bg-surface-subtle'
                   } ${enr.id === value ? 'font-bold' : ''}`}
                 >
                   <span className="truncate">{normalizeStaffLabel(enr)}</span>
-                  <span className="text-[10px] text-slate-400 font-mono shrink-0">#{enr.id}</span>
+                  <span className="text-[10px] text-text-muted font-mono shrink-0">#{enr.id}</span>
                 </button>
               ))
             )}

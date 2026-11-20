@@ -1,6 +1,10 @@
+import { Textarea } from '../../../components/ui/Textarea';
+import { Input } from '../../../components/ui/Input';
+import { Select } from '../../../components/ui/Select';
 import React, { useState, useEffect } from 'react';
 import { CareTask, CreateCareTaskDTO, UpdateCareTaskDTO, TaskType, TaskPriority } from '../types/care.types';
 import { Button } from '../../../components/ui/Button';
+import { Modal } from '../../../components/ui/Modal';
 import { useToast } from '../../../components/ui/Toast';
 import { EnrollmentSearchSelect } from './EnrollmentSearchSelect';
 import { getEnrollmentPackageLabel } from '../../enrollments/utils/enrollmentDisplay';
@@ -14,16 +18,16 @@ interface CareTaskModalProps {
 }
 
 const TYPE_OPTIONS: { value: TaskType; label: string }[] = [
-  { value: 'CALLBACK', label: 'Hẹn gọi lại (Callback)' },
-  { value: 'HOT_ISSUE', label: 'Điểm nóng / Khiếu nại (Hot Issue)' },
-  { value: 'FOLLOW_UP', label: 'Theo dõi tiến độ (Follow-up)' },
+  { value: 'CALLBACK', label: 'Hẹn gọi lại' },
+  { value: 'HOT_ISSUE', label: 'Điểm nóng / Khiếu nại' },
+  { value: 'FOLLOW_UP', label: 'Theo dõi tiến độ' },
 ];
 
 const PRIORITY_OPTIONS: { value: TaskPriority; label: string }[] = [
-  { value: 'LOW', label: 'Thấp (Low)' },
-  { value: 'NORMAL', label: 'Bình thường (Normal)' },
-  { value: 'HIGH', label: 'Cao (High)' },
-  { value: 'URGENT', label: 'Khẩn cấp (Urgent)' },
+  { value: 'LOW', label: 'Thấp' },
+  { value: 'NORMAL', label: 'Bình thường' },
+  { value: 'HIGH', label: 'Cao' },
+  { value: 'URGENT', label: 'Khẩn cấp' },
 ];
 
 export const CareTaskModal: React.FC<CareTaskModalProps> = ({
@@ -107,129 +111,76 @@ export const CareTaskModal: React.FC<CareTaskModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
-          <h4 className="font-semibold text-gray-900 text-base">
-            {initialTask ? 'Chỉnh sửa Nhiệm vụ Chăm sóc' : 'Tạo Nhiệm vụ Chăm sóc Mới'}
-          </h4>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-lg leading-none">
-            &times;
-          </button>
+    <Modal isOpen={isOpen} onClose={onClose} title={initialTask ? 'Chỉnh sửa nhiệm vụ chăm sóc' : 'Tạo nhiệm vụ chăm sóc'}>
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div>
+          <label className="block text-xs font-medium text-text-secondary uppercase tracking-wider mb-1">
+            Học viên / Ghi danh <span className="text-red-500">*</span>
+          </label>
+          <EnrollmentSearchSelect
+            value={enrollmentId}
+            onChange={(id) => setEnrollmentId(id)}
+            disabled={Boolean(initialTask)}
+            fallbackLabel={
+              initialTask?.enrollment
+                ? `${initialTask.enrollment.student?.full_name || 'HV'} · ${initialTask.enrollment.student?.external_id || `#${initialTask.enrollment.id}`
+                } · ${getEnrollmentPackageLabel(initialTask.enrollment)
+                }`
+                : undefined
+            }
+            placeholder="Tìm theo tên học viên, mã HV, mã ghi danh..."
+          />
+          {initialTask && (
+            <p className="mt-1 text-[10px] text-text-muted">
+              Ghi danh gắn với nhiệm vụ đã tạo không thể thay đổi.
+            </p>
+          )}
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          <div>
-            <label className="block text-xs font-medium text-gray-700 uppercase tracking-wider mb-1">
-              Học viên / Ghi danh <span className="text-red-500">*</span>
-            </label>
-            <EnrollmentSearchSelect
-              value={enrollmentId}
-              onChange={(id) => setEnrollmentId(id)}
-              disabled={Boolean(initialTask)}
-              fallbackLabel={
-                initialTask?.enrollment
-                  ? `${initialTask.enrollment.student?.full_name || 'HV'} · ${
-                      initialTask.enrollment.student?.external_id || `#${initialTask.enrollment.id}`
-                    } · ${
-                      getEnrollmentPackageLabel(initialTask.enrollment)
-                    }`
-                  : undefined
-              }
-              placeholder="Tìm theo tên học viên, mã HV, mã ghi danh..."
-            />
-            {initialTask && (
-              <p className="mt-1 text-[10px] text-gray-400">
-                Ghi danh gắn với nhiệm vụ đã tạo không thể thay đổi.
-              </p>
-            )}
-          </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <Select label={"Loại nhiệm vụ"} value={formData.type}
+            onChange={(e) => setFormData({ ...formData, type: e.target.value as TaskType })}>
+            {TYPE_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </Select>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-medium text-gray-700 uppercase tracking-wider mb-1">
-                Loại nhiệm vụ
-              </label>
-              <select
-                value={formData.type}
-                onChange={(e) => setFormData({ ...formData, type: e.target.value as TaskType })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
-              >
-                {TYPE_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
-            </div>
+          <Select label={"Mức độ ưu tiên"} value={formData.priority}
+            onChange={(e) => setFormData({ ...formData, priority: e.target.value as TaskPriority })}>
+            {PRIORITY_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </Select>
+        </div>
 
-            <div>
-              <label className="block text-xs font-medium text-gray-700 uppercase tracking-wider mb-1">
-                Mức độ ưu tiên
-              </label>
-              <select
-                value={formData.priority}
-                onChange={(e) => setFormData({ ...formData, priority: e.target.value as TaskPriority })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
-              >
-                {PRIORITY_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
+        <Input label={"Tiêu đề nhiệm vụ *"} type="text"
+          required
+          value={formData.title}
+          onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+          placeholder="VD: Gọi lại cho phụ huynh em An lúc 15:00..." />
 
-          <div>
-            <label className="block text-xs font-medium text-gray-700 uppercase tracking-wider mb-1">
-              Tiêu đề nhiệm vụ <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="text"
-              required
-              value={formData.title}
-              onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-              placeholder="VD: Gọi lại cho phụ huynh em An lúc 15:00..."
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
-            />
-          </div>
+        <Input label="Hạn hoàn thành" type="datetime-local"
+          value={formData.due_at}
+          onChange={(e) => setFormData({ ...formData, due_at: e.target.value })} />
 
-          <div>
-            <label className="block text-xs font-medium text-gray-700 uppercase tracking-wider mb-1">
-              Hạn hoàn thành (Due Date)
-            </label>
-            <input
-              type="datetime-local"
-              value={formData.due_at}
-              onChange={(e) => setFormData({ ...formData, due_at: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
-            />
-          </div>
+        <Textarea label={"Ghi chú nội dung"} rows={3}
+          value={formData.note}
+          onChange={(e) => setFormData({ ...formData, note: e.target.value })}
+          placeholder="Ghi chú thêm thông tin cần chuẩn bị trước khi gọi..."></Textarea>
 
-          <div>
-            <label className="block text-xs font-medium text-gray-700 uppercase tracking-wider mb-1">
-              Ghi chú nội dung
-            </label>
-            <textarea
-              rows={3}
-              value={formData.note}
-              onChange={(e) => setFormData({ ...formData, note: e.target.value })}
-              placeholder="Ghi chú thêm thông tin cần chuẩn bị trước khi gọi..."
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
-            />
-          </div>
-
-          <div className="flex justify-end gap-3 pt-2">
-            <Button type="button" variant="outline" onClick={onClose}>
-              Hủy
-            </Button>
-            <Button type="submit" disabled={loading}>
-              {loading ? 'Đang lưu...' : initialTask ? 'Lưu cập nhật' : 'Tạo nhiệm vụ'}
-            </Button>
-          </div>
-        </form>
-      </div>
-    </div>
+        <div className="flex justify-end gap-3 pt-2">
+          <Button type="button" variant="outline" onClick={onClose}>
+            Hủy
+          </Button>
+          <Button type="submit" disabled={loading}>
+            {loading ? 'Đang lưu...' : initialTask ? 'Lưu cập nhật' : 'Tạo nhiệm vụ'}
+          </Button>
+        </div>
+      </form>
+    </Modal>
   );
 };

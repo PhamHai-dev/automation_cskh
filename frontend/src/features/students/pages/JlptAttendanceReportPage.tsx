@@ -8,6 +8,7 @@ import {
 import { FilterBar } from '../../../components/common/FilterBar';
 import { PaginationFooter } from '../../../components/common/Pagination';
 import { Button } from '../../../components/ui/Button';
+import { Badge } from '../../../components/ui/Badge';
 import { useToast } from '../../../components/ui/Toast';
 import { useAuth } from '../../../contexts/AuthContext';
 import { useDebouncedValue } from '../../../hooks/useDebouncedValue';
@@ -19,6 +20,8 @@ import {
   Lock,
   RefreshCw,
   BookOpen,
+  AlertCircle,
+  Bell,
 } from 'lucide-react';
 
 interface InlineEditCellProps {
@@ -68,10 +71,10 @@ export const InlineEditCell: React.FC<InlineEditCellProps> = ({
   if (disabled) {
     return (
       <div
-        className={`p-1.5 rounded-lg min-h-[28px] flex items-center gap-1 text-xs text-slate-700 ${alignClass} ${className}`}
+        className={`p-1.5 rounded-lg min-h-[28px] flex items-center gap-1 text-xs text-text-secondary ${alignClass} ${className}`}
         title={strValue ? `${strValue} (Chỉ xem)` : 'Chỉ xem'}
       >
-        <span className={strValue ? 'font-medium text-slate-700' : 'text-slate-400'}>
+        <span className={strValue ? 'font-medium text-text-secondary' : 'text-text-muted'}>
           {strValue || placeholder}
         </span>
       </div>
@@ -114,7 +117,7 @@ export const InlineEditCell: React.FC<InlineEditCellProps> = ({
               }
             }}
             placeholder={placeholder}
-            className="w-full text-xs p-1.5 bg-white border-2 border-primary rounded-lg focus:outline-none shadow-md resize-none text-slate-800"
+            className="w-full text-xs p-1.5 bg-surface border-2 border-primary rounded-lg focus:outline-none shadow-md resize-none text-text-primary"
           />
         </div>
       );
@@ -140,7 +143,7 @@ export const InlineEditCell: React.FC<InlineEditCellProps> = ({
           }
         }}
         placeholder={placeholder}
-        className={`w-full min-w-[60px] text-xs p-1 bg-white border-2 border-primary rounded-lg focus:outline-none shadow-md font-semibold text-slate-800 ${
+        className={`w-full min-w-[60px] text-xs p-1 bg-surface border-2 border-primary rounded-lg focus:outline-none shadow-md font-semibold text-text-primary ${
           align === 'center' ? 'text-center' : align === 'right' ? 'text-right' : 'text-left'
         }`}
       />
@@ -155,7 +158,7 @@ export const InlineEditCell: React.FC<InlineEditCellProps> = ({
     >
       <span
         className={`text-xs ${
-          strValue ? 'font-semibold text-slate-800' : 'text-slate-400'
+          strValue ? 'font-semibold text-text-primary' : 'text-text-muted'
         } ${multiline ? 'truncate max-w-[200px]' : ''}`}
       >
         {strValue || placeholder}
@@ -191,16 +194,16 @@ const STATUS_OPTIONS = [
 
 const WARNING_FILTER_OPTIONS = [
   { value: 'ALL', label: 'Tất cả cảnh báo' },
-  { value: 'ABSENT_WARN', label: '⚠ Vắng liên tiếp ≥2 buổi' },
-  { value: 'NO_HW_WARN', label: '⚠ Không làm bài ≥2 buổi' },
-  { value: 'MISSING_SCORE', label: '❗ Chưa có đủ điểm KT' },
-  { value: 'UPCOMING_EXAM', label: '🔔 Sắp kiểm tra (≤2 buổi)' },
+  { value: 'ABSENT_WARN', label: 'Vắng liên tiếp ≥2 buổi' },
+  { value: 'NO_HW_WARN', label: 'Không làm bài ≥2 buổi' },
+  { value: 'MISSING_SCORE', label: 'Chưa có đủ điểm KT' },
+  { value: 'UPCOMING_EXAM', label: 'Sắp kiểm tra (≤2 buổi)' },
   { value: 'LOW_ATTENDANCE', label: 'Chuyên cần < 70%' },
 ];
 
 export const renderAttendanceRateCell = (rate: number | null) => {
   if (rate === null || rate === undefined || Number.isNaN(Number(rate))) {
-    return <span className="text-slate-400 text-xs">—</span>;
+    return <span className="text-text-muted text-xs">—</span>;
   }
   const pct = Math.round(Number(rate) * 100);
   if (pct < 70) {
@@ -225,33 +228,13 @@ export const renderAttendanceRateCell = (rate: number | null) => {
 };
 
 export const renderExamWarningBadge = (warning: string) => {
-  if (!warning) return <span className="text-slate-400 text-xs">—</span>;
-  if (warning.startsWith('❗')) {
-    return (
-      <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold bg-rose-50 text-rose-800 border border-rose-200 whitespace-nowrap">
-        {warning}
-      </span>
-    );
-  }
-  if (warning.startsWith('🔔')) {
-    return (
-      <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold bg-amber-50 text-amber-900 border border-amber-200 whitespace-nowrap">
-        {warning}
-      </span>
-    );
-  }
-  if (warning.startsWith('✅')) {
-    return (
-      <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200 whitespace-nowrap">
-        {warning}
-      </span>
-    );
-  }
-  return (
-    <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium text-slate-600 bg-slate-100 border border-slate-200 whitespace-nowrap">
-      {warning}
-    </span>
-  );
+  if (!warning) return <span className="text-text-muted text-xs">—</span>;
+  const danger = warning.startsWith('❗'), upcoming = warning.startsWith('🔔'), success = warning.startsWith('✅');
+  const Icon = success ? CheckCircle2 : upcoming ? Bell : AlertCircle;
+  const label = warning.replace(/^[❗🔔✅⚠️]+\s*/u, '');
+  return <Badge size="sm" variant={danger ? 'danger' : upcoming ? 'warning' : success ? 'success' : 'neutral'}>
+    <Icon className="h-3.5 w-3.5" aria-hidden="true" />{label}
+  </Badge>;
 };
 
 /**
@@ -301,10 +284,10 @@ export const JlptChuyenCanTable: React.FC<JlptChuyenCanTableProps> = ({
       <table data-table="native" className="w-full text-xs text-left border-collapse">
         <thead>
           {/* Row 1: Group Headers (giống dòng 3 sheet Chuyên cần HV) */}
-          <tr className="bg-slate-100 text-text-secondary border-b border-border/80 text-[11px] font-bold uppercase tracking-wider text-center">
+          <tr className="bg-surface-muted text-text-secondary border-b border-border/80 text-[11px] font-bold uppercase tracking-wider text-center">
             <th scope="colgroup"
               colSpan={3}
-              className="sticky left-0 z-30 bg-slate-100 border-r-2 border-border/80 px-3 py-2 text-slate-800 shadow-[2px_0_4px_-1px_rgba(0,0,0,0.06)]"
+              className="sticky left-0 z-30 bg-surface-muted border-r-2 border-border/80 px-3 py-2 text-text-primary shadow-[2px_0_4px_-1px_rgba(0,0,0,0.06)]"
             >
               Học viên
             </th>
@@ -326,21 +309,21 @@ export const JlptChuyenCanTable: React.FC<JlptChuyenCanTableProps> = ({
             >
               C. CẢNH BÁO LIÊN TIẾP
             </th>
-            <th scope="colgroup" colSpan={4} className="bg-slate-100 border-r border-border/80 px-3 py-2" />
+            <th scope="colgroup" colSpan={4} className="bg-surface-muted border-r border-border/80 px-3 py-2" />
             <th scope="colgroup" colSpan={7} className="bg-teal-50/70 text-teal-900 px-3 py-2" />
           </tr>
 
           {/* Row 2: 22 Column Headers (giống dòng 4 sheet Chuyên cần HV) */}
           <tr className="bg-surface-muted/90 text-text-secondary border-b border-border/80 text-[11px] font-bold text-center">
-            <th scope="col" className="sticky left-0 z-30 px-2 py-3 border-r border-border/60 bg-slate-100 w-10 min-w-[40px] max-w-[40px] whitespace-nowrap">
+            <th scope="col" className="sticky left-0 z-30 px-2 py-3 border-r border-border/60 bg-surface-muted w-10 min-w-[40px] max-w-[40px] whitespace-nowrap">
               #
             </th>
             {/* 1. Mã lớp */}
-            <th scope="col" className="sticky left-10 z-30 px-3 py-3 border-r border-border/60 bg-slate-100 w-[115px] min-w-[115px] max-w-[115px] whitespace-nowrap">
+            <th scope="col" className="sticky left-10 z-30 px-3 py-3 border-r border-border/60 bg-surface-muted w-[115px] min-w-[115px] max-w-[115px] whitespace-nowrap">
               Mã lớp
             </th>
             {/* 2. Họ và tên */}
-            <th scope="col" className="sticky left-[155px] z-30 px-3 py-3 border-r-2 border-border/80 bg-slate-100 w-[185px] min-w-[185px] max-w-[185px] whitespace-nowrap shadow-[2px_0_4px_-1px_rgba(0,0,0,0.06)]">
+            <th scope="col" className="sticky left-[155px] z-30 px-3 py-3 border-r-2 border-border/80 bg-surface-muted w-[185px] min-w-[185px] max-w-[185px] whitespace-nowrap shadow-[2px_0_4px_-1px_rgba(0,0,0,0.06)]">
               Họ và tên
             </th>
             {/* 3. Số buổi tham gia */}
@@ -428,13 +411,13 @@ export const JlptChuyenCanTable: React.FC<JlptChuyenCanTableProps> = ({
 
         <tbody>
           {rows.map((row, rIdx) => {
-            const stickyBg = rIdx % 2 === 1 ? 'bg-slate-50' : 'bg-surface';
+            const stickyBg = rIdx % 2 === 1 ? 'bg-surface-subtle' : 'bg-surface';
 
             return (
               <tr
                 key={`${row.student_id}-${row.enrollment_id}`}
-                className={`border-b border-border/60 hover:bg-slate-50/80 transition-colors ${
-                  rIdx % 2 === 1 ? 'bg-slate-50/30' : 'bg-surface'
+                className={`border-b border-border/60 hover:bg-surface-subtle/80 transition-colors ${
+                  rIdx % 2 === 1 ? 'bg-surface-subtle/30' : 'bg-surface'
                 }`}
               >
                 {/* # */}
@@ -645,7 +628,7 @@ export const JlptChuyenCanTable: React.FC<JlptChuyenCanTableProps> = ({
                         : row.status === 'PAUSED'
                         ? 'bg-amber-50 text-amber-800 border-amber-200'
                         : row.status === 'FINISHED'
-                        ? 'bg-slate-100 text-slate-700 border-slate-300'
+                        ? 'bg-surface-muted text-text-secondary border-border-strong'
                         : 'bg-blue-50 text-blue-800 border-blue-200'
                     }`}
                   >
@@ -963,9 +946,9 @@ export const JlptAttendanceReportTabPanel: React.FC = () => {
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               placeholder="Tên, mã HV, mã lớp..."
-              className="w-full h-9 pl-9 pr-3 border border-border rounded-xl text-sm bg-white text-text-primary focus:outline-none focus:ring-2 focus:ring-primary"
+              className="w-full h-9 pl-9 pr-3 border border-border rounded-xl text-sm bg-surface text-text-primary focus:outline-none focus:ring-2 focus:ring-primary"
             />
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+            <Search className="w-4 h-4 text-text-muted absolute left-3 top-2.5" />
           </div>
         </div>
 
@@ -976,7 +959,7 @@ export const JlptAttendanceReportTabPanel: React.FC = () => {
           <select
             value={classCodeFilter}
             onChange={(e) => setClassCodeFilter(e.target.value)}
-            className="w-full h-9 px-3 border border-border rounded-xl text-sm bg-white text-text-primary focus:outline-none focus:ring-2 focus:ring-primary cursor-pointer"
+            className="w-full h-9 px-3 border border-border rounded-xl text-sm bg-surface text-text-primary focus:outline-none focus:ring-2 focus:ring-primary cursor-pointer"
           >
             <option value="">Tất cả lớp</option>
             {classCodeOptions.map((code) => (
@@ -994,7 +977,7 @@ export const JlptAttendanceReportTabPanel: React.FC = () => {
           <select
             value={courseTrackFilter}
             onChange={(e) => setCourseTrackFilter(e.target.value)}
-            className="w-full h-9 px-3 border border-border rounded-xl text-sm bg-white text-text-primary focus:outline-none focus:ring-2 focus:ring-primary cursor-pointer"
+            className="w-full h-9 px-3 border border-border rounded-xl text-sm bg-surface text-text-primary focus:outline-none focus:ring-2 focus:ring-primary cursor-pointer"
           >
             {COURSE_TRACK_OPTIONS.map((opt) => (
               <option key={opt.value} value={opt.value}>
@@ -1011,7 +994,7 @@ export const JlptAttendanceReportTabPanel: React.FC = () => {
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
-            className="w-full h-9 px-3 border border-border rounded-xl text-sm bg-white text-text-primary focus:outline-none focus:ring-2 focus:ring-primary cursor-pointer"
+            className="w-full h-9 px-3 border border-border rounded-xl text-sm bg-surface text-text-primary focus:outline-none focus:ring-2 focus:ring-primary cursor-pointer"
           >
             {STATUS_OPTIONS.map((opt) => (
               <option key={opt.value} value={opt.value}>
@@ -1028,7 +1011,7 @@ export const JlptAttendanceReportTabPanel: React.FC = () => {
           <select
             value={warningFilter}
             onChange={(e) => setWarningFilter(e.target.value)}
-            className="w-full h-9 px-3 border border-border rounded-xl text-sm bg-white text-text-primary focus:outline-none focus:ring-2 focus:ring-primary cursor-pointer"
+            className="w-full h-9 px-3 border border-border rounded-xl text-sm bg-surface text-text-primary focus:outline-none focus:ring-2 focus:ring-primary cursor-pointer"
           >
             {WARNING_FILTER_OPTIONS.map((opt) => (
               <option key={opt.value} value={opt.value}>
@@ -1046,7 +1029,7 @@ export const JlptAttendanceReportTabPanel: React.FC = () => {
             <select
               value={cvhtFilter}
               onChange={(e) => setCvhtFilter(e.target.value)}
-              className="w-full h-9 px-3 border border-border rounded-xl text-sm bg-white text-text-primary focus:outline-none focus:ring-2 focus:ring-primary cursor-pointer"
+              className="w-full h-9 px-3 border border-border rounded-xl text-sm bg-surface text-text-primary focus:outline-none focus:ring-2 focus:ring-primary cursor-pointer"
             >
               <option value="">Tất cả CVHT</option>
               {cvhtOptions.map((code) => (
@@ -1062,7 +1045,7 @@ export const JlptAttendanceReportTabPanel: React.FC = () => {
       {/* Main Table Card (Chuẩn cấu trúc bảng chung của web) */}
       <div className="bg-surface rounded-2xl border border-border/80 shadow-soft overflow-hidden">
         {/* Table Toolbar */}
-        <div className="flex flex-wrap items-center justify-between gap-2.5 border-b border-border/80 bg-slate-50/60 p-3 sm:px-4 text-xs">
+        <div className="flex flex-wrap items-center justify-between gap-2.5 border-b border-border/80 bg-surface-subtle/60 p-3 sm:px-4 text-xs">
           <div className="flex flex-wrap items-center gap-2 font-semibold text-text-secondary">
             <span className="inline-flex items-center gap-1.5 rounded-lg border border-border/80 bg-surface px-2.5 py-1.5 shadow-2xs">
               <span>Hiển thị:</span>

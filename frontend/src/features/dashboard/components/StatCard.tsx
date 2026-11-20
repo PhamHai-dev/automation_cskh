@@ -62,21 +62,21 @@ export const StatCard: React.FC<StatCardProps> = ({
   const scheme = COLOR_CLASSES[color] || COLOR_CLASSES.blue;
 
   return (
-    <div className={`relative bg-white rounded-2xl border border-slate-200/80 p-5 shadow-soft hover:shadow-md transition-all duration-200 overflow-hidden group`}>
+    <div className={`relative min-w-0 bg-surface rounded-2xl border border-border p-5 shadow-soft hover:shadow-md transition-all duration-200 overflow-hidden group`}>
       {/* Decorative gradient highlight */}
       <div className={`absolute -top-12 -right-12 w-28 h-28 rounded-full bg-gradient-to-br ${scheme.bgGradient} blur-xl group-hover:scale-125 transition-transform duration-500 pointer-events-none`} />
 
       <div className="flex items-center justify-between gap-2 mb-3 relative z-10">
-        <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">{title}</span>
+        <span className="text-[11px] font-bold text-text-muted uppercase tracking-wider">{title}</span>
         {icon && (
-          <div className={`w-9 h-9 rounded-xl flex items-center justify-center transition-transform group-hover:scale-105 duration-200 ${scheme.iconBg}`}>
+          <div className={`w-9 h-9 shrink-0 rounded-xl flex items-center justify-center transition-transform group-hover:scale-105 duration-200 ${scheme.iconBg}`}>
             {icon}
           </div>
         )}
       </div>
 
       <div className="flex items-baseline gap-2 relative z-10">
-        <span className="text-2xl lg:text-3xl font-extrabold text-slate-900 tracking-tight">{value}</span>
+        <span className="text-2xl lg:text-3xl font-extrabold text-text-primary tracking-tight">{value}</span>
         {trend && (
           <span
             className={`text-xs font-bold px-1.5 py-0.5 rounded-full ${
@@ -88,7 +88,7 @@ export const StatCard: React.FC<StatCardProps> = ({
         )}
       </div>
 
-      {subtitle && <p className="text-xs text-slate-500 mt-1.5 line-clamp-1 relative z-10">{subtitle}</p>}
+      {subtitle && <p className="text-xs text-text-secondary mt-1.5 break-words relative z-10">{subtitle}</p>}
     </div>
   );
 };

@@ -20,7 +20,7 @@ export const ChartCard: React.FC<ChartCardProps> = ({
   className = '',
 }) => {
   return (
-    <div className={`bg-white rounded-2xl border border-border/80 shadow-soft p-5 ${className}`}>
+    <div className={`bg-surface rounded-2xl border border-border/80 shadow-soft p-5 ${className}`}>
       <div className="flex items-start justify-between gap-2 mb-4">
         <div className="min-w-0">
           <h4 className="font-semibold text-text-primary text-sm sm:text-base">{title}</h4>

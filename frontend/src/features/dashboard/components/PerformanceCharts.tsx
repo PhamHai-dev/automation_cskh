@@ -58,7 +58,7 @@ export const CSLeaderboard: React.FC<{ data: PerformancePayload['cs_leaderboard'
         </thead>
         <tbody className="divide-y divide-border/60">
           {data.map((r, idx) => (
-            <tr key={r.cs_id} className="hover:bg-slate-50/60">
+            <tr key={r.cs_id} className="hover:bg-surface-subtle/60">
               <td data-align="center" data-wrap="nowrap" className="py-2.5 px-3 text-text-muted font-bold">{idx + 1}</td>
               <td data-align="left" data-wrap="normal" className="py-2.5 px-3 font-medium text-text-primary">{r.cs_name}</td>
               <td data-align="right" data-wrap="nowrap" className="py-2.5 px-3 text-right text-text-secondary">{r.total_enrollments}</td>
@@ -86,7 +86,7 @@ const PillPct: React.FC<{ value: number; tone: 'good' | 'warn' }> = ({ value }) 
       ? 'bg-emerald-50 text-emerald-700'
       : value >= 30
         ? 'bg-amber-50 text-amber-700'
-        : 'bg-slate-100 text-slate-500';
+        : 'bg-surface-muted text-text-muted';
   return (
     <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-bold ${cls}`}>
       {value}%
@@ -105,7 +105,7 @@ export const CompletionBar: React.FC<{ data: PerformancePayload['task_completion
           {data.month_done}/{data.month_total} NV tháng này
         </span>
       </div>
-      <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden">
+      <div className="w-full h-3 bg-surface-muted rounded-full overflow-hidden">
         <div
           className="h-full bg-gradient-to-r from-emerald-500 to-emerald-400 transition-all duration-500"
           style={{ width: `${pct}%` }}

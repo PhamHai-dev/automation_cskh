@@ -57,17 +57,17 @@ export const ToastProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   };
 
   const borderColors = {
-    success: 'border-emerald-200 bg-white shadow-emerald-500/10',
-    error: 'border-rose-200 bg-white shadow-rose-500/10',
-    warning: 'border-amber-200 bg-white shadow-amber-500/10',
-    info: 'border-blue-200 bg-white shadow-blue-500/10',
+    success: 'border-emerald-200 bg-surface shadow-emerald-500/10',
+    error: 'border-rose-200 bg-surface shadow-rose-500/10',
+    warning: 'border-amber-200 bg-surface shadow-amber-500/10',
+    info: 'border-blue-200 bg-surface shadow-blue-500/10',
   };
 
   return (
     <ToastContext.Provider value={{ toast }}>
       {children}
       {/* Toast Notification Container */}
-      <div className="fixed bottom-5 right-5 z-50 flex flex-col gap-2.5 max-w-sm w-full pointer-events-none px-4 sm:px-0">
+      <div className="fixed bottom-4 inset-x-4 sm:left-auto sm:right-5 z-[150] flex flex-col gap-2.5 sm:w-full max-w-sm pointer-events-none">
         {toasts.map((t) => (
           <div
             key={t.id}

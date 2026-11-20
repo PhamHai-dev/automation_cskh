@@ -33,7 +33,7 @@ export const PageHeader: React.FC<PageHeaderProps> = ({
   };
 
   return (
-    <div className="mb-6">
+    <div className="page-header min-w-0 mb-6">
       {/* Breadcrumbs or Back Button */}
       {(breadcrumbs || backUrl || onBack) && (
         <div className="flex items-center gap-2 mb-2.5 text-xs text-text-muted">
@@ -75,9 +75,9 @@ export const PageHeader: React.FC<PageHeaderProps> = ({
       )}
 
       {/* Title & Actions Row */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div className="flex-1 min-w-0">
-          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-text-primary">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="flex-1 basis-64 min-w-0">
+          <h1 className="break-words text-xl sm:text-2xl font-bold tracking-tight text-text-primary">
             {title}
           </h1>
           {description && (
@@ -87,7 +87,7 @@ export const PageHeader: React.FC<PageHeaderProps> = ({
           )}
         </div>
         {actions && (
-          <div className="flex items-center gap-2.5 shrink-0 flex-wrap sm:flex-nowrap">
+          <div className="page-header-actions flex min-w-0 max-w-full flex-wrap items-center gap-2">
             {actions}
           </div>
         )}

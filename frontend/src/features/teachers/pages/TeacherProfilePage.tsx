@@ -98,7 +98,7 @@ export const TeacherProfilePage: React.FC = () => {
       <div className="grid gap-6 lg:grid-cols-[320px_minmax(0,1fr)]">
         <Card className="overflow-hidden p-0">
           <div className="bg-gradient-to-br from-primary to-accent p-6 text-white">
-            <div className="flex h-20 w-20 items-center justify-center rounded-2xl border border-white/30 bg-white/15 text-2xl font-extrabold shadow-lg backdrop-blur">
+            <div className="flex h-20 w-20 items-center justify-center rounded-2xl border border-white/30 bg-surface/15 text-2xl font-extrabold shadow-lg backdrop-blur">
               {getInitials(profile.name)}
             </div>
             <h2 className="mt-4 text-xl font-extrabold">{profile.name}</h2>

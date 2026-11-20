@@ -267,7 +267,7 @@ export const AutomationWorkflowsPage: React.FC = () => {
           className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold ${
             item.active
               ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-              : 'bg-slate-100 text-slate-500 border border-slate-200'
+              : 'bg-surface-muted text-text-muted border border-border'
           }`}
         >
           <span
@@ -298,7 +298,7 @@ export const AutomationWorkflowsPage: React.FC = () => {
               }}
               title="Chỉnh sửa & Phân quyền CSKH"
             >
-              <Pencil className="w-4 h-4 text-slate-500 hover:text-primary" />
+              <Pencil className="w-4 h-4 text-text-muted hover:text-primary" />
             </Button>
             <Button
               variant="ghost"
@@ -310,7 +310,7 @@ export const AutomationWorkflowsPage: React.FC = () => {
               title={item.active ? 'Tắt kịch bản' : 'Bật kịch bản'}
             >
               <Power
-                className={`w-4 h-4 ${item.active ? 'text-emerald-500' : 'text-slate-400'}`}
+                className={`w-4 h-4 ${item.active ? 'text-emerald-500' : 'text-text-muted'}`}
               />
             </Button>
             <Button
@@ -599,13 +599,11 @@ export const AutomationWorkflowsPage: React.FC = () => {
 
           {/* Delete Confirm */}
           {isAdminOrManage && deleteTarget && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
-              <div className="bg-surface rounded-2xl shadow-soft-xl w-full max-w-sm overflow-hidden border border-border/80">
+            <Modal isOpen onClose={() => setDeleteTarget(null)} title="Xóa kịch bản?" size="sm">
                 <div className="p-6 text-center">
                   <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
                     <Trash2 className="w-6 h-6 text-red-500" />
                   </div>
-                  <h3 className="text-base font-bold text-text-primary mb-2">Xóa kịch bản?</h3>
                   <p className="text-sm text-text-secondary">
                     Kịch bản <strong>{deleteTarget.name}</strong> và toàn bộ cụm trigger, học viên
                     áp dụng sẽ bị xóa vĩnh viễn.
@@ -619,8 +617,7 @@ export const AutomationWorkflowsPage: React.FC = () => {
                     Xóa kịch bản
                   </Button>
                 </div>
-              </div>
-            </div>
+            </Modal>
           )}
         </>
       )}

@@ -192,7 +192,7 @@ const DashboardPage: React.FC = () => {
                   className={`px-3 h-9 text-xs font-semibold rounded-xl border transition ${
                     currentPreset === p.key
                       ? 'bg-primary text-white border-primary'
-                      : 'bg-white text-text-secondary border-border hover:bg-surface-muted'
+                      : 'bg-surface text-text-secondary border-border hover:bg-surface-muted'
                   }`}
                 >
                   {p.label}
@@ -207,7 +207,7 @@ const DashboardPage: React.FC = () => {
               type="date"
               value={filters.date_from || ''}
               onChange={(e) => setFilters({ ...filters, date_from: e.target.value || undefined })}
-              className="w-full h-9 px-3 border border-border rounded-xl text-sm bg-white text-text-primary focus:outline-none focus:ring-2 focus:ring-primary"
+              className="w-full h-9 px-3 border border-border rounded-xl text-sm bg-surface text-text-primary focus:outline-none focus:ring-2 focus:ring-primary"
             />
           </div>
           <div>
@@ -216,7 +216,7 @@ const DashboardPage: React.FC = () => {
               type="date"
               value={filters.date_to || ''}
               onChange={(e) => setFilters({ ...filters, date_to: e.target.value || undefined })}
-              className="w-full h-9 px-3 border border-border rounded-xl text-sm bg-white text-text-primary focus:outline-none focus:ring-2 focus:ring-primary"
+              className="w-full h-9 px-3 border border-border rounded-xl text-sm bg-surface text-text-primary focus:outline-none focus:ring-2 focus:ring-primary"
             />
           </div>
         </FilterBar>
@@ -368,7 +368,7 @@ const DashboardPage: React.FC = () => {
       {loading && activeTab !== 'jlpt_attendance' && !overview && !care && !attendance && !performance && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {[0, 1, 2, 3].map((i) => (
-            <div key={i} className="h-64 bg-white rounded-2xl border border-border/80 animate-pulse" />
+            <div key={i} className="h-64 bg-surface rounded-2xl border border-border/80 animate-pulse" />
           ))}
         </div>
       )}

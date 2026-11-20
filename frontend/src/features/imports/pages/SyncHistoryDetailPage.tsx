@@ -459,7 +459,7 @@ export const SyncHistoryDetailPage: React.FC = () => {
   if (loading || !detail) {
     return (
       <PageContainer>
-        <div className="bg-white rounded-2xl border border-slate-200 p-16 flex items-center justify-center text-slate-500">
+        <div className="bg-surface rounded-2xl border border-border p-16 flex items-center justify-center text-text-muted">
           <RefreshCw className="w-5 h-5 animate-spin mr-3 text-blue-600" />
           <span className="text-xs font-semibold">
             Đang tải chi tiết phiên đồng bộ #{runId}...
@@ -481,20 +481,20 @@ export const SyncHistoryDetailPage: React.FC = () => {
     <PageContainer>
       <div className="space-y-5">
         {/* 1. Header & Thông tin phiên chạy */}
-        <div className="bg-white rounded-2xl border border-slate-200/90 p-5 shadow-xs space-y-4">
+        <div className="bg-surface rounded-2xl border border-border/90 p-5 shadow-xs space-y-4">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="space-y-1.5">
               <button
                 type="button"
                 onClick={() => navigate('/data-sync?tab=history')}
-                className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-blue-600 transition-colors cursor-pointer"
+                className="inline-flex items-center gap-1.5 text-xs font-semibold text-text-secondary hover:text-blue-600 transition-colors cursor-pointer"
               >
                 <ArrowLeft className="w-3.5 h-3.5" />
                 <span>Quay lại Lịch sử đồng bộ</span>
               </button>
 
               <div className="flex flex-wrap items-center gap-2.5">
-                <h1 className="text-xl font-bold text-slate-900">
+                <h1 className="text-xl font-bold text-text-primary">
                   Chi tiết phiên đồng bộ #{run.id}: {run.name}
                 </h1>
                 <span
@@ -530,18 +530,18 @@ export const SyncHistoryDetailPage: React.FC = () => {
                 )}
               </div>
 
-              <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500">
+              <div className="flex flex-wrap items-center gap-3 text-xs text-text-muted">
                 <span className="inline-flex items-center gap-1">
-                  <Clock className="w-3.5 h-3.5 text-slate-400" />
+                  <Clock className="w-3.5 h-3.5 text-text-muted" />
                   Thời gian chạy:{' '}
-                  <strong className="text-slate-800">
+                  <strong className="text-text-primary">
                     {formatDateTime(run.createdAt)}
                   </strong>
                 </span>
                 <span>·</span>
                 <span>
                   Chế độ chạy:{' '}
-                  <strong className="text-slate-800">
+                  <strong className="text-text-primary">
                     {run.triggerType === 'AUTO'
                       ? 'Tự động theo lịch'
                       : 'Thủ công (Qua Preview)'}
@@ -550,7 +550,7 @@ export const SyncHistoryDetailPage: React.FC = () => {
                 <span>·</span>
                 <span>
                   Thời lượng:{' '}
-                  <strong className="text-slate-800">
+                  <strong className="text-text-primary">
                     {run.durationSec} giây
                   </strong>
                 </span>
@@ -573,11 +573,11 @@ export const SyncHistoryDetailPage: React.FC = () => {
 
         {/* 2. Khu vực Thống Kê (6 KPI Summary Cards) */}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-          <div className="bg-white rounded-2xl border border-slate-200 p-4">
-            <div className="text-[11px] font-semibold text-slate-500">
+          <div className="bg-surface rounded-2xl border border-border p-4">
+            <div className="text-[11px] font-semibold text-text-muted">
               Tổng quét
             </div>
-            <div className="text-xl font-extrabold text-slate-900 mt-1">
+            <div className="text-xl font-extrabold text-text-primary mt-1">
               {summary.totalRowsScanned}
             </div>
           </div>
@@ -618,20 +618,20 @@ export const SyncHistoryDetailPage: React.FC = () => {
             </div>
           </div>
 
-          <div className="bg-slate-100 rounded-2xl border border-slate-200 p-4">
-            <div className="text-[11px] font-semibold text-slate-600">
+          <div className="bg-surface-muted rounded-2xl border border-border p-4">
+            <div className="text-[11px] font-semibold text-text-secondary">
               Đã hoàn tác
             </div>
-            <div className="text-xl font-extrabold text-slate-800 mt-1">
+            <div className="text-xl font-extrabold text-text-primary mt-1">
               {summary.rolledBackCount}
             </div>
           </div>
         </div>
 
         {/* 3. Bảng Xem Chi Tiết Các Thay Đổi */}
-        <div className="bg-white rounded-2xl border border-slate-200/90 shadow-xs overflow-hidden">
+        <div className="bg-surface rounded-2xl border border-border/90 shadow-xs overflow-hidden">
           {/* Toolbar */}
-          <div className="p-3.5 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3 bg-slate-50/50">
+          <div className="p-3.5 border-b border-border flex flex-wrap items-center justify-between gap-3 bg-surface-subtle/50">
             <div className="flex flex-wrap items-center gap-1.5">
               {(
                 [
@@ -652,7 +652,7 @@ export const SyncHistoryDetailPage: React.FC = () => {
                   className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
                     activeFilter === tab.key
                       ? 'bg-blue-600 text-white shadow-2xs'
-                      : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
+                      : 'bg-surface border border-border text-text-secondary hover:bg-surface-muted'
                   }`}
                 >
                   {tab.label}
@@ -678,13 +678,13 @@ export const SyncHistoryDetailPage: React.FC = () => {
               )}
 
               <div className="relative w-64 max-w-full">
-                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <Search className="w-3.5 h-3.5 text-text-muted absolute left-3 top-1/2 -translate-y-1/2" />
                 <input
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Tìm Mã HV, Tên HV, Mã lớp..."
-                  className="w-full h-8 rounded-lg border border-slate-200 bg-white pl-8 pr-3 text-xs text-slate-800 focus:outline-none focus:border-blue-500"
+                  className="w-full h-8 rounded-lg border border-border bg-surface pl-8 pr-3 text-xs text-text-primary focus:outline-none focus:border-blue-500"
                 />
               </div>
             </div>
@@ -693,7 +693,7 @@ export const SyncHistoryDetailPage: React.FC = () => {
           <div className="overflow-x-auto">
             <table data-table="native" className="w-full text-left border-collapse text-xs">
               <thead>
-                <tr className="border-b border-slate-200 bg-slate-50/80 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+                <tr className="border-b border-border bg-surface-subtle/80 text-[11px] font-semibold text-text-muted uppercase tracking-wider">
                   <th scope="col" className="py-3 pl-4 pr-2 w-10">
                     <input
                       type="checkbox"
@@ -708,7 +708,7 @@ export const SyncHistoryDetailPage: React.FC = () => {
                             : new Set()
                         )
                       }
-                      className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                      className="rounded border-border-strong text-blue-600 focus:ring-blue-500 cursor-pointer"
                     />
                   </th>
                   <th scope="col" className="py-3 px-3 w-20">Dòng</th>
@@ -723,7 +723,7 @@ export const SyncHistoryDetailPage: React.FC = () => {
               <tbody className="divide-y divide-slate-100">
                 {filteredItems.length === 0 ? (
                   <tr>
-                    <td data-align="center" colSpan={8} className="py-12 text-center text-slate-500">
+                    <td data-align="center" colSpan={8} className="py-12 text-center text-text-muted">
                       Không có bản ghi thay đổi nào phù hợp với bộ lọc.
                     </td>
                   </tr>
@@ -745,8 +745,8 @@ export const SyncHistoryDetailPage: React.FC = () => {
                         key={item.id}
                         className={`transition-colors ${
                           isRolledBack
-                            ? 'bg-slate-50/70 opacity-75'
-                            : 'hover:bg-slate-50/70'
+                            ? 'bg-surface-subtle/70 opacity-75'
+                            : 'hover:bg-surface-subtle/70'
                         }`}
                       >
                         <td data-align="center" data-wrap="nowrap" className="py-3.5 pl-4 pr-2 align-top">
@@ -755,23 +755,23 @@ export const SyncHistoryDetailPage: React.FC = () => {
                             disabled={isRolledBack || item.status === 'FAILED'}
                             checked={isChecked}
                             onChange={() => toggleSelectChange(item.id)}
-                            className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 disabled:opacity-40 cursor-pointer mt-0.5"
+                            className="rounded border-border-strong text-blue-600 focus:ring-blue-500 disabled:opacity-40 cursor-pointer mt-0.5"
                           />
                         </td>
-                        <td data-align="center" data-wrap="nowrap" className="py-3.5 px-3 align-top font-mono font-semibold text-slate-600">
+                        <td data-align="center" data-wrap="nowrap" className="py-3.5 px-3 align-top font-mono font-semibold text-text-secondary">
                           #{item.rowNumber}
                         </td>
                         <td data-align="left" data-wrap="normal" className="py-3.5 px-3 align-top">
-                          <div className="font-bold text-slate-900">
+                          <div className="font-bold text-text-primary">
                             {item.fullName}
                           </div>
-                          <div className="text-[11px] text-slate-500 font-mono">
+                          <div className="text-[11px] text-text-muted font-mono">
                             HV: {item.externalId}
                             {item.classCode ? ` • Lớp: ${item.classCode}` : ''}
                           </div>
                         </td>
                         <td data-align="center" data-wrap="nowrap" className="py-3.5 px-3 align-top">
-                          <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-semibold text-[11px]">
+                          <span className="px-2 py-0.5 rounded bg-surface-muted text-text-secondary font-semibold text-[11px]">
                             {ENTITY_TYPE_LABELS[item.entityType] ||
                               item.entityType}
                           </span>
@@ -797,7 +797,7 @@ export const SyncHistoryDetailPage: React.FC = () => {
                               key={idx}
                               className="flex flex-wrap items-center gap-1.5 text-xs"
                             >
-                              <span className="font-semibold text-slate-700">
+                              <span className="font-semibold text-text-secondary">
                                 [{diff.fieldLabel || diff.field}]:
                               </span>
                               {item.action !== 'CREATE' && (
@@ -805,7 +805,7 @@ export const SyncHistoryDetailPage: React.FC = () => {
                                   <span className="line-through text-red-600 bg-red-50 px-1.5 py-0.5 rounded">
                                     {formatDiffVal(diff.before)}
                                   </span>
-                                  <span className="text-slate-400">→</span>
+                                  <span className="text-text-muted">→</span>
                                 </>
                               )}
                               <span className="text-emerald-700 bg-emerald-50 font-semibold px-1.5 py-0.5 rounded">
@@ -845,7 +845,7 @@ export const SyncHistoryDetailPage: React.FC = () => {
                         </td>
                         <td data-align="center" data-wrap="nowrap" className="py-3.5 px-3 align-top">
                           {item.status === 'ROLLED_BACK' ? (
-                            <span className="inline-flex items-center gap-1 text-slate-500 font-semibold">
+                            <span className="inline-flex items-center gap-1 text-text-muted font-semibold">
                               <RotateCcw className="w-3.5 h-3.5" />
                               <span>Đã hoàn tác</span>
                             </span>
@@ -880,7 +880,7 @@ export const SyncHistoryDetailPage: React.FC = () => {
                               <span>Hủy thay đổi</span>
                             </button>
                           ) : (
-                            <span className="text-[11px] text-slate-400 italic">
+                            <span className="text-[11px] text-text-muted italic">
                               Đã hoàn tác
                             </span>
                           )}
@@ -954,10 +954,10 @@ export const SyncHistoryDetailPage: React.FC = () => {
             </div>
           </div>
 
-          <div className="max-h-64 overflow-y-auto rounded-xl border border-slate-200">
+          <div className="max-h-64 overflow-y-auto rounded-xl border border-border">
             <table data-table="native" className="w-full text-left border-collapse text-xs">
-              <thead className="bg-slate-50 border-b border-slate-200 sticky top-0">
-                <tr className="text-[11px] font-semibold text-slate-500 uppercase">
+              <thead className="bg-surface-subtle border-b border-border sticky top-0">
+                <tr className="text-[11px] font-semibold text-text-muted uppercase">
                   <th scope="col" className="py-2 px-3">Học viên</th>
                   <th scope="col" className="py-2 px-3">Trường dữ liệu</th>
                   <th scope="col" className="py-2 px-3">Trước đồng bộ</th>
@@ -969,17 +969,17 @@ export const SyncHistoryDetailPage: React.FC = () => {
                 {conflictList.map((c) => (
                   <tr key={c.changeId}>
                     <td data-align="left" data-wrap="normal" className="py-2.5 px-3">
-                      <div className="font-bold text-slate-900">
+                      <div className="font-bold text-text-primary">
                         {c.fullName}
                       </div>
-                      <div className="font-mono text-[11px] text-slate-500">
+                      <div className="font-mono text-[11px] text-text-muted">
                         {c.externalId} (Dòng #{c.rowNumber})
                       </div>
                     </td>
-                    <td data-align="left" data-wrap="normal" className="py-2.5 px-3 font-semibold text-slate-700">
+                    <td data-align="left" data-wrap="normal" className="py-2.5 px-3 font-semibold text-text-secondary">
                       {c.fieldLabel}
                     </td>
-                    <td data-align="left" data-wrap="normal" className="py-2.5 px-3 text-slate-600">
+                    <td data-align="left" data-wrap="normal" className="py-2.5 px-3 text-text-secondary">
                       {formatDiffVal(c.beforeSyncValue)}
                     </td>
                     <td data-align="left" data-wrap="normal" className="py-2.5 px-3 text-blue-700 font-semibold">

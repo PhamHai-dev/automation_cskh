@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Columns3, RotateCcw, Check } from 'lucide-react';
 import { PreferenceScope, ProgramColumnFilter } from '../columns';
 import { useColumnVisibility } from '../hooks/useColumnVisibility';
@@ -15,6 +15,8 @@ export const ColumnVisibilityDropdown: React.FC<ColumnVisibilityDropdownProps> =
 }) => {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [menuPosition, setMenuPosition] = useState({ left: 16, top: 80 });
   const { columns, draft, dirty, saving, setDraftValue, setAll, resetToDefault, save } =
     useColumnVisibility(scope, programFilter);
 
@@ -38,12 +40,32 @@ export const ColumnVisibilityDropdown: React.FC<ColumnVisibilityDropdownProps> =
 
   const visibleCount = columns.filter((c) => (c.locked ? true : Boolean(draft[c.key]))).length;
 
+  useLayoutEffect(() => {
+    if (!open) return;
+    const positionMenu = () => {
+      const trigger = containerRef.current?.getBoundingClientRect();
+      const menu = menuRef.current?.getBoundingClientRect();
+      if (!trigger || !menu) return;
+      setMenuPosition({
+        left: Math.max(16, Math.min(trigger.right - menu.width, window.innerWidth - menu.width - 16)),
+        top: Math.max(16, Math.min(trigger.bottom + 8, window.innerHeight - menu.height - 16)),
+      });
+    };
+    positionMenu();
+    window.addEventListener('resize', positionMenu);
+    window.addEventListener('scroll', positionMenu, true);
+    return () => {
+      window.removeEventListener('resize', positionMenu);
+      window.removeEventListener('scroll', positionMenu, true);
+    };
+  }, [open]);
+
   return (
     <div ref={containerRef} className="relative inline-block">
       <button
         type="button"
         onClick={() => setOpen((prev) => !prev)}
-        className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-border/80 bg-white px-3 text-xs font-bold text-text-primary shadow-2xs transition hover:border-primary/50 hover:bg-primary-soft/20 cursor-pointer whitespace-nowrap"
+        className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-border/80 bg-surface px-3 text-xs font-bold text-text-primary shadow-2xs transition hover:border-primary/50 hover:bg-primary-soft/20 cursor-pointer whitespace-nowrap"
         title="Chọn các cột hiển thị trên bảng này"
       >
         <Columns3 className="h-3.5 w-3.5 text-primary shrink-0" />
@@ -54,8 +76,8 @@ export const ColumnVisibilityDropdown: React.FC<ColumnVisibilityDropdownProps> =
       </button>
 
       {open && (
-        <div className="absolute right-0 z-50 mt-2 w-80 sm:w-96 rounded-2xl border border-border bg-surface p-3.5 shadow-xl">
-          <div className="flex items-center justify-between border-b border-border/70 pb-2.5 mb-2.5">
+        <div ref={menuRef} style={menuPosition} className="fixed z-50 w-96 max-h-[calc(100dvh-2rem)] overflow-y-auto max-w-[calc(100vw-2rem)] rounded-2xl border border-border bg-surface p-3.5 shadow-soft-lg">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/70 pb-2.5 mb-2.5">
             <div>
               <div className="text-xs font-extrabold text-text-primary">Tùy chỉnh cột hiển thị</div>
               <div className="text-[11px] text-text-muted">
@@ -91,10 +113,10 @@ export const ColumnVisibilityDropdown: React.FC<ColumnVisibilityDropdownProps> =
                   key={col.key}
                   className={`flex items-center gap-2 rounded-lg border px-2.5 py-1.5 text-xs select-none transition ${
                     col.locked
-                      ? 'border-border/50 bg-slate-100/70 text-text-muted cursor-not-allowed opacity-75'
+                      ? 'border-border/50 bg-surface-muted/70 text-text-muted cursor-not-allowed opacity-75'
                       : checked
                       ? 'border-primary/30 bg-primary-soft/35 text-text-primary font-semibold cursor-pointer hover:bg-primary-soft/60'
-                      : 'border-border/60 bg-white text-text-secondary cursor-pointer hover:bg-slate-50'
+                      : 'border-border/60 bg-surface text-text-secondary cursor-pointer hover:bg-surface-subtle'
                   }`}
                 >
                   <input
@@ -102,7 +124,7 @@ export const ColumnVisibilityDropdown: React.FC<ColumnVisibilityDropdownProps> =
                     checked={checked}
                     disabled={col.locked}
                     onChange={(e) => !col.locked && setDraftValue(col.key, e.target.checked)}
-                    className="h-3.5 w-3.5 rounded accent-primary border-slate-300"
+                    className="h-3.5 w-3.5 rounded accent-primary border-border-strong"
                   />
                   <span className="truncate flex-1" title={col.label}>
                     {col.label}

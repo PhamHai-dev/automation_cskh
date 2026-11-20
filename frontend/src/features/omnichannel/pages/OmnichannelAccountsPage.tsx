@@ -22,6 +22,7 @@ import { Card } from '../../../components/ui/Card';
 import { HorizontalTabs } from '../../../components/ui/HorizontalTabs';
 import { Button } from '../../../components/ui/Button';
 import { Input } from '../../../components/ui/Input';
+import { Modal } from '../../../components/ui/Modal';
 import { useToast } from '../../../components/ui/Toast';
 import { QrLoginDialog } from '../../zalo/components/QrLoginDialog';
 import { LineQrLoginDialog } from '../../line/components/LineQrLoginDialog';
@@ -742,16 +743,11 @@ export const OmnichannelAccountsPage: React.FC<{ initialChannel?: ChannelFilterT
 
       {/* Quick Create Account Modal */}
       {createChannelType && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-white rounded-2xl shadow-xl border border-gray-200 w-full max-w-lg p-6 space-y-4">
-            <h3 className="text-base font-bold text-gray-900">
-              {createChannelType === 'ZALO'
+        <Modal isOpen onClose={() => setCreateChannelType(null)} title={createChannelType === 'ZALO'
                 ? 'Thêm Tài khoản Zalo Cá nhân'
                 : createChannelType === 'LINE_OA'
                   ? 'Thêm Tài khoản LINE Official Account (OA)'
-                  : 'Thêm Tài khoản LINE Cá nhân (Quét mã QR)'}
-            </h3>
-
+                  : 'Thêm Tài khoản LINE Cá nhân (Quét mã QR)'}>
             <form onSubmit={handleCreateQuickAccount} className="space-y-3">
               {createChannelType === 'ZALO' ? (
                 <>
@@ -834,7 +830,7 @@ export const OmnichannelAccountsPage: React.FC<{ initialChannel?: ChannelFilterT
                 </>
               )}
 
-              <div className="flex justify-end gap-2 pt-3 border-t border-gray-100">
+              <div className="flex justify-end gap-2 pt-3 border-t border-border-subtle">
                 <Button
                   type="button"
                   variant="outline"
@@ -847,8 +843,7 @@ export const OmnichannelAccountsPage: React.FC<{ initialChannel?: ChannelFilterT
                 </Button>
               </div>
             </form>
-          </div>
-        </div>
+        </Modal>
       )}
 
       {/* Security / Proxy / Rate Limit Modal */}

@@ -64,21 +64,21 @@ const ATTENDANCE_STATUS_BADGE: Record<
   },
   TECH_ERROR_E: {
     label: 'Lỗi kỹ thuật (E)',
-    className: 'bg-slate-200 text-slate-800 border-slate-400 font-extrabold',
+    className: 'bg-slate-200 text-text-primary border-slate-400 font-extrabold',
   },
 };
 
 const renderAttendanceStatusBadge = (status: string | null) => {
   if (!status) {
     return (
-      <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-semibold border border-slate-200 bg-slate-100 text-slate-600">
+      <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-semibold border border-border bg-surface-muted text-text-secondary">
         Chưa điểm danh
       </span>
     );
   }
   const cfg = ATTENDANCE_STATUS_BADGE[status] || {
     label: status,
-    className: 'bg-slate-100 text-slate-700 border-slate-300 font-bold',
+    className: 'bg-surface-muted text-text-secondary border-border-strong font-bold',
   };
   return (
     <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-xs border ${cfg.className}`}>
@@ -393,9 +393,9 @@ export const CarePage: React.FC = () => {
       ) : activeTab === 'logs' && !isTeacherOnly ? (
         <div className="space-y-6">
           {/* Search Enrollment Bar */}
-          <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-soft">
+          <div className="bg-surface p-4 rounded-2xl border border-border/80 shadow-soft">
             <form onSubmit={handleSearchEnrollmentLogs} className="flex flex-wrap items-center gap-3">
-              <label className="text-xs font-bold text-slate-700 whitespace-nowrap">
+              <label className="text-xs font-bold text-text-secondary whitespace-nowrap">
                 Tra cứu theo Học viên / Ghi danh:
               </label>
               <div className="flex-1 min-w-[260px] max-w-md">
@@ -418,7 +418,7 @@ export const CarePage: React.FC = () => {
           </div>
 
           {selectedEnrollmentId ? (
-            <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-soft">
+            <div className="bg-surface p-6 rounded-2xl border border-border/80 shadow-soft">
               <CareLogTimeline
                 enrollmentId={selectedEnrollmentId}
                 logs={logs}
@@ -427,7 +427,7 @@ export const CarePage: React.FC = () => {
               />
             </div>
           ) : (
-            <div className="text-center py-16 bg-white rounded-2xl border border-dashed border-slate-200 text-slate-400 text-xs">
+            <div className="text-center py-16 bg-surface rounded-2xl border border-dashed border-border text-text-muted text-xs">
               Nhập mã ghi danh ở ô trên để xem toàn bộ lịch sử chăm sóc và ghi nhận phản hồi mới.
             </div>
           )}
@@ -436,7 +436,7 @@ export const CarePage: React.FC = () => {
         /* TAB: NOTIFICATIONS */
         <div className="bg-surface rounded-2xl border border-border/80 shadow-soft overflow-hidden">
           {/* Toolbar */}
-          <div className="p-3.5 sm:px-5 border-b border-border/80 bg-slate-50/70 flex flex-wrap items-center justify-between gap-3">
+          <div className="p-3.5 sm:px-5 border-b border-border/80 bg-surface-subtle/70 flex flex-wrap items-center justify-between gap-3">
             <div className="flex flex-wrap items-center gap-2">
               <div className="flex p-0.5 bg-surface-muted rounded-xl border border-border/70 text-xs font-semibold">
                 <button
@@ -464,7 +464,7 @@ export const CarePage: React.FC = () => {
                     <span
                       className={`rounded-full px-1.5 py-0.2 text-[10px] font-extrabold ${
                         notificationFilter === 'unread'
-                          ? 'bg-white/20 text-white'
+                          ? 'bg-surface/20 text-white'
                           : 'bg-primary-soft text-primary'
                       }`}
                     >
@@ -544,7 +544,7 @@ export const CarePage: React.FC = () => {
                     className={`p-4 sm:px-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-colors ${
                       !item.is_read
                         ? 'bg-blue-50/40 border-l-4 border-l-primary hover:bg-blue-50/60'
-                        : 'bg-surface hover:bg-slate-50/60'
+                        : 'bg-surface hover:bg-surface-subtle/60'
                     }`}
                   >
                     <div className="space-y-2 min-w-0 flex-1">
@@ -560,7 +560,7 @@ export const CarePage: React.FC = () => {
                           {item.student_name}
                         </span>
                         {item.student_code && (
-                          <span className="font-mono text-[11px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200">
+                          <span className="font-mono text-[11px] font-bold px-1.5 py-0.5 rounded bg-surface-muted text-text-secondary border border-border">
                             {item.student_code}
                           </span>
                         )}
@@ -715,7 +715,7 @@ export const CarePage: React.FC = () => {
           </div>
         }
       >
-        <div className="flex items-start space-x-3 text-xs text-slate-700">
+        <div className="flex items-start space-x-3 text-xs text-text-secondary">
           <AlertTriangle className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" />
           <p>
             Bạn có chắc chắn muốn hủy nhiệm vụ chăm sóc này không? Trạng thái nhiệm vụ sẽ được chuyển thành ĐÃ HỦY.

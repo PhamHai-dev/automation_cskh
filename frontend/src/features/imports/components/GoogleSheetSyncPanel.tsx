@@ -1,3 +1,4 @@
+import { GoogleColorIcon } from '../../../components/ui/BrandIcons';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { importsApi } from '../api/imports.api';
@@ -59,7 +60,7 @@ const FLOW_CARDS: Array<{
     key: 'ALL',
     title: 'Tất cả nguồn',
     subtitle: 'Tổng hợp toàn bộ 4 luồng đồng bộ',
-    badgeColor: 'bg-slate-100 text-slate-800 border-slate-200',
+    badgeColor: 'bg-surface-muted text-text-primary border-border',
     activeBorder: 'border-slate-900 bg-slate-900 text-white',
     icon: <FileSpreadsheet className="w-4 h-4" />,
   },
@@ -411,26 +412,6 @@ const formatDateTimeFull = (iso?: string | null): string => {
   return `${date} ${time}`;
 };
 
-const GoogleColorIcon: React.FC<{ className?: string }> = ({ className = 'w-5 h-5' }) => (
-  <svg viewBox="0 0 24 24" className={className} aria-hidden="true">
-    <path
-      fill="#4285F4"
-      d="M23.49 12.27c0-.79-.07-1.54-.19-2.27H12v4.51h6.47c-.29 1.48-1.14 2.73-2.4 3.58v3h3.86c2.26-2.09 3.56-5.17 3.56-8.82z"
-    />
-    <path
-      fill="#34A853"
-      d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.86-3c-1.08.72-2.45 1.16-4.07 1.16-3.13 0-5.78-2.11-6.73-4.96H1.29v3.09C3.26 21.3 7.31 24 12 24z"
-    />
-    <path
-      fill="#FBBC05"
-      d="M5.27 14.29c-.25-.72-.38-1.49-.38-2.29s.14-1.57.38-2.29V6.62H1.29C.47 8.24 0 10.06 0 12s.47 3.76 1.29 5.38l3.98-3.09z"
-    />
-    <path
-      fill="#EA4335"
-      d="M12 4.75c1.77 0 3.35.61 3.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.31 0 3.26 2.7 1.29 6.62l3.98 3.09c.95-2.85 3.6-4.96 6.73-4.96z"
-    />
-  </svg>
-);
 
 const synthesizeSyncHistory = (
   configs: GoogleSheetSyncConfig[]
@@ -1079,8 +1060,8 @@ export const GoogleSheetSyncPanel: React.FC = () => {
               {srcTags}
             </span>
           </div>
-          <div className="text-[11px] text-slate-600 truncate" title={enrTags}>
-            Trạng thái: <strong className="text-slate-800">{enrTags}</strong>
+          <div className="text-[11px] text-text-secondary truncate" title={enrTags}>
+            Trạng thái: <strong className="text-text-primary">{enrTags}</strong>
           </div>
         </div>
       );
@@ -1109,11 +1090,11 @@ export const GoogleSheetSyncPanel: React.FC = () => {
             <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200 font-bold text-[11px]">
               Năm: {year}
             </span>
-            <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-semibold text-[11px]">
+            <span className="px-2 py-0.5 rounded bg-surface-muted text-text-secondary font-semibold text-[11px]">
               Tháng: {monthLabel}
             </span>
           </div>
-          <div className="text-[11px] text-slate-500 truncate">
+          <div className="text-[11px] text-text-muted truncate">
             HV: {enrTags}
           </div>
         </div>
@@ -1124,20 +1105,20 @@ export const GoogleSheetSyncPanel: React.FC = () => {
     return (
       <div className="space-y-1 max-w-[220px]">
         {cfg.target_student_external_id ? (
-          <div className="text-[11px] font-semibold text-slate-800">
+          <div className="text-[11px] font-semibold text-text-primary">
             Mã HV:{' '}
             <span className="font-mono text-teal-700">
               {cfg.target_student_external_id}
             </span>
           </div>
         ) : (
-          <div className="text-[11px] text-slate-500">
+          <div className="text-[11px] text-text-muted">
             Mã HV: <span className="italic">Tự đọc từ Sheet</span>
           </div>
         )}
-        <div className="text-[11px] text-slate-600">
+        <div className="text-[11px] text-text-secondary">
           Lớp:{' '}
-          <strong className="text-slate-800">
+          <strong className="text-text-primary">
             {cfg.target_class_code || fc?.classCodes?.[0] || 'Tất cả'}
           </strong>
         </div>
@@ -1147,7 +1128,7 @@ export const GoogleSheetSyncPanel: React.FC = () => {
 
   if (loading && configs.length === 0) {
     return (
-      <div className="bg-white rounded-2xl border border-slate-200/90 p-12 flex items-center justify-center text-slate-500">
+      <div className="bg-surface rounded-2xl border border-border/90 p-12 flex items-center justify-center text-text-muted">
         <RefreshCw className="w-5 h-5 animate-spin mr-3 text-blue-600" />
         <span className="text-xs font-semibold">
           Đang tải hệ thống Đồng bộ dữ liệu 4 luồng...
@@ -1189,7 +1170,7 @@ export const GoogleSheetSyncPanel: React.FC = () => {
                 ? 'Bấm để sao chép email Service Account'
                 : 'Bấm để mở trang Ánh xạ CVHT & Kết nối'
             }
-            className="bg-white rounded-xl border border-slate-200 px-3.5 py-1.5 flex items-center gap-2.5 shadow-2xs hover:bg-slate-50 transition-colors text-left cursor-pointer"
+            className="bg-surface rounded-xl border border-border px-3.5 py-1.5 flex items-center gap-2.5 shadow-2xs hover:bg-surface-subtle transition-colors text-left cursor-pointer"
           >
             <GoogleColorIcon className="w-5 h-5 shrink-0" />
             <div className="leading-tight">
@@ -1204,7 +1185,7 @@ export const GoogleSheetSyncPanel: React.FC = () => {
                   <span className="text-[10px]">●</span>
                 </div>
               )}
-              <div className="text-[11px] text-slate-500 truncate max-w-[180px]">
+              <div className="text-[11px] text-text-muted truncate max-w-[180px]">
                 {serviceAccount?.clientEmail || 'Chưa cấu hình Service Account'}
               </div>
             </div>
@@ -1269,11 +1250,11 @@ export const GoogleSheetSyncPanel: React.FC = () => {
           </DataFilters>
 
           {/* 3. Bảng Quản Lý Theo Dòng — 8 Cột Tiêu Chuẩn */}
-          <div className="bg-white rounded-2xl border border-slate-200/90 shadow-xs overflow-hidden">
+          <div className="bg-surface rounded-2xl border border-border/90 shadow-xs overflow-hidden">
             <div className="data-table-scroll">
               <table data-table="native" className="data-source-table">
                 <thead>
-                  <tr className="border-b border-slate-200 bg-slate-50/80 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+                  <tr className="border-b border-border bg-surface-subtle/80 text-[11px] font-semibold text-text-muted uppercase tracking-wider">
                     <th scope="col" className="py-3 pl-4 pr-2 w-10">
                       <input
                         type="checkbox" aria-label="Chọn tất cả nguồn trên trang"
@@ -1300,7 +1281,7 @@ export const GoogleSheetSyncPanel: React.FC = () => {
                             });
                           }
                         }}
-                        className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                        className="rounded border-border-strong text-blue-600 focus:ring-blue-500 cursor-pointer"
                       />
                     </th>
                     <th scope="col">Tên nguồn</th><th scope="col">Phân loại</th><th scope="col">Kết nối</th><th scope="col">Phạm vi</th><th scope="col">Tự động</th><th scope="col">Kết quả gần nhất</th><th scope="col">Thao tác</th>
@@ -1309,7 +1290,7 @@ export const GoogleSheetSyncPanel: React.FC = () => {
                 <tbody className="divide-y divide-slate-100 text-xs">
                   {paginatedConfigs.length === 0 ? (
                     <tr>
-                      <td data-align="center" colSpan={8} className="py-12 text-center text-slate-500">
+                      <td data-align="center" colSpan={8} className="py-12 text-center text-text-muted">
                         Không có nguồn đồng bộ nào phù hợp với bộ lọc hiện tại.
                       </td>
                     </tr>
@@ -1354,7 +1335,7 @@ export const GoogleSheetSyncPanel: React.FC = () => {
                                   return next;
                                 })
                               }
-                              className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                              className="rounded border-border-strong text-blue-600 focus:ring-blue-500 cursor-pointer"
                             />
                           </td>
                             <td data-align="left" data-wrap="normal"><div className="data-source-name"><span>{cfg.name}</span></div></td>
@@ -1416,7 +1397,7 @@ export const GoogleSheetSyncPanel: React.FC = () => {
                                 </Badge>
                               )}
                             </div>
-                            <div className="text-[11px] text-slate-500 mt-1">
+                            <div className="text-[11px] text-text-muted mt-1">
                               <span className="text-emerald-600 font-semibold">
                                 +{sum?.createdCount ?? 0} mới
                               </span>{' '}
@@ -1429,7 +1410,7 @@ export const GoogleSheetSyncPanel: React.FC = () => {
                                 className={
                                   (sum?.failedCount ?? 0) > 0
                                     ? 'text-rose-600 font-semibold'
-                                    : 'text-slate-500'
+                                    : 'text-text-muted'
                                 }
                               >
                                 {sum?.failedCount ?? 0} lỗi
@@ -1452,28 +1433,28 @@ export const GoogleSheetSyncPanel: React.FC = () => {
             </div>
 
             {/* Pagination Footer (20 / 50 / 100 rows) */}
-            <div className="px-4 py-3 border-t border-slate-100 bg-slate-50/50 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-600">
+            <div className="px-4 py-3 border-t border-border-subtle bg-surface-subtle/50 flex flex-wrap items-center justify-between gap-3 text-xs text-text-secondary">
               <div className="flex items-center gap-3">
                 <span>
                   Hiển thị{' '}
-                  <strong className="text-slate-800">
+                  <strong className="text-text-primary">
                     {filteredConfigs.length === 0
                       ? 0
                       : (page - 1) * pageSize + 1}
                     –{Math.min(page * pageSize, filteredConfigs.length)}
                   </strong>{' '}
-                  / <strong className="text-slate-800">{filteredConfigs.length}</strong>{' '}
+                  / <strong className="text-text-primary">{filteredConfigs.length}</strong>{' '}
                   nguồn
                 </span>
 
                 <div className="flex items-center gap-1.5">
-                  <span className="text-slate-500">Số dòng/trang:</span>
+                  <span className="text-text-muted">Số dòng/trang:</span>
                   <select
                     value={pageSize}
                     onChange={(e) =>
                       setPageSize(Number(e.target.value) as 20 | 50 | 100)
                     }
-                    className="h-7 rounded-lg border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-700"
+                    className="h-7 rounded-lg border border-border bg-surface px-2 text-xs font-semibold text-text-secondary"
                   >
                     <option value={20}>20 dòng</option>
                     <option value={50}>50 dòng</option>
@@ -1487,18 +1468,18 @@ export const GoogleSheetSyncPanel: React.FC = () => {
                   type="button"
                   disabled={page <= 1}
                   onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  className="px-2.5 py-1 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-40 font-semibold cursor-pointer"
+                  className="px-2.5 py-1 rounded-lg border border-border bg-surface hover:bg-surface-subtle disabled:opacity-40 font-semibold cursor-pointer"
                 >
                   Trước
                 </button>
-                <span className="px-2 font-semibold text-slate-700">
+                <span className="px-2 font-semibold text-text-secondary">
                   Trang {page} / {totalPages}
                 </span>
                 <button
                   type="button"
                   disabled={page >= totalPages}
                   onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                  className="px-2.5 py-1 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-40 font-semibold cursor-pointer"
+                  className="px-2.5 py-1 rounded-lg border border-border bg-surface hover:bg-surface-subtle disabled:opacity-40 font-semibold cursor-pointer"
                 >
                   Sau
                 </button>
@@ -1512,7 +1493,7 @@ export const GoogleSheetSyncPanel: React.FC = () => {
       {activeSubTab === 'history' && (
         <div className="space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="text-xs text-slate-600 font-medium flex flex-wrap items-center gap-1.5">
+            <div className="text-xs text-text-secondary font-medium flex flex-wrap items-center gap-1.5">
               <span>
                 Hôm nay:{' '}
                 <strong className="text-blue-600 font-bold">
@@ -1534,7 +1515,7 @@ export const GoogleSheetSyncPanel: React.FC = () => {
               <span className="text-slate-300">·</span>
               <span>
                 Lần gần nhất{' '}
-                <strong className="text-slate-900 font-semibold">
+                <strong className="text-text-primary font-semibold">
                   {effectiveHistory.stats.lastRunTime || '--:--'}
                 </strong>
               </span>
@@ -1543,36 +1524,36 @@ export const GoogleSheetSyncPanel: React.FC = () => {
             <button
               type="button"
               onClick={handleExportSyncHistoryCsv}
-              className="bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-xl px-3.5 py-2 text-xs font-semibold inline-flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
+              className="bg-surface border border-border hover:bg-surface-subtle text-text-secondary rounded-xl px-3.5 py-2 text-xs font-semibold inline-flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
             >
-              <Download className="w-3.5 h-3.5 text-slate-500" />
+              <Download className="w-3.5 h-3.5 text-text-muted" />
               <span>Xuất lịch sử CSV</span>
             </button>
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5">
-            <div className="inline-flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg px-2.5 h-9 text-xs text-slate-600">
-              <span className="text-slate-400">Từ:</span>
+            <div className="inline-flex items-center gap-1.5 bg-surface border border-border rounded-lg px-2.5 h-9 text-xs text-text-secondary">
+              <span className="text-text-muted">Từ:</span>
               <input
                 type="date"
                 value={historyFromDate}
                 onChange={(e) => setHistoryFromDate(e.target.value)}
-                className="text-xs text-slate-700 focus:outline-none bg-transparent"
+                className="text-xs text-text-secondary focus:outline-none bg-transparent"
               />
               <span className="text-slate-300">—</span>
-              <span className="text-slate-400">Đến:</span>
+              <span className="text-text-muted">Đến:</span>
               <input
                 type="date"
                 value={historyToDate}
                 onChange={(e) => setHistoryToDate(e.target.value)}
-                className="text-xs text-slate-700 focus:outline-none bg-transparent"
+                className="text-xs text-text-secondary focus:outline-none bg-transparent"
               />
             </div>
 
             <select
               value={historyProgramFilter}
               onChange={(e) => setHistoryProgramFilter(e.target.value)}
-              className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700 focus:outline-none"
+              className="h-9 rounded-lg border border-border bg-surface px-3 text-xs font-medium text-text-secondary focus:outline-none"
             >
               <option value="ALL">Tất cả chương trình</option>
               <option value="JLPT">JLPT</option>
@@ -1582,7 +1563,7 @@ export const GoogleSheetSyncPanel: React.FC = () => {
             <select
               value={historyStatusFilter}
               onChange={(e) => setHistoryStatusFilter(e.target.value)}
-              className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700 focus:outline-none"
+              className="h-9 rounded-lg border border-border bg-surface px-3 text-xs font-medium text-text-secondary focus:outline-none"
             >
               <option value="ALL">Tất cả kết quả</option>
               <option value="SUCCESS">Thành công</option>
@@ -1594,7 +1575,7 @@ export const GoogleSheetSyncPanel: React.FC = () => {
               onClick={fetchHistory}
               disabled={historyLoading}
               title="Làm mới lịch sử"
-              className="h-9 w-9 rounded-lg border border-slate-200 bg-white flex items-center justify-center text-slate-600 hover:bg-slate-50 transition-colors cursor-pointer"
+              className="h-9 w-9 rounded-lg border border-border bg-surface flex items-center justify-center text-text-secondary hover:bg-surface-subtle transition-colors cursor-pointer"
             >
               <RefreshCw
                 className={`w-3.5 h-3.5 ${historyLoading ? 'animate-spin' : ''}`}
@@ -1602,11 +1583,11 @@ export const GoogleSheetSyncPanel: React.FC = () => {
             </button>
           </div>
 
-          <div className="bg-white rounded-2xl border border-slate-200/90 shadow-xs overflow-hidden">
+          <div className="bg-surface rounded-2xl border border-border/90 shadow-xs overflow-hidden">
             <div className="data-table-scroll">
               <table data-table="native" className="data-history-table w-full text-left border-collapse">
                 <thead>
-                  <tr className="border-b border-slate-200 bg-slate-50/70 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+                  <tr className="border-b border-border bg-surface-subtle/70 text-[11px] font-semibold text-text-muted uppercase tracking-wider">
                     <th scope="col" className="py-3 pl-4 pr-3">Thời gian</th>
                     <th scope="col" className="py-3 px-3">Nguồn đồng bộ</th>
                     <th scope="col" className="py-3 px-3">Chương trình</th>
@@ -1622,7 +1603,7 @@ export const GoogleSheetSyncPanel: React.FC = () => {
                 <tbody className="divide-y divide-slate-100 text-xs">
                   {effectiveHistory.items.length === 0 ? (
                     <tr>
-                      <td data-align="center" colSpan={8} className="py-12 text-center text-slate-500">
+                      <td data-align="center" colSpan={8} className="py-12 text-center text-text-muted">
                         Chưa có phiên chạy đồng bộ nào. Hãy bấm{' '}
                         <strong>[Đồng bộ ngay]</strong> trên một nguồn bất kỳ để
                         kiểm tra Preview và lưu lịch sử.
@@ -1643,12 +1624,12 @@ export const GoogleSheetSyncPanel: React.FC = () => {
                               }?code=${encodeURIComponent(item.code)}`
                             )
                           }
-                          className="hover:bg-slate-50/80 transition-colors cursor-pointer"
+                          className="hover:bg-surface-subtle/80 transition-colors cursor-pointer"
                         >
-                          <td data-align="center" data-wrap="nowrap" className="py-3.5 pl-4 pr-3 align-middle font-medium text-slate-800 whitespace-nowrap">
+                          <td data-align="center" data-wrap="nowrap" className="py-3.5 pl-4 pr-3 align-middle font-medium text-text-primary whitespace-nowrap">
                             {formatDateTimeFull(item.createdAt)}
                           </td>
-                          <td data-align="left" data-wrap="normal" className="py-3.5 px-3 align-middle font-bold text-slate-900">
+                          <td data-align="left" data-wrap="normal" className="py-3.5 px-3 align-middle font-bold text-text-primary">
                             {item.name || item.code}
                           </td>
                           <td data-align="center" data-wrap="nowrap" className="py-3.5 px-3 align-middle">
@@ -1662,7 +1643,7 @@ export const GoogleSheetSyncPanel: React.FC = () => {
                               {item.programType}
                             </span>
                           </td>
-                          <td data-align="center" data-wrap="nowrap" className="py-3.5 px-3 align-middle text-slate-600">
+                          <td data-align="center" data-wrap="nowrap" className="py-3.5 px-3 align-middle text-text-secondary">
                             {item.triggerType === 'AUTO'
                               ? 'Tự động'
                               : 'Thủ công'}
@@ -1679,7 +1660,7 @@ export const GoogleSheetSyncPanel: React.FC = () => {
                               </Badge>
                             )}
                           </td>
-                          <td data-align="right" data-wrap="nowrap" className="py-3.5 px-3 align-middle text-slate-600">
+                          <td data-align="right" data-wrap="nowrap" className="py-3.5 px-3 align-middle text-text-secondary">
                             {item.durationSec} giây
                           </td>
                           <td data-align="center" data-wrap="nowrap" className="py-3.5 pl-3 pr-4 align-middle text-right">
@@ -1700,13 +1681,13 @@ export const GoogleSheetSyncPanel: React.FC = () => {
       {activeSubTab === 'connection' && (
         <div className="data-connection grid grid-cols-1 xl:grid-cols-2 gap-5">
           {/* Card 1: Ánh xạ CVHT cho 2 file tổng */}
-          <div className="bg-white rounded-2xl border border-slate-200/90 p-5 shadow-xs space-y-5">
+          <div className="bg-surface rounded-2xl border border-border/90 p-5 shadow-xs space-y-5">
             <div>
-              <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+              <h3 className="text-sm font-bold text-text-primary flex items-center gap-2">
                 <ShieldCheck className="w-4 h-4 text-blue-600" />
                 <span>Ánh xạ Mã CVHT trong Sheet ➔ Tài khoản CVHT</span>
               </h3>
-              <p className="text-xs text-slate-500 mt-0.5">
+              <p className="text-xs text-text-muted mt-0.5">
                 Phân bổ tự động học viên về đúng nhân viên CVHT dựa trên cột
                 CVHT trong File nguồn tổng JLPT &amp; Kaiwa
               </p>
@@ -1730,7 +1711,7 @@ export const GoogleSheetSyncPanel: React.FC = () => {
                 return (
                   <div
                     key={cfg.code}
-                    className="rounded-xl border border-slate-200 p-4 space-y-3 bg-slate-50/50"
+                    className="rounded-xl border border-border p-4 space-y-3 bg-surface-subtle/50"
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
@@ -1743,7 +1724,7 @@ export const GoogleSheetSyncPanel: React.FC = () => {
                         >
                           {cfg.program_type}
                         </span>
-                        <span className="text-xs font-bold text-slate-800">
+                        <span className="text-xs font-bold text-text-primary">
                           {cfg.name}
                         </span>
                       </div>
@@ -1752,7 +1733,7 @@ export const GoogleSheetSyncPanel: React.FC = () => {
                         size="sm"
                         isLoading={savingCode === cfg.code}
                         onClick={() => handleSaveCvhtMapping(cfg.code)}
-                        leftIcon={<Save className="w-3.5 h-3.5 text-slate-600" />}
+                        leftIcon={<Save className="w-3.5 h-3.5 text-text-secondary" />}
                       >
                         Lưu ánh xạ
                       </Button>
@@ -1764,7 +1745,7 @@ export const GoogleSheetSyncPanel: React.FC = () => {
                         return (
                           <div
                             key={cvhtCode}
-                            className="flex items-center gap-2 bg-white p-2 rounded-lg border border-slate-200/90"
+                            className="flex items-center gap-2 bg-surface p-2 rounded-lg border border-border/90"
                           >
                             <span className="px-2 py-1 rounded bg-blue-50 text-blue-700 border border-blue-200 font-mono font-bold text-[11px] shrink-0">
                               {cvhtCode}
@@ -1790,7 +1771,7 @@ export const GoogleSheetSyncPanel: React.FC = () => {
                                   };
                                 });
                               }}
-                              className="flex-1 h-8 px-2 border border-slate-200 rounded-lg text-xs font-medium bg-white text-slate-800 focus:outline-none"
+                              className="flex-1 h-8 px-2 border border-border rounded-lg text-xs font-medium bg-surface text-text-primary focus:outline-none"
                             >
                               <option value="">
                                 -- Tự động theo mã {cvhtCode} --
@@ -1806,8 +1787,8 @@ export const GoogleSheetSyncPanel: React.FC = () => {
                         );
                       })}
 
-                      <div className="flex items-center gap-2 bg-white p-2 rounded-lg border border-dashed border-slate-300">
-                        <span className="px-2 py-1 rounded bg-slate-100 text-slate-700 font-semibold text-[11px] shrink-0">
+                      <div className="flex items-center gap-2 bg-surface p-2 rounded-lg border border-dashed border-border-strong">
+                        <span className="px-2 py-1 rounded bg-surface-muted text-text-secondary font-semibold text-[11px] shrink-0">
                           Mặc định (Trống)
                         </span>
                         <select
@@ -1822,7 +1803,7 @@ export const GoogleSheetSyncPanel: React.FC = () => {
                               },
                             }));
                           }}
-                          className="flex-1 h-8 px-2 border border-slate-200 rounded-lg text-xs font-medium bg-white text-slate-800 focus:outline-none"
+                          className="flex-1 h-8 px-2 border border-border rounded-lg text-xs font-medium bg-surface text-text-primary focus:outline-none"
                         >
                           <option value="">-- Chọn CVHT mặc định --</option>
                           {csUsers.map((u) => (
@@ -1840,17 +1821,17 @@ export const GoogleSheetSyncPanel: React.FC = () => {
           </div>
 
           {/* Card 2: Google Service Account */}
-          <div className="bg-white rounded-2xl border border-slate-200/90 p-5 shadow-xs space-y-4">
+          <div className="bg-surface rounded-2xl border border-border/90 p-5 shadow-xs space-y-4">
             <div className="flex items-start justify-between gap-3">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-center">
+                <div className="w-10 h-10 rounded-xl bg-surface-subtle border border-border flex items-center justify-center">
                   <GoogleColorIcon className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-bold text-slate-900">
+                  <h3 className="text-sm font-bold text-text-primary">
                     Google Service Account
                   </h3>
-                  <p className="text-xs text-slate-500">
+                  <p className="text-xs text-text-muted">
                     Tài khoản kỹ thuật dùng để đọc dữ liệu từ các Google Sheet nguồn
                   </p>
                 </div>
@@ -1869,12 +1850,12 @@ export const GoogleSheetSyncPanel: React.FC = () => {
               </span>
             </div>
 
-            <div className="rounded-xl bg-slate-50 border border-slate-200/80 p-3.5 space-y-2.5 text-xs">
+            <div className="rounded-xl bg-surface-subtle border border-border/80 p-3.5 space-y-2.5 text-xs">
               <div className="flex items-center justify-between gap-2">
-                <span className="text-slate-500 font-medium">Client Email:</span>
+                <span className="text-text-muted font-medium">Client Email:</span>
                 {serviceAccount?.clientEmail ? (
                   <div className="inline-flex items-center gap-1.5">
-                    <code className="px-2 py-0.5 bg-white border border-slate-200 rounded font-mono text-[11px] font-semibold text-slate-800">
+                    <code className="px-2 py-0.5 bg-surface border border-border rounded font-mono text-[11px] font-semibold text-text-primary">
                       {serviceAccount.clientEmail}
                     </code>
                     <button
@@ -1889,35 +1870,35 @@ export const GoogleSheetSyncPanel: React.FC = () => {
                     </button>
                   </div>
                 ) : (
-                  <span className="text-slate-400 italic">Chưa thiết lập</span>
+                  <span className="text-text-muted italic">Chưa thiết lập</span>
                 )}
               </div>
 
               <div className="flex items-center justify-between gap-2">
-                <span className="text-slate-500 font-medium">Project ID:</span>
-                <span className="font-mono font-semibold text-slate-800">
+                <span className="text-text-muted font-medium">Project ID:</span>
+                <span className="font-mono font-semibold text-text-primary">
                   {serviceAccount?.projectId || '-'}
                 </span>
               </div>
 
               <div className="flex items-center justify-between gap-2">
-                <span className="text-slate-500 font-medium">
+                <span className="text-text-muted font-medium">
                   Nguồn cấu hình:
                 </span>
-                <span className="font-semibold text-slate-700">
+                <span className="font-semibold text-text-secondary">
                   {serviceAccount?.source || 'NONE'}
                 </span>
               </div>
             </div>
 
-            <div className="rounded-xl bg-blue-50/60 border border-blue-200/80 p-3.5 text-xs text-slate-700 space-y-1">
+            <div className="rounded-xl bg-blue-50/60 border border-blue-200/80 p-3.5 text-xs text-text-secondary space-y-1">
               <div className="font-semibold text-blue-900 flex items-center gap-1.5">
                 <Info className="w-4 h-4 text-blue-600 shrink-0" />
                 <span>
                   Hướng dẫn cấp quyền Xem (Viewer) trên Google Sheet nguồn
                 </span>
               </div>
-              <p className="text-[11px] text-slate-600 leading-relaxed">
+              <p className="text-[11px] text-text-secondary leading-relaxed">
                 Mở file Google Sheet (hoặc thư mục Google Drive chứa các file
                 Báo cáo học tập / Lịch dạy GV) → Bấm nút{' '}
                 <strong>Share (Chia sẻ)</strong> → Dán địa chỉ{' '}
@@ -1928,10 +1909,10 @@ export const GoogleSheetSyncPanel: React.FC = () => {
             </div>
 
             {isAdmin && (
-              <div className="pt-2 border-t border-slate-100 space-y-3">
+              <div className="pt-2 border-t border-border-subtle space-y-3">
                 {!editingSaJson ? (
                   <div className="flex items-center justify-between">
-                    <span className="text-xs text-slate-500">
+                    <span className="text-xs text-text-muted">
                       Cập nhật khóa JSON Service Account mới
                     </span>
                     <Button
@@ -1944,7 +1925,7 @@ export const GoogleSheetSyncPanel: React.FC = () => {
                   </div>
                 ) : (
                   <div className="space-y-2.5">
-                    <label className="block text-xs font-semibold text-slate-700">
+                    <label className="block text-xs font-semibold text-text-secondary">
                       Dán nội dung file Service Account JSON:
                     </label>
                     <textarea
@@ -1952,7 +1933,7 @@ export const GoogleSheetSyncPanel: React.FC = () => {
                       value={saJsonText}
                       onChange={(e) => setSaJsonText(e.target.value)}
                       placeholder='{"type": "service_account", "project_id": "...", "client_email": "..."}'
-                      className="w-full rounded-xl border border-slate-200 p-3 text-xs font-mono text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                      className="w-full rounded-xl border border-border p-3 text-xs font-mono text-text-primary focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                     />
                     <div className="flex items-center justify-end gap-2">
                       <Button

@@ -369,7 +369,7 @@ const FriendsDirectory: React.FC<{ initialChannel?: ContactsChannelTab }> = ({
                       setLookupPhoneInput('');
                       setLookupOpen(true);
                     }}
-                    leftIcon={<UserPlus className="w-4 h-4 text-[#06C755]" />}
+                    leftIcon={<UserPlus className="w-4 h-4 text-line" />}
                   >
                     Tìm & Kết bạn qua SĐT
                   </Button>
@@ -507,7 +507,7 @@ const FriendsDirectory: React.FC<{ initialChannel?: ContactsChannelTab }> = ({
                                 className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
                                   fr.relationship_kind === 'friend'
                                     ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                                    : 'bg-gray-100 text-gray-600'
+                                    : 'bg-surface-muted text-text-secondary'
                                 }`}
                               >
                                 {ZALO_KIND_LABELS[fr.relationship_kind] || 'Liên hệ'}
@@ -610,7 +610,7 @@ const FriendsDirectory: React.FC<{ initialChannel?: ContactsChannelTab }> = ({
                 <span
                   className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold ${
                     selectedLineAccount.account_type === 'OA'
-                      ? 'bg-[#06C755]/15 text-[#06C755]'
+                      ? 'bg-line/15 text-line'
                       : 'bg-teal-50 text-teal-700'
                   }`}
                 >
@@ -647,7 +647,7 @@ const FriendsDirectory: React.FC<{ initialChannel?: ContactsChannelTab }> = ({
           <div className="bg-surface rounded-2xl border border-border shadow-2xs overflow-hidden">
             {lineLoading ? (
               <div className="flex items-center justify-center py-14 text-text-muted text-sm gap-2">
-                <Loader2 className="w-4 h-4 animate-spin text-[#06C755]" />
+                <Loader2 className="w-4 h-4 animate-spin text-line" />
                 Đang tải danh bạ LINE...
               </div>
             ) : lineFriends.length === 0 ? (
@@ -699,7 +699,7 @@ const FriendsDirectory: React.FC<{ initialChannel?: ContactsChannelTab }> = ({
                               </span>
                             )}
                             {fr.status_message && (
-                              <span className="italic text-gray-400 truncate max-w-xs">
+                              <span className="italic text-text-muted truncate max-w-xs">
                                 &ldquo;{fr.status_message}&rdquo;
                               </span>
                             )}
@@ -720,7 +720,7 @@ const FriendsDirectory: React.FC<{ initialChannel?: ContactsChannelTab }> = ({
                             });
                             setMessageText('');
                           }}
-                          leftIcon={<MessageSquare className="w-3.5 h-3.5 text-[#06C755]" />}
+                          leftIcon={<MessageSquare className="w-3.5 h-3.5 text-line" />}
                         >
                           Nhắn tin
                         </Button>

@@ -1,5 +1,5 @@
 import React from 'react';
-import { X } from 'lucide-react';
+import { Reply, X } from 'lucide-react';
 import type { QuoteRef } from '../types/zalo.types';
 
 interface ReplyPreviewBarProps {
@@ -22,16 +22,16 @@ export const ReplyPreviewBar: React.FC<ReplyPreviewBarProps> = ({ quote, onCance
   return (
     <div className="flex items-center gap-2 px-3 py-2 bg-blue-50 border-l-[3px] border-l-blue-500 rounded-lg mb-2 animate-slideIn">
       <div className="flex-1 min-w-0">
-        <p className="text-[11px] font-bold text-blue-700">
-          ↩ Trả lời {quote.senderName || 'Unknown'}
+        <p className="flex items-center gap-1.5 text-[11px] font-bold text-primary">
+          <Reply className="h-4 w-4" /><span>Trả lời {quote.senderName || 'Không rõ người gửi'}</span>
         </p>
         {preview && (
-          <p className="text-xs text-gray-600 truncate mt-0.5">{preview}</p>
+          <p title={quote.content || ''} className="text-xs text-text-secondary truncate mt-0.5">{preview}</p>
         )}
       </div>
       <button
         onClick={onCancel}
-        className="p-1 rounded-full hover:bg-blue-100 text-gray-400 hover:text-gray-600 transition-colors shrink-0"
+        className="p-1 rounded-full hover:bg-blue-100 text-text-muted hover:text-text-secondary transition-colors shrink-0"
         title="Hủy trả lời"
       >
         <X className="w-3.5 h-3.5" />

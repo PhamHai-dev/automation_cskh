@@ -179,7 +179,7 @@ export const AutoAttendanceConfigCard: React.FC = () => {
                     }`}
                   >
                     <span
-                      className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-sm transition-transform ${
+                      className={`inline-block h-5 w-5 transform rounded-full bg-surface shadow-sm transition-transform ${
                         enabled ? 'translate-x-[22px]' : 'translate-x-[3px]'
                       }`}
                     />
@@ -244,7 +244,7 @@ export const AutoAttendanceConfigCard: React.FC = () => {
                   </Button>
                 </div>
                 <p className="text-[11px] text-text-muted mt-1.5 flex items-center gap-1">
-                  <Info className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                  <Info className="w-3.5 h-3.5 text-text-muted shrink-0" />
                   Mặc định: 15 phút. Cho phép cấu hình từ 0 phút (điểm danh đúng giờ bắt đầu) đến 1440 phút (24 giờ).
                 </p>
               </div>
@@ -321,7 +321,7 @@ export const AutoAttendanceConfigCard: React.FC = () => {
           </CardHeader>
           <CardContent className="p-5">
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 text-center">
+              <div className="p-3 rounded-xl bg-surface-subtle border border-border/80 text-center">
                 <div className="text-xs text-text-muted font-medium">Lịch học đã quét</div>
                 <div className="text-xl font-extrabold text-text-primary mt-1">
                   {lastResult.processed_schedules}
@@ -339,7 +339,7 @@ export const AutoAttendanceConfigCard: React.FC = () => {
                   {lastResult.issues_created}
                 </div>
               </div>
-              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 text-center">
+              <div className="p-3 rounded-xl bg-surface-subtle border border-border/80 text-center">
                 <div className="text-xs text-text-muted font-medium">Lịch chưa đến giờ/Bỏ qua</div>
                 <div className="text-xl font-extrabold text-text-secondary mt-1">
                   {lastResult.skipped_count}
@@ -354,7 +354,7 @@ export const AutoAttendanceConfigCard: React.FC = () => {
       <Card className="border-border/80 bg-surface shadow-soft">
         <CardHeader className="pb-3 border-b border-border/60">
           <CardTitle className="text-sm flex items-center gap-2 text-text-primary">
-            <HelpCircle className="w-4 h-4 text-slate-500" />
+            <HelpCircle className="w-4 h-4 text-text-muted" />
             Quy tắc hoạt động của Tự động Điểm danh
           </CardTitle>
         </CardHeader>

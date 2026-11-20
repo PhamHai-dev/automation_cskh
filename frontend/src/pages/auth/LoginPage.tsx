@@ -4,8 +4,9 @@ import { useAuth } from '../../contexts/AuthContext';
 import { apiClient } from '../../api/client';
 import { Input } from '../../components/ui/Input';
 import { Button } from '../../components/ui/Button';
+import { Modal } from '../../components/ui/Modal';
 import { useToast } from '../../components/ui/Toast';
-import { ArrowRight, Check, Eye, EyeOff, GraduationCap, Lock, Mail, ShieldCheck, UserRound, X } from 'lucide-react';
+import { ArrowRight, Check, Eye, EyeOff, GraduationCap, Lock, Mail, ShieldCheck, UserRound } from 'lucide-react';
 
 const DEMO_ACCOUNTS = [
   { label: 'Quản trị viên', role: 'ADMIN', email: 'admin@gmail.com', icon: ShieldCheck },
@@ -70,11 +71,11 @@ export const LoginPage: React.FC = () => {
       <div className="pointer-events-none absolute -left-20 top-24 -z-10 hidden h-56 w-56 rounded-full bg-blue-100/40 blur-3xl lg:block" aria-hidden="true" />
       <div className="pointer-events-none absolute -bottom-40 -right-36 -z-10 h-[30rem] w-[30rem] rounded-full bg-cyan-100/70 blur-3xl" aria-hidden="true" />
       <div className="pointer-events-none absolute bottom-16 left-8 -z-10 h-24 w-24 opacity-70 [background-image:radial-gradient(#bfdbfe_1.5px,transparent_1.5px)] [background-size:18px_18px] lg:left-[3%]" aria-hidden="true" />
-      <div className="pointer-events-none absolute -bottom-28 right-[-2rem] -z-10 hidden h-80 w-80 rotate-[28deg] rounded-[5rem] border border-primary-border/45 bg-white/25 sm:block" aria-hidden="true" />
+      <div className="pointer-events-none absolute -bottom-28 right-[-2rem] -z-10 hidden h-80 w-80 rotate-[28deg] rounded-[5rem] border border-primary-border/45 bg-surface/25 sm:block" aria-hidden="true" />
       <div className="pointer-events-none absolute bottom-0 right-0 -z-10 hidden h-44 w-72 rounded-tl-[9rem] bg-gradient-to-tl from-blue-100/55 via-cyan-50/50 to-transparent sm:block" aria-hidden="true" />
 
       <section className="relative flex w-full max-w-[430px] flex-col items-center">
-        <div className="w-full rounded-2xl border border-primary-border/50 bg-white px-8 py-8 shadow-[0_24px_70px_-30px_rgba(37,99,235,0.38)] sm:px-9 sm:py-9">
+        <div className="w-full rounded-2xl border border-primary-border/50 bg-surface px-8 py-8 shadow-[0_24px_70px_-30px_rgba(37,99,235,0.38)] sm:px-9 sm:py-9">
           <header className="text-center">
             <div className="flex items-center justify-center gap-3">
               <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-sky-500 text-white shadow-lg shadow-primary/25">
@@ -105,7 +106,7 @@ export const LoginPage: React.FC = () => {
               onChange={(event) => setEmail(event.target.value)}
               placeholder="Nhập email của bạn"
               leftIcon={<Mail className="h-4 w-4" aria-hidden="true" />}
-              className="h-10 rounded-md bg-white text-[12px] shadow-none"
+              className="h-10 rounded-md bg-surface text-[12px] shadow-none"
             />
 
             <div>
@@ -130,7 +131,7 @@ export const LoginPage: React.FC = () => {
                     {showPassword ? <EyeOff className="h-4 w-4" aria-hidden="true" /> : <Eye className="h-4 w-4" aria-hidden="true" />}
                   </button>
                 }
-                className="h-10 rounded-md bg-white text-[12px] shadow-none"
+                className="h-10 rounded-md bg-surface text-[12px] shadow-none"
               />
             </div>
 
@@ -174,19 +175,10 @@ export const LoginPage: React.FC = () => {
       </section>
 
       {import.meta.env.DEV && showDemoAccounts && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/20 px-4 py-6 backdrop-blur-[3px]" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setShowDemoAccounts(false)}>
-          <section id="demo-accounts-dialog" role="dialog" aria-modal="true" aria-labelledby="demo-accounts-title" className="w-full max-w-[390px] rounded-2xl border border-primary-border/70 bg-white p-5 shadow-[0_24px_70px_-20px_rgba(15,23,42,0.35)]">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-primary">Demo workspace</p>
-                <h2 id="demo-accounts-title" className="mt-1 text-lg font-bold text-text-primary">Chọn tài khoản trải nghiệm</h2>
-                <p className="mt-1 text-xs text-text-muted">Thông tin sẽ được tự động điền vào biểu mẫu.</p>
-              </div>
-              <button id="close-demo-accounts" type="button" onClick={() => setShowDemoAccounts(false)} className="rounded-lg p-1.5 text-text-muted transition-colors hover:bg-surface-muted hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary" aria-label="Đóng danh sách tài khoản demo"><X className="h-5 w-5" aria-hidden="true" /></button>
-            </div>
-            <div className="mt-4 space-y-2" role="listbox" aria-label="Tài khoản demo">
+        <Modal isOpen onClose={() => setShowDemoAccounts(false)} size="sm" title="Chọn tài khoản trải nghiệm" description="Thông tin sẽ được tự động điền vào biểu mẫu.">
+            <div className="space-y-2" role="listbox" aria-label="Tài khoản demo">
               {DEMO_ACCOUNTS.map(({ label, role, email: demoEmail, icon: Icon }) => (
-                <button key={demoEmail} id={`demo-account-${role.toLowerCase()}-${demoEmail.split('@')[0]}`} type="button" role="option" onClick={() => chooseDemoAccount(demoEmail)} className="group flex w-full items-center gap-3 rounded-xl border border-border bg-white px-3 py-3 text-left transition-all hover:border-primary-border hover:bg-primary-soft/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary" title={`${demoEmail} · Mật khẩu: 123456`}>
+                <button key={demoEmail} id={`demo-account-${role.toLowerCase()}-${demoEmail.split('@')[0]}`} type="button" role="option" onClick={() => chooseDemoAccount(demoEmail)} className="group flex w-full items-center gap-3 rounded-xl border border-border bg-surface px-3 py-3 text-left transition-all hover:border-primary-border hover:bg-primary-soft/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary" title={`${demoEmail} · Mật khẩu: 123456`}>
                   <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary-soft text-primary"><Icon className="h-4 w-4" aria-hidden="true" /></span>
                   <span className="min-w-0 flex-1"><span className="block text-sm font-semibold text-text-primary">{label}</span><span className="mt-0.5 block truncate text-xs text-text-muted">{demoEmail}</span></span>
                   <span className="rounded-md bg-surface-muted px-2 py-1 text-[10px] font-bold text-text-muted">{role}</span><Check className="h-4 w-4 text-primary opacity-0 transition-opacity group-hover:opacity-100" aria-hidden="true" />
@@ -194,8 +186,7 @@ export const LoginPage: React.FC = () => {
               ))}
             </div>
             <p className="mt-4 rounded-lg bg-surface-muted px-3 py-2 text-xs text-text-muted">Mật khẩu dùng chung: <strong className="text-text-secondary">123456</strong></p>
-          </section>
-        </div>
+        </Modal>
       )}
     </main>
   );

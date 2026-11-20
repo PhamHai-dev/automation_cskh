@@ -1,5 +1,13 @@
 # Project Status
 
+## Rà soát giao diện, component và icon toàn frontend — 2026-11-20
+
+- Sửa các lỗi tái hiện bằng browser: header tràn tablet, nút thêm học viên/bộ lọc chiến dịch/chờ đối soát bị cắt, icon KPI co méo, menu cột vượt màn hình khi mở gần đáy trang, câu hướng dẫn QR bị chia thành nhiều cột và PIN LINE không vừa màn hình nhỏ.
+- Chuẩn hóa component chung: Button/Input/Select 40px mặc định, action được wrap, form min-width 0, header/footer modal không co và body cuộn theo viewport động. Tạo tài khoản, QR Zalo/LINE, OA, bảo mật, nhiệm vụ/nhật ký chăm sóc, xác nhận xóa kịch bản và demo login dùng Modal chung; thêm portal/focus trap/Escape/scroll lock lồng nhau. Chuyển bộ lọc chiến dịch sang FilterBar/Input/Select chung.
+- Trung tính hóa màu nền/chữ/viền bằng token, Badge dùng màu trạng thái chung, màu provider tập trung. Sửa Tailwind alpha modifier cho token CSS, tăng độ rõ chữ phụ. Lucide là bộ icon chức năng; loại emoji chức năng/SVG check tự vẽ, gom logo Google về catalog chung; giữ emoji phản ứng và màu nội dung tin nhắn.
+- Browser dùng dữ liệu thật ADMIN/TEACHER: 48 trang/tab ở 1440/1024/768/390, 192 lượt đo cuối không ghi nhận overflow/button clip/icon distortion/pageerror/API 500 trong phạm vi đo. Bổ sung CS 5/6 ở các trang đa kênh; modal/PIN/notification/menu/login ở 320–1440; kiểm thử fixture account/group/link/inbox/loading/empty/error/retry pass, không gửi tin thật hoặc thay dữ liệu nghiệp vụ.
+- 31 frontend tests pass, gồm 3 regression cases cho ID/feedback form, biên dịch màu alpha và icon catalog. Frontend TypeScript/Vite build đạt; lint vẫn bị chặn bởi repo thiếu ESLint config. Không sửa API/schema/backend hoặc bật worker. Báo cáo: `khao-sat/AI_REVIEW/12_UI_CONSISTENCY_AUDIT_2026-11-20.md`.
+
 ## Endpoint tài khoản và hậu tố JLPT tự do — 2026-11-20
 
 - Bỏ giới hạn hậu tố theo danh sách N1–N5. Matcher đối chiếu lõi CSKH + mã + tên đã biết, phân loại JLPT bằng hậu tố không rỗng; không đọc `Enrollment.level` để chọn nhóm hoặc gợi ý tên. Khoảng trắng cuối không biến Kaiwa thành JLPT. Preview yêu cầu tên học viên để xác định ranh giới; danh sách hậu tố trong cấu hình chỉ là ví dụ tùy chọn.

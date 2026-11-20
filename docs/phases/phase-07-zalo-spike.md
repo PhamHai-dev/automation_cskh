@@ -79,6 +79,10 @@ Theo yêu cầu tiếp tục của người dùng, đã chạy product và sửa
 
 ## Changes from original plan
 
+### Rà soát UI toàn project — 2026-11-20
+
+Theo yêu cầu người dùng rà toàn bộ giao diện, sửa header/action/filter/popover bị tràn, icon bị co, câu hướng dẫn QR và PIN mobile; chuẩn hóa primitive form/button/modal, token và Lucide/logo catalog. Chuyển các modal tự dựng về Modal chung, kiểm tra focus/scroll/keyboard lồng nhau. Không sửa API, DB hoặc bật automation; không đánh dấu nghiệm thu provider/phase. Browser dữ liệu thật kiểm tra 48 trang/tab ở bốn viewport (192 lượt), bổ sung CS và fixture modal/inbox/account/group; 31 frontend tests/build đạt, lint thiếu config có sẵn. Chi tiết tại `../khao-sat/AI_REVIEW/12_UI_CONSISTENCY_AUDIT_2026-11-20.md`.
+
 ### Endpoint tài khoản và hậu tố JLPT tự do — 2026-11-20
 
 Theo người dùng làm rõ Q-016, hậu tố JLPT chỉ là dấu hiệu chương trình và không tương ứng với trường học viên. Matcher xác định phần lõi bằng CSKH + mã + tên đã biết, chấp nhận `VIPN4N5` khi hồ sơ ghi `N54Video`; không dùng danh sách ví dụ để giới hạn hậu tố hoặc lấy trình độ hồ sơ làm gợi ý. Giữ báo trùng/chọn thủ công. DB/API thật xác nhận nhóm của học viên `420285164` đã liên kết `JLPT/AUTO_GROUP_NAME`; preview và UI cấu hình được cập nhật.

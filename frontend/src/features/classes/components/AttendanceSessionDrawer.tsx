@@ -70,7 +70,7 @@ export const DRAWER_STATUS_CONFIG: Record<AttendanceStatus, AttendanceDrawerStat
     label: 'Lỗi kỹ thuật',
     short: 'E',
     bg: 'bg-slate-200 hover:bg-slate-300',
-    text: 'text-slate-800 font-extrabold',
+    text: 'text-text-primary font-extrabold',
     border: 'border-slate-400',
   },
 };
@@ -396,22 +396,22 @@ export const AttendanceSessionDrawer: React.FC<AttendanceSessionDrawerProps> = (
         className="relative z-10 flex h-full w-full max-w-[440px] flex-col bg-surface shadow-2xl border-l border-border animate-in slide-in-from-right duration-200"
       >
         {/* Header */}
-        <div className="flex items-start justify-between gap-3 border-b border-border bg-slate-50/80 px-5 py-4">
+        <div className="flex items-start justify-between gap-3 border-b border-border bg-surface-subtle/80 px-5 py-4">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-1.5">
               <span className="truncate text-base font-extrabold text-text-primary">
                 {studentName}
               </span>
               {studentCode && (
-                <span className="rounded bg-slate-200/80 px-1.5 py-0.5 font-mono text-[11px] font-bold text-slate-700">
+                <span className="rounded bg-slate-200/80 px-1.5 py-0.5 font-mono text-[11px] font-bold text-text-secondary">
                   {studentCode}
                 </span>
               )}
             </div>
             {(className || classCode) && (
               <div className="mt-1 flex items-center gap-1.5 text-xs text-text-secondary">
-                <Users className="h-3.5 w-3.5 text-slate-400 shrink-0" />
-                <span className="font-semibold text-slate-700">{className}</span>
+                <Users className="h-3.5 w-3.5 text-text-muted shrink-0" />
+                <span className="font-semibold text-text-secondary">{className}</span>
                 {classCode && (
                   <span className="font-mono text-[11px] text-text-muted">({classCode})</span>
                 )}
@@ -436,7 +436,7 @@ export const AttendanceSessionDrawer: React.FC<AttendanceSessionDrawerProps> = (
         </div>
 
         {/* Thanh chọn Ca học trong ngày */}
-        <div className="border-b border-border/80 bg-white px-5 py-3">
+        <div className="border-b border-border/80 bg-surface px-5 py-3">
           <div className="mb-1.5 flex items-center justify-between">
             <span className="text-[11px] font-bold uppercase tracking-wider text-text-secondary">
               Chọn ca học trong ngày{' '}
@@ -447,8 +447,8 @@ export const AttendanceSessionDrawer: React.FC<AttendanceSessionDrawerProps> = (
               )}
             </span>
             {activeSession && (
-              <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-600">
-                <Clock className="h-3 w-3 text-slate-400" />
+              <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-text-secondary">
+                <Clock className="h-3 w-3 text-text-muted" />
                 <span>
                   Buổi #{activeSession.session_number}
                   {activeSession.start_time ? ` · ${activeSession.start_time}` : ''}
@@ -478,14 +478,14 @@ export const AttendanceSessionDrawer: React.FC<AttendanceSessionDrawerProps> = (
                   className={`inline-flex h-8 items-center gap-1.5 rounded-lg border px-3 text-xs font-bold transition ${
                     isSelected
                       ? 'border-primary bg-primary text-white shadow-xs'
-                      : 'border-border bg-slate-50 text-text-primary hover:bg-slate-100'
+                      : 'border-border bg-surface-subtle text-text-primary hover:bg-surface-muted'
                   }`}
                 >
                   <span>Ca {caNo}</span>
                   {cfg ? (
                     <span
                       className={`inline-flex h-4 min-w-4 items-center justify-center rounded px-1 text-[10px] font-extrabold ${
-                        isSelected ? 'bg-white/25 text-white' : `${cfg.bg} ${cfg.text}`
+                        isSelected ? 'bg-surface/25 text-white' : `${cfg.bg} ${cfg.text}`
                       }`}
                     >
                       {cfg.short}
@@ -496,8 +496,8 @@ export const AttendanceSessionDrawer: React.FC<AttendanceSessionDrawerProps> = (
                     <span
                       className={`inline-flex h-4 min-w-4 items-center justify-center rounded border border-dashed px-1 text-[10px] font-bold ${
                         isSelected
-                          ? 'border-white/60 bg-white/15 text-white'
-                          : 'border-slate-400 bg-white text-slate-500'
+                          ? 'border-white/60 bg-surface/15 text-white'
+                          : 'border-slate-400 bg-surface text-text-muted'
                       }`}
                       title="Ca đã tạo nhưng chưa chấm điểm danh"
                     >
@@ -539,9 +539,9 @@ export const AttendanceSessionDrawer: React.FC<AttendanceSessionDrawerProps> = (
               <span className="font-bold">Đang tạo Ca {selectedSessionNumber} mới:</span> Chọn trạng thái điểm danh rồi bấm <strong>Lưu thông tin</strong> ở cuối khung.
             </div>
           ) : (
-            <div className="rounded-xl border border-slate-200 bg-slate-50/90 p-3 space-y-2">
+            <div className="rounded-xl border border-border bg-surface-subtle/90 p-3 space-y-2">
               <div className="flex items-center justify-between gap-2">
-                <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-600">
+                <span className="text-[11px] font-extrabold uppercase tracking-wider text-text-secondary">
                   Tóm tắt trạng thái Ca {selectedSessionNumber}
                 </span>
                 {att?.reconciliation_state === 'RESOLVED' ? (
@@ -565,28 +565,28 @@ export const AttendanceSessionDrawer: React.FC<AttendanceSessionDrawerProps> = (
                     Mới CSKH chấm ({csCfg.short}) — Chờ GV chấm
                   </span>
                 ) : (
-                  <span className="inline-flex items-center gap-1 rounded-full border border-dashed border-slate-400 bg-white px-2 py-0.5 text-[10px] font-bold text-slate-600">
+                  <span className="inline-flex items-center gap-1 rounded-full border border-dashed border-slate-400 bg-surface px-2 py-0.5 text-[10px] font-bold text-text-secondary">
                     ? Đã mở ca — Cả GV & CSKH đều chưa chấm
                   </span>
                 )}
               </div>
 
               <div className="grid grid-cols-3 gap-2 text-[11px]">
-                <div className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5">
-                  <div className="text-[10px] font-semibold text-slate-500">Giáo viên</div>
-                  <div className="mt-0.5 font-bold text-slate-800">
+                <div className="rounded-lg border border-border bg-surface px-2.5 py-1.5">
+                  <div className="text-[10px] font-semibold text-text-muted">Giáo viên</div>
+                  <div className="mt-0.5 font-bold text-text-primary">
                     {teacherCfg ? `${teacherCfg.short} · ${teacherCfg.label}` : 'Chưa chấm'}
                   </div>
                 </div>
-                <div className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5">
-                  <div className="text-[10px] font-semibold text-slate-500">CSKH</div>
-                  <div className="mt-0.5 font-bold text-slate-800">
+                <div className="rounded-lg border border-border bg-surface px-2.5 py-1.5">
+                  <div className="text-[10px] font-semibold text-text-muted">CSKH</div>
+                  <div className="mt-0.5 font-bold text-text-primary">
                     {csCfg ? `${csCfg.short} · ${csCfg.label}` : 'Chưa chấm'}
                   </div>
                 </div>
-                <div className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5">
-                  <div className="text-[10px] font-semibold text-slate-500">Kết quả chốt</div>
-                  <div className="mt-0.5 font-bold text-slate-800">
+                <div className="rounded-lg border border-border bg-surface px-2.5 py-1.5">
+                  <div className="text-[10px] font-semibold text-text-muted">Kết quả chốt</div>
+                  <div className="mt-0.5 font-bold text-text-primary">
                     {adminFinalCfg ? `${adminFinalCfg.short} · ${adminFinalCfg.label}` : 'Chưa chốt'}
                   </div>
                 </div>
@@ -625,7 +625,7 @@ export const AttendanceSessionDrawer: React.FC<AttendanceSessionDrawerProps> = (
 
             {side === 'TEACHER' && canMarkStatus && isEditing && (
               <div>
-                <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-wider text-slate-600">
+                <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-wider text-text-secondary">
                   Chọn trạng thái điểm danh Giáo viên
                 </label>
                 <div className="grid grid-cols-2 gap-1.5">
@@ -646,7 +646,7 @@ export const AttendanceSessionDrawer: React.FC<AttendanceSessionDrawerProps> = (
                         } ${cfg.bg} ${cfg.text} ${cfg.border} disabled:opacity-50`}
                       >
                         <span className="flex items-center gap-2">
-                          <span className="inline-flex h-5 w-5 items-center justify-center rounded bg-white/70 text-[11px] font-black">
+                          <span className="inline-flex h-5 w-5 items-center justify-center rounded bg-surface/70 text-[11px] font-black">
                             {code}
                           </span>
                           <span>{label}</span>
@@ -662,7 +662,7 @@ export const AttendanceSessionDrawer: React.FC<AttendanceSessionDrawerProps> = (
             {canEditTeacherFields && isEditing ? (
               <div className="space-y-2.5">
                 <div>
-                  <label className="mb-1 block text-xs font-semibold text-slate-700">
+                  <label className="mb-1 block text-xs font-semibold text-text-secondary">
                     Nội dung bài học (Ca {selectedSessionNumber})
                   </label>
                   <input
@@ -670,11 +670,11 @@ export const AttendanceSessionDrawer: React.FC<AttendanceSessionDrawerProps> = (
                     value={currentDraft.lessonTopic}
                     onChange={(e) => updateCurrentDraft({ lessonTopic: e.target.value })}
                     placeholder="VD: Bài 5 - Ngữ pháp N4, Kaiwa chủ đề Gia đình..."
-                    className="h-9 w-full rounded-lg border border-border bg-white px-3 text-xs text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/40"
+                    className="h-9 w-full rounded-lg border border-border bg-surface px-3 text-xs text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/40"
                   />
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs font-semibold text-slate-700">
+                  <label className="mb-1 block text-xs font-semibold text-text-secondary">
                     Ghi chú của Giáo viên (Ca {selectedSessionNumber})
                   </label>
                   <textarea
@@ -682,15 +682,15 @@ export const AttendanceSessionDrawer: React.FC<AttendanceSessionDrawerProps> = (
                     value={currentDraft.teacherNote}
                     onChange={(e) => updateCurrentDraft({ teacherNote: e.target.value })}
                     placeholder="Nhận xét buổi học, bài tập về nhà, thái độ học tập..."
-                    className="w-full rounded-lg border border-border bg-white p-2.5 text-xs text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/40 resize-none"
+                    className="w-full rounded-lg border border-border bg-surface p-2.5 text-xs text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/40 resize-none"
                   />
                 </div>
               </div>
             ) : (
               <div className="space-y-2 text-xs">
-                <div className="rounded-lg border border-border/60 bg-white px-3 py-2">
+                <div className="rounded-lg border border-border/60 bg-surface px-3 py-2">
                   <div className="text-[10px] font-bold uppercase text-text-muted">Trạng thái điểm danh GV</div>
-                  <div className="mt-0.5 font-bold text-slate-800">
+                  <div className="mt-0.5 font-bold text-text-primary">
                     {teacherCfg ? (
                       <span>{teacherCfg.short} · {teacherCfg.label}</span>
                     ) : (
@@ -698,13 +698,13 @@ export const AttendanceSessionDrawer: React.FC<AttendanceSessionDrawerProps> = (
                     )}
                   </div>
                 </div>
-                <div className="rounded-lg border border-border/60 bg-white px-3 py-2">
+                <div className="rounded-lg border border-border/60 bg-surface px-3 py-2">
                   <div className="text-[10px] font-bold uppercase text-text-muted">Nội dung bài học</div>
                   <div className="mt-0.5 font-semibold text-teal-800">
                     {att?.lesson_topic || <span className="font-normal italic text-text-muted">Chưa ghi bài học</span>}
                   </div>
                 </div>
-                <div className="rounded-lg border border-border/60 bg-white px-3 py-2">
+                <div className="rounded-lg border border-border/60 bg-surface px-3 py-2">
                   <div className="text-[10px] font-bold uppercase text-text-muted">Ghi chú buổi học (GV)</div>
                   <div className="mt-0.5 text-text-secondary">
                     {att?.teacher_note ? (
@@ -750,7 +750,7 @@ export const AttendanceSessionDrawer: React.FC<AttendanceSessionDrawerProps> = (
 
               {side === 'CS' && canMarkStatus && isEditing ? (
                 <div>
-                  <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-wider text-slate-600">
+                  <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-wider text-text-secondary">
                     Chọn trạng thái điểm danh CSKH
                   </label>
                   <div className="grid grid-cols-2 gap-1.5">
@@ -771,7 +771,7 @@ export const AttendanceSessionDrawer: React.FC<AttendanceSessionDrawerProps> = (
                           } ${cfg.bg} ${cfg.text} ${cfg.border} disabled:opacity-50`}
                         >
                           <span className="flex items-center gap-2">
-                            <span className="inline-flex h-5 w-5 items-center justify-center rounded bg-white/70 text-[11px] font-black">
+                            <span className="inline-flex h-5 w-5 items-center justify-center rounded bg-surface/70 text-[11px] font-black">
                               {code}
                             </span>
                             <span>{label}</span>
@@ -783,9 +783,9 @@ export const AttendanceSessionDrawer: React.FC<AttendanceSessionDrawerProps> = (
                   </div>
                 </div>
               ) : (
-                <div className="rounded-lg border border-border/60 bg-white px-3 py-2 text-xs">
+                <div className="rounded-lg border border-border/60 bg-surface px-3 py-2 text-xs">
                   <div className="text-[10px] font-bold uppercase text-text-muted">Trạng thái điểm danh CSKH</div>
-                  <div className="mt-0.5 font-bold text-slate-800">
+                  <div className="mt-0.5 font-bold text-text-primary">
                     {csCfg ? (
                       <span>{csCfg.short} · {csCfg.label}</span>
                     ) : (
@@ -797,7 +797,7 @@ export const AttendanceSessionDrawer: React.FC<AttendanceSessionDrawerProps> = (
 
               {canEditCsFields && isEditing ? (
                 <div>
-                  <label className="mb-1 block text-xs font-semibold text-slate-700">
+                  <label className="mb-1 block text-xs font-semibold text-text-secondary">
                     Ghi chú của CSKH (Ca {selectedSessionNumber})
                   </label>
                   <textarea
@@ -805,11 +805,11 @@ export const AttendanceSessionDrawer: React.FC<AttendanceSessionDrawerProps> = (
                     value={currentDraft.csNote}
                     onChange={(e) => updateCurrentDraft({ csNote: e.target.value })}
                     placeholder="Ghi chú xác nhận từ phụ huynh/học viên, lý do nghỉ..."
-                    className="w-full rounded-lg border border-border bg-white p-2.5 text-xs text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/40 resize-none"
+                    className="w-full rounded-lg border border-border bg-surface p-2.5 text-xs text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/40 resize-none"
                   />
                 </div>
               ) : (
-                <div className="rounded-lg border border-border/60 bg-white px-3 py-2 text-xs">
+                <div className="rounded-lg border border-border/60 bg-surface px-3 py-2 text-xs">
                   <div className="text-[10px] font-bold uppercase text-text-muted">Ghi chú CSKH</div>
                   <div className="mt-0.5 text-text-secondary">
                     {att?.cs_note ? (
@@ -855,7 +855,7 @@ export const AttendanceSessionDrawer: React.FC<AttendanceSessionDrawerProps> = (
 
               {side === 'ADMIN' && canMarkStatus && isEditing ? (
                 <div>
-                  <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-wider text-slate-600">
+                  <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-wider text-text-secondary">
                     Chọn trạng thái điểm danh chốt (Admin)
                   </label>
                   <div className="grid grid-cols-2 gap-1.5">
@@ -876,7 +876,7 @@ export const AttendanceSessionDrawer: React.FC<AttendanceSessionDrawerProps> = (
                           } ${cfg.bg} ${cfg.text} ${cfg.border} disabled:opacity-50`}
                         >
                           <span className="flex items-center gap-2">
-                            <span className="inline-flex h-5 w-5 items-center justify-center rounded bg-white/70 text-[11px] font-black">
+                            <span className="inline-flex h-5 w-5 items-center justify-center rounded bg-surface/70 text-[11px] font-black">
                               {code}
                             </span>
                             <span>{label}</span>
@@ -888,9 +888,9 @@ export const AttendanceSessionDrawer: React.FC<AttendanceSessionDrawerProps> = (
                   </div>
                 </div>
               ) : (
-                <div className="rounded-lg border border-border/60 bg-white px-3 py-2 text-xs">
+                <div className="rounded-lg border border-border/60 bg-surface px-3 py-2 text-xs">
                   <div className="text-[10px] font-bold uppercase text-text-muted">Kết quả điểm danh chốt</div>
-                  <div className="mt-0.5 font-bold text-slate-800">
+                  <div className="mt-0.5 font-bold text-text-primary">
                     {adminFinalCfg ? (
                       <span>{adminFinalCfg.short} · {adminFinalCfg.label}</span>
                     ) : (
@@ -901,7 +901,7 @@ export const AttendanceSessionDrawer: React.FC<AttendanceSessionDrawerProps> = (
               )}
 
               {/* Dòng trạng thái đối chiếu 2 bên */}
-              <div className="rounded-lg border border-border/60 bg-white px-3 py-2 text-xs">
+              <div className="rounded-lg border border-border/60 bg-surface px-3 py-2 text-xs">
                 <div className="text-[10px] font-bold uppercase text-text-muted">Trạng thái đối soát</div>
                 <div className="mt-0.5 font-semibold">
                   {!att || (!att.teacher_status && !att.cs_status && !adminFinalCfg) ? (
@@ -926,7 +926,7 @@ export const AttendanceSessionDrawer: React.FC<AttendanceSessionDrawerProps> = (
                 </div>
                 {att?.resolution_note && (
                   <div className="mt-1.5 border-t border-border/50 pt-1.5 text-[11px] text-text-secondary">
-                    <span className="font-semibold text-slate-700">Ghi chú phân xử: </span>
+                    <span className="font-semibold text-text-secondary">Ghi chú phân xử: </span>
                     <span>{att.resolution_note}</span>
                   </div>
                 )}
@@ -959,7 +959,7 @@ export const AttendanceSessionDrawer: React.FC<AttendanceSessionDrawerProps> = (
         </form>
 
         {/* Footer (chuẩn hóa duy nhất 1 nút Sửa ở đây; khi đang sửa thì hiện Hủy sửa + Lưu thông tin) */}
-        <div className="flex items-center justify-between gap-2 border-t border-border bg-slate-50 px-5 py-3.5">
+        <div className="flex items-center justify-between gap-2 border-t border-border bg-surface-subtle px-5 py-3.5">
           {isEditing && daySessions.length > 0 && !defaultEditing ? (
             <Button
               variant="outline"

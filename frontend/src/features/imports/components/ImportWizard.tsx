@@ -200,7 +200,7 @@ export const ImportWizard: React.FC<Props> = ({ onImportComplete }) => {
         </div>
 
         {isAdminOrManage && (
-          <div className="text-left bg-white p-4 rounded-xl border border-border shadow-sm space-y-2">
+          <div className="text-left bg-surface p-4 rounded-xl border border-border shadow-sm space-y-2">
             <label htmlFor="assigned-cs-select" className="block text-xs font-semibold text-text-primary flex items-center gap-1.5">
               <UserCheck className="w-4 h-4 text-primary" />
               Gán học viên cho tài khoản CVHT:
@@ -209,7 +209,7 @@ export const ImportWizard: React.FC<Props> = ({ onImportComplete }) => {
               id="assigned-cs-select"
               value={assignedCsId || ''}
               onChange={(e) => setAssignedCsId(e.target.value ? Number(e.target.value) : undefined)}
-              className="w-full rounded-lg border border-border bg-white px-3 py-2 text-xs font-medium text-text-primary focus:border-primary focus:ring-1 focus:ring-primary"
+              className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-xs font-medium text-text-primary focus:border-primary focus:ring-1 focus:ring-primary"
             >
               <option value="">-- Mặc định: Gán cho tài khoản của bạn --</option>
               {csUsers.map((u) => (
@@ -224,7 +224,7 @@ export const ImportWizard: React.FC<Props> = ({ onImportComplete }) => {
           </div>
         )}
 
-        <label id="workbook-upload-label" className="block border-2 border-dashed border-border hover:border-primary rounded-2xl p-8 cursor-pointer transition-colors bg-white/70">
+        <label id="workbook-upload-label" className="block border-2 border-dashed border-border hover:border-primary rounded-2xl p-8 cursor-pointer transition-colors bg-surface/70">
           <Upload className="w-6 h-6 mx-auto text-primary mb-2" />
           <span className="text-sm font-semibold">{file?.name || 'Chọn file Excel (.xlsx)'}</span>
           <input id="workbook-file-input" className="hidden" type="file" accept=".xlsx" onChange={(e) => setFile(e.target.files?.[0] || null)} />
@@ -250,7 +250,7 @@ export const ImportWizard: React.FC<Props> = ({ onImportComplete }) => {
               id={`studentEnrollment-${f.key}-mapping`}
               value={mappings.studentEnrollment[f.key] || ''}
               onChange={(e) => setMappings((p) => ({ ...p, studentEnrollment: { ...p.studentEnrollment, [f.key]: e.target.value } }))}
-              className="mt-1 w-full rounded-lg border border-border bg-white px-3 py-2 text-xs"
+              className="mt-1 w-full rounded-lg border border-border bg-surface px-3 py-2 text-xs"
             >
               <option value="">Bỏ qua</option>
               {current.headers.map((h) => <option key={h.col} value={h.col}>{h.col} — {h.title}</option>)}
@@ -326,7 +326,7 @@ export const ImportWizard: React.FC<Props> = ({ onImportComplete }) => {
           ['Bỏ qua ngoài quyền', report.summary.skippedOutOfScope ?? 0, 'neutral'],
           ['Lỗi dữ liệu', report.summary.invalid, 'danger'],
         ].map(([label, count, variant]) => (
-          <div key={String(label)} className="rounded-xl border border-border p-4 bg-white shadow-sm">
+          <div key={String(label)} className="rounded-xl border border-border p-4 bg-surface shadow-sm">
             <Badge variant={variant as any}>{String(label)}</Badge>
             <p className="text-2xl font-bold mt-2 text-text-primary">{String(count)}</p>
           </div>
@@ -336,7 +336,7 @@ export const ImportWizard: React.FC<Props> = ({ onImportComplete }) => {
       {Boolean(report.summary.willTransfer && report.summary.willTransfer > 0) && (
         <div className="flex gap-2 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 p-3 text-xs">
           <AlertTriangle className="w-4 h-4 shrink-0 text-amber-600" />
-          Có <b>{report.summary.willTransfer}</b> học viên thuộc CSKH khác. Hệ thống sẽ tự động gửi yêu cầu điều chuyển vào hàng đợi để Quản trị viên/Quản lý phê duyệt.
+          <span>Có <b>{report.summary.willTransfer}</b> học viên thuộc CSKH khác. Hệ thống sẽ tự động gửi yêu cầu điều chuyển vào hàng đợi để Quản trị viên/Quản lý phê duyệt.</span>
         </div>
       )}
 

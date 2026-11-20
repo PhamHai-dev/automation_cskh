@@ -111,13 +111,13 @@ export function DataTable<T>({
       <div className="w-full overflow-x-auto">
         <table data-table="standard" style={{ tableLayout, minWidth: minTableWidth }} className="w-full text-sm text-left border-separate border-spacing-0">
           <thead className="relative z-20">
-            <tr className="bg-slate-100 text-text-secondary">
+            <tr className="bg-surface-muted text-text-secondary">
               {columns.map((col, index) => (
                 <th
                   key={index}
                   scope="col"
                   style={col.width ? { width: col.width } : undefined}
-                  className={`px-4 py-3.5 text-xs font-bold whitespace-nowrap border-b border-border/80 bg-slate-100 ${col.className || ''} !text-center`}
+                  className={`px-4 py-3.5 text-xs font-bold whitespace-nowrap border-b border-border/80 bg-surface-muted ${col.className || ''} !text-center`}
                 >
                   {col.header}
                 </th>
@@ -152,7 +152,7 @@ export function DataTable<T>({
                 <tr
                   key={rowIndex}
                   onClick={() => onRowClick?.(item)}
-                  className={`group transition-colors hover:bg-slate-50 ${
+                  className={`group transition-colors hover:bg-surface-subtle ${
                     onRowClick ? 'cursor-pointer' : ''
                   }`}
                 >
@@ -161,7 +161,7 @@ export function DataTable<T>({
                       key={colIndex}
                       data-align={col.align}
                       data-wrap={col.wrap ? 'normal' : 'nowrap'}
-                      className={`px-4 py-3.5 text-text-primary border-b border-border/60 bg-white group-hover:bg-slate-50 ${col.className || ''}`}
+                      className={`px-4 py-3.5 text-text-primary border-b border-border/60 bg-surface group-hover:bg-surface-subtle ${col.className || ''}`}
                     >
                       {col.cell
                         ? col.cell(item, rowIndex)

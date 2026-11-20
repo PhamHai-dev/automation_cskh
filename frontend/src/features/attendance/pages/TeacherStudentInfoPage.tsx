@@ -85,7 +85,7 @@ const STATUS_BADGE_MAP: Record<
   },
   TECH_ERROR_E: {
     label: 'Lỗi KT (E)',
-    className: 'bg-slate-200 text-slate-800 border-slate-400',
+    className: 'bg-slate-200 text-text-primary border-slate-400',
   },
 };
 
@@ -372,7 +372,7 @@ export const TeacherStudentInfoPage: React.FC = () => {
       ) : (
         <div className="bg-surface rounded-2xl border border-border/80 shadow-soft overflow-hidden">
           {/* Table Toolbar */}
-          <div className="flex flex-wrap items-center justify-between gap-2.5 border-b border-border/80 bg-slate-50/60 p-3 sm:px-4 text-xs">
+          <div className="flex flex-wrap items-center justify-between gap-2.5 border-b border-border/80 bg-surface-subtle/60 p-3 sm:px-4 text-xs">
             {/* Bên trái: Chip thống kê & chú thích */}
             <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-text-secondary">
               <span className="inline-flex items-center gap-1.5 rounded-lg border border-border/80 bg-surface px-2.5 py-1.5 shadow-2xs">
@@ -397,9 +397,9 @@ export const TeacherStudentInfoPage: React.FC = () => {
             </div>
 
             {/* Bên phải: Bộ gạt phạm vi cột buổi & Làm mới */}
-            <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-2">
+            <div className="ml-auto flex min-w-0 max-w-full flex-wrap items-center justify-end gap-2">
               <div
-                className="inline-flex h-9 items-center gap-1 rounded-xl border border-slate-200/90 bg-slate-100 p-1"
+                className="inline-flex max-w-full flex-wrap items-center gap-1 rounded-xl border border-border bg-surface-muted p-1"
                 role="tablist"
                 aria-label="Chọn phạm vi hiển thị cột buổi học"
               >
@@ -415,7 +415,7 @@ export const TeacherStudentInfoPage: React.FC = () => {
                   className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                     showFullPackage
                       ? 'bg-primary text-white shadow-xs'
-                      : 'bg-white/60 text-slate-600 hover:bg-white hover:text-slate-900'
+                      : 'bg-surface/60 text-text-secondary hover:bg-surface hover:text-text-primary'
                   }`}
                 >
                   Toàn khóa
@@ -429,10 +429,10 @@ export const TeacherStudentInfoPage: React.FC = () => {
                   className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                     !showFullPackage
                       ? 'bg-primary text-white shadow-xs'
-                      : 'bg-white/60 text-slate-600 hover:bg-white hover:text-slate-900'
+                      : 'bg-surface/60 text-text-secondary hover:bg-surface hover:text-text-primary'
                   }`}
                 >
-                  Thu gọn theo buổi đã học
+                  Buổi đã học
                 </button>
               </div>
 
@@ -472,15 +472,15 @@ export const TeacherStudentInfoPage: React.FC = () => {
               <table data-table="native" className="w-full text-xs text-left border-collapse">
                 <thead>
                   <tr className="bg-surface-muted/90 text-text-secondary border-b border-border/80 text-[11px] font-bold">
-                    <th scope="col" className="sticky left-0 z-30 px-2 py-3 border-r border-border/60 bg-slate-100 text-text-secondary text-center w-10 min-w-[40px] max-w-[40px] whitespace-nowrap">
+                    <th scope="col" className="sticky left-0 z-30 px-2 py-3 border-r border-border/60 bg-surface-muted text-text-secondary text-center w-10 min-w-[40px] max-w-[40px] whitespace-nowrap">
                       #
                     </th>
                     {/* Cột Mã HV - sticky left 40px */}
-                    <th scope="col" className="sticky left-10 z-30 px-3 py-3 border-r border-border/60 bg-slate-100 text-text-secondary w-[110px] min-w-[110px] max-w-[110px] whitespace-nowrap ">
+                    <th scope="col" className="sticky left-10 z-30 px-3 py-3 border-r border-border/60 bg-surface-muted text-text-secondary w-[110px] min-w-[110px] max-w-[110px] whitespace-nowrap ">
                       Mã HV
                     </th>
                     {/* Cột Họ tên HV - sticky left 150px */}
-                    <th scope="col" className="sticky left-[150px] z-30 px-3 py-3 border-r-2 border-border/80 bg-slate-100 text-text-secondary w-[175px] min-w-[175px] max-w-[175px] whitespace-nowrap shadow-[2px_0_4px_-1px_rgba(0,0,0,0.06)] ">
+                    <th scope="col" className="sticky left-[150px] z-30 px-3 py-3 border-r-2 border-border/80 bg-surface-muted text-text-secondary w-[175px] min-w-[175px] max-w-[175px] whitespace-nowrap shadow-[2px_0_4px_-1px_rgba(0,0,0,0.06)] ">
                       Họ tên HV
                     </th>
                     {/* Lớp học */}
@@ -537,13 +537,13 @@ export const TeacherStudentInfoPage: React.FC = () => {
                 <tbody>
                   {paginatedRows.map((row, rIdx) => {
                     const stickyBg =
-                      rIdx % 2 === 1 ? 'bg-slate-50' : 'bg-surface';
+                      rIdx % 2 === 1 ? 'bg-surface-subtle' : 'bg-surface';
 
                     return (
                       <tr
                         key={row.enrollmentClassId}
-                        className={`border-b border-border/60 hover:bg-slate-50/80 transition-colors ${
-                          rIdx % 2 === 1 ? 'bg-slate-50/30' : 'bg-surface'
+                        className={`border-b border-border/60 hover:bg-surface-subtle/80 transition-colors ${
+                          rIdx % 2 === 1 ? 'bg-surface-subtle/30' : 'bg-surface'
                         }`}
                       >
                         {/* Cột # (STT) */}
@@ -720,7 +720,7 @@ export const TeacherStudentInfoPage: React.FC = () => {
                                         e.currentTarget.blur();
                                       }
                                     }}
-                                    className="h-7 w-full rounded-lg border border-teal-300/80 bg-white px-2 pr-6 text-xs font-semibold text-text-primary placeholder:text-text-muted placeholder:font-normal focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:bg-slate-50 disabled:text-text-muted"
+                                    className="h-7 w-full rounded-lg border border-teal-300/80 bg-surface px-2 pr-6 text-xs font-semibold text-text-primary placeholder:text-text-muted placeholder:font-normal focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:bg-surface-subtle disabled:text-text-muted"
                                   />
                                   {isSaving && (
                                     <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-600 absolute right-1.5 top-1/2 -translate-y-1/2" />
@@ -744,13 +744,13 @@ export const TeacherStudentInfoPage: React.FC = () => {
                               : {
                                   label: 'Chưa điểm danh',
                                   className:
-                                    'bg-slate-100 text-slate-600 border-slate-300',
+                                    'bg-surface-muted text-text-secondary border-border-strong',
                                 };
 
                             return (
                               <td data-cell-layout="custom" data-align="center" data-wrap="nowrap"
                                 key={k}
-                                className="border-r border-border/60 p-1.5 align-top bg-slate-50/50 min-w-[145px]"
+                                className="border-r border-border/60 p-1.5 align-top bg-surface-subtle/50 min-w-[145px]"
                                 title="Học viên chưa học buổi này nên ô bị khóa"
                               >
                                 <div className="flex items-center justify-between gap-1 mb-1 px-0.5">
@@ -770,9 +770,9 @@ export const TeacherStudentInfoPage: React.FC = () => {
                                     value={cell.lessonTopic || ''}
                                     placeholder="Đã khóa"
                                     title="Học viên chưa học buổi này nên ô bị khóa"
-                                    className="h-7 w-full rounded-lg border border-border/70 bg-slate-100/80 px-2 pr-6 text-xs text-text-muted cursor-not-allowed"
+                                    className="h-7 w-full rounded-lg border border-border/70 bg-surface-muted/80 px-2 pr-6 text-xs text-text-muted cursor-not-allowed"
                                   />
-                                  <Lock className="w-3.5 h-3.5 text-slate-400 absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                                  <Lock className="w-3.5 h-3.5 text-text-muted absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                                 </div>
                               </td>
                             );
@@ -782,7 +782,7 @@ export const TeacherStudentInfoPage: React.FC = () => {
                           return (
                             <td data-cell-layout="custom" data-align="center" data-wrap="nowrap"
                               key={k}
-                              className="border-r border-border/60 p-1.5 align-top bg-slate-50/25 min-w-[145px]"
+                              className="border-r border-border/60 p-1.5 align-top bg-surface-subtle/25 min-w-[145px]"
                             >
                               <div className="flex items-center justify-between gap-1 mb-1 px-0.5 min-h-[18px]">
                                 <span className="text-[10px] text-text-muted">
@@ -796,9 +796,9 @@ export const TeacherStudentInfoPage: React.FC = () => {
                                   value=""
                                   placeholder="Chưa học"
                                   title="Học viên chưa học buổi này nên ô bị khóa"
-                                  className="h-7 w-full rounded-lg border border-border/70 bg-slate-100/80 px-2 pr-6 text-xs text-text-muted cursor-not-allowed"
+                                  className="h-7 w-full rounded-lg border border-border/70 bg-surface-muted/80 px-2 pr-6 text-xs text-text-muted cursor-not-allowed"
                                 />
-                                <Lock className="w-3.5 h-3.5 text-slate-400 absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                                <Lock className="w-3.5 h-3.5 text-text-muted absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                               </div>
                             </td>
                           );

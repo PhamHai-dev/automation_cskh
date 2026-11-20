@@ -1,3 +1,4 @@
+import { GoogleColorIcon } from '../../../components/ui/BrandIcons';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { importsApi } from '../api/imports.api';
@@ -76,26 +77,6 @@ const FLOW_TABS: Array<{
   },
 ];
 
-const GoogleColorIcon: React.FC<{ className?: string }> = ({ className = 'w-5 h-5' }) => (
-  <svg viewBox="0 0 24 24" className={className} aria-hidden="true">
-    <path
-      fill="#4285F4"
-      d="M23.49 12.27c0-.79-.07-1.54-.19-2.27H12v4.51h6.47c-.29 1.48-1.14 2.73-2.4 3.58v3h3.86c2.26-2.09 3.56-5.17 3.56-8.82z"
-    />
-    <path
-      fill="#34A853"
-      d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.86-3c-1.08.72-2.45 1.16-4.07 1.16-3.13 0-5.78-2.11-6.73-4.96H1.29v3.09C3.26 21.3 7.31 24 12 24z"
-    />
-    <path
-      fill="#FBBC05"
-      d="M5.27 14.29c-.25-.72-.38-1.49-.38-2.29s.14-1.57.38-2.29V6.62H1.29C.47 8.24 0 10.06 0 12s.47 3.76 1.29 5.38l3.98-3.09z"
-    />
-    <path
-      fill="#EA4335"
-      d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.31 0 3.26 2.7 1.29 6.62l3.98 3.09c.95-2.85 3.6-4.96 6.73-4.96z"
-    />
-  </svg>
-);
 
 function classifyBackupFlow(programType?: string): Exclude<BackupFlowGroup, 'ALL'> {
   const pt = String(programType || '').toUpperCase();
@@ -757,7 +738,7 @@ export const CsSheetBackupPanel: React.FC<CsSheetBackupPanelProps> = ({ initialT
                 ? 'Bấm để sao chép email Service Account cấp quyền Editor'
                 : 'Bấm để mở trang Cấu hình & Kết nối'
             }
-            className="bg-white rounded-xl border border-slate-200 px-3.5 py-1.5 flex items-center gap-2.5 shadow-2xs hover:bg-slate-50 transition-colors text-left cursor-pointer"
+            className="bg-surface rounded-xl border border-border px-3.5 py-1.5 flex items-center gap-2.5 shadow-2xs hover:bg-surface-subtle transition-colors text-left cursor-pointer"
           >
             <GoogleColorIcon className="w-5 h-5 shrink-0" />
             <div className="leading-tight">
@@ -772,7 +753,7 @@ export const CsSheetBackupPanel: React.FC<CsSheetBackupPanelProps> = ({ initialT
                   <span className="text-[10px]">●</span>
                 </div>
               )}
-              <div className="text-[11px] text-slate-500 truncate max-w-[180px]">
+              <div className="text-[11px] text-text-muted truncate max-w-[180px]">
                 {serviceAccount?.clientEmail || 'Chưa gắn Service Account'}
               </div>
             </div>
@@ -785,19 +766,19 @@ export const CsSheetBackupPanel: React.FC<CsSheetBackupPanelProps> = ({ initialT
                   <button
                     type="button"
                     onClick={() => setAddMenuOpen((prev) => !prev)}
-                    className="h-9 px-3.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 inline-flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
+                    className="h-9 px-3.5 rounded-xl border border-border bg-surface hover:bg-surface-subtle text-xs font-semibold text-text-secondary inline-flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
                   >
                     <Plus className="w-4 h-4 text-blue-600" />
                     <span>Thêm nguồn</span>
                     <ChevronDown
-                      className={`w-3.5 h-3.5 text-slate-400 transition-transform ${
+                      className={`w-3.5 h-3.5 text-text-muted transition-transform ${
                         addMenuOpen ? 'rotate-180' : ''
                       }`}
                     />
                   </button>
 
                   {addMenuOpen && (
-                    <div className="absolute right-0 mt-1.5 w-48 rounded-xl border border-slate-200 bg-white p-1.5 shadow-lg z-30">
+                    <div className="absolute right-0 mt-1.5 w-48 rounded-xl border border-border bg-surface p-1.5 shadow-lg z-30">
                       <button
                         type="button"
                         onClick={() => {
@@ -805,7 +786,7 @@ export const CsSheetBackupPanel: React.FC<CsSheetBackupPanelProps> = ({ initialT
                           setEditingConfig(null);
                           setConfigModalOpen(true);
                         }}
-                        className="w-full px-2.5 py-2 rounded-lg text-left text-xs font-semibold text-slate-700 hover:bg-slate-50 flex items-center gap-2 cursor-pointer"
+                        className="w-full px-2.5 py-2 rounded-lg text-left text-xs font-semibold text-text-secondary hover:bg-surface-subtle flex items-center gap-2 cursor-pointer"
                       >
                         <Plus className="w-3.5 h-3.5 text-blue-600 shrink-0" />
                         <span>Thêm nguồn mới</span>
@@ -818,7 +799,7 @@ export const CsSheetBackupPanel: React.FC<CsSheetBackupPanelProps> = ({ initialT
                             setAddMenuOpen(false);
                             setBulkOpen(true);
                           }}
-                          className="w-full px-2.5 py-2 rounded-lg text-left text-xs font-semibold text-slate-700 hover:bg-slate-50 flex items-center gap-2 cursor-pointer"
+                          className="w-full px-2.5 py-2 rounded-lg text-left text-xs font-semibold text-text-secondary hover:bg-surface-subtle flex items-center gap-2 cursor-pointer"
                         >
                           <ClipboardPaste className="w-3.5 h-3.5 text-teal-600 shrink-0" />
                           <span>Dán nhiều link</span>
@@ -887,11 +868,11 @@ export const CsSheetBackupPanel: React.FC<CsSheetBackupPanelProps> = ({ initialT
           </DataFilters>
 
           {/* 5. Bảng Nguồn sao lưu (8 Cột) & Phân trang */}
-          <div className="bg-white rounded-2xl border border-slate-200/90 shadow-xs overflow-hidden">
+          <div className="bg-surface rounded-2xl border border-border/90 shadow-xs overflow-hidden">
             <div className="data-table-scroll">
               <table data-table="native" className="data-source-table">
                 <thead>
-                  <tr className="border-b border-slate-200 bg-slate-50/80 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+                  <tr className="border-b border-border bg-surface-subtle/80 text-[11px] font-semibold text-text-muted uppercase tracking-wider">
                     <th scope="col" className="py-3 pl-4 pr-2 w-10">
                       <input
                         type="checkbox" aria-label="Chọn tất cả nguồn trên trang"
@@ -914,7 +895,7 @@ export const CsSheetBackupPanel: React.FC<CsSheetBackupPanelProps> = ({ initialT
                             });
                           }
                         }}
-                        className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                        className="rounded border-border-strong text-blue-600 focus:ring-blue-500 cursor-pointer"
                       />
                     </th>
                     <th scope="col">Tên nguồn</th><th scope="col">Phân loại</th><th scope="col">Nơi lưu</th><th scope="col">Phạm vi</th><th scope="col">Tự động</th><th scope="col">Kết quả gần nhất</th><th scope="col">Thao tác</th>
@@ -923,14 +904,14 @@ export const CsSheetBackupPanel: React.FC<CsSheetBackupPanelProps> = ({ initialT
                 <tbody className="divide-y divide-slate-100 text-xs">
                   {loading ? (
                     <tr>
-                      <td data-align="center" colSpan={8} className="py-12 text-center text-slate-500">
+                      <td data-align="center" colSpan={8} className="py-12 text-center text-text-muted">
                         <RefreshCw className="w-4 h-4 animate-spin inline mr-2 text-blue-600" />
                         Đang tải danh sách nguồn sao lưu...
                       </td>
                     </tr>
                   ) : paginatedConfigs.length === 0 ? (
                     <tr>
-                      <td data-align="center" colSpan={8} className="py-12 text-center text-slate-500">
+                      <td data-align="center" colSpan={8} className="py-12 text-center text-text-muted">
                         Không có nguồn sao lưu nào phù hợp với bộ lọc hiện tại.
                       </td>
                     </tr>
@@ -970,7 +951,7 @@ export const CsSheetBackupPanel: React.FC<CsSheetBackupPanelProps> = ({ initialT
                                   return next;
                                 })
                               }
-                              className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                              className="rounded border-border-strong text-blue-600 focus:ring-blue-500 cursor-pointer"
                             />
                           </td>
                             <td data-align="left" data-wrap="normal"><div className="data-source-name"><span>{cfg.name}</span></div></td>
@@ -1016,7 +997,7 @@ export const CsSheetBackupPanel: React.FC<CsSheetBackupPanelProps> = ({ initialT
                                 </Badge>
                               )}
                             </div>
-                            <div className="text-[11px] text-slate-500 mt-1">
+                            <div className="text-[11px] text-text-muted mt-1">
                               <span className="text-emerald-600 font-semibold">
                                 +{sum?.appendedRows ?? 0} mới
                               </span>{' '}
@@ -1047,28 +1028,28 @@ export const CsSheetBackupPanel: React.FC<CsSheetBackupPanelProps> = ({ initialT
             </div>
 
             {/* Pagination Footer (20 / 50 / 100 rows) */}
-            <div className="px-4 py-3 border-t border-slate-100 bg-slate-50/50 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-600">
+            <div className="px-4 py-3 border-t border-border-subtle bg-surface-subtle/50 flex flex-wrap items-center justify-between gap-3 text-xs text-text-secondary">
               <div className="flex items-center gap-3">
                 <span>
                   Hiển thị{' '}
-                  <strong className="text-slate-800">
+                  <strong className="text-text-primary">
                     {filteredConfigs.length === 0
                       ? 0
                       : (page - 1) * pageSize + 1}
                     –{Math.min(page * pageSize, filteredConfigs.length)}
                   </strong>{' '}
-                  / <strong className="text-slate-800">{filteredConfigs.length}</strong>{' '}
+                  / <strong className="text-text-primary">{filteredConfigs.length}</strong>{' '}
                   nguồn sao lưu
                 </span>
 
                 <div className="flex items-center gap-1.5">
-                  <span className="text-slate-500">Số dòng/trang:</span>
+                  <span className="text-text-muted">Số dòng/trang:</span>
                   <select
                     value={pageSize}
                     onChange={(e) =>
                       setPageSize(Number(e.target.value) as 20 | 50 | 100)
                     }
-                    className="h-7 rounded-lg border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-700"
+                    className="h-7 rounded-lg border border-border bg-surface px-2 text-xs font-semibold text-text-secondary"
                   >
                     <option value={20}>20 dòng</option>
                     <option value={50}>50 dòng</option>
@@ -1082,18 +1063,18 @@ export const CsSheetBackupPanel: React.FC<CsSheetBackupPanelProps> = ({ initialT
                   type="button"
                   disabled={page <= 1}
                   onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  className="px-2.5 py-1 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-40 font-semibold cursor-pointer"
+                  className="px-2.5 py-1 rounded-lg border border-border bg-surface hover:bg-surface-subtle disabled:opacity-40 font-semibold cursor-pointer"
                 >
                   Trước
                 </button>
-                <span className="px-2 font-semibold text-slate-700">
+                <span className="px-2 font-semibold text-text-secondary">
                   Trang {page} / {totalPages}
                 </span>
                 <button
                   type="button"
                   disabled={page >= totalPages}
                   onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                  className="px-2.5 py-1 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-40 font-semibold cursor-pointer"
+                  className="px-2.5 py-1 rounded-lg border border-border bg-surface hover:bg-surface-subtle disabled:opacity-40 font-semibold cursor-pointer"
                 >
                   Sau
                 </button>
@@ -1110,7 +1091,7 @@ export const CsSheetBackupPanel: React.FC<CsSheetBackupPanelProps> = ({ initialT
         <div className="space-y-4">
           {/* 1. KPI Summary Row + Xuất CSV */}
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="text-xs text-slate-600 font-medium flex flex-wrap items-center gap-1.5">
+            <div className="text-xs text-text-secondary font-medium flex flex-wrap items-center gap-1.5">
               <span>
                 Hôm nay:{' '}
                 <strong className="text-blue-600 font-bold">
@@ -1132,7 +1113,7 @@ export const CsSheetBackupPanel: React.FC<CsSheetBackupPanelProps> = ({ initialT
               <span className="text-slate-300">·</span>
               <span>
                 Lần gần nhất{' '}
-                <strong className="text-slate-900 font-semibold">
+                <strong className="text-text-primary font-semibold">
                   {historyStats.lastRunTime || '--:--'}
                 </strong>
               </span>
@@ -1141,9 +1122,9 @@ export const CsSheetBackupPanel: React.FC<CsSheetBackupPanelProps> = ({ initialT
             <button
               type="button"
               onClick={handleExportBackupHistoryCsv}
-              className="bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-xl px-3.5 py-2 text-xs font-semibold inline-flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
+              className="bg-surface border border-border hover:bg-surface-subtle text-text-secondary rounded-xl px-3.5 py-2 text-xs font-semibold inline-flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
             >
-              <Download className="w-3.5 h-3.5 text-slate-500" />
+              <Download className="w-3.5 h-3.5 text-text-muted" />
               <span>Xuất lịch sử CSV</span>
             </button>
           </div>
@@ -1151,38 +1132,38 @@ export const CsSheetBackupPanel: React.FC<CsSheetBackupPanelProps> = ({ initialT
           {/* 2. Bộ lọc lịch sử */}
           <div className="flex flex-wrap items-center gap-2.5">
             <div className="relative min-w-[200px]">
-              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <Search className="w-3.5 h-3.5 text-text-muted absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
               <input
                 type="text"
                 value={historySearch}
                 onChange={(e) => setHistorySearch(e.target.value)}
                 placeholder="Tìm tên nguồn, mã CVHT, GV, mã batch..."
-                className="w-full h-9 rounded-lg border border-slate-200 bg-white pl-8 pr-3 text-xs text-slate-800 focus:outline-none"
+                className="w-full h-9 rounded-lg border border-border bg-surface pl-8 pr-3 text-xs text-text-primary focus:outline-none"
               />
             </div>
 
-            <div className="inline-flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg px-2.5 h-9 text-xs text-slate-600">
-              <span className="text-slate-400">Từ:</span>
+            <div className="inline-flex items-center gap-1.5 bg-surface border border-border rounded-lg px-2.5 h-9 text-xs text-text-secondary">
+              <span className="text-text-muted">Từ:</span>
               <input
                 type="date"
                 value={historyFromDate}
                 onChange={(e) => setHistoryFromDate(e.target.value)}
-                className="text-xs text-slate-700 focus:outline-none bg-transparent"
+                className="text-xs text-text-secondary focus:outline-none bg-transparent"
               />
               <span className="text-slate-300">—</span>
-              <span className="text-slate-400">Đến:</span>
+              <span className="text-text-muted">Đến:</span>
               <input
                 type="date"
                 value={historyToDate}
                 onChange={(e) => setHistoryToDate(e.target.value)}
-                className="text-xs text-slate-700 focus:outline-none bg-transparent"
+                className="text-xs text-text-secondary focus:outline-none bg-transparent"
               />
             </div>
 
             <select
               value={historyFlowFilter}
               onChange={(e) => setHistoryFlowFilter(e.target.value as BackupFlowGroup)}
-              className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700 focus:outline-none"
+              className="h-9 rounded-lg border border-border bg-surface px-3 text-xs font-medium text-text-secondary focus:outline-none"
             >
               <option value="ALL">Tất cả nhóm</option>
               <option value="ADMIN">Sổ tổng</option>
@@ -1194,7 +1175,7 @@ export const CsSheetBackupPanel: React.FC<CsSheetBackupPanelProps> = ({ initialT
             <select
               value={historyProgramFilter}
               onChange={(e) => setHistoryProgramFilter(e.target.value)}
-              className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700 focus:outline-none"
+              className="h-9 rounded-lg border border-border bg-surface px-3 text-xs font-medium text-text-secondary focus:outline-none"
             >
               <option value="ALL">Tất cả chương trình</option>
               <option value="JLPT">JLPT</option>
@@ -1204,7 +1185,7 @@ export const CsSheetBackupPanel: React.FC<CsSheetBackupPanelProps> = ({ initialT
             <select
               value={historyStatusFilter}
               onChange={(e) => setHistoryStatusFilter(e.target.value)}
-              className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700 focus:outline-none"
+              className="h-9 rounded-lg border border-border bg-surface px-3 text-xs font-medium text-text-secondary focus:outline-none"
             >
               <option value="ALL">Tất cả kết quả</option>
               <option value="SUCCESS">Thành công</option>
@@ -1216,18 +1197,18 @@ export const CsSheetBackupPanel: React.FC<CsSheetBackupPanelProps> = ({ initialT
               onClick={loadHistory}
               disabled={historyLoading}
               title="Làm mới lịch sử"
-              className="h-9 w-9 rounded-lg border border-slate-200 bg-white flex items-center justify-center text-slate-600 hover:bg-slate-50 transition-colors cursor-pointer"
+              className="h-9 w-9 rounded-lg border border-border bg-surface flex items-center justify-center text-text-secondary hover:bg-surface-subtle transition-colors cursor-pointer"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${historyLoading ? 'animate-spin' : ''}`} />
             </button>
           </div>
 
           {/* 3. Bảng phẳng Lịch sử sao lưu (10 cột) */}
-          <div className="bg-white rounded-2xl border border-slate-200/90 shadow-xs overflow-hidden">
+          <div className="bg-surface rounded-2xl border border-border/90 shadow-xs overflow-hidden">
             <div className="data-table-scroll">
               <table data-table="native" className="data-history-table w-full text-left border-collapse">
                 <thead>
-                  <tr className="border-b border-slate-200 bg-slate-50/70 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+                  <tr className="border-b border-border bg-surface-subtle/70 text-[11px] font-semibold text-text-muted uppercase tracking-wider">
                     <th scope="col" className="py-3 pl-4 pr-3">Thời gian</th>
                     <th scope="col" className="py-3 px-3">Nguồn sao lưu</th>
                     <th scope="col" className="py-3 px-3">Chương trình</th>
@@ -1241,7 +1222,7 @@ export const CsSheetBackupPanel: React.FC<CsSheetBackupPanelProps> = ({ initialT
                 <tbody className="divide-y divide-slate-100 text-xs">
                   {paginatedHistoryItems.length === 0 ? (
                     <tr>
-                      <td data-align="center" colSpan={8} className="py-12 text-center text-slate-500">
+                      <td data-align="center" colSpan={8} className="py-12 text-center text-text-muted">
                         Chưa có phiên chạy sao lưu nào khớp bộ lọc. Hãy bấm{' '}
                         <strong>[Sao lưu ngay]</strong> trên một nguồn bất kỳ để tạo lịch sử.
                       </td>
@@ -1253,22 +1234,22 @@ export const CsSheetBackupPanel: React.FC<CsSheetBackupPanelProps> = ({ initialT
                         <tr
                           key={`${item.id}-${item.configId}-${item.createdAt}`}
                           onClick={() => setSelectedHistoryItem(item)}
-                          className="hover:bg-slate-50/80 transition-colors cursor-pointer"
+                          className="hover:bg-surface-subtle/80 transition-colors cursor-pointer"
                         >
-                          <td data-align="center" data-wrap="nowrap" className="py-3.5 pl-4 pr-3 align-middle font-medium text-slate-800 whitespace-nowrap">
+                          <td data-align="center" data-wrap="nowrap" className="py-3.5 pl-4 pr-3 align-middle font-medium text-text-primary whitespace-nowrap">
                             <div>{formatDateTimeFull(item.backedUpAt || item.createdAt)}</div>
                             {item.batchId && (
-                              <div className="text-[10px] font-mono text-slate-400">
+                              <div className="text-[10px] font-mono text-text-muted">
                                 {item.batchId}
                               </div>
                             )}
                           </td>
                           <td data-align="left" data-wrap="normal" className="py-3.5 px-3 align-middle">
-                            <div className="font-bold text-slate-900">
+                            <div className="font-bold text-text-primary">
                               {item.configName || `Nguồn #${item.configId}`}
                             </div>
                             {item.staffCode && (
-                              <div className="text-[11px] text-slate-500 font-mono">
+                              <div className="text-[11px] text-text-muted font-mono">
                                 {item.staffCode} {item.staffName ? `· ${item.staffName}` : ''}
                               </div>
                             )}
@@ -1276,7 +1257,7 @@ export const CsSheetBackupPanel: React.FC<CsSheetBackupPanelProps> = ({ initialT
                           <td data-align="center" data-wrap="nowrap" className="py-3.5 px-3 align-middle">
                             {renderProgramBadge(item.programType)}
                           </td>
-                          <td data-align="center" data-wrap="nowrap" className="py-3.5 px-3 align-middle text-slate-600">
+                          <td data-align="center" data-wrap="nowrap" className="py-3.5 px-3 align-middle text-text-secondary">
                             {item.triggerType === 'AUTO' ? 'Tự động' : 'Thủ công'}
                           </td>
                           <td data-align="left" data-wrap="normal" className="py-3.5 px-3"><div className="data-history-result"><span>{item.totalStudents ?? 0} học viên</span><span>+{item.appendedRows ?? 0} dòng mới</span><span>{item.updatedCellsCount ?? 0} ô cập nhật</span></div></td>
@@ -1291,7 +1272,7 @@ export const CsSheetBackupPanel: React.FC<CsSheetBackupPanelProps> = ({ initialT
                               </Badge>
                             )}
                           </td>
-                          <td data-align="right" data-wrap="nowrap" className="py-3.5 px-3 align-middle text-slate-600">
+                          <td data-align="right" data-wrap="nowrap" className="py-3.5 px-3 align-middle text-text-secondary">
                             {item.durationSec} giây
                           </td>
                           <td data-align="center" data-wrap="nowrap" className="py-3.5 pl-3 pr-4 align-middle text-right">
@@ -1306,28 +1287,28 @@ export const CsSheetBackupPanel: React.FC<CsSheetBackupPanelProps> = ({ initialT
             </div>
 
             {/* Pagination Footer cho Lịch sử */}
-            <div className="px-4 py-3 border-t border-slate-100 bg-slate-50/50 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-600">
+            <div className="px-4 py-3 border-t border-border-subtle bg-surface-subtle/50 flex flex-wrap items-center justify-between gap-3 text-xs text-text-secondary">
               <div className="flex items-center gap-3">
                 <span>
                   Hiển thị{' '}
-                  <strong className="text-slate-800">
+                  <strong className="text-text-primary">
                     {flatHistoryItems.length === 0
                       ? 0
                       : (historyPage - 1) * historyPageSize + 1}
                     –{Math.min(historyPage * historyPageSize, flatHistoryItems.length)}
                   </strong>{' '}
-                  / <strong className="text-slate-800">{flatHistoryItems.length}</strong>{' '}
+                  / <strong className="text-text-primary">{flatHistoryItems.length}</strong>{' '}
                   phiên sao lưu
                 </span>
 
                 <div className="flex items-center gap-1.5">
-                  <span className="text-slate-500">Số dòng/trang:</span>
+                  <span className="text-text-muted">Số dòng/trang:</span>
                   <select
                     value={historyPageSize}
                     onChange={(e) =>
                       setHistoryPageSize(Number(e.target.value) as 20 | 50 | 100)
                     }
-                    className="h-7 rounded-lg border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-700"
+                    className="h-7 rounded-lg border border-border bg-surface px-2 text-xs font-semibold text-text-secondary"
                   >
                     <option value={20}>20 dòng</option>
                     <option value={50}>50 dòng</option>
@@ -1341,11 +1322,11 @@ export const CsSheetBackupPanel: React.FC<CsSheetBackupPanelProps> = ({ initialT
                   type="button"
                   disabled={historyPage <= 1}
                   onClick={() => setHistoryPage((p) => Math.max(1, p - 1))}
-                  className="px-2.5 py-1 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-40 font-semibold cursor-pointer"
+                  className="px-2.5 py-1 rounded-lg border border-border bg-surface hover:bg-surface-subtle disabled:opacity-40 font-semibold cursor-pointer"
                 >
                   Trước
                 </button>
-                <span className="px-2 font-semibold text-slate-700">
+                <span className="px-2 font-semibold text-text-secondary">
                   Trang {historyPage} / {totalHistoryPages}
                 </span>
                 <button
@@ -1354,7 +1335,7 @@ export const CsSheetBackupPanel: React.FC<CsSheetBackupPanelProps> = ({ initialT
                   onClick={() =>
                     setHistoryPage((p) => Math.min(totalHistoryPages, p + 1))
                   }
-                  className="px-2.5 py-1 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-40 font-semibold cursor-pointer"
+                  className="px-2.5 py-1 rounded-lg border border-border bg-surface hover:bg-surface-subtle disabled:opacity-40 font-semibold cursor-pointer"
                 >
                   Sau
                 </button>
@@ -1395,17 +1376,17 @@ export const CsSheetBackupPanel: React.FC<CsSheetBackupPanelProps> = ({ initialT
       >
         {selectedHistoryItem && (
           <div className="space-y-4 text-xs">
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 p-3 rounded-xl bg-slate-50 border border-slate-200">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 p-3 rounded-xl bg-surface-subtle border border-border">
               <div>
-                <div className="text-[11px] text-slate-500">Thời gian chạy</div>
-                <div className="font-bold text-slate-900 mt-0.5">
+                <div className="text-[11px] text-text-muted">Thời gian chạy</div>
+                <div className="font-bold text-text-primary mt-0.5">
                   {formatDateTimeFull(
                     selectedHistoryItem.backedUpAt || selectedHistoryItem.createdAt
                   )}
                 </div>
               </div>
               <div>
-                <div className="text-[11px] text-slate-500">Trạng thái</div>
+                <div className="text-[11px] text-text-muted">Trạng thái</div>
                 <div className="mt-0.5">
                   <Badge
                     variant={
@@ -1421,15 +1402,15 @@ export const CsSheetBackupPanel: React.FC<CsSheetBackupPanelProps> = ({ initialT
                 </div>
               </div>
               <div>
-                <div className="text-[11px] text-slate-500">Đẩy Google Sheet</div>
-                <div className="font-bold text-slate-900 mt-0.5">
+                <div className="text-[11px] text-text-muted">Đẩy Google Sheet</div>
+                <div className="font-bold text-text-primary mt-0.5">
                   {selectedHistoryItem.syncedToGoogleSheet
                     ? 'Đã đẩy lên Sheet'
                     : 'Lưu Excel Local'}
                 </div>
               </div>
               <div>
-                <div className="text-[11px] text-slate-500">Tổng thay đổi</div>
+                <div className="text-[11px] text-text-muted">Tổng thay đổi</div>
                 <div className="font-bold text-blue-600 mt-0.5">
                   +{selectedHistoryItem.appendedRows ?? 0} dòng ·{' '}
                   {selectedHistoryItem.updatedCellsCount ?? 0} ô
@@ -1444,10 +1425,10 @@ export const CsSheetBackupPanel: React.FC<CsSheetBackupPanelProps> = ({ initialT
             )}
 
             {/* Bảng thống kê từng Sheet trong Workbook */}
-            <div className="border border-slate-200 rounded-xl overflow-x-auto">
+            <div className="border border-border rounded-xl overflow-x-auto">
               <table data-table="native" className="w-full text-left border-collapse text-xs">
                 <thead>
-                  <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase">
+                  <tr className="bg-surface-subtle border-b border-border text-[11px] font-bold text-text-muted uppercase">
                     <th scope="col" className="py-2.5 px-3">Tên Sheet trong File</th>
                     <th scope="col" className="py-2.5 px-3">Tổng dòng HV</th>
                     <th scope="col" className="py-2.5 px-3">Thêm mới</th>
@@ -1473,7 +1454,7 @@ export const CsSheetBackupPanel: React.FC<CsSheetBackupPanelProps> = ({ initialT
                     .filter((x) => Boolean(x.stat))
                     .map((entry, idx) => (
                       <tr key={idx}>
-                        <td data-align="left" data-wrap="normal" className="py-2.5 px-3 font-bold text-slate-800">
+                        <td data-align="left" data-wrap="normal" className="py-2.5 px-3 font-bold text-text-primary">
                           {entry.stat?.sheetName || entry.fallback}
                         </td>
                         <td data-align="right" data-wrap="nowrap" className="py-2.5 px-3">
@@ -1495,17 +1476,17 @@ export const CsSheetBackupPanel: React.FC<CsSheetBackupPanelProps> = ({ initialT
             </div>
 
             {selectedHistoryItem.localFilePath && (
-              <div className="text-[11px] text-slate-500 flex items-center justify-between bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+              <div className="text-[11px] text-text-muted flex items-center justify-between bg-surface-subtle p-2.5 rounded-lg border border-border">
                 <span>
                   Đường dẫn file Server:{' '}
-                  <code className="font-mono font-semibold text-slate-700">
+                  <code className="font-mono font-semibold text-text-secondary">
                     {selectedHistoryItem.localFilePath}
                   </code>
                 </span>
               </div>
             )}
 
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200">
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-border">
               <Button
                 variant="outline"
                 size="sm"
@@ -1538,13 +1519,13 @@ export const CsSheetBackupPanel: React.FC<CsSheetBackupPanelProps> = ({ initialT
         title="Dán hàng loạt Link Google Sheet sao lưu"
       >
         <div className="space-y-3 text-xs">
-          <p className="text-slate-600">
+          <p className="text-text-secondary">
             Mỗi dòng 1 link theo cú pháp:{' '}
-            <code className="font-mono bg-slate-100 px-1.5 py-0.5 rounded">
+            <code className="font-mono bg-surface-muted px-1.5 py-0.5 rounded">
               Mã | Chương trình | Link Google Sheet
             </code>
           </p>
-          <pre className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 font-mono text-[11px] text-slate-700 overflow-x-auto">
+          <pre className="p-2.5 rounded-xl bg-surface-subtle border border-border font-mono text-[11px] text-text-secondary overflow-x-auto">
 {`ADMIN_KAIWA | https://docs.google.com/spreadsheets/d/1abc...
 ADMIN_JLPT | https://docs.google.com/spreadsheets/d/1def...
 ADMIN_RECONCILIATION | https://docs.google.com/spreadsheets/d/1ghi...
@@ -1557,7 +1538,7 @@ GV505 | https://docs.google.com/spreadsheets/d/1pqr...`}
             value={bulkText}
             onChange={(e) => setBulkText(e.target.value)}
             placeholder="Dán danh sách link vào đây..."
-            className="w-full p-2.5 rounded-xl border border-slate-200 font-mono text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+            className="w-full p-2.5 rounded-xl border border-border font-mono text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/20"
           />
           <div className="flex justify-end gap-2 pt-1">
             <Button variant="outline" size="sm" onClick={() => setBulkOpen(false)}>

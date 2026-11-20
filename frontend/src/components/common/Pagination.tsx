@@ -40,18 +40,19 @@ export const PaginationFooter: React.FC<PaginationFooterProps> = ({
 
   return (
     <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 sm:px-6 py-3 border-t border-border/80 bg-surface-muted/30 text-xs text-text-secondary">
-      <div className="flex items-center gap-2">
-        <span>
+      <div className="flex min-w-0 flex-wrap items-center justify-center sm:justify-start gap-2">
+        <span className="text-center sm:text-left">
           Hiển thị <strong className="text-text-primary">{startRecord}</strong> -{' '}
           <strong className="text-text-primary">{endRecord}</strong> trên tổng số{' '}
           <strong className="text-text-primary">{totalCount}</strong> {recordLabel}
         </span>
         <span className="hidden sm:inline text-text-muted">•</span>
         {onPageSizeChange && (
-          <div className="flex items-center gap-1.5">
+          <div className="flex shrink-0 items-center gap-1.5 whitespace-nowrap">
             <span>Mỗi trang:</span>
             <select
               value={pageSize}
+              aria-label="Số bản ghi mỗi trang"
               onChange={(e) => onPageSizeChange(Number(e.target.value))}
               className="bg-surface border border-border rounded-lg px-2 py-1 text-xs text-text-primary focus:outline-none focus:ring-1 focus:ring-primary"
             >
@@ -79,7 +80,7 @@ export const PaginationFooter: React.FC<PaginationFooterProps> = ({
         >
           <ChevronLeft className="w-4 h-4" />
         </Button>
-        <span className="px-2 font-medium">
+        <span className="px-2 font-medium whitespace-nowrap tabular-nums">
           Trang {currentPage} / {totalPages}
         </span>
         <Button

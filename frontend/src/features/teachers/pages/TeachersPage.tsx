@@ -217,8 +217,8 @@ export const TeachersPage: React.FC = () => {
             {item.name.charAt(0).toUpperCase()}
           </div>
           <div>
-            <div className="font-bold text-slate-900 text-xs">{item.name}</div>
-            {item.email && <div className="text-slate-500 text-[11px]">{item.email}</div>}
+            <div className="font-bold text-text-primary text-xs">{item.name}</div>
+            {item.email && <div className="text-text-muted text-[11px]">{item.email}</div>}
           </div>
         </div>
       ),
@@ -226,7 +226,7 @@ export const TeachersPage: React.FC = () => {
     {
       align: 'center' as const, wrap: false, header: 'Mã giáo viên',
       cell: (item) => (
-        <span className="font-mono text-xs text-slate-800 font-semibold bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+        <span className="font-mono text-xs text-text-primary font-semibold bg-surface-muted px-2 py-0.5 rounded border border-border">
           {item.code || '—'}
         </span>
       ),
@@ -250,7 +250,7 @@ export const TeachersPage: React.FC = () => {
           return (
             <div className="flex flex-col gap-0.5">
               <Badge variant="success" size="sm">Đã cấp tài khoản</Badge>
-              <span className="text-[11px] text-slate-600 font-mono">{item.user.email}</span>
+              <span className="text-[11px] text-text-secondary font-mono">{item.user.email}</span>
             </div>
           );
         }
@@ -296,7 +296,7 @@ export const TeachersPage: React.FC = () => {
             }}
             title="Chỉnh sửa thông tin"
           >
-            <Edit className="w-4 h-4 text-slate-500 hover:text-blue-600" />
+            <Edit className="w-4 h-4 text-text-muted hover:text-blue-600" />
           </Button>
         </div>
       ),
@@ -350,7 +350,7 @@ export const TeachersPage: React.FC = () => {
           <select
             value={typeFilter}
             onChange={(e) => setTypeFilter(e.target.value)}
-            className="w-full h-9 px-3 border border-border rounded-xl text-sm bg-white text-text-primary focus:outline-none focus:ring-2 focus:ring-primary shadow-xs transition"
+            className="w-full h-9 px-3 border border-border rounded-xl text-sm bg-surface text-text-primary focus:outline-none focus:ring-2 focus:ring-primary shadow-xs transition"
           >
             <option value="">Tất cả phân loại</option>
             <option value="VIETNAMESE">Giáo viên Việt</option>
@@ -366,7 +366,7 @@ export const TeachersPage: React.FC = () => {
           <select
             value={accountStatusFilter}
             onChange={(e) => setAccountStatusFilter(e.target.value)}
-            className="w-full h-9 px-3 border border-border rounded-xl text-sm bg-white text-text-primary focus:outline-none focus:ring-2 focus:ring-primary shadow-xs transition"
+            className="w-full h-9 px-3 border border-border rounded-xl text-sm bg-surface text-text-primary focus:outline-none focus:ring-2 focus:ring-primary shadow-xs transition"
           >
             <option value="">Tất cả trạng thái</option>
             <option value="PROVISIONED">Đã cấp tài khoản</option>
@@ -399,8 +399,8 @@ export const TeachersPage: React.FC = () => {
       >
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">
-              Mã giáo viên <span className="text-slate-400 font-normal">(bỏ trống để tự sinh)</span>
+            <label className="block text-sm font-medium text-text-secondary mb-1">
+              Mã giáo viên <span className="text-text-muted font-normal">(bỏ trống để tự sinh)</span>
             </label>
             <Input
               value={formData.code}
@@ -410,7 +410,7 @@ export const TeachersPage: React.FC = () => {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">
+            <label className="block text-sm font-medium text-text-secondary mb-1">
               Họ tên giáo viên <span className="text-red-500">*</span>
             </label>
             <Input
@@ -422,8 +422,8 @@ export const TeachersPage: React.FC = () => {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">
-              Email liên hệ <span className="text-slate-400 font-normal">(không bắt buộc)</span>
+            <label className="block text-sm font-medium text-text-secondary mb-1">
+              Email liên hệ <span className="text-text-muted font-normal">(không bắt buộc)</span>
             </label>
             <Input
               type="email"
@@ -434,8 +434,8 @@ export const TeachersPage: React.FC = () => {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">
-              Số điện thoại <span className="text-slate-400 font-normal">(không bắt buộc)</span>
+            <label className="block text-sm font-medium text-text-secondary mb-1">
+              Số điện thoại <span className="text-text-muted font-normal">(không bắt buộc)</span>
             </label>
             <Input
               value={formData.phone}
@@ -445,7 +445,7 @@ export const TeachersPage: React.FC = () => {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">
+            <label className="block text-sm font-medium text-text-secondary mb-1">
               Phân loại giáo viên
             </label>
             <Select
@@ -471,9 +471,9 @@ export const TeachersPage: React.FC = () => {
                 id="teacher-active-checkbox"
                 checked={formData.active}
                 onChange={(e) => setFormData({ ...formData, active: e.target.checked })}
-                className="w-4 h-4 text-primary rounded border-slate-300"
+                className="w-4 h-4 text-primary rounded border-border-strong"
               />
-              <label htmlFor="teacher-active-checkbox" className="text-sm font-medium text-slate-700">
+              <label htmlFor="teacher-active-checkbox" className="text-sm font-medium text-text-secondary">
                 Đang còn giảng dạy
               </label>
             </div>
@@ -502,7 +502,7 @@ export const TeachersPage: React.FC = () => {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">
+            <label className="block text-sm font-medium text-text-secondary mb-1">
               Email đăng nhập <span className="text-red-500">*</span>
             </label>
             <Input
@@ -515,7 +515,7 @@ export const TeachersPage: React.FC = () => {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">
+            <label className="block text-sm font-medium text-text-secondary mb-1">
               Mật khẩu khởi tạo <span className="text-red-500">*</span>
             </label>
             <Input
@@ -525,7 +525,7 @@ export const TeachersPage: React.FC = () => {
               onChange={(e) => setProvisionPassword(e.target.value)}
               placeholder="VD: 123456"
             />
-            <p className="text-xs text-slate-500 mt-1">Mặc định: 123456 (Giáo viên có thể đổi sau khi đăng nhập)</p>
+            <p className="text-xs text-text-muted mt-1">Mặc định: 123456 (Giáo viên có thể đổi sau khi đăng nhập)</p>
           </div>
 
           <div className="flex justify-end space-x-3 pt-4 border-t">

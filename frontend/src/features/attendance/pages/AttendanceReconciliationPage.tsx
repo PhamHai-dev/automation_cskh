@@ -646,7 +646,7 @@ export const AttendanceReconciliationPage: React.FC = () => {
           align: 'center' as const, wrap: false, header: (
             <input
               type="checkbox"
-              className="h-4 w-4 rounded border-slate-300 accent-primary cursor-pointer"
+              className="h-4 w-4 rounded border-border-strong accent-primary cursor-pointer"
               checked={
                 pendingItems.length > 0 && selectedPendingIds.length === pendingItems.length
               }
@@ -658,7 +658,7 @@ export const AttendanceReconciliationPage: React.FC = () => {
           cell: (r) => (
             <input
               type="checkbox"
-              className="h-4 w-4 rounded border-slate-300 accent-primary cursor-pointer"
+              className="h-4 w-4 rounded border-border-strong accent-primary cursor-pointer"
               checked={selectedPendingIds.includes(r.id)}
               onChange={() => toggleSelectPending(r.id)}
               aria-label={`Chọn buổi ${r.class_session?.session_number}`}
@@ -939,9 +939,9 @@ export const AttendanceReconciliationPage: React.FC = () => {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Tên học viên, mã HV, SĐT, tên lớp..."
-              className="w-full h-9 pl-9 pr-3 border border-border rounded-xl text-xs font-medium bg-white text-text-primary focus:outline-none focus:ring-2 focus:ring-primary shadow-xs transition"
+              className="w-full h-9 pl-9 pr-3 border border-border rounded-xl text-xs font-medium bg-surface text-text-primary focus:outline-none focus:ring-2 focus:ring-primary shadow-xs transition"
             />
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+            <Search className="w-4 h-4 text-text-muted absolute left-3 top-2.5" />
           </div>
         </div>
 
@@ -957,7 +957,7 @@ export const AttendanceReconciliationPage: React.FC = () => {
               setPendingPage(1);
               setHistoryPage(1);
             }}
-            className="w-full h-9 px-3 border border-border rounded-xl text-xs font-semibold bg-white text-text-primary focus:outline-none focus:ring-2 focus:ring-primary shadow-xs transition cursor-pointer"
+            className="w-full h-9 px-3 border border-border rounded-xl text-xs font-semibold bg-surface text-text-primary focus:outline-none focus:ring-2 focus:ring-primary shadow-xs transition cursor-pointer"
           >
             <option value="">Tất cả lớp học</option>
             {classesList.map((cls) => {
@@ -984,7 +984,7 @@ export const AttendanceReconciliationPage: React.FC = () => {
                 setPendingFilter(e.target.value as PendingFilter);
                 setPendingPage(1);
               }}
-              className="w-full h-9 px-3 border border-border rounded-xl text-xs font-semibold bg-white text-text-primary focus:outline-none focus:ring-2 focus:ring-primary shadow-xs transition cursor-pointer"
+              className="w-full h-9 px-3 border border-border rounded-xl text-xs font-semibold bg-surface text-text-primary focus:outline-none focus:ring-2 focus:ring-primary shadow-xs transition cursor-pointer"
             >
               <option value="all">
                 Tất cả trạng thái chờ ({stats.pendingCsCount + stats.pendingTeacherCount})
@@ -1003,7 +1003,7 @@ export const AttendanceReconciliationPage: React.FC = () => {
             type="date"
             value={startDate}
             onChange={(e) => handleDateChange(e.target.value, endDate)}
-            className="w-full h-9 px-3 border border-border rounded-xl text-xs font-semibold bg-white text-text-primary focus:outline-none focus:ring-2 focus:ring-primary shadow-xs transition"
+            className="w-full h-9 px-3 border border-border rounded-xl text-xs font-semibold bg-surface text-text-primary focus:outline-none focus:ring-2 focus:ring-primary shadow-xs transition"
           />
         </div>
 
@@ -1016,7 +1016,7 @@ export const AttendanceReconciliationPage: React.FC = () => {
             value={endDate}
             min={startDate || undefined}
             onChange={(e) => handleDateChange(startDate, e.target.value)}
-            className="w-full h-9 px-3 border border-border rounded-xl text-xs font-semibold bg-white text-text-primary focus:outline-none focus:ring-2 focus:ring-primary shadow-xs transition"
+            className="w-full h-9 px-3 border border-border rounded-xl text-xs font-semibold bg-surface text-text-primary focus:outline-none focus:ring-2 focus:ring-primary shadow-xs transition"
           />
         </div>
       </FilterBar>
@@ -1024,7 +1024,7 @@ export const AttendanceReconciliationPage: React.FC = () => {
       {/* Khung Bảng chuẩn Design System kèm Thanh công cụ KPI trên đầu bảng */}
       <div className="bg-surface rounded-2xl border border-border/80 shadow-soft overflow-hidden">
         {/* Table Toolbar */}
-        <div className="flex flex-wrap items-center justify-between gap-2.5 border-b border-border/80 bg-slate-50/60 p-3 sm:px-4 text-xs">
+        <div className="flex flex-wrap items-center justify-between gap-2.5 border-b border-border/80 bg-surface-subtle/60 p-3 sm:px-4 text-xs">
           {/* Bên trái: Các chip KPI lọc nhanh */}
           <div className="flex flex-wrap items-center gap-2">
             <button
@@ -1082,10 +1082,10 @@ export const AttendanceReconciliationPage: React.FC = () => {
           </div>
 
           {/* Bên phải: Bộ chuyển phân loại chờ + Thao tác duyệt hàng loạt + Làm mới */}
-          <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-2">
+          <div className="ml-auto flex min-w-0 max-w-full flex-wrap items-center justify-end gap-2">
             {activeTab === 'pending' && (
               <div
-                className="inline-flex h-9 items-center p-1 bg-slate-100 rounded-xl border border-slate-200/90 gap-1"
+                className="inline-flex max-w-full flex-wrap items-center p-1 bg-surface-muted rounded-xl border border-border/90 gap-1"
                 role="tablist"
                 aria-label="Chọn phân loại chờ đối soát"
               >
@@ -1100,10 +1100,10 @@ export const AttendanceReconciliationPage: React.FC = () => {
                       setPendingFilter(f.value);
                       setPendingPage(1);
                     }}
-                    className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    className={`whitespace-nowrap px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                       pendingFilter === f.value
                         ? 'bg-primary text-white shadow-xs'
-                        : 'bg-white/60 text-slate-600 hover:bg-white hover:text-slate-900'
+                        : 'bg-surface/60 text-text-secondary hover:bg-surface hover:text-text-primary'
                     }`}
                   >
                     {f.label} ({f.count})

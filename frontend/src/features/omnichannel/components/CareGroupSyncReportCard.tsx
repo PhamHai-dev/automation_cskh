@@ -186,10 +186,10 @@ export const CareGroupSyncReportCard: React.FC<CareGroupSyncReportCardProps> = (
                   key={stageText}
                   className={`flex items-start gap-1.5 p-2 rounded-lg border ${
                     isCurrent
-                      ? 'border-blue-300 bg-white text-blue-900 font-semibold shadow-2xs'
+                      ? 'border-blue-300 bg-surface text-blue-900 font-semibold shadow-2xs'
                       : isDone
                         ? 'border-emerald-200 bg-emerald-50/60 text-emerald-800'
-                        : 'border-transparent bg-white/50 text-slate-500'
+                        : 'border-transparent bg-surface/50 text-text-muted'
                   }`}
                 >
                   <span className="font-bold shrink-0">{idx + 1}.</span>
@@ -249,7 +249,7 @@ export const CareGroupSyncReportCard: React.FC<CareGroupSyncReportCardProps> = (
                 <span className="inline-flex items-center px-2.5 py-0.5 rounded-lg bg-blue-600 text-white text-xs font-bold">
                   +{report.newlyLinkedZaloCount ?? 0} Nhóm Zalo
                 </span>
-                <span className="inline-flex items-center px-2.5 py-0.5 rounded-lg bg-[#06C755] text-white text-xs font-bold">
+                <span className="inline-flex items-center px-2.5 py-0.5 rounded-lg bg-line text-white text-xs font-bold">
                   +{report.newlyLinkedLineCount ?? 0} Nhóm LINE
                 </span>
               </div>
@@ -385,7 +385,7 @@ export const CareGroupSyncReportCard: React.FC<CareGroupSyncReportCardProps> = (
                                     onClick={() =>
                                       handleCopyGroupName(item.suggestedGroupName, copyId)
                                     }
-                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-white border border-amber-300 hover:bg-amber-100 text-amber-900 font-semibold text-[11px] transition-colors"
+                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface border border-amber-300 hover:bg-amber-100 text-amber-900 font-semibold text-[11px] transition-colors"
                                     title="Sao chép tên này để đặt tên nhóm trên Zalo / LINE"
                                   >
                                     {isCopied ? (
