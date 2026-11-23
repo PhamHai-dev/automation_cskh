@@ -26,6 +26,7 @@ import {
   MatrixCellFilter,
   AttendanceLegendCounts,
 } from './AttendanceCellBadge';
+import { AttendanceStatusDropdown } from './AttendanceStatusDropdown';
 import {
   ChevronLeft,
   ChevronRight,
@@ -2097,7 +2098,7 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
     );
   };
 
-  // ===== Tab 1 (Nhập điểm danh) chuẩn progressive disclosure giống bên GV =====
+  // ===== Tab 1 (Nhập điểm danh) =====
   const QUICK_INLINE_BUTTONS: Array<{ status: AttendanceStatus; code: string; shortLabel: string }> = [
     { status: 'ATTENDED', code: '1', shortLabel: 'Có mặt' },
     { status: 'ABSENT_APPROVED_A', code: 'A', shortLabel: 'Có phép' },
@@ -2107,10 +2108,8 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
     { status: 'TECH_ERROR_E', code: 'E', shortLabel: 'Lỗi KT' },
   ];
 
-  // Cột có thể chấm ở Tab 1: mặc định "—" + "+"; bấm "—" mới bung thanh 6 trạng thái;
-  // chọn xong thu gọn thành chip "Ca n: Mã · Trạng thái". Kèm nút xóa ca (thùng rác).
-  // variant='admin-final': chỉ đọc att.status (kết quả chốt); chưa chốt thì hiện "—"
-  // kèm dòng note trạng thái đối chiếu bên dưới (chờ GV / chờ CSKH / hai bên lệch...).
+  // Giáo viên chọn trạng thái qua dropdown, gồm cả “Chưa điểm danh” để gỡ trạng thái đã chấm.
+  // Các vai trò còn lại giữ picker hiện tại vì cột Admin còn hiển thị thông tin đối soát bổ sung.
   const renderQuickInlineStatusStack = (
     st: StudentRow,
     dateStr: string,
@@ -2187,7 +2186,62 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
           return (
             <div key={caNo} className="flex flex-col items-start gap-0.5">
               <div className="flex min-h-7 flex-nowrap items-center gap-1 whitespace-nowrap">
-                {!isOpen ? (
+                {isTeacherOnly ? (
+                  <>
+                    <AttendanceStatusDropdown
+                      id={`teacher-attendance-status-${pickerKey}`}
+                      value={curStatus}
+                      options={QUICK_INLINE_BUTTONS.map(({ status, code, shortLabel }) => ({
+                        status,
+                        label: `${code} · ${shortLabel}`,
+                      }))}
+                      disabled={savingSessionId !== null || isDeletingThisCa || Boolean(st.is_readonly_for_cs)}
+                      ariaLabel={`Trạng thái điểm danh Ca ${caNo} của ${st.full_name}`}
+                      title={
+                        st.is_readonly_for_cs
+                          ? 'Chế độ Chỉ xem (không được điểm danh)'
+                          : `Chọn trạng thái điểm danh Ca ${caNo} cho ${st.full_name}`
+                      }
+                      triggerClassName={`h-8 w-[132px] rounded-lg border px-2.5 text-xs font-bold shadow-2xs outline-none focus:ring-2 focus:ring-primary/25 disabled:cursor-not-allowed disabled:opacity-60 ${
+                        cfg
+                          ? `${cfg.bg.replace(/\s*hover:\S+/g, '')} ${cfg.text} ${cfg.border}`
+                          : 'border-slate-300 bg-white text-slate-600'
+                      }`}
+                      onChange={(nextStatus) => {
+                        if (!nextStatus) {
+                          if (sess && curStatus) return handleClearCell(st.enrollment_class_id, sess);
+                          return;
+                        }
+                        return handleStatusSelect(
+                          st.enrollment_class_id,
+                          dateStr,
+                          sess,
+                          nextStatus,
+                          caNo
+                        );
+                      }}
+                    />
+
+                    {caNo === totalCa && classId && (
+                      <button
+                        type="button"
+                        disabled={isAddingCa || Boolean(st.is_readonly_for_cs)}
+                        onClick={() => {
+                          if (st.is_readonly_for_cs) return;
+                          handleAddCaForStudent(st, dateStr);
+                        }}
+                        title={
+                          st.is_readonly_for_cs
+                            ? 'Chế độ Chỉ xem (không được thêm ca)'
+                            : `Thêm Ca ${totalCa + 1} trong ngày này`
+                        }
+                        className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-dashed border-primary/50 bg-white text-primary transition hover:border-primary hover:bg-primary-soft disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <Plus className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </>
+                ) : !isOpen ? (
                   <>
                     <button
                       type="button"

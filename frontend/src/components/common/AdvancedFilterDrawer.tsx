@@ -64,7 +64,7 @@ export const AdvancedFilterDrawer: React.FC<AdvancedFilterDrawerProps> = ({
         aria-modal="true"
         aria-labelledby={titleId}
         tabIndex={-1}
-        className="absolute inset-x-0 bottom-0 flex max-h-[92vh] flex-col overflow-hidden rounded-t-2xl border border-border bg-surface shadow-2xl outline-none sm:inset-y-0 sm:left-auto sm:w-[min(920px,92vw)] sm:rounded-none sm:rounded-l-2xl"
+        className="absolute left-1/2 top-1/2 flex max-h-[calc(100vh-2rem)] w-[calc(100%-2rem)] max-w-[920px] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-2xl outline-none sm:max-h-[92vh] sm:w-[92vw]"
       >
         <header className="flex shrink-0 items-start justify-between gap-4 border-b border-border/70 px-4 py-3 sm:px-5 sm:py-4">
           <div className="flex min-w-0 items-center gap-2">

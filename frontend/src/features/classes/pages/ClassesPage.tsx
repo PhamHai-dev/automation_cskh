@@ -35,6 +35,7 @@ import {
   toLocalDateString,
 } from '../components/AttendanceMatrix';
 import { AttendanceSessionDrawer } from '../components/AttendanceSessionDrawer';
+import { AttendanceStatusDropdown } from '../components/AttendanceStatusDropdown';
 import {
   MonthlyEmptyDateCell,
   MonthlySessionBadge,
@@ -3573,8 +3574,8 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
     );
   };
 
-  // Ô điểm danh gọn theo chuẩn Progressive Disclosure ở Tab 1 (Nhập điểm danh — chế độ Theo Lớp học)
-  // Hỗ trợ đồng bộ cả 3 vai trò: TEACHER (chấm teacher_status), CS (chấm cs_status), ADMIN (chấm chốt).
+  // Ô điểm danh nhanh ở Tab 1 (Nhập điểm danh — chế độ Theo Lớp học).
+  // Giáo viên dùng dropdown có “Chưa điểm danh”; CS/Admin giữ picker để hiển thị đối soát.
   const renderQuickStatusCell = (
     cls: Class,
     st: EnrolledStudentItem,
@@ -3665,7 +3666,59 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
           return (
             <div key={caNo} className="flex flex-col items-start gap-0.5">
               <div className="flex min-h-7 flex-nowrap items-center gap-1 whitespace-nowrap">
-                {!isOpen ? (
+                {isTeacher ? (
+                  <>
+                    <AttendanceStatusDropdown
+                      id={`class-teacher-attendance-status-${pickerKey}`}
+                      value={curStatus}
+                      options={QUICK_BUTTONS.map(({ status, code, shortLabel }) => ({
+                        status,
+                        label: `${code} · ${shortLabel}`,
+                      }))}
+                      disabled={isSavingRow || isDeletingThisCa || Boolean(st.is_readonly_for_cs)}
+                      ariaLabel={`Trạng thái điểm danh Ca ${caNo} của ${st.full_name}`}
+                      title={
+                        st.is_readonly_for_cs
+                          ? 'Chế độ Chỉ xem (không được điểm danh)'
+                          : `Chọn trạng thái điểm danh Ca ${caNo} cho ${st.full_name}`
+                      }
+                      triggerClassName={`h-8 w-[132px] rounded-lg border px-2.5 text-xs font-bold shadow-2xs outline-none focus:ring-2 focus:ring-primary/25 disabled:cursor-not-allowed disabled:opacity-60 ${
+                        cfg
+                          ? `${cfg.bg.replace(/\s*hover:\S+/g, '')} ${cfg.text} ${cfg.border}`
+                          : 'border-slate-300 bg-white text-slate-600'
+                      }`}
+                      onChange={async (nextStatus) => {
+                        setSelectedCa(cls.id, dateStr, caNo);
+                        if (!nextStatus) {
+                          if (sess && curStatus) {
+                            await handleClearAttendance(cls.id, st.enrollment_class_id, sess);
+                          }
+                          return;
+                        }
+                        await handleQuickMark(cls, st, dateStr, caNo, nextStatus);
+                      }}
+                    />
+
+                    {isLastCa && (
+                      <button
+                        type="button"
+                        disabled={isAddingCa || Boolean(st.is_readonly_for_cs)}
+                        onClick={() => {
+                          if (st.is_readonly_for_cs) return;
+                          handleAddCaForClass(cls, dateStr, st);
+                        }}
+                        title={
+                          st.is_readonly_for_cs
+                            ? 'Chế độ Chỉ xem (không được thêm ca)'
+                            : `Thêm Ca ${totalCa + 1} trong ngày này`
+                        }
+                        className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-dashed border-primary/50 bg-white text-primary transition hover:border-primary hover:bg-primary-soft disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <Plus className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </>
+                ) : !isOpen ? (
                   <>
                     <button
                       type="button"
