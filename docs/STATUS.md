@@ -1,5 +1,13 @@
 # Project Status
 
+## Lịch sử điểm danh riêng tư cho Giáo viên — 2026-11-23
+
+- Tài khoản thuần `TEACHER` chỉ thấy trạng thái do mình chấm trong `Lịch sử điểm danh`; bảng tháng dùng `1/A/B/C/D/E`, `–` khi ca đã có nhưng GV chưa chấm và `·` khi không có ca.
+- Nhật ký chỉ còn `Trạng thái của tôi`; drawer chỉ đọc hiển thị trạng thái GV, bài học, ghi chú GV và `cs_note`. Không có CSKH/final/reconciliation/admin resolution hoặc thao tác tạo/sửa/xóa/hàng loạt trong lịch sử.
+- Backend role-shape dữ liệu ở class/session/attendance và teacher tracking/write responses nên trường nhạy cảm không xuất hiện trong Network. Tài khoản đa vai trò giữ response/UI đặc quyền hiện hành.
+- Xác minh: presenter privacy 4/4 test pass; teacher-student-info 13/13 test pass. Backend typecheck và frontend build được chạy lại sau thay đổi cuối.
+
+
 ## Phân cụm sidebar staff — 2026-11-20
 
 - Sidebar ADMIN được phân thành tám cụm: Tổng quan, Chăm sóc khách hàng, Đào tạo, Giáo viên, Đa kênh, Tự động hóa & Chiến dịch, Dữ liệu và Quản trị hệ thống.

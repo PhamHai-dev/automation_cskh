@@ -339,6 +339,12 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
   const [bulkCsNote, setBulkCsNote] = useState<string>('');
   const [bulkSaving, setBulkSaving] = useState<boolean>(false);
 
+  useEffect(() => {
+    if (!isTeacher || activeTab !== 'detailed') return;
+    setSelectedEnrollmentIds(new Set());
+    setSelectedClassIds(new Set());
+  }, [activeTab, isTeacher]);
+
   // Nháp Ghi chú CSKH theo từng học viên & từng ca ở chế độ Theo Lớp học (`${enrollment_class_id}_${dateStr}_s${caNo}`)
   const [csNoteDrafts, setCsNoteDrafts] = useState<Record<string, string>>({});
   const csNoteTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
@@ -1844,7 +1850,9 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
       : isCSOnly
       ? Boolean(att?.cs_status)
       : Boolean(getFinalizedStatus(att));
-    const shouldEdit = st.is_readonly_for_cs
+    const shouldEdit = isTeacher && activeTab === 'detailed'
+      ? false
+      : st.is_readonly_for_cs
       ? false
       : defaultEditing !== undefined
       ? defaultEditing
@@ -3877,7 +3885,9 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
         <MonthlyEmptyDateCell
           studentName={st.full_name}
           dateLabel={formattedDateLabel}
+          readonly={isTeacher && activeTab === 'detailed'}
           onClick={() => {
+            if (isTeacher && activeTab === 'detailed') return;
             if (st.is_readonly_for_cs) return;
             openDrawer(cls, st, dateStr, 1, true);
           }}
@@ -3901,27 +3911,30 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
               att={att}
               studentName={st.full_name}
               dateLabel={formattedDateLabel}
+              teacherOnlyView={isTeacher && activeTab === 'detailed'}
               onClick={() => openDrawer(cls, st, dateStr, sessionNumber)}
             />
           );
         })}
 
-        <button
-          type="button"
-          disabled={Boolean(st.is_readonly_for_cs)}
-          onClick={() => {
-            if (st.is_readonly_for_cs) return;
-            openDrawer(cls, st, dateStr, nextSessionNumber, true);
-          }}
-          title={
-            st.is_readonly_for_cs
-              ? 'Chế độ Chỉ xem (không được thêm ca)'
-              : `Thêm ca học mới (Ca ${nextSessionNumber})`
-          }
-          className="inline-flex h-6 w-5 items-center justify-center rounded-md border border-dashed border-primary/50 text-xs font-extrabold text-primary opacity-0 group-hover/cell:opacity-100 focus:opacity-100 transition hover:bg-primary-soft disabled:opacity-40 disabled:cursor-not-allowed"
-        >
-          +
-        </button>
+        {!(isTeacher && activeTab === 'detailed') && (
+          <button
+            type="button"
+            disabled={Boolean(st.is_readonly_for_cs)}
+            onClick={() => {
+              if (st.is_readonly_for_cs) return;
+              openDrawer(cls, st, dateStr, nextSessionNumber, true);
+            }}
+            title={
+              st.is_readonly_for_cs
+                ? 'Chế độ Chỉ xem (không được thêm ca)'
+                : `Thêm ca học mới (Ca ${nextSessionNumber})`
+            }
+            className="inline-flex h-6 w-5 items-center justify-center rounded-md border border-dashed border-primary/50 text-xs font-extrabold text-primary opacity-0 group-hover/cell:opacity-100 focus:opacity-100 transition hover:bg-primary-soft disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            +
+          </button>
+        )}
       </div>
     );
   };
@@ -4112,7 +4125,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
         className="mb-3"
         items={[
           { value: 'quick', label: 'Nhập điểm danh', icon: <Zap /> },
-          { value: 'detailed', label: 'Lịch sử & Bảng tháng', icon: <ListChecks /> },
+          { value: 'detailed', label: isTeacher ? 'Lịch sử điểm danh' : 'Lịch sử & Bảng tháng', icon: <ListChecks /> },
           { value: 'stats', label: 'Thống kê chuyên cần', icon: <BarChart3 /> },
         ]}
       />
@@ -4422,7 +4435,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                         : 'bg-white/60 text-slate-600 hover:bg-white hover:text-slate-900'
                     }`}
                   >
-                    Nhật ký bài học
+                    Nhật ký buổi học
                   </button>
                 </div>
 
@@ -4505,7 +4518,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
 
         {/* Thanh Nghiệp Vụ Hàng Loạt (Bulk Action Bar) dùng chung cho cả 3 Role ở chế độ Theo Lớp học */}
         {(selectedEnrollmentIds.size > 0 || selectedClassIds.size > 0) &&
-          (activeTab === 'quick' || activeTab === 'detailed') && (
+          (activeTab === 'quick' || (activeTab === 'detailed' && !isTeacher)) && (
             <div className="flex flex-col gap-2.5 border-b border-primary/20 bg-primary-soft/70 px-4 py-3 text-xs">
               <div className="flex flex-wrap items-center justify-between gap-2.5">
                 {/* Cụm 1: Thông tin chọn & Ca/Ngày áp dụng */}
@@ -4734,18 +4747,24 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                   <th className="px-3 py-3 border-r border-border/60 whitespace-nowrap min-w-[160px]">Học viên</th>
                   <th className="px-3 py-3 border-r border-border/60 whitespace-nowrap min-w-[140px]">Lớp học</th>
                   <th className="px-3 py-3 border-r border-border/60 whitespace-nowrap min-w-[120px]">Giáo viên</th>
-                  <th className="px-3 py-3 border-r border-border/60 text-center whitespace-nowrap min-w-[115px]">Điểm danh GV</th>
-                  <th className="px-3 py-3 border-r border-border/60 text-center whitespace-nowrap min-w-[115px]">Điểm danh CSKH</th>
-                  <th className="px-3 py-3 border-r border-border/60 text-center whitespace-nowrap min-w-[120px]">Trạng thái chốt</th>
+                  {isTeacher ? (
+                    <th className="px-3 py-3 border-r border-border/60 text-center whitespace-nowrap min-w-[145px]">Trạng thái của tôi</th>
+                  ) : (
+                    <>
+                      <th className="px-3 py-3 border-r border-border/60 text-center whitespace-nowrap min-w-[115px]">Điểm danh GV</th>
+                      <th className="px-3 py-3 border-r border-border/60 text-center whitespace-nowrap min-w-[115px]">Điểm danh CSKH</th>
+                      <th className="px-3 py-3 border-r border-border/60 text-center whitespace-nowrap min-w-[120px]">Trạng thái chốt</th>
+                    </>
+                  )}
                   <th className="px-3 py-3 border-r border-border/60 min-w-[200px]">Bài học &amp; Ghi chú GV</th>
                   <th className="px-3 py-3 border-r border-border/60 min-w-[180px]">Ghi chú CSKH</th>
-                  <th className="px-3 py-3 text-center whitespace-nowrap w-24">Thao tác</th>
+                  <th className="px-3 py-3 text-center whitespace-nowrap w-24">Chi tiết</th>
                 </tr>
               </thead>
               <tbody>
                 {periodSessionLogs.length === 0 ? (
                   <tr>
-                    <td colSpan={11} className="py-10 text-center text-text-muted">
+                    <td colSpan={isTeacher ? 9 : 11} className="py-10 text-center text-text-muted">
                       Chưa có buổi học nào phát sinh trong kỳ {detailedPeriodTitle}.
                     </td>
                   </tr>
@@ -4814,58 +4833,62 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                                 {tCfg.short} · {tCfg.label}
                               </span>
                             ) : (
-                              <span className="text-text-muted">—</span>
+                              <span className="inline-flex h-6 items-center rounded-md border border-dashed border-slate-300 bg-slate-50 px-2 text-[10px] font-bold text-slate-500">–</span>
                             )}
                           </td>
-                          <td className="px-3 py-2.5 border-r border-border/60 text-center whitespace-nowrap">
-                            {csCfg ? (
-                              <span
-                                className={`inline-flex h-6 items-center gap-1 rounded-md border px-2 text-[10px] font-extrabold ${csCfg.bg.replace(
-                                  /\s*hover:\S+/g,
-                                  ''
-                                )} ${csCfg.text} ${csCfg.border}`}
-                              >
-                                {csCfg.short} · {csCfg.label}
-                              </span>
-                            ) : (
-                              <span className="text-text-muted">—</span>
-                            )}
-                          </td>
-                          <td className="px-3 py-2.5 border-r border-border/60 text-center whitespace-nowrap">
-                            {classified.category === 'ADMIN_RESOLVED' && finalCfg ? (
-                              <span
-                                className={`inline-flex h-6 items-center gap-1 rounded-md border px-2 text-[10px] font-extrabold ring-1 ring-violet-500/70 ${finalCfg.bg.replace(
-                                  /\s*hover:\S+/g,
-                                  ''
-                                )} ${finalCfg.text} ${finalCfg.border}`}
-                              >
-                                ✓ {finalCfg.short} · Admin đã chốt
-                              </span>
-                            ) : classified.category === 'CONFLICT' ? (
-                              <span className="inline-flex h-6 items-center rounded-md border-2 border-rose-500 bg-rose-50 px-2 text-[10px] font-extrabold text-rose-800">
-                                Lệch (GV: {tCfg?.short || '?'} ≠ CSKH: {csCfg?.short || '?'})
-                              </span>
-                            ) : classified.category === 'MATCHED' && finalCfg ? (
-                              <span
-                                className={`inline-flex h-6 items-center gap-1 rounded-md border px-2 text-[10px] font-extrabold ${finalCfg.bg.replace(
-                                  /\s*hover:\S+/g,
-                                  ''
-                                )} ${finalCfg.text} ${finalCfg.border}`}
-                              >
-                                {finalCfg.short} · Đã khớp
-                              </span>
-                            ) : classified.category === 'PENDING_ONE_SIDE' ? (
-                              <span className="inline-flex h-6 items-center rounded-md border border-dashed border-amber-400 bg-amber-50 px-2 text-[10px] font-bold text-amber-800">
-                                {classified.provisionalSide === 'GV'
-                                  ? `Mới GV chấm (${tCfg?.short}) · Chờ CSKH`
-                                  : `Mới CSKH chấm (${csCfg?.short}) · Chờ GV`}
-                              </span>
-                            ) : (
-                              <span className="inline-flex h-6 items-center rounded-md border border-dashed border-slate-400 bg-slate-50 px-2 text-[10px] font-bold text-slate-600">
-                                ? · Đã mở ca, chưa chấm
-                              </span>
-                            )}
-                          </td>
+                          {!isTeacher && (
+                            <>
+                              <td className="px-3 py-2.5 border-r border-border/60 text-center whitespace-nowrap">
+                                {csCfg ? (
+                                  <span
+                                    className={`inline-flex h-6 items-center gap-1 rounded-md border px-2 text-[10px] font-extrabold ${csCfg.bg.replace(
+                                      /\s*hover:\S+/g,
+                                      ''
+                                    )} ${csCfg.text} ${csCfg.border}`}
+                                  >
+                                    {csCfg.short} · {csCfg.label}
+                                  </span>
+                                ) : (
+                                  <span className="text-text-muted">—</span>
+                                )}
+                              </td>
+                              <td className="px-3 py-2.5 border-r border-border/60 text-center whitespace-nowrap">
+                                {classified.category === 'ADMIN_RESOLVED' && finalCfg ? (
+                                  <span
+                                    className={`inline-flex h-6 items-center gap-1 rounded-md border px-2 text-[10px] font-extrabold ring-1 ring-violet-500/70 ${finalCfg.bg.replace(
+                                      /\s*hover:\S+/g,
+                                      ''
+                                    )} ${finalCfg.text} ${finalCfg.border}`}
+                                  >
+                                    ✓ {finalCfg.short} · Admin đã chốt
+                                  </span>
+                                ) : classified.category === 'CONFLICT' ? (
+                                  <span className="inline-flex h-6 items-center rounded-md border-2 border-rose-500 bg-rose-50 px-2 text-[10px] font-extrabold text-rose-800">
+                                    Lệch (GV: {tCfg?.short || '?'} ≠ CSKH: {csCfg?.short || '?'})
+                                  </span>
+                                ) : classified.category === 'MATCHED' && finalCfg ? (
+                                  <span
+                                    className={`inline-flex h-6 items-center gap-1 rounded-md border px-2 text-[10px] font-extrabold ${finalCfg.bg.replace(
+                                      /\s*hover:\S+/g,
+                                      ''
+                                    )} ${finalCfg.text} ${finalCfg.border}`}
+                                  >
+                                    {finalCfg.short} · Đã khớp
+                                  </span>
+                                ) : classified.category === 'PENDING_ONE_SIDE' ? (
+                                  <span className="inline-flex h-6 items-center rounded-md border border-dashed border-amber-400 bg-amber-50 px-2 text-[10px] font-bold text-amber-800">
+                                    {classified.provisionalSide === 'GV'
+                                      ? `Mới GV chấm (${tCfg?.short}) · Chờ CSKH`
+                                      : `Mới CSKH chấm (${csCfg?.short}) · Chờ GV`}
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex h-6 items-center rounded-md border border-dashed border-slate-400 bg-slate-50 px-2 text-[10px] font-bold text-slate-600">
+                                    ? · Đã mở ca, chưa chấm
+                                  </span>
+                                )}
+                              </td>
+                            </>
+                          )}
                           <td className="px-3 py-2.5 border-r border-border/60">
                             {att?.lesson_topic || att?.teacher_note ? (
                               <div className="space-y-0.5">
@@ -4909,7 +4932,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
           </div>
         ) : (
         <div>
-          {activeTab === 'detailed' && <AttendanceMatrixLegendBar />}
+          {activeTab === 'detailed' && !isTeacher && <AttendanceMatrixLegendBar />}
           <div className="w-full overflow-x-auto">
           <table className="w-full text-xs text-left border-collapse">
             <thead>
@@ -4919,18 +4942,20 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                     activeTab === 'detailed' ? 'sticky left-0 z-30 bg-slate-100' : ''
                   }`}
                 >
-                  <input
-                    ref={(el) => {
-                      if (el) el.indeterminate = someVisibleInClassesSelected;
-                    }}
-                    type="checkbox"
-                    checked={allVisibleInClassesSelected}
-                    onChange={handleToggleSelectAllInClasses}
-                    disabled={totalSelectableInClasses === 0}
-                    className="h-4 w-4 cursor-pointer rounded border-slate-300 accent-primary focus:ring-primary disabled:cursor-not-allowed disabled:opacity-40"
-                    title="Chọn hoặc bỏ chọn tất cả lớp / học viên đang hiển thị"
-                    aria-label="Chọn hoặc bỏ chọn tất cả lớp / học viên đang hiển thị"
-                  />
+                  {!isTeacher && (
+                    <input
+                      ref={(el) => {
+                        if (el) el.indeterminate = someVisibleInClassesSelected;
+                      }}
+                      type="checkbox"
+                      checked={allVisibleInClassesSelected}
+                      onChange={handleToggleSelectAllInClasses}
+                      disabled={totalSelectableInClasses === 0}
+                      className="h-4 w-4 cursor-pointer rounded border-slate-300 accent-primary focus:ring-primary disabled:cursor-not-allowed disabled:opacity-40"
+                      title="Chọn hoặc bỏ chọn tất cả lớp / học viên đang hiển thị"
+                      aria-label="Chọn hoặc bỏ chọn tất cả lớp / học viên đang hiển thị"
+                    />
+                  )}
                 </th>
                 <th
                   className={`px-3 py-3 border-r border-border/60 whitespace-nowrap w-28 min-w-[112px] max-w-[112px] overflow-hidden ${
@@ -5235,20 +5260,22 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                               : ''
                           }`}
                         >
-                          <input
-                            ref={(el) => {
-                              if (el) el.indeterminate = someInClassSelected;
-                            }}
-                            type="checkbox"
-                            checked={allInClassSelected}
-                            onChange={() => handleToggleSelectClassRow(cls, students)}
-                            className="h-3.5 w-3.5 cursor-pointer rounded border-slate-300 text-primary accent-primary focus:ring-primary"
-                            title={
-                              isOneToOne
-                                ? 'Chọn lớp / học viên'
-                                : `Chọn hoặc bỏ chọn toàn bộ học viên lớp ${formattedCode}`
-                            }
-                          />
+                          {!isTeacher && (
+                            <input
+                              ref={(el) => {
+                                if (el) el.indeterminate = someInClassSelected;
+                              }}
+                              type="checkbox"
+                              checked={allInClassSelected}
+                              onChange={() => handleToggleSelectClassRow(cls, students)}
+                              className="h-3.5 w-3.5 cursor-pointer rounded border-slate-300 text-primary accent-primary focus:ring-primary"
+                              title={
+                                isOneToOne
+                                  ? 'Chọn lớp / học viên'
+                                  : `Chọn hoặc bỏ chọn toàn bộ học viên lớp ${formattedCode}`
+                              }
+                            />
+                          )}
                         </td>
 
                         {/* Mã lớp chuẩn class_0001 */}
@@ -5648,38 +5675,6 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                                 >
                                   {isOneToOne && singleStudent ? (
                                     renderMatrixDateCell(cls, singleStudent, dStr)
-                                  ) : isTeacher && students.length > 0 ? (
-                                    (() => {
-                                      const markedInDay = countMarkedInCa(cls, dStr, 1);
-                                      const isAllMarkedInDay =
-                                        markedInDay >= students.length && students.length > 0;
-                                      return (
-                                        <button
-                                          type="button"
-                                          onClick={() => {
-                                            if (isAllMarkedInDay) {
-                                              void handleBulkUnmarkWholeClass(cls, dStr, 1);
-                                            } else {
-                                              void handleBulkMarkWholeClass(cls, dStr, 'ATTENDED', 1);
-                                            }
-                                          }}
-                                          disabled={savingKey === `class_${cls.id}_${dStr}_s1`}
-                                          title={
-                                            isAllMarkedInDay
-                                              ? `Bỏ chấm cả lớp (${students.length} học viên) ngày ${dStr}`
-                                              : `Chấm Có mặt cả lớp (${students.length} học viên) ngày ${dStr}`
-                                          }
-                                          className={`inline-flex h-6 items-center justify-center gap-1 whitespace-nowrap rounded-md border border-dashed bg-white px-1.5 text-[10px] font-bold transition disabled:opacity-50 ${
-                                            isAllMarkedInDay
-                                              ? 'border-rose-300 text-rose-700 hover:border-rose-400 hover:bg-rose-50'
-                                              : 'border-indigo-300 text-indigo-700 hover:border-indigo-400 hover:bg-indigo-50'
-                                          }`}
-                                        >
-                                          <ListChecks className="h-3 w-3 shrink-0" />
-                                          <span>{isAllMarkedInDay ? 'Bỏ chấm cả lớp' : 'Chấm cả lớp'}</span>
-                                        </button>
-                                      );
-                                    })()
                                   ) : (
                                     <span className="text-[10px] text-slate-400">↓</span>
                                   )}
@@ -5762,15 +5757,17 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                                     activeTab === 'detailed' ? 'sticky left-0 z-20 bg-white' : ''
                                   }`}
                                 >
-                                  <input
-                                    type="checkbox"
-                                    checked={isChildSelected}
-                                    onChange={() =>
-                                      handleToggleSelectSingleEcId(st.enrollment_class_id)
-                                    }
-                                    className="h-3.5 w-3.5 cursor-pointer rounded border-slate-300 text-primary accent-primary focus:ring-primary"
-                                    title={`Chọn học viên ${st.full_name}`}
-                                  />
+                                  {!isTeacher && (
+                                    <input
+                                      type="checkbox"
+                                      checked={isChildSelected}
+                                      onChange={() =>
+                                        handleToggleSelectSingleEcId(st.enrollment_class_id)
+                                      }
+                                      className="h-3.5 w-3.5 cursor-pointer rounded border-slate-300 text-primary accent-primary focus:ring-primary"
+                                      title={`Chọn học viên ${st.full_name}`}
+                                    />
+                                  )}
                                 </td>
                                 <td
                                   className={`py-2 pl-[1cm] pr-3 border-r border-border/50 text-left font-mono text-[10px] text-slate-400 w-28 min-w-[112px] max-w-[112px] overflow-hidden ${
@@ -6129,14 +6126,17 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
         }
         side={activeSide}
         defaultEditing={drawerState?.defaultEditing}
-        canEditTeacherFields={isTeacher}
+        teacherHistoryReadonly={isTeacher && activeTab === 'detailed'}
+        canEditTeacherFields={isTeacher && activeTab !== 'detailed'}
         canEditCsFields={isCSOnly && !drawerState?.isReadonlyForCs}
         canMarkStatus={
-          isTeacher ||
-          isAdminOrManage ||
-          (isCSOnly && !drawerState?.isReadonlyForCs)
+          activeTab !== 'detailed' && (
+            isTeacher ||
+            isAdminOrManage ||
+            (isCSOnly && !drawerState?.isReadonlyForCs)
+          )
         }
-        canDeleteSession={!drawerState?.isReadonlyForCs}
+        canDeleteSession={activeTab !== 'detailed' && !drawerState?.isReadonlyForCs}
         saving={!!savingKey}
         onSaveStatusAndNotes={async ({ session, sessionNumber, status, lesson_topic, teacher_note, cs_note }) => {
           if (!drawerState) return;

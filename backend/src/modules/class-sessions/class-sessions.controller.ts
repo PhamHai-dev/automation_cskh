@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { ClassSessionsService } from './class-sessions.service';
 import { createClassSessionSchema, createActualClassSessionSchema, updateClassSessionSchema, cancelClassSessionSchema } from './class-sessions.schema';
+import { presentSessionForActor } from '../attendance/attendance.presenter';
 
 const classSessionsService = new ClassSessionsService();
 
@@ -22,7 +23,7 @@ export class ClassSessionsController {
       const classId = parseInt(req.params.classId);
       const sessionId = parseInt(req.params.sessionId);
       const session = await classSessionsService.getSession(classId, sessionId);
-      res.json({ data: session, meta: null });
+      res.json({ data: presentSessionForActor(session, req.user), meta: null });
     } catch (error) {
       next(error);
     }
@@ -34,7 +35,7 @@ export class ClassSessionsController {
       const userId = req.user?.id || 0;
       const validated = createClassSessionSchema.parse({ body: req.body });
       const session = await classSessionsService.createSession(classId, validated.body, userId);
-      res.status(201).json({ data: unwrapSession(session), meta: null });
+      res.status(201).json({ data: presentSessionForActor(unwrapSession(session), req.user), meta: null });
     } catch (error: any) {
       if (error.name === 'ZodError') {
         return res.status(400).json({ error: { code: 'VALIDATION_ERROR', message: 'Invalid data', details: error.errors } });
@@ -49,7 +50,7 @@ export class ClassSessionsController {
       const userId = req.user?.id || 0;
       const validated = createActualClassSessionSchema.parse({ body: req.body });
       const result = await classSessionsService.createActualSession(classId, validated.body, userId);
-      res.status(result.replayed ? 200 : 201).json({ data: result.session, meta: { replayed: result.replayed } });
+      res.status(result.replayed ? 200 : 201).json({ data: presentSessionForActor(result.session, req.user), meta: { replayed: result.replayed } });
     } catch (error: any) {
       if (error.name === 'ZodError') {
         return res.status(400).json({ error: { code: 'VALIDATION_ERROR', message: 'Invalid data', details: error.errors } });

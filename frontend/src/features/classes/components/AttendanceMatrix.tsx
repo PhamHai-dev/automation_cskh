@@ -2009,7 +2009,9 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
         : activeSide === 'CS'
         ? Boolean(rawAtt?.cs_status)
         : isAttendanceFinalized(rawAtt);
-    const shouldEdit = st.is_readonly_for_cs
+    const shouldEdit = isTeacherOnly && activeTab === 'detailed'
+      ? false
+      : st.is_readonly_for_cs
       ? false
       : defaultEditing !== undefined
       ? defaultEditing
@@ -2043,7 +2045,9 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
           id={`attendance-cell-${st.enrollment_class_id}-${dateStr}`}
           studentName={st.full_name}
           dateLabel={formattedDateLabel}
+          readonly={isTeacherOnly && activeTab === 'detailed'}
           onClick={() => {
+            if (isTeacherOnly && activeTab === 'detailed') return;
             if (st.is_readonly_for_cs) return;
             openDrawer(st, dateStr, 1, true);
           }}
@@ -2071,29 +2075,32 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
               att={rawAtt}
               studentName={st.full_name}
               dateLabel={formattedDateLabel}
+              teacherOnlyView={isTeacherOnly && activeTab === 'detailed'}
               onClick={() => openDrawer(st, dateStr, sessionNumber)}
             />
           );
         })}
 
-        <button
-          id={`attendance-add-session-${st.enrollment_class_id}-${dateStr}`}
-          type="button"
-          disabled={Boolean(st.is_readonly_for_cs)}
-          onClick={() => {
-            if (st.is_readonly_for_cs) return;
-            openDrawer(st, dateStr, nextSessionNumber, true);
-          }}
-          aria-label={`Thêm Ca ${nextSessionNumber} cho ${st.full_name} ngày ${formattedDateLabel}`}
-          title={
-            st.is_readonly_for_cs
-              ? 'Chế độ Chỉ xem (không được thêm ca)'
-              : `Thêm ca tiếp theo (Ca ${nextSessionNumber})`
-          }
-          className="inline-flex h-6 w-5 items-center justify-center rounded-md border border-dashed border-primary/50 text-xs font-extrabold text-primary opacity-0 group-hover/cell:opacity-100 focus:opacity-100 transition hover:bg-primary-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 disabled:opacity-40 disabled:cursor-not-allowed"
-        >
-          +
-        </button>
+        {!(isTeacherOnly && activeTab === 'detailed') && (
+          <button
+            id={`attendance-add-session-${st.enrollment_class_id}-${dateStr}`}
+            type="button"
+            disabled={Boolean(st.is_readonly_for_cs)}
+            onClick={() => {
+              if (st.is_readonly_for_cs) return;
+              openDrawer(st, dateStr, nextSessionNumber, true);
+            }}
+            aria-label={`Thêm Ca ${nextSessionNumber} cho ${st.full_name} ngày ${formattedDateLabel}`}
+            title={
+              st.is_readonly_for_cs
+                ? 'Chế độ Chỉ xem (không được thêm ca)'
+                : `Thêm ca tiếp theo (Ca ${nextSessionNumber})`
+            }
+            className="inline-flex h-6 w-5 items-center justify-center rounded-md border border-dashed border-primary/50 text-xs font-extrabold text-primary opacity-0 group-hover/cell:opacity-100 focus:opacity-100 transition hover:bg-primary-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            +
+          </button>
+        )}
       </div>
     );
   };
@@ -2982,7 +2989,7 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
                       : 'bg-white/60 text-slate-600 hover:bg-white hover:text-slate-900'
                   }`}
                 >
-                  Nhật ký bài học
+                  Nhật ký buổi học
                 </button>
               </div>
 
@@ -3109,7 +3116,9 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
       </div>
 
       {/* Unified Bulk Action Bar for Tab 1 (quick) & Tab 2 (detailed) */}
-      {selectedStudents.size > 0 && (activeTab === 'quick' || activeTab === 'detailed') && (
+      {selectedStudents.size > 0 &&
+        (activeTab === 'quick' || activeTab === 'detailed') &&
+        !(isTeacherOnly && activeTab === 'detailed') && (
         <div className="flex flex-col gap-2.5 border-b border-primary/20 bg-primary-soft/70 px-4 py-3 text-xs">
           <div className="flex flex-wrap items-center justify-between gap-2.5">
             {/* Cụm 1: Thông tin chọn & Ca/Ngày áp dụng */}
@@ -3726,18 +3735,24 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
                 <th className="px-3 py-3 border-r border-border/60 whitespace-nowrap min-w-[160px]">Học viên</th>
                 <th className="px-3 py-3 border-r border-border/60 whitespace-nowrap min-w-[130px]">Lớp học</th>
                 <th className="px-3 py-3 border-r border-border/60 whitespace-nowrap min-w-[120px]">Giáo viên</th>
-                <th className="px-3 py-3 border-r border-border/60 text-center whitespace-nowrap min-w-[115px]">Điểm danh GV</th>
-                <th className="px-3 py-3 border-r border-border/60 text-center whitespace-nowrap min-w-[115px]">Điểm danh CSKH</th>
-                <th className="px-3 py-3 border-r border-border/60 text-center whitespace-nowrap min-w-[120px]">Trạng thái chốt</th>
+                {isTeacherOnly ? (
+                  <th className="px-3 py-3 border-r border-border/60 text-center whitespace-nowrap min-w-[145px]">Trạng thái của tôi</th>
+                ) : (
+                  <>
+                    <th className="px-3 py-3 border-r border-border/60 text-center whitespace-nowrap min-w-[115px]">Điểm danh GV</th>
+                    <th className="px-3 py-3 border-r border-border/60 text-center whitespace-nowrap min-w-[115px]">Điểm danh CSKH</th>
+                    <th className="px-3 py-3 border-r border-border/60 text-center whitespace-nowrap min-w-[120px]">Trạng thái chốt</th>
+                  </>
+                )}
                 <th className="px-3 py-3 border-r border-border/60 min-w-[200px]">Bài học &amp; Ghi chú GV</th>
                 <th className="px-3 py-3 border-r border-border/60 min-w-[180px]">Ghi chú CSKH</th>
-                <th className="px-3 py-3 text-center whitespace-nowrap w-24">Thao tác</th>
+                <th className="px-3 py-3 text-center whitespace-nowrap w-24">Chi tiết</th>
               </tr>
             </thead>
             <tbody>
               {periodSessionLogs.length === 0 ? (
                 <tr>
-                  <td colSpan={11} className="text-center py-10 text-text-muted">
+                  <td colSpan={isTeacherOnly ? 9 : 11} className="text-center py-10 text-text-muted">
                     Chưa có buổi học nào phát sinh trong kỳ {viewTitle}.
                   </td>
                 </tr>
@@ -3781,43 +3796,47 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
                             {tCfg.short} · {tCfg.label}
                           </span>
                         ) : (
-                          <span className="text-text-muted">—</span>
+                          <span className="inline-flex h-6 items-center rounded-md border border-dashed border-slate-300 bg-slate-50 px-2 text-[10px] font-bold text-slate-500">–</span>
                         )}
                       </td>
-                      <td className="px-3 py-2.5 border-r border-border/60 text-center whitespace-nowrap">
-                        {csCfg ? (
-                          <span className={`inline-flex h-6 items-center gap-1 rounded-md border px-2 text-[10px] font-extrabold ${csCfg.bg.replace(/\s*hover:\S+/g, '')} ${csCfg.text} ${csCfg.border}`}>
-                            {csCfg.short} · {csCfg.label}
-                          </span>
-                        ) : (
-                          <span className="text-text-muted">—</span>
-                        )}
-                      </td>
-                      <td className="px-3 py-2.5 border-r border-border/60 text-center whitespace-nowrap">
-                        {classified.category === 'ADMIN_RESOLVED' && finalCfg ? (
-                          <span className={`inline-flex h-6 items-center gap-1 rounded-md border px-2 text-[10px] font-extrabold ring-1 ring-violet-500/70 ${finalCfg.bg.replace(/\s*hover:\S+/g, '')} ${finalCfg.text} ${finalCfg.border}`}>
-                            ✓ {finalCfg.short} · Admin đã chốt
-                          </span>
-                        ) : classified.category === 'CONFLICT' ? (
-                          <span className="inline-flex h-6 items-center rounded-md border-2 border-rose-500 bg-rose-50 px-2 text-[10px] font-extrabold text-rose-800">
-                            Lệch (GV: {tCfg?.short || '?'} ≠ CSKH: {csCfg?.short || '?'})
-                          </span>
-                        ) : classified.category === 'MATCHED' && finalCfg ? (
-                          <span className={`inline-flex h-6 items-center gap-1 rounded-md border px-2 text-[10px] font-extrabold ${finalCfg.bg.replace(/\s*hover:\S+/g, '')} ${finalCfg.text} ${finalCfg.border}`}>
-                            {finalCfg.short} · Đã khớp
-                          </span>
-                        ) : classified.category === 'PENDING_ONE_SIDE' ? (
-                          <span className="inline-flex h-6 items-center rounded-md border border-dashed border-amber-400 bg-amber-50 px-2 text-[10px] font-bold text-amber-800">
-                            {classified.provisionalSide === 'GV'
-                              ? `Mới GV chấm (${tCfg?.short}) · Chờ CSKH`
-                              : `Mới CSKH chấm (${csCfg?.short}) · Chờ GV`}
-                          </span>
-                        ) : (
-                          <span className="inline-flex h-6 items-center rounded-md border border-dashed border-slate-400 bg-slate-50 px-2 text-[10px] font-bold text-slate-600">
-                            ? · Đã mở ca, chưa chấm
-                          </span>
-                        )}
-                      </td>
+                      {!isTeacherOnly && (
+                        <>
+                          <td className="px-3 py-2.5 border-r border-border/60 text-center whitespace-nowrap">
+                            {csCfg ? (
+                              <span className={`inline-flex h-6 items-center gap-1 rounded-md border px-2 text-[10px] font-extrabold ${csCfg.bg.replace(/\s*hover:\S+/g, '')} ${csCfg.text} ${csCfg.border}`}>
+                                {csCfg.short} · {csCfg.label}
+                              </span>
+                            ) : (
+                              <span className="text-text-muted">—</span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2.5 border-r border-border/60 text-center whitespace-nowrap">
+                            {classified.category === 'ADMIN_RESOLVED' && finalCfg ? (
+                              <span className={`inline-flex h-6 items-center gap-1 rounded-md border px-2 text-[10px] font-extrabold ring-1 ring-violet-500/70 ${finalCfg.bg.replace(/\s*hover:\S+/g, '')} ${finalCfg.text} ${finalCfg.border}`}>
+                                ✓ {finalCfg.short} · Admin đã chốt
+                              </span>
+                            ) : classified.category === 'CONFLICT' ? (
+                              <span className="inline-flex h-6 items-center rounded-md border-2 border-rose-500 bg-rose-50 px-2 text-[10px] font-extrabold text-rose-800">
+                                Lệch (GV: {tCfg?.short || '?'} ≠ CSKH: {csCfg?.short || '?'})
+                              </span>
+                            ) : classified.category === 'MATCHED' && finalCfg ? (
+                              <span className={`inline-flex h-6 items-center gap-1 rounded-md border px-2 text-[10px] font-extrabold ${finalCfg.bg.replace(/\s*hover:\S+/g, '')} ${finalCfg.text} ${finalCfg.border}`}>
+                                {finalCfg.short} · Đã khớp
+                              </span>
+                            ) : classified.category === 'PENDING_ONE_SIDE' ? (
+                              <span className="inline-flex h-6 items-center rounded-md border border-dashed border-amber-400 bg-amber-50 px-2 text-[10px] font-bold text-amber-800">
+                                {classified.provisionalSide === 'GV'
+                                  ? `Mới GV chấm (${tCfg?.short}) · Chờ CSKH`
+                                  : `Mới CSKH chấm (${csCfg?.short}) · Chờ GV`}
+                              </span>
+                            ) : (
+                              <span className="inline-flex h-6 items-center rounded-md border border-dashed border-slate-400 bg-slate-50 px-2 text-[10px] font-bold text-slate-600">
+                                ? · Đã mở ca, chưa chấm
+                              </span>
+                            )}
+                          </td>
+                        </>
+                      )}
                       <td className="px-3 py-2.5 border-r border-border/60">
                         {att?.lesson_topic || att?.teacher_note ? (
                           <div className="space-y-0.5">
@@ -3859,32 +3878,36 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
 
       {activeTab === 'detailed' && detailedViewMode === 'matrix' && (
         <div>
-          <AttendanceMatrixLegendBar
-            activeFilter={matrixCellFilter}
-            onFilterChange={(f) => {
-              setMatrixCellFilter(f);
-              setPage(1);
-            }}
-            counts={matrixLegendStats.counts}
-          />
+          {!isTeacherOnly && (
+            <AttendanceMatrixLegendBar
+              activeFilter={matrixCellFilter}
+              onFilterChange={(f) => {
+                setMatrixCellFilter(f);
+                setPage(1);
+              }}
+              counts={matrixLegendStats.counts}
+            />
+          )}
           <div className="w-full overflow-x-auto">
           <table className="w-full text-xs text-left border-collapse">
             <thead>
               <tr className="bg-surface-muted/90 text-text-secondary border-b border-border/80 text-[11px] font-bold">
                 {/* Checkbox */}
                 <th className="px-2 py-3 border-r border-border/60 sticky left-0 bg-slate-100 z-20 w-10 min-w-[40px] text-center">
-                  <input
-                    ref={(el) => {
-                      if (el) el.indeterminate = someVisibleSelected;
-                    }}
-                    type="checkbox"
-                    checked={allVisibleSelected}
-                    onChange={handleToggleSelectAllStudents}
-                    disabled={validVisibleStudentIds.length === 0}
-                    className="h-4 w-4 cursor-pointer rounded border-slate-300 accent-primary focus:ring-primary disabled:cursor-not-allowed disabled:opacity-40"
-                    title="Chọn hoặc bỏ chọn tất cả học viên đang hiển thị"
-                    aria-label="Chọn hoặc bỏ chọn tất cả học viên đang hiển thị"
-                  />
+                  {!isTeacherOnly && (
+                    <input
+                      ref={(el) => {
+                        if (el) el.indeterminate = someVisibleSelected;
+                      }}
+                      type="checkbox"
+                      checked={allVisibleSelected}
+                      onChange={handleToggleSelectAllStudents}
+                      disabled={validVisibleStudentIds.length === 0}
+                      className="h-4 w-4 cursor-pointer rounded border-slate-300 accent-primary focus:ring-primary disabled:cursor-not-allowed disabled:opacity-40"
+                      title="Chọn hoặc bỏ chọn tất cả học viên đang hiển thị"
+                      aria-label="Chọn hoặc bỏ chọn tất cả học viên đang hiển thị"
+                    />
+                  )}
                 </th>
                 {/* Sticky 3 Cột định danh nhận diện */}
                 <th className="px-2 py-3 border-r border-border/60 sticky left-10 bg-slate-100 z-20 w-10 min-w-[40px] text-center">
@@ -4055,20 +4078,22 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
                     >
                       {/* Checkbox */}
                       <td className="px-2 py-2.5 border-r border-border/60 text-center sticky left-0 bg-slate-100 z-10">
-                        <input
-                          type="checkbox"
-                          checked={isSelected}
-                          disabled={st.enrollment_class_id <= 0 || Boolean(st.is_readonly_for_cs)}
-                          onChange={() => handleToggleSelectStudent(st.enrollment_class_id)}
-                          className="w-3.5 h-3.5 rounded text-primary focus:ring-primary border-slate-300 cursor-pointer accent-primary disabled:opacity-40 disabled:cursor-not-allowed"
-                          title={
-                            st.is_readonly_for_cs
-                              ? 'Chế độ Chỉ xem (Không được điểm danh)'
-                              : st.enrollment_class_id <= 0
-                              ? 'Học viên chưa được xếp lớp'
-                              : 'Chọn học viên'
-                          }
-                        />
+                        {!isTeacherOnly && (
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            disabled={st.enrollment_class_id <= 0 || Boolean(st.is_readonly_for_cs)}
+                            onChange={() => handleToggleSelectStudent(st.enrollment_class_id)}
+                            className="w-3.5 h-3.5 rounded text-primary focus:ring-primary border-slate-300 cursor-pointer accent-primary disabled:opacity-40 disabled:cursor-not-allowed"
+                            title={
+                              st.is_readonly_for_cs
+                                ? 'Chế độ Chỉ xem (Không được điểm danh)'
+                                : st.enrollment_class_id <= 0
+                                ? 'Học viên chưa được xếp lớp'
+                                : 'Chọn học viên'
+                            }
+                          />
+                        )}
                       </td>
                       {/* STT */}
                       <td className="px-2 py-2.5 border-r border-border/60 text-center text-text-muted font-bold sticky left-10 bg-slate-100 z-10">
@@ -4730,14 +4755,17 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
         }
         side={activeSide}
         defaultEditing={drawerState?.defaultEditing}
-        canEditTeacherFields={activeSide === 'TEACHER'}
+        teacherHistoryReadonly={isTeacherOnly && activeTab === 'detailed'}
+        canEditTeacherFields={activeSide === 'TEACHER' && activeTab !== 'detailed'}
         canEditCsFields={activeSide === 'CS' && !drawerState?.student.is_readonly_for_cs}
         canMarkStatus={
-          activeSide === 'TEACHER' ||
-          activeSide === 'ADMIN' ||
-          (activeSide === 'CS' && !drawerState?.student.is_readonly_for_cs)
+          activeTab !== 'detailed' && (
+            activeSide === 'TEACHER' ||
+            activeSide === 'ADMIN' ||
+            (activeSide === 'CS' && !drawerState?.student.is_readonly_for_cs)
+          )
         }
-        canDeleteSession={!drawerState?.student.is_readonly_for_cs}
+        canDeleteSession={activeTab !== 'detailed' && !drawerState?.student.is_readonly_for_cs}
         saving={savingSessionId !== null}
         onSaveStatusAndNotes={async ({ session, sessionNumber, status, lesson_topic, teacher_note, cs_note }) => {
           if (!drawerState) return;

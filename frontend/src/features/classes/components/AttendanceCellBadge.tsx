@@ -256,6 +256,7 @@ export interface MonthlyEmptyDateCellProps {
   studentName: string;
   dateLabel: string;
   onClick: () => void;
+  readonly?: boolean;
 }
 
 export const MonthlyEmptyDateCell: React.FC<MonthlyEmptyDateCellProps> = ({
@@ -263,7 +264,20 @@ export const MonthlyEmptyDateCell: React.FC<MonthlyEmptyDateCellProps> = ({
   studentName,
   dateLabel,
   onClick,
+  readonly = false,
 }) => {
+  if (readonly) {
+    return (
+      <div
+        id={id}
+        className="flex min-h-9 w-full min-w-[56px] items-center justify-center px-1 py-1 text-xs font-bold text-slate-300"
+        title={`Ngày ${dateLabel}: Không có buổi học`}
+        aria-label={`${studentName} ngày ${dateLabel}: Không có buổi học`}
+      >
+        ·
+      </div>
+    );
+  }
   return (
     <div className="flex min-h-9 w-full min-w-[56px] items-center justify-center px-1 py-1">
       <button
@@ -290,6 +304,7 @@ export interface MonthlySessionBadgeProps {
   studentName: string;
   dateLabel: string;
   onClick: () => void;
+  teacherOnlyView?: boolean;
 }
 
 export const MonthlySessionBadge: React.FC<MonthlySessionBadgeProps> = ({
@@ -301,33 +316,50 @@ export const MonthlySessionBadge: React.FC<MonthlySessionBadgeProps> = ({
   studentName,
   dateLabel,
   onClick,
+  teacherOnlyView = false,
 }) => {
-  const classified = classifySessionAttendance(att);
-  const tooltip = buildSessionBadgeTooltip({
-    sessionNumber,
-    session,
-    att,
-    classified,
-  });
+  const teacherStatus = (att?.teacher_status as AttendanceStatus | null | undefined) || undefined;
+  const classified = teacherOnlyView ? undefined : classifySessionAttendance(att);
+  const teacherCfg = teacherStatus ? ATTENDANCE_CODE_CONFIG[teacherStatus] : null;
+  const teacherSummary = teacherCfg
+    ? `${teacherCfg.short} · ${teacherCfg.label}`
+    : '– · Chưa điểm danh';
+  const tooltip = teacherOnlyView
+    ? [
+        `Ca ${sessionNumber}${session?.start_time ? ` (${session.start_time})` : ''}: Trạng thái của tôi — ${teacherSummary}`,
+        ...(att?.lesson_topic?.trim() ? [`• Bài học: ${att.lesson_topic.trim()}`] : []),
+        ...(att?.teacher_note?.trim() ? [`• Ghi chú GV: ${att.teacher_note.trim()}`] : []),
+        ...(att?.cs_note?.trim() ? [`• Ghi chú CSKH: ${att.cs_note.trim()}`] : []),
+        '👉 Nhấn để xem chi tiết',
+      ].join('\n')
+    : buildSessionBadgeTooltip({
+        sessionNumber,
+        session,
+        att,
+        classified: classified!,
+      });
 
   const showCaPrefix = totalSessionsInDay > 1;
   const caPrefix = showCaPrefix ? `C${sessionNumber}:` : '';
 
   let styleClasses = '';
-  if (classified.category === 'ADMIN_RESOLVED' && classified.finalStatus) {
+  if (teacherOnlyView) {
+    styleClasses = teacherCfg
+      ? `${teacherCfg.solidBg} ${teacherCfg.solidText} ${teacherCfg.solidBorder}`
+      : 'border-dashed border-slate-400 bg-slate-50 text-slate-600 font-bold';
+  } else if (classified?.category === 'ADMIN_RESOLVED' && classified.finalStatus) {
     const cfg = ATTENDANCE_CODE_CONFIG[classified.finalStatus];
     styleClasses = `${cfg.solidBg} ${cfg.solidText} ${cfg.solidBorder} ring-1 ring-violet-500/70`;
-  } else if (classified.category === 'MATCHED' && classified.finalStatus) {
+  } else if (classified?.category === 'MATCHED' && classified.finalStatus) {
     const cfg = ATTENDANCE_CODE_CONFIG[classified.finalStatus];
     styleClasses = `${cfg.solidBg} ${cfg.solidText} ${cfg.solidBorder}`;
-  } else if (classified.category === 'CONFLICT') {
+  } else if (classified?.category === 'CONFLICT') {
     styleClasses =
       'bg-rose-50 hover:bg-rose-100 text-rose-800 border-2 border-rose-500 font-extrabold shadow-2xs';
-  } else if (classified.category === 'PENDING_ONE_SIDE' && classified.provisionalStatus) {
+  } else if (classified?.category === 'PENDING_ONE_SIDE' && classified.provisionalStatus) {
     const cfg = ATTENDANCE_CODE_CONFIG[classified.provisionalStatus];
     styleClasses = `${cfg.dashedBg} ${cfg.dashedText} ${cfg.dashedBorder}`;
   } else {
-    // SESSION_UNMARKED
     styleClasses =
       'border-dashed border-slate-400 bg-slate-50 hover:bg-slate-100 text-slate-600 font-bold';
   }
@@ -337,12 +369,12 @@ export const MonthlySessionBadge: React.FC<MonthlySessionBadgeProps> = ({
       id={id}
       type="button"
       onClick={onClick}
-      aria-label={`Xem chi tiết ${studentName} ngày ${dateLabel}, Ca ${sessionNumber}: ${classified.workflowSummary}`}
+      aria-label={`Xem chi tiết ${studentName} ngày ${dateLabel}, Ca ${sessionNumber}: ${teacherOnlyView ? teacherSummary : classified!.workflowSummary}`}
       title={tooltip}
       className={`relative inline-flex h-6 min-w-[26px] items-center justify-center gap-0.5 rounded-md border px-1.5 text-[10px] leading-none transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${styleClasses}`}
     >
       {/* Top-left badge for Admin Resolved */}
-      {classified.category === 'ADMIN_RESOLVED' && (
+      {!teacherOnlyView && classified?.category === 'ADMIN_RESOLVED' && (
         <span
           className=" -ml-0.5 inline-flex h-3 w-3 shrink-0 items-center justify-center rounded-full bg-violet-600 text-white"
           aria-hidden="true"
@@ -357,10 +389,12 @@ export const MonthlySessionBadge: React.FC<MonthlySessionBadgeProps> = ({
       )}
 
       {/* Main status text */}
-      <span className="tracking-tight">{classified.badgeText}</span>
+      <span className="tracking-tight">{teacherOnlyView ? teacherCfg?.short || '–' : classified!.badgeText}</span>
 
       {/* Bottom-right indicator for Lesson Topic / Notes */}
-      {classified.hasNote && (
+      {(teacherOnlyView
+        ? Boolean(att?.lesson_topic?.trim() || att?.teacher_note?.trim() || att?.cs_note?.trim())
+        : classified!.hasNote) && (
         <span
           className="absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full border border-white bg-indigo-600 shadow-2xs"
           aria-hidden="true"

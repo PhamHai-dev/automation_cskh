@@ -6,6 +6,7 @@ import { runAttendancePostCommit } from './attendance-lifecycle';
 import { findEffectiveAssignment } from './teacher-assignment';
 import { createLogger } from '../../shared/logger/logger';
 import { AppError } from '../../middlewares/error.middleware';
+import { presentAttendanceForActor, presentAttendancesForActor } from './attendance.presenter';
 
 const log = createLogger('AttendanceService');
 
@@ -217,13 +218,14 @@ export class AttendanceService {
     }
   }
 
-  async listBySession(classId: number, sessionId: number) {
+  async listBySession(classId: number, sessionId: number, actor: AttendanceActor) {
     const session = await prisma.classSession.findFirst({
       where: { id: sessionId, class_id: classId },
       select: { id: true },
     });
     if (!session) throw new AppError(404, 'Không tìm thấy buổi học trong lớp này');
-    return this.repository.findBySession(classId, sessionId);
+    const records = await this.repository.findBySession(classId, sessionId);
+    return presentAttendancesForActor(records, actor);
   }
 
   async markAttendance(classId: number, sessionId: number, data: MarkAttendanceDTO, actor: AttendanceActor) {
@@ -255,7 +257,7 @@ export class AttendanceService {
       await this.notifyOnAdminMark(result.id, actor);
     }
     await this.runDownstream(result);
-    return result;
+    return presentAttendanceForActor(result, actor);
   }
 
   async bulkMarkAttendance(classId: number, sessionId: number, data: BulkMarkAttendanceDTO, actor: AttendanceActor) {
@@ -282,7 +284,7 @@ export class AttendanceService {
       }
     }
     for (const attendance of results) await this.runDownstream(attendance);
-    return results;
+    return presentAttendancesForActor(results, actor);
   }
 
   async updateAttendance(attendanceId: number, data: UpdateAttendanceDTO, actor: AttendanceActor, classId?: number, sessionId?: number) {
@@ -304,7 +306,7 @@ export class AttendanceService {
       await this.notifyOnAdminMark(result.id, actor);
     }
     await this.runDownstream(result);
-    return result;
+    return presentAttendanceForActor(result, actor);
   }
 
   async resetAttendance(attendanceId: number, actor: AttendanceActor, requestedSide?: AttendanceSide, classId?: number, sessionId?: number) {

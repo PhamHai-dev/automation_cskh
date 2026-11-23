@@ -7,6 +7,7 @@ import { handleAttendanceEvent, cancelPendingDeliveries } from '../automation/au
 import { createLogger } from '../../shared/logger/logger';
 import { AppError } from '../../middlewares/error.middleware';
 import { parseAttendanceValue, parseTimeSlot, normalizeDateOnly } from './attendance.utils';
+import { isPureTeacherActor, presentAttendanceForActor, presentClassForActor } from './attendance.presenter';
 
 const log = createLogger('ReconciliationService');
 
@@ -416,7 +417,7 @@ export class ReconciliationService {
       return result;
     });
     await this.runDownstream(updated.id, state);
-    return updated;
+    return presentAttendanceForActor(updated, actor);
   }
 
   async markByCS(attendanceId: number, data: CSMarkDTO, actor: Actor) {
@@ -1280,7 +1281,13 @@ export class ReconciliationService {
       const complete = enrollments.length > 0 && marked === enrollments.length;
       return query.completionState === 'COMPLETED' ? complete : !complete;
     });
-    const items = filtered.slice((page - 1) * pageSize, page * pageSize);
+    const pageItems = filtered.slice((page - 1) * pageSize, page * pageSize);
+    const items = isPureTeacherActor(actor)
+      ? pageItems.map((session) => ({
+          ...session,
+          class: presentClassForActor(session.class, actor),
+        }))
+      : pageItems;
     return {
       items,
       total: filtered.length,
@@ -1559,19 +1566,23 @@ export class ReconciliationService {
 
       const sessions = combined.map(({ session, att }, idx) => {
         const teacherStatus: AttendanceStatus | null = att?.teacher_status || null;
-        const finalStatus: AttendanceStatus | null = att?.status || null;
-        const reconciliationState: ReconciliationState | null =
-          att?.reconciliation_state || null;
-        const effectiveStatus: AttendanceStatus | null =
-          att?.teacher_status ??
-          (att?.reconciliation_state === 'MATCHED' ||
-          att?.reconciliation_state === 'RESOLVED' ||
-          !att?.reconciliation_state
-            ? att?.status ?? null
-            : null);
-        const isAttended =
-          teacherStatus === 'ATTENDED' ||
-          (teacherStatus === null && finalStatus === 'ATTENDED');
+        const pureTeacher = isPureTeacherActor(actor);
+        const finalStatus: AttendanceStatus | null = pureTeacher ? null : att?.status || null;
+        const reconciliationState: ReconciliationState | null = pureTeacher
+          ? null
+          : att?.reconciliation_state || null;
+        const effectiveStatus: AttendanceStatus | null = pureTeacher
+          ? teacherStatus
+          : att?.teacher_status ??
+            (att?.reconciliation_state === 'MATCHED' ||
+            att?.reconciliation_state === 'RESOLVED' ||
+            !att?.reconciliation_state
+              ? att?.status ?? null
+              : null);
+        const isAttended = pureTeacher
+          ? teacherStatus === 'ATTENDED'
+          : teacherStatus === 'ATTENDED' ||
+            (teacherStatus === null && finalStatus === 'ATTENDED');
         const isUnlocked = isAttended;
 
         return {
@@ -1583,8 +1594,7 @@ export class ReconciliationService {
           endTime: session.end_time || null,
           attendanceId: att?.id || null,
           teacherStatus,
-          finalStatus,
-          reconciliationState,
+          ...(!pureTeacher ? { finalStatus, reconciliationState } : {}),
           effectiveStatus: isAttended ? AttendanceStatus.ATTENDED : effectiveStatus,
           isAttended,
           isUnlocked,
@@ -1739,7 +1749,7 @@ export class ReconciliationService {
       return result;
     });
 
-    return updated;
+    return presentAttendanceForActor(updated, actor);
   }
 
   /**
@@ -1862,7 +1872,10 @@ export class ReconciliationService {
     });
 
     await this.runDownstream(attendance.id, attendance.reconciliation_state);
-    return { session, attendance };
+    return {
+      session,
+      attendance: presentAttendanceForActor(attendance, actor),
+    };
   }
 }
 

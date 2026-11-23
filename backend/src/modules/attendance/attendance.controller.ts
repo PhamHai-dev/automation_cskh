@@ -9,7 +9,8 @@ export class AttendanceController {
     try {
       const classId = parseInt(req.params.classId);
       const sessionId = parseInt(req.params.sessionId);
-      const attendances = await attendanceService.listBySession(classId, sessionId);
+      const actor = { id: req.user!.id, roles: req.user!.roles };
+      const attendances = await attendanceService.listBySession(classId, sessionId, actor);
       res.json({ data: attendances, meta: null });
     } catch (error) {
       next(error);

@@ -1,5 +1,13 @@
 # Project Changelog
 
+## 2026-11-23 — Lịch sử điểm danh riêng tư cho Giáo viên
+
+- Đổi tab giáo viên thành `Lịch sử điểm danh`; bảng tháng chỉ thể hiện trạng thái phía GV (`1/A/B/C/D/E`, `–`, `·`) và nhật ký chỉ có `Trạng thái của tôi`.
+- Biến lịch sử thành chỉ đọc ở cả Theo lớp học/Theo học viên; ẩn checkbox, hàng loạt, tạo ca và các thao tác sửa/xóa. Drawer chỉ giữ trạng thái GV, bài học, ghi chú GV và ghi chú CSKH.
+- Thêm presenter allow-list ở backend cho tài khoản thuần `TEACHER`, áp dụng lên class/session/attendance và teacher tracking/write responses để không lộ CS status, final/reconciliation hoặc admin resolution qua Network.
+- Tài khoản `TEACHER` đa vai trò giữ nguyên luồng đặc quyền; không thay Prisma schema hoặc phép tính nghiệp vụ.
+
+
 ## 2026-11-20 — Phân cụm lại sidebar staff
 
 - Giữ kiểu sidebar hiện tại nhưng phân lại tám cụm nghiệp vụ: Tổng quan, Chăm sóc khách hàng, Đào tạo, Giáo viên, Đa kênh, Tự động hóa & Chiến dịch, Dữ liệu và Quản trị hệ thống.

@@ -102,6 +102,7 @@ export interface AttendanceSessionDrawerProps {
   canMarkStatus: boolean;
   canDeleteSession?: boolean;
   defaultEditing?: boolean;
+  teacherHistoryReadonly?: boolean;
   saving?: boolean;
   onSaveStatusAndNotes: (params: {
     session: ClassSession | undefined;
@@ -140,6 +141,7 @@ export const AttendanceSessionDrawer: React.FC<AttendanceSessionDrawerProps> = (
   canMarkStatus,
   canDeleteSession = false,
   defaultEditing = false,
+  teacherHistoryReadonly = false,
   saving = false,
   onSaveStatusAndNotes,
   onSaveNotesOnly,
@@ -202,10 +204,10 @@ export const AttendanceSessionDrawer: React.FC<AttendanceSessionDrawerProps> = (
   useEffect(() => {
     if (!isOpen) return;
     const initialHasSession = Boolean(daySessions[selectedSessionNumber - 1]);
-    setIsEditing(Boolean(defaultEditing || !initialHasSession));
+    setIsEditing(teacherHistoryReadonly ? false : Boolean(defaultEditing || !initialHasSession));
     setMaxCaCount(Math.max(1, daySessions.length, selectedSessionNumber));
     setDraftsByCa(buildInitialDrafts());
-  }, [isOpen, dateStr, studentName]);
+  }, [isOpen, dateStr, studentName, teacherHistoryReadonly]);
 
   // Đồng bộ dữ liệu mới từ server cho những Ca chưa bị người dùng chỉnh sửa (dirty = false)
   useEffect(() => {
@@ -538,6 +540,23 @@ export const AttendanceSessionDrawer: React.FC<AttendanceSessionDrawerProps> = (
             <div className="rounded-xl border border-amber-200 bg-amber-50/80 px-3.5 py-2.5 text-xs text-amber-900">
               <span className="font-bold">Đang tạo Ca {selectedSessionNumber} mới:</span> Chọn trạng thái điểm danh rồi bấm <strong>Lưu thông tin</strong> ở cuối khung.
             </div>
+          ) : teacherHistoryReadonly ? (
+            <div className="rounded-xl border border-teal-200/80 bg-teal-50/40 p-3">
+              <div className="text-[11px] font-extrabold uppercase tracking-wider text-teal-800">
+                Trạng thái của tôi · Ca {selectedSessionNumber}
+              </div>
+              <div className="mt-2">
+                {teacherCfg ? (
+                  <span className={`inline-flex h-7 items-center rounded-md border px-2.5 text-xs font-extrabold ${teacherCfg.bg.replace(/\s*hover:\S+/g, '')} ${teacherCfg.text} ${teacherCfg.border}`}>
+                    {teacherCfg.short} · {teacherCfg.label}
+                  </span>
+                ) : (
+                  <span className="inline-flex h-7 items-center rounded-md border border-dashed border-slate-400 bg-white px-2.5 text-xs font-bold text-slate-600">
+                    – · Chưa điểm danh
+                  </span>
+                )}
+              </div>
+            </div>
           ) : (
             <div className="rounded-xl border border-slate-200 bg-slate-50/90 p-3 space-y-2">
               <div className="flex items-center justify-between gap-2">
@@ -601,7 +620,7 @@ export const AttendanceSessionDrawer: React.FC<AttendanceSessionDrawerProps> = (
             <div className="flex items-center justify-between gap-2 border-b border-teal-200/60 pb-2.5">
               <div className="flex items-center gap-1.5 text-xs font-extrabold text-teal-950">
                 <BookOpen className="h-4 w-4 text-teal-600 shrink-0" />
-                <span>1. Giáo viên (Ca {selectedSessionNumber})</span>
+                <span>{teacherHistoryReadonly ? `Thông tin của tôi (Ca ${selectedSessionNumber})` : `1. Giáo viên (Ca ${selectedSessionNumber})`}</span>
               </div>
               {(() => {
                 const displaySt =
@@ -613,11 +632,11 @@ export const AttendanceSessionDrawer: React.FC<AttendanceSessionDrawerProps> = (
                   <span
                     className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-extrabold ${cfg.bg.replace(/\s*hover:\S+/g, '')} ${cfg.text} ${cfg.border}`}
                   >
-                    GV: {cfg.short} · {cfg.label}
+                      {teacherHistoryReadonly ? '' : 'GV: '}{cfg.short} · {cfg.label}
                   </span>
                 ) : (
                   <Badge variant="neutral" size="sm">
-                    GV: — · Chưa chấm
+                    {teacherHistoryReadonly ? '– · Chưa điểm danh' : 'GV: — · Chưa chấm'}
                   </Badge>
                 );
               })()}
@@ -721,34 +740,36 @@ export const AttendanceSessionDrawer: React.FC<AttendanceSessionDrawerProps> = (
           {/* ================================================================= */}
           {/* BOX 2: THÔNG TIN CSKH (Điểm danh CSKH + Ghi chú CSKH)              */}
           {/* ================================================================= */}
-          {(side !== 'TEACHER' || att?.cs_status || att?.cs_note) && (
+          {(teacherHistoryReadonly ? Boolean(att?.cs_note) : side !== 'TEACHER' || att?.cs_status || att?.cs_note) && (
             <div className="rounded-xl border border-blue-200/80 bg-blue-50/30 p-3.5 space-y-3">
-              <div className="flex items-center justify-between gap-2 border-b border-blue-200/60 pb-2.5">
-                <div className="flex items-center gap-1.5 text-xs font-extrabold text-blue-950">
-                  <UserCheck className="h-4 w-4 text-blue-600 shrink-0" />
-                  <span>2. CSKH (Ca {selectedSessionNumber})</span>
+              {!teacherHistoryReadonly && (
+                <div className="flex items-center justify-between gap-2 border-b border-blue-200/60 pb-2.5">
+                  <div className="flex items-center gap-1.5 text-xs font-extrabold text-blue-950">
+                    <UserCheck className="h-4 w-4 text-blue-600 shrink-0" />
+                    <span>2. CSKH (Ca {selectedSessionNumber})</span>
+                  </div>
+                  {(() => {
+                    const displaySt =
+                      side === 'CS' && isEditing
+                        ? currentDraft.status ?? (att?.cs_status as AttendanceStatus | undefined)
+                        : (att?.cs_status as AttendanceStatus | undefined);
+                    const cfg = displaySt ? DRAWER_STATUS_CONFIG[displaySt] : null;
+                    return cfg ? (
+                      <span
+                        className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-extrabold ${cfg.bg.replace(/\s*hover:\S+/g, '')} ${cfg.text} ${cfg.border}`}
+                      >
+                        CSKH: {cfg.short} · {cfg.label}
+                      </span>
+                    ) : (
+                      <Badge variant="neutral" size="sm">
+                        CSKH: — · Chưa chấm
+                      </Badge>
+                    );
+                  })()}
                 </div>
-                {(() => {
-                  const displaySt =
-                    side === 'CS' && isEditing
-                      ? currentDraft.status ?? (att?.cs_status as AttendanceStatus | undefined)
-                      : (att?.cs_status as AttendanceStatus | undefined);
-                  const cfg = displaySt ? DRAWER_STATUS_CONFIG[displaySt] : null;
-                  return cfg ? (
-                    <span
-                      className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-extrabold ${cfg.bg.replace(/\s*hover:\S+/g, '')} ${cfg.text} ${cfg.border}`}
-                    >
-                      CSKH: {cfg.short} · {cfg.label}
-                    </span>
-                  ) : (
-                    <Badge variant="neutral" size="sm">
-                      CSKH: — · Chưa chấm
-                    </Badge>
-                  );
-                })()}
-              </div>
+              )}
 
-              {side === 'CS' && canMarkStatus && isEditing ? (
+              {!teacherHistoryReadonly && (side === 'CS' && canMarkStatus && isEditing ? (
                 <div>
                   <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-wider text-slate-600">
                     Chọn trạng thái điểm danh CSKH
@@ -793,7 +814,7 @@ export const AttendanceSessionDrawer: React.FC<AttendanceSessionDrawerProps> = (
                     )}
                   </div>
                 </div>
-              )}
+              ))}
 
               {canEditCsFields && isEditing ? (
                 <div>
@@ -826,7 +847,7 @@ export const AttendanceSessionDrawer: React.FC<AttendanceSessionDrawerProps> = (
           {/* ================================================================= */}
           {/* BOX 3: THÔNG TIN ADMIN / ĐIỂM DANH CHỐT & ĐỐI SOÁT                 */}
           {/* ================================================================= */}
-          {side !== 'TEACHER' && (
+          {!teacherHistoryReadonly && side !== 'TEACHER' && (
             <div className="rounded-xl border border-emerald-200/90 bg-emerald-50/30 p-3.5 space-y-3">
               <div className="flex items-center justify-between gap-2 border-b border-emerald-200/60 pb-2.5">
                 <div className="flex items-center gap-1.5 text-xs font-extrabold text-emerald-950">
@@ -959,57 +980,65 @@ export const AttendanceSessionDrawer: React.FC<AttendanceSessionDrawerProps> = (
         </form>
 
         {/* Footer (chuẩn hóa duy nhất 1 nút Sửa ở đây; khi đang sửa thì hiện Hủy sửa + Lưu thông tin) */}
-        <div className="flex items-center justify-between gap-2 border-t border-border bg-slate-50 px-5 py-3.5">
-          {isEditing && daySessions.length > 0 && !defaultEditing ? (
-            <Button
-              variant="outline"
-              size="sm"
-              type="button"
-              onClick={handleCancelEdit}
-              disabled={saving}
-            >
-              Hủy sửa
-            </Button>
-          ) : (
-            <Button variant="outline" size="sm" type="button" onClick={onClose} disabled={saving}>
+        <div className={`flex items-center gap-2 border-t border-border bg-slate-50 px-5 py-3.5 ${teacherHistoryReadonly ? 'justify-end' : 'justify-between'}`}>
+          {teacherHistoryReadonly ? (
+            <Button variant="outline" size="sm" type="button" onClick={onClose}>
               Đóng
             </Button>
-          )}
-
-          {canEditAnything ? (
-            isEditing ? (
-              <Button
-                variant="primary"
-                size="sm"
-                type="button"
-                disabled={saving}
-                onClick={() => void handleSaveAll()}
-                leftIcon={<Check className="h-4 w-4" />}
-              >
-                {saving ? 'Đang lưu...' : 'Lưu thông tin'}
-              </Button>
-            ) : (
-              <Button
-                variant="primary"
-                size="sm"
-                type="button"
-                onClick={() => setIsEditing(true)}
-                leftIcon={<Edit3 className="h-3.5 w-3.5" />}
-              >
-                Sửa thông tin
-              </Button>
-            )
           ) : (
-            <Button
-              variant="primary"
-              size="sm"
-              type="button"
-              disabled
-              leftIcon={<Edit3 className="h-3.5 w-3.5" />}
-              title="Chế độ Chỉ xem (không có quyền chỉnh sửa)"
-            >
-              Sửa thông tin
-            </Button>
+            <>
+              {isEditing && daySessions.length > 0 && !defaultEditing ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  type="button"
+                  onClick={handleCancelEdit}
+                  disabled={saving}
+                >
+                  Hủy sửa
+                </Button>
+              ) : (
+                <Button variant="outline" size="sm" type="button" onClick={onClose} disabled={saving}>
+                  Đóng
+                </Button>
+              )}
+
+              {canEditAnything ? (
+                isEditing ? (
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    type="button"
+                    disabled={saving}
+                    onClick={() => void handleSaveAll()}
+                    leftIcon={<Check className="h-4 w-4" />}
+                  >
+                    {saving ? 'Đang lưu...' : 'Lưu thông tin'}
+                  </Button>
+                ) : (
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    type="button"
+                    onClick={() => setIsEditing(true)}
+                    leftIcon={<Edit3 className="h-3.5 w-3.5" />}
+                  >
+                    Sửa thông tin
+                  </Button>
+                )
+              ) : (
+                <Button
+                  variant="primary"
+                  size="sm"
+                  type="button"
+                  disabled
+                  leftIcon={<Edit3 className="h-3.5 w-3.5" />}
+                  title="Chế độ Chỉ xem (không có quyền chỉnh sửa)"
+                >
+                  Sửa thông tin
+                </Button>
+              )}
+            </>
           )}
         </div>
       </div>

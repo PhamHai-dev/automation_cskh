@@ -11,6 +11,7 @@ import { prisma } from '../../prisma/client';
 import { ClassModelType, AttendanceSourceType } from '@prisma/client';
 import { AuthUser } from '../../middlewares/auth.middleware';
 import { getAccessibleClassIds, assertClassAccess } from './classes.scope';
+import { presentClassForActor } from '../attendance/attendance.presenter';
 
 class CustomError extends Error {
   status: number;
@@ -45,7 +46,7 @@ export class ClassesService {
     return `class_${String(id).padStart(4, '0')}`;
   }
 
-  formatClass<T extends { id?: number; class_code?: string | null; model_type: any; enrollment_classes?: any[] }>(cls: T): T {
+  formatClass<T extends { id?: number; class_code?: string | null; model_type: any; enrollment_classes?: any[] }>(cls: T, user?: AuthUser): T {
     if (!cls) return cls;
     const rawCode = cls.class_code ? String(cls.class_code).trim() : '';
     const shouldCompact = !rawCode || /^(CLS_|id\d+$)/i.test(rawCode);
@@ -67,12 +68,13 @@ export class ClassesService {
           return ec;
         })
       : cls.enrollment_classes;
-    return {
+    const formatted = {
       ...cls,
       class_code: normalizedCode,
       model_type: this.formatModelType(cls.model_type),
       ...(normalizedEcs !== undefined ? { enrollment_classes: normalizedEcs } : {}),
-    };
+    } as T;
+    return presentClassForActor(formatted, user);
   }
 
   async generateUniqueClassCode(): Promise<string> {
@@ -107,7 +109,7 @@ export class ClassesService {
     const accessibleIds = user ? await getAccessibleClassIds(user) : null;
     const classes = await this.repository.findAll(accessibleIds, options);
     await this.normalizeMissingClassCodes(classes);
-    return classes.map((c) => this.formatClass(c));
+    return classes.map((c) => this.formatClass(c, user));
   }
 
   async getClassesWithMeta(
@@ -117,7 +119,7 @@ export class ClassesService {
     const accessibleIds = user ? await getAccessibleClassIds(user) : null;
     const rawClasses = await this.repository.findAll(accessibleIds, options);
     await this.normalizeMissingClassCodes(rawClasses);
-    const data = rawClasses.map((c) => this.formatClass(c));
+    const data = rawClasses.map((c) => this.formatClass(c, user));
     const meta = await this.repository.computeMeta(accessibleIds, options, data);
     return { data, meta };
   }
@@ -136,7 +138,7 @@ export class ClassesService {
         cls.class_code = targetCode;
       }
     }
-    return this.formatClass(cls);
+    return this.formatClass(cls, user);
   }
 
   async createClass(data: CreateClassDTO) {

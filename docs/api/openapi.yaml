@@ -1288,7 +1288,9 @@ paths:
       summary: List students and lesson sessions in selected teacher scope
       description: >-
         Search, program, class, role scope, count and pagination are applied server-side before
-        returning rows. JNPT is accepted only as a legacy alias and normalized to JLPT.
+        returning rows. JNPT is accepted only as a legacy alias and normalized to JLPT. For a
+        pure TEACHER account, session status is derived only from teacherStatus and the response
+        omits finalStatus and reconciliationState; privileged or multi-role views keep them.
       tags: [Attendance Reconciliation]
       parameters:
         - { name: teacherId, in: query, description: Required for ADMIN/MANAGE; TEACHER uses self, schema: { type: integer } }
@@ -1309,6 +1311,11 @@ paths:
   /api/v1/attendance-reconciliation/teacher-sessions:
     get:
       summary: List teacher sessions and active students in actor scope
+      description: >-
+        Nested attendance is role-shaped. A pure TEACHER receives TeacherAttendanceView fields
+        only (teacher_status, lesson_topic, teacher_note and cs_note); CS status, final status,
+        reconciliation and admin resolution fields are omitted. Multi-role staff keep the
+        privileged response.
       tags: [Attendance Reconciliation]
       parameters:
         - { name: startDate, in: query, required: true, schema: { type: string, format: date } }
@@ -1972,6 +1979,26 @@ components:
         updated_at:
           type: string
           format: date-time
+
+    TeacherAttendanceView:
+      type: object
+      description: Allow-listed Attendance projection returned to a pure TEACHER account.
+      properties:
+        id: { type: integer }
+        enrollment_class_id: { type: integer }
+        class_session_id: { type: integer }
+        source:
+          type: string
+          enum: [MANUAL, EXCEL_IMPORT, TEACHER_UPLOAD, AUTO_SCHEDULE]
+        teacher_status:
+          type: [string, 'null']
+          enum: [ATTENDED, ABSENT_APPROVED_A, LEAVE_B, ABSENT_UNAPPROVED_C, TEACHER_ABSENT_D, TECH_ERROR_E, null]
+        lesson_topic: { type: [string, 'null'] }
+        teacher_note: { type: [string, 'null'] }
+        cs_note: { type: [string, 'null'] }
+        teacher_submitted_at: { type: [string, 'null'], format: date-time }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
 
     ImportBatch:
       type: object

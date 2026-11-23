@@ -38,6 +38,8 @@ Base: `/api/v1/classes/{classId}/sessions/{sessionId}/attendance`
 - Chỉ `MATCHED/RESOLVED` được tính số buổi và kích hoạt automation. Khi đang pending/conflict, `status` không được coi là kết quả chính thức.
 - Cross-class attendance bị chặn và mọi write enforce role + data scope ở service.
 - `TEACHER` chỉ xem/ghi lớp có `ClassTeacher(active=true)`; `CS` chỉ ghi Enrollment có `cs_id` của mình. `ADMIN/MANAGE` được hỗ trợ thao tác theo giáo viên; actor và người được hỗ trợ phải được audit.
+- Với tài khoản thuần `TEACHER` (có `TEACHER`, không có `ADMIN`, `MANAGE`, `CS`), mọi Attendance trả về từ class/session/list/write và teacher tracking chỉ gồm trạng thái phía giáo viên (`teacher_status`), bài học, ghi chú giáo viên và `cs_note`; không trả `status`, `cs_status`, reconciliation/final/resolution. Tài khoản đa vai trò giữ contract đặc quyền hiện hành.
+- Lịch sử điểm danh của giáo viên là chỉ đọc; thao tác tạo ca, chấm/sửa/xóa và hàng loạt chỉ thực hiện trong tab `Nhập điểm danh`.
 - `Chưa điểm danh` không phải status; reset soft-delete Attendance, hủy delivery đang chờ và giữ delivery đã gửi cùng audit.
 - Sửa Attendance final khiến hai nguồn khác nhau sẽ đưa về `CONFLICT`; không tự hoàn tác automation đã gửi.
 
@@ -47,7 +49,7 @@ Base: `/api/v1/attendance-reconciliation`.
 
 ### Danh sách và bộ lọc backend
 
-- `GET /teacher-sessions?startDate&endDate&teacherId&classId&search&modelType&completionState&page&pageSize`: TEACHER xem lớp của mình; ADMIN/MANAGE có thể chọn giáo viên. Search, lớp, mô hình, trạng thái hoàn thành và pagination được áp dụng backend trước khi trả dữ liệu. Trả `{ items, total, page, pageSize, totalPages }`, mỗi item là ClassSession kèm toàn bộ EnrollmentClass `ACTIVE`, kể cả chưa có Attendance.
+- `GET /teacher-sessions?startDate&endDate&teacherId&classId&search&modelType&completionState&page&pageSize`: TEACHER xem lớp của mình; ADMIN/MANAGE có thể chọn giáo viên. Search, lớp, mô hình, trạng thái hoàn thành và pagination được áp dụng backend trước khi trả dữ liệu. Trả `{ items, total, page, pageSize, totalPages }`, mỗi item là ClassSession kèm toàn bộ EnrollmentClass `ACTIVE`, kể cả chưa có Attendance. Attendance lồng nhau được role-shape theo quy tắc pure-teacher ở trên.
 - `GET /pending?page&pageSize&classId&csId&teacherId&state&startDate&endDate&search&programType`: trả hàng chờ trong data scope; `state=PENDING_CS|PENDING_TEACHER`, `programType=KAIWA|JLPT` (`JNPT` chỉ là alias input cũ và được chuẩn hóa thành `JLPT`).
 - `GET /conflicts`, `GET /stats` và `GET /history` nhận cùng các bộ lọc có ý nghĩa. Search bao phủ tên/mã/SĐT/email học viên, mã khóa học, tên/mã gói và tên/mã lớp.
 - Scope và filter được gộp trong cùng Prisma predicate trước count, sort và pagination: ADMIN không giới hạn; CS thường chỉ thấy Enrollment có `cs_id` của mình; MANAGE thấy chính mình và thành viên các nhóm CS được giao; TEACHER chỉ thấy lớp được phân công trên luồng teacher tracking. Filter người dùng chỉ thu hẹp, không mở rộng scope.

@@ -51,6 +51,9 @@
 - [x] Bulk marking trực tiếp qua click ô ngày: `X` (Có mặt), `A` (Nghỉ phép), `B` (Bảo lưu), `C` (Nghỉ không phép), `D` (GV nghỉ), `E` (Lỗi kỹ thuật).
 - [x] Status legend A/B/C/D/E.
 - [x] Read-only state theo role/source.
+- [x] Lịch sử tài khoản thuần `TEACHER` chỉ hiển thị `teacher_status`, bài học, ghi chú GV và `cs_note`; không hiển thị CSKH/final/reconciliation/admin resolution.
+- [x] Backend role-shape Attendance cho pure teacher ở class/session/list/write và teacher tracking; tài khoản đa vai trò giữ contract cũ.
+- [x] Lịch sử GV không có checkbox, bulk action, tạo ca, sửa hoặc xóa; các thao tác ghi nằm ở `Nhập điểm danh`.
 - [x] Confirmation khi sửa dữ liệu cũ nếu policy quy định.
 
 ## API contract
