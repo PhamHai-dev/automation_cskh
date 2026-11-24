@@ -4,20 +4,40 @@ import { SheetSyncService } from './sheet-sync.service';
 import { SheetBackupService } from './sheet-backup.service';
 import { ImportType } from '@prisma/client';
 import { AppError } from '../../middlewares/error.middleware';
+import { JlptWorkbookService } from './jlpt-workbook.service';
 
 export class ImportsController {
   private service: ImportsService;
   private sheetSyncService: SheetSyncService;
   private sheetBackupService: SheetBackupService;
+  private jlptWorkbookService: JlptWorkbookService;
 
   constructor(
     service?: ImportsService,
     sheetSyncService?: SheetSyncService,
-    sheetBackupService?: SheetBackupService
+    sheetBackupService?: SheetBackupService,
+    jlptWorkbookService?: JlptWorkbookService
   ) {
     this.service = service || new ImportsService();
     this.sheetSyncService = sheetSyncService || new SheetSyncService();
     this.sheetBackupService = sheetBackupService || new SheetBackupService(this.sheetSyncService, this.service);
+    this.jlptWorkbookService = jlptWorkbookService || new JlptWorkbookService();
+  }
+
+  private isAdmin(req: Request) {
+    return Boolean(req.user?.roles.includes('ADMIN'));
+  }
+
+  private assertJlptSyncAdmin(req: Request, flowType?: unknown) {
+    if (String(flowType || '').toUpperCase() === 'JLPT_LEARNING_LOG' && !this.isAdmin(req)) {
+      throw new AppError(403, 'Chỉ ADMIN được cấu hình hoặc chạy đồng bộ nhật ký học tập JLPT');
+    }
+  }
+
+  private async assertJlptConfigAdmin(req: Request, idOrCode: string) {
+    const config = await this.sheetSyncService.findConfigByIdOrCode(idOrCode);
+    this.assertJlptSyncAdmin(req, config.flow_type);
+    return config;
   }
 
   upload = async (req: Request, res: Response, next: NextFunction) => {
@@ -308,6 +328,7 @@ export class ImportsController {
 
   createSheetSyncConfig = async (req: Request, res: Response, next: NextFunction) => {
     try {
+      this.assertJlptSyncAdmin(req, req.body?.flow_type);
       const user = (req as any).user;
       const data = await this.sheetSyncService.createConfig(req.body || {}, user?.id);
       res.status(201).json({ data, meta: null });
@@ -318,6 +339,7 @@ export class ImportsController {
 
   bulkPasteSheetSyncLinks = async (req: Request, res: Response, next: NextFunction) => {
     try {
+      this.assertJlptSyncAdmin(req, req.body?.flow_type);
       const user = (req as any).user;
       const data = await this.sheetSyncService.bulkPasteLinks(req.body || {}, user?.id);
       res.status(200).json({ data, meta: null });
@@ -329,6 +351,7 @@ export class ImportsController {
   deleteSheetSyncConfig = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const code = req.params.code;
+      await this.assertJlptConfigAdmin(req, code);
       const data = await this.sheetSyncService.deleteConfig(code);
       res.status(200).json({ data, meta: null });
     } catch (err) {
@@ -339,6 +362,7 @@ export class ImportsController {
   previewSheetSyncByCode = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const code = req.params.code;
+      await this.assertJlptConfigAdmin(req, code);
       const data = await this.sheetSyncService.previewConfig(code, {
         sync_year: req.body?.sync_year !== undefined ? (req.body.sync_year ? Number(req.body.sync_year) : null) : undefined,
         filter_config: req.body?.filter_config,
@@ -353,6 +377,7 @@ export class ImportsController {
   commitSheetSyncByCode = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const code = req.params.code;
+      await this.assertJlptConfigAdmin(req, code);
       const user = (req as any).user;
       const data = await this.sheetSyncService.commitConfigSync(code, {
         previewToken: req.body?.previewToken,
@@ -385,6 +410,8 @@ export class ImportsController {
   updateSheetSyncConfig = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const code = req.params.code;
+      const existing = await this.assertJlptConfigAdmin(req, code);
+      this.assertJlptSyncAdmin(req, req.body?.flow_type || existing.flow_type);
       const user = (req as any).user;
       const updated = await this.sheetSyncService.updateConfig(code, req.body || {}, user?.id);
       res.status(200).json({ data: updated, meta: null });
@@ -399,6 +426,7 @@ export class ImportsController {
         throw new AppError(400, 'Vui lòng chọn file Excel (.xlsx) từ máy tính');
       }
       const code = req.params.code;
+      await this.assertJlptConfigAdmin(req, code);
       const user = (req as any).user;
       const data = await this.sheetSyncService.saveUploadedLocalFile(code, req.file, user?.id);
       res.status(200).json({ data, meta: null });
@@ -410,6 +438,7 @@ export class ImportsController {
   syncSheetByCode = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const code = req.params.code;
+      await this.assertJlptConfigAdmin(req, code);
       const user = (req as any).user;
       const forceFullSync = Boolean(req.body?.forceFullSync);
       const limit = req.body?.limit ? Number(req.body.limit) : undefined;
@@ -430,11 +459,13 @@ export class ImportsController {
       const forceFullSync = Boolean(req.body?.forceFullSync);
       const limit = req.body?.limit ? Number(req.body.limit) : undefined;
       const flowType = req.body?.flowType ? String(req.body.flowType) : undefined;
+      this.assertJlptSyncAdmin(req, flowType);
       const data = await this.sheetSyncService.syncAll({
         forceFullSync,
         limit,
         flowType,
         actorId: user?.id,
+        actorRoles: user?.roles || [],
       });
       res.status(200).json({ data, meta: null });
     } catch (err) {
@@ -720,5 +751,73 @@ export class ImportsController {
     } catch (err) {
       next(err);
     }
+  };
+  previewJlptWorkbook = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      if (!req.file) throw new AppError(400, 'Vui lòng chọn workbook NKHT JLPT');
+      const targetYear = Number(req.body?.target_year);
+      const data = await this.jlptWorkbookService.preview(req.file.buffer, targetYear, req.user!);
+      res.status(200).json({ data, meta: null });
+    } catch (error) { next(error); }
+  };
+
+  confirmJlptWorkbook = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      if (!req.file) throw new AppError(400, 'Vui lòng chọn workbook NKHT JLPT');
+      const parseMap = (value: unknown, label: string) => {
+        if (typeof value !== 'string') throw new AppError(400, `${label} phải là JSON object`);
+        try { const parsed = JSON.parse(value); if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object') throw new Error(); return parsed; }
+        catch { throw new AppError(400, `${label} không phải JSON object hợp lệ`); }
+      };
+      const data = await this.jlptWorkbookService.confirm(
+        req.file.buffer,
+        Number(req.body?.target_year),
+        String(req.body?.preview_token || ''),
+        parseMap(req.body?.conflict_actions, 'conflict_actions'),
+        parseMap(req.body?.normalization_resolutions, 'normalization_resolutions'),
+        req.user!,
+        req.file.originalname,
+      );
+      res.status(200).json({ data, meta: null });
+    } catch (error) { next(error); }
+  };
+
+  exportJlptWorkbook = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const parseIds = (value: unknown) => String(value || '').split(',').map(Number).filter((id) => Number.isInteger(id) && id > 0);
+      const result = await this.jlptWorkbookService.exportWorkbook(Number(req.query.year), parseIds(req.query.teacher_ids), parseIds(req.query.class_ids), req.user!);
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', `attachment; filename="jlpt_nkht_${req.query.year}.xlsx"`);
+      if (result.warnings.length) res.setHeader('X-JLPT-Export-Warnings', encodeURIComponent(result.warnings.join(' | ')));
+      res.send(result.buffer);
+    } catch (error) { next(error); }
+  };
+
+  listJlptNormalizationTasks = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const data = await this.jlptWorkbookService.listTasks(req.user!, {
+        page: req.query.page ? Number(req.query.page) : undefined,
+        pageSize: req.query.pageSize ? Number(req.query.pageSize) : undefined,
+        status: req.query.status ? String(req.query.status) : undefined,
+        issueType: req.query.issue_type ? String(req.query.issue_type) : undefined,
+        runId: req.query.run_id ? Number(req.query.run_id) : undefined,
+        classId: req.query.class_id ? Number(req.query.class_id) : undefined,
+      });
+      res.status(200).json({ data, meta: null });
+    } catch (error) { next(error); }
+  };
+
+  resolveJlptNormalizationTask = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const data = await this.jlptWorkbookService.resolveTask(Number(req.params.taskId), req.body || {}, req.user!);
+      res.status(200).json({ data, meta: null });
+    } catch (error) { next(error); }
+  };
+
+  rejectJlptNormalizationTask = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const data = await this.jlptWorkbookService.rejectTask(Number(req.params.taskId), String(req.body?.reason || ''), req.user!);
+      res.status(200).json({ data, meta: null });
+    } catch (error) { next(error); }
   };
 }

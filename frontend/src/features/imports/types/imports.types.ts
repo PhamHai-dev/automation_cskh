@@ -103,7 +103,8 @@ export type SyncFlowType =
   | 'STUDENT_MASTER'
   | 'CSKH_ATTENDANCE'
   | 'TEACHER_ATTENDANCE'
-  | 'STUDY_REPORT';
+  | 'STUDY_REPORT'
+  | 'JLPT_LEARNING_LOG';
 
 export interface SyncFilterConfig {
   sourceStatuses?: string[];
@@ -120,6 +121,7 @@ export interface SyncFlowCounts {
   CSKH_ATTENDANCE: number;
   TEACHER_ATTENDANCE: number;
   STUDY_REPORT: number;
+  JLPT_LEARNING_LOG: number;
 }
 
 export interface GoogleSheetSyncConfig {
@@ -539,6 +541,20 @@ export interface SyncHistoryChangeLogItem {
   rolledBackAt?: string | null;
 }
 
+export interface JlptNormalizationTaskItem {
+  id: number;
+  source_type: 'MANUAL_IMPORT' | 'GOOGLE_SHEET_SYNC';
+  issue_type: 'AMBIGUOUS_ABSENCE' | 'SESSION_HEADER_MISMATCH';
+  status: 'PENDING' | 'RESOLVED' | 'REJECTED';
+  class_id?: number | null;
+  enrollment_class_id?: number | null;
+  class_session_id?: number | null;
+  source_note?: string | null;
+  raw_payload: Record<string, unknown>;
+  proposed_metadata?: Record<string, unknown> | null;
+  created_at: string;
+}
+
 export interface SyncHistoryDetailResponse {
   run: {
     id: number;
@@ -564,6 +580,7 @@ export interface SyncHistoryDetailResponse {
     remainingAppliedCount: number;
   };
   items: SyncHistoryChangeLogItem[];
+  normalizationTasks?: JlptNormalizationTaskItem[];
 }
 
 export interface SyncRollbackConflictItem {

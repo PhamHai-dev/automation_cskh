@@ -35,6 +35,7 @@ import {
   toLocalDateString,
 } from '../components/AttendanceMatrix';
 import { AttendanceSessionDrawer } from '../components/AttendanceSessionDrawer';
+import { JlptLearningColumns, JlptLearningHeaders, JlptLearningProvider } from '../components/JlptLearningColumns';
 import { AttendanceStatusDropdown } from '../components/AttendanceStatusDropdown';
 import {
   MonthlyEmptyDateCell,
@@ -246,6 +247,10 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
   const activeSide: AttendanceSide = isAdminOrManage ? 'ADMIN' : isCSOnly ? 'CS' : 'TEACHER';
   const canManageClasses = isAdminOrManage;
   const isAdmin = Boolean(user?.roles?.includes('ADMIN'));
+  const jlptLearningLogEnabled = import.meta.env.VITE_ENABLE_JLPT_LEARNING_LOG === 'true';
+  const canWriteJlptRecords = Boolean(
+    user?.roles?.some((role) => role === 'ADMIN' || role === 'MANAGE' || role === 'TEACHER')
+  );
 
   const toast = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -293,6 +298,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
       /* ignore */
     }
   };
+  const showClassSelection = !isTeacher || activeTab === 'quick';
   const prefScope: PreferenceScope = `enrollments.${activeTab}`;
   const { visible: visibleColumns } = useColumnVisibility(prefScope);
   const isColVisible = (key: string): boolean => {
@@ -389,7 +395,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
     return new Date();
   });
 
-  // Collapsed state for 1:2 / 1:n classes (empty set = all expanded by default)
+  // Collapsed state for every class model (empty set = all expanded by default)
   const [collapsedClassIds, setCollapsedClassIds] = useState<Set<number>>(new Set());
 
   // Inline note/lesson draft edits keyed by `${enrollment_class_id}_${dateStr}_s${ca}`
@@ -433,6 +439,9 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
   const [savingKey, setSavingKey] = useState<string | null>(null);
   const inlineTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const lastSavedNoteRef = useRef<Record<string, { lesson: string; note: string }>>({});
+
+  // Tiêu chí học tập JLPT được nhập trực tiếp trong bảng điểm danh; Kaiwa giữ nguyên.
+
 
   // Modal Thêm/Sửa Lớp học
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -1413,6 +1422,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
   }, [allStudentRows, activeTab, statsAttendanceFilter, studentAttendanceStats]);
 
   const allSessions = useMemo(() => Array.from(sessionsById.values()), [sessionsById]);
+
   const allAttendances = useMemo(
     () => Array.from(attendanceByEcAndSession.values()),
     [attendanceByEcAndSession]
@@ -2130,19 +2140,11 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
     }
   };
 
-  const multiStudentClasses = useMemo(
-    () =>
-      filteredClasses.filter(
-        (c) => normalizeModel(c.model_type) !== '1:1' || getAllStudentsOfClass(c).length > 1
-      ),
-    [filteredClasses]
-  );
-
-  const allExpanded = multiStudentClasses.every((c) => !collapsedClassIds.has(c.id));
+  const allExpanded = filteredClasses.every((c) => !collapsedClassIds.has(c.id));
 
   const handleToggleExpandAll = () => {
     if (allExpanded) {
-      setCollapsedClassIds(new Set(multiStudentClasses.map((c) => c.id)));
+      setCollapsedClassIds(new Set(filteredClasses.map((c) => c.id)));
     } else {
       setCollapsedClassIds(new Set());
     }
@@ -4095,8 +4097,20 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
 
   const totalStudentsCount = enrollmentsMeta?.total ?? classesMeta?.total ?? matrixStudents.length;
   const totalClassesCount = classesMeta?.total ?? tableClasses.length;
+  const showJlptLearningColumns = jlptLearningLogEnabled && programFilter !== 'KAIWA' &&
+    (programFilter === 'JLPT' || matrixStudents.some(st => st.program_type?.toUpperCase() === 'JLPT') ||
+      tableClasses.some(cls => cls.program_type === 'JLPT' ||
+        getAllStudentsOfClass(cls).some(st => st.program_type?.toUpperCase() === 'JLPT')));
+
+  const visibleOptionalColsCount = ['level', 'model_type', 'teacher_name', 'schedule_pattern', 'status']
+    .filter(isColVisible).length;
+  const classIdentityColumnCount = (showClassSelection ? 3 : 2) + visibleOptionalColsCount;
+  const classAttendanceColumnCount = 1 +
+    (activeTab === 'quick' ? (isCSOnly ? 4 : 3) : 2 + visiblePeriodDates.length) +
+    (canManageClasses ? 1 : 0) + (activeTab === 'quick' && showJlptLearningColumns ? 4 : 0);
 
   return (
+    <JlptLearningProvider key={`classes-${selectedDate}-${programFilter}-${displayMode}-${page}`}>
     <PageContainer>
       <PageHeader
         title={isTeacher ? 'Điểm danh' : 'Lớp học & Điểm danh'}
@@ -4259,6 +4273,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
           </div>
         ) : (
           <AttendanceMatrix
+            showJlptLearningColumns={showJlptLearningColumns}
             activeTab={activeTab}
             titleHeader={
               <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-text-secondary">
@@ -4342,7 +4357,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
 
             <ColumnVisibilityDropdown scope={prefScope} />
 
-            {multiStudentClasses.length > 0 && (
+            {filteredClasses.length > 0 && (
               <Button
                 variant="outline"
                 size="sm"
@@ -4356,7 +4371,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                 }
                 className="h-8 text-xs font-semibold"
               >
-                {allExpanded ? 'Thu gọn lớp 1:n' : 'Mở rộng tất cả lớp 1:n'}
+                {allExpanded ? 'Thu gọn tất cả lớp' : 'Mở rộng tất cả lớp'}
               </Button>
             )}
           </div>
@@ -4937,13 +4952,14 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
           <table className="w-full text-xs text-left border-collapse">
             <thead>
               <tr className="bg-surface-muted/90 text-text-secondary border-b border-border/80 text-[11px] font-bold">
-                <th
-                  className={`px-2 py-3 border-r border-border/60 w-10 min-w-[40px] max-w-[40px] text-center bg-slate-100 ${
-                    activeTab === 'detailed' ? 'sticky left-0 z-30 bg-slate-100' : ''
-                  }`}
-                >
-                  {!isTeacher && (
+                {showClassSelection && (
+                  <th
+                    className={`px-2 py-3 border-r border-border/60 w-10 min-w-[40px] max-w-[40px] text-center bg-slate-100 ${
+                      activeTab === 'detailed' ? 'sticky left-0 z-30 bg-slate-100' : ''
+                    }`}
+                  >
                     <input
+                      id="select-all-class-attendance"
                       ref={(el) => {
                         if (el) el.indeterminate = someVisibleInClassesSelected;
                       }}
@@ -4955,11 +4971,13 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                       title="Chọn hoặc bỏ chọn tất cả lớp / học viên đang hiển thị"
                       aria-label="Chọn hoặc bỏ chọn tất cả lớp / học viên đang hiển thị"
                     />
-                  )}
-                </th>
+                  </th>
+                )}
                 <th
                   className={`px-3 py-3 border-r border-border/60 whitespace-nowrap w-28 min-w-[112px] max-w-[112px] overflow-hidden ${
-                    activeTab === 'detailed' ? 'sticky left-10 z-30 bg-slate-100' : ''
+                    activeTab === 'detailed'
+                      ? `sticky ${showClassSelection ? 'left-10' : 'left-0'} z-30 bg-slate-100`
+                      : ''
                   }`}
                 >
                   Mã lớp
@@ -4967,7 +4985,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                 <th
                   className={`px-3 py-3 border-r-2 border-border/80 whitespace-nowrap w-[155px] min-w-[155px] max-w-[155px] overflow-hidden ${
                     activeTab === 'detailed'
-                      ? 'sticky left-[152px] z-30 bg-slate-100 shadow-[4px_0_6px_-2px_rgba(0,0,0,0.08)]'
+                      ? `sticky ${showClassSelection ? 'left-[152px]' : 'left-[112px]'} z-30 bg-slate-100 shadow-[4px_0_6px_-2px_rgba(0,0,0,0.08)]`
                       : ''
                   }`}
                 >
@@ -5134,6 +5152,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                   </>
                 )}
 
+                {activeTab === 'quick' && showJlptLearningColumns && <JlptLearningHeaders />}
                 {canManageClasses && (
                   <th className="px-3 py-3 text-right whitespace-nowrap min-w-[110px]">
                     Thao tác
@@ -5146,14 +5165,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
               {loading ? (
                 <tr>
                   <td
-                    colSpan={
-                      (activeTab === 'quick'
-                        ? isCSOnly
-                          ? 13
-                          : 12
-                        : 11 + visiblePeriodDates.length) +
-                      (canManageClasses ? 1 : 0)
-                    }
+                    colSpan={classIdentityColumnCount + classAttendanceColumnCount}
                     className="py-12 text-center text-text-muted"
                   >
                     Đang tải danh sách lớp học & điểm danh...
@@ -5162,14 +5174,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
               ) : tableClasses.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={
-                      (activeTab === 'quick'
-                        ? isCSOnly
-                          ? 13
-                          : 12
-                        : 11 + visiblePeriodDates.length) +
-                      (canManageClasses ? 1 : 0)
-                    }
+                    colSpan={classIdentityColumnCount + classAttendanceColumnCount}
                     className="py-12 text-center text-text-muted"
                   >
                     {activeTab === 'quick' && onlyScheduledOnDate && filteredClasses.length > 0
@@ -5191,8 +5196,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                     cleanClassIdentifier(cls.class_name) ||
                     cleanClassIdentifier(cls.class_code) ||
                     cls.class_name;
-                  const isOneToOne = modelNorm === '1:1' && students.length <= 1;
-                  const singleStudent = isOneToOne ? students[0] : undefined;
+                  const firstStudent = students[0];
                   const isExpanded = !collapsedClassIds.has(cls.id);
                   const mainTeacher =
                     cls.class_teachers?.find((t) => t.role === 'MAIN' && t.active !== false)?.teacher ||
@@ -5201,14 +5205,14 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                     cls.class_teachers?.[0]?.teacher;
                   const schedule = cls.class_schedules?.[0];
                   const formattedStartTime = formatScheduleTimeDisplay(schedule?.start_time);
-
-                  const singleStudentStat = singleStudent
-                    ? studentAttendanceStats.get(singleStudent.enrollment_class_id)
-                    : undefined;
-                  const singleTotalAttended =
-                    (singleStudent?.attended_previous_years || 0) +
-                    (singleStudentStat?.totalAttended || 0);
-                  const singleMonthAttended = singleStudentStat?.monthAttended || 0;
+                  const isJlptClass =
+                    cls.program_type === 'JLPT' ||
+                    allClassStudents.some(
+                      (student) => (student.program_type || '').toUpperCase() === 'JLPT'
+                    ) ||
+                    /\b(jlpt|jnpt|n[1-5])\b/i.test(
+                      `${cls.class_code || ''} ${cls.class_name} ${cls.level || ''}`
+                    );
 
                   const classSumTotalAttended = students.reduce((acc, s) => {
                     const stStat = studentAttendanceStats.get(s.enrollment_class_id);
@@ -5233,35 +5237,28 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                     classEcIds.length > 0 &&
                     selectedInClassCount > 0 &&
                     !allInClassSelected;
-                  const visibleOptionalColsCount =
-                    (isColVisible('level') ? 1 : 0) +
-                    (isColVisible('model_type') ? 1 : 0) +
-                    (isColVisible('teacher_name') ? 1 : 0) +
-                    (isColVisible('schedule_pattern') ? 1 : 0) +
-                    (isColVisible('status') ? 1 : 0);
 
                   return (
                     <React.Fragment key={cls.id}>
                       {/* DÒNG LỚP HỌC CHÍNH */}
                       <tr
+                        id={`attendance-class-${cls.id}`}
+                        data-row-kind="class"
                         className={`border-b border-border/70 transition-colors ${
                           allInClassSelected
                             ? 'bg-primary-soft/40'
-                            : isOneToOne
-                            ? 'bg-surface hover:bg-slate-50/80'
                             : 'bg-slate-100/75 hover:bg-slate-100 font-semibold'
                         }`}
                       >
                         {/* Checkbox chọn lớp / toàn bộ học viên của lớp */}
-                        <td
-                          className={`px-2 py-2.5 border-r border-border/60 w-10 min-w-[40px] max-w-[40px] text-center ${
-                            activeTab === 'detailed'
-                              ? `sticky left-0 z-20 ${isOneToOne ? 'bg-surface' : 'bg-slate-100'}`
-                              : ''
-                          }`}
-                        >
-                          {!isTeacher && (
+                        {showClassSelection && (
+                          <td
+                            className={`px-2 py-2.5 border-r border-border/60 w-10 min-w-[40px] max-w-[40px] text-center ${
+                              activeTab === 'detailed' ? 'sticky left-0 z-20 bg-slate-100' : ''
+                            }`}
+                          >
                             <input
+                              id={`select-attendance-class-${cls.id}`}
                               ref={(el) => {
                                 if (el) el.indeterminate = someInClassSelected;
                               }}
@@ -5269,20 +5266,17 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                               checked={allInClassSelected}
                               onChange={() => handleToggleSelectClassRow(cls, students)}
                               className="h-3.5 w-3.5 cursor-pointer rounded border-slate-300 text-primary accent-primary focus:ring-primary"
-                              title={
-                                isOneToOne
-                                  ? 'Chọn lớp / học viên'
-                                  : `Chọn hoặc bỏ chọn toàn bộ học viên lớp ${formattedCode}`
-                              }
+                              title={`Chọn hoặc bỏ chọn toàn bộ học viên lớp ${formattedCode}`}
+                              aria-label={`Chọn hoặc bỏ chọn toàn bộ học viên lớp ${formattedCode}`}
                             />
-                          )}
-                        </td>
+                          </td>
+                        )}
 
                         {/* Mã lớp chuẩn class_0001 */}
                         <td
                           className={`px-3 py-2.5 border-r border-border/60 whitespace-nowrap w-28 min-w-[112px] max-w-[112px] overflow-hidden ${
                             activeTab === 'detailed'
-                              ? `sticky left-10 z-20 ${isOneToOne ? 'bg-surface' : 'bg-slate-100'}`
+                              ? `sticky ${showClassSelection ? 'left-10' : 'left-0'} z-20 bg-slate-100`
                               : ''
                           }`}
                         >
@@ -5295,22 +5289,21 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                         <td
                           className={`px-3 py-2.5 border-r-2 border-border/80 font-bold text-slate-900 text-xs whitespace-nowrap w-[155px] min-w-[155px] max-w-[155px] overflow-hidden ${
                             activeTab === 'detailed'
-                              ? `sticky left-[152px] z-20 shadow-[4px_0_6px_-2px_rgba(0,0,0,0.08)] ${
-                                  isOneToOne ? 'bg-surface' : 'bg-slate-100'
-                                }`
+                              ? `sticky ${showClassSelection ? 'left-[152px]' : 'left-[112px]'} z-20 shadow-[4px_0_6px_-2px_rgba(0,0,0,0.08)] bg-slate-100`
                               : ''
                           }`}
                           title={cleanedClassName}
                         >
                           <div className="truncate max-w-[150px]">{cleanedClassName}</div>
+
                         </td>
 
                         {/* Trình độ */}
                         {isColVisible('level') && (
                           <td className="px-2.5 py-2.5 border-r border-border/60 text-center whitespace-nowrap">
-                            {cls.level || singleStudent?.level ? (
+                            {cls.level || firstStudent?.level ? (
                               <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">
-                                {cls.level || singleStudent?.level}
+                                {cls.level || firstStudent?.level}
                               </span>
                             ) : (
                               <span className="text-text-muted">—</span>
@@ -5368,29 +5361,17 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                           className={`px-3 py-2.5 border-r-2 border-border/80 whitespace-nowrap min-w-[175px] ${
                             activeTab === 'detailed'
                               ? `${
-                                  isOneToOne ? 'bg-surface' : 'bg-slate-100'
+                                  'bg-slate-100'
                                 }`
                               : ''
                           }`}
                         >
-                          {isOneToOne ? (
-                            singleStudent ? (
-                              <div>
-                                <div className="font-bold text-text-primary whitespace-nowrap">
-                                  {singleStudent.full_name}
-                                </div>
-                                <div className="font-mono text-[10px] text-text-muted whitespace-nowrap">
-                                  {singleStudent.external_id}
-                                </div>
-                              </div>
-                            ) : (
-                              <span className="text-xs italic text-slate-400 whitespace-nowrap">
-                                Chưa xếp học viên
-                              </span>
-                            )
-                          ) : (
+                          {(
                             <button
+                              id={`toggle-attendance-class-${cls.id}`}
                               type="button"
+                              aria-expanded={isExpanded}
+                              aria-label={`${isExpanded ? 'Thu gọn' : 'Mở rộng'} học viên lớp ${formattedCode}`}
                               onClick={() => toggleClassExpand(cls.id)}
                               className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-purple-200 bg-purple-50/80 px-2.5 py-1 text-xs font-extrabold text-purple-900 hover:bg-purple-100 transition"
                             >
@@ -5410,15 +5391,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                           isTeacher ? (
                             <>
                               <td className="px-2.5 py-2 border-r border-border/60 bg-teal-50/20 align-top">
-                                {isOneToOne ? (
-                                  singleStudent ? (
-                                    renderQuickStatusCell(cls, singleStudent, selectedDate)
-                                  ) : (
-                                    <span className="text-xs italic text-slate-400">
-                                      Chưa có học viên
-                                    </span>
-                                  )
-                                ) : (
+                                {(
                                   <div className="flex flex-col gap-1.5">
                                     {Array.from(
                                       { length: getVisibleCaCount(cls, selectedDate) },
@@ -5558,28 +5531,14 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                                         selectedDate,
                                         idx + 1,
                                         getVisibleCaCount(cls, selectedDate),
-                                        isOneToOne
+                                        false
                                       )
                                   )}
                                 </div>
                               </td>
 
                               <td className="px-2.5 py-2 border-r border-border/60 bg-indigo-50/15 select-text align-top">
-                                {isOneToOne && singleStudent ? (
-                                  <div className="flex flex-col gap-1.5">
-                                    {Array.from(
-                                      { length: getVisibleCaCount(cls, selectedDate) },
-                                      (_, idx) =>
-                                        renderCaNoteInput(
-                                          cls,
-                                          singleStudent,
-                                          selectedDate,
-                                          idx + 1,
-                                          getVisibleCaCount(cls, selectedDate)
-                                        )
-                                    )}
-                                  </div>
-                                ) : (
+                                {(
                                   <span className="text-[11px] text-text-muted">—</span>
                                 )}
                               </td>
@@ -5588,13 +5547,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                             <>
                               {/* Cột 1 (CSKH/Admin): Điểm danh GV & Bài học */}
                               <td className="px-2.5 py-2 border-r border-border/60 bg-slate-50/40 align-middle whitespace-nowrap">
-                                {isOneToOne ? (
-                                  singleStudent ? (
-                                    renderQuickTeacherStackForClassStudent(cls, singleStudent, selectedDate)
-                                  ) : (
-                                    <span className="text-xs italic text-slate-400">Chưa có học viên</span>
-                                  )
-                                ) : (
+                                {(
                                   <span className="text-[11px] text-text-muted">
                                     Mở rộng lớp ({students.length} HV) ↓
                                   </span>
@@ -5603,17 +5556,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
 
                               {/* Cột 2 (CSKH/Admin): Điểm danh CSKH (hoặc Điểm danh & Ghi chú CSKH) */}
                               <td className="px-2.5 py-2 border-r border-border/60 bg-blue-50/20 align-middle whitespace-nowrap">
-                                {isOneToOne ? (
-                                  singleStudent ? (
-                                    isCSOnly ? (
-                                      renderQuickStatusCell(cls, singleStudent, selectedDate, 'mark')
-                                    ) : (
-                                      renderCSReadonlyCellForClassStudent(cls, singleStudent, selectedDate)
-                                    )
-                                  ) : (
-                                    <span className="text-xs italic text-slate-400">—</span>
-                                  )
-                                ) : (
+                                {(
                                   <span className="text-[11px] text-text-muted">—</span>
                                 )}
                               </td>
@@ -5621,9 +5564,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                               {/* Cột 3 (chỉ CSKH): Ghi chú CSKH */}
                               {isCSOnly && (
                                 <td className="px-2.5 py-2 border-r border-border/60 bg-indigo-50/15 align-middle whitespace-nowrap">
-                                  {isOneToOne && singleStudent ? (
-                                    renderQuickCsNoteStackForClassStudent(cls, singleStudent, selectedDate)
-                                  ) : (
+                                  {(
                                     <span className="text-[11px] text-text-muted">—</span>
                                   )}
                                 </td>
@@ -5631,17 +5572,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
 
                               {/* Cột 4 (CSKH/Admin): Điểm danh chốt */}
                               <td className="px-2.5 py-2 border-r border-border/60 bg-emerald-50/20 align-middle whitespace-nowrap">
-                                {isOneToOne ? (
-                                  singleStudent ? (
-                                    isAdminOrManage ? (
-                                      renderQuickStatusCell(cls, singleStudent, selectedDate, 'admin-final')
-                                    ) : (
-                                      renderFinalStatusCellForClassStudent(cls, singleStudent, selectedDate)
-                                    )
-                                  ) : (
-                                    <span className="text-xs italic text-slate-400">—</span>
-                                  )
-                                ) : (
+                                {(
                                   <span className="text-[11px] text-text-muted">—</span>
                                 )}
                               </td>
@@ -5651,18 +5582,10 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                           <>
                             {/* 2 Cột thống kê trong Tab Điểm danh chi tiết */}
                             <td className="px-3 py-2.5 border-r border-border/60 text-center font-extrabold text-emerald-800 bg-emerald-50/40">
-                              {isOneToOne
-                                ? singleStudent
-                                  ? singleTotalAttended
-                                  : 0
-                                : classSumTotalAttended}
+                              {classSumTotalAttended}
                             </td>
                             <td className="px-3 py-2.5 border-r-2 border-border/80 text-center font-extrabold text-emerald-800 bg-emerald-100/30">
-                              {isOneToOne
-                                ? singleStudent
-                                  ? singleMonthAttended
-                                  : 0
-                                : classSumMonthAttended}
+                              {classSumMonthAttended}
                             </td>
 
                             {/* Các Cột Lịch Ngày của kỳ đang chọn */}
@@ -5673,9 +5596,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                                   key={dStr}
                                   className="px-1 py-1.5 border-r border-border/60 text-center"
                                 >
-                                  {isOneToOne && singleStudent ? (
-                                    renderMatrixDateCell(cls, singleStudent, dStr)
-                                  ) : (
+                                  {(
                                     <span className="text-[10px] text-slate-400">↓</span>
                                   )}
                                 </td>
@@ -5684,6 +5605,9 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                           </>
                         )}
 
+                        {activeTab === 'quick' && showJlptLearningColumns && <JlptLearningColumns
+                          sessions={[]} enabled={false} readonly
+                        />}
                         {/* Cột Thao tác (chỉ hiển thị cho vai trò quản lý lớp) */}
                         {canManageClasses && (
                           <td className="px-3 py-2 text-right whitespace-nowrap">
@@ -5713,21 +5637,13 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                         )}
                       </tr>
 
-                      {/* CÁC DÒNG HỌC VIÊN CON BÊN DƯỚI LỚP 1:2 / 1:N */}
-                      {!isOneToOne &&
-                        isExpanded &&
+                      {/* CÁC DÒNG HỌC VIÊN CON BÊN DƯỚI MỌI MÔ HÌNH LỚP, KỂ CẢ 1:1 */}
+                      {isExpanded &&
                         (students.length === 0 ? (
                           <tr className="border-b border-border/50 bg-slate-50/40">
-                            <td colSpan={3 + visibleOptionalColsCount} className="px-3 py-2 border-r border-border/50" />
+                            <td colSpan={classIdentityColumnCount} className="px-3 py-2 border-r border-border/50" />
                             <td
-                              colSpan={
-                                (activeTab === 'quick'
-                                  ? isCSOnly
-                                    ? 5
-                                    : 4
-                                  : 3 + visiblePeriodDates.length) +
-                                (canManageClasses ? 1 : 0)
-                              }
+                              colSpan={classAttendanceColumnCount}
                               className="px-3 py-2 text-xs italic text-slate-400"
                             >
                               Lớp chưa có học viên nào được gán.
@@ -5746,32 +5662,39 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                             return (
                               <tr
                                 key={st.enrollment_class_id}
+                                id={`attendance-class-${cls.id}-student-${st.enrollment_class_id}`}
+                                data-row-kind="student"
                                 className={`border-b border-border/50 transition-colors ${
                                   isChildSelected
                                     ? 'bg-primary-soft/35 hover:bg-primary-soft/45'
                                     : 'bg-white hover:bg-blue-50/30'
                                 }`}
                               >
-                                <td
-                                  className={`px-2 py-2 border-r border-border/50 w-10 min-w-[40px] max-w-[40px] text-center ${
-                                    activeTab === 'detailed' ? 'sticky left-0 z-20 bg-white' : ''
-                                  }`}
-                                >
-                                  {!isTeacher && (
+                                {showClassSelection && (
+                                  <td
+                                    className={`px-2 py-2 border-r border-border/50 w-10 min-w-[40px] max-w-[40px] text-center ${
+                                      activeTab === 'detailed' ? 'sticky left-0 z-20 bg-white' : ''
+                                    }`}
+                                  >
                                     <input
+                                      id={`select-attendance-student-${st.enrollment_class_id}`}
                                       type="checkbox"
                                       checked={isChildSelected}
                                       onChange={() =>
                                         handleToggleSelectSingleEcId(st.enrollment_class_id)
                                       }
-                                      className="h-3.5 w-3.5 cursor-pointer rounded border-slate-300 text-primary accent-primary focus:ring-primary"
+                                      disabled={st.enrollment_class_id <= 0}
+                                      className="h-3.5 w-3.5 cursor-pointer rounded border-slate-300 text-primary accent-primary focus:ring-primary disabled:cursor-not-allowed disabled:opacity-40"
                                       title={`Chọn học viên ${st.full_name}`}
+                                      aria-label={`Chọn học viên ${st.full_name}`}
                                     />
-                                  )}
-                                </td>
+                                  </td>
+                                )}
                                 <td
                                   className={`py-2 pl-[1cm] pr-3 border-r border-border/50 text-left font-mono text-[10px] text-slate-400 w-28 min-w-[112px] max-w-[112px] overflow-hidden ${
-                                    activeTab === 'detailed' ? 'sticky left-10 z-20 bg-white' : ''
+                                    activeTab === 'detailed'
+                                      ? `sticky ${showClassSelection ? 'left-10' : 'left-0'} z-20 bg-white`
+                                      : ''
                                   }`}
                                 >
                                   {formattedCode}.{sIdx + 1}
@@ -5779,7 +5702,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                                 <td
                                   className={`px-3 py-2 border-r-2 border-border/80 text-[11px] text-slate-500 whitespace-nowrap w-[155px] min-w-[155px] max-w-[155px] overflow-hidden ${
                                     activeTab === 'detailed'
-                                      ? 'sticky left-[152px] z-20 bg-white shadow-[4px_0_6px_-2px_rgba(0,0,0,0.08)]'
+                                      ? `sticky ${showClassSelection ? 'left-[152px]' : 'left-[112px]'} z-20 bg-white shadow-[4px_0_6px_-2px_rgba(0,0,0,0.08)]`
                                       : ''
                                   }`}
                                   title={cleanedClassName}
@@ -5933,6 +5856,12 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                                   </>
                                 )}
 
+                                {activeTab === 'quick' && showJlptLearningColumns && <JlptLearningColumns
+                                  classId={cls.id} enrollmentClassId={st.enrollment_class_id}
+                                  sessions={getDaySessions(cls.id, selectedDate)} enabled={isJlptClass}
+                                  readonly={!canWriteJlptRecords || Boolean(st.is_readonly_for_cs)}
+                                  attendanceForSession={id => attendanceByEcAndSession.get(`${st.enrollment_class_id}_session_${id}`)}
+                                />}
                                 {canManageClasses && (
                                   <td className="px-3 py-1.5 text-right text-[11px] text-text-muted">
                                     —
@@ -6099,6 +6028,8 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
           </div>
         )}
       </Modal>
+
+
 
       {/* Ngăn chi tiết ca học (Drawer) — đồng bộ cho cả 3 role (GV · CSKH · Admin) */}
       <AttendanceSessionDrawer
@@ -6536,5 +6467,6 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
         )}
       </Modal>
     </PageContainer>
+    </JlptLearningProvider>
   );
 };

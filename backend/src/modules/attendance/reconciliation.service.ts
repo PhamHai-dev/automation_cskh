@@ -8,6 +8,10 @@ import { createLogger } from '../../shared/logger/logger';
 import { AppError } from '../../middlewares/error.middleware';
 import { parseAttendanceValue, parseTimeSlot, normalizeDateOnly } from './attendance.utils';
 import { isPureTeacherActor, presentAttendanceForActor, presentClassForActor } from './attendance.presenter';
+import {
+  LEGACY_CLASS_SCALAR_SELECT,
+  LEGACY_CLASS_SESSION_SCALAR_SELECT,
+} from '../../shared/prisma-legacy-selects';
 
 const log = createLogger('ReconciliationService');
 
@@ -1041,7 +1045,7 @@ export class ReconciliationService {
               enrollments: {
                 include: {
                   enrollment_classes: {
-                    include: { class: true },
+                    include: { class: { select: LEGACY_CLASS_SCALAR_SELECT } },
                     orderBy: { sequence_no: 'desc' },
                   },
                 },
@@ -1243,9 +1247,11 @@ export class ReconciliationService {
       ...(searchOr.length > 0 ? { OR: searchOr } : {}),
       ...(Object.keys(classWhere).length > 1 ? { class: classWhere } : {}),
     };
-    const include = {
+    const select = {
+      ...LEGACY_CLASS_SESSION_SCALAR_SELECT,
       class: {
-        include: {
+        select: {
+          ...LEGACY_CLASS_SCALAR_SELECT,
           enrollment_classes: {
             where: { status: 'ACTIVE' as const },
             include: {
@@ -1265,7 +1271,7 @@ export class ReconciliationService {
     const allMatching = await prisma.classSession.findMany({
       where,
       orderBy: [{ session_date: 'desc' }, { start_time: 'asc' }, { id: 'desc' }],
-      include,
+      select,
     });
     const scoped = allMatching.filter((session) =>
       findEffectiveAssignment(byClass.get(session.class_id) ?? [], session.session_date) !== null
@@ -1448,7 +1454,8 @@ export class ReconciliationService {
             },
           },
           class: {
-            include: {
+            select: {
+              ...LEGACY_CLASS_SCALAR_SELECT,
               class_schedules: {
                 where: { active: true },
                 orderBy: { id: 'asc' },
@@ -1460,12 +1467,23 @@ export class ReconciliationService {
                   { start_time: 'asc' },
                   { session_number: 'asc' },
                 ],
+                select: LEGACY_CLASS_SESSION_SCALAR_SELECT,
               },
             },
           },
           attendance: {
             where: { deleted_at: null },
-            include: { class_session: true },
+            select: {
+              id: true,
+              status: true,
+              teacher_status: true,
+              cs_status: true,
+              reconciliation_state: true,
+              deleted_at: true,
+              class_session: {
+                select: LEGACY_CLASS_SESSION_SCALAR_SELECT,
+              },
+            },
           },
         },
         orderBy: [{ class_id: 'asc' }, { id: 'asc' }],
@@ -1655,7 +1673,7 @@ export class ReconciliationService {
     const existing = await prisma.attendance.findFirst({
       where: { id: attendanceId, deleted_at: null },
       include: {
-        class_session: true,
+        class_session: { select: LEGACY_CLASS_SESSION_SCALAR_SELECT },
         enrollment_class: {
           include: {
             enrollment: {

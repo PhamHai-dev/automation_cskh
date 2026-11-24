@@ -1,12 +1,19 @@
 import { Router } from 'express';
 import { ClassesController } from './classes.controller';
+import { JlptController } from '../jlpt/jlpt.controller';
 import { authenticate, requireRoles } from '../../middlewares/auth.middleware';
 import { requireClassAccess } from './classes.scope';
 
 const router = Router();
 const controller = new ClassesController();
+const jlptController = new JlptController();
 
 router.use(authenticate);
+
+// JLPT program and global-template operations. These must stay before /:id.
+router.patch('/:classId/program', requireRoles(['ADMIN', 'MANAGE']), requireClassAccess('đổi chương trình lớp học'), jlptController.changeClassProgram);
+router.get('/:classId/jlpt-template-status', requireRoles(['ADMIN', 'MANAGE', 'CS', 'TEACHER']), requireClassAccess('xem trạng thái template JLPT'), jlptController.classTemplateStatus);
+router.post('/:classId/jlpt-template/apply', requireRoles(['ADMIN', 'MANAGE']), requireClassAccess('áp template JLPT'), jlptController.applyToClass);
 
 // List/Get
 router.get('/', requireRoles(['ADMIN', 'MANAGE', 'CS', 'TEACHER']), controller.list);

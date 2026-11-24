@@ -3,6 +3,7 @@ import { CreateClassSessionDTO, UpdateClassSessionDTO, ActualSessionResult } fro
 import { prisma } from '../../prisma/client';
 import { Prisma } from '@prisma/client';
 import { AppError } from '../../middlewares/error.middleware';
+import { AuthUser } from '../../middlewares/auth.middleware';
 import { assertClassAccess } from '../classes/classes.scope';
 
 export class ClassSessionsService {
@@ -24,7 +25,8 @@ export class ClassSessionsService {
     return session;
   }
 
-  async createSession(classId: number, data: CreateClassSessionDTO, userId: number) {
+  async createSession(classId: number, data: CreateClassSessionDTO, actor: AuthUser) {
+    this.assertMetadataPermission(data, actor);
     if (data.session_number && !data.idempotency_key) {
       const exists = await this.repository.findByClassAndNumber(classId, data.session_number);
       if (exists) throw new AppError(409, 'Số thứ tự buổi đã tồn tại trong lớp');
@@ -40,11 +42,19 @@ export class ClassSessionsService {
       }
     }
 
+    const sessionType = data.session_type ?? 'LESSON';
+    const sessionTitle = data.session_title?.trim() || null;
+    if (sessionType === 'TEST' && !sessionTitle) throw new AppError(400, 'Buổi TEST bắt buộc có tên');
+    if (sessionType === 'TEST' && sessionTitle) {
+      const duplicate = await this.repository.findTestByTitle(classId, sessionTitle);
+      if (duplicate) throw new AppError(409, 'Tên buổi TEST không được trùng trong lớp');
+    }
+
     for (let attempt = 0; attempt < 3; attempt += 1) {
       try {
         return data.idempotency_key
-          ? await this.repository.createIdempotent(classId, data, userId)
-          : await this.repository.create(classId, data, userId);
+          ? await this.repository.createIdempotent(classId, data, actor.id)
+          : await this.repository.create(classId, data, actor.id);
       } catch (error) {
         const retryable =
           !data.session_number &&
@@ -81,17 +91,27 @@ export class ClassSessionsService {
     return this.repository.createIdempotent(classId, { ...data, teacher_id: userId, status: 'COMPLETED' }, userId);
   }
 
-  async updateSession(classId: number, sessionId: number, data: UpdateClassSessionDTO) {
+  async updateSession(classId: number, sessionId: number, data: UpdateClassSessionDTO, actor: AuthUser) {
+    this.assertMetadataPermission(data, actor);
     const session = await this.getSession(classId, sessionId);
 
     if (data.session_number && data.session_number !== session.session_number) {
-      const exists = await this.repository.findByClassAndNumber(classId, data.session_number);
-      if (exists) {
-        throw new Error('Session number already exists in this class');
+      if (session.attendance.length > 0 || session.jlpt_learning_records.length > 0) {
+        throw new AppError(409, 'Không thể đổi số thứ tự khi buổi đã có điểm danh hoặc dữ liệu JLPT');
       }
+      const exists = await this.repository.findByClassAndNumber(classId, data.session_number);
+      if (exists) throw new AppError(409, 'Số thứ tự buổi đã tồn tại trong lớp');
     }
 
-    return this.repository.update(classId, sessionId, data);
+    const nextType = data.session_type ?? session.session_type;
+    const nextTitle = data.session_title !== undefined ? data.session_title?.trim() || null : session.session_title;
+    if (nextType === 'TEST' && !nextTitle) throw new AppError(400, 'Buổi TEST bắt buộc có tên');
+    if (nextType === 'TEST' && nextTitle) {
+      const duplicate = await this.repository.findTestByTitle(classId, nextTitle, sessionId);
+      if (duplicate) throw new AppError(409, 'Tên buổi TEST không được trùng trong lớp');
+    }
+
+    return this.repository.update(classId, sessionId, data, actor.id);
   }
 
   async cancelSession(classId: number, sessionId: number, reason?: string, userId?: number) {
@@ -120,8 +140,21 @@ export class ClassSessionsService {
     return result;
   }
 
+  private assertMetadataPermission(
+    data: Pick<CreateClassSessionDTO, 'session_type' | 'session_title'>,
+    actor: AuthUser,
+  ) {
+    const changesMetadata = data.session_type !== undefined || data.session_title !== undefined;
+    if (changesMetadata && !actor.roles.some((role) => role === 'ADMIN' || role === 'MANAGE')) {
+      throw new AppError(403, 'Chỉ ADMIN hoặc MANAGE được sửa loại và tên buổi JLPT');
+    }
+  }
+
   async deleteSession(classId: number, sessionId: number, userId: number, confirmed: boolean) {
     const session = await this.getSession(classId, sessionId);
+    if (session.jlpt_learning_records.length > 0) {
+      throw new AppError(409, 'Không thể xóa buổi học đã có dữ liệu nhật ký JLPT');
+    }
     const attendanceCount = session.attendance.length;
     if (attendanceCount > 0 && !confirmed) {
       throw new AppError(409, `Buổi học có ${attendanceCount} bản ghi điểm danh. Xác nhận để xóa toàn bộ.`);

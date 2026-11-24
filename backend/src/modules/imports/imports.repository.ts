@@ -1,6 +1,7 @@
 import { Prisma, PrismaClient, ImportBatch, ImportRow, ImportBatchStatus, ImportRowStatus, ImportType, AttendanceStatus, AttendanceSource, EnrollmentStatus, EnrollmentClassStatus, ClassModelType, AttendanceSourceType, ReconciliationState } from '@prisma/client';
 import { prisma } from '../../prisma/client';
 import { normalizeDateOnly } from '../attendance/attendance.utils';
+import { LEGACY_CLASS_SCALAR_SELECT, LEGACY_CLASS_SESSION_SCALAR_SELECT } from '../../shared/prisma-legacy-selects';
 
 export class ImportsRepository {
   private db: PrismaClient;
@@ -112,7 +113,7 @@ export class ImportsRepository {
         enrollments: {
           include: {
             enrollment_classes: {
-              include: { class: true },
+              include: { class: { select: LEGACY_CLASS_SCALAR_SELECT } },
             },
           },
         },
@@ -139,7 +140,7 @@ export class ImportsRepository {
         enrollments: {
           include: {
             enrollment_classes: {
-              include: { class: true },
+              include: { class: { select: LEGACY_CLASS_SCALAR_SELECT } },
             },
           },
         },
@@ -161,7 +162,7 @@ export class ImportsRepository {
         enrollments: {
           include: {
             enrollment_classes: {
-              include: { class: true },
+              include: { class: { select: LEGACY_CLASS_SCALAR_SELECT } },
             },
           },
         },
@@ -399,7 +400,7 @@ export class ImportsRepository {
         },
       },
       include: {
-        class: true,
+        class: { select: LEGACY_CLASS_SCALAR_SELECT },
         enrollment: true,
       },
       orderBy: {
@@ -589,7 +590,7 @@ export class ImportsRepository {
   async getTeacherAssignedClassNames(teacherUserId: number): Promise<string[]> {
     const records = await this.db.classTeacher.findMany({
       where: { teacher: { user_id: teacherUserId }, active: true },
-      include: { class: true },
+      include: { class: { select: LEGACY_CLASS_SCALAR_SELECT } },
     });
     const names = new Set<string>();
     records.forEach((r) => {
@@ -624,7 +625,7 @@ export class ImportsRepository {
             package: true,
             cs: { select: { id: true, name: true, email: true } },
             enrollment_classes: {
-              include: { class: true },
+              include: { class: { select: LEGACY_CLASS_SCALAR_SELECT } },
             },
           },
         },
@@ -647,7 +648,7 @@ export class ImportsRepository {
       include: {
         enrollment_class: {
           include: {
-            class: true,
+            class: { select: LEGACY_CLASS_SCALAR_SELECT },
             enrollment: {
               include: {
                 student: true,
@@ -656,7 +657,7 @@ export class ImportsRepository {
             },
           },
         },
-        class_session: true,
+        class_session: { select: LEGACY_CLASS_SESSION_SCALAR_SELECT },
         created_by: {
           select: { id: true, name: true, email: true },
         },

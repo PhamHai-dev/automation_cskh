@@ -17,6 +17,7 @@ import { Modal } from '../../../components/ui/Modal';
 import { useToast } from '../../../components/ui/Toast';
 import { attendanceApi, classSessionsApi } from '../api/sessions.api';
 import { useAuth } from '../../../contexts/AuthContext';
+import { JlptLearningColumns, JlptLearningHeaders, JlptLearningProvider } from './JlptLearningColumns';
 import { AttendanceSessionDrawer } from './AttendanceSessionDrawer';
 import {
   MonthlyEmptyDateCell,
@@ -125,6 +126,7 @@ export interface AttendanceMatrixProps {
   onPageChange?: (page: number) => void;
   onPageSizeChange?: (pageSize: number) => void;
   isFetchingData?: boolean;
+  showJlptLearningColumns?: boolean;
 }
 
 export type AttendanceTab = 'quick' | 'detailed' | 'stats';
@@ -248,6 +250,7 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
   onPageChange,
   onPageSizeChange,
   isFetchingData = false,
+  showJlptLearningColumns: controlledShowJlptLearningColumns,
 }) => {
   const isColVisible = (key: string): boolean => {
     if (!visibleColumns) return true;
@@ -261,6 +264,9 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
   const isCSOnly = Boolean(user?.roles.includes('CS') && !isAdminOrManage);
   const isTeacherOnly = Boolean(user?.roles.includes('TEACHER') && !isAdminOrManage && !user?.roles.includes('CS'));
   const selectedSide: AttendanceSide = isAdminOrManage ? 'ADMIN' : isCSOnly ? 'CS' : 'TEACHER';
+  const showJlptLearningColumns = import.meta.env.VITE_ENABLE_JLPT_LEARNING_LOG === 'true' &&
+    (controlledShowJlptLearningColumns ?? students.some(st => st.program_type?.toUpperCase() === 'JLPT'));
+  const canWriteJlptRecords = Boolean(user?.roles.some(role => ['ADMIN', 'MANAGE', 'TEACHER'].includes(role)));
 
   const [internalActiveTab] = useState<AttendanceTab>('quick');
   const activeTab = controlledActiveTab ?? internalActiveTab;
@@ -2909,6 +2915,7 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
   };
 
   return (
+    <JlptLearningProvider key={`students-${quickDate}`}>
     <div className="bg-surface rounded-2xl border border-border/80 shadow-soft overflow-hidden">
       {/* Unified Table Toolbar for all tabs */}
       <div className="flex flex-wrap items-center gap-2.5 border-b border-border/80 bg-slate-50/60 p-3 sm:px-4 text-xs">
@@ -3475,6 +3482,7 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
                     </>
                   );
                 })()}
+                {showJlptLearningColumns && <JlptLearningHeaders />}
                 {showClassManageActions && (
                   <th className="px-3 py-3 text-right whitespace-nowrap min-w-[110px]">
                     Thao tác
@@ -3486,7 +3494,7 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
             <tbody>
               {quickVisibleStudents.length === 0 ? (
                 <tr>
-                  <td colSpan={(isCSOnly ? 15 : 14) + (showClassManageActions ? 1 : 0)} className="text-center py-10 text-text-muted">
+                  <td colSpan={(isCSOnly ? 15 : 14) + (showClassManageActions ? 1 : 0) + (showJlptLearningColumns ? 4 : 0)} className="text-center py-10 text-text-muted">
                     {onlyStudentsWithDaySchedule
                       ? 'Không có học viên nào có lịch hoặc ca học trong ngày này.'
                       : 'Không có học viên nào để điểm danh.'}
@@ -3681,6 +3689,14 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
                         </>
                       )}
 
+                      {showJlptLearningColumns && <JlptLearningColumns
+                        classId={cls?.id || st.class_id}
+                        enrollmentClassId={st.enrollment_class_id}
+                        sessions={getSessionsForCell(st.enrollment_class_id, quickDate)}
+                        enabled={st.program_type?.toUpperCase() === 'JLPT' || cls?.program_type === 'JLPT'}
+                        readonly={!canWriteJlptRecords || Boolean(st.is_readonly_for_cs)}
+                        attendanceForSession={id => rawAttendanceMap.get(`${st.enrollment_class_id}_session_${id}`)}
+                      />}
                       {showClassManageActions && (
                         <td className="px-3 py-2 text-right whitespace-nowrap">
                           {st.class_id && st.class_id > 0 ? (
@@ -4846,5 +4862,6 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
         }}
       />
     </div>
+    </JlptLearningProvider>
   );
 };

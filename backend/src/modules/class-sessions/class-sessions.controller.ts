@@ -32,9 +32,9 @@ export class ClassSessionsController {
   async create(req: Request, res: Response, next: NextFunction) {
     try {
       const classId = parseInt(req.params.classId);
-      const userId = req.user?.id || 0;
       const validated = createClassSessionSchema.parse({ body: req.body });
-      const session = await classSessionsService.createSession(classId, validated.body, userId);
+      if (!req.user) throw new Error('Authenticated user is required');
+      const session = await classSessionsService.createSession(classId, validated.body, req.user);
       res.status(201).json({ data: presentSessionForActor(unwrapSession(session), req.user), meta: null });
     } catch (error: any) {
       if (error.name === 'ZodError') {
@@ -64,7 +64,8 @@ export class ClassSessionsController {
       const classId = parseInt(req.params.classId);
       const sessionId = parseInt(req.params.sessionId);
       const validated = updateClassSessionSchema.parse({ body: req.body });
-      const session = await classSessionsService.updateSession(classId, sessionId, validated.body);
+      if (!req.user) throw new Error('Authenticated user is required');
+      const session = await classSessionsService.updateSession(classId, sessionId, validated.body, req.user);
       res.json({ data: session, meta: null });
     } catch (error: any) {
       if (error.name === 'ZodError') {

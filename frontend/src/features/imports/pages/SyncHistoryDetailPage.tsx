@@ -5,8 +5,10 @@ import { Button } from '../../../components/ui/Button';
 import { Badge } from '../../../components/ui/Badge';
 import { Modal } from '../../../components/ui/Modal';
 import { useToast } from '../../../components/ui/Toast';
+import { useAuth } from '../../../contexts/AuthContext';
 import { importsApi } from '../api/imports.api';
 import {
+  JlptNormalizationTaskItem,
   SyncFlowType,
   SyncHistoryChangeLogItem,
   SyncHistoryDetailResponse,
@@ -49,6 +51,10 @@ const FLOW_LABELS: Record<SyncFlowType, { label: string; colorClass: string }> =
   STUDY_REPORT: {
     label: 'Báo cáo học tập',
     colorClass: 'bg-teal-100 text-teal-800 border-teal-200',
+  },
+  JLPT_LEARNING_LOG: {
+    label: 'Nhật ký học tập JLPT',
+    colorClass: 'bg-fuchsia-100 text-fuchsia-800 border-fuchsia-200',
   },
 };
 
@@ -215,6 +221,8 @@ export const SyncHistoryDetailPage: React.FC = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const toast = useToast();
+  const { user } = useAuth();
+  const canManageNormalization = Boolean(user?.roles.some((role) => role === 'ADMIN' || role === 'MANAGE'));
 
   const codeHint = searchParams.get('code');
 
@@ -228,6 +236,9 @@ export const SyncHistoryDetailPage: React.FC = () => {
     new Set()
   );
   const [expandedRowIds, setExpandedRowIds] = useState<Set<number>>(new Set());
+  const [normalizationTasks, setNormalizationTasks] = useState<JlptNormalizationTaskItem[]>([]);
+  const [normalizationTab, setNormalizationTab] = useState<'CHANGES' | 'NORMALIZATION'>('CHANGES');
+  const [normalizingTaskId, setNormalizingTaskId] = useState<number | null>(null);
 
   const toggleExpandRow = (rowId: number) => {
     setExpandedRowIds((prev) => {
@@ -255,19 +266,52 @@ export const SyncHistoryDetailPage: React.FC = () => {
     try {
       setLoading(true);
       try {
-        const res = await importsApi.getSheetSyncHistoryDetail(runId);
+        const [res, queue] = await Promise.all([
+          importsApi.getSheetSyncHistoryDetail(runId),
+          canManageNormalization
+            ? importsApi.getJlptNormalizationTasks(runId).catch(() => ({ items: [] }))
+            : Promise.resolve({ items: [] }),
+        ]);
         if (res && res.run && Array.isArray(res.items)) {
           setDetail(res);
+          setNormalizationTasks(Array.isArray(queue?.items) ? queue.items : []);
           return;
         }
       } catch {
         // Fallback if backend detail endpoint not yet mounted
       }
       setDetail(buildFallbackHistoryDetail(runId, codeHint));
+      setNormalizationTasks([]);
     } finally {
       setLoading(false);
     }
-  }, [runId, codeHint]);
+  }, [runId, codeHint, canManageNormalization]);
+
+  const resolveNormalization = async (task: JlptNormalizationTaskItem, resolution: 'ABSENT_APPROVED_A' | 'ABSENT_UNAPPROVED_C') => {
+    try {
+      setNormalizingTaskId(task.id);
+      await importsApi.resolveJlptNormalizationTask(task.id, { resolution_status: resolution, note: task.source_note || null });
+      setNormalizationTasks((current) => current.filter((item) => item.id !== task.id));
+      toast.success('Đã chuẩn hóa trạng thái và chuyển qua đối soát điểm danh');
+    } catch (error: any) {
+      toast.error(error?.response?.data?.message || 'Không thể chuẩn hóa mục này');
+    } finally {
+      setNormalizingTaskId(null);
+    }
+  };
+
+  const rejectNormalization = async (task: JlptNormalizationTaskItem) => {
+    try {
+      setNormalizingTaskId(task.id);
+      await importsApi.rejectJlptNormalizationTask(task.id, 'Từ chối từ chi tiết lịch sử đồng bộ');
+      setNormalizationTasks((current) => current.filter((item) => item.id !== task.id));
+      toast.success('Đã từ chối mục chờ chuẩn hóa');
+    } catch (error: any) {
+      toast.error(error?.response?.data?.message || 'Không thể từ chối mục này');
+    } finally {
+      setNormalizingTaskId(null);
+    }
+  };
 
   useEffect(() => {
     fetchDetail();
@@ -628,8 +672,61 @@ export const SyncHistoryDetailPage: React.FC = () => {
           </div>
         </div>
 
+        <div className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white p-1.5 shadow-xs w-fit">
+          <button
+            id="sync-history-changes-tab"
+            type="button"
+            onClick={() => setNormalizationTab('CHANGES')}
+            className={`rounded-xl px-4 py-2 text-xs font-bold transition-all ${normalizationTab === 'CHANGES' ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'}`}
+          >
+            Chi tiết thay đổi
+          </button>
+          {canManageNormalization && (
+            <button
+              id="sync-history-normalization-tab"
+              type="button"
+              onClick={() => setNormalizationTab('NORMALIZATION')}
+              className={`rounded-xl px-4 py-2 text-xs font-bold transition-all ${normalizationTab === 'NORMALIZATION' ? 'bg-amber-500 text-white shadow-sm' : 'text-slate-600 hover:bg-amber-50'}`}
+            >
+              Chờ chuẩn hóa ({normalizationTasks.length})
+            </button>
+          )}
+        </div>
+
+        {normalizationTab === 'NORMALIZATION' && (
+          <section aria-labelledby="normalization-heading" className="overflow-hidden rounded-2xl border border-amber-200 bg-gradient-to-br from-amber-50 via-white to-orange-50 shadow-sm">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-amber-200 px-5 py-4">
+              <div>
+                <h2 id="normalization-heading" className="flex items-center gap-2 text-sm font-extrabold text-slate-900">
+                  <ShieldAlert className="h-4 w-4 text-amber-600" /> Hàng chờ chuẩn hóa JLPT
+                </h2>
+                <p className="mt-1 text-xs text-slate-600">X có ghi chú được giữ nguyên trạng thái hiện tại cho đến khi ADMIN/MANAGE phân loại.</p>
+              </div>
+              <Badge variant={normalizationTasks.length ? 'warning' : 'success'}>{normalizationTasks.length ? `${normalizationTasks.length} mục đang chờ` : 'Đã xử lý hết'}</Badge>
+            </div>
+            {normalizationTasks.length === 0 ? (
+              <div className="px-6 py-12 text-center text-sm font-semibold text-emerald-700"><CheckCircle2 className="mx-auto mb-3 h-8 w-8" />Không còn mục chờ chuẩn hóa trong phiên này.</div>
+            ) : (
+              <div className="divide-y divide-amber-100">
+                {normalizationTasks.map((task) => (
+                  <article key={task.id} className="grid gap-4 px-5 py-4 md:grid-cols-[1fr_auto] md:items-center">
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2"><Badge variant="warning">{task.issue_type === 'AMBIGUOUS_ABSENCE' ? 'X cần phân loại' : 'Header lệch'}</Badge><span className="text-xs font-bold text-slate-800">Task #{task.id} · Buổi {task.class_session_id || '-'}</span></div>
+                      <p className="mt-2 text-sm text-slate-700">{task.source_note || 'Không có ghi chú nguồn'}</p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {task.issue_type === 'AMBIGUOUS_ABSENCE' && <><Button id={`normalization-approved-${task.id}`} size="sm" variant="secondary" isLoading={normalizingTaskId === task.id} onClick={() => resolveNormalization(task, 'ABSENT_APPROVED_A')}>Nghỉ phép</Button><Button id={`normalization-unapproved-${task.id}`} size="sm" variant="primary" isLoading={normalizingTaskId === task.id} onClick={() => resolveNormalization(task, 'ABSENT_UNAPPROVED_C')}>Nghỉ không phép</Button></>}
+                      <Button id={`normalization-reject-${task.id}`} size="sm" variant="ghost" isLoading={normalizingTaskId === task.id} onClick={() => rejectNormalization(task)}>Từ chối</Button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
+          </section>
+        )}
+
         {/* 3. Bảng Xem Chi Tiết Các Thay Đổi */}
-        <div className="bg-white rounded-2xl border border-slate-200/90 shadow-xs overflow-hidden">
+        {normalizationTab === 'CHANGES' && <div className="bg-white rounded-2xl border border-slate-200/90 shadow-xs overflow-hidden">
           {/* Toolbar */}
           <div className="p-3.5 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3 bg-slate-50/50">
             <div className="flex flex-wrap items-center gap-1.5">
@@ -892,7 +989,7 @@ export const SyncHistoryDetailPage: React.FC = () => {
               </tbody>
             </table>
           </div>
-        </div>
+        </div>}
       </div>
 
       {/* 4. Modal Cảnh Báo Xung Đột Khi Hủy Thay Đổi */}

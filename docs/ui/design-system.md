@@ -432,3 +432,10 @@ Mỗi page/data feature phải xử lý khi phù hợp:
 - Dùng `DataGroups`, `DataFilters`, `DataRowMenu` trong feature imports, không tạo primitive UI mới thay Button/PageHeader.
 - Styles giới hạn trong `data-management.css`; không thay theme toàn ứng dụng. Bộ lọc phụ giữ state khi thu gọn; menu portal tránh clipping trong bảng cuộn ngang và hỗ trợ bàn phím.
 - Cấu hình nâng cao dùng details/summary; không unmount field khi đóng. Footer modal nằm ngoài vùng cuộn.
+
+### Bảng điểm danh theo lớp — cập nhật 2026-11-24
+
+- Mọi mô hình 1:1, 1:2, 1:n dùng cùng hierarchy: dòng lớp với số học viên + mở/thu gọn, dòng học viên bên dưới.
+- Không gộp lớp 1:1 và học viên thành một dòng. Mô hình chỉ là dữ liệu/badge, không quyết định hierarchy.
+- Điểm danh, ghi chú và tiêu chí JLPT của từng học viên nhập tại dòng con. Dòng lớp giữ tổng hợp, bài học chung và thao tác cả lớp; không gắn tiêu chí JLPT của riêng một học viên.
+- Thu gọn/mở rộng tất cả áp dụng mọi mô hình; không đổi mô hình hay dữ liệu xếp lớp. Giữ horizontal scroll cho màn hình hẹp.

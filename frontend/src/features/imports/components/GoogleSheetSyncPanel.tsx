@@ -95,6 +95,14 @@ const FLOW_CARDS: Array<{
     activeBorder: 'border-teal-600 bg-teal-600 text-white',
     icon: <FileText className="w-4 h-4" />,
   },
+  {
+    key: 'JLPT_LEARNING_LOG',
+    title: '5. Nhật ký học tập JLPT',
+    subtitle: 'NKHT N2–N5, đồng bộ tuyệt đối nhiều sheet',
+    badgeColor: 'bg-fuchsia-50 text-fuchsia-700 border-fuchsia-200',
+    activeBorder: 'border-fuchsia-600 bg-fuchsia-600 text-white',
+    icon: <FileSpreadsheet className="w-4 h-4" />,
+  },
 ];
 
 const resolveFlowType = (cfg: GoogleSheetSyncConfig): SyncFlowType => {
@@ -703,6 +711,7 @@ export const GoogleSheetSyncPanel: React.FC = () => {
       CSKH_ATTENDANCE: 0,
       TEACHER_ATTENDANCE: 0,
       STUDY_REPORT: 0,
+      JLPT_LEARNING_LOG: 0,
     };
     configs.forEach((c) => {
       const ft = resolveFlowType(c);
@@ -1375,7 +1384,7 @@ export const GoogleSheetSyncPanel: React.FC = () => {
                               <div className="data-cell-primary">{isGoogleSheet && sheetUrl ? `Tab: ${cfg.sheet_name || 'Chưa chọn'}` : localFileName || 'Chưa chọn file'}</div>
                               <div className="data-cell-actions">
                                 {renderColumnScopeBadge(cfg)}
-                                {isGoogleSheet && sheetUrl ? <a href={sheetUrl} target="_blank" rel="noreferrer">Mở Sheet <ExternalLink className="w-3 h-3" /></a> : <button type="button" onClick={() => handleTriggerInlineFileUpload(cfg.code)}>Thay file</button>}
+                                {isGoogleSheet && sheetUrl ? <a href={sheetUrl} target="_blank" rel="noreferrer">Mở Sheet <ExternalLink className="w-3 h-3" /></a> : (flowType !== 'JLPT_LEARNING_LOG' || isAdmin) ? <button type="button" onClick={() => handleTriggerInlineFileUpload(cfg.code)}>Thay file</button> : null}
                               </div>
                             </div></td>
                             <td>{renderFilterSummaryCell(cfg)}</td>
@@ -1385,7 +1394,7 @@ export const GoogleSheetSyncPanel: React.FC = () => {
                               role="switch"
                               aria-label={`Tự động: ${cfg.name}`}
                               aria-checked={Boolean(isGoogleSheet && sheetUrl && cfg.enabled)}
-                              disabled={!isGoogleSheet || !sheetUrl || togglingCode === cfg.code}
+                              disabled={!isGoogleSheet || !sheetUrl || togglingCode === cfg.code || (flowType === 'JLPT_LEARNING_LOG' && !isAdmin)}
                               title={isGoogleSheet && sheetUrl ? `${cfg.enabled ? 'Đang bật' : 'Đang tắt'} · Mỗi ${cfg.sync_interval_minutes || 30} phút` : 'File tải từ máy chỉ chạy thủ công'}
                               onClick={() => handleToggleAutoOnRow(cfg)}
                               className={`data-auto-switch ${cfg.enabled && isGoogleSheet && sheetUrl ? 'is-on' : ''}`}
@@ -1436,10 +1445,10 @@ export const GoogleSheetSyncPanel: React.FC = () => {
                               </span>
                             </div>
                           </td>
-                            <td><div className="data-row-actions"><Button size="sm" variant="outline" onClick={() => navigate(`/data-sync/preview/${encodeURIComponent(cfg.code)}`)} leftIcon={<Eye className="w-4 h-4" />}>Đồng bộ ngay</Button><DataRowMenu label={cfg.name} actions={[
-    { label: 'Cấu hình', icon: <Settings className="w-4 h-4" />, onClick: () => { setEditingConfig(cfg); setConfigModalOpen(true); } },
+                            <td><div className="data-row-actions">{(flowType !== 'JLPT_LEARNING_LOG' || isAdmin) && <Button size="sm" variant="outline" onClick={() => navigate(`/data-sync/preview/${encodeURIComponent(cfg.code)}`)} leftIcon={<Eye className="w-4 h-4" />}>Đồng bộ ngay</Button>}<DataRowMenu label={cfg.name} actions={[
+    ...(flowType !== 'JLPT_LEARNING_LOG' || isAdmin ? [{ label: 'Cấu hình', icon: <Settings className="w-4 h-4" />, onClick: () => { setEditingConfig(cfg); setConfigModalOpen(true); } }] : []),
     { label: 'Xem lịch sử', icon: <History className="w-4 h-4" />, onClick: () => navigate(`/data-sync/history/${cfg.id}?code=${encodeURIComponent(cfg.code)}`) },
-    ...(!isSystemMaster ? [{ label: 'Xóa nguồn', icon: <Trash2 className="w-4 h-4" />, danger: true, onClick: () => { void handleDeleteConfig(cfg); } }] : []),
+    ...(!isSystemMaster && (flowType !== 'JLPT_LEARNING_LOG' || isAdmin) ? [{ label: 'Xóa nguồn', icon: <Trash2 className="w-4 h-4" />, danger: true, onClick: () => { void handleDeleteConfig(cfg); } }] : []),
   ]} /></div></td>
                           </tr>
 
@@ -1990,6 +1999,7 @@ export const GoogleSheetSyncPanel: React.FC = () => {
           setEditingConfig(null);
         }}
         editingConfig={editingConfig}
+        isAdmin={isAdmin}
         onSaved={(saved) => {
           setConfigs((prev) => {
             const exists = prev.some((c) => c.code === saved.code);

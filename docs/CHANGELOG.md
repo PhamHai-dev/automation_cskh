@@ -1,5 +1,65 @@
 # Project Changelog
 
+## 2026-11-24 — Đồng nhất hiển thị lớp 1:1 trong bảng điểm danh
+
+- Bỏ nhánh gộp lớp 1:1/học viên: chế độ Theo lớp học luôn có dòng lớp và học viên con, cả khi lớp chỉ có một học viên; hỗ trợ mở/thu gọn từng lớp và tất cả lớp.
+- Giữ badge mô hình 1:1 và dữ liệu; ô điểm danh/ghi chú/JLPT nằm ở dòng học viên, tổng hợp và bài học chung nằm ở dòng lớp. Không đổi API/schema/quyền hoặc chế độ Theo học viên.
+- Thêm aria-expanded, ID dòng/nút, 2 regression tests; tổng frontend tests 22/22 đạt. Browser/responsive chưa trực tiếp xác minh vì lỗi CDP đã ghi nhận.
+
+## 2026-11-24 — Sửa không nhập được nhật ký của học viên chuyển lớp
+
+- Sửa mismatch: bảng điểm danh có học viên TRANSFERRED nhưng learning API lọc ACTIVE nên ô bị khóa với nhãn Ngoài danh sách ca.
+- Theo user duyệt: cho đọc/ghi TRANSFERRED chỉ khi có Attendance chưa xóa trong đúng session; dùng chung predicate list/PATCH/bulk, không sửa trạng thái và không nới quyền lớp/CS/teacher assignment.
+- Frontend thử tải lại eligibility sau khi có Attendance mới; thông báo không đủ điều kiện/chỉ xem rõ hơn.
+- Backend typecheck, 40/40 JLPT tests đạt. Live teacher API trên QA clone: GET/PATCH/read-back/restore đều thành công, trạng thái vẫn TRANSFERRED. Không đổi schema/migration và không chạm DB gốc.
+
+## 2026-11-24 — Chuyển nhật ký JLPT thành cột điểm danh
+
+- Bỏ entrypoint/modal Nhật ký JLPT; nhập trực tiếp bốn tiêu chí trong bảng Theo học viên và Theo lớp học, theo từng ca, kể cả các dòng học viên lớp nhóm.
+- Dùng Select/Input/Button chung, semantic tokens, horizontal-scroll container sẵn có; autosave một field, tải record dùng chung theo ca, retry lỗi tải, hoàn nguyên ô khi lưu lỗi và validation số nguyên không âm.
+- Giữ CS read-only, teacher absence/cancelled-session lock, null khác false/0; không tạo ca hoặc ghi Attendance khi chỉ sửa tiêu chí JLPT.
+- Thêm 6 regression tests; tổng frontend tests 20/20 đạt, typecheck/build đạt. Lint thiếu config; browser QA/responsive/persistence bị chặn do lỗi CDP, chưa được đánh dấu pass.
+- Không đổi API/schema/migration trong thay đổi UX này. Local dev dùng clone QA đã migrate; DB gốc chưa migrate.
+
+## 2026-11-24 — Nhật ký học tập JLPT: hoàn tất Chặng D–F
+
+- Thêm parser workbook nhiều sheet `Info/Lịch/Setting/NKHT N2–N5`, match class + tên chuẩn hóa + external ID từ Info và không tự tạo ClassSession.
+- Thêm ADMIN-only manual preview/confirm với hash token, field conflict actions, ambiguous-X resolution và audited transaction.
+- Thêm scoped export cho ADMIN/MANAGE/CS theo năm + giáo viên/lớp, `O/X` + marker `[STATUS:...]` round-trip và không xuất `0.5X`.
+- Thêm Google Sheet flow `JLPT_LEARNING_LOG` với populated overwrite, blank clear, ambiguous X preserve + normalization task và run-item/audit history.
+- Thêm API/UI hàng chờ chuẩn hóa theo MANAGE scope trong Sync History Detail; config/chạy sync JLPT chỉ ADMIN.
+- Hardening task idempotency bằng unique pending key, transaction rollback-safe và shared Attendance post-commit lifecycle với `NO_SEND`.
+- Xác minh đạt: backend typecheck, frontend build, Prisma validate, OpenAPI parse/ref, 17/17 import-sync hardening tests, 51/51 JLPT/ClassSession regression tests và diff check; migration vẫn chưa apply trên DB hiện tại.
+
+## 2026-11-24 — Nhật ký học tập JLPT: learning record và UI
+
+- Thêm API list records theo class/session, autosave đúng một field và bulk all-or-nothing cho `JlptLearningRecord`; create/update/clear ghi AuditLog trong cùng transaction.
+- Enforce active EnrollmentClass, class/session invariant, CS/MANAGE row scope, pure-TEACHER attendance privacy và teacher assignment hiệu lực theo ngày buổi học.
+- Thêm UI Theo buổi/Toàn khóa với TEST highlight, per-cell saving/saved/error, optimistic rollback, bulk confirm, CS read-only và absent hide/lock nhưng không xóa dữ liệu đã lưu.
+- Bổ sung frontend API/types và metadata `program_type/session_type/session_title`; Kaiwa giữ nguyên nhánh UI hiện tại.
+- Gate rollout bằng `VITE_ENABLE_JLPT_LEARNING_LOG=false` cho đến khi migration/backfill được review trên môi trường đích.
+- Xác minh đạt: backend typecheck, 44/44 regression test JLPT/ClassSession trong 3 suite, frontend production build, OpenAPI parse và `git diff --check`; lint bị chặn vì repository chưa có ESLint config. Không apply migration hoặc ghi dữ liệu nghiệp vụ.
+
+## 2026-11-24 — Nhật ký học tập JLPT: template và ClassSession backend
+
+- Thêm module `/api/v1/jlpt` cho singleton global template: list/get/create/update/delete, apply preview và teacher change request với approve/reject.
+- Thêm Class endpoints đổi `program_type`, xem trạng thái template và apply metadata; template không bind vào Class và chỉ sửa metadata session hiện có.
+- Enforce singleton/race conflict, template positions liên tục, TEST title bắt buộc/duy nhất, RBAC và phạm vi MANAGE bao phủ toàn bộ lớp JLPT bị ảnh hưởng.
+- Mở rộng ClassSession với `session_type/session_title`; chặn CS/TEACHER sửa metadata template trực tiếp, khóa đổi số/xóa session khi đã có dữ liệu JLPT và ghi AuditLog cho các thay đổi quan trọng.
+- Bổ sung unit/regression test cô lập database: 42/42 test trong 4 suite đạt; backend typecheck và `git diff --check` đạt.
+- Không chạy migration trên database hiện tại và không ghi dữ liệu nghiệp vụ.
+
+## 2026-11-23 — Nhật ký học tập JLPT: contract và nền dữ liệu
+
+- Chốt Q-016 từ workbook `giao_vien_JLPT.xlsx`: Attendance hiện tại tiếp tục là nguồn chuyên cần; thêm bốn tiêu chí JLPT và note dùng lại `Attendance.teacher_note`.
+- Đặc tả một template Buổi/KT singleton toàn cục, change request, JLPT learning record và hàng chờ chuẩn hóa; không có template binding trên Class.
+- Đặc tả contract API cho singleton template, áp metadata vào lớp, metadata session, autosave từng tiêu chí, NKHT preview/confirm/export và resolve normalization.
+- Thêm Prisma schema và migration `20261123103000_add_jlpt_learning_log_foundation`; migration không được áp dụng lên database hiện tại.
+- Thêm dry-run audit chỉ đọc và 4 unit test; audit tách active course code khỏi lịch sử và đề xuất level có kiểm soát.
+- Audit 1.399 lớp: 7 level chuẩn, 243 level đề xuất an toàn, 78 level cần xử lý thủ công; active course code gồm 270 unique, 2 missing và 56 multiple. Q-017 đã chốt; không tự backfill.
+- Prisma/OpenAPI/backend typecheck/4 test/migration scan/write scan/diff check đều đạt sau khi đồng bộ singleton template.
+- Đây là checkpoint nền tảng; backend route/service và frontend chưa được coi là hoàn thành.
+
 ## 2026-11-23 — Lịch sử điểm danh riêng tư cho Giáo viên
 
 - Đổi tab giáo viên thành `Lịch sử điểm danh`; bảng tháng chỉ thể hiện trạng thái phía GV (`1/A/B/C/D/E`, `–`, `·`) và nhật ký chỉ có `Trạng thái của tôi`.

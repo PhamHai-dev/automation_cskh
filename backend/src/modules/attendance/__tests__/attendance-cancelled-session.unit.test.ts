@@ -136,7 +136,7 @@ describe('markAttendance — CANCELLED session guard (C.6)', () => {
       TEACHER
     );
 
-    expect(result).toBe(marked);
+    expect(result).toEqual(expect.objectContaining(marked));
     expect(repo.mark).toHaveBeenCalledWith(
       enrollmentClassId,
       sessionId,
@@ -203,7 +203,7 @@ describe('bulkMarkAttendance — CANCELLED session guard (C.6)', () => {
       TEACHER
     );
 
-    expect(out).toBe(results);
+    expect(out).toEqual([expect.objectContaining(results[0])]);
     expect(repo.bulkMark).toHaveBeenCalledTimes(1);
   });
 });
@@ -250,7 +250,7 @@ describe('updateAttendance / resetAttendance — CANCELLED session guard (C.6)',
 
     const result = await service.updateAttendance(70, { status: 'LEAVE_B', side: 'TEACHER' }, TEACHER, classId, sessionId);
 
-    expect(result).toBe(updated);
+    expect(result).toEqual(expect.objectContaining(updated));
     expect(repo.update).toHaveBeenCalledTimes(1);
   });
 
@@ -287,7 +287,7 @@ describe('assertWriteScope — D8 inactive assignment within window (owner verdi
       TEACHER
     );
 
-    expect(result).toBe(marked);
+    expect(result).toEqual(expect.objectContaining(marked));
     expect(mockPrisma.classTeacher.findMany).toHaveBeenCalledWith({
       where: { class_id: classId, teacher: { user_id: TEACHER.id } },
       select: { active: true, start_date: true, end_date: true },

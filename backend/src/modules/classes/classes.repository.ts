@@ -8,6 +8,10 @@ import {
   ClassListMeta,
 } from './classes.types';
 import { ClassModelType, AttendanceSourceType } from '@prisma/client';
+import {
+  LEGACY_CLASS_SCALAR_SELECT,
+  LEGACY_CLASS_SESSION_SCALAR_SELECT,
+} from '../../shared/prisma-legacy-selects';
 
 export const SAFE_USER_SELECT = {
   id: true,
@@ -602,14 +606,21 @@ export class ClassesRepository {
     const classes = await prisma.class.findMany({
       where,
       ...(isPaginated ? { skip: (page - 1) * pageSize, take: pageSize } : {}),
-      include: {
+      select: {
+        ...LEGACY_CLASS_SCALAR_SELECT,
         class_teachers: {
-          include: { teacher: true }
+          include: { teacher: true },
         },
         class_schedules: true,
         class_sessions: {
           ...(hasSessionBounds ? { where: { session_date: sessionDateWhere } } : {}),
           orderBy: [{ session_date: 'asc' }, { session_number: 'asc' }],
+          select: {
+            ...LEGACY_CLASS_SESSION_SCALAR_SELECT,
+            attendance: {
+              where: { deleted_at: null },
+            },
+          },
         },
         enrollment_classes: {
           where: { enrollment: { student: { deleted_at: null } } },
@@ -626,8 +637,16 @@ export class ClassesRepository {
                 deleted_at: null,
                 ...(hasSessionBounds ? { class_session: { session_date: sessionDateWhere } } : {}),
               },
-              include: {
-                class_session: true,
+              select: {
+                id: true,
+                status: true,
+                teacher_status: true,
+                cs_status: true,
+                reconciliation_state: true,
+                deleted_at: true,
+                class_session: {
+                  select: LEGACY_CLASS_SESSION_SCALAR_SELECT,
+                },
               },
             },
           },
@@ -834,7 +853,8 @@ export class ClassesRepository {
   async findById(id: number) {
     return prisma.class.findUnique({
       where: { id },
-      include: {
+      select: {
+        ...LEGACY_CLASS_SCALAR_SELECT,
         class_teachers: {
           include: {
             teacher: {
@@ -848,7 +868,8 @@ export class ClassesRepository {
         },
         class_schedules: true,
         class_sessions: {
-          include: {
+          select: {
+            ...LEGACY_CLASS_SESSION_SCALAR_SELECT,
             attendance: {
               where: { deleted_at: null },
             },
@@ -867,8 +888,16 @@ export class ClassesRepository {
             },
             attendance: {
               where: { deleted_at: null },
-              include: {
-                class_session: true,
+              select: {
+                id: true,
+                status: true,
+                teacher_status: true,
+                cs_status: true,
+                reconciliation_state: true,
+                deleted_at: true,
+                class_session: {
+                  select: LEGACY_CLASS_SESSION_SCALAR_SELECT,
+                },
               },
             },
           },

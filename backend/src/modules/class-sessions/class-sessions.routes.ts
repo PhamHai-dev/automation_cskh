@@ -1,15 +1,22 @@
 import { Router } from 'express';
 import { ClassSessionsController } from './class-sessions.controller';
+import { JlptController } from '../jlpt/jlpt.controller';
 import { authenticate, requireRoles } from '../../middlewares/auth.middleware';
 import { requireClassAccess } from '../classes/classes.scope';
 
 const router = Router({ mergeParams: true });
 const controller = new ClassSessionsController();
+const jlptController = new JlptController();
 
 router.use(authenticate);
 
 // List sessions for a class
 router.get('/', requireRoles(['ADMIN', 'MANAGE', 'CS', 'TEACHER']), requireClassAccess('xem danh sách buổi học'), controller.list);
+
+// JLPT learning records. Keep /bulk before /:enrollmentClassId.
+router.get('/:sessionId/jlpt-records', requireRoles(['ADMIN', 'MANAGE', 'CS', 'TEACHER']), requireClassAccess('xem nhật ký học tập JLPT'), jlptController.listLearningRecords);
+router.post('/:sessionId/jlpt-records/bulk', requireRoles(['ADMIN', 'MANAGE', 'TEACHER']), requireClassAccess('cập nhật hàng loạt nhật ký học tập JLPT'), jlptController.updateLearningRecordsBulk);
+router.patch('/:sessionId/jlpt-records/:enrollmentClassId', requireRoles(['ADMIN', 'MANAGE', 'TEACHER']), requireClassAccess('cập nhật nhật ký học tập JLPT'), jlptController.updateLearningRecord);
 
 // Get single session
 router.get('/:sessionId', requireRoles(['ADMIN', 'MANAGE', 'CS', 'TEACHER']), requireClassAccess('xem chi tiết buổi học'), controller.get);

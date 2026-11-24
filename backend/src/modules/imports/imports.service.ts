@@ -3,6 +3,7 @@ import path from 'path';
 import ExcelJS from 'exceljs';
 import { ImportBatchStatus, ImportRowStatus, ImportType, AttendanceStatus, AttendanceSource, EnrollmentStatus, EnrollmentClassStatus, ImportCreateRequestStatus, Prisma, CareLogOutcome, ReconciliationState } from '@prisma/client';
 import { prisma } from '../../prisma/client';
+import { LEGACY_CLASS_SCALAR_SELECT, LEGACY_CLASS_SESSION_SCALAR_SELECT } from '../../shared/prisma-legacy-selects';
 import { ImportsRepository } from './imports.repository';
 import { SheetPreviewData, UploadResponse, ValidationReport, ValidationErrorItem, ValidationWarningItem, SaveMappingDTO, ImportBatchSummary, RequestActor, ReconcileItem, ReconcileClassification, LogicalSheet, MonthAttendanceBlock } from './imports.types';
 import { AppError } from '../../middlewares/error.middleware';
@@ -1037,7 +1038,20 @@ export class ImportsService {
         include: {
           enrollments: {
             where: { package: { code: packageCode } },
-            include: { package: true, cs: true, enrollment_classes: { include: { class: { include: { class_teachers: { include: { teacher: true } } } } } } },
+            include: {
+              package: true,
+              cs: true,
+              enrollment_classes: {
+                include: {
+                  class: {
+                    select: {
+                      ...LEGACY_CLASS_SCALAR_SELECT,
+                      class_teachers: { include: { teacher: true } },
+                    },
+                  },
+                },
+              },
+            },
             orderBy: { created_at: 'desc' },
           },
         },
@@ -1523,7 +1537,7 @@ export class ImportsService {
           // 5. Enrollment
           let enrollment = await tx.enrollment.findFirst({
             where: { student_id: student.id, package_id: pkg.id },
-            include: { enrollment_classes: { include: { class: true }, orderBy: { sequence_no: 'desc' } } },
+            include: { enrollment_classes: { include: { class: { select: LEGACY_CLASS_SCALAR_SELECT } }, orderBy: { sequence_no: 'desc' } } },
             orderBy: { created_at: 'desc' },
           });
 
@@ -1561,7 +1575,7 @@ export class ImportsService {
                 attended_previous_years: snap.attended_previous_years !== undefined && snap.attended_previous_years !== '' ? Number(snap.attended_previous_years) : 0,
                 external_synced_at: new Date(),
               },
-              include: { enrollment_classes: { include: { class: true } } },
+              include: { enrollment_classes: { include: { class: { select: LEGACY_CLASS_SCALAR_SELECT } } } },
             });
           } else {
             // Overwrite enrollment: blank cell sets to null per Decision 4
@@ -1630,7 +1644,7 @@ export class ImportsService {
                 sequence_no: (ec?.sequence_no || 0) + 1,
                 status: EnrollmentClassStatus.ACTIVE,
               },
-              include: { class: true },
+              include: { class: { select: LEGACY_CLASS_SCALAR_SELECT } },
             });
           }
 
@@ -2512,7 +2526,7 @@ export class ImportsService {
       include: {
         enrollments: {
           where: { package_id: pkg.id },
-          include: { enrollment_classes: { include: { class: true } } },
+          include: { enrollment_classes: { include: { class: { select: LEGACY_CLASS_SCALAR_SELECT } } } },
         },
       },
     });

@@ -1,6 +1,7 @@
 import { prisma } from '../../prisma/client';
 import { AttendanceSide, UpdateAttendanceDTO } from './attendance.types';
 import { Prisma, AttendanceStatus, ReconciliationState } from '@prisma/client';
+import { LEGACY_CLASS_SESSION_SCALAR_SELECT } from '../../shared/prisma-legacy-selects';
 
 export class AttendanceRepository {
   async findBySession(classId: number, sessionId: number) {
@@ -35,7 +36,7 @@ export class AttendanceRepository {
       },
       include: {
         enrollment_class: { include: { enrollment: true } },
-        class_session: true,
+        class_session: { select: LEGACY_CLASS_SESSION_SCALAR_SELECT },
         created_by: { select: { id: true, name: true, email: true } },
       },
     });

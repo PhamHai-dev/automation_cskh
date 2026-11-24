@@ -2,6 +2,7 @@ import { AttendanceSource, AttendanceStatus, ClassModelType, EnrollmentClassStat
 import ExcelJS from 'exceljs';
 import { AttendanceDeliveryPolicy, AttendancePostCommitInput, deriveAttendanceReconciliationState, runAttendancePostCommit } from './attendance-lifecycle';
 import { prisma } from '../../prisma/client';
+import { LEGACY_CLASS_SCALAR_SELECT, LEGACY_CLASS_SESSION_SCALAR_SELECT } from '../../shared/prisma-legacy-selects';
 import { addMinutes, normalizeClassModel, normalizeDateOnly, parseAttendanceValue, parseTimeSlot, remapDateYear } from './attendance.utils';
 import { findEffectiveAssignment } from './teacher-assignment';
 
@@ -93,7 +94,7 @@ export class AttendanceImportService {
         },
         ...(input.classModel ? { class: { model_type: input.classModel } } : {}),
       },
-      include: { enrollment: true, class: true },
+      include: { enrollment: true, class: { select: LEGACY_CLASS_SCALAR_SELECT } },
     });
 
     if (enrollmentClasses.length > 1 && input.classReference) {

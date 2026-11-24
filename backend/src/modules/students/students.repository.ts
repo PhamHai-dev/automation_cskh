@@ -37,6 +37,35 @@ export const SAFE_USER_SELECT = {
   last_login_at: true,
 } as const;
 
+/**
+ * Keep the student endpoints compatible with databases that predate the JLPT
+ * foundation migration. An `include: { class: ... }` implicitly selects every
+ * scalar Class column, including the newer `program_type` column.
+ */
+const STUDENT_CLASS_SELECT = {
+  id: true,
+  class_code: true,
+  class_name: true,
+  level: true,
+  model_type: true,
+  attendance_source: true,
+  active: true,
+  created_at: true,
+  updated_at: true,
+  class_teachers: {
+    include: {
+      teacher: {
+        include: {
+          user: {
+            select: SAFE_USER_SELECT,
+          },
+        },
+      },
+    },
+  },
+  class_schedules: true,
+} as const;
+
 /** Same assigned-group + self scope already used by the student list. */
 export async function getStudentCsScope(actor: AuthUser): Promise<number[] | undefined> {
   if (actor.roles.includes('ADMIN')) return undefined;
@@ -644,20 +673,7 @@ export class StudentsRepository {
             enrollment_classes: {
               include: {
                 class: {
-                  include: {
-                    class_teachers: {
-                      include: {
-                        teacher: {
-                          include: {
-                            user: {
-                              select: SAFE_USER_SELECT,
-                            },
-                          },
-                        },
-                      },
-                    },
-                    class_schedules: true,
-                  },
+                  select: STUDENT_CLASS_SELECT,
                 },
                 attendance: {
                   where: { deleted_at: null },
@@ -843,20 +859,7 @@ export class StudentsRepository {
                 where: { class_id: { in: accessibleClassIds } },
                 include: {
                   class: {
-                    include: {
-                      class_teachers: {
-                        include: {
-                          teacher: {
-                            include: {
-                              user: {
-                                select: SAFE_USER_SELECT,
-                              },
-                            },
-                          },
-                        },
-                      },
-                      class_schedules: true,
-                    },
+                    select: STUDENT_CLASS_SELECT,
                   },
                   attendance: { where: { deleted_at: null } },
                 },
@@ -913,20 +916,7 @@ export class StudentsRepository {
             enrollment_classes: {
               include: {
                 class: {
-                  include: {
-                    class_teachers: {
-                      include: {
-                        teacher: {
-                          include: {
-                            user: {
-                              select: SAFE_USER_SELECT,
-                            },
-                          },
-                        },
-                      },
-                    },
-                    class_schedules: true,
-                  },
+                  select: STUDENT_CLASS_SELECT,
                 },
                 attendance: { where: { deleted_at: null } },
               },
@@ -1202,20 +1192,7 @@ export class StudentsRepository {
           enrollment_classes: {
             include: {
               class: {
-                include: {
-                  class_schedules: true,
-                  class_teachers: {
-                    include: {
-                      teacher: {
-                        include: {
-                          user: {
-                            select: SAFE_USER_SELECT,
-                          },
-                        },
-                      },
-                    },
-                  },
-                },
+                select: STUDENT_CLASS_SELECT,
               },
             },
           },

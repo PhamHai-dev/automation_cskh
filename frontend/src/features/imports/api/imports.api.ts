@@ -263,6 +263,26 @@ export const importsApi = {
     return res.data?.data || res.data;
   },
 
+  getJlptNormalizationTasks: async (runId: number | string) => {
+    const res = await apiClient.get('/imports/jlpt/normalization-tasks', {
+      params: { run_id: runId, status: 'PENDING', pageSize: 100 },
+    });
+    return res.data?.data || res.data;
+  },
+
+  resolveJlptNormalizationTask: async (
+    taskId: number,
+    payload: { resolution_status?: 'ABSENT_APPROVED_A' | 'ABSENT_UNAPPROVED_C'; session_type?: 'LESSON' | 'TEST'; session_title?: string | null; note?: string | null }
+  ) => {
+    const res = await apiClient.post(`/imports/jlpt/normalization-tasks/${taskId}/resolve`, payload);
+    return res.data?.data || res.data;
+  },
+
+  rejectJlptNormalizationTask: async (taskId: number, reason: string) => {
+    const res = await apiClient.post(`/imports/jlpt/normalization-tasks/${taskId}/reject`, { reason });
+    return res.data?.data || res.data;
+  },
+
   saveServiceAccount: async (
     serviceAccountJson: string | null
   ): Promise<{ serviceAccount: ServiceAccountInfo }> => {

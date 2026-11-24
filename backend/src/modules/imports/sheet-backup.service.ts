@@ -28,6 +28,7 @@ import {
 } from '@prisma/client';
 
 import { prisma } from '../../prisma/client';
+import { LEGACY_CLASS_SCALAR_SELECT, LEGACY_CLASS_SESSION_SCALAR_SELECT } from '../../shared/prisma-legacy-selects';
 import { createLogger } from '../../shared/logger/logger';
 import { resolveActivityDateRange, vietnamDateKey } from '../activity-logs/activity-time';
 import { AppError } from '../../middlewares/error.middleware';
@@ -374,7 +375,7 @@ async function loadEnrollments(csUserId: number, programType: string) {
           },
           attendance: {
             where: { deleted_at: null },
-            include: { class_session: true },
+            include: { class_session: { select: LEGACY_CLASS_SESSION_SCALAR_SELECT } },
           },
         },
         orderBy: { sequence_no: 'asc' },
@@ -405,7 +406,7 @@ async function loadAllProgramEnrollments(programType: 'KAIWA' | 'JLPT') {
           },
           attendance: {
             where: { deleted_at: null },
-            include: { class_session: true },
+            include: { class_session: { select: LEGACY_CLASS_SESSION_SCALAR_SELECT } },
           },
         },
         orderBy: { sequence_no: 'asc' },
@@ -446,7 +447,7 @@ async function loadTeacherEnrollments(teacherId: number) {
           },
           attendance: {
             where: { deleted_at: null },
-            include: { class_session: true },
+            include: { class_session: { select: LEGACY_CLASS_SESSION_SCALAR_SELECT } },
           },
         },
         orderBy: { sequence_no: 'asc' },

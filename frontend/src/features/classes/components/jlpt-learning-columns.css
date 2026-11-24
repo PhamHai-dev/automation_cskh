@@ -1,0 +1,10 @@
+.jlpt-learning-heading { min-width: 148px; padding: 10px 12px; border-right: 1px solid var(--color-border); background: var(--color-surface-muted); white-space: nowrap; }
+.jlpt-learning-heading small { display: block; margin-top: 2px; font-size: 10px; font-weight: 500; color: var(--color-text-muted); }
+.jlpt-learning-cell { padding: 8px 10px; border-right: 1px solid var(--color-border); vertical-align: top; }
+.jlpt-learning-stack { display: flex; flex-direction: column; gap: 6px; }
+.jlpt-learning-entry { display: flex; align-items: center; gap: 6px; min-height: 28px; }
+.jlpt-learning-entry > span { flex-shrink: 0; white-space: nowrap; font-size: 10px; color: var(--color-text-muted); }
+.jlpt-learning-control { min-width: 110px; }
+.jlpt-learning-control select, .jlpt-learning-control input { height: 28px; border-radius: 8px; padding-top: 2px; padding-bottom: 2px; font-size: 12px; }
+.jlpt-learning-feedback { display: block; margin-top: 2px; font-size: 10px; color: var(--color-text-muted); }
+.jlpt-learning-error { color: var(--color-danger); }

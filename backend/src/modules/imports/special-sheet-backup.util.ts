@@ -11,6 +11,7 @@
 import ExcelJS from 'exceljs';
 import { AttendanceStatus, ReconciliationState } from '@prisma/client';
 import { prisma } from '../../prisma/client';
+import { LEGACY_CLASS_SESSION_SCALAR_SELECT } from '../../shared/prisma-legacy-selects';
 import { isConsumedAttendance } from '../enrollments/enrollment-entitlement';
 import {
   colNumberToLetter,
@@ -645,7 +646,7 @@ export async function writeAdminReconciliationWorkbookSheets(
   const attendances = await prisma.attendance.findMany({
     where: { deleted_at: null },
     include: {
-      class_session: true,
+      class_session: { select: LEGACY_CLASS_SESSION_SCALAR_SELECT },
       resolved_by: { select: { id: true, name: true, email: true } },
       enrollment_class: {
         include: {

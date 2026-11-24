@@ -25,6 +25,7 @@ export interface SyncConfigModalProps {
   isOpen: boolean;
   onClose: () => void;
   editingConfig: GoogleSheetSyncConfig | null;
+  isAdmin: boolean;
   onSaved: (saved: GoogleSheetSyncConfig) => void;
 }
 
@@ -55,6 +56,11 @@ const FLOW_OPTIONS: Array<{
     subtitle:
       'Đồng bộ Chuyên cần HV JLPT (khớp hàng loạt Lớp + Tên) hoặc Báo cáo học tập Kaiwa',
   },
+  {
+    value: 'JLPT_LEARNING_LOG',
+    label: '5. Nhật ký học tập JLPT (NKHT nhiều sheet)',
+    subtitle: 'Đồng bộ tuyệt đối Info, Lịch, Setting và NKHT N2–N5; ô trống sẽ xóa dữ liệu nguồn tương ứng',
+  },
 ];
 
 const JLPT_SOURCE_STATUSES = ['Active', 'Deactive', 'HV Mới', 'Đặt cọc'];
@@ -82,6 +88,8 @@ const getDefaultSheetName = (flowType: SyncFlowType, programType: string): strin
       return '2026 スケジュール';
     case 'STUDY_REPORT':
       return isJlpt ? 'Chuyên cần HV' : '会話 3 - 学習レポート';
+    case 'JLPT_LEARNING_LOG':
+      return 'NKHT N4';
   }
 };
 
@@ -95,6 +103,8 @@ const getDefaultHeaderRow = (flowType: SyncFlowType, programType: string): numbe
       return 2;
     case 'STUDY_REPORT':
       return isJlpt ? 4 : 1;
+    case 'JLPT_LEARNING_LOG':
+      return 1;
   }
 };
 
@@ -108,6 +118,7 @@ export const SyncConfigModal: React.FC<SyncConfigModalProps> = ({
   isOpen,
   onClose,
   editingConfig,
+  isAdmin,
   onSaved,
 }) => {
   const toast = useToast();
@@ -282,8 +293,15 @@ export const SyncConfigModal: React.FC<SyncConfigModalProps> = ({
 
   const urlValid =
     sourceType !== 'GOOGLE_SHEET' || isValidGoogleSheetUrl(spreadsheetUrl);
+  const availableFlowOptions = isAdmin
+    ? FLOW_OPTIONS
+    : FLOW_OPTIONS.filter((option) => option.value !== 'JLPT_LEARNING_LOG');
 
   const handleSubmit = async () => {
+    if (flowType === 'JLPT_LEARNING_LOG' && !isAdmin) {
+      toast.error('Chỉ ADMIN được cấu hình Nhật ký học tập JLPT');
+      return;
+    }
     if (sourceType === 'GOOGLE_SHEET') {
       if (!spreadsheetUrl.trim()) {
         toast.error('Vui lòng dán Link Google Sheet hợp lệ');
@@ -487,14 +505,14 @@ export const SyncConfigModal: React.FC<SyncConfigModalProps> = ({
               }
               className="w-full h-9 rounded-xl border border-slate-200 bg-white disabled:bg-slate-100 px-3 text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
             >
-              {FLOW_OPTIONS.map((opt) => (
+              {availableFlowOptions.map((opt) => (
                 <option key={opt.value} value={opt.value}>
                   {opt.label}
                 </option>
               ))}
             </select>
             <p className="text-[11px] text-slate-500 mt-1">
-              {FLOW_OPTIONS.find((f) => f.value === flowType)?.subtitle}
+              {availableFlowOptions.find((f) => f.value === flowType)?.subtitle}
             </p>
           </div>
 

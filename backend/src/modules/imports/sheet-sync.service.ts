@@ -16,6 +16,7 @@ import {
   ReconciliationState,
 } from '@prisma/client';
 import { prisma } from '../../prisma/client';
+import { LEGACY_CLASS_SCALAR_SELECT, LEGACY_CLASS_SESSION_SCALAR_SELECT } from '../../shared/prisma-legacy-selects';
 import { createLogger } from '../../shared/logger/logger';
 import { AppError } from '../../middlewares/error.middleware';
 import { encrypt, decrypt } from '../../shared/crypto/aes-gcm';
@@ -35,6 +36,7 @@ import {
   parseKaiwaStudyReportWorkbook,
   parseTeacherAttendanceSheet,
 } from './sheet-sync.parser';
+import { JlptWorkbookService } from './jlpt-workbook.service';
 import { cleanJlptClassCode } from '../students/jlpt-attendance-report.util';
 import type { AuthUser } from '../../middlewares/auth.middleware';
 import { resolveActivityDateRange, vietnamTodayBounds } from '../activity-logs/activity-time';
@@ -45,7 +47,8 @@ export type SyncFlowType =
   | 'STUDENT_MASTER'
   | 'CSKH_ATTENDANCE'
   | 'TEACHER_ATTENDANCE'
-  | 'STUDY_REPORT';
+  | 'STUDY_REPORT'
+  | 'JLPT_LEARNING_LOG';
 
 export type SyncSourceType = 'GOOGLE_SHEET' | 'LOCAL_FILE';
 
@@ -1169,6 +1172,7 @@ export class SheetSyncService {
       CSKH_ATTENDANCE: 0,
       TEACHER_ATTENDANCE: 0,
       STUDY_REPORT: 0,
+      JLPT_LEARNING_LOG: 0,
     };
 
     for (const cfg of allConfigs) {
@@ -1277,6 +1281,9 @@ export class SheetSyncService {
 
     const flowType: SyncFlowType = dto.flow_type || 'STUDENT_MASTER';
     const programType: 'JLPT' | 'KAIWA' = dto.program_type?.toUpperCase() === 'JLPT' ? 'JLPT' : 'KAIWA';
+    if (flowType === 'JLPT_LEARNING_LOG' && programType !== 'JLPT') {
+      throw new AppError(400, 'JLPT_LEARNING_LOG chỉ áp dụng cho chương trình JLPT');
+    }
     const spreadsheetUrl = dto.spreadsheet_url?.trim() || null;
     const spreadsheetId = this.extractSpreadsheetId(spreadsheetUrl);
     const sheetGid = this.extractSheetGid(spreadsheetUrl);
@@ -1293,6 +1300,8 @@ export class SheetSyncService {
       defaultSheetName = `${dto.sync_year || 2026} スケジュール`;
     } else if (flowType === 'STUDY_REPORT') {
       defaultSheetName = programType === 'JLPT' ? 'Chuyên cần HV' : '会話 3 - 学習レポート';
+    } else if (flowType === 'JLPT_LEARNING_LOG') {
+      defaultSheetName = 'NKHT N4';
     }
 
     const sheetName = (dto.sheet_name || defaultSheetName).trim();
@@ -1310,13 +1319,15 @@ export class SheetSyncService {
         : dto.sync_year ?? null;
 
     const defaultHeaderRow =
-      flowType === 'STUDY_REPORT'
-        ? programType === 'JLPT'
-          ? 4
-          : 1
-        : sheetName === '1.Chăm sóc'
-          ? 3
-          : 2;
+      flowType === 'JLPT_LEARNING_LOG'
+        ? 1
+        : flowType === 'STUDY_REPORT'
+          ? programType === 'JLPT'
+            ? 4
+            : 1
+          : sheetName === '1.Chăm sóc'
+            ? 3
+            : 2;
 
     const created = await prisma.googleSheetSyncConfig.create({
       data: {
@@ -1449,7 +1460,7 @@ export class SheetSyncService {
         enrollments: {
           include: {
             package: true,
-            enrollment_classes: { include: { class: true } },
+            enrollment_classes: { include: { class: { select: LEGACY_CLASS_SCALAR_SELECT } } },
           },
         },
       },
@@ -1979,6 +1990,9 @@ export class SheetSyncService {
     if (flowType === 'TEACHER_ATTENDANCE') {
       return [sheetName || '2026 スケジュール', 'Info', 'Infoー情報', 'Setting'];
     }
+    if (flowType === 'JLPT_LEARNING_LOG') {
+      return [];
+    }
     if (flowType === 'STUDY_REPORT' && programType === 'JLPT') {
       return [sheetName || 'Chuyên cần HV'];
     }
@@ -2167,7 +2181,7 @@ export class SheetSyncService {
         include: {
           package: true,
           cs: { select: { id: true, code: true, staff_code: true, name: true } },
-          enrollment_classes: { include: { class: true } },
+          enrollment_classes: { include: { class: { select: LEGACY_CLASS_SCALAR_SELECT } } },
           care_logs: true,
         },
       }),
@@ -2666,9 +2680,9 @@ export class SheetSyncService {
             package: true,
             enrollment_classes: {
               include: {
-                class: true,
+                class: { select: LEGACY_CLASS_SCALAR_SELECT },
                 attendance: {
-                  include: { class_session: true },
+                  include: { class_session: { select: LEGACY_CLASS_SESSION_SCALAR_SELECT } },
                 },
               },
             },
@@ -3051,7 +3065,7 @@ export class SheetSyncService {
             where: { program_type: 'JLPT' },
             include: {
               package: true,
-              enrollment_classes: { include: { class: true } },
+              enrollment_classes: { include: { class: { select: LEGACY_CLASS_SCALAR_SELECT } } },
             },
             orderBy: { created_at: 'desc' },
           },
@@ -3299,7 +3313,7 @@ export class SheetSyncService {
             enrollments: {
               include: {
                 package: true,
-                enrollment_classes: { include: { class: true } },
+                enrollment_classes: { include: { class: { select: LEGACY_CLASS_SCALAR_SELECT } } },
               },
               orderBy: { created_at: 'desc' },
             },
@@ -3314,7 +3328,7 @@ export class SheetSyncService {
           enrollments: {
             include: {
               package: true,
-              enrollment_classes: { include: { class: true } },
+              enrollment_classes: { include: { class: { select: LEGACY_CLASS_SCALAR_SELECT } } },
             },
             orderBy: { created_at: 'desc' },
           },
@@ -4766,6 +4780,10 @@ export class SheetSyncService {
     const mode: 'DELTA' | 'FULL' = forceFullSync ? 'FULL' : 'DELTA';
     const flowType = (config.flow_type || 'STUDENT_MASTER').toUpperCase() as SyncFlowType;
 
+    if (flowType === 'JLPT_LEARNING_LOG') {
+      return this.syncJlptLearningLog(config, { ...options, triggerType });
+    }
+
     // For non-STUDENT_MASTER flows, delegate directly to preview + commit pipeline
     if (flowType !== 'STUDENT_MASTER') {
       const committed = await this.commitConfigSync(config.code, {
@@ -5090,14 +5108,16 @@ export class SheetSyncService {
     }
   }
 
-  public async syncAll(options?: { forceFullSync?: boolean; limit?: number; actorId?: number; flowType?: string }) {
+  public async syncAll(options?: { forceFullSync?: boolean; limit?: number; actorId?: number; actorRoles?: string[]; flowType?: string }) {
     await this.ensureDefaultConfigs();
     const sourceTypeMap = await this.getSourceTypeMap();
     const configs = await prisma.googleSheetSyncConfig.findMany({
       orderBy: { id: 'asc' },
     });
+    const isAdmin = Boolean(options?.actorRoles?.includes('ADMIN'));
 
     const readyConfigs = configs.filter((cfg) => {
+      if (cfg.flow_type === 'JLPT_LEARNING_LOG' && !isAdmin) return false;
       if (options?.flowType && options.flowType !== 'ALL' && cfg.flow_type !== options.flowType) {
         return false;
       }
@@ -5753,6 +5773,70 @@ export class SheetSyncService {
       runId: updatedRun.id,
       message: `Đã hoàn tác thành công ${rolledBackNow} dòng dữ liệu về trạng thái trước đồng bộ.`,
     };
+  }
+
+  private async syncJlptLearningLog(
+    config: any,
+    options?: { actorId?: number; triggerType?: 'MANUAL' | 'AUTO' }
+  ): Promise<SheetSyncResult> {
+    const startedAt = Date.now();
+    const triggerType = options?.triggerType || 'MANUAL';
+    const actorId = options?.actorId || config.default_cs_id || 1;
+    const syncYear = config.sync_year || new Date().getUTCFullYear();
+    const sourceTypeMap = await this.getSourceTypeMap();
+    const effectiveSourceType = this.resolveConfigSourceType(config, sourceTypeMap);
+    const { buffer } = await this.loadWorkbookBuffer({ ...config, source_type: effectiveSourceType });
+    await prisma.googleSheetSyncConfig.update({ where: { id: config.id }, data: { last_status: 'SYNCING', last_error: null } });
+    const run = await prisma.googleSheetSyncRun.create({
+      data: {
+        config_id: config.id,
+        config_code: config.code,
+        config_name: config.name,
+        flow_type: 'JLPT_LEARNING_LOG',
+        program_type: 'JLPT',
+        trigger_type: triggerType,
+        status: 'SUCCESS',
+        sync_year: syncYear,
+        triggered_by_id: options?.actorId || null,
+      },
+    });
+    const runItem = await prisma.googleSheetSyncRunItem.create({
+      data: {
+        run_id: run.id,
+        entity_type: 'JlptLearningLog',
+        action: 'UPDATE',
+        status: 'APPLIED',
+        summary_text: 'Đồng bộ tuyệt đối workbook NKHT JLPT',
+      },
+    });
+    try {
+      const result = await new JlptWorkbookService().syncAbsolute(buffer, syncYear, actorId, runItem.id);
+      const durationMs = Math.max(1, Date.now() - startedAt);
+      const completedAt = new Date();
+      await prisma.googleSheetSyncRunItem.update({
+        where: { id: runItem.id },
+        data: {
+          summary_text: `Đã cập nhật ${result.updatedFields} trường; tạo ${result.taskCount} mục chờ chuẩn hóa`,
+          field_diffs: [{ field: 'updated_fields', label: 'Số trường cập nhật', before: 0, after: result.updatedFields }] as unknown as Prisma.InputJsonValue,
+          after_snapshot: result as unknown as Prisma.InputJsonValue,
+        },
+      });
+      await prisma.googleSheetSyncRun.update({
+        where: { id: run.id },
+        data: { status: 'SUCCESS', total_rows: result.totalCells, updated_count: result.updatedFields, conflict_count: result.taskCount, duration_ms: durationMs, completed_at: completedAt },
+      });
+      const summary: SheetSyncResult = { runId: run.id, code: config.code, programType: 'JLPT', flowType: 'JLPT_LEARNING_LOG', skipped: false, totalRows: result.totalCells, unchangedRows: 0, createdCount: 0, updatedCount: result.updatedFields, conflictCount: result.taskCount, failedCount: 0, byCvht: {}, syncedAt: completedAt.toISOString(), durationMs, triggerType, mode: 'FULL' };
+      await prisma.googleSheetSyncConfig.update({ where: { id: config.id }, data: { last_synced_at: completedAt, last_status: 'SUCCESS', last_summary: summary as unknown as Prisma.InputJsonValue, last_error: null, last_file_hash: this.sha256(buffer) } });
+      await prisma.auditLog.create({ data: { user_id: actorId, action: 'JLPT_GOOGLE_SHEET_ABSOLUTE_SYNC', entity_type: 'GoogleSheetSyncRun', entity_id: String(run.id), after_data: summary as unknown as Prisma.InputJsonValue } });
+      return summary;
+    } catch (error: any) {
+      const completedAt = new Date();
+      const message = error?.message || String(error);
+      await prisma.googleSheetSyncRunItem.update({ where: { id: runItem.id }, data: { status: 'FAILED', error_message: message } });
+      await prisma.googleSheetSyncRun.update({ where: { id: run.id }, data: { status: 'FAILED', failed_count: 1, error_message: message, duration_ms: Math.max(1, Date.now() - startedAt), completed_at: completedAt } });
+      await prisma.googleSheetSyncConfig.update({ where: { id: config.id }, data: { last_synced_at: completedAt, last_status: 'FAILED', last_error: message, last_file_hash: null } });
+      throw error;
+    }
   }
 
   /**

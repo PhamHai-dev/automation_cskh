@@ -1,4 +1,4 @@
-﻿import { AuthUser } from '../../middlewares/auth.middleware';
+import { AuthUser } from '../../middlewares/auth.middleware';
 
 type AttendanceActor = Pick<AuthUser, 'roles'> | { roles: string[] } | undefined;
 
@@ -24,6 +24,7 @@ export function presentAttendanceForActor<T>(record: T, actor: AttendanceActor):
     class_session_id: item.class_session_id,
     source: item.source,
     teacher_status: item.teacher_status ?? null,
+    reconciliation_state: item.reconciliation_state ?? null,
     lesson_topic: item.lesson_topic ?? null,
     teacher_note: item.teacher_note ?? null,
     cs_note: item.cs_note ?? null,

@@ -18,12 +18,14 @@ export interface ClassTeacherAssignment {
 export type ClassTeacher = ClassTeacherAssignment;
 
 export type ClassModelType = '1:1' | '1:2' | '1:n' | string;
+export type ProgramType = 'KAIWA' | 'JLPT';
 
 export interface Class {
   id: number;
   class_code?: string;
   class_name: string;
   level?: string;
+  program_type?: ProgramType;
   model_type: ClassModelType;
   attendance_source: 'LEARNING_SYSTEM' | 'ZOOM';
   active: boolean;
@@ -244,6 +246,7 @@ export interface AssignTeacherDTO {
 // ---- ClassSession ----
 
 export type ClassSessionStatus = 'SCHEDULED' | 'COMPLETED' | 'CANCELLED';
+export type ClassSessionType = 'LESSON' | 'TEST';
 
 export interface ClassSession {
   id: number;
@@ -253,6 +256,8 @@ export interface ClassSession {
   start_time?: string;
   end_time?: string;
   teacher_id?: number;
+  session_type?: ClassSessionType;
+  session_title?: string | null;
   status: ClassSessionStatus;
   attendance?: Attendance[];
   created_by_id: number;
@@ -267,6 +272,8 @@ export interface CreateClassSessionDTO {
   start_time?: string;
   end_time?: string;
   teacher_id?: number;
+  session_type?: ClassSessionType;
+  session_title?: string | null;
 }
 
 export interface UpdateClassSessionDTO extends Partial<CreateClassSessionDTO> {
@@ -357,3 +364,43 @@ export const SESSION_STATUS_LABELS: Record<ClassSessionStatus, string> = {
   COMPLETED: 'Đã hoàn thành',
   CANCELLED: 'Đã hủy',
 };
+
+export type JlptRating = 'A' | 'B' | 'C';
+export type JlptLearningRecordField =
+  | 'preparation_rating'
+  | 'attitude_rating'
+  | 'homework_completed'
+  | 'test_correct_answers';
+
+export interface JlptLearningRecord {
+  id: number;
+  enrollment_class_id: number;
+  class_session_id: number;
+  preparation_rating: JlptRating | null;
+  attitude_rating: JlptRating | null;
+  homework_completed: boolean | null;
+  test_correct_answers: number | null;
+  created_by_id: number;
+  updated_by_id: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface JlptLearningRecordRow {
+  enrollment_class_id: number;
+  student: {
+    id: number;
+    external_id?: string | null;
+    full_name: string;
+    phone?: string | null;
+    email?: string | null;
+  };
+  attendance: Attendance | null;
+  learning_record: JlptLearningRecord | null;
+}
+
+export type JlptLearningRecordPatch =
+  | { field: 'preparation_rating'; value: JlptRating | null }
+  | { field: 'attitude_rating'; value: JlptRating | null }
+  | { field: 'homework_completed'; value: boolean | null }
+  | { field: 'test_correct_answers'; value: number | null };

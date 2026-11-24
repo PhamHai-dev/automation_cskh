@@ -160,6 +160,53 @@ Xuất file Excel dữ liệu thực tế đang có trong hệ thống để đ�
 - Response có `batches`, tổng batch chính xác, metadata phân trang và `refreshedAt`.
 - Retention chỉ xóa lịch sử; file Excel sao lưu vật lý không bị xóa.
 
+### 2.13. NKHT JLPT manual import
+
+Ngoại lệ quyền có phạm vi: chỉ `ADMIN` được gọi import NKHT; không thay quyền các luồng Sheet 1/Sheet 3.
+
+`POST /api/v1/imports/jlpt/preview`
+
+- `multipart/form-data`: `file` (.xlsx) và `target_year`.
+- Đọc `Info`, sheet lịch/setting và toàn bộ `NKHT N2/N3/N4/N5` có trong workbook.
+- Match bằng class code + full name chuẩn hóa, sau đó đối chiếu external student ID từ Info. Duplicate/ambiguous không được đoán.
+- Cột buổi map bằng `session_number`; ClassSession thiếu hoặc header lệch là issue, không tự tạo/sửa session.
+- Blank là `KEEP_DATABASE`; nonblank khác DB tạo conflict từng field.
+- Response trả `preview_token`, summary, items, conflicts, normalization issues và `can_confirm`.
+
+`POST /api/v1/imports/jlpt/confirm`
+
+- Nhận lại `file`, `target_year`, `preview_token`, `conflict_actions` và `normalization_resolutions` dạng JSON string.
+- Server parse/preview lại file, không tin dữ liệu preview từ client.
+- Mọi conflict phải chọn `OVERWRITE|KEEP_DATABASE`; mọi X có note tự do phải chọn `ABSENT_APPROVED_A|ABSENT_UNAPPROVED_C`.
+- Header/session/match error hoặc issue chưa giải quyết làm `can_confirm=false` và confirm trả `409`.
+- Commit transaction theo Class/session hợp lý, ghi `ImportBatch`, `ImportRow`, AuditLog, teacher side Attendance + reconciliation và JLPT record.
+
+### 2.14. NKHT JLPT export
+
+`GET /api/v1/imports/export/jlpt?year&teacher_ids&class_ids`
+
+- `ADMIN`, `MANAGE`, `CS` trong data scope; `TEACHER` luôn `403`.
+- Bắt buộc `year` và ít nhất một teacher/class filter.
+- Class phải là JLPT và có level chuẩn `N2|N3|N4|N5`; level thiếu/sai trả `409` kèm danh sách cần chuẩn hóa. Mọi Class dùng cùng singleton template nên không kiểm tra hoặc tách nhóm tương thích template.
+- Workbook có các sheet hỗ trợ và đúng một sheet NKHT cho mỗi level có dữ liệu; không cần clone format/công thức nguồn 100%.
+- Present xuất `O`; mọi status vắng/B/D/E xuất `X` cùng marker `[STATUS:<code>]` trong note. Không xuất `0.5X`.
+- Marker chỉ thuộc file và phải bị loại trước khi note được lưu lại. Dữ liệu JLPT ẩn do trạng thái vắng vẫn được xuất.
+
+### 2.15. Google Sheet NKHT và normalization
+
+- Flow type chuẩn: `JLPT_LEARNING_LOG`; chỉ ADMIN tạo/cập nhật/chạy config.
+- Một config đại diện một workbook/giáo viên, đọc đồng thời các sheet hỗ trợ và NKHT.
+- Sync tự động coi Sheet là nguồn tuyệt đối: nonblank overwrite; blank clear đúng field. Blank chuyên cần chỉ clear `teacher_status` qua lifecycle/reconciliation/audit hiện có.
+- `X` có note tự do không thay teacher status hiện tại nhưng vẫn sync tiêu chí khác và tạo task `AMBIGUOUS_ABSENCE`; header lệch tạo `SESSION_HEADER_MISMATCH`.
+
+Endpoints:
+
+- `GET /api/v1/imports/jlpt/normalization-tasks` — ADMIN toàn bộ; MANAGE trong scope; lọc `status`, `issue_type`, `run_id`, `class_id`, phân trang.
+- `POST /api/v1/imports/jlpt/normalization-tasks/{taskId}/resolve` — body `{ resolution_status?, session_type?, session_title?, note? }` tùy issue.
+- `POST /api/v1/imports/jlpt/normalization-tasks/{taskId}/reject` — body `{ reason }`; không thay dữ liệu nghiệp vụ.
+
+Resolve `AMBIGUOUS_ABSENCE` chỉ nhận `ABSENT_APPROVED_A|ABSENT_UNAPPROVED_C`, ghi teacher side, note nguồn đã loại marker và reconciliation. Resolve header mismatch cập nhật metadata session chỉ khi actor có quyền và session khớp scope; không đổi ngày/giờ/số thứ tự.
+
 ## 3. Quy tắc nghiệp vụ bắt buộc
 - **Không silent-fix:** Mọi giá trị sai format, lạ hoặc xung đột phải được báo cáo và lưu lại trạng thái `FAILED`.
 - **Sheet 1 (`STUDENT_ENROLLMENT`):** Cột ID map vào `Student.external_id`. Tạo hoặc update `Student`, `Enrollment`, `EnrollmentClass`.

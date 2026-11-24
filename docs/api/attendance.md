@@ -76,6 +76,28 @@ Base: `/api/v1/attendance-reconciliation`.
 
 Các endpoint write trả `400` khi request sai, `403` khi ngoài scope, `404` khi không tìm thấy trong scope, `409` khi invariant/state không hợp lệ. Response theo envelope `{ data, meta }`.
 
+## JLPT learning records
+
+Base: `/api/v1/classes/{classId}/sessions/{sessionId}/jlpt-records`.
+
+- `GET /` trả EnrollmentClass `ACTIVE`, cùng `TRANSFERRED` có Attendance chưa xóa trong đúng `sessionId`; kèm Student, Attendance allow-list theo role và `JlptLearningRecord` nullable. PATCH/bulk áp dụng cùng điều kiện này, không đổi trạng thái xếp lớp và không tự tạo Attendance. Giữ class/CS scope và phân công giáo viên hiệu lực tại ngày ca.
+- `PATCH /{enrollmentClassId}` autosave đúng một field; body `{ field, value }` với:
+  - `preparation_rating`: `A|B|C|null`;
+  - `attitude_rating`: `A|B|C|null`;
+  - `homework_completed`: `boolean|null`;
+  - `test_correct_answers`: integer `>=0|null`.
+- `POST /bulk` chỉ dùng cho thao tác chủ động có confirm; body `{ enrollment_class_ids, field, value }` và transaction all-or-nothing.
+
+Quy tắc:
+
+- Chỉ Class `program_type=JLPT` và session thuộc Class mới được dùng endpoint; sai invariant trả `409`.
+- Bốn trường đều nullable. Attendance/chuyên cần và ghi chú không duplicate vào record này.
+- TEACHER chỉ đọc/ghi Class được phân công active. ADMIN/MANAGE đọc/ghi trong scope. CS chỉ đọc trong scope.
+- Tài khoản thuần TEACHER chỉ nhận Attendance projection phía giáo viên theo privacy rule hiện có.
+- Web khóa bốn tiêu chí khi `teacher_status` đang là trạng thái vắng, nhưng backend không xóa dữ liệu đã có; import/sync có thể lưu dữ liệu nguồn dù đang vắng.
+- PATCH trả record sau lưu và `updated_at` để UI hiển thị Đang lưu/Đã lưu/Lỗi theo từng ô. Mỗi request chỉ thay một field; lỗi không ảnh hưởng ô khác.
+- Mọi create/update/clear ghi actor và AuditLog. Không kích hoạt Attendance automation vì learning record không phải Attendance final.
+
 ## Automatic attendance settings
 
 Base: `/api/v1/settings/auto-attendance` — chỉ role `ADMIN`.

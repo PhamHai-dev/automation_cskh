@@ -18,6 +18,8 @@ AI không được tự quyết các mục `WAITING_USER` nếu quyết định 
 | Q-012 | RESOLVED | Bảng Học viên Sheet 1 | Chuẩn hóa 28 cột theo cấu trúc Sheet 1, highlight badge đỏ cảnh báo nợ buổi âm, tự động lọc học viên theo Sale phụ trách nếu role là `CS`. | 3, frontend |
 | Q-013 | RESOLVED | Nhập/Xuất Excel Tất cả Vai trò | Mở quyền import cho ADMIN, MANAGE, CS, TEACHER theo endpoint phù hợp. Attendance import luôn preview/commit, chỉ ghi ClassSession đã tồn tại trong scope; dòng không match hoặc ngoài scope được báo lỗi và bỏ qua. | 4, 5, frontend |
 | Q-015 | RESOLVED | Chuẩn hóa Gói học | Chốt 2026-11-17: Kaiwa Gói học và JLPT Gói SP cùng lưu qua `Enrollment.package_id -> Package`; JLPT Mã khóa học tách riêng tại `Enrollment.course_code`; migrate dữ liệu cũ nhưng chưa chạy trên DB hiện tại. | 3, 5, frontend |
+| Q-016 | RESOLVED | Nhật ký học tập JLPT | Chốt 2026-11-23: tái sử dụng Attendance, thêm 4 tiêu chí JLPT riêng, template Buổi/KT động, NKHT import/sync/normalization/export theo rule chi tiết bên dưới. | 4, 5, JLPT enhancement |
+| Q-017 | RESOLVED | Backfill Class JLPT legacy | Dùng singleton template; course code chỉ xét EnrollmentClass ACTIVE; level chỉ tự đề xuất khi class code và mọi active course code cùng chỉ về một N2–N5, ngoại lệ xử lý thủ công. | JLPT rollout |
 
 ## Q-014 — Điều hướng Đồng bộ dữ liệu / Sao lưu dữ liệu
 
@@ -30,6 +32,29 @@ AI không được tự quyết các mục `WAITING_USER` nếu quyết định 
 - Cột Tự động chỉ hiển thị công tắc; lịch chạy nằm trong tooltip. Cấu hình, lịch sử, tải Excel và xóa đặt trong menu phụ theo điều kiện/quyền hiện có.
 - Tìm kiếm/chương trình/trạng thái luôn hiện; bộ lọc phụ thu gọn. Form một trang có nhóm nâng cao và footer lưu/hủy; lịch sử gom số liệu thành tóm tắt.
 - Áp dụng cả Đồng bộ và Sao lưu; không đổi API, dữ liệu, phạm vi tác vụ hay quy trình xem trước/xác nhận.
+
+## Q-016 — Nhật ký học tập JLPT và workbook NKHT
+
+- Trạng thái: `RESOLVED`.
+- Chốt ngày 2026-11-23 sau khi đối chiếu sheet `NKHT N4` trong `giao_vien_JLPT.xlsx`.
+- Web tiếp tục dùng các Attendance status chuẩn; `O`, `X`, `0.5X` chỉ là ký hiệu tương thích import/sync/export. `0.5X` map `ATTENDED` và không xuất lại.
+- Sáu dòng NKHT được lưu bằng Attendance cho Chuyên cần, `Attendance.teacher_note` cho Ghi chú và `JlptLearningRecord` cho Chuẩn bị, Thái độ, BTVN, số câu đúng.
+- Buổi kiểm tra không hardcode: toàn bộ Class JLPT N2–N5 dùng một template toàn cục; template chỉ áp metadata loại/tên lên ClassSession cùng `session_number`, không tự tạo/xóa/đổi lịch.
+- Chỉ ADMIN import NKHT và cấu hình/chạy Google Sheet sync. ADMIN/MANAGE/CS được export trong scope; TEACHER không export. Đây là ngoại lệ hẹp của luồng NKHT, không thay quyền import/export Sheet 1/Sheet 3 ở Q-013.
+- Import thủ công bắt buộc preview, xử lý hết X có ghi chú và conflict trước confirm; ô trống giữ DB. Sync tự động coi Sheet là nguồn tuyệt đối; ô trống xóa trường tương ứng nhưng Attendance vẫn chỉ cập nhật phía giáo viên rồi reconciliation.
+- X có ghi chú tự do và header lệch tạo hàng chờ chuẩn hóa. ADMIN giải quyết toàn bộ; MANAGE chỉ trong data scope.
+- Export dùng đúng một sheet cho mỗi level. Mọi lớp dùng cùng template nên không có kiểm tra tương thích template; marker `[STATUS:...]` chỉ tồn tại trong file để round-trip, không lưu/hiển thị trên web.
+- Migration hiện tại chỉ được viết và kiểm tra tĩnh/test DB clone; không chạy trên DB đang dùng do lịch sử migration chưa đồng nhất.
+
+## Q-017 — Chính sách backfill Class JLPT legacy
+
+- Trạng thái: `RESOLVED`.
+- Chốt ngày 2026-11-23.
+- Audit ban đầu chỉ đọc ghi nhận 1.399 lớp gồm 1.071 Kaiwa và 328 JLPT; không có lớp mixed/unknown. 321 lớp JLPT có `Class.level` legacy và 56 lớp có nhiều course code lịch sử.
+- Template không phụ thuộc level/course code: toàn bộ JLPT N2–N5 dùng một singleton template `GLOBAL`; Class không có `jlpt_template_id`.
+- Khi chuẩn hóa course code, chỉ xét EnrollmentClass JLPT đang `ACTIVE`; bỏ qua course code lịch sử. Một mã duy nhất được chọn; không có hoặc có nhiều mã ACTIVE thì chuyển ADMIN xử lý thủ công.
+- Level dùng để chọn sheet export. Chỉ tự đề xuất N2–N5 khi class code và mọi course code ACTIVE đều chứa đúng một level và cùng kết quả; Combo, thiếu hoặc xung đột chuyển ADMIN xử lý.
+- Script chỉ tạo báo cáo dry-run và `proposedLevel`; không ghi DB. ADMIN phải duyệt báo cáo trước bất kỳ backfill nào.
 
 ## Cách đóng câu hỏi
 

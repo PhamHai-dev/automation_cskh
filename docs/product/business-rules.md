@@ -210,7 +210,53 @@ Quyết định tracking: Q-013 & Quyết định 32 (RESOLVED).
   - Re-upload khi dữ liệu đã phản ánh là `UNCHANGED`; commit ghi audit và không tạo duplicate Attendance.
 - **Định dạng file:** Sheet 1 profile và attendance workbook dùng luồng riêng; source phải phù hợp cấu trúc workbook đã chọn.
 
-## 20. Checklist khi business rule thay đổi
+## 20. Nhật ký học tập JLPT và tương thích NKHT — CHỐT
+
+Quyết định tracking: Q-016 (RESOLVED, 2026-11-23).
+
+### 20.1. Dữ liệu và hiển thị
+
+- Không tạo hệ thống điểm danh thứ hai. Chuyên cần dùng `Attendance.teacher_status`; ghi chú dùng `Attendance.teacher_note`.
+- `JlptLearningRecord` chỉ lưu bốn trường nullable: Chuẩn bị `A|B|C`, Thái độ `A|B|C`, BTVN boolean và số câu đúng nguyên không âm.
+- Được nhập trực tiếp trong bảng điểm danh. EnrollmentClass `ACTIVE` được nhập như cũ; `TRANSFERRED` chỉ được đọc/ghi nhật ký tại ca đã có Attendance chưa xóa của chính EnrollmentClass đó. Không đổi trạng thái xếp lớp, không mở ca khác và không tự tạo Attendance; giữ class/CS scope, CS chỉ xem và teacher assignment hiệu lực tại ngày ca (user duyệt 2026-11-24).
+- Web chỉ hiển thị Attendance status chuẩn, không hiển thị `O`, `X`, `0.5X`.
+- Khi trạng thái phía giáo viên là vắng, web khóa/ẩn bốn tiêu chí nhưng không xóa DB; note vẫn sửa được. Import/sync và export vẫn giữ các tiêu chí đã lưu.
+- Điểm kiểm tra có thể nhập ở mọi buổi; session loại `TEST` chỉ nhấn mạnh trường điểm.
+
+### 20.2. Mapping legacy
+
+| Nguồn NKHT | Giá trị chuẩn |
+| --- | --- |
+| `O` | `ATTENDED` |
+| `0.5X` | `ATTENDED`, tiêu thụ đủ một buổi; không xuất lại `0.5X` |
+| `X` không note | `ABSENT_UNAPPROVED_C` |
+| `X` + marker `[STATUS:...]` hợp lệ | Status trong marker; loại marker trước khi lưu/hiển thị note |
+| `X` + note tự do | Giữ teacher status hiện tại cho tới khi chuẩn hóa |
+
+Mọi cập nhật chuyên cần NKHT chỉ ghi phía giáo viên và chạy reconciliation hiện có; không ghi thẳng final.
+
+### 20.3. Class và template
+
+- `Class.program_type` là nguồn tường minh `KAIWA|JLPT`; một lớp không trộn chương trình.
+- Toàn bộ Class JLPT N2–N5 dùng đúng một template toàn cục; Class không có `jlpt_template_id`. Đổi JLPT → Kaiwa chỉ khi chưa có `JlptLearningRecord`.
+- Template singleton có khóa nội bộ `GLOBAL`, tổng buổi dự kiến và metadata từng `session_number`: `LESSON|TEST` + title; template không chứa level/course code.
+- Tên TEST phải duy nhất trong template/lớp. Template chỉ cập nhật metadata cho session đã tồn tại cùng số thứ tự; không tự tạo/xóa/đổi ngày/giờ.
+- Không đổi `session_number` sau khi session đã có Attendance hoặc JLPT record.
+- ADMIN tạo/xóa template; ADMIN/MANAGE sửa và duyệt. TEACHER chỉ gửi change request từ lớp được phân công. MANAGE chỉ duyệt khi toàn bộ Class JLPT bị ảnh hưởng thuộc scope; nếu không phải chuyển ADMIN.
+
+### 20.4. Import, sync, chuẩn hóa và export
+
+- NKHT manual import chỉ dành cho ADMIN, theo `preview → resolve → confirm`; confirm bị chặn nếu còn X có note, match mơ hồ, header/session lỗi hoặc conflict chưa có action.
+- Match bằng class code + họ tên chuẩn hóa, đối chiếu external student ID từ Info; không đoán duplicate. Không tự tạo ClassSession.
+- Manual import: blank giữ DB; nonblank khác DB tạo conflict từng field với action `OVERWRITE|KEEP_DATABASE`.
+- Google Sheet sync chỉ ADMIN cấu hình/chạy; một config đại diện workbook/giáo viên và đọc các sheet liên quan cùng nhau. Nonblank overwrite, blank clear trường tương ứng.
+- X có note tự do và header mismatch tạo `JlptNormalizationTask`; ADMIN giải quyết toàn bộ, MANAGE trong scope. Resolution X chọn nghỉ phép/nghỉ không phép, ghi teacher side, reconciliation và note sạch.
+- Export chỉ ADMIN/MANAGE/CS trong scope; TEACHER không export. Lọc theo năm + giáo viên/lớp; mỗi level chỉ có một sheet và mọi lớp dùng template toàn cục.
+- Export yêu cầu `Class.level` chuẩn N2–N5. Với level legacy, dry-run chỉ tự đề xuất khi class code và mọi course code ACTIVE cùng chỉ về đúng một level; Combo/thiếu/xung đột chuyển ADMIN xử lý.
+- Course code chuẩn hóa chỉ xét EnrollmentClass JLPT `ACTIVE`, bỏ qua lịch sử; zero/multiple active course code xử lý thủ công.
+- Export mọi trạng thái vắng thành `X`, kèm marker status chỉ trong file; luôn xuất cả tiêu chí JLPT đang được giữ ẩn.
+
+## 21. Checklist khi business rule thay đổi
 
 Khi user chốt hoặc thay đổi business rule:
 1. Cập nhật file này.

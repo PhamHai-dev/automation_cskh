@@ -58,6 +58,14 @@ router.get('/create-requests/:id', requireRoles(['ADMIN', 'MANAGE', 'CS']), cont
 router.post('/create-requests/:id/approve', requireRoles(['ADMIN', 'MANAGE']), controller.approveCreateRequest);
 router.post('/create-requests/:id/reject', requireRoles(['ADMIN', 'MANAGE']), controller.rejectCreateRequest);
 
+// 3b. JLPT NKHT manual import/export and normalization queue
+router.post('/jlpt/preview', requireRoles(['ADMIN']), upload.single('file'), controller.previewJlptWorkbook);
+router.post('/jlpt/confirm', requireRoles(['ADMIN']), upload.single('file'), controller.confirmJlptWorkbook);
+router.get('/export/jlpt', requireRoles(['ADMIN', 'MANAGE', 'CS']), controller.exportJlptWorkbook);
+router.get('/jlpt/normalization-tasks', requireRoles(['ADMIN', 'MANAGE']), controller.listJlptNormalizationTasks);
+router.post('/jlpt/normalization-tasks/:taskId/resolve', requireRoles(['ADMIN', 'MANAGE']), controller.resolveJlptNormalizationTask);
+router.post('/jlpt/normalization-tasks/:taskId/reject', requireRoles(['ADMIN', 'MANAGE']), controller.rejectJlptNormalizationTask);
+
 // 4. Batch details & errors
 router.get('/:importId', requireRoles(['ADMIN', 'MANAGE', 'CS', 'TEACHER']), controller.getBatch);
 router.get('/:importId/errors', requireRoles(['ADMIN', 'MANAGE', 'CS', 'TEACHER']), controller.getErrors);

@@ -109,7 +109,7 @@ export class EnrollmentsService {
 
   async getEnrollmentById(id: number, userId: number, roles: string[]) {
     const enrollment = await this.repository.findById(id);
-    if (!enrollment) throw new CustomError('Enrollment not found', 404);
+    if (!enrollment || (enrollment as any).student?.deleted_at) throw new CustomError('Enrollment not found', 404);
 
     if (roles.includes('ADMIN')) return enrollment;
 

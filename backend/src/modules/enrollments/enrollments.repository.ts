@@ -26,6 +26,11 @@ export const CS_VIEWER_USER_SELECT = {
   staff_code: true,
 } as const;
 
+import {
+  LEGACY_CLASS_SCALAR_SELECT,
+  LEGACY_CLASS_SESSION_SCALAR_SELECT,
+} from '../../shared/prisma-legacy-selects';
+
 function buildEnrollmentIncludes(sessionRange?: { fromDate?: Date; toDate?: Date }) {
   const sessionDateWhere: any = {};
   if (sessionRange?.fromDate) sessionDateWhere.gte = sessionRange.fromDate;
@@ -53,7 +58,8 @@ function buildEnrollmentIncludes(sessionRange?: { fromDate?: Date; toDate?: Date
     enrollment_classes: {
       include: {
         class: {
-          include: {
+          select: {
+            ...LEGACY_CLASS_SCALAR_SELECT,
             class_teachers: {
               include: {
                 teacher: {
@@ -69,6 +75,7 @@ function buildEnrollmentIncludes(sessionRange?: { fromDate?: Date; toDate?: Date
             class_sessions: {
               ...(hasDateBounds ? { where: { session_date: sessionDateWhere } } : {}),
               orderBy: [{ session_date: 'asc' as const }, { session_number: 'asc' as const }],
+              select: LEGACY_CLASS_SESSION_SCALAR_SELECT,
             },
           },
         },
@@ -77,8 +84,16 @@ function buildEnrollmentIncludes(sessionRange?: { fromDate?: Date; toDate?: Date
             deleted_at: null,
             ...(hasDateBounds ? { class_session: { session_date: sessionDateWhere } } : {}),
           },
-          include: {
-            class_session: true,
+          select: {
+            id: true,
+            status: true,
+            teacher_status: true,
+            cs_status: true,
+            reconciliation_state: true,
+            deleted_at: true,
+            class_session: {
+              select: LEGACY_CLASS_SESSION_SCALAR_SELECT,
+            },
           },
         },
       },
@@ -888,8 +903,8 @@ export class EnrollmentsRepository {
   }
 
   async findById(id: number) {
-    return prisma.enrollment.findFirst({
-      where: { id, student: { deleted_at: null } },
+    return prisma.enrollment.findUnique({
+      where: { id },
       include: {
         student: true,
         package: true,
@@ -900,7 +915,13 @@ export class EnrollmentsRepository {
             transferred_to: { select: CS_VIEWER_USER_SELECT },
           },
         },
-        enrollment_classes: { include: { class: true } },
+        enrollment_classes: {
+          include: {
+            class: {
+              select: LEGACY_CLASS_SCALAR_SELECT,
+            },
+          },
+        },
       },
     });
   }
@@ -918,7 +939,13 @@ export class EnrollmentsRepository {
             transferred_to: { select: CS_VIEWER_USER_SELECT },
           },
         },
-        enrollment_classes: { include: { class: true } },
+        enrollment_classes: {
+          include: {
+            class: {
+              select: LEGACY_CLASS_SCALAR_SELECT,
+            },
+          },
+        },
       },
     });
   }

@@ -85,18 +85,25 @@ describe('Query Validation & Security/Pagination across 5 modules', () => {
           },
         },
       });
-      // Verify teacher -> user select in findAll
-      const findAllUserInclude =
-        findAllArgs.include.enrollments.include.enrollment_classes.include.class.include.class_teachers.include.teacher.include.user;
-      expect(findAllUserInclude).toEqual({ select: EXPECTED_SAFE_USER_SELECT });
+      // The Students endpoint must not implicitly select JLPT-only columns
+      // while the current database is still pre-migration.
+      const findAllClassSelect =
+        findAllArgs.include.enrollments.include.enrollment_classes.include.class.select;
+      expect(findAllClassSelect.program_type).toBeUndefined();
+      expect(findAllClassSelect.class_teachers.include.teacher.include.user).toEqual({
+        select: EXPECTED_SAFE_USER_SELECT,
+      });
 
       // Verify teacher -> user select in findById
       await repo.findById(1, { id: 1, roles: ['ADMIN'] });
       const findByIdArgs = mockPrisma.student.findFirst.mock.calls[0][0];
       expect(findByIdArgs.where).toEqual({ id: 1, deleted_at: null });
-      const findByIdUserInclude =
-        findByIdArgs.include.enrollments.include.enrollment_classes.include.class.include.class_teachers.include.teacher.include.user;
-      expect(findByIdUserInclude).toEqual({ select: EXPECTED_SAFE_USER_SELECT });
+      const findByIdClassSelect =
+        findByIdArgs.include.enrollments.include.enrollment_classes.include.class.select;
+      expect(findByIdClassSelect.program_type).toBeUndefined();
+      expect(findByIdClassSelect.class_teachers.include.teacher.include.user).toEqual({
+        select: EXPECTED_SAFE_USER_SELECT,
+      });
     });
 
     it('TeachersRepository.findByCode and findByName select only safe user fields', async () => {
@@ -123,7 +130,7 @@ describe('Query Validation & Security/Pagination across 5 modules', () => {
       await repo.findById(99);
 
       const args = mockPrisma.class.findUnique.mock.calls[0][0];
-      expect(args.include.class_teachers.include.teacher.include.user).toEqual({
+      expect(args.select.class_teachers.include.teacher.include.user).toEqual({
         select: EXPECTED_SAFE_USER_SELECT,
       });
     });
@@ -466,7 +473,7 @@ describe('Query Validation & Security/Pagination across 5 modules', () => {
         ],
       });
       const classSessionsInclude =
-        findManyCall.include.enrollment_classes.include.class.include.class_sessions;
+        findManyCall.include.enrollment_classes.include.class.select.class_sessions;
       expect(classSessionsInclude.include).toBeUndefined();
       expect(classSessionsInclude.where).toEqual({
         session_date: {
@@ -549,7 +556,9 @@ describe('Query Validation & Security/Pagination across 5 modules', () => {
       expect(mockPrisma.class.update).not.toHaveBeenCalled();
 
       const findManyCall = mockPrisma.class.findMany.mock.calls[0][0];
-      expect(findManyCall.include.class_sessions.include).toBeUndefined();
+      const findManyClassSelect = findManyCall.select;
+      expect(findManyClassSelect.class_sessions.select.attendance).toBeDefined();
+      expect(findManyClassSelect.skip).toBeUndefined();
       expect(findManyCall.skip).toBe(0);
       expect(findManyCall.take).toBe(10);
 

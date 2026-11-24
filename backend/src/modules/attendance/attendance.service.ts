@@ -7,6 +7,7 @@ import { findEffectiveAssignment } from './teacher-assignment';
 import { createLogger } from '../../shared/logger/logger';
 import { AppError } from '../../middlewares/error.middleware';
 import { presentAttendanceForActor, presentAttendancesForActor } from './attendance.presenter';
+import { LEGACY_CLASS_SESSION_SCALAR_SELECT } from '../../shared/prisma-legacy-selects';
 
 const log = createLogger('AttendanceService');
 
@@ -42,15 +43,19 @@ export class AttendanceService {
   }
 
   private async assertWriteScope(actor: AttendanceActor, side: AttendanceSide, classId: number, enrollmentClassId: number, sessionDate: Date) {
-    const activeEnrollmentClass = await prisma.enrollmentClass.findFirst({
-      where: {
-        id: enrollmentClassId,
-        class_id: classId,
-        enrollment: { student: { deleted_at: null } },
+    const activeEnrollmentClass = await prisma.enrollmentClass.findUnique({
+      where: { id: enrollmentClassId },
+      select: {
+        id: true,
+        class_id: true,
+        enrollment: { select: { student: { select: { deleted_at: true } } } },
       },
-      select: { id: true },
     });
-    if (!activeEnrollmentClass) {
+    if (
+      !activeEnrollmentClass ||
+      activeEnrollmentClass.class_id !== classId ||
+      activeEnrollmentClass.enrollment?.student?.deleted_at
+    ) {
       throw new AppError(404, 'Không tìm thấy ghi danh của học viên đang hoạt động');
     }
 
@@ -113,7 +118,7 @@ export class AttendanceService {
                 },
               },
             },
-            class_session: true,
+            class_session: { select: LEGACY_CLASS_SESSION_SCALAR_SELECT },
           },
         }),
         prisma.user.findUnique({

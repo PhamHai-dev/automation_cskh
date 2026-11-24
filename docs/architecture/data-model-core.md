@@ -370,7 +370,112 @@ Attendance (
 
 Sheet 3 hiện đang trải ngày thành hàng trăm cột. Khi đưa vào DB, mỗi ngày/buổi trở thành một `ClassSession`, mỗi ô điểm danh trở thành một `Attendance`.
 
-### 3.10. Business rule cho Attendance
+### 3.10. Mở rộng Nhật ký học tập JLPT
+
+`Class` có nguồn chương trình tường minh; JLPT dùng template toàn cục theo nghiệp vụ, không có FK template trên từng lớp:
+
+```text
+Class (
+  ...,
+  program_type[KAIWA|JLPT]
+)
+```
+
+`ClassSession` thêm metadata không duplicate lịch:
+
+```text
+ClassSession (
+  ...,
+  session_type[LESSON|TEST],
+  session_title?
+)
+```
+
+Toàn bộ JLPT N2–N5 dùng một template singleton. Template xác định cấu trúc vị trí buổi nhưng không chứa level/course code, không tạo hoặc sở hữu ngày/giờ thực tế:
+
+```text
+JlptSessionTemplate (
+  id,
+  singleton_key[GLOBAL],
+  name,
+  total_sessions,
+  active,
+  created_by_id -> User,
+  updated_by_id -> User,
+  UNIQUE(singleton_key)
+)
+
+JlptSessionTemplateItem (
+  id,
+  template_id -> JlptSessionTemplate,
+  session_number,
+  session_type[LESSON|TEST],
+  session_title?,
+  UNIQUE(template_id, session_number)
+)
+```
+
+Tên TEST unique theo template/lớp được enforce ở service vì MySQL không hỗ trợ partial unique phù hợp. Thay đổi template toàn cục phải kiểm tra scope của toàn bộ Class JLPT bị ảnh hưởng.
+
+```text
+JlptLearningRecord (
+  id,
+  enrollment_class_id -> EnrollmentClass,
+  class_session_id -> ClassSession,
+  preparation_rating?[A|B|C],
+  attitude_rating?[A|B|C],
+  homework_completed?,
+  test_correct_answers?,
+  created_by_id -> User,
+  updated_by_id -> User,
+  created_at,
+  updated_at,
+  UNIQUE(enrollment_class_id, class_session_id)
+)
+```
+
+Record này không lưu Attendance status, note, ngày hoặc giờ. Service bắt buộc kiểm tra `EnrollmentClass.class_id = ClassSession.class_id` và Class là JLPT.
+
+```text
+JlptTemplateChangeRequest (
+  id,
+  template_id -> JlptSessionTemplate,
+  class_id -> Class,
+  requested_by_id -> User,
+  before_snapshot,
+  proposed_snapshot,
+  status[PENDING|APPROVED|REJECTED],
+  reviewed_by_id? -> User,
+  review_reason?,
+  reviewed_at?,
+  created_at,
+  updated_at
+)
+
+JlptNormalizationTask (
+  id,
+  source_type[MANUAL_IMPORT|GOOGLE_SHEET_SYNC],
+  issue_type[AMBIGUOUS_ABSENCE|SESSION_HEADER_MISMATCH],
+  status[PENDING|RESOLVED|REJECTED],
+  import_batch_id? -> ImportBatch,
+  sync_run_item_id? -> GoogleSheetSyncRunItem,
+  class_id? -> Class,
+  enrollment_class_id? -> EnrollmentClass,
+  class_session_id? -> ClassSession,
+  raw_payload,
+  source_note?,
+  proposed_metadata?,
+  resolution?,
+  resolved_by_id? -> User,
+  resolved_at?,
+  created_at,
+  updated_at
+)
+```
+
+Các FK Student/session có thể null ở issue header cấp sheet, nhưng `class_id` phải có khi task đã match được lớp. ADMIN xử lý toàn bộ; MANAGE chỉ xử lý task chứng minh được Class/Enrollment thuộc scope.
+
+### 3.11. Business rule cho Attendance
 
 Phải chốt rule trước khi code automation:
 

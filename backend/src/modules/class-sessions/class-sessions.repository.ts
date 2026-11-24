@@ -28,12 +28,25 @@ export class ClassSessionsRepository {
       include: {
         created_by: { select: { id: true, name: true, email: true } },
         attendance: { where: { deleted_at: null }, include: { enrollment_class: { include: { enrollment: true } } } },
+        jlpt_learning_records: { select: { id: true } },
       },
     });
   }
 
   async findByClassAndNumber(classId: number, sessionNumber: number) {
     return prisma.classSession.findFirst({ where: { class_id: classId, session_number: sessionNumber } });
+  }
+
+  async findTestByTitle(classId: number, title: string, excludeSessionId?: number) {
+    return prisma.classSession.findFirst({
+      where: {
+        class_id: classId,
+        session_type: 'TEST',
+        session_title: title,
+        ...(excludeSessionId ? { id: { not: excludeSessionId } } : {}),
+      },
+      select: { id: true },
+    });
   }
 
   async create(classId: number, data: CreateClassSessionDTO, userId: number) {
@@ -51,6 +64,8 @@ export class ClassSessionsRepository {
           start_time: data.start_time,
           end_time: data.end_time,
           teacher_id: data.teacher_id,
+          session_type: data.session_type,
+          session_title: data.session_title?.trim() || null,
           status: data.status || 'SCHEDULED',
           created_by_id: userId,
         },
@@ -120,6 +135,8 @@ export class ClassSessionsRepository {
           start_time: data.start_time,
           end_time: data.end_time,
           teacher_id: data.teacher_id,
+          session_type: data.session_type,
+          session_title: data.session_title?.trim() || null,
           status: data.status || 'SCHEDULED',
           created_by_id: userId,
           ...(data.enrollment_class_id ? { attendance: { create: {
@@ -154,20 +171,39 @@ export class ClassSessionsRepository {
     });
   }
 
-  async update(classId: number, sessionId: number, data: UpdateClassSessionDTO) {
+  async update(classId: number, sessionId: number, data: UpdateClassSessionDTO, userId: number) {
     return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-      await tx.classSession.updateMany({
-        where: { id: sessionId, class_id: classId },
+      const before = await tx.classSession.findFirst({ where: { id: sessionId, class_id: classId } });
+      if (!before) return null;
+      const updated = await tx.classSession.update({
+        where: { id: sessionId },
         data: {
           session_number: data.session_number,
           session_date: data.session_date ? new Date(data.session_date) : undefined,
           start_time: data.start_time,
           end_time: data.end_time,
           teacher_id: data.teacher_id,
+          session_type: data.session_type,
+          session_title: data.session_title !== undefined ? data.session_title?.trim() || null : undefined,
           status: data.status,
         },
       });
-      return tx.classSession.findFirst({ where: { id: sessionId, class_id: classId } });
+      const metadataChanged =
+        before.session_type !== updated.session_type ||
+        (before.session_title ?? null) !== (updated.session_title ?? null);
+      if (metadataChanged && userId) {
+        await tx.auditLog.create({
+          data: {
+            user_id: userId,
+            action: 'JLPT_SESSION_METADATA_UPDATED',
+            entity_type: 'ClassSession',
+            entity_id: String(sessionId),
+            before_data: before as any,
+            after_data: updated as any,
+          },
+        });
+      }
+      return updated;
     });
   }
 

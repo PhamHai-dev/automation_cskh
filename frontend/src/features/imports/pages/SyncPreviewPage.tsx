@@ -48,6 +48,10 @@ const FLOW_LABELS: Record<SyncFlowType, { label: string; colorClass: string }> =
     label: 'Báo cáo học tập',
     colorClass: 'bg-teal-100 text-teal-800 border-teal-200',
   },
+  JLPT_LEARNING_LOG: {
+    label: 'Nhật ký học tập JLPT',
+    colorClass: 'bg-fuchsia-100 text-fuchsia-800 border-fuchsia-200',
+  },
 };
 
 const ENROLLMENT_STATUS_OPTIONS = [

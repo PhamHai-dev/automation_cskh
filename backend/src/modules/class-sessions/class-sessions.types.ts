@@ -4,6 +4,8 @@ export interface CreateClassSessionDTO {
   start_time?: string;
   end_time?: string;
   teacher_id?: number;
+  session_type?: 'LESSON' | 'TEST';
+  session_title?: string | null;
   status?: 'SCHEDULED' | 'COMPLETED' | 'CANCELLED';
   /**
    * Teacher actual-session route only. The generic create schema strips both of these, so
@@ -20,6 +22,8 @@ export interface UpdateClassSessionDTO {
   start_time?: string;
   end_time?: string;
   teacher_id?: number;
+  session_type?: 'LESSON' | 'TEST';
+  session_title?: string | null;
   status?: 'SCHEDULED' | 'COMPLETED' | 'CANCELLED';
 }
 

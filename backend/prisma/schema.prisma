@@ -29,39 +29,46 @@ model User {
   created_by    User?  @relation("UserCreator", fields: [created_by_id], references: [id])
   created_users User[] @relation("UserCreator")
 
-  auth_sessions                    AuthSession[]
-  password_reset_tokens            PasswordResetToken[]
-  login_audits                     LoginAudit[]
-  cs_group_members                 CSGroupMember[]
-  manage_assignments               ManageAssignment[]
-  teacher                          Teacher?
-  created_class_sessions           ClassSession[]             @relation("SessionCreator")
-  created_attendances              Attendance[]               @relation("AttendanceCreator")
-  deleted_attendances              Attendance[]               @relation("AttendanceDeleter")
-  enrollments_as_cs                Enrollment[]               @relation("EnrollmentCS")
-  zalo_accounts                    ZaloAccount[]
-  line_accounts                    LineAccount[]
-  automation_workflows             AutomationWorkflow[]       @relation("AutomationWorkflowOwner")
-  care_logs                        CareLog[]                  @relation("CareLogCS")
-  care_tasks_assigned              CareTask[]                 @relation("CareTaskAssignee")
-  import_batches                   ImportBatch[]              @relation("ImportBatchUploader")
-  audit_logs                       AuditLog[]                 @relation("AuditLogUser")
-  zalo_account_accesses            ZaloAccountAccess[]
-  archived_zalo_accounts           ZaloAccount[]              @relation("ZaloAccountArchiver")
-  archived_line_accounts           LineAccount[]              @relation("LineAccountArchiver")
-  requested_import_create_requests ImportCreateRequest[]      @relation("ImportCreateRequestRequester")
-  reviewed_import_create_requests  ImportCreateRequest[]      @relation("ImportCreateRequestReviewer")
-  assigned_import_create_requests  ImportCreateRequest[]      @relation("ImportCreateRequestAssignee")
-  updated_app_settings             AppSetting[]               @relation("AppSettingUpdater")
-  attendances_as_teacher           Attendance[]               @relation("AttendanceTeacherUser")
-  attendances_as_cs                Attendance[]               @relation("AttendanceCSUser")
-  resolved_attendances             Attendance[]               @relation("AttendanceResolver")
-  user_preferences                 UserPreference[]
-  program_sheet_backup_configs     ProgramSheetBackupConfig[] @relation("UserProgramSheetBackup")
-  enrollment_cs_viewers            EnrollmentCsViewer[]       @relation("EnrollmentCsViewerUser")
-  enrollment_cs_transfers_received EnrollmentCsViewer[]       @relation("EnrollmentCsTransferredTo")
-  enrollment_cs_transfers_made     EnrollmentCsViewer[]       @relation("EnrollmentCsTransferredBy")
-  soft_deleted_students            Student[]                  @relation("StudentSoftDeleter")
+  auth_sessions                     AuthSession[]
+  password_reset_tokens             PasswordResetToken[]
+  login_audits                      LoginAudit[]
+  cs_group_members                  CSGroupMember[]
+  manage_assignments                ManageAssignment[]
+  teacher                           Teacher?
+  created_class_sessions            ClassSession[]              @relation("SessionCreator")
+  created_attendances               Attendance[]                @relation("AttendanceCreator")
+  deleted_attendances               Attendance[]                @relation("AttendanceDeleter")
+  enrollments_as_cs                 Enrollment[]                @relation("EnrollmentCS")
+  zalo_accounts                     ZaloAccount[]
+  line_accounts                     LineAccount[]
+  automation_workflows              AutomationWorkflow[]        @relation("AutomationWorkflowOwner")
+  care_logs                         CareLog[]                   @relation("CareLogCS")
+  care_tasks_assigned               CareTask[]                  @relation("CareTaskAssignee")
+  import_batches                    ImportBatch[]               @relation("ImportBatchUploader")
+  audit_logs                        AuditLog[]                  @relation("AuditLogUser")
+  zalo_account_accesses             ZaloAccountAccess[]
+  archived_zalo_accounts            ZaloAccount[]               @relation("ZaloAccountArchiver")
+  archived_line_accounts            LineAccount[]               @relation("LineAccountArchiver")
+  requested_import_create_requests  ImportCreateRequest[]       @relation("ImportCreateRequestRequester")
+  reviewed_import_create_requests   ImportCreateRequest[]       @relation("ImportCreateRequestReviewer")
+  assigned_import_create_requests   ImportCreateRequest[]       @relation("ImportCreateRequestAssignee")
+  updated_app_settings              AppSetting[]                @relation("AppSettingUpdater")
+  attendances_as_teacher            Attendance[]                @relation("AttendanceTeacherUser")
+  attendances_as_cs                 Attendance[]                @relation("AttendanceCSUser")
+  resolved_attendances              Attendance[]                @relation("AttendanceResolver")
+  user_preferences                  UserPreference[]
+  program_sheet_backup_configs      ProgramSheetBackupConfig[]  @relation("UserProgramSheetBackup")
+  enrollment_cs_viewers             EnrollmentCsViewer[]        @relation("EnrollmentCsViewerUser")
+  enrollment_cs_transfers_received  EnrollmentCsViewer[]        @relation("EnrollmentCsTransferredTo")
+  enrollment_cs_transfers_made      EnrollmentCsViewer[]        @relation("EnrollmentCsTransferredBy")
+  soft_deleted_students             Student[]                   @relation("StudentSoftDeleter")
+  created_jlpt_templates            JlptSessionTemplate[]       @relation("JlptTemplateCreator")
+  updated_jlpt_templates            JlptSessionTemplate[]       @relation("JlptTemplateUpdater")
+  requested_jlpt_template_changes   JlptTemplateChangeRequest[] @relation("JlptTemplateChangeRequester")
+  reviewed_jlpt_template_changes    JlptTemplateChangeRequest[] @relation("JlptTemplateChangeReviewer")
+  created_jlpt_learning_records     JlptLearningRecord[]        @relation("JlptLearningRecordCreator")
+  updated_jlpt_learning_records     JlptLearningRecord[]        @relation("JlptLearningRecordUpdater")
+  resolved_jlpt_normalization_tasks JlptNormalizationTask[]     @relation("JlptNormalizationResolver")
 
   @@map("users")
 }
@@ -333,25 +340,39 @@ enum AttendanceSourceType {
   ZOOM
 }
 
+enum ProgramType {
+  KAIWA
+  JLPT
+}
+
+enum ClassSessionType {
+  LESSON
+  TEST
+}
+
 model Class {
   id                Int                  @id @default(autoincrement())
   class_code        String?
   class_name        String
   level             String?
+  program_type      ProgramType          @default(KAIWA)
   model_type        ClassModelType
   attendance_source AttendanceSourceType
   active            Boolean              @default(true)
   created_at        DateTime             @default(now())
   updated_at        DateTime             @updatedAt
 
-  class_teachers     ClassTeacher[]
-  enrollment_classes EnrollmentClass[]
-  class_schedules    ClassSchedule[]
-  class_sessions     ClassSession[]
+  class_teachers                ClassTeacher[]
+  enrollment_classes            EnrollmentClass[]
+  class_schedules               ClassSchedule[]
+  class_sessions                ClassSession[]
+  jlpt_template_change_requests JlptTemplateChangeRequest[]
+  jlpt_normalization_tasks      JlptNormalizationTask[]
 
   @@index([class_code])
   @@index([class_name])
   @@index([model_type, active])
+  @@index([program_type, level, active])
   @@map("classes")
 }
 
@@ -399,11 +420,14 @@ model EnrollmentClass {
   created_at    DateTime              @default(now())
   updated_at    DateTime              @updatedAt
 
-  enrollment Enrollment   @relation(fields: [enrollment_id], references: [id])
-  class      Class        @relation(fields: [class_id], references: [id])
-  attendance Attendance[]
+  enrollment               Enrollment              @relation(fields: [enrollment_id], references: [id])
+  class                    Class                   @relation(fields: [class_id], references: [id])
+  attendance               Attendance[]
+  jlpt_learning_records    JlptLearningRecord[]
+  jlpt_normalization_tasks JlptNormalizationTask[]
 
   @@unique([enrollment_id, class_id, sequence_no])
+  @@index([class_id, status])
   @@map("enrollment_classes")
 }
 
@@ -440,20 +464,25 @@ model ClassSession {
   start_time     String?
   end_time       String?
   teacher_id     Int?
+  session_type   ClassSessionType   @default(LESSON)
+  session_title  String?            @db.VarChar(120)
   status         ClassSessionStatus @default(SCHEDULED)
   created_by_id  Int
   created_at     DateTime           @default(now())
   updated_at     DateTime           @updatedAt
 
-  class_schedule_id Int?
-  class             Class          @relation(fields: [class_id], references: [id])
-  class_schedule    ClassSchedule? @relation(fields: [class_schedule_id], references: [id])
-  created_by        User           @relation("SessionCreator", fields: [created_by_id], references: [id])
-  attendance        Attendance[]
+  class_schedule_id        Int?
+  class                    Class                   @relation(fields: [class_id], references: [id])
+  class_schedule           ClassSchedule?          @relation(fields: [class_schedule_id], references: [id])
+  created_by               User                    @relation("SessionCreator", fields: [created_by_id], references: [id])
+  attendance               Attendance[]
+  jlpt_learning_records    JlptLearningRecord[]
+  jlpt_normalization_tasks JlptNormalizationTask[]
 
   @@unique([class_id, session_number])
   @@unique([class_schedule_id, session_date])
   @@index([session_date, status])
+  @@index([class_id, session_type])
   @@map("class_sessions")
 }
 
@@ -534,6 +563,161 @@ model Attendance {
   @@unique([enrollment_class_id, class_session_id])
   @@index([reconciliation_state])
   @@map("attendances")
+}
+
+enum JlptRating {
+  A
+  B
+  C
+}
+
+enum JlptTemplateChangeRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum JlptNormalizationSourceType {
+  MANUAL_IMPORT
+  GOOGLE_SHEET_SYNC
+}
+
+enum JlptNormalizationIssueType {
+  AMBIGUOUS_ABSENCE
+  SESSION_HEADER_MISMATCH
+}
+
+enum JlptNormalizationStatus {
+  PENDING
+  RESOLVED
+  REJECTED
+}
+
+model JlptSessionTemplate {
+  id             Int      @id @default(autoincrement())
+  singleton_key  String   @unique @default("GLOBAL") @db.VarChar(20)
+  name           String   @db.VarChar(150)
+  total_sessions Int
+  active         Boolean  @default(true)
+  created_by_id  Int
+  updated_by_id  Int
+  created_at     DateTime @default(now())
+  updated_at     DateTime @updatedAt
+
+  created_by      User                        @relation("JlptTemplateCreator", fields: [created_by_id], references: [id])
+  updated_by      User                        @relation("JlptTemplateUpdater", fields: [updated_by_id], references: [id])
+  items           JlptSessionTemplateItem[]
+  change_requests JlptTemplateChangeRequest[]
+
+  @@index([active])
+  @@index([created_by_id])
+  @@index([updated_by_id])
+  @@map("jlpt_session_templates")
+}
+
+model JlptSessionTemplateItem {
+  id             Int              @id @default(autoincrement())
+  template_id    Int
+  session_number Int
+  session_type   ClassSessionType @default(LESSON)
+  session_title  String?          @db.VarChar(120)
+  created_at     DateTime         @default(now())
+  updated_at     DateTime         @updatedAt
+
+  template JlptSessionTemplate @relation(fields: [template_id], references: [id], onDelete: Cascade)
+
+  @@unique([template_id, session_number])
+  @@index([template_id, session_type])
+  @@map("jlpt_session_template_items")
+}
+
+model JlptTemplateChangeRequest {
+  id                Int                             @id @default(autoincrement())
+  template_id       Int
+  class_id          Int
+  requested_by_id   Int
+  before_snapshot   Json
+  proposed_snapshot Json
+  request_note      String?                         @db.Text
+  status            JlptTemplateChangeRequestStatus @default(PENDING)
+  reviewed_by_id    Int?
+  review_reason     String?                         @db.Text
+  reviewed_at       DateTime?
+  created_at        DateTime                        @default(now())
+  updated_at        DateTime                        @updatedAt
+
+  template     JlptSessionTemplate @relation(fields: [template_id], references: [id])
+  class        Class               @relation(fields: [class_id], references: [id])
+  requested_by User                @relation("JlptTemplateChangeRequester", fields: [requested_by_id], references: [id])
+  reviewed_by  User?               @relation("JlptTemplateChangeReviewer", fields: [reviewed_by_id], references: [id])
+
+  @@index([template_id, status, created_at])
+  @@index([class_id, status])
+  @@index([requested_by_id, status])
+  @@index([reviewed_by_id])
+  @@map("jlpt_template_change_requests")
+}
+
+model JlptLearningRecord {
+  id                   Int         @id @default(autoincrement())
+  enrollment_class_id  Int
+  class_session_id     Int
+  preparation_rating   JlptRating?
+  attitude_rating      JlptRating?
+  homework_completed   Boolean?
+  test_correct_answers Int?
+  created_by_id        Int
+  updated_by_id        Int
+  created_at           DateTime    @default(now())
+  updated_at           DateTime    @updatedAt
+
+  enrollment_class EnrollmentClass @relation(fields: [enrollment_class_id], references: [id])
+  class_session    ClassSession    @relation(fields: [class_session_id], references: [id])
+  created_by       User            @relation("JlptLearningRecordCreator", fields: [created_by_id], references: [id])
+  updated_by       User            @relation("JlptLearningRecordUpdater", fields: [updated_by_id], references: [id])
+
+  @@unique([enrollment_class_id, class_session_id])
+  @@index([class_session_id])
+  @@index([created_by_id])
+  @@index([updated_by_id])
+  @@map("jlpt_learning_records")
+}
+
+model JlptNormalizationTask {
+  id                  Int                         @id @default(autoincrement())
+  source_type         JlptNormalizationSourceType
+  issue_type          JlptNormalizationIssueType
+  status              JlptNormalizationStatus     @default(PENDING)
+  pending_key         String?                     @unique @db.VarChar(191)
+  import_batch_id     Int?
+  sync_run_item_id    Int?
+  class_id            Int?
+  enrollment_class_id Int?
+  class_session_id    Int?
+  raw_payload         Json
+  source_note         String?                     @db.Text
+  proposed_metadata   Json?
+  resolution          Json?
+  resolved_by_id      Int?
+  resolved_at         DateTime?
+  created_at          DateTime                    @default(now())
+  updated_at          DateTime                    @updatedAt
+
+  import_batch     ImportBatch?            @relation(fields: [import_batch_id], references: [id], onDelete: SetNull)
+  sync_run_item    GoogleSheetSyncRunItem? @relation(fields: [sync_run_item_id], references: [id], onDelete: SetNull)
+  class            Class?                  @relation(fields: [class_id], references: [id], onDelete: SetNull)
+  enrollment_class EnrollmentClass?        @relation(fields: [enrollment_class_id], references: [id], onDelete: SetNull)
+  class_session    ClassSession?           @relation(fields: [class_session_id], references: [id], onDelete: SetNull)
+  resolved_by      User?                   @relation("JlptNormalizationResolver", fields: [resolved_by_id], references: [id], onDelete: SetNull)
+
+  @@index([status, issue_type, created_at])
+  @@index([import_batch_id])
+  @@index([sync_run_item_id])
+  @@index([class_id, status])
+  @@index([enrollment_class_id])
+  @@index([class_session_id])
+  @@index([resolved_by_id])
+  @@map("jlpt_normalization_tasks")
 }
 
 // -----------------------------------------------------------------------------
@@ -1051,6 +1235,7 @@ enum ImportType {
   STUDENT_ENROLLMENT
   ATTENDANCE
   TEACHER_ATTENDANCE
+  JLPT_LEARNING_LOG
   GOOGLE_SHEET_SYNC
   GOOGLE_SHEET_BACKUP
 }
@@ -1185,7 +1370,8 @@ model GoogleSheetSyncRunItem {
   rolled_back_by_id Int?
   created_at        DateTime  @default(now())
 
-  run GoogleSheetSyncRun @relation(fields: [run_id], references: [id], onDelete: Cascade)
+  run                      GoogleSheetSyncRun      @relation(fields: [run_id], references: [id], onDelete: Cascade)
+  jlpt_normalization_tasks JlptNormalizationTask[]
 
   @@index([run_id, action])
   @@index([external_id])
@@ -1230,9 +1416,10 @@ model ImportBatch {
   created_at     DateTime          @default(now())
   completed_at   DateTime?
 
-  uploaded_by            User                  @relation("ImportBatchUploader", fields: [uploaded_by_id], references: [id])
-  import_rows            ImportRow[]
-  import_create_requests ImportCreateRequest[]
+  uploaded_by              User                    @relation("ImportBatchUploader", fields: [uploaded_by_id], references: [id])
+  import_rows              ImportRow[]
+  import_create_requests   ImportCreateRequest[]
+  jlpt_normalization_tasks JlptNormalizationTask[]
 
   @@map("import_batches")
 }

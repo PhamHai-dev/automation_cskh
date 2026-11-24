@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ClassSessionStatus } from '@prisma/client';
+import { ClassSessionStatus, ClassSessionType } from '@prisma/client';
 
 const SESSION_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const SESSION_TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -31,6 +31,8 @@ export const createClassSessionSchema = z.object({
     start_time: z.string().optional(),
     end_time: z.string().optional(),
     teacher_id: z.number().int().positive().optional(),
+    session_type: z.nativeEnum(ClassSessionType).optional(),
+    session_title: z.string().trim().max(120).nullable().optional(),
     status: z.nativeEnum(ClassSessionStatus).optional(),
   }),
 });
@@ -57,6 +59,8 @@ export const updateClassSessionSchema = z.object({
     start_time: z.string().optional(),
     end_time: z.string().optional(),
     teacher_id: z.number().int().positive().optional(),
+    session_type: z.nativeEnum(ClassSessionType).optional(),
+    session_title: z.string().trim().max(120).nullable().optional(),
     status: z.nativeEnum(ClassSessionStatus).optional(),
   }),
 });
