@@ -1426,7 +1426,7 @@ export const GoogleSheetSyncPanel: React.FC = () => {
                               </span>
                             </div>
                           </td>
-                            <td><div className="data-row-actions">{(flowType !== 'JLPT_LEARNING_LOG' || isAdmin) && <Button size="sm" variant="outline" onClick={() => navigate(`/data-sync/preview/${encodeURIComponent(cfg.code)}`)} leftIcon={<Eye className="w-4 h-4" />}>Đồng bộ ngay</Button>}<DataRowMenu label={cfg.name} actions={[
+                            <td data-align="center" data-wrap="nowrap" data-cell-layout="custom"><div className="data-row-actions">{(flowType !== 'JLPT_LEARNING_LOG' || isAdmin) && <Button size="sm" variant="outline" onClick={() => navigate(`/data-sync/preview/${encodeURIComponent(cfg.code)}`)} leftIcon={<Eye className="w-4 h-4" />}>Đồng bộ ngay</Button>}<DataRowMenu label={cfg.name} actions={[
     ...(flowType !== 'JLPT_LEARNING_LOG' || isAdmin ? [{ label: 'Cấu hình', icon: <Settings className="w-4 h-4" />, onClick: () => { setEditingConfig(cfg); setConfigModalOpen(true); } }] : []),
     { label: 'Xem lịch sử', icon: <History className="w-4 h-4" />, onClick: () => navigate(`/data-sync/history/${cfg.id}?code=${encodeURIComponent(cfg.code)}`) },
     ...(!isSystemMaster && (flowType !== 'JLPT_LEARNING_LOG' || isAdmin) ? [{ label: 'Xóa nguồn', icon: <Trash2 className="w-4 h-4" />, danger: true, onClick: () => { void handleDeleteConfig(cfg); } }] : []),

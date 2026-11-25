@@ -1,4 +1,4 @@
-import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Columns3, RotateCcw, Check } from 'lucide-react';
 import { PreferenceScope, ProgramColumnFilter } from '../columns';
 import { useColumnVisibility } from '../hooks/useColumnVisibility';
@@ -15,8 +15,6 @@ export const ColumnVisibilityDropdown: React.FC<ColumnVisibilityDropdownProps> =
 }) => {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
-  const [menuPosition, setMenuPosition] = useState({ left: 16, top: 80 });
   const { columns, draft, dirty, saving, setDraftValue, setAll, resetToDefault, save } =
     useColumnVisibility(scope, programFilter);
 
@@ -40,25 +38,6 @@ export const ColumnVisibilityDropdown: React.FC<ColumnVisibilityDropdownProps> =
 
   const visibleCount = columns.filter((c) => (c.locked ? true : Boolean(draft[c.key]))).length;
 
-  useLayoutEffect(() => {
-    if (!open) return;
-    const positionMenu = () => {
-      const trigger = containerRef.current?.getBoundingClientRect();
-      const menu = menuRef.current?.getBoundingClientRect();
-      if (!trigger || !menu) return;
-      setMenuPosition({
-        left: Math.max(16, Math.min(trigger.right - menu.width, window.innerWidth - menu.width - 16)),
-        top: Math.max(16, Math.min(trigger.bottom + 8, window.innerHeight - menu.height - 16)),
-      });
-    };
-    positionMenu();
-    window.addEventListener('resize', positionMenu);
-    window.addEventListener('scroll', positionMenu, true);
-    return () => {
-      window.removeEventListener('resize', positionMenu);
-      window.removeEventListener('scroll', positionMenu, true);
-    };
-  }, [open]);
 
   return (
     <div ref={containerRef} className="column-visibility-control relative inline-block">

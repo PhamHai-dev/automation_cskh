@@ -105,7 +105,8 @@ export interface FilterBarProps {
   activeCount?: number;
   collapsibleOnMobile?: boolean;
   defaultMobileExpanded?: boolean;
-  variant?: 'card' | 'toolbar' | 'learning';
+  variant?: 'card' | 'toolbar' | 'learning' | 'embedded';
+  showHeader?: boolean;
   viewControls?: ReactNode;
 }
 
@@ -124,6 +125,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
   collapsibleOnMobile = false,
   defaultMobileExpanded = false,
   variant = 'card',
+  showHeader = true,
   viewControls,
 }) => {
   const [mobileExpanded, setMobileExpanded] = useState(defaultMobileExpanded);
@@ -177,10 +179,12 @@ export const FilterBar: React.FC<FilterBarProps> = ({
 
   return (
     <section
-      className={`mb-6 rounded-2xl border border-border/80 bg-surface p-4 shadow-soft transition-all sm:p-5 ${className}`}
+      className={variant === 'embedded'
+        ? `min-w-0 bg-surface ${className}`
+        : `mb-6 rounded-2xl border border-border/80 bg-surface p-4 shadow-soft transition-all sm:p-5 ${className}`}
       aria-label={title}
     >
-      <div className="flex items-start justify-between gap-3 border-b border-border/60 pb-3">
+      {showHeader && <div className="flex items-start justify-between gap-3 border-b border-border/60 pb-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2 text-xs font-bold uppercase tracking-wider text-text-secondary">
             <Filter className="h-3.5 w-3.5 text-primary" aria-hidden="true" />
@@ -225,11 +229,11 @@ export const FilterBar: React.FC<FilterBarProps> = ({
             </button>
           )}
         </div>
-      </div>
+      </div>}
 
       <div
         id="filter-bar-content"
-        className={`${collapsibleOnMobile && !mobileExpanded ? 'hidden sm:block' : 'block'} pt-3`}
+        className={`${collapsibleOnMobile && !mobileExpanded ? 'hidden sm:block' : 'block'}${showHeader ? ' pt-3' : ''}`}
       >
         <div className={gridClassName}>{children}</div>
       </div>

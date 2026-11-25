@@ -498,12 +498,12 @@ export const JlptLearningGrid: React.FC<JlptLearningGridProps> = ({
             </div>
           ) : (
             <div className="overflow-x-auto rounded-2xl border border-border bg-surface shadow-soft">
-              <table className="min-w-max border-collapse text-xs">
+              <table data-table="native" className="min-w-max border-collapse text-xs">
                 <thead className="bg-slate-100/90 text-text-secondary">
                   <tr>
-                    <th className="sticky left-0 z-20 min-w-[220px] border-b border-r-2 border-border bg-slate-100 px-4 py-3 text-left uppercase tracking-wider">Học viên</th>
+                    <th scope="col" className="sticky left-0 z-20 min-w-[220px] border-b border-r-2 border-border bg-slate-100 px-4 py-3 text-left uppercase tracking-wider">Học viên</th>
                     {sessions.map((session) => (
-                      <th key={session.id} className={`min-w-[190px] border-b border-r border-border px-3 py-3 text-left align-top ${session.session_type === 'TEST' ? 'bg-amber-100 text-amber-950' : ''}`}>
+                      <th scope="col" key={session.id} className={`min-w-[190px] border-b border-r border-border px-3 py-3 text-left align-top ${session.session_type === 'TEST' ? 'bg-amber-100 text-amber-950' : ''}`}>
                         <div className="font-black">Buổi {session.session_number}</div>
                         <div className="mt-0.5 normal-case font-semibold">{session.session_title || (session.session_type === 'TEST' ? 'Kiểm tra' : 'Bài học')}</div>
                         <div className="mt-1 font-normal text-text-muted">{new Date(session.session_date).toLocaleDateString('vi-VN')}</div>
@@ -514,7 +514,7 @@ export const JlptLearningGrid: React.FC<JlptLearningGridProps> = ({
                 <tbody>
                   {courseStudentRows.map((baseRow) => (
                     <tr key={baseRow.enrollment_class_id} className="border-b border-border/70 last:border-b-0">
-                      <td className="sticky left-0 z-10 border-r-2 border-border bg-white px-4 py-3">
+                      <td data-align="left" data-wrap="normal" className="sticky left-0 z-10 border-r-2 border-border bg-white px-4 py-3">
                         <div className="font-bold text-text-primary">{baseRow.student.full_name}</div>
                         <div className="mt-0.5 font-mono text-[10px] text-text-muted">{baseRow.student.external_id || `HV-${baseRow.student.id}`}</div>
                       </td>
@@ -524,7 +524,7 @@ export const JlptLearningGrid: React.FC<JlptLearningGridProps> = ({
                         const absent = row ? isAbsent(row) : false;
                         const record = row?.learning_record;
                         return (
-                          <td key={session.id} className={`border-r border-border p-2 align-top ${session.session_type === 'TEST' ? 'bg-amber-50/40' : ''}`}>
+                          <td data-align="left" data-wrap="normal" data-cell-layout="custom" key={session.id} className={`border-r border-border p-2 align-top ${session.session_type === 'TEST' ? 'bg-amber-50/40' : ''}`}>
                             {row ? (
                               <button
                                 id={`jlpt-course-cell-${session.id}-${baseRow.enrollment_class_id}`}
@@ -584,11 +584,11 @@ export const JlptLearningGrid: React.FC<JlptLearningGridProps> = ({
           </div>
         ) : (
           <div className="overflow-x-auto rounded-2xl border border-border bg-surface shadow-soft">
-            <table className="min-w-[940px] w-full border-collapse text-sm">
+            <table data-table="native" className="min-w-[940px] w-full border-collapse text-sm">
               <thead className="bg-slate-100/90 text-left text-xs uppercase tracking-wider text-text-secondary">
                 <tr>
                   {!readonly && (
-                    <th className="sticky left-0 z-20 w-12 border-b border-r border-border bg-slate-100 px-3 py-3 text-center">
+                    <th scope="col" className="sticky left-0 z-20 w-12 border-b border-r border-border bg-slate-100 px-3 py-3 text-center">
                       <input
                         id="jlpt-select-all"
                         type="checkbox"
@@ -599,13 +599,13 @@ export const JlptLearningGrid: React.FC<JlptLearningGridProps> = ({
                       />
                     </th>
                   )}
-                  <th className={`${readonly ? 'left-0' : 'left-12'} sticky z-20 min-w-[230px] border-b border-r-2 border-border bg-slate-100 px-4 py-3`}>Học viên</th>
-                  <th className="min-w-[150px] border-b border-r border-border px-3 py-3">Điểm danh</th>
-                  <th className="min-w-[150px] border-b border-r border-border px-3 py-3">Chuẩn bị bài</th>
-                  <th className="min-w-[160px] border-b border-r border-border px-3 py-3">Thái độ</th>
-                  <th className="min-w-[150px] border-b border-r border-border px-3 py-3">Bài tập</th>
-                  <th className={`min-w-[150px] border-b border-r border-border px-3 py-3 ${selectedSession?.session_type === 'TEST' ? 'bg-amber-100 text-amber-950' : ''}`}>Số câu đúng</th>
-                  <th className="min-w-[220px] border-b border-border px-3 py-3">Ghi chú giáo viên</th>
+                  <th scope="col" className={`${readonly ? 'left-0' : 'left-12'} sticky z-20 min-w-[230px] border-b border-r-2 border-border bg-slate-100 px-4 py-3`}>Học viên</th>
+                  <th scope="col" className="min-w-[150px] border-b border-r border-border px-3 py-3">Điểm danh</th>
+                  <th scope="col" className="min-w-[150px] border-b border-r border-border px-3 py-3">Chuẩn bị bài</th>
+                  <th scope="col" className="min-w-[160px] border-b border-r border-border px-3 py-3">Thái độ</th>
+                  <th scope="col" className="min-w-[150px] border-b border-r border-border px-3 py-3">Bài tập</th>
+                  <th scope="col" className={`min-w-[150px] border-b border-r border-border px-3 py-3 ${selectedSession?.session_type === 'TEST' ? 'bg-amber-100 text-amber-950' : ''}`}>Số câu đúng</th>
+                  <th scope="col" className="min-w-[220px] border-b border-border px-3 py-3">Ghi chú giáo viên</th>
                 </tr>
               </thead>
               <tbody>
@@ -623,7 +623,7 @@ export const JlptLearningGrid: React.FC<JlptLearningGridProps> = ({
                   return (
                     <tr key={row.enrollment_class_id} className="border-b border-border/70 last:border-b-0 hover:bg-indigo-50/20">
                       {!readonly && (
-                        <td className="sticky left-0 z-10 border-r border-border bg-white px-3 py-3 text-center">
+                        <td data-align="center" data-wrap="nowrap" className="sticky left-0 z-10 border-r border-border bg-white px-3 py-3 text-center">
                           <input
                             id={`jlpt-select-${row.enrollment_class_id}`}
                             type="checkbox"
@@ -635,14 +635,14 @@ export const JlptLearningGrid: React.FC<JlptLearningGridProps> = ({
                           />
                         </td>
                       )}
-                      <td className={`${readonly ? 'left-0' : 'left-12'} sticky z-10 border-r-2 border-border bg-white px-4 py-3`}>
+                      <td data-align="left" data-wrap="normal" className={`${readonly ? 'left-0' : 'left-12'} sticky z-10 border-r-2 border-border bg-white px-4 py-3`}>
                         <div className="font-bold text-text-primary">{row.student.full_name}</div>
                         <div className="mt-0.5 font-mono text-[11px] text-text-muted">{row.student.external_id || `HV-${row.student.id}`}</div>
                         {absent && (
                           <span className="mt-1.5 inline-flex rounded-md bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-600">Tiêu chí đang khóa vì vắng</span>
                         )}
                       </td>
-                      <td className="border-r border-border px-3 py-3">
+                      <td data-align="center" data-wrap="nowrap" className="border-r border-border px-3 py-3">
                         {attendanceStatus ? (
                           <span className="inline-flex rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-bold text-slate-700">
                             {ATTENDANCE_STATUS_LABELS[attendanceStatus] || attendanceStatus}
@@ -650,7 +650,7 @@ export const JlptLearningGrid: React.FC<JlptLearningGridProps> = ({
                         ) : <span className="text-xs text-text-muted">Chưa điểm danh</span>}
                       </td>
                       {(['preparation_rating', 'attitude_rating'] as const).map((field) => (
-                        <td key={field} className="border-r border-border px-3 py-3">
+                        <td data-align="center" data-wrap="nowrap" data-cell-layout="custom" key={field} className="border-r border-border px-3 py-3">
                           <div className="flex items-center gap-2">
                             {absent ? (
                               <div className="flex h-10 w-full items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50 text-[11px] font-semibold text-slate-400">
@@ -674,7 +674,7 @@ export const JlptLearningGrid: React.FC<JlptLearningGridProps> = ({
                           </div>
                         </td>
                       ))}
-                      <td className="border-r border-border px-3 py-3">
+                      <td data-align="center" data-wrap="nowrap" data-cell-layout="custom" className="border-r border-border px-3 py-3">
                         <div className="flex items-center gap-2">
                           {absent ? (
                             <div className="flex h-10 w-full items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50 text-[11px] font-semibold text-slate-400">
@@ -700,7 +700,7 @@ export const JlptLearningGrid: React.FC<JlptLearningGridProps> = ({
                           <span className="w-4 shrink-0">{renderState('homework_completed')}</span>
                         </div>
                       </td>
-                      <td className={`px-3 py-3 ${selectedSession?.session_type === 'TEST' ? 'bg-amber-50/70' : ''}`}>
+                      <td data-align="right" data-wrap="nowrap" data-cell-layout="custom" className={`px-3 py-3 ${selectedSession?.session_type === 'TEST' ? 'bg-amber-50/70' : ''}`}>
                         <div className="flex items-center gap-2">
                           {absent ? (
                             <div className="flex h-10 min-w-0 flex-1 items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50 text-[11px] font-semibold text-slate-400">
@@ -737,7 +737,7 @@ export const JlptLearningGrid: React.FC<JlptLearningGridProps> = ({
                           <span className="w-4 shrink-0">{renderState('test_correct_answers')}</span>
                         </div>
                       </td>
-                      <td className="px-3 py-3 align-top">
+                      <td data-align="left" data-wrap="normal" className="px-3 py-3 align-top">
                         {row.attendance?.teacher_note ? (
                           <p className="max-w-[260px] whitespace-pre-wrap text-xs leading-relaxed text-text-secondary">{row.attendance.teacher_note}</p>
                         ) : (

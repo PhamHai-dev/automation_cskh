@@ -3211,7 +3211,7 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
             <tbody>
               {quickVisibleStudents.length === 0 ? (
                 <tr>
-                  <td colSpan={(isCSOnly ? 15 : 14) + (showClassManageActions ? 1 : 0) + (showJlptLearningColumns ? 4 : 0)} className="text-center py-10 text-text-muted">
+                  <td data-align="center" data-wrap="normal" colSpan={(isCSOnly ? 15 : 14) + (showClassManageActions ? 1 : 0) + (showJlptLearningColumns ? 4 : 0)} className="text-center py-10 text-text-muted">
                     {onlyStudentsWithDaySchedule
                       ? 'Không có học viên nào có lịch hoặc ca học trong ngày này.'
                       : 'Không có học viên nào để điểm danh.'}
@@ -3463,29 +3463,29 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
           <table data-table="native" className="w-full text-xs text-left border-collapse">
             <thead>
               <tr className="bg-surface-muted/90 text-text-secondary border-b border-border/80 text-[11px] font-bold">
-                <th className="px-3 py-3 border-r border-border/60 whitespace-nowrap w-28">Ngày học</th>
-                <th className="px-2.5 py-3 border-r border-border/60 text-center whitespace-nowrap w-16">Ca</th>
-                <th className="px-3 py-3 border-r border-border/60 whitespace-nowrap min-w-[160px]">Học viên</th>
-                <th className="px-3 py-3 border-r border-border/60 whitespace-nowrap min-w-[130px]">Lớp học</th>
-                <th className="px-3 py-3 border-r border-border/60 whitespace-nowrap min-w-[120px]">Giáo viên</th>
+                <th scope="col" className="px-3 py-3 border-r border-border/60 whitespace-nowrap w-28">Ngày học</th>
+                <th scope="col" className="px-2.5 py-3 border-r border-border/60 text-center whitespace-nowrap w-16">Ca</th>
+                <th scope="col" className="px-3 py-3 border-r border-border/60 whitespace-nowrap min-w-[160px]">Học viên</th>
+                <th scope="col" className="px-3 py-3 border-r border-border/60 whitespace-nowrap min-w-[130px]">Lớp học</th>
+                <th scope="col" className="px-3 py-3 border-r border-border/60 whitespace-nowrap min-w-[120px]">Giáo viên</th>
                 {isTeacherOnly ? (
-                  <th className="px-3 py-3 border-r border-border/60 text-center whitespace-nowrap min-w-[145px]">Trạng thái của tôi</th>
+                  <th scope="col" className="px-3 py-3 border-r border-border/60 text-center whitespace-nowrap min-w-[145px]">Trạng thái của tôi</th>
                 ) : (
                   <>
-                    <th className="px-3 py-3 border-r border-border/60 text-center whitespace-nowrap min-w-[115px]">Điểm danh GV</th>
-                    <th className="px-3 py-3 border-r border-border/60 text-center whitespace-nowrap min-w-[115px]">Điểm danh CSKH</th>
-                    <th className="px-3 py-3 border-r border-border/60 text-center whitespace-nowrap min-w-[120px]">Trạng thái chốt</th>
+                    <th scope="col" className="px-3 py-3 border-r border-border/60 text-center whitespace-nowrap min-w-[115px]">Điểm danh GV</th>
+                    <th scope="col" className="px-3 py-3 border-r border-border/60 text-center whitespace-nowrap min-w-[115px]">Điểm danh CSKH</th>
+                    <th scope="col" className="px-3 py-3 border-r border-border/60 text-center whitespace-nowrap min-w-[120px]">Trạng thái chốt</th>
                   </>
                 )}
-                <th className="px-3 py-3 border-r border-border/60 min-w-[200px]">Bài học &amp; Ghi chú GV</th>
-                <th className="px-3 py-3 border-r border-border/60 min-w-[180px]">Ghi chú CSKH</th>
-                <th className="px-3 py-3 text-center whitespace-nowrap w-24">Chi tiết</th>
+                <th scope="col" className="px-3 py-3 border-r border-border/60 min-w-[200px]">Bài học &amp; Ghi chú GV</th>
+                <th scope="col" className="px-3 py-3 border-r border-border/60 min-w-[180px]">Ghi chú CSKH</th>
+                <th scope="col" className="px-3 py-3 text-center whitespace-nowrap w-24">Chi tiết</th>
               </tr>
             </thead>
             <tbody>
               {periodSessionLogs.length === 0 ? (
                 <tr>
-                  <td colSpan={isTeacherOnly ? 9 : 11} className="text-center py-10 text-text-muted">
+                  <td data-align="center" data-wrap="normal" colSpan={isTeacherOnly ? 9 : 11} className="text-center py-10 text-text-muted">
                     Chưa có buổi học nào phát sinh trong kỳ {viewTitle}.
                   </td>
                 </tr>
@@ -3534,7 +3534,7 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
                       </td>
                       {!isTeacherOnly && (
                         <>
-                          <td className="px-3 py-2.5 border-r border-border/60 text-center whitespace-nowrap">
+                          <td data-align="center" data-wrap="nowrap" className="px-3 py-2.5 border-r border-border/60 text-center whitespace-nowrap">
                             {csCfg ? (
                               <span className={`inline-flex h-6 items-center gap-1 rounded-md border px-2 text-[10px] font-extrabold ${csCfg.bg.replace(/\s*hover:\S+/g, '')} ${csCfg.text} ${csCfg.border}`}>
                                 {csCfg.short} · {csCfg.label}
@@ -3543,7 +3543,7 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
                               <span className="text-text-muted">—</span>
                             )}
                           </td>
-                          <td className="px-3 py-2.5 border-r border-border/60 text-center whitespace-nowrap">
+                          <td data-align="center" data-wrap="nowrap" className="px-3 py-2.5 border-r border-border/60 text-center whitespace-nowrap">
                             {classified.category === 'ADMIN_RESOLVED' && finalCfg ? (
                               <span className={`inline-flex h-6 items-center gap-1 rounded-md border px-2 text-[10px] font-extrabold ring-1 ring-violet-500/70 ${finalCfg.bg.replace(/\s*hover:\S+/g, '')} ${finalCfg.text} ${finalCfg.border}`}>
                                 ✓ {finalCfg.short} · Admin đã chốt
@@ -3570,7 +3570,7 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
                           </td>
                         </>
                       )}
-                      <td className="px-3 py-2.5 border-r border-border/60">
+                      <td data-align="left" data-wrap="normal" className="px-3 py-2.5 border-r border-border/60">
                         {att?.lesson_topic || att?.teacher_note ? (
                           <div className="space-y-0.5">
                             {att.lesson_topic && (
@@ -3626,7 +3626,7 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
             <thead>
               <tr className="bg-surface-muted/90 text-text-secondary border-b border-border/80 text-[11px] font-bold">
                 {/* Checkbox */}
-                <th className="px-2 py-3 border-r border-border/60 sticky left-0 bg-slate-100 z-20 w-10 min-w-[40px] text-center">
+                <th scope="col" className="px-2 py-3 border-r border-border/60 sticky left-0 bg-slate-100 z-20 w-10 min-w-[40px] text-center">
                   {!isTeacherOnly && (
                     <input
                       ref={(el) => {
@@ -3810,7 +3810,7 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
                       }`}
                     >
                       {/* Checkbox */}
-                      <td className="px-2 py-2.5 border-r border-border/60 text-center sticky left-0 bg-slate-100 z-10">
+                      <td data-align="center" data-wrap="nowrap" className="px-2 py-2.5 border-r border-border/60 text-center sticky left-0 bg-slate-100 z-10">
                         {!isTeacherOnly && (
                           <input
                             type="checkbox"

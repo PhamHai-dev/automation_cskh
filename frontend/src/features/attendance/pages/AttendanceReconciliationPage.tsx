@@ -548,7 +548,7 @@ export const AttendanceReconciliationPage: React.FC = () => {
         },
       },
       {
-        header: 'CVHT ghi nhận',
+        align: 'left' as const, wrap: true, header: 'CVHT ghi nhận',
         cell: (r) => {
           const cfg = r.cs_status ? statusLabels[r.cs_status] : null;
           return (
@@ -657,7 +657,7 @@ export const AttendanceReconciliationPage: React.FC = () => {
     };
 
     const csReportColumn: Column<AttendanceRecord> = {
-      header: 'Điểm danh CVHT',
+      align: 'left' as const, wrap: true, header: 'Điểm danh CVHT',
       cell: (r) => {
         const cfg = r.cs_status ? statusLabels[r.cs_status] : null;
         return cfg ? (

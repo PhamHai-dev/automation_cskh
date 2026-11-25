@@ -108,6 +108,9 @@ Không để frontend tự đoán cấu trúc Student/Enrollment/Class response.
 
 ## Implementation notes
 
+- Maintenance 2026-11-25 sau merge ưu tiên local: giữ bộ lọc learning/menu cột và cấu trúc lớp/học viên; bổ sung tùy chọn FilterBar remote và metadata bố cục bảng. Không đổi API/schema/quyền hoặc rule điểm danh.
+- Kiểm tra maintenance: frontend build/TypeScript và 61/61 tests đạt; lint bị chặn do thiếu config. Browser TEACHER read-only kiểm tra trang điểm danh/menu cột, console không lỗi; chưa nghiệm thu đủ responsive do resize không đạt viewport yêu cầu và không có quyền Inbox/admin. Không migration/push.
+
 - Cập nhật 2026-11-20: bổ sung lưu trữ mềm Student (`deleted_at`, `deleted_by_id`) qua `DELETE /api/v1/students/{studentId}`, chỉ `ADMIN`.
 - Danh sách/chi tiết nghiệp vụ và các module liên quan chỉ đọc Student active; lịch sử Enrollment/Class/Attendance/Care/Messaging không bị xóa khỏi DB.
 - Trang Hồ sơ học viên bỏ nút chuyển CVHT ở header và từng dòng, bỏ sticky cột Thao tác, thêm icon lưu trữ có modal xác nhận cho Admin.

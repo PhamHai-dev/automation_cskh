@@ -122,7 +122,7 @@ export const JlptLearningColumns: React.FC<{
   classId?: number; enrollmentClassId?: number; sessions: ClassSession[]; enabled: boolean;
   readonly?: boolean; attendanceForSession?: (sessionId: number) => Attendance | undefined;
 }> = ({ classId, enrollmentClassId, sessions, enabled, readonly = false, attendanceForSession }) => <>
-  {JLPT_LEARNING_FIELDS.map(({ field }) => <td key={field} className="jlpt-learning-cell">
+  {JLPT_LEARNING_FIELDS.map(({ field }) => <td data-align={field === 'test_correct_answers' ? 'right' : 'center'} data-wrap="nowrap" data-cell-layout="custom" key={field} className="jlpt-learning-cell">
     {!enabled || !classId || !enrollmentClassId || enrollmentClassId <= 0 ? <span className="text-text-muted">—</span>
       : sessions.length === 0 ? <span className="text-text-muted text-[10px] whitespace-nowrap">Chưa có ca học</span>
       : <div className="jlpt-learning-stack">{sessions.map((session, index) => <div key={session.id} className="jlpt-learning-entry">

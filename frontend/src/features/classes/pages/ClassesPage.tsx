@@ -4241,29 +4241,29 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
             <table data-table="native" className="w-full text-xs text-left border-collapse">
               <thead>
                 <tr className="bg-surface-muted/90 text-text-secondary border-b border-border/80 text-[11px] font-bold">
-                  <th className="px-3 py-3 border-r border-border/60 whitespace-nowrap w-28">Ngày học</th>
-                  <th className="px-2.5 py-3 border-r border-border/60 text-center whitespace-nowrap w-16">Ca</th>
-                  <th className="px-3 py-3 border-r border-border/60 whitespace-nowrap min-w-[160px]">Học viên</th>
-                  <th className="px-3 py-3 border-r border-border/60 whitespace-nowrap min-w-[140px]">Lớp học</th>
-                  <th className="px-3 py-3 border-r border-border/60 whitespace-nowrap min-w-[120px]">Giáo viên</th>
+                  <th scope="col" className="px-3 py-3 border-r border-border/60 whitespace-nowrap w-28">Ngày học</th>
+                  <th scope="col" className="px-2.5 py-3 border-r border-border/60 text-center whitespace-nowrap w-16">Ca</th>
+                  <th scope="col" className="px-3 py-3 border-r border-border/60 whitespace-nowrap min-w-[160px]">Học viên</th>
+                  <th scope="col" className="px-3 py-3 border-r border-border/60 whitespace-nowrap min-w-[140px]">Lớp học</th>
+                  <th scope="col" className="px-3 py-3 border-r border-border/60 whitespace-nowrap min-w-[120px]">Giáo viên</th>
                   {isTeacher ? (
-                    <th className="px-3 py-3 border-r border-border/60 text-center whitespace-nowrap min-w-[145px]">Trạng thái của tôi</th>
+                    <th scope="col" className="px-3 py-3 border-r border-border/60 text-center whitespace-nowrap min-w-[145px]">Trạng thái của tôi</th>
                   ) : (
                     <>
-                      <th className="px-3 py-3 border-r border-border/60 text-center whitespace-nowrap min-w-[115px]">Điểm danh GV</th>
-                      <th className="px-3 py-3 border-r border-border/60 text-center whitespace-nowrap min-w-[115px]">Điểm danh CSKH</th>
-                      <th className="px-3 py-3 border-r border-border/60 text-center whitespace-nowrap min-w-[120px]">Trạng thái chốt</th>
+                      <th scope="col" className="px-3 py-3 border-r border-border/60 text-center whitespace-nowrap min-w-[115px]">Điểm danh GV</th>
+                      <th scope="col" className="px-3 py-3 border-r border-border/60 text-center whitespace-nowrap min-w-[115px]">Điểm danh CSKH</th>
+                      <th scope="col" className="px-3 py-3 border-r border-border/60 text-center whitespace-nowrap min-w-[120px]">Trạng thái chốt</th>
                     </>
                   )}
-                  <th className="px-3 py-3 border-r border-border/60 min-w-[200px]">Bài học &amp; Ghi chú GV</th>
-                  <th className="px-3 py-3 border-r border-border/60 min-w-[180px]">Ghi chú CSKH</th>
-                  <th className="px-3 py-3 text-center whitespace-nowrap w-24">Chi tiết</th>
+                  <th scope="col" className="px-3 py-3 border-r border-border/60 min-w-[200px]">Bài học &amp; Ghi chú GV</th>
+                  <th scope="col" className="px-3 py-3 border-r border-border/60 min-w-[180px]">Ghi chú CSKH</th>
+                  <th scope="col" className="px-3 py-3 text-center whitespace-nowrap w-24">Chi tiết</th>
                 </tr>
               </thead>
               <tbody>
                 {periodSessionLogs.length === 0 ? (
                   <tr>
-                    <td colSpan={isTeacher ? 9 : 11} className="py-10 text-center text-text-muted">
+                    <td data-align="center" data-wrap="normal" colSpan={isTeacher ? 9 : 11} className="py-10 text-center text-text-muted">
                       Chưa có buổi học nào phát sinh trong kỳ {detailedPeriodTitle}.
                     </td>
                   </tr>
@@ -4337,7 +4337,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                           </td>
                           {!isTeacher && (
                             <>
-                              <td className="px-3 py-2.5 border-r border-border/60 text-center whitespace-nowrap">
+                              <td data-align="center" data-wrap="nowrap" className="px-3 py-2.5 border-r border-border/60 text-center whitespace-nowrap">
                                 {csCfg ? (
                                   <span
                                     className={`inline-flex h-6 items-center gap-1 rounded-md border px-2 text-[10px] font-extrabold ${csCfg.bg.replace(
@@ -4351,7 +4351,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                                   <span className="text-text-muted">—</span>
                                 )}
                               </td>
-                              <td className="px-3 py-2.5 border-r border-border/60 text-center whitespace-nowrap">
+                              <td data-align="center" data-wrap="nowrap" className="px-3 py-2.5 border-r border-border/60 text-center whitespace-nowrap">
                                 {classified.category === 'ADMIN_RESOLVED' && finalCfg ? (
                                   <span
                                     className={`inline-flex h-6 items-center gap-1 rounded-md border px-2 text-[10px] font-extrabold ring-1 ring-violet-500/70 ${finalCfg.bg.replace(
@@ -4388,7 +4388,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                               </td>
                             </>
                           )}
-                          <td className="px-3 py-2.5 border-r border-border/60">
+                          <td data-align="left" data-wrap="normal" className="px-3 py-2.5 border-r border-border/60">
                             {att?.lesson_topic || att?.teacher_note ? (
                               <div className="space-y-0.5">
                                 {att.lesson_topic && (
@@ -4437,7 +4437,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
             <thead>
               <tr className="bg-surface-muted/90 text-text-secondary border-b border-border/80 text-[11px] font-bold">
                 {showClassSelection && (
-                  <th
+                  <th scope="col"
                     className={`px-2 py-3 border-r border-border/60 w-10 min-w-[40px] max-w-[40px] text-center bg-slate-100 ${
                       activeTab === 'detailed' ? 'sticky left-0 z-30 bg-slate-100' : ''
                     }`}
@@ -4457,7 +4457,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                     />
                   </th>
                 )}
-                <th
+                <th scope="col"
                   className={`px-3 py-3 border-r border-border/60 whitespace-nowrap w-28 min-w-[112px] max-w-[112px] overflow-hidden ${
                     activeTab === 'detailed'
                       ? `sticky ${showClassSelection ? 'left-10' : 'left-0'} z-30 bg-slate-100`
@@ -4648,7 +4648,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
             <tbody>
               {loading ? (
                 <tr>
-                  <td
+                  <td data-align="center" data-wrap="normal"
                     colSpan={classIdentityColumnCount + classAttendanceColumnCount}
                     className="py-12 text-center text-text-muted"
                   >
@@ -4657,7 +4657,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                 </tr>
               ) : tableClasses.length === 0 ? (
                 <tr>
-                  <td
+                  <td data-align="center" data-wrap="normal"
                     colSpan={classIdentityColumnCount + classAttendanceColumnCount}
                     className="py-12 text-center text-text-muted"
                   >
@@ -4736,7 +4736,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                       >
                         {/* Checkbox chọn lớp / toàn bộ học viên của lớp */}
                         {showClassSelection && (
-                          <td
+                          <td data-align="center" data-wrap="nowrap"
                             className={`px-2 py-2.5 border-r border-border/60 w-10 min-w-[40px] max-w-[40px] text-center ${
                               activeTab === 'detailed' ? 'sticky left-0 z-20 bg-slate-100' : ''
                             }`}
@@ -4784,7 +4784,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
 
                         {/* Trình độ */}
                         {isColVisible('level') && (
-                          <td className="px-2.5 py-2.5 border-r border-border/60 text-center whitespace-nowrap">
+                          <td data-align="center" data-wrap="nowrap" className="px-2.5 py-2.5 border-r border-border/60 text-center whitespace-nowrap">
                             {cls.level || firstStudent?.level ? (
                               <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">
                                 {cls.level || firstStudent?.level}
@@ -4874,7 +4874,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                         {activeTab === 'quick' ? (
                           isTeacher ? (
                             <>
-                              <td className="px-2.5 py-2 border-r border-border/60 bg-teal-50/20 align-top">
+                              <td data-align="center" data-wrap="nowrap" data-cell-layout="custom" className="px-2.5 py-2 border-r border-border/60 bg-teal-50/20 align-top">
                                 {(
                                   <div className="flex flex-col gap-1.5">
                                     {Array.from(
@@ -5021,7 +5021,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                                 </div>
                               </td>
 
-                              <td className="px-2.5 py-2 border-r border-border/60 bg-indigo-50/15 select-text align-top">
+                              <td data-align="left" data-wrap="normal" data-cell-layout="custom" className="px-2.5 py-2 border-r border-border/60 bg-indigo-50/15 select-text align-top">
                                 {(
                                   <span className="text-[11px] text-text-muted">—</span>
                                 )}
@@ -5030,7 +5030,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                           ) : (
                             <>
                               {/* Cột 1 (CSKH/Admin): Điểm danh GV & Bài học */}
-                              <td className="px-2.5 py-2 border-r border-border/60 bg-slate-50/40 align-middle whitespace-nowrap">
+                              <td data-align="center" data-wrap="normal" data-cell-layout="custom" className="px-2.5 py-2 border-r border-border/60 bg-slate-50/40 align-middle whitespace-nowrap">
                                 {(
                                   <span className="text-[11px] text-text-muted">
                                     Mở rộng lớp ({students.length} HV) ↓
@@ -5039,7 +5039,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                               </td>
 
                               {/* Cột 2 (CSKH/Admin): Điểm danh CSKH (hoặc Điểm danh & Ghi chú CSKH) */}
-                              <td className="px-2.5 py-2 border-r border-border/60 bg-blue-50/20 align-middle whitespace-nowrap">
+                              <td data-align="center" data-wrap="nowrap" className="px-2.5 py-2 border-r border-border/60 bg-blue-50/20 align-middle whitespace-nowrap">
                                 {(
                                   <span className="text-[11px] text-text-muted">—</span>
                                 )}
@@ -5047,7 +5047,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
 
                               {/* Cột 3 (chỉ CSKH): Ghi chú CSKH */}
                               {isCSOnly && (
-                                <td className="px-2.5 py-2 border-r border-border/60 bg-indigo-50/15 align-middle whitespace-nowrap">
+                                <td data-align="center" data-wrap="nowrap" className="px-2.5 py-2 border-r border-border/60 bg-indigo-50/15 align-middle whitespace-nowrap">
                                   {(
                                     <span className="text-[11px] text-text-muted">—</span>
                                   )}
@@ -5055,7 +5055,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                               )}
 
                               {/* Cột 4 (CSKH/Admin): Điểm danh chốt */}
-                              <td className="px-2.5 py-2 border-r border-border/60 bg-emerald-50/20 align-middle whitespace-nowrap">
+                              <td data-align="center" data-wrap="nowrap" className="px-2.5 py-2 border-r border-border/60 bg-emerald-50/20 align-middle whitespace-nowrap">
                                 {(
                                   <span className="text-[11px] text-text-muted">—</span>
                                 )}
@@ -5065,10 +5065,10 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                         ) : (
                           <>
                             {/* 2 Cột thống kê trong Tab Điểm danh chi tiết */}
-                            <td className="px-3 py-2.5 border-r border-border/60 text-center font-extrabold text-emerald-800 bg-emerald-50/40">
+                            <td data-align="right" data-wrap="nowrap" className="px-3 py-2.5 border-r border-border/60 text-center font-extrabold text-emerald-800 bg-emerald-50/40">
                               {classSumTotalAttended}
                             </td>
-                            <td className="px-3 py-2.5 border-r-2 border-border/80 text-center font-extrabold text-emerald-800 bg-emerald-100/30">
+                            <td data-align="right" data-wrap="nowrap" className="px-3 py-2.5 border-r-2 border-border/80 text-center font-extrabold text-emerald-800 bg-emerald-100/30">
                               {classSumMonthAttended}
                             </td>
 
@@ -5125,8 +5125,8 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                       {isExpanded &&
                         (students.length === 0 ? (
                           <tr className="border-b border-border/50 bg-slate-50/40">
-                            <td colSpan={classIdentityColumnCount} className="px-3 py-2 border-r border-border/50" />
-                            <td
+                            <td data-align="center" data-wrap="nowrap" colSpan={classIdentityColumnCount} className="px-3 py-2 border-r border-border/50" />
+                            <td data-align="left" data-wrap="normal"
                               colSpan={classAttendanceColumnCount}
                               className="px-3 py-2 text-xs italic text-slate-400"
                             >
@@ -5155,7 +5155,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                                 }`}
                               >
                                 {showClassSelection && (
-                                  <td
+                                  <td data-align="center" data-wrap="nowrap"
                                     className={`px-2 py-2 border-r border-border/50 w-10 min-w-[40px] max-w-[40px] text-center ${
                                       activeTab === 'detailed' ? 'sticky left-0 z-20 bg-white' : ''
                                     }`}
@@ -5174,7 +5174,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                                     />
                                   </td>
                                 )}
-                                <td
+                                <td data-align="left" data-wrap="nowrap"
                                   className={`py-2 pl-[1cm] pr-3 border-r border-border/50 text-left font-mono text-[10px] text-slate-400 w-28 min-w-[112px] max-w-[112px] overflow-hidden ${
                                     activeTab === 'detailed'
                                       ? `sticky ${showClassSelection ? 'left-10' : 'left-0'} z-20 bg-white`

@@ -1,5 +1,13 @@
 # Project Changelog
 
+## 2026-11-25 — Sửa tương thích frontend sau merge ưu tiên local
+
+- Giữ FilterBar learning/toolbar local, hỗ trợ thêm `embedded` và `showHeader` cho Inbox/chiến dịch; thêm 2 regression tests bảo vệ các tùy chọn này.
+- Giữ menu cột absolute local, bỏ state/effect định vị fixed không nối với DOM sau merge.
+- Bổ sung align/wrap ở đối soát và metadata/scope cho bảng điểm danh, JLPT, đồng bộ; không đổi handler, dữ liệu, quyền hoặc rule điểm danh.
+- Production build/TypeScript và 61/61 frontend regression tests đạt, gồm test layout toàn source trước đó fail. Lint còn bị chặn bởi ESLint config thiếu từ trước; bundle còn cảnh báo kích thước.
+- Browser TEACHER read-only: điểm danh tải được, menu cột mở/đóng và console không lỗi. Chưa nghiệm thu đủ viewport 1440/768/390px do resize sai kích thước; Inbox/admin bị giới hạn role. Không migration, không push.
+
 ## 2026-11-25 — Tinh chỉnh thứ tự và độ rộng hàng lọc
 
 - Hiển thị + Cột hiển thị đứng đầu hàng 2; ngày/kỳ đứng cuối, căn phải ở Lớp học/Điểm danh và không gian giáo viên.

@@ -1,5 +1,13 @@
 # Project Status
 
+## Sửa tương thích frontend sau merge — 2026-11-25
+
+- Giữ bộ lọc learning/toolbar và menu cột absolute của local; bổ sung `embedded`/`showHeader` cho nơi dùng từ remote, bỏ phần fixed positioning ghép dở không được sử dụng.
+- Bổ sung align/wrap cho cột đối soát; scope và metadata bảng tại điểm danh/JLPT/đồng bộ. Giữ handler, quyền, rule lưu/xóa điểm danh và cấu trúc lớp/học viên.
+- Frontend production build (gồm TypeScript), 61/61 regression tests và `git diff --check` đạt. Thêm 2 test tương thích FilterBar; không bỏ hay nới lỏng test layout.
+- Lint vẫn bị chặn vì thiếu ESLint config từ trước; build cảnh báo bundle lớn hơn 500 kB. Không đổi backend/API/schema, không chạy migration, không push.
+- Browser read-only bằng phiên TEACHER: trang điểm danh tải được, menu cột mở/đóng, console không lỗi. Chỉ xác minh tại viewport thực tế 1604/942/626px; công cụ resize không đạt đúng 1440/768/390px, Inbox/admin không truy cập bằng role hiện tại. Chưa nghiệm thu responsive đầy đủ hoặc clipping menu ở viewport hẹp.
+
 ## Thứ tự và khoảng cách bộ lọc — 2026-11-25
 
 - Hàng 2 ưu tiên Hiển thị + Cột hiển thị ở đầu, ngày/kỳ ở cuối và căn phải; bỏ nút khớp GV khỏi hàng 2 của hai chế độ điểm danh.

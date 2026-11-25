@@ -40,6 +40,26 @@ test('legacy filter variants do not gain the persistent learning empty row', () 
   assert.doesNotMatch(html, /Chưa áp dụng bộ lọc|data-filter-row="active"/);
 });
 
+test('embedded inbox filters support hidden headers without a nested card shell', () => {
+  const html = renderToStaticMarkup(React.createElement(FilterBar, {
+    variant: 'embedded', showHeader: false, gridClassName: 'space-y-2',
+  }, React.createElement('input', { id: 'embedded-inbox-search' })));
+  assert.match(html, /id="embedded-inbox-search"/);
+  assert.match(html, /class="space-y-2"/);
+  assert.doesNotMatch(html, /<span>Bộ lọc dữ liệu<\/span>|rounded-2xl|shadow-soft|\bpt-3\b/);
+  assert.doesNotMatch(html, /data-filter-row="active"/);
+});
+
+test('card filters keep their local default header and can hide it for campaigns', () => {
+  const withHeader = renderToStaticMarkup(React.createElement(FilterBar, null, 'Campaign controls'));
+  const withoutHeader = renderToStaticMarkup(React.createElement(FilterBar, { showHeader: false }, 'Campaign controls'));
+  assert.match(withHeader, /<span>Bộ lọc dữ liệu<\/span>/);
+  assert.match(withHeader, /\bpt-3\b/);
+  assert.match(withoutHeader, /rounded-2xl/);
+  assert.match(withoutHeader, /Campaign controls/);
+  assert.doesNotMatch(withoutHeader, /<span>Bộ lọc dữ liệu<\/span>|\bpt-3\b/);
+});
+
 test('all scoped student and report pages place existing toolbar in viewControls', () => {
   for (const file of ['features/students/pages/StudentsPage.tsx', 'features/students/pages/JlptAttendanceReportPage.tsx', 'features/attendance/pages/TeacherStudentInfoPage.tsx']) {
     const page = source(file);
