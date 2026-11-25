@@ -18,19 +18,19 @@ export const AtRiskTable: React.FC<{ data: CarePayload['at_risk'] }> = ({ data }
 
   return (
     <div className="overflow-x-auto rounded-xl border border-red-200">
-      <table className="w-full text-left text-sm">
+      <table data-table="native" className="w-full text-left text-sm">
         <thead>
           <tr className="bg-red-50/60 border-b border-red-200">
-            <th className="py-2.5 px-3 font-semibold text-red-700">Học viên</th>
-            <th className="py-2.5 px-3 font-semibold text-red-700">Mốc buổi</th>
-            <th className="py-2.5 px-3 font-semibold text-red-700">CSKH</th>
-            <th className="py-2.5 px-3 font-semibold text-red-700">Ngày log</th>
+            <th scope="col" className="py-2.5 px-3 font-semibold text-red-700">Học viên</th>
+            <th scope="col" className="py-2.5 px-3 font-semibold text-red-700">Mốc buổi</th>
+            <th scope="col" className="py-2.5 px-3 font-semibold text-red-700">CSKH</th>
+            <th scope="col" className="py-2.5 px-3 font-semibold text-red-700">Ngày chăm sóc</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-border/60">
           {data.map((r) => (
             <tr key={r.enrollment_id} className="hover:bg-red-50/40">
-              <td className="py-2.5 px-3 font-medium text-text-primary">
+              <td data-align="left" data-wrap="normal" className="py-2.5 px-3 font-medium text-text-primary">
                 <button
                   type="button"
                   onClick={() => navigate(`/care?tab=logs&enrollment_id=${r.enrollment_id}`)}
@@ -41,11 +41,11 @@ export const AtRiskTable: React.FC<{ data: CarePayload['at_risk'] }> = ({ data }
                   <span>{r.student_name}</span>
                 </button>
               </td>
-              <td className="py-2.5 px-3 text-text-secondary">
+              <td data-align="center" data-wrap="nowrap" className="py-2.5 px-3 text-text-secondary">
                 {r.after_session_number ? `Buổi ${r.after_session_number}` : '—'}
               </td>
-              <td className="py-2.5 px-3 text-text-secondary">{r.cs_name || '—'}</td>
-              <td className="py-2.5 px-3 text-text-muted">{new Date(r.last_log_at).toLocaleDateString('vi-VN')}</td>
+              <td data-align="left" data-wrap="normal" className="py-2.5 px-3 text-text-secondary">{r.cs_name || '—'}</td>
+              <td data-align="center" data-wrap="nowrap" className="py-2.5 px-3 text-text-muted">{new Date(r.last_log_at).toLocaleDateString('vi-VN')}</td>
             </tr>
           ))}
         </tbody>

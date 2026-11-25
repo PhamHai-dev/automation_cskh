@@ -220,6 +220,7 @@ export const lineApi = {
   },
 
   createLink: async (data: {
+    program_type?: 'ALL' | 'KAIWA' | 'JLPT';
     student_id: number;
     line_account_id: number;
     line_group_id?: number | null;

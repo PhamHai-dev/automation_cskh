@@ -80,7 +80,15 @@ export interface EncryptedCredentialsBundle {
   checksum?: string;
 }
 
+export type CareProgram = 'KAIWA' | 'JLPT';
+export interface CareGroupRules { enabled: boolean; kaiwaTemplate: string; jlptTemplate: string; jlptNotes: string[]; updatedAt: string | null }
+
 export interface LinkedStudentCareGroupItem {
+  studentPhone?: string | null;
+  studentEmail?: string | null;
+  programType: CareProgram;
+  suggestedGroupName: string | null;
+  warnings: string[];
   studentId: number;
   studentExternalId: string;
   studentName: string;
@@ -98,7 +106,36 @@ export interface LinkedStudentCareGroupItem {
   newlyLinked: boolean;
 }
 
+export interface GroupDirectoryAccount {
+  id: number;
+  platform: 'ZALO' | 'LINE';
+  name: string;
+  status: string;
+}
+export interface GroupDirectoryItem {
+  programType: CareProgram | null;
+  levelNote: string | null;
+  needsProgramReview: boolean;
+  key: string;
+  id: number;
+  platform: 'ZALO' | 'LINE';
+  account: GroupDirectoryAccount;
+  externalGroupId: string;
+  name: string;
+  avatarUrl: string | null;
+  memberCount: number | null;
+  lastSyncedAt: string | null;
+  classLinks: { programType: CareProgram; studentId: number; studentName: string; studentExternalId: string | null; classId: number; className: string; classCode: string | null }[];
+}
+export interface GroupDirectoryResponse {
+  data: GroupDirectoryItem[];
+  meta: { page: number; pageSize: number; total: number; totalPages: number; accounts: GroupDirectoryAccount[] };
+}
+
 export interface UnlinkedStudentCareGroupItem {
+  studentPhone?: string | null;
+  studentEmail?: string | null;
+  programType: CareProgram;
   studentId: number;
   studentExternalId: string | null;
   studentName: string;
@@ -275,6 +312,13 @@ function normalizeCategories(
 }
 
 export const omnichannelApi = {
+  getCareGroupRules: async (): Promise<CareGroupRules> => (await apiClient.get('/omnichannel/care-group-rules')).data.data,
+  saveCareGroupRules: async (config: Omit<CareGroupRules, 'updatedAt'>, expectedUpdatedAt: string | null): Promise<CareGroupRules> => (await apiClient.put('/omnichannel/care-group-rules', { ...config, expectedUpdatedAt })).data.data,
+  previewCareGroupRules: async (config: Omit<CareGroupRules, 'updatedAt'>, groupName: string, studentName: string): Promise<{ programType: CareProgram; csCode: string; studentId: string; levelNote: string | null } | null> => (await apiClient.post('/omnichannel/care-group-rules/preview', { config, groupName, studentName })).data.data,
+  listGroups: async (params: { scope: 'all' | 'class-linked'; program?: 'ALL' | CareProgram; platform?: 'ALL' | 'ZALO' | 'LINE'; accountId?: number; search?: string; page?: number; pageSize?: number }, signal?: AbortSignal): Promise<GroupDirectoryResponse> => {
+    const response = await apiClient.get('/omnichannel/groups', { params, signal });
+    return response.data;
+  },
   // ─── Rate Limits & Anti-Ban Bounds ──────────────────────────────────────────
 
   getAccountLimits: async (

@@ -179,6 +179,8 @@ Enrollment (
 
 **Quy tắc package (chốt 2026-11-17):** cả Kaiwa `Gói học` và JLPT `Gói SP` đều được chuẩn hóa qua `Enrollment.package_id -> Package`. JLPT `Mã khóa học` lưu riêng tại `Enrollment.course_code`; các ghi mới không dùng `Enrollment.level` để lưu `Gói SP`.
 
+DB local đã áp dụng migration này ngày 2026-11-20 sau snapshot/đối chiếu để xử lý API P2022. Không được chạy app dùng Prisma client mới trên database thiếu migration; chạy `npm exec prisma migrate status` và `npm exec prisma migrate deploy` trong backend khi triển khai phiên bản này. Không dùng reset/db push để bỏ qua migration dữ liệu.
+
 **Không có `class_id` trong Enrollment.** Một Enrollment có thể đi qua nhiều lớp trong cùng hành trình học; quan hệ này được lưu ở `EnrollmentClass`.
 
 Ví dụ:

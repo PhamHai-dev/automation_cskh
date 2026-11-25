@@ -1,3 +1,4 @@
+import { programRelationWhere, lineProgramRelationWhere } from '../omnichannel/care-group-rules';
 /**
  * Automation Worker — BullMQ worker that processes delayed deliveries.
  *
@@ -626,6 +627,23 @@ export async function checkInvariants(delivery: any): Promise<{ shouldSend: bool
     return { shouldSend: false, skipReason: 'CANCELLED' };
   }
 
+  // A queued personal-channel delivery may already contain a care-group target.
+  // Recheck the persisted program binding before sending, including legacy jobs.
+  if (delivery.automation_step?.channel === 'LINE_PERSONAL' && delivery.line_group_id) {
+    const relation = await prisma.lineContactRelation.findFirst({ where: {
+      student_id: delivery.enrollment.student_id, line_account_id: delivery.line_account_id,
+      line_group_id: delivery.line_group_id, program_type: delivery.enrollment.program_type || '__NONE__', relation_status: 'FRIEND',
+    } });
+    if (!relation) return { shouldSend: false, skipReason: 'SKIPPED_NOT_FRIEND' };
+  }
+  if (delivery.automation_step?.channel === 'ZALO_PERSONAL' && delivery.zalo_group_id) {
+    const relation = await prisma.zaloContactRelation.findFirst({ where: {
+      student_id: delivery.enrollment.student_id, zalo_account_id: delivery.zalo_account_id,
+      zalo_group_id: delivery.zalo_group_id, program_type: delivery.enrollment.program_type || '__NONE__', relation_status: 'FRIEND',
+    } });
+    if (!relation) return { shouldSend: false, skipReason: 'SKIPPED_NOT_FRIEND' };
+  }
+
   if (isLineDelivery(delivery)) {
     // LINE account must be ACTIVE
     if (!delivery.line_account || delivery.line_account.status !== 'ACTIVE') {
@@ -640,13 +658,16 @@ export async function checkInvariants(delivery: any): Promise<{ shouldSend: bool
     // Personal LINE channel: relation must be FRIEND OR student has direct line_uid
     if (!delivery.line_group_id) {
       const relation = await prisma.lineContactRelation.findFirst({
+      orderBy: { program_type: 'desc' },
         where: {
+        ...lineProgramRelationWhere(delivery.enrollment.program_type),
           student_id: delivery.enrollment.student_id,
           line_account_id: delivery.line_account_id,
           relation_status: 'FRIEND',
         },
       });
-      const hasStudentLineUid = Boolean(delivery.enrollment?.student?.line_uid?.trim());
+      const directUid = delivery.enrollment?.student?.line_uid?.trim();
+      const hasStudentLineUid = Boolean(directUid && !/^[cC]/.test(directUid));
       if (!relation && !hasStudentLineUid) {
         return { shouldSend: false, skipReason: 'SKIPPED_NOT_FRIEND' };
       }
@@ -668,7 +689,9 @@ export async function checkInvariants(delivery: any): Promise<{ shouldSend: bool
   // Personal channel: relation must still be FRIEND
   if (!delivery.zalo_group_id) {
     const relation = await prisma.zaloContactRelation.findFirst({
+      orderBy: { program_type: 'desc' },
       where: {
+        ...programRelationWhere(delivery.enrollment.program_type),
         student_id: delivery.enrollment.student_id,
         zalo_account_id: delivery.zalo_account_id,
         relation_status: 'FRIEND',
@@ -711,7 +734,9 @@ export async function resolvePersonalTargetLine(
 ): Promise<{ targetId: string; isGroup: boolean } | null> {
   // 1. Try LineContactRelation (including Care Group relation if linked after delivery creation)
   const relation = await prisma.lineContactRelation.findFirst({
+      orderBy: { program_type: 'desc' },
     where: {
+        ...lineProgramRelationWhere(delivery.enrollment.program_type),
       student_id: delivery.enrollment.student_id,
       line_account_id: delivery.line_account_id,
       relation_status: 'FRIEND',
@@ -753,7 +778,7 @@ export async function resolvePersonalTargetLine(
 
   // 2. Try direct Student.line_uid
   const studentLineUid = delivery.enrollment?.student?.line_uid?.trim();
-  if (studentLineUid) {
+  if (studentLineUid && !/^[cC]/.test(studentLineUid)) {
     log.debug('Resolved target LINE UID from student.line_uid', {
       deliveryId: delivery.id,
       studentLineUid,
@@ -822,7 +847,9 @@ export async function resolvePersonalTargetZalo(
 ): Promise<{ targetId: string; threadType: 0 | 1 } | null> {
   // 1. Try ZaloContactRelation (including Care Group if linked after delivery creation)
   const relation = await prisma.zaloContactRelation.findFirst({
+      orderBy: { program_type: 'desc' },
     where: {
+        ...programRelationWhere(delivery.enrollment.program_type),
       student_id: delivery.enrollment.student_id,
       zalo_account_id: delivery.zalo_account_id,
       relation_status: 'FRIEND',

@@ -33,18 +33,23 @@ const STORAGE_PERSIST_DEBOUNCE_MS = 2000;
 
 /**
  * Create a per-account custom `fetch` bound to `proxyUrl` via `undici.ProxyAgent`.
+ * Use Node's native fetch: the SDK passes native Request objects, which
+ * undici.fetch rejects because its Request class has a different brand.
  */
 export function createProxyFetch(
   proxyUrl?: string | null,
+  signal?: AbortSignal,
 ): ((input: any, init?: any) => Promise<any>) | undefined {
   if (!proxyUrl || !proxyUrl.trim()) return undefined;
   try {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { ProxyAgent, fetch: undiciFetch } = require('undici');
-    const dispatcher = new ProxyAgent(proxyUrl.trim());
-    const baseFetch = typeof undiciFetch === 'function' ? undiciFetch : globalThis.fetch;
+    const { ProxyAgent } = require('undici');
+    const dispatcher = new ProxyAgent({ uri: proxyUrl.trim(), allowH2: true, requestTls: { allowH2: true } });
+    signal?.addEventListener('abort', () => {
+      void dispatcher.destroy().catch(() => undefined);
+    }, { once: true });
     return (input: any, init?: any) => {
-      return baseFetch(input, { ...(init ?? {}), dispatcher });
+      return globalThis.fetch(input, { ...(init ?? {}), dispatcher } as any);
     };
   } catch (err) {
     log.warn('[LinePersonalAdapter] Failed to initialize undici.ProxyAgent; falling back to default fetch', {
@@ -262,15 +267,36 @@ export class LinePersonalAdapter {
   }
 
   private buildInitOptions(): Record<string, any> {
-    const customProxyFetch = createProxyFetch(this.proxyUrl);
     const signal = this.abortController?.signal;
+    const customProxyFetch = createProxyFetch(this.proxyUrl, signal);
+    // A custom SDK fetch also handles /PUSH, which requires HTTP/2. Keep
+    // dispatchers scoped to this connection instead of changing global fetch.
+    const { Agent } = require('undici');
+    const dispatcher = customProxyFetch ? undefined : new Agent({ allowH2: true });
+    signal?.addEventListener('abort', () => {
+      void dispatcher?.destroy().catch(() => undefined);
+    }, { once: true });
     const transport = customProxyFetch ?? globalThis.fetch;
     return {
       device: (this.sessionData.device as any) || 'DESKTOPWIN',
       storage: this.storage as any,
-      fetch: (input: any, init?: any) => transport(input, { ...init,
-        signal: signal && init?.signal ? AbortSignal.any([signal, init.signal]) : signal ?? init?.signal,
-      }),
+      // LINE's /enc gateway currently rejects valid requests with empty 404s
+      // (linejs #280). Use the standard HTTPS Thrift endpoint for QR, saved
+      // sessions and subsequent Talk calls. Letter Sealing stays enabled.
+      legy: { encrypted: false },
+      fetch: async (input: any, init?: any) => {
+        const requestSignal = init?.signal ?? input?.signal;
+        const response = await transport(input, { ...init,
+          ...(dispatcher ? { dispatcher } : {}),
+          signal: signal && requestSignal ? AbortSignal.any([signal, requestSignal]) : signal ?? requestSignal,
+        });
+        if (!response.ok) {
+          // Never log headers, body, query, QR secrets or access tokens.
+          const path = new URL(typeof input === 'string' ? input : input.url).pathname;
+          log.warn('LINE HTTP request failed', { accountId: this.accountId, path, status: response.status });
+        }
+        return response;
+      },
     };
   }
 
@@ -477,17 +503,13 @@ export class LinePersonalAdapter {
 
     const existingAccount = await lineRepository.findAccountById(this.accountId);
     if (this.epoch !== runEpoch) return;
-    const keepDisplayName =
-      existingAccount?.display_name &&
-      !existingAccount.display_name.startsWith('LINE ') &&
-      existingAccount.display_name !== 'LINE Personal'
-        ? existingAccount.display_name
-        : displayName || existingAccount?.display_name || null;
+    // The setup name is a placeholder until LINE returns its own profile.
+    const profileDisplayName = displayName?.trim() || existingAccount?.display_name || null;
 
     const updated = await lineRepository.updateAccount(this.accountId, {
       status: 'ACTIVE',
       ...(mid ? { line_mid: mid } : {}),
-      ...(keepDisplayName ? { display_name: keepDisplayName } : {}),
+      ...(profileDisplayName ? { display_name: profileDisplayName } : {}),
       ...(pictureUrl ? { avatar_url: pictureUrl } : {}),
       encrypted_session_data: encrypted,
       qr_code: null,
@@ -791,12 +813,40 @@ export class LinePersonalAdapter {
   }
 
   /**
+   * Refresh the signed-in account's identity alongside a manual contact sync.
+   * Never replace a saved name with an empty provider value.
+   */
+  async syncProfile(): Promise<void> {
+    const client = this.client;
+    if (!client) return;
+    const runEpoch = this.epoch;
+    const profile = (await client.getMyProfile?.()) ?? (await client.base?.talk?.getProfile?.());
+    if (!profile || this.epoch !== runEpoch || this.client !== client) return;
+    const displayName = typeof profile.displayName === 'string' ? profile.displayName.trim() : '';
+    const mid = typeof profile.mid === 'string' ? profile.mid.trim() : '';
+    const pictureUrl = profile.pictureStatus ? `https://obs.line-scdn.net/${profile.pictureStatus}` : null;
+    if (!displayName && !mid && !pictureUrl) return;
+    const updated = await lineRepository.updateAccount(this.accountId, {
+      ...(displayName ? { display_name: displayName } : {}),
+      ...(mid ? { line_mid: mid } : {}),
+      ...(pictureUrl ? { avatar_url: pictureUrl } : {}),
+    });
+    if (this.epoch !== runEpoch || this.client !== client) return;
+    emitLineStatus({
+      accountId: this.accountId, accountType: 'PERSONAL', status: 'ACTIVE',
+      displayName: updated.display_name, lineMid: updated.line_mid, avatarUrl: updated.avatar_url,
+      timestamp: new Date().toISOString(),
+    });
+  }
+
+  /**
    * Sync all contacts (`LineFriend`) and active message boxes (`LineConversation`) for this Personal LINE account.
    */
   async syncFriends(): Promise<{ synced: number }> {
     if (!this.client) return { synced: 0 };
 
     try {
+      await this.syncProfile();
       const contactByMid = new Map<string, any>();
 
       if (typeof this.client.fetchUsers === 'function') {

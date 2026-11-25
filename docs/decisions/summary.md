@@ -2,6 +2,10 @@
 
 ## 8. Quyết định đã chốt
 
+### Phạm vi nhóm và danh bạ đa kênh — người dùng chốt 2026-11-20
+
+Nhóm Lớp Đa kênh chỉ liệt kê nhóm Zalo/LINE có liên kết GROUP đã lưu với học viên có lớp (EnrollmentClass), không coi toàn bộ nhóm sync là nhóm lớp. Danh bạ đa kênh gồm Danh sách bạn bè và Danh sách nhóm và cộng đồng; mục nhóm chứa toàn bộ nhóm sync từ tài khoản sở hữu. Không tạo quan hệ Class ↔ Group mới, không suy luận liên kết bằng tên khi đọc danh sách, không thay phạm vi truy cập kênh hiện có. Chi tiết: `../api/omnichannel.md`.
+
 1. **Scope dữ liệu:** tập trung Sheet `1.Chăm sóc` và `3.Chấm buổi`; không thiết kế module tái tục/bàn giao ca trong MVP này.
 2. **Student:** một con người; chỉ chứa thông tin cá nhân.
 3. **Enrollment:** một gói/lần đăng ký học; tương ứng gần nhất với một dòng nghiệp vụ ở Sheet 1.

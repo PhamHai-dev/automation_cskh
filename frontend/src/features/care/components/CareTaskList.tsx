@@ -66,14 +66,14 @@ export const CareTaskList: React.FC<CareTaskListProps> = ({
 
       {/* Task List / Table */}
       {loading ? (
-        <div className="py-12 text-center text-gray-500 bg-white rounded-xl border border-gray-200">
+        <div className="py-12 text-center text-text-muted bg-surface rounded-xl border border-border">
           Đang tải danh sách nhiệm vụ...
         </div>
       ) : tasks.length === 0 ? (
-        <div className="py-16 text-center bg-white rounded-xl border border-dashed border-gray-200">
+        <div className="py-16 text-center bg-surface rounded-xl border border-dashed border-border">
           <Clock className="w-12 h-12 mx-auto text-gray-300 mb-2" />
-          <p className="font-medium text-gray-600">Không có nhiệm vụ nào phù hợp với bộ lọc</p>
-          <p className="text-xs text-gray-400 mt-1">Hãy tạo nhiệm vụ mới để ghi nhớ lịch hẹn gọi lại hoặc vấn đề cần xử lý</p>
+          <p className="font-medium text-text-secondary">Không có nhiệm vụ nào phù hợp với bộ lọc</p>
+          <p className="text-xs text-text-muted mt-1">Hãy tạo nhiệm vụ mới để ghi nhớ lịch hẹn gọi lại hoặc vấn đề cần xử lý</p>
         </div>
       ) : (
         <div className="space-y-3">
@@ -97,8 +97,8 @@ export const CareTaskList: React.FC<CareTaskListProps> = ({
             return (
               <div
                 key={task.id}
-                className={`bg-white rounded-xl border p-4 shadow-sm transition-all hover:shadow flex flex-col md:flex-row md:items-center justify-between gap-4 ${
-                  isOverdue ? 'border-red-300 bg-red-50/20' : 'border-gray-200'
+                className={`bg-surface rounded-xl border p-4 shadow-sm transition-all hover:shadow flex flex-col md:flex-row md:items-center justify-between gap-4 ${
+                  isOverdue ? 'border-red-300 bg-red-50/20' : 'border-border'
                 }`}
               >
                 <div className="space-y-1.5 flex-1 min-w-0">
@@ -114,33 +114,33 @@ export const CareTaskList: React.FC<CareTaskListProps> = ({
                     )}
                   </div>
 
-                  <div className="font-semibold text-gray-900 text-sm md:text-base leading-snug truncate">
+                  <div className="font-semibold text-text-primary text-sm md:text-base leading-snug truncate">
                     {task.title || 'Nhiệm vụ không tiêu đề'}
                   </div>
 
                   {task.note && (
-                    <div className="text-xs text-gray-600 line-clamp-2 leading-relaxed">
+                    <div className="text-xs text-text-secondary line-clamp-2 leading-relaxed">
                       {task.note}
                     </div>
                   )}
 
-                  <div className="flex flex-wrap items-center gap-4 text-xs text-gray-500 pt-1">
+                  <div className="flex flex-wrap items-center gap-4 text-xs text-text-muted pt-1">
                     {task.enrollment && (
                       <span>
                         Học viên:{' '}
-                        <strong className="text-gray-700">
+                        <strong className="text-text-secondary">
                           {task.enrollment.student?.full_name || 'Học viên'} (
                           {task.enrollment.student?.phone || 'Chưa có SĐT'})
                         </strong>
                       </span>
                     )}
                     <span className="flex items-center gap-1">
-                      <Calendar className="w-3.5 h-3.5 text-gray-400" />
-                      Hạn: <strong className={isOverdue ? 'text-red-600' : 'text-gray-700'}>{formattedDue}</strong>
+                      <Calendar className="w-3.5 h-3.5 text-text-muted" />
+                      <span>Hạn: <strong className={isOverdue ? 'text-red-600' : 'text-text-secondary'}>{formattedDue}</strong></span>
                     </span>
                     {task.assigned_to && (
                       <span>
-                        Phụ trách: <strong className="text-gray-700">{task.assigned_to.name}</strong>
+                        Phụ trách: <strong className="text-text-secondary">{task.assigned_to.name}</strong>
                       </span>
                     )}
                   </div>
@@ -164,7 +164,7 @@ export const CareTaskList: React.FC<CareTaskListProps> = ({
                         size="sm"
                         variant="outline"
                         onClick={() => onCancel(task.id)}
-                        className="text-gray-500 hover:text-red-600 hover:border-red-300"
+                        className="text-text-muted hover:text-red-600 hover:border-red-300"
                         leftIcon={<XCircle className="w-3.5 h-3.5" />}
                         title="Hủy nhiệm vụ"
                       >
@@ -176,7 +176,7 @@ export const CareTaskList: React.FC<CareTaskListProps> = ({
                     size="sm"
                     variant="outline"
                     onClick={() => onEdit(task)}
-                    className="text-gray-600 hover:text-blue-600"
+                    className="text-text-secondary hover:text-blue-600"
                     leftIcon={<Edit className="w-3.5 h-3.5" />}
                     title="Chỉnh sửa"
                   />
@@ -186,11 +186,11 @@ export const CareTaskList: React.FC<CareTaskListProps> = ({
           })}
 
           {tasks.length > 0 && (
-            <div className="bg-white rounded-xl border border-gray-200 px-4 py-3 flex flex-wrap items-center justify-between gap-3 text-xs text-gray-600">
+            <div className="bg-surface rounded-xl border border-border px-4 py-3 flex flex-wrap items-center justify-between gap-3 text-xs text-text-secondary">
               <span>
-                Hiển thị <strong className="text-gray-900">{startIdx}</strong>–
-                <strong className="text-gray-900">{endIdx}</strong> /{' '}
-                <strong className="text-gray-900">{tasks.length}</strong> nhiệm vụ
+                Hiển thị <strong className="text-text-primary">{startIdx}</strong>–
+                <strong className="text-text-primary">{endIdx}</strong> /{' '}
+                <strong className="text-text-primary">{tasks.length}</strong> nhiệm vụ
               </span>
               <div className="flex items-center gap-3">
                 <div className="flex items-center gap-1.5">
@@ -216,7 +216,7 @@ export const CareTaskList: React.FC<CareTaskListProps> = ({
                   >
                     <ChevronLeft className="w-3.5 h-3.5" />
                   </Button>
-                  <span className="px-2 font-semibold text-gray-800">
+                  <span className="px-2 font-semibold text-text-primary">
                     {safePage} / {totalPages}
                   </span>
                   <Button

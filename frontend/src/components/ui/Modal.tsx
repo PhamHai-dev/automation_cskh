@@ -1,5 +1,10 @@
-import React, { useEffect, ReactNode } from 'react';
+import React, { useEffect, useId, useRef, ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
+import { Button } from './Button';
+
+const openDialogs: string[] = [];
+let previousBodyOverflow = '';
 
 export interface ModalProps {
   isOpen: boolean;
@@ -22,21 +27,57 @@ export const Modal: React.FC<ModalProps> = ({
   size = 'md',
   closeOnOutsideClick = true,
 }) => {
+  const dialogId = useId();
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const closeRef = useRef(onClose);
+  const wasOpen = useRef(false);
+  const openerRef = useRef<HTMLElement | null>(null);
+  closeRef.current = onClose;
+  if (isOpen && !wasOpen.current && typeof document !== 'undefined') {
+    openerRef.current = document.activeElement as HTMLElement | null;
+  }
+  wasOpen.current = isOpen;
+
   useEffect(() => {
+    if (!isOpen) return;
+    const previousFocus = openerRef.current;
+    if (openDialogs.length === 0) previousBodyOverflow = document.body.style.overflow;
+    openDialogs.push(dialogId);
+    document.body.style.overflow = 'hidden';
+    const focusable = () => Array.from(dialogRef.current?.querySelectorAll<HTMLElement>(
+      'button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex="0"]'
+    ) || []).filter(el => el.getClientRects().length > 0 && !el.closest('[hidden], [inert]'));
+    if (!dialogRef.current?.contains(document.activeElement)) dialogRef.current?.focus();
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isOpen) {
-        onClose();
+      if (openDialogs[openDialogs.length - 1] !== dialogId) return;
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        closeRef.current();
+      }
+      if (e.key === 'Tab') {
+        const elements = focusable();
+        const first = elements[0], last = elements[elements.length - 1];
+        if (!first) { e.preventDefault(); dialogRef.current?.focus(); }
+        else if (!dialogRef.current?.contains(document.activeElement)) {
+          e.preventDefault(); (e.shiftKey ? last : first).focus();
+        }
+        else if (e.shiftKey && (document.activeElement === first || document.activeElement === dialogRef.current)) {
+          e.preventDefault(); last.focus();
+        } else if (!e.shiftKey && (document.activeElement === last || document.activeElement === dialogRef.current)) {
+          e.preventDefault(); first.focus();
+        }
       }
     };
-    if (isOpen) {
-      document.body.style.overflow = 'hidden';
-      window.addEventListener('keydown', handleKeyDown);
-    }
+    document.addEventListener('keydown', handleKeyDown);
     return () => {
-      document.body.style.overflow = 'unset';
-      window.removeEventListener('keydown', handleKeyDown);
+      const index = openDialogs.indexOf(dialogId);
+      if (index >= 0) openDialogs.splice(index, 1);
+      if (openDialogs.length === 0) document.body.style.overflow = previousBodyOverflow;
+      document.removeEventListener('keydown', handleKeyDown);
+      if (previousFocus?.isConnected) previousFocus.focus();
     };
-  }, [isOpen, onClose]);
+  }, [isOpen, dialogId]);
 
   if (!isOpen) return null;
 
@@ -49,8 +90,8 @@ export const Modal: React.FC<ModalProps> = ({
     full: 'max-w-[95vw]',
   };
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto">
+  return createPortal(
+    <div className="fixed inset-0 z-[140] flex min-w-0 items-center justify-center p-3 sm:p-4">
       {/* Backdrop */}
       <div
         className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm transition-opacity"
@@ -59,45 +100,53 @@ export const Modal: React.FC<ModalProps> = ({
 
       {/* Modal Dialog */}
       <div
-        className={`relative w-full ${sizeClasses[size]} bg-surface rounded-2xl shadow-soft-lg border border-border overflow-hidden z-10 my-8 transition-all transform scale-100 flex flex-col max-h-[90vh]`}
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={title ? `${dialogId}-title` : undefined}
+        aria-label={!title ? 'Hộp thoại' : undefined}
+        aria-describedby={description ? `${dialogId}-description` : undefined}
+        tabIndex={-1}
+        className={`relative min-w-0 w-full ${sizeClasses[size]} bg-surface rounded-2xl shadow-soft-lg border border-border overflow-hidden z-10 outline-none flex flex-col max-h-[calc(100dvh-1.5rem)] sm:max-h-[calc(100dvh-2rem)]`}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
         {(title || description) && (
-          <div className="flex items-start justify-between p-5 sm:p-6 border-b border-border/80 bg-surface">
-            <div>
+          <div className="shrink-0 flex items-start justify-between gap-3 p-4 sm:p-6 border-b border-border/80 bg-surface">
+            <div className="min-w-0 break-words">
               {title && (
-                <h3 className="text-base sm:text-lg font-bold text-text-primary tracking-tight">
+                <h3 id={`${dialogId}-title`} className="text-base sm:text-lg font-bold text-text-primary tracking-tight">
                   {title}
                 </h3>
               )}
               {description && (
-                <p className="mt-1 text-xs sm:text-sm text-text-muted leading-relaxed">
+                <p id={`${dialogId}-description`} className="mt-1 text-xs sm:text-sm text-text-muted leading-relaxed">
                   {description}
                 </p>
               )}
             </div>
-            <button
+            <Button
               type="button"
+              variant="ghost"
+              size="icon-sm"
               onClick={onClose}
-              className="text-text-muted hover:text-text-primary p-1.5 rounded-lg hover:bg-surface-muted transition-colors ml-4 shrink-0"
               aria-label="Đóng"
             >
               <X className="w-5 h-5" />
-            </button>
+            </Button>
           </div>
         )}
 
         {/* Body */}
-        <div className="p-5 sm:p-6 overflow-y-auto flex-1">{children}</div>
+        <div className="min-h-0 min-w-0 p-4 sm:p-6 overflow-y-auto overscroll-contain flex-1">{children}</div>
 
         {/* Footer */}
         {footer && (
-          <div className="flex items-center justify-end gap-3 p-4 sm:p-5 border-t border-border/80 bg-surface-muted/50">
+          <div className="shrink-0 flex flex-wrap items-center justify-end gap-2 p-4 sm:p-5 border-t border-border/80 bg-surface-muted/50 [&>.flex]:flex-wrap">
             {footer}
           </div>
         )}
       </div>
-    </div>
+    </div>, document.body
   );
 };

@@ -139,6 +139,17 @@ States bắt buộc:
 
 Không viết button trực tiếp bằng class Tailwind lặp lại nếu `Button` đáp ứng được.
 
+### Quy chuẩn component và icon — rà soát 2026-11-20
+
+- Button `sm` 32px, `md` 40px, `lg` 44px; nút chỉ icon lần lượt 28/32/40px theo `icon-xs/icon-sm/icon`. Input/Select mặc định 40px, bộ lọc inbox được phép 32–36px như quy ước chuyên biệt. Hàng action dùng flex-wrap, không co chữ/icon để ép vừa một hàng; PageHeader tự chuyển hàng khi thiếu chỗ.
+- Icon chức năng dùng **Lucide**, nét mặc định 2, 16px ở button/form/tab, 20px ở điều hướng, 24px trở lên cho trạng thái rỗng/khối lớn. Icon không flex-shrink. Emoji chỉ dành cho nội dung tin nhắn/cảm xúc, không làm icon chức năng. Logo nhà cung cấp dùng catalog `BrandIcons.tsx`, giữ màu thương hiệu.
+- Màu nền/chữ/viền trung tính dùng `surface`, `text-*`, `border-*`; trạng thái dùng token semantic và Badge chung. Màu Zalo/LINE và nền mô phỏng riêng dùng token `zalo`, `line`, `zalo-preview`, `line-preview`. Không thay màu nội dung rich text, nhóm trạng thái điểm danh hoặc palette biểu đồ đã có ý nghĩa nghiệp vụ.
+- Token màu có kênh RGB trong `tokens.css`; Tailwind dùng `rgb(var(--color-*-rgb) / <alpha-value>)` để các lớp `/20`, `/50`, `/95` được sinh CSS và hiển thị đúng. `text-muted` dùng slate-500 để đọc rõ chữ nhỏ. Radius 8/12/16px và shadow-xs/soft tập trung ở theme.
+- Label trùng tên vẫn phải có ID khác nhau; Input/Select/Textarea dùng `useId`, liên kết label/feedback và `aria-invalid` khi lỗi. Không đổi dữ liệu hoặc field nghiệp vụ chỉ để căn giao diện.
+- Header có vùng breadcrumb co giãn; tìm kiếm hiển thị từ desktop, tên/email tài khoản từ màn hình rộng. Popup/menu phải được giới hạn theo cả chiều ngang và dọc viewport, bao gồm lúc mở gần cuối trang.
+- Modal dùng portal và layer 140 (trên drawer điểm danh 130), Toast layer 150. Header/footer không co, body cuộn trong `100dvh`; action được wrap. Có tên truy cập, Escape chỉ đóng modal trên cùng, focus giữ trong hộp thoại, khóa cuộn được giữ khi còn modal con.
+- Câu hướng dẫn chứa `strong`, `code`, link phải nằm trong cùng một span/block văn bản. Không đặt từng đoạn inline thành các flex item độc lập, vì sẽ chia câu thành cột và làm vỡ dòng.
+
 ## 6. Form controls
 
 Component chuẩn:
@@ -199,6 +210,22 @@ Không viết lại tab bằng chuỗi Tailwind trong từng page.
   `ArrowLeft`, `ArrowRight`, `Home`, `End`.
 - Hiệu ứng chuyển trạng thái ngắn và phải tôn trọng `prefers-reduced-motion`.
 
+## Nhóm lớp và Danh bạ đa kênh — quy ước 2026-11-20
+
+- Nhóm Lớp Đa kênh chỉ có nhóm đã liên kết học viên có lớp qua quan hệ GROUP → Student → Enrollment → EnrollmentClass; bảng có cột lớp/học viên để đối chiếu. Không fallback sang toàn bộ nhóm sync khi rỗng/lỗi.
+- Danh bạ có hai `HorizontalTabs`: Danh sách bạn bè, Danh sách nhóm và cộng đồng. Nhóm dùng `GroupDirectory scope="all"`, nhóm lớp dùng `scope="class-linked"`; cả hai dùng chung FilterBar/DataTable và server pagination, giữ contract căn cột.
+- Hai bảng nhóm dùng DataTable `tableLayout="fixed"`, `minTableWidth=1080`, tỷ lệ nhóm/tài khoản/lớp/thành viên/thao tác 30/17/29/10/14%. Text nhiều dòng căn trái và mép trên; số thành viên căn phải, header giữa. Khối nút grid 3 vị trí giữ tọa độ hai thao tác chung ở Zalo/LINE. Không cho chuỗi dài kéo giãn cột hoặc rơi sang cột kế; màn hình nhỏ cuộn riêng bảng.
+- Đồng bộ danh bạ nhóm là action riêng; trang nhóm lớp chỉ làm mới liên kết đã lưu. Metadata chưa có dùng “—”; không tự bịa số thành viên hoặc loại cộng đồng nếu nguồn chưa phân biệt.
+
+## Hộp thư đa kênh — quy ước 2026-11-20
+
+- Một hộp thư duy nhất. Tìm kiếm, Nền tảng (Tất cả/Zalo/LINE), Tài khoản, Loại hội thoại và Trạng thái đặt trong cùng `FilterBar variant="embedded"` ở đầu danh sách; header trang chỉ có tiêu đề. Các option dùng `Select` chung, bố trí hai cột và căn đáy cùng hàng, label rõ; không xé bộ lọc thành tab/vùng ở các nơi khác nhau. Nền tảng giới hạn option tài khoản; loại và trạng thái lọc kết hợp, có Xóa bộ lọc và số kết quả. Tài khoản/nền tảng thực tế của hội thoại hiện trong dòng/header chat.
+- Chế độ gọn mặc định: tìm kiếm cùng nút lọc bổ sung/làm mới trên một hàng, nền tảng/tài khoản hàng dưới; control cao 32–36px, khoảng cách 8px. Loại/trạng thái thu trong nút Bộ lọc bổ sung có `aria-expanded`/`aria-controls`; badge và dòng số kết quả báo số điều kiện bổ sung đang áp dụng, thu gọn không xóa điều kiện. Bỏ header phụ của FilterBar, đặt reset cạnh số kết quả; khối lọc mặc định dưới 160px chưa tính padding ngoài.
+- Workspace chat là layout chuyên biệt full height trong app shell, dùng `InboxWorkspace`/`InboxThread`; không lồng thêm viewport height ở khung con. Danh sách rộng 320px tablet, 384px desktop lớn; mobile dưới 768px hiện một khung và nút quay lại.
+- Mọi nền tảng dùng bubble 14px, tin nhận trái/nền surface, tin gửi phải/nền primary; giữ xuống dòng và wrap chuỗi dài. Ngày phân tách theo vi-VN, giờ HH:mm; trạng thái đã nhận/đã xem chỉ khi có dữ liệu thật. Nhận diện nền tảng bằng nhãn, không đổi toàn bộ màu UI.
+- Composer chung dùng Textarea + Button; Enter gửi, Shift+Enter xuống dòng, IME không tự gửi; giữ draft khi lỗi, chặn gửi trùng. Cuộn theo tin mới khi đang gần cuối danh sách.
+- Không chèn nút riêng “Nhắn từ danh bạ Zalo” vào khối lọc; sử dụng trang Danh bạ đã có. Cảm xúc/bình chọn Zalo nằm tại hội thoại; LINE OA chỉ có nhãn phản hồi miễn phí khi token còn hạn. Thông tin hội thoại dùng modal chung. Loading/empty/error/retry cùng component; lỗi provider không làm mất dữ liệu provider khác.
+
 ## 9. DataTable
 
 Đây là component quan trọng vì product có nhiều bảng.
@@ -224,6 +251,27 @@ Kích thước mặc định:
 - font 14px
 
 Không để mỗi page tự viết table style riêng.
+
+### Quy tắc căn cột và xuống dòng (2026-11-20)
+
+Áp dụng cho mọi bảng dữ liệu, bảng trong modal và ma trận. Tiêu đề cột luôn căn giữa theo chiều ngang và dọc, bất kể cách căn giá trị bên dưới. Tiêu đề ngắn gọn, dùng tiếng Việt nhất quán; chỉ chia thành nhiều dòng khi chủ đích nhóm ngày/tháng hoặc nhóm cột, không để co cột làm vỡ từng từ.
+
+| Loại giá trị | Căn giá trị | Cách hiển thị |
+| --- | --- | --- |
+| Họ tên, tên lớp/gói/nguồn, email, địa chỉ/link, nội dung, ghi chú, lý do, giá trị trước/sau hỗn hợp | Trái | Cho phép xuống dòng theo từ; chuỗi liền dài được ngắt khi cần |
+| STT, checkbox, mã/ID ngắn, SĐT, ngày/giờ/lịch, chương trình/trình độ, giới tính, trạng thái, loại/chế độ | Giữa | Giữ mã/ngày/số điện thoại và badge trên một dòng |
+| Số lượng, tiền, tổng/số buổi còn lại, thời lượng, điểm, tỷ lệ | Phải | Một dòng, `tabular-nums`; giữ nguyên đơn vị và dấu âm |
+| Thao tác, switch, nút xem báo cáo, ô trạng thái điểm danh theo ngày | Giữa | Nhóm nút không co icon, không tách chữ, căn cùng trục với tiêu đề |
+| Ô phối hợp trạng thái + nội dung nhiều phần trong ma trận | Căn ngoài theo kiểu dữ liệu; bố cục trong ô có chủ đích | Dùng `data-cell-layout="custom"` khi cần giữ phân bố nội bộ |
+
+- `Column<T>.align` của `DataTable` là bắt buộc, chỉ điều khiển phần thân; `wrap: true` dành cho nội dung, `wrap: false` dành cho giá trị ngắn. Không dùng `className` để đổi căn lề tiêu đề theo dữ liệu.
+- Bảng JSX riêng khai báo `data-table="native"`, từng ô nội dung khai báo `data-align="left|center|right"` và `data-wrap="normal|nowrap"`. Header dùng `scope="col"` hoặc `scope="colgroup"` cho nhóm cột. Bảng biểu mẫu báo cáo dùng `data-table="report"` để giữ bố cục biểu mẫu.
+- CSS chung ở `frontend/src/styles/tables.css` đồng bộ căn lề của ô và nhóm flex trực tiếp. Không thêm selector ghi đè tiêu đề căn trái/phải theo page.
+- Không đặt `nowrap` cho cả bảng. Tên dài/nội dung phải có đủ độ rộng hoặc wrap; nếu chủ đích dùng ellipsis, cung cấp `title` đầy đủ hoặc hành động xem chi tiết. Không cắt âm thầm mã, ngày hay nút thao tác bằng `overflow-hidden`.
+- Container bảng cuộn ngang riêng; không làm tràn toàn trang. Cột sticky giữ kích thước/offset desktop; dưới 640px bỏ ghim ngang để người dùng tiếp cận mọi cột, giữ khả năng sticky dọc cho header khi có.
+- Không đổi loại dữ liệu, số tiền, số buổi, quyền sửa hoặc logic nghiệp vụ chỉ để căn bảng. Form/input trong ô tuân theo cùng cách căn dữ liệu.
+- Riêng bảng Tài khoản & kênh, theo yêu cầu người dùng: giá trị Nhân viên CSKH căn giữa. Bỏ hẳn cột Giới hạn sử dụng cho mọi loại tài khoản và bộ lọc; không ẩn/hiện có điều kiện hoặc thay bằng lời nhắc cấu hình lặp lại.
+- Chạy `node --test frontend/tests/table-layout.test.cjs` từ root để kiểm tra contract toàn source và trạng thái render cơ bản; kiểm tra trình duyệt ở 1440/768/390px với tên dài, số âm, badge dài và cột thao tác.
 
 ### 8.1. AttendanceMatrixTable (Ma trận điểm danh theo lớp & theo Ngày)
 

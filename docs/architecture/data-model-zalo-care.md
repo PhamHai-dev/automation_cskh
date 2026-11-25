@@ -2,6 +2,8 @@
 
 ### 3.12. ZaloAccount & quan hệ bạn bè
 
+**Cập nhật 2026-11-20:** ZaloContactRelation và LineContactRelation có `program_type` (ALL/KAIWA/JLPT), unique `(student_id, account_id, program_type)`. GROUP mới bắt buộc KAIWA/JLPT; USER ALL dùng chung. GROUP legacy ALL được giữ để xác định chương trình lại; không dùng làm đích gửi tự động. Quy tắc mẫu tên lưu AppSetting, chi tiết tại `../api/omnichannel.md`.
+
 ```text
 ZaloAccount (
   id,

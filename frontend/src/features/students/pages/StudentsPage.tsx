@@ -220,7 +220,7 @@ const InlineEditableCell: React.FC<InlineEditableCellProps> = ({
       >
         <span
           className={`text-xs block truncate max-w-[200px] ${
-            value ? 'text-slate-700 font-medium' : 'text-slate-400 italic'
+            value ? 'text-text-secondary font-medium' : 'text-text-muted italic'
           }`}
         >
           {value || '—'}
@@ -265,10 +265,10 @@ const InlineEditableCell: React.FC<InlineEditableCellProps> = ({
               }
             }}
             rows={2}
-            className="w-full text-xs p-1.5 bg-white border-2 border-primary rounded-lg focus:outline-none shadow-md resize-none text-slate-800"
+            className="w-full text-xs p-1.5 bg-surface border-2 border-primary rounded-lg focus:outline-none shadow-md resize-none text-text-primary"
             placeholder={placeholder}
           />
-          <div className="text-[10px] text-slate-400 text-right pr-1">Enter: Lưu • Esc: Hủy</div>
+          <div className="text-[10px] text-text-muted text-right pr-1">Enter: Lưu • Esc: Hủy</div>
         </div>
       );
     }
@@ -290,7 +290,7 @@ const InlineEditableCell: React.FC<InlineEditableCellProps> = ({
               setDraft(value || '');
             }
           }}
-          className="w-full text-xs p-1 bg-white border-2 border-primary rounded-lg focus:outline-none shadow-md text-slate-800"
+          className="w-full text-xs p-1 bg-surface border-2 border-primary rounded-lg focus:outline-none shadow-md text-text-primary"
           placeholder={placeholder}
         />
       </div>
@@ -307,7 +307,7 @@ const InlineEditableCell: React.FC<InlineEditableCellProps> = ({
     >
       <span
         className={`text-xs block truncate max-w-[200px] ${
-          value ? 'text-slate-800 font-medium' : 'text-slate-400 italic'
+          value ? 'text-text-primary font-medium' : 'text-text-muted italic'
         }`}
       >
         {value || placeholder}
@@ -1396,7 +1396,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
     ...(isAdminOrManage
       ? [
           {
-            key: 'select',
+            align: 'center' as const, wrap: false, key: 'select',
             header: (
               <div className="flex items-center justify-center">
                 <input
@@ -1404,7 +1404,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
                   checked={isAllPageSelected}
                   onChange={toggleSelectAllCurrentPage}
                   onClick={(e) => e.stopPropagation()}
-                  className="h-4 w-4 rounded border-slate-300 text-primary focus:ring-primary cursor-pointer"
+                  className="h-4 w-4 rounded border-border-strong text-primary focus:ring-primary cursor-pointer"
                   title="Chọn tất cả học viên trên trang này"
                 />
               </div>
@@ -1421,7 +1421,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
                   type="checkbox"
                   checked={selectedStudentIds.includes(item.id)}
                   onChange={() => toggleSelectStudent(item.id)}
-                  className="h-4 w-4 rounded border-slate-300 text-primary focus:ring-primary cursor-pointer"
+                  className="h-4 w-4 rounded border-border-strong text-primary focus:ring-primary cursor-pointer"
                 />
               </div>
             ),
@@ -1429,20 +1429,20 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
         ]
       : []),
     {
-      key: 'stt',
+      align: 'center' as const, wrap: false, key: 'stt',
       header: '#',
       width: '52px',
       className: `${
         isAdminOrManage ? 'sticky left-[40px]' : 'sticky left-0'
       } z-20 w-[52px] min-w-[52px] max-w-[52px] text-center border-r border-border/60 overflow-hidden`,
       cell: (_item, rowIndex) => (
-        <span className="font-bold text-slate-400 text-xs text-center block">
+        <span className="font-bold text-text-muted text-xs text-center block">
           {(page - 1) * pageSize + rowIndex + 1}
         </span>
       ),
     },
     {
-      key: 'external_id',
+      align: 'center' as const, wrap: false, key: 'external_id',
       header: 'Mã học viên',
       width: '132px',
       className: `${
@@ -1455,7 +1455,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
       ),
     },
     {
-      key: 'full_name',
+      align: 'left' as const, wrap: true, key: 'full_name',
       header: 'Họ và tên',
       width: '210px',
       className: `${
@@ -1467,7 +1467,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
             {item.full_name.charAt(0).toUpperCase()}
           </div>
           <span
-            className="font-bold text-slate-900 text-xs hover:text-blue-600 cursor-pointer truncate"
+            className="font-bold text-text-primary text-xs hover:text-blue-600 cursor-pointer truncate"
             onClick={() => setViewingStudent(item)}
             title={item.full_name}
           >
@@ -1477,7 +1477,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
       ),
     },
     {
-      key: 'program_type',
+      align: 'center' as const, wrap: false, key: 'program_type',
       header: 'Khóa',
       cell: (item) => {
         const enr = item.enrollments?.[0];
@@ -1497,7 +1497,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
       },
     },
     {
-      key: 'cs_staff_code',
+      align: 'center' as const, wrap: false, key: 'cs_staff_code',
       header: 'CVHT',
       cell: (item) => {
         const enr = item.enrollments?.[0];
@@ -1580,26 +1580,26 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
       },
     },
     {
-      key: 'paid_at',
+      align: 'center' as const, wrap: false, key: 'paid_at',
       header: 'Ngày nộp học phí',
       cell: (item) => {
         const enr = item.enrollments?.[0];
         const date = enr?.paid_at || enr?.start_date;
         return (
-          <span className="text-slate-600 text-xs whitespace-nowrap">
+          <span className="text-text-secondary text-xs whitespace-nowrap">
             {date ? new Date(date).toLocaleDateString('vi-VN') : '—'}
           </span>
         );
       },
     },
     {
-      key: 'sale_name',
+      align: 'left' as const, wrap: true, key: 'sale_name',
       header: 'Sale phụ trách',
       cell: (item) => {
         const enr = item.enrollments?.[0];
         const sale = enr?.sale_name || (enr as any)?.sale?.name || '—';
         return (
-          <div className="flex items-center gap-1.5 font-semibold text-slate-800 text-xs whitespace-nowrap">
+          <div className="flex items-center gap-1.5 font-semibold text-text-primary text-xs whitespace-nowrap">
             <UserCheck className="w-3.5 h-3.5 text-blue-600 shrink-0" />
             <span>{sale}</span>
           </div>
@@ -1607,47 +1607,47 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
       },
     },
     {
-      key: 'student_source_status',
+      align: 'center' as const, wrap: false, key: 'student_source_status',
       header: 'Trạng thái HV',
       cell: (item) => {
         const enr = item.enrollments?.[0];
         const status = enr?.student_source_status || '—';
         return (
-          <span className="text-[11px] font-medium text-slate-700 bg-slate-100 px-2 py-0.5 rounded-full whitespace-nowrap">
+          <span className="text-[11px] font-medium text-text-secondary bg-surface-muted px-2 py-0.5 rounded-full whitespace-nowrap">
             {status}
           </span>
         );
       },
     },
     {
-      key: 'gender',
+      align: 'center' as const, wrap: false, key: 'gender',
       header: 'Giới tính',
       cell: (item) => (
-        <span className="text-slate-600 text-xs whitespace-nowrap">
+        <span className="text-text-secondary text-xs whitespace-nowrap">
           {item.gender ? GENDER_LABELS[item.gender] || item.gender : '—'}
         </span>
       ),
     },
     {
-      key: 'phone',
+      align: 'center' as const, wrap: false, key: 'phone',
       header: 'Số điện thoại',
       cell: (item) => (
-        <span className="font-mono text-slate-700 text-xs whitespace-nowrap">
+        <span className="font-mono text-text-secondary text-xs whitespace-nowrap">
           {item.phone || '—'}
         </span>
       ),
     },
     {
-      key: 'email',
+      align: 'left' as const, wrap: true, key: 'email',
       header: 'Email',
       cell: (item) => (
-        <span className="text-slate-600 text-xs max-w-[160px] truncate block" title={item.email || ''}>
+        <span className="text-text-secondary text-xs max-w-[160px] truncate block" title={item.email || ''}>
           {item.email || '—'}
         </span>
       ),
     },
     {
-      key: 'course_content',
+      align: 'left' as const, wrap: true, key: 'course_content',
       header: 'Nội dung khóa',
       cell: (item) => {
         const enr = item.enrollments?.[0];
@@ -1658,14 +1658,14 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
             ? '—'
             : raw;
         return (
-          <span className="text-slate-700 text-xs whitespace-nowrap max-w-[180px] truncate block">
+          <span title={String(displayVal ?? '')} className="text-text-secondary text-xs whitespace-nowrap max-w-[180px] truncate block">
             {displayVal}
           </span>
         );
       },
     },
     {
-      key: 'tuition_fee',
+      align: 'right' as const, wrap: false, key: 'tuition_fee',
       header: 'Học phí thực nộp',
       cell: (item) => {
         const enr = item.enrollments?.[0];
@@ -1680,7 +1680,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
           ? `${Number(val).toLocaleString('vi-VN')}đ`
           : val;
         return (
-          <span className="text-slate-700 text-xs whitespace-nowrap max-w-[180px] truncate block">
+          <span title={String(displayVal ?? '')} className="text-text-secondary text-xs whitespace-nowrap max-w-[180px] truncate block">
             {displayVal}
           </span>
         );
@@ -1690,7 +1690,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
 
   // --- CỘT THAO TÁC CUỐI BẢNG ---
   const actionColumn: Column<Student> = {
-    key: 'action',
+    align: 'center' as const, wrap: false, key: 'action',
     header: 'Thao tác',
     className: 'text-right',
     cell: (item) => {
@@ -1723,7 +1723,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
                 : 'Chỉnh sửa học viên'
             }
           >
-            <Edit className="w-4 h-4 text-slate-500 hover:text-blue-600" />
+            <Edit className="w-4 h-4 text-text-muted hover:text-blue-600" />
           </Button>
           {isAdmin && (
             <Button
@@ -1744,12 +1744,12 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
     },
   };
   const packageColumn: Column<Student> = {
-    key: 'package_name',
+    align: 'left' as const, wrap: true, key: 'package_name',
     header: 'Gói học',
     cell: (item) => {
       const enr = item.enrollments?.[0];
       return (
-        <span className="font-semibold text-slate-800 text-xs whitespace-nowrap">
+        <span className="font-semibold text-text-primary text-xs whitespace-nowrap">
           {getEnrollmentPackageLabel(enr)}
         </span>
       );
@@ -1760,12 +1760,12 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
   const tab1Columns: Column<Student>[] = [
     ...commonColumnsAtoI,
     {
-      key: 'payment_status',
+      align: 'center' as const, wrap: false, key: 'payment_status',
       header: 'Trạng thái thanh toán',
       cell: (item) => {
         const enr = item.enrollments?.[0];
         if (!enr?.payment_status) {
-          return <span className="text-slate-400 text-xs">—</span>;
+          return <span className="text-text-muted text-xs">—</span>;
         }
         return (
           <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded whitespace-nowrap">
@@ -1776,59 +1776,59 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
     },
     packageColumn,
     {
-      key: 'jlpt_course_code',
+      align: 'center' as const, wrap: false, key: 'jlpt_course_code',
       header: 'Mã khóa học',
       cell: (item) => {
         const enr = item.enrollments?.[0];
         const isJlpt = (enr?.program_type || '').toUpperCase() === 'JLPT';
         const val = isJlpt ? enr?.course_code || '—' : '—';
         return (
-          <span className="font-mono font-semibold text-slate-700 text-xs whitespace-nowrap">
+          <span className="font-mono font-semibold text-text-secondary text-xs whitespace-nowrap">
             {val}
           </span>
         );
       },
     },
     {
-      key: 'course_teacher_type',
+      align: 'center' as const, wrap: false, key: 'course_teacher_type',
       header: 'Khóa học',
       cell: (item) => {
         const enr = item.enrollments?.[0];
         const isJlpt = (enr?.program_type || '').toUpperCase() === 'JLPT';
         return (
-          <span className="text-slate-700 text-xs whitespace-nowrap">
+          <span className="text-text-secondary text-xs whitespace-nowrap">
             {isJlpt ? '—' : enr?.course_teacher_type || '—'}
           </span>
         );
       },
     },
     {
-      key: 'level',
+      align: 'center' as const, wrap: false, key: 'level',
       header: 'Trình độ',
       cell: (item) => {
         const enr = item.enrollments?.[0];
         const isJlpt = (enr?.program_type || '').toUpperCase() === 'JLPT';
         return (
-          <span className="font-mono font-semibold text-slate-700 text-xs whitespace-nowrap">
+          <span className="font-mono font-semibold text-text-secondary text-xs whitespace-nowrap">
             {isJlpt ? '—' : enr?.level || '—'}
           </span>
         );
       },
     },
     {
-      key: 'total_sessions',
+      align: 'right' as const, wrap: false, key: 'total_sessions',
       header: 'Tổng số buổi',
       cell: (item) => {
         const enr = item.enrollments?.[0];
         return (
-          <span className="font-bold text-slate-800 text-xs text-center block whitespace-nowrap">
+          <span className="font-bold text-text-primary text-xs text-center block whitespace-nowrap">
             {enr?.total_sessions ?? '—'}
           </span>
         );
       },
     },
     {
-      key: 'class_model',
+      align: 'center' as const, wrap: false, key: 'class_model',
       header: 'Mô hình lớp',
       cell: (item) => {
         const enr = item.enrollments?.[0];
@@ -1838,7 +1838,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
           enr?.program_metadata?.package_code ||
           ec?.class?.model_type;
         if (!rawModel) {
-          return <span className="text-slate-400 text-xs">—</span>;
+          return <span className="text-text-muted text-xs">—</span>;
         }
         const mNorm = normalizeClassModel(rawModel);
         const mStyle = CLASS_MODEL_BADGE_STYLES[mNorm];
@@ -1852,7 +1852,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
       },
     },
     {
-      key: 'class_code',
+      align: 'center' as const, wrap: false, key: 'class_code',
       header: 'Mã lớp',
       cell: (item) => {
         const enr = item.enrollments?.[0];
@@ -1867,19 +1867,19 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
             {code}
           </span>
         ) : (
-          <span className="text-slate-400 text-xs">—</span>
+          <span className="text-text-muted text-xs">—</span>
         );
       },
     },
     {
-      key: 'sales_note',
+      align: 'left' as const, wrap: true, key: 'sales_note',
       header: 'Ghi chú sale',
       cell: (item) => {
         const enr = item.enrollments?.[0];
         const cleaned = cleanNoteText(enr?.sales_note);
         return (
           <span
-            className="text-slate-500 text-xs italic max-w-[150px] truncate block"
+            className="text-text-muted text-xs italic max-w-[150px] truncate block"
             title={cleaned}
           >
             {cleaned || '—'}
@@ -1888,30 +1888,30 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
       },
     },
     {
-      key: 'birth_year',
+      align: 'center' as const, wrap: false, key: 'birth_year',
       header: 'Năm sinh',
       cell: (item) => (
-        <span className="text-slate-600 text-xs whitespace-nowrap">
+        <span className="text-text-secondary text-xs whitespace-nowrap">
           {item.birth_year ?? '—'}
         </span>
       ),
     },
     {
-      key: 'occupation',
+      align: 'left' as const, wrap: true, key: 'occupation',
       header: 'Nghề nghiệp',
       cell: (item) => (
-        <span className="text-slate-600 text-xs whitespace-nowrap">
+        <span className="text-text-secondary text-xs whitespace-nowrap">
           {item.occupation || '—'}
         </span>
       ),
     },
     {
-      key: 'remaining_sessions',
+      align: 'right' as const, wrap: false, key: 'remaining_sessions',
       header: 'Số buổi còn lại',
       cell: (item) => {
         const enr = item.enrollments?.[0];
         const ec = enr?.enrollment_classes?.[0];
-        if (!enr) return <span className="text-slate-400">—</span>;
+        if (!enr) return <span className="text-text-muted">—</span>;
 
         // Tính các buổi đã học năm nay:
         const currentYear = new Date().getFullYear();
@@ -1972,7 +1972,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
         ) {
           rem = Number(enr.external_remaining_sessions) - attendedThisYear;
         } else {
-          return <span className="text-slate-400">—</span>;
+          return <span className="text-text-muted">—</span>;
         }
 
         const isDebt = rem < 0;
@@ -1999,19 +1999,19 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
       },
     },
     {
-      key: 'start_date',
+      align: 'center' as const, wrap: false, key: 'start_date',
       header: 'Ngày bắt đầu học',
       cell: (item) => {
         const enr = item.enrollments?.[0];
         return (
-          <span className="text-slate-600 text-xs whitespace-nowrap">
+          <span className="text-text-secondary text-xs whitespace-nowrap">
             {enr?.start_date ? new Date(enr.start_date).toLocaleDateString('vi-VN') : '—'}
           </span>
         );
       },
     },
     {
-      key: 'status',
+      align: 'center' as const, wrap: false, key: 'status',
       header: 'Trạng thái',
       cell: (item) => {
         const enr = item.enrollments?.[0];
@@ -2032,12 +2032,12 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
       },
     },
     {
-      key: 'expected_start_date',
+      align: 'center' as const, wrap: false, key: 'expected_start_date',
       header: 'Ngày KG dự kiến',
       cell: (item) => {
         const enr = item.enrollments?.[0];
         const isJlpt = (enr?.program_type || '').toUpperCase() === 'JLPT';
-        if (!isJlpt) return <span className="text-slate-400 text-xs">—</span>;
+        if (!isJlpt) return <span className="text-text-muted text-xs">—</span>;
         const raw = enr?.program_metadata?.expected_start_date;
         const displayDate = raw
           ? /^\d{4}-\d{2}-\d{2}/.test(String(raw))
@@ -2045,14 +2045,14 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
             : String(raw)
           : null;
         return (
-          <span className="text-slate-600 text-xs whitespace-nowrap">
+          <span className="text-text-secondary text-xs whitespace-nowrap">
             {displayDate || '—'}
           </span>
         );
       },
     },
     {
-      key: 'end_date',
+      align: 'center' as const, wrap: false, key: 'end_date',
       header: 'Ngày bảo lưu/kết thúc',
       cell: (item) => {
         const enr = item.enrollments?.[0];
@@ -2061,24 +2061,24 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
           ? new Date(enr.end_date).toLocaleDateString('vi-VN')
           : null;
         return (
-          <span className="text-slate-600 text-xs whitespace-nowrap">
+          <span className="text-text-secondary text-xs whitespace-nowrap">
             {displayDate || '—'}
           </span>
         );
       },
     },
     {
-      key: 'active_state',
+      align: 'center' as const, wrap: false, key: 'active_state',
       header: 'Tình trạng',
-      cell: (item: Student) => <span className="text-slate-700 text-xs whitespace-nowrap">{item.enrollments?.[0]?.program_metadata?.active_state ?? '—'}</span>,
+      cell: (item: Student) => <span className="text-text-secondary text-xs whitespace-nowrap">{item.enrollments?.[0]?.program_metadata?.active_state ?? '—'}</span>,
     },
     {
-      key: 'latest_class_code',
+      align: 'center' as const, wrap: false, key: 'latest_class_code',
       header: 'Mã lớp gần nhất',
-      cell: (item: Student) => <span className="text-slate-700 text-xs whitespace-nowrap">{item.enrollments?.[0]?.program_metadata?.latest_class_code ?? '—'}</span>,
+      cell: (item: Student) => <span className="text-text-secondary text-xs whitespace-nowrap">{item.enrollments?.[0]?.program_metadata?.latest_class_code ?? '—'}</span>,
     },
     {
-      key: 'start_time',
+      align: 'center' as const, wrap: false, key: 'start_time',
       header: 'Giờ học',
       cell: (item) => {
         const ec = item.enrollments?.[0]?.enrollment_classes?.[0];
@@ -2088,14 +2088,14 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
           .filter(Boolean);
         const displayTime = times.length > 0 ? times.join(', ') : '—';
         return (
-          <span className="font-mono text-slate-700 text-xs whitespace-nowrap">
+          <span className="font-mono text-text-secondary text-xs whitespace-nowrap">
             {displayTime}
           </span>
         );
       },
     },
     {
-      key: 'schedule_pattern',
+      align: 'center' as const, wrap: false, key: 'schedule_pattern',
       header: 'Buổi học',
       cell: (item) => {
         const ec = item.enrollments?.[0]?.enrollment_classes?.[0];
@@ -2110,20 +2110,20 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
       },
     },
     {
-      key: 'teacher_name',
+      align: 'left' as const, wrap: true, key: 'teacher_name',
       header: 'Giáo viên',
       cell: (item) => {
         const ec = item.enrollments?.[0]?.enrollment_classes?.[0];
         const teacher = ec?.class?.class_teachers?.[0]?.teacher;
         return (
-          <span className="font-semibold text-slate-800 text-xs whitespace-nowrap">
+          <span className="font-semibold text-text-primary text-xs whitespace-nowrap">
             {teacher?.name || '—'}
           </span>
         );
       },
     },
     {
-      key: 'teacher_code',
+      align: 'center' as const, wrap: false, key: 'teacher_code',
       header: 'Mã giáo viên',
       cell: (item) => {
         const ec = item.enrollments?.[0]?.enrollment_classes?.[0];
@@ -2133,18 +2133,18 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
           (teacher as any)?.teacher_profile?.teacher_code ||
           (teacher as any)?.teacher_code ||
           '—';
-        return <span className="text-slate-500 font-mono text-xs whitespace-nowrap">{teacherCode}</span>;
+        return <span className="text-text-muted font-mono text-xs whitespace-nowrap">{teacherCode}</span>;
       },
     },
     {
-      key: 'class_name',
+      align: 'left' as const, wrap: true, key: 'class_name',
       header: 'Tên lớp',
       cell: (item) => {
         const ec = item.enrollments?.[0]?.enrollment_classes?.[0];
         const cleaned = cleanClassIdentifier(ec?.class?.class_name) || ec?.class?.class_name || '—';
         return (
           <span
-            className="font-semibold text-slate-800 text-xs whitespace-nowrap max-w-[150px] truncate block"
+            className="font-semibold text-text-primary text-xs whitespace-nowrap max-w-[150px] truncate block"
             title={cleaned}
           >
             {cleaned}
@@ -2153,7 +2153,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
       },
     },
     {
-      key: 'attended_prev',
+      align: 'right' as const, wrap: false, key: 'attended_prev',
       header: 'Tổng số buổi đã học năm trước',
       cell: (item) => {
         const enr = item.enrollments?.[0];
@@ -2163,7 +2163,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
           const str = String(rawText).trim();
           return (
             <span
-              className="font-semibold text-slate-700 text-xs block max-w-[200px] truncate whitespace-nowrap"
+              className="font-semibold text-text-secondary text-xs block max-w-[200px] truncate whitespace-nowrap"
               title={str}
             >
               {str}
@@ -2174,7 +2174,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
         // 1. Nếu có giá trị số lưu từ Excel hoặc người dùng nhập
         if (enr?.attended_previous_years !== undefined && enr?.attended_previous_years !== null) {
           return (
-            <span className="font-semibold text-slate-700 text-xs text-center block whitespace-nowrap">
+            <span className="font-semibold text-text-secondary text-xs text-center block whitespace-nowrap">
               {enr.attended_previous_years} buổi
             </span>
           );
@@ -2193,7 +2193,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
 
         if (attendedInPastYears > 0) {
           return (
-            <span className="font-semibold text-slate-700 text-xs text-center block whitespace-nowrap">
+            <span className="font-semibold text-text-secondary text-xs text-center block whitespace-nowrap">
               {attendedInPastYears} buổi
             </span>
           );
@@ -2231,11 +2231,11 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
           }
         }
 
-        return <span className="text-slate-400 text-xs text-center block whitespace-nowrap">0</span>;
+        return <span className="text-text-muted text-xs text-center block whitespace-nowrap">0</span>;
       },
     },
     {
-      key: 'attended_this_year',
+      align: 'right' as const, wrap: false, key: 'attended_this_year',
       header: `Đã học ${new Date().getFullYear()}`,
       cell: (item) => {
         const enr = item.enrollments?.[0];
@@ -2271,13 +2271,13 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
     ...commonColumnsAtoI,
     packageColumn,
     {
-      key: 'study_report_url',
+      align: 'center' as const, wrap: false, key: 'study_report_url',
       header: 'Báo cáo học tập',
       cell: (item: Student) => {
         const enr = item.enrollments?.[0];
         const isJlpt = (enr?.program_type || '').toUpperCase() === 'JLPT';
         const reportUrl = enr?.study_report_url;
-        if (!isJlpt && !reportUrl) return <span className="text-slate-400 text-xs"> </span>;
+        if (!isJlpt && !reportUrl) return <span className="text-text-muted text-xs"> </span>;
 
         return (
           <div className="flex items-center justify-center whitespace-nowrap">
@@ -2300,11 +2300,11 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
       },
     },
     {
-      key: 'exchange_info',
+      align: 'left' as const, wrap: true, key: 'exchange_info',
       header: 'Trao đổi với học viên',
       cell: (item) => {
         const enr = item.enrollments?.[0];
-        if (!enr) return <span className="text-slate-400">—</span>;
+        if (!enr) return <span className="text-text-muted">—</span>;
         return (
           <InlineEditableCell
             value={enr.exchange_info}
@@ -2317,11 +2317,11 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
       },
     },
     {
-      key: 'callback_note',
+      align: 'left' as const, wrap: true, key: 'callback_note',
       header: 'Lịch hẹn gọi',
       cell: (item) => {
         const enr = item.enrollments?.[0];
-        if (!enr) return <span className="text-slate-400">—</span>;
+        if (!enr) return <span className="text-text-muted">—</span>;
         return (
           <div className="flex items-center gap-1">
             <PhoneCall className="w-3.5 h-3.5 text-blue-500 shrink-0" />
@@ -2336,11 +2336,11 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
       },
     },
     {
-      key: 'hot_issue_note',
+      align: 'left' as const, wrap: true, key: 'hot_issue_note',
       header: 'Điểm nóng',
       cell: (item) => {
         const enr = item.enrollments?.[0];
-        if (!enr) return <span className="text-slate-400">—</span>;
+        if (!enr) return <span className="text-text-muted">—</span>;
         return (
           <div className="flex items-center gap-1">
             <Flame className="w-3.5 h-3.5 text-rose-500 shrink-0" />
@@ -2364,11 +2364,11 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
           : `Nội dung CS sau buổi ${sessionNum}`;
 
       return {
-        key: `care_session_${sessionNum}`,
+        align: 'center' as const, wrap: false, key: `care_session_${sessionNum}`,
         header: (
           <div
             key={`head-sess-${sessionNum}`}
-            className="flex items-center gap-1 text-slate-800 whitespace-nowrap"
+            className="flex items-center gap-1 text-text-primary whitespace-nowrap"
           >
             <MessageSquare className="w-3.5 h-3.5 text-blue-600 shrink-0" />
             <span>{label}</span>
@@ -2376,7 +2376,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
         ),
         cell: (item: Student) => {
           const enr = item.enrollments?.[0];
-          if (!enr) return <span className="text-slate-400">—</span>;
+          if (!enr) return <span className="text-text-muted">—</span>;
           const log = enr.care_logs?.find((cl) => cl.after_session_number === sessionNum);
           return (
             <CareSelectCell
@@ -2392,11 +2392,11 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
 
     // --- CÁC CỘT ĐẶC THÙ CỦA KHÓA JLPT (Đọc/Ghi trực tiếp program_metadata; tự ẩn khi lọc Kaiwa nhưng vẫn bật lại được) ---
     {
-      key: 'satisfaction_score_b18',
+      align: 'right' as const, wrap: false, key: 'satisfaction_score_b18',
       header: 'Điểm hài lòng (B18)',
       cell: (item: Student) => {
         const enr = item.enrollments?.[0];
-        if (!enr) return <span className="text-slate-400">—</span>;
+        if (!enr) return <span className="text-text-muted">—</span>;
         return (
           <InlineEditableCell
             value={enr.program_metadata?.satisfaction_score_b18 || ''}
@@ -2410,11 +2410,11 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
       },
     },
     {
-      key: 'exam_registration',
+      align: 'center' as const, wrap: false, key: 'exam_registration',
       header: 'Tình trạng đăng ký thi',
       cell: (item: Student) => {
         const enr = item.enrollments?.[0];
-        if (!enr) return <span className="text-slate-400">—</span>;
+        if (!enr) return <span className="text-text-muted">—</span>;
         return (
           <InlineEditableCell
             value={enr.program_metadata?.exam_registration || ''}
@@ -2428,11 +2428,11 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
       },
     },
     {
-      key: 'exam_score',
+      align: 'right' as const, wrap: false, key: 'exam_score',
       header: 'Điểm thi thật',
       cell: (item: Student) => {
         const enr = item.enrollments?.[0];
-        if (!enr) return <span className="text-slate-400">—</span>;
+        if (!enr) return <span className="text-text-muted">—</span>;
         const rawVal = enr.program_metadata?.exam_score;
         return (
           <InlineEditableCell
@@ -2445,11 +2445,11 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
       },
     },
     {
-      key: 'exam_result',
+      align: 'center' as const, wrap: false, key: 'exam_result',
       header: 'Tình trạng thi',
       cell: (item: Student) => {
         const enr = item.enrollments?.[0];
-        if (!enr) return <span className="text-slate-400">—</span>;
+        if (!enr) return <span className="text-text-muted">—</span>;
         return (
           <InlineEditableCell
             value={enr.program_metadata?.exam_result || ''}
@@ -2461,11 +2461,11 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
       },
     },
     ...Array.from({ length: 7 }, (_, index) => ({
-      key: `test_score_l${index + 1}`,
+      align: 'right' as const, wrap: false, key: `test_score_l${index + 1}`,
       header: `Kiểm tra lần ${index + 1}`,
       cell: (item: Student) => {
         const enr = item.enrollments?.[0];
-        if (!enr) return <span className="text-slate-400">—</span>;
+        if (!enr) return <span className="text-text-muted">—</span>;
         const key = `l${index + 1}`;
         return <InlineEditableCell
           value={String(enr.program_metadata?.test_scores?.[key] ?? '')}
@@ -2478,11 +2478,11 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
       },
     })),
     ...Array.from({ length: 3 }, (_, index) => ({
-      key: `special_support_l${index + 1}`,
+      align: 'left' as const, wrap: true, key: `special_support_l${index + 1}`,
       header: `HT đặc biệt lần ${index + 1}`,
       cell: (item: Student) => {
         const enr = item.enrollments?.[0];
-        if (!enr) return <span className="text-slate-400">—</span>;
+        if (!enr) return <span className="text-text-muted">—</span>;
         const key = `l${index + 1}`;
         return <InlineEditableCell
           value={enr.program_metadata?.special_support?.[key] ?? ''}
@@ -2496,11 +2496,11 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
       },
     })),
     {
-      key: 'renewal_note',
+      align: 'left' as const, wrap: true, key: 'renewal_note',
       header: 'Tái tục',
       cell: (item: Student) => {
         const enr = item.enrollments?.[0];
-        if (!enr) return <span className="text-slate-400">—</span>;
+        if (!enr) return <span className="text-text-muted">—</span>;
         return (
           <InlineEditableCell
             value={enr.program_metadata?.renewal_note || ''}
@@ -2512,11 +2512,11 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
       },
     },
     {
-      key: 'latest_class_code',
+      align: 'center' as const, wrap: false, key: 'latest_class_code',
       header: 'Mã lớp gần nhất',
       cell: (item: Student) => {
         const enr = item.enrollments?.[0];
-        if (!enr) return <span className="text-slate-400">—</span>;
+        if (!enr) return <span className="text-text-muted">—</span>;
         return (
           <InlineEditableCell
             value={enr.program_metadata?.latest_class_code || ''}
@@ -2530,11 +2530,11 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
 
     // --- CÁC CỘT CUỐI (BD ➔ BH) ---
     {
-      key: 'post_course_care',
+      align: 'left' as const, wrap: true, key: 'post_course_care',
       header: 'Chăm sóc sau kết thúc',
       cell: (item) => {
         const enr = item.enrollments?.[0];
-        if (!enr) return <span className="text-slate-400">—</span>;
+        if (!enr) return <span className="text-text-muted">—</span>;
         return (
           <InlineEditableCell
             value={enr.post_course_care}
@@ -2547,48 +2547,48 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
       },
     },
     {
-      key: 'handed_over_at',
+      align: 'center' as const, wrap: false, key: 'handed_over_at',
       header: 'Ngày bàn giao',
       cell: (item) => {
         const enr = item.enrollments?.[0];
         return (
-          <span className="text-slate-600 text-xs whitespace-nowrap">
+          <span className="text-text-secondary text-xs whitespace-nowrap">
             {enr?.handed_over_at ? new Date(enr.handed_over_at).toLocaleDateString('vi-VN') : '—'}
           </span>
         );
       },
     },
     {
-      key: 'paid_month',
+      align: 'center' as const, wrap: false, key: 'paid_month',
       header: 'Tháng nộp học phí',
       cell: (item) => {
         const enr = item.enrollments?.[0];
         const rawPaidMonth = enr?.program_metadata?.paid_month;
         if (rawPaidMonth !== undefined && rawPaidMonth !== null && String(rawPaidMonth).trim() !== '') {
           return (
-            <span className="text-slate-700 font-semibold text-xs whitespace-nowrap">
+            <span className="text-text-secondary font-semibold text-xs whitespace-nowrap">
               {String(rawPaidMonth).trim()}
             </span>
           );
         }
         const date = enr?.paid_at || enr?.start_date;
-        if (!date) return <span className="text-slate-400">—</span>;
+        if (!date) return <span className="text-text-muted">—</span>;
         const d = new Date(date);
-        if (Number.isNaN(d.getTime())) return <span className="text-slate-400">—</span>;
+        if (Number.isNaN(d.getTime())) return <span className="text-text-muted">—</span>;
         return (
-          <span className="text-slate-700 font-semibold text-xs whitespace-nowrap">
+          <span className="text-text-secondary font-semibold text-xs whitespace-nowrap">
             {String(d.getMonth() + 1).padStart(2, '0')}/{d.getFullYear()}
           </span>
         );
       },
     },
     {
-      key: 'account_created_at',
+      align: 'center' as const, wrap: false, key: 'account_created_at',
       header: 'Ngày tạo tài khoản',
       cell: (item) => {
         const enr = item.enrollments?.[0];
         return (
-          <span className="text-slate-600 text-xs whitespace-nowrap">
+          <span className="text-text-secondary text-xs whitespace-nowrap">
             {enr?.account_created_at
               ? new Date(enr.account_created_at).toLocaleDateString('vi-VN')
               : '—'}
@@ -2612,8 +2612,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
                 variant="outline"
                 size="sm"
                 onClick={() => setIsAddMilestoneModalOpen(true)}
-                leftIcon={<PlusCircle className="w-4 h-4 text-emerald-600" />}
-                className="border-emerald-300 text-emerald-800 hover:bg-emerald-50"
+                leftIcon={<PlusCircle className="w-4 h-4" />}
               >
                 Thêm mốc buổi CS
               </Button>
@@ -2933,7 +2932,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
                 className={`px-2.5 py-1 rounded-lg text-xs font-bold border transition cursor-pointer ${
                   advancedFilterDraft.cvht === ''
                     ? 'bg-primary text-white border-primary shadow-2xs'
-                    : 'bg-white text-slate-600 border-border hover:bg-slate-50'
+                    : 'bg-surface text-text-secondary border-border hover:bg-surface-subtle'
                 }`}
               >
                 Tất cả CVHT
@@ -2965,7 +2964,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
       {/* Bulk Action Bar khi chọn học viên (dành cho Admin / Manage) */}
       {isAdminOrManage && selectedStudentIds.length > 0 && (
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border-2 border-primary/40 bg-blue-50/90 px-4 py-2.5 shadow-soft animate-in fade-in duration-150">
-          <div className="flex items-center gap-2 text-xs font-bold text-slate-900">
+          <div className="flex items-center gap-2 text-xs font-bold text-text-primary">
             <span className="inline-flex h-6 w-6 items-center justify-center rounded-lg bg-primary text-white text-xs font-extrabold">
               {selectedStudentIds.length}
             </span>
@@ -2992,7 +2991,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
               variant="outline"
               size="sm"
               onClick={() => setSelectedStudentIds([])}
-              className="bg-white"
+              className="bg-surface"
             >
               Bỏ chọn
             </Button>
@@ -3078,7 +3077,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
             </p>
 
             <div>
-              <label className="block font-bold text-slate-800 mb-1">
+              <label className="block font-bold text-text-primary mb-1">
                 Số thứ tự buổi học (Số nguyên dương):
               </label>
               <Input
@@ -3093,12 +3092,12 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
             </div>
 
             <div className="flex items-center gap-2 pt-2">
-              <span className="text-slate-500">Mốc đang có:</span>
+              <span className="text-text-muted">Mốc đang có:</span>
               <div className="flex flex-wrap gap-1">
                 {activeMilestones.map((m) => (
                   <span
                     key={m}
-                    className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-mono font-bold text-[11px]"
+                    className="px-2 py-0.5 rounded bg-surface-muted text-text-secondary font-mono font-bold text-[11px]"
                   >
                     Buổi {m}
                   </span>
@@ -3135,55 +3134,55 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
           onClose={() => setViewingStudent(null)}
           title={`Hồ sơ chi tiết Sheet 1 — ${viewingStudent.full_name}`}
         >
-          <div className="space-y-5 text-xs text-slate-700">
+          <div className="space-y-5 text-xs text-text-secondary">
             {/* Section 1: Personal info */}
             <div>
-              <h4 className="font-bold text-slate-900 text-sm mb-2.5 flex items-center gap-2 border-b border-slate-100 pb-1.5">
+              <h4 className="font-bold text-text-primary text-sm mb-2.5 flex items-center gap-2 border-b border-border-subtle pb-1.5">
                 <UserCheck className="w-4 h-4 text-blue-600" />
                 1. Thông tin cá nhân & Liên hệ
               </h4>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 bg-slate-50 p-3.5 rounded-xl border border-slate-200/70">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 bg-surface-subtle p-3.5 rounded-xl border border-border/70">
                 <div>
-                  <span className="text-slate-500 block">Mã học viên:</span>
-                  <strong className="text-slate-900 font-mono">
+                  <span className="text-text-muted block">Mã học viên:</span>
+                  <strong className="text-text-primary font-mono">
                     {viewingStudent.external_id || `HV_${viewingStudent.id}`}
                   </strong>
                 </div>
                 <div>
-                  <span className="text-slate-500 block">Họ và tên:</span>
-                  <strong className="text-slate-900">{viewingStudent.full_name}</strong>
+                  <span className="text-text-muted block">Họ và tên:</span>
+                  <strong className="text-text-primary">{viewingStudent.full_name}</strong>
                 </div>
                 <div>
-                  <span className="text-slate-500 block">Giới tính:</span>
-                  <strong className="text-slate-900">
+                  <span className="text-text-muted block">Giới tính:</span>
+                  <strong className="text-text-primary">
                     {viewingStudent.gender ? GENDER_LABELS[viewingStudent.gender] || viewingStudent.gender : '—'}
                   </strong>
                 </div>
                 <div>
-                  <span className="text-slate-500 block">Số điện thoại:</span>
-                  <strong className="text-slate-900 font-mono">{viewingStudent.phone || '—'}</strong>
+                  <span className="text-text-muted block">Số điện thoại:</span>
+                  <strong className="text-text-primary font-mono">{viewingStudent.phone || '—'}</strong>
                 </div>
                 <div>
-                  <span className="text-slate-500 block">Email:</span>
-                  <strong className="text-slate-900">{viewingStudent.email || '—'}</strong>
+                  <span className="text-text-muted block">Email:</span>
+                  <strong className="text-text-primary">{viewingStudent.email || '—'}</strong>
                 </div>
                 <div>
-                  <span className="text-slate-500 block">Năm sinh:</span>
-                  <strong className="text-slate-900">
+                  <span className="text-text-muted block">Năm sinh:</span>
+                  <strong className="text-text-primary">
                     {viewingStudent.birth_year ?? '—'}
                   </strong>
                 </div>
                 <div>
-                  <span className="text-slate-500 block">Nghề nghiệp:</span>
-                  <strong className="text-slate-900">{viewingStudent.occupation || '—'}</strong>
+                  <span className="text-text-muted block">Nghề nghiệp:</span>
+                  <strong className="text-text-primary">{viewingStudent.occupation || '—'}</strong>
                 </div>
                 <div>
-                  <span className="text-slate-500 block">Trường học:</span>
-                  <strong className="text-slate-900">{viewingStudent.school || '—'}</strong>
+                  <span className="text-text-muted block">Trường học:</span>
+                  <strong className="text-text-primary">{viewingStudent.school || '—'}</strong>
                 </div>
                 <div>
-                  <span className="text-slate-500 block">Phụ huynh:</span>
-                  <strong className="text-slate-900">
+                  <span className="text-text-muted block">Phụ huynh:</span>
+                  <strong className="text-text-primary">
                     {viewingStudent.parent_name || '—'}{' '}
                     {viewingStudent.parent_phone ? `(${viewingStudent.parent_phone})` : ''}
                   </strong>
@@ -3194,26 +3193,26 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
             {/* Section 2: Enrollment Info */}
             {viewingStudent.enrollments?.[0] && (
               <div>
-                <h4 className="font-bold text-slate-900 text-sm mb-2.5 flex items-center gap-2 border-b border-slate-100 pb-1.5">
+                <h4 className="font-bold text-text-primary text-sm mb-2.5 flex items-center gap-2 border-b border-border-subtle pb-1.5">
                   <FileText className="w-4 h-4 text-emerald-600" />
                   2. Khóa học & Lịch học
                 </h4>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 bg-slate-50 p-3.5 rounded-xl border border-slate-200/70">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 bg-surface-subtle p-3.5 rounded-xl border border-border/70">
                   <div>
-                    <span className="text-slate-500 block">Gói học:</span>
-                    <strong className="text-slate-900">
+                    <span className="text-text-muted block">Gói học:</span>
+                    <strong className="text-text-primary">
                       {getEnrollmentPackageLabel(viewingStudent.enrollments[0])}
                     </strong>
                   </div>
                   <div>
-                    <span className="text-slate-500 block">Mã khóa học:</span>
-                    <strong className="text-slate-900 font-mono">
+                    <span className="text-text-muted block">Mã khóa học:</span>
+                    <strong className="text-text-primary font-mono">
                       {viewingStudent.enrollments[0].course_code || '—'}
                     </strong>
                   </div>
                   <div>
-                    <span className="text-slate-500 block">Sale phụ trách:</span>
-                    <strong className="text-slate-900">
+                    <span className="text-text-muted block">Sale phụ trách:</span>
+                    <strong className="text-text-primary">
                       {viewingStudent.enrollments[0].sale_name ||
                         viewingStudent.enrollments[0].sale?.name ||
                         viewingStudent.enrollments[0].cs?.name ||
@@ -3221,13 +3220,13 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
                     </strong>
                   </div>
                   <div>
-                    <span className="text-slate-500 block">Tổng số buổi:</span>
-                    <strong className="text-slate-900">
+                    <span className="text-text-muted block">Tổng số buổi:</span>
+                    <strong className="text-text-primary">
                       {viewingStudent.enrollments[0].total_sessions} buổi
                     </strong>
                   </div>
                   <div>
-                    <span className="text-slate-500 block">Số buổi còn lại:</span>
+                    <span className="text-text-muted block">Số buổi còn lại:</span>
                     <strong
                       className={`font-bold ${
                         (viewingStudent.enrollments[0].external_remaining_sessions || 0) < 0
@@ -3239,7 +3238,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
                     </strong>
                   </div>
                   <div>
-                    <span className="text-slate-500 block">
+                    <span className="text-text-muted block">
                       Tổng số buổi đã học năm trước:
                     </span>
                     {(() => {
@@ -3253,7 +3252,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
                         const rawStr = String(rawPrev).trim();
                         return (
                           <strong
-                            className="text-slate-900 block whitespace-pre-line break-words"
+                            className="text-text-primary block whitespace-pre-line break-words"
                             title={rawStr}
                           >
                             {rawStr}
@@ -3262,14 +3261,14 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
                       }
                       const numPrev = viewingStudent.enrollments[0].attended_previous_years;
                       return (
-                        <strong className="text-slate-900">
+                        <strong className="text-text-primary">
                           {numPrev !== undefined && numPrev !== null ? `${numPrev} buổi` : '—'}
                         </strong>
                       );
                     })()}
                   </div>
                   <div>
-                    <span className="text-slate-500 block">Trạng thái:</span>
+                    <span className="text-text-muted block">Trạng thái:</span>
                     <Badge
                       variant={
                         ENROLLMENT_STATUS_LABELS[viewingStudent.enrollments[0].status]?.variant ||
@@ -3287,14 +3286,14 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
             {/* Section 3: Care & Reports Info */}
             {viewingStudent.enrollments?.[0] && (
               <div>
-                <h4 className="font-bold text-slate-900 text-sm mb-2.5 flex items-center gap-2 border-b border-slate-100 pb-1.5">
+                <h4 className="font-bold text-text-primary text-sm mb-2.5 flex items-center gap-2 border-b border-border-subtle pb-1.5">
                   <MessageSquare className="w-4 h-4 text-blue-600" />
                   3. Báo cáo học tập & Thông tin chăm sóc
                 </h4>
-                <div className="space-y-3 bg-slate-50 p-3.5 rounded-xl border border-slate-200/70">
+                <div className="space-y-3 bg-surface-subtle p-3.5 rounded-xl border border-border/70">
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <span className="text-slate-500 block mb-0.5">Link Báo cáo học tập:</span>
+                      <span className="text-text-muted block mb-0.5">Link Báo cáo học tập:</span>
                       {viewingStudent.enrollments[0].study_report_url ? (
                         <a
                           href={
@@ -3310,31 +3309,31 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
                           <ExternalLink className="w-3 h-3" />
                         </a>
                       ) : (
-                        <span className="text-slate-400">Chưa có link</span>
+                        <span className="text-text-muted">Chưa có link</span>
                       )}
                     </div>
                     <div>
-                      <span className="text-slate-500 block mb-0.5">Lịch hẹn gọi:</span>
-                      <strong className="text-slate-900">
+                      <span className="text-text-muted block mb-0.5">Lịch hẹn gọi:</span>
+                      <strong className="text-text-primary">
                         {viewingStudent.enrollments[0].callback_note || '—'}
                       </strong>
                     </div>
                   </div>
 
                   <div>
-                    <span className="text-slate-500 block mb-0.5">Thông tin trao đổi với HV:</span>
-                    <p className="bg-white p-2 rounded-lg border border-slate-200 text-slate-800">
+                    <span className="text-text-muted block mb-0.5">Thông tin trao đổi với HV:</span>
+                    <p className="bg-surface p-2 rounded-lg border border-border text-text-primary">
                       {viewingStudent.enrollments[0].exchange_info || 'Chưa có thông tin trao đổi'}
                     </p>
                   </div>
 
                   <div>
-                    <span className="text-slate-500 block mb-0.5">Điểm nóng (Vấn đề cần lưu ý):</span>
+                    <span className="text-text-muted block mb-0.5">Điểm nóng (Vấn đề cần lưu ý):</span>
                     <p
-                      className={`p-2 rounded-lg border text-slate-800 ${
+                      className={`p-2 rounded-lg border text-text-primary ${
                         viewingStudent.enrollments[0].hot_issue_note
                           ? 'bg-rose-50 border-rose-200 text-rose-900 font-medium'
-                          : 'bg-white border-slate-200 text-slate-500'
+                          : 'bg-surface border-border text-text-muted'
                       }`}
                     >
                       {viewingStudent.enrollments[0].hot_issue_note || 'Không có điểm nóng'}
@@ -3342,8 +3341,8 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
                   </div>
 
                   <div>
-                    <span className="text-slate-500 block mb-0.5">Chăm sóc sau kết thúc:</span>
-                    <p className="bg-white p-2 rounded-lg border border-slate-200 text-slate-800">
+                    <span className="text-text-muted block mb-0.5">Chăm sóc sau kết thúc:</span>
+                    <p className="bg-surface p-2 rounded-lg border border-border text-text-primary">
                       {viewingStudent.enrollments[0].post_course_care || 'Chưa có thông tin sau kết thúc'}
                     </p>
                   </div>
@@ -3351,15 +3350,15 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
                   {/* Care Logs List */}
                   {viewingStudent.enrollments[0].care_logs &&
                     viewingStudent.enrollments[0].care_logs.length > 0 && (
-                      <div className="pt-2 border-t border-slate-200">
-                        <span className="text-slate-700 font-bold block mb-1.5">
+                      <div className="pt-2 border-t border-border">
+                        <span className="text-text-secondary font-bold block mb-1.5">
                           Nhật ký chăm sóc sau các buổi:
                         </span>
                         <div className="space-y-1.5 max-h-40 overflow-y-auto">
                           {viewingStudent.enrollments[0].care_logs.map((cl) => (
                             <div
                               key={cl.id}
-                              className="bg-emerald-50/70 border border-emerald-200/80 p-2 rounded-lg text-slate-800 flex items-start gap-2"
+                              className="bg-emerald-50/70 border border-emerald-200/80 p-2 rounded-lg text-text-primary flex items-start gap-2"
                             >
                               <Badge variant="success" size="sm">
                                 Buổi {cl.after_session_number}
@@ -3375,7 +3374,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
             )}
 
             {/* Footer actions inside Viewing Modal */}
-            <div className="flex items-center justify-between gap-2 pt-3 border-t border-slate-200">
+            <div className="flex items-center justify-between gap-2 pt-3 border-t border-border">
               <div className="flex items-center gap-2">
                 {isStudentReadonlyForUser(viewingStudent) && (
                   <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-100 text-amber-800 border border-amber-300 font-semibold text-xs">
@@ -3460,10 +3459,10 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
                 {editingStudent ? <Edit className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
               </div>
               <div>
-                <h3 className="font-bold text-slate-900 text-base">
+                <h3 className="font-bold text-text-primary text-base">
                   {editingStudent ? `Chỉnh sửa hồ sơ: ${editingStudent.full_name}` : 'Thêm mới học viên'}
                 </h3>
-                <p className="text-xs text-slate-500 font-normal">
+                <p className="text-xs text-text-muted font-normal">
                   Điền đầy đủ thông tin hồ sơ, tài chính, lớp học và ghi chú chăm sóc theo chuẩn Sheet 1
                 </p>
               </div>
@@ -3489,7 +3488,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
               <div className="space-y-4 pt-1 animate-fadeIn text-xs">
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
                   <div>
-                    <label className="block font-medium text-slate-700 mb-1">
+                    <label className="block font-medium text-text-secondary mb-1">
                       Mã học viên (ID Sheet 1)
                     </label>
                     <Input
@@ -3499,7 +3498,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
                     />
                   </div>
                   <div>
-                    <label className="block font-medium text-slate-700 mb-1">
+                    <label className="block font-medium text-text-secondary mb-1">
                       Họ và tên <span className="text-red-500">*</span>
                     </label>
                     <Input
@@ -3510,11 +3509,11 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
                     />
                   </div>
                   <div>
-                    <label className="block font-medium text-slate-700 mb-1">Giới tính</label>
+                    <label className="block font-medium text-text-secondary mb-1">Giới tính</label>
                     <select
                       value={formData.gender || 'OTHER'}
                       onChange={(e) => setFormData({ ...formData, gender: e.target.value })}
-                      className="w-full text-xs px-3 py-2 bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20"
+                      className="w-full text-xs px-3 py-2 bg-surface border border-border-strong rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20"
                     >
                       <option value="MALE">Nam</option>
                       <option value="FEMALE">Nữ</option>
@@ -3525,7 +3524,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
                   <div>
-                    <label className="block font-medium text-slate-700 mb-1">Năm sinh</label>
+                    <label className="block font-medium text-text-secondary mb-1">Năm sinh</label>
                     <Input
                       type="number"
                       min={1900}
@@ -3540,7 +3539,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
                     />
                   </div>
                   <div>
-                    <label className="block font-medium text-slate-700 mb-1">Số điện thoại</label>
+                    <label className="block font-medium text-text-secondary mb-1">Số điện thoại</label>
                     <Input
                       placeholder="0987654321"
                       value={formData.phone || ''}
@@ -3548,7 +3547,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
                     />
                   </div>
                   <div>
-                    <label className="block font-medium text-slate-700 mb-1">Email</label>
+                    <label className="block font-medium text-text-secondary mb-1">Email</label>
                     <Input
                       type="email"
                       placeholder="email@example.com"
@@ -3560,7 +3559,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
                   <div>
-                    <label className="block font-medium text-slate-700 mb-1">Zalo UID / SĐT Zalo</label>
+                    <label className="block font-medium text-text-secondary mb-1">Zalo UID / SĐT Zalo</label>
                     <Input
                       placeholder="Số điện thoại hoặc UID Zalo"
                       value={formData.zalo_uid || ''}
@@ -3568,7 +3567,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
                     />
                   </div>
                   <div>
-                    <label className="block font-medium text-slate-700 mb-1">LINE UID / ID LINE</label>
+                    <label className="block font-medium text-text-secondary mb-1">LINE UID / ID LINE</label>
                     <Input
                       placeholder="LINE UID (U...) hoặc SĐT LINE"
                       value={formData.line_uid || ''}
@@ -3576,7 +3575,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
                     />
                   </div>
                   <div>
-                    <label className="block font-medium text-slate-700 mb-1">Nghề nghiệp</label>
+                    <label className="block font-medium text-text-secondary mb-1">Nghề nghiệp</label>
                     <Input
                       placeholder="Ví dụ: Kỹ sư, Sinh viên..."
                       value={formData.occupation || ''}
@@ -3584,7 +3583,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
                     />
                   </div>
                   <div>
-                    <label className="block font-medium text-slate-700 mb-1">Trường học</label>
+                    <label className="block font-medium text-text-secondary mb-1">Trường học</label>
                     <Input
                       placeholder="Tên trường học"
                       value={formData.school || ''}
@@ -3595,7 +3594,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <label className="block font-medium text-slate-700 mb-1">Họ tên Phụ huynh</label>
+                    <label className="block font-medium text-text-secondary mb-1">Họ tên Phụ huynh</label>
                     <Input
                       placeholder="Họ tên cha hoặc mẹ"
                       value={formData.parent_name || ''}
@@ -3603,7 +3602,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
                     />
                   </div>
                   <div>
-                    <label className="block font-medium text-slate-700 mb-1">SĐT Phụ huynh</label>
+                    <label className="block font-medium text-text-secondary mb-1">SĐT Phụ huynh</label>
                     <Input
                       placeholder="Số điện thoại phụ huynh"
                       value={formData.parent_phone || ''}
@@ -3613,13 +3612,13 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
                 </div>
 
                 <div>
-                  <label className="block font-medium text-slate-700 mb-1">Ghi chú cá nhân</label>
+                  <label className="block font-medium text-text-secondary mb-1">Ghi chú cá nhân</label>
                   <textarea
                     rows={2}
                     placeholder="Ghi chú thêm về học viên..."
                     value={formData.note || ''}
                     onChange={(e) => setFormData({ ...formData, note: e.target.value })}
-                    className="w-full text-xs p-2.5 bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20"
+                    className="w-full text-xs p-2.5 bg-surface border border-border-strong rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20"
                   />
                 </div>
               </div>
@@ -3630,19 +3629,19 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
               <div className="space-y-4 pt-1 animate-fadeIn text-xs">
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
                   <div>
-                    <label className="block font-medium text-slate-700 mb-1">Gói học</label>
+                    <label className="block font-medium text-text-secondary mb-1">Gói học</label>
                     <Input
                       placeholder={formData.program_type === 'JLPT' ? 'Ví dụ: N4CB (Gói SP)' : 'Ví dụ: CKAI451030JP'}
                       value={formData.package_code || ''}
                       onChange={(e) => setFormData({ ...formData, package_code: e.target.value })}
                     />
                     {formData.program_type === 'JLPT' && (
-                      <p className="mt-1 text-[10px] text-slate-500">Tương ứng cột Gói SP của dữ liệu JLPT.</p>
+                      <p className="mt-1 text-[10px] text-text-muted">Tương ứng cột Gói SP của dữ liệu JLPT.</p>
                     )}
                   </div>
                   {formData.program_type === 'JLPT' && (
                     <div>
-                      <label className="block font-medium text-slate-700 mb-1">Mã khóa học</label>
+                      <label className="block font-medium text-text-secondary mb-1">Mã khóa học</label>
                       <Input
                         placeholder="Ví dụ: N4VIP16"
                         value={formData.course_code || ''}
@@ -3652,11 +3651,11 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
                   )}
                   {formData.program_type !== 'JLPT' && (
                     <div>
-                      <label className="block font-medium text-slate-700 mb-1">Trình độ</label>
+                      <label className="block font-medium text-text-secondary mb-1">Trình độ</label>
                       <select
                         value={formData.level || 'N5'}
                         onChange={(e) => setFormData({ ...formData, level: e.target.value })}
-                        className="w-full text-xs px-3 py-2 bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20"
+                        className="w-full text-xs px-3 py-2 bg-surface border border-border-strong rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20"
                       >
                         <option value="N5">N5 (Sơ cấp 1)</option>
                         <option value="N4">N4 (Sơ cấp 2)</option>
@@ -3668,7 +3667,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
                     </div>
                   )}
                   <div>
-                    <label className="block font-medium text-slate-700 mb-1">
+                    <label className="block font-medium text-text-secondary mb-1">
                       Nội dung khóa học
                     </label>
                     <Input
@@ -3678,7 +3677,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
                     />
                   </div>
                   <div>
-                    <label className="block font-medium text-slate-700 mb-1">Sale phụ trách</label>
+                    <label className="block font-medium text-text-secondary mb-1">Sale phụ trách</label>
                     <Input
                       placeholder="Tên hoặc Email nhân viên Sale/CSKH"
                       value={formData.sale_name || ''}
@@ -3689,7 +3688,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
                   <div>
-                    <label className="block font-medium text-slate-700 mb-1">
+                    <label className="block font-medium text-text-secondary mb-1">
                       Trạng thái học viên
                     </label>
                     <Input
@@ -3701,7 +3700,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
                     />
                   </div>
                   <div>
-                    <label className="block font-medium text-slate-700 mb-1">
+                    <label className="block font-medium text-text-secondary mb-1">
                       Ngày nộp học phí
                     </label>
                     <Input
@@ -3711,13 +3710,13 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
                     />
                   </div>
                   <div>
-                    <label className="block font-medium text-slate-700 mb-1">
+                    <label className="block font-medium text-text-secondary mb-1">
                       Trạng thái thanh toán
                     </label>
                     <select
                       value={formData.payment_status || 'Đã đóng đủ'}
                       onChange={(e) => setFormData({ ...formData, payment_status: e.target.value })}
-                      className="w-full text-xs px-3 py-2 bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20"
+                      className="w-full text-xs px-3 py-2 bg-surface border border-border-strong rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20"
                     >
                       <option value="Đã đóng đủ">Đã đóng đủ</option>
                       <option value="Đóng 1 phần">Đóng 1 phần</option>
@@ -3729,7 +3728,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
                   <div>
-                    <label className="block font-medium text-slate-700 mb-1">Tổng số buổi</label>
+                    <label className="block font-medium text-text-secondary mb-1">Tổng số buổi</label>
                     <Input
                       type="number"
                       min={1}
@@ -3739,7 +3738,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
                     />
                   </div>
                   <div>
-                    <label className="block font-medium text-slate-700 mb-1">
+                    <label className="block font-medium text-text-secondary mb-1">
                       Số buổi còn lại
                     </label>
                     <Input
@@ -3752,7 +3751,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
                     />
                   </div>
                   <div>
-                    <label className="block font-medium text-slate-700 mb-1">
+                    <label className="block font-medium text-text-secondary mb-1">
                       Tổng số buổi đã học năm trước
                     </label>
                     <Input
@@ -3774,10 +3773,10 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
                         const rawStr = String(rawPrev).trim();
                         return (
                           <div
-                            className="mt-1 text-[11px] text-slate-500 truncate"
+                            className="mt-1 text-[11px] text-text-muted truncate"
                             title={rawStr}
                           >
-                            Nguyên bản Sheet (Cột AI): <strong className="text-slate-700">{rawStr}</strong>
+                            Nguyên bản Sheet (Cột AI): <strong className="text-text-secondary">{rawStr}</strong>
                           </div>
                         );
                       }
@@ -3785,11 +3784,11 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
                     })()}
                   </div>
                   <div>
-                    <label className="block font-medium text-slate-700 mb-1">Mô hình lớp</label>
+                    <label className="block font-medium text-text-secondary mb-1">Mô hình lớp</label>
                     <select
                       value={formData.class_model || 'Nhóm'}
                       onChange={(e) => setFormData({ ...formData, class_model: e.target.value })}
-                      className="w-full text-xs px-3 py-2 bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20"
+                      className="w-full text-xs px-3 py-2 bg-surface border border-border-strong rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20"
                     >
                       <option value="Nhóm">Nhóm</option>
                       <option value="1:1">1:1 (Kèm 1-1)</option>
@@ -3799,13 +3798,13 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
                 </div>
 
                 <div>
-                  <label className="block font-medium text-slate-700 mb-1">Ghi chú sale</label>
+                  <label className="block font-medium text-text-secondary mb-1">Ghi chú sale</label>
                   <textarea
                     rows={2}
                     placeholder="Ghi chú từ bộ phận Sale về học viên này..."
                     value={formData.sales_note || ''}
                     onChange={(e) => setFormData({ ...formData, sales_note: e.target.value })}
-                    className="w-full text-xs p-2.5 bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20"
+                    className="w-full text-xs p-2.5 bg-surface border border-border-strong rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20"
                   />
                 </div>
               </div>
@@ -3816,7 +3815,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
               <div className="space-y-4 pt-1 animate-fadeIn text-xs">
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div>
-                    <label className="block font-medium text-slate-700 mb-1">Tên lớp học</label>
+                    <label className="block font-medium text-text-secondary mb-1">Tên lớp học</label>
                     <Input
                       placeholder="Ví dụ: Lớp N5 - K01 (246 Sáng)"
                       value={formData.class_name || ''}
@@ -3824,7 +3823,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
                     />
                   </div>
                   <div>
-                    <label className="block font-medium text-slate-700 mb-1">
+                    <label className="block font-medium text-text-secondary mb-1">
                       Mã giáo viên
                     </label>
                     <Input
@@ -3852,7 +3851,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
                     </datalist>
                   </div>
                   <div>
-                    <label className="block font-medium text-slate-700 mb-1">
+                    <label className="block font-medium text-text-secondary mb-1">
                       Giáo viên phụ trách
                     </label>
                     <Input
@@ -3883,7 +3882,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
                   <div>
-                    <label className="block font-medium text-slate-700 mb-1">
+                    <label className="block font-medium text-text-secondary mb-1">
                       Ngày bắt đầu học
                     </label>
                     <Input
@@ -3893,7 +3892,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
                     />
                   </div>
                   <div>
-                    <label className="block font-medium text-slate-700 mb-1">
+                    <label className="block font-medium text-text-secondary mb-1">
                       Ngày kết thúc / bảo lưu
                     </label>
                     <Input
@@ -3903,11 +3902,11 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
                     />
                   </div>
                   <div>
-                    <label className="block font-medium text-slate-700 mb-1">Trạng thái gói</label>
+                    <label className="block font-medium text-text-secondary mb-1">Trạng thái gói</label>
                     <select
                       value={formData.status || 'STUDYING'}
                       onChange={(e) => setFormData({ ...formData, status: e.target.value })}
-                      className="w-full text-xs px-3 py-2 bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20"
+                      className="w-full text-xs px-3 py-2 bg-surface border border-border-strong rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20"
                     >
                       <option value="WAITING_CLASS">Chờ lớp (WAITING_CLASS)</option>
                       <option value="STUDYING">Đang học (STUDYING)</option>
@@ -3928,7 +3927,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
                   </h5>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
-                      <label className="block font-medium text-slate-700 mb-1">Giờ học</label>
+                      <label className="block font-medium text-text-secondary mb-1">Giờ học</label>
                       <Input
                         placeholder="Ví dụ: 20h00, 19h30..."
                         value={formData.start_time || ''}
@@ -3936,7 +3935,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
                       />
                     </div>
                     <div>
-                      <label className="block font-medium text-slate-700 mb-1">
+                      <label className="block font-medium text-text-secondary mb-1">
                         Buổi học
                       </label>
                       <Input
@@ -3956,7 +3955,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
             {formModalTab === 'care' && (
               <div className="space-y-4 pt-1 animate-fadeIn text-xs">
                 <div>
-                  <label className="block font-medium text-slate-700 mb-1 flex items-center gap-1">
+                  <label className="block font-medium text-text-secondary mb-1 flex items-center gap-1">
                     <ExternalLink className="w-3.5 h-3.5 text-blue-600" />
                     <span>Đường dẫn Báo cáo học tập (Google Docs / Google Sheets)</span>
                   </label>
@@ -3972,7 +3971,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <label className="block font-medium text-slate-700 mb-1 flex items-center gap-1">
+                    <label className="block font-medium text-text-secondary mb-1 flex items-center gap-1">
                       <PhoneCall className="w-3.5 h-3.5 text-blue-500" />
                       <span>Lịch hẹn gọi</span>
                     </label>
@@ -3983,7 +3982,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
                     />
                   </div>
                   <div>
-                    <label className="block font-medium text-slate-700 mb-1 flex items-center gap-1">
+                    <label className="block font-medium text-text-secondary mb-1 flex items-center gap-1">
                       <Flame className="w-3.5 h-3.5 text-rose-500" />
                       <span>Điểm nóng / Vấn đề cần lưu ý</span>
                     </label>
@@ -3997,7 +3996,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <label className="block font-medium text-slate-700 mb-1">Ngày bàn giao</label>
+                    <label className="block font-medium text-text-secondary mb-1">Ngày bàn giao</label>
                     <Input
                       type="date"
                       value={formData.handed_over_at || ''}
@@ -4007,7 +4006,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
                     />
                   </div>
                   <div>
-                    <label className="block font-medium text-slate-700 mb-1">
+                    <label className="block font-medium text-text-secondary mb-1">
                       Ngày tạo tài khoản
                     </label>
                     <Input
@@ -4021,7 +4020,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
                 </div>
 
                 <div>
-                  <label className="block font-medium text-slate-700 mb-1">
+                  <label className="block font-medium text-text-secondary mb-1">
                     Thông tin trao đổi với Học viên / Phụ huynh
                   </label>
                   <textarea
@@ -4029,12 +4028,12 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
                     placeholder="Ghi nhận thông tin phản hồi, nguyện vọng học tập..."
                     value={formData.exchange_info || ''}
                     onChange={(e) => setFormData({ ...formData, exchange_info: e.target.value })}
-                    className="w-full text-xs p-2.5 bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20"
+                    className="w-full text-xs p-2.5 bg-surface border border-border-strong rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20"
                   />
                 </div>
 
                 <div>
-                  <label className="block font-medium text-slate-700 mb-1">
+                  <label className="block font-medium text-text-secondary mb-1">
                     Chăm sóc sau kết thúc khóa học
                   </label>
                   <textarea
@@ -4042,14 +4041,14 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
                     placeholder="Đánh giá kết quả cuối khóa, phương án tái tục hoặc giới thiệu..."
                     value={formData.post_course_care || ''}
                     onChange={(e) => setFormData({ ...formData, post_course_care: e.target.value })}
-                    className="w-full text-xs p-2.5 bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20"
+                    className="w-full text-xs p-2.5 bg-surface border border-border-strong rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20"
                   />
                 </div>
               </div>
             )}
 
             {/* FORM FOOTER CONTROLS */}
-            <div className="flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-slate-200 mt-6">
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-border mt-6">
               {/* Tab Step Controls */}
               <div className="flex items-center gap-1.5">
                 {formModalTab !== 'profile' && (

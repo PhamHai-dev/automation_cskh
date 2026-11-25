@@ -33,6 +33,7 @@ Với endpoint mới hoặc thay đổi endpoint:
 - `packages.md` — gói học.
 - `teachers.md` — TeacherProfile và dữ liệu GV phục vụ lớp.
 - `classes.md` — class, teacher assignment, schedule, EnrollmentClass.
+- `omnichannel.md` — danh sách nhóm đã đồng bộ và nhóm đã liên kết học viên/lớp, owner scope, filter và pagination.
 - `attendance.md` — ClassSession + Attendance.
 - `care.md` — CareLog + CareTask.
 - `imports.md` — upload/preview/map/validate/confirm/import/export.

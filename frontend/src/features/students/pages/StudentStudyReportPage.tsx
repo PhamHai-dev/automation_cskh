@@ -456,22 +456,22 @@ export const StudentStudyReportPage: React.FC = () => {
     return (
       <>
         <tr>
-          <td
+          <td data-align="center"
             colSpan={2}
-            className="bg-[#FFE599] border border-slate-400 px-3 py-2 font-bold text-slate-900 text-sm text-left"
+            className="bg-[#FFE599] border border-slate-400 px-3 py-2 font-bold text-text-primary text-sm text-left"
           >
             {title}
           </td>
         </tr>
-        <tr className="bg-[#FFE599] font-bold text-slate-900 text-center">
-          <td className="border border-slate-400 px-3 py-2 w-[34%]">Nội dung</td>
-          <td className="border border-slate-400 px-3 py-2 w-[66%]">Nhận xét</td>
+        <tr className="bg-[#FFE599] font-bold text-text-primary text-center">
+          <td data-align="center" className="border border-slate-400 px-3 py-2 w-[34%]">Nội dung</td>
+          <td data-align="center" className="border border-slate-400 px-3 py-2 w-[66%]">Nhận xét</td>
         </tr>
         <tr>
-          <td className="border border-slate-400 px-3 py-2 font-medium text-slate-800 align-middle">
+          <td data-align="left" className="border border-slate-400 px-3 py-2 font-medium text-text-primary align-middle">
             Chuẩn bị bài mới
           </td>
-          <td className="border border-slate-400 p-1.5">
+          <td data-align="left" className="border border-slate-400 p-1.5">
             <textarea
               rows={2}
               value={data.preparation}
@@ -482,15 +482,15 @@ export const StudentStudyReportPage: React.FC = () => {
                 }))
               }
               placeholder="Nhập nhận xét chuẩn bị bài mới..."
-              className="w-full px-2.5 py-1.5 text-xs text-slate-800 bg-transparent rounded focus:bg-amber-50/40 focus:outline-none focus:ring-1 focus:ring-primary resize-y"
+              className="w-full px-2.5 py-1.5 text-xs text-text-primary bg-transparent rounded focus:bg-amber-50/40 focus:outline-none focus:ring-1 focus:ring-primary resize-y"
             />
           </td>
         </tr>
         <tr>
-          <td className="border border-slate-400 px-3 py-2 font-medium text-slate-800 align-middle">
+          <td data-align="left" className="border border-slate-400 px-3 py-2 font-medium text-text-primary align-middle">
             Mức độ tương tác trong lớp
           </td>
-          <td className="border border-slate-400 p-1.5">
+          <td data-align="left" className="border border-slate-400 p-1.5">
             <textarea
               rows={2}
               value={data.interaction}
@@ -501,15 +501,15 @@ export const StudentStudyReportPage: React.FC = () => {
                 }))
               }
               placeholder="Nhập nhận xét mức độ tương tác..."
-              className="w-full px-2.5 py-1.5 text-xs text-slate-800 bg-transparent rounded focus:bg-amber-50/40 focus:outline-none focus:ring-1 focus:ring-primary resize-y"
+              className="w-full px-2.5 py-1.5 text-xs text-text-primary bg-transparent rounded focus:bg-amber-50/40 focus:outline-none focus:ring-1 focus:ring-primary resize-y"
             />
           </td>
         </tr>
         <tr>
-          <td className="border border-slate-400 px-3 py-2 font-medium text-slate-800 align-middle">
+          <td data-align="left" className="border border-slate-400 px-3 py-2 font-medium text-text-primary align-middle">
             Khả năng tiếp thu trong lớp
           </td>
-          <td className="border border-slate-400 p-1.5">
+          <td data-align="left" className="border border-slate-400 p-1.5">
             <textarea
               rows={2}
               value={data.comprehension}
@@ -520,7 +520,7 @@ export const StudentStudyReportPage: React.FC = () => {
                 }))
               }
               placeholder="Nhập nhận xét khả năng tiếp thu..."
-              className="w-full px-2.5 py-1.5 text-xs text-slate-800 bg-transparent rounded focus:bg-amber-50/40 focus:outline-none focus:ring-1 focus:ring-primary resize-y"
+              className="w-full px-2.5 py-1.5 text-xs text-text-primary bg-transparent rounded focus:bg-amber-50/40 focus:outline-none focus:ring-1 focus:ring-primary resize-y"
             />
           </td>
         </tr>
@@ -536,44 +536,44 @@ export const StudentStudyReportPage: React.FC = () => {
     return (
       <>
         <tr>
-          <td
+          <td data-align="center"
             colSpan={2}
-            className="bg-[#FFE599] border border-slate-400 px-3 py-2 font-bold text-slate-900 text-sm text-left"
+            className="bg-[#FFE599] border border-slate-400 px-3 py-2 font-bold text-text-primary text-sm text-left"
           >
             {title}
           </td>
         </tr>
-        <tr className="bg-[#FFE599] font-bold text-slate-900 text-center">
-          <td rowSpan={2} className="border border-slate-400 px-3 py-2 align-middle w-[34%]">
+        <tr className="bg-[#FFE599] font-bold text-text-primary text-center">
+          <td data-align="center" rowSpan={2} className="border border-slate-400 px-3 py-2 align-middle w-[34%]">
             Nội dung
           </td>
-          <td className="border border-slate-400 px-3 py-2 w-[66%]">Nhận xét</td>
+          <td data-align="center" className="border border-slate-400 px-3 py-2 w-[66%]">Nhận xét</td>
         </tr>
         <tr className="bg-[#FFE599]">
-          <td className="border border-slate-400 px-3 py-1.5">
-            <div className="flex items-center gap-2 text-xs font-bold text-slate-900">
+          <td data-align="left" className="border border-slate-400 px-3 py-1.5">
+            <div className="flex items-center gap-2 text-xs font-bold text-text-primary">
               <span className="shrink-0">Ngày từ:</span>
               <input
                 type="text"
                 value={data.date_range}
                 onChange={(e) => updateStage(stageKey, 'date_range', e.target.value)}
                 placeholder=".../.../... - .../.../..."
-                className="flex-1 bg-white/80 border border-slate-400/80 rounded px-2 py-1 text-xs font-semibold text-slate-900 focus:outline-none focus:ring-1 focus:ring-primary"
+                className="flex-1 bg-surface/80 border border-slate-400/80 rounded px-2 py-1 text-xs font-semibold text-text-primary focus:outline-none focus:ring-1 focus:ring-primary"
               />
             </div>
           </td>
         </tr>
 
         <tr>
-          <td
+          <td data-align="left"
             rowSpan={3}
-            className="border border-slate-400 px-3 py-2 font-medium text-slate-800 align-middle"
+            className="border border-slate-400 px-3 py-2 font-medium text-text-primary align-middle"
           >
             Độ chuyên cần
           </td>
-          <td className="border border-slate-400 px-3 py-1.5">
+          <td data-align="left" className="border border-slate-400 px-3 py-1.5">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="text-xs text-slate-800">
+              <span className="text-xs text-text-primary">
                 Học viên xin nghỉ có phép (buổi):
               </span>
               <input
@@ -581,15 +581,15 @@ export const StudentStudyReportPage: React.FC = () => {
                 value={data.absent_excused}
                 onChange={(e) => updateStage(stageKey, 'absent_excused', e.target.value)}
                 placeholder="Nhập số buổi..."
-                className="w-48 border border-slate-300 rounded px-2.5 py-1 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-primary"
+                className="w-48 border border-border-strong rounded px-2.5 py-1 text-xs text-text-primary focus:outline-none focus:ring-1 focus:ring-primary"
               />
             </div>
           </td>
         </tr>
         <tr>
-          <td className="border border-slate-400 px-3 py-1.5">
+          <td data-align="left" className="border border-slate-400 px-3 py-1.5">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="text-xs text-slate-800">
+              <span className="text-xs text-text-primary">
                 Học viên nghỉ không phép (buổi):
               </span>
               <input
@@ -597,136 +597,136 @@ export const StudentStudyReportPage: React.FC = () => {
                 value={data.absent_unexcused}
                 onChange={(e) => updateStage(stageKey, 'absent_unexcused', e.target.value)}
                 placeholder="Nhập số buổi..."
-                className="w-48 border border-slate-300 rounded px-2.5 py-1 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-primary"
+                className="w-48 border border-border-strong rounded px-2.5 py-1 text-xs text-text-primary focus:outline-none focus:ring-1 focus:ring-primary"
               />
             </div>
           </td>
         </tr>
         <tr>
-          <td className="border border-slate-400 px-3 py-1.5">
+          <td data-align="left" className="border border-slate-400 px-3 py-1.5">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="text-xs text-slate-800">Giáo viên xin nghỉ (buổi):</span>
+              <span className="text-xs text-text-primary">Giáo viên xin nghỉ (buổi):</span>
               <input
                 type="text"
                 value={data.teacher_absent}
                 onChange={(e) => updateStage(stageKey, 'teacher_absent', e.target.value)}
                 placeholder="Nhập số buổi..."
-                className="w-48 border border-slate-300 rounded px-2.5 py-1 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-primary"
+                className="w-48 border border-border-strong rounded px-2.5 py-1 text-xs text-text-primary focus:outline-none focus:ring-1 focus:ring-primary"
               />
             </div>
           </td>
         </tr>
 
         <tr>
-          <td className="border border-slate-400 px-3 py-2 font-medium text-slate-800 align-middle">
+          <td data-align="left" className="border border-slate-400 px-3 py-2 font-medium text-text-primary align-middle">
             Chuẩn bị bài mới
           </td>
-          <td className="border border-slate-400 p-1.5">
+          <td data-align="left" className="border border-slate-400 p-1.5">
             <textarea
               rows={2}
               value={data.preparation}
               onChange={(e) => updateStage(stageKey, 'preparation', e.target.value)}
               placeholder="Nhập nhận xét chuẩn bị bài mới..."
-              className="w-full px-2.5 py-1.5 text-xs text-slate-800 bg-transparent rounded focus:bg-amber-50/40 focus:outline-none focus:ring-1 focus:ring-primary resize-y"
+              className="w-full px-2.5 py-1.5 text-xs text-text-primary bg-transparent rounded focus:bg-amber-50/40 focus:outline-none focus:ring-1 focus:ring-primary resize-y"
             />
           </td>
         </tr>
 
         <tr>
-          <td className="border border-slate-400 px-3 py-2 font-medium text-slate-800 align-middle">
+          <td data-align="left" className="border border-slate-400 px-3 py-2 font-medium text-text-primary align-middle">
             Hoàn thành bài tập về nhà
           </td>
-          <td className="border border-slate-400 px-3 py-1.5">
+          <td data-align="left" className="border border-slate-400 px-3 py-1.5">
             <div className="flex items-center gap-1.5">
               <input
                 type="text"
                 value={data.homework_completed}
                 onChange={(e) => updateStage(stageKey, 'homework_completed', e.target.value)}
                 placeholder="..."
-                className="w-24 border border-slate-300 rounded px-2.5 py-1 text-xs font-semibold text-slate-800 text-right focus:outline-none focus:ring-1 focus:ring-primary"
+                className="w-24 border border-border-strong rounded px-2.5 py-1 text-xs font-semibold text-text-primary text-right focus:outline-none focus:ring-1 focus:ring-primary"
               />
-              <span className="text-xs font-bold text-slate-700">/ 10</span>
+              <span className="text-xs font-bold text-text-secondary">/ 10</span>
             </div>
           </td>
         </tr>
 
         <tr>
-          <td className="border border-slate-400 px-3 py-2 font-medium text-slate-800 align-middle">
+          <td data-align="left" className="border border-slate-400 px-3 py-2 font-medium text-text-primary align-middle">
             Mức độ tương tác trong lớp
           </td>
-          <td className="border border-slate-400 p-1.5">
+          <td data-align="left" className="border border-slate-400 p-1.5">
             <textarea
               rows={2}
               value={data.interaction}
               onChange={(e) => updateStage(stageKey, 'interaction', e.target.value)}
               placeholder="Nhập nhận xét mức độ tương tác..."
-              className="w-full px-2.5 py-1.5 text-xs text-slate-800 bg-transparent rounded focus:bg-amber-50/40 focus:outline-none focus:ring-1 focus:ring-primary resize-y"
+              className="w-full px-2.5 py-1.5 text-xs text-text-primary bg-transparent rounded focus:bg-amber-50/40 focus:outline-none focus:ring-1 focus:ring-primary resize-y"
             />
           </td>
         </tr>
 
         <tr>
-          <td className="border border-slate-400 px-3 py-2 font-medium text-slate-800 align-middle">
+          <td data-align="left" className="border border-slate-400 px-3 py-2 font-medium text-text-primary align-middle">
             Khả năng tiếp thu trong lớp
           </td>
-          <td className="border border-slate-400 p-1.5">
+          <td data-align="left" className="border border-slate-400 p-1.5">
             <textarea
               rows={2}
               value={data.comprehension}
               onChange={(e) => updateStage(stageKey, 'comprehension', e.target.value)}
               placeholder="Nhập nhận xét khả năng tiếp thu..."
-              className="w-full px-2.5 py-1.5 text-xs text-slate-800 bg-transparent rounded focus:bg-amber-50/40 focus:outline-none focus:ring-1 focus:ring-primary resize-y"
+              className="w-full px-2.5 py-1.5 text-xs text-text-primary bg-transparent rounded focus:bg-amber-50/40 focus:outline-none focus:ring-1 focus:ring-primary resize-y"
             />
           </td>
         </tr>
 
         <tr>
-          <td className="border border-slate-400 px-3 py-2 font-medium text-slate-800 align-middle">
+          <td data-align="left" className="border border-slate-400 px-3 py-2 font-medium text-text-primary align-middle">
             <div>Điểm mạnh - Tiến bộ</div>
-            <div className="text-[11px] text-slate-500 font-normal">
+            <div className="text-[11px] text-text-muted font-normal">
               (Từ vựng / ngữ pháp / phát âm / phản xạ)
             </div>
           </td>
-          <td className="border border-slate-400 p-1.5">
+          <td data-align="left" className="border border-slate-400 p-1.5">
             <textarea
               rows={2}
               value={data.strengths}
               onChange={(e) => updateStage(stageKey, 'strengths', e.target.value)}
               placeholder="Nhập điểm mạnh - tiến bộ..."
-              className="w-full px-2.5 py-1.5 text-xs text-slate-800 bg-transparent rounded focus:bg-amber-50/40 focus:outline-none focus:ring-1 focus:ring-primary resize-y"
+              className="w-full px-2.5 py-1.5 text-xs text-text-primary bg-transparent rounded focus:bg-amber-50/40 focus:outline-none focus:ring-1 focus:ring-primary resize-y"
             />
           </td>
         </tr>
 
         <tr>
-          <td className="border border-slate-400 px-3 py-2 font-medium text-slate-800 align-middle">
+          <td data-align="left" className="border border-slate-400 px-3 py-2 font-medium text-text-primary align-middle">
             <div>Điểm hạn chế</div>
-            <div className="text-[11px] text-slate-500 font-normal">
+            <div className="text-[11px] text-text-muted font-normal">
               (Từ vựng / ngữ pháp / phát âm / phản xạ)
             </div>
           </td>
-          <td className="border border-slate-400 p-1.5">
+          <td data-align="left" className="border border-slate-400 p-1.5">
             <textarea
               rows={2}
               value={data.weaknesses}
               onChange={(e) => updateStage(stageKey, 'weaknesses', e.target.value)}
               placeholder="Nhập điểm hạn chế..."
-              className="w-full px-2.5 py-1.5 text-xs text-slate-800 bg-transparent rounded focus:bg-amber-50/40 focus:outline-none focus:ring-1 focus:ring-primary resize-y"
+              className="w-full px-2.5 py-1.5 text-xs text-text-primary bg-transparent rounded focus:bg-amber-50/40 focus:outline-none focus:ring-1 focus:ring-primary resize-y"
             />
           </td>
         </tr>
 
         <tr>
-          <td className="border border-slate-400 px-3 py-2 font-medium text-slate-800 align-middle">
+          <td data-align="left" className="border border-slate-400 px-3 py-2 font-medium text-text-primary align-middle">
             Nhận xét bổ sung (nếu có)
           </td>
-          <td className="border border-slate-400 p-1.5">
+          <td data-align="left" className="border border-slate-400 p-1.5">
             <textarea
               rows={2}
               value={data.additional_notes}
               onChange={(e) => updateStage(stageKey, 'additional_notes', e.target.value)}
               placeholder="Nhập nhận xét bổ sung..."
-              className="w-full px-2.5 py-1.5 text-xs text-slate-800 bg-transparent rounded focus:bg-amber-50/40 focus:outline-none focus:ring-1 focus:ring-primary resize-y"
+              className="w-full px-2.5 py-1.5 text-xs text-text-primary bg-transparent rounded focus:bg-amber-50/40 focus:outline-none focus:ring-1 focus:ring-primary resize-y"
             />
           </td>
         </tr>
@@ -739,65 +739,65 @@ export const StudentStudyReportPage: React.FC = () => {
     return (
       <>
         <tr>
-          <td
+          <td data-align="center"
             colSpan={2}
-            className="bg-[#FFE599] border border-slate-400 px-3 py-2.5 font-extrabold text-slate-900 text-sm text-center uppercase"
+            className="bg-[#FFE599] border border-slate-400 px-3 py-2.5 font-extrabold text-text-primary text-sm text-center uppercase"
           >
             {title}
           </td>
         </tr>
         <tr>
-          <td
+          <td data-align="left"
             rowSpan={4}
-            className="border border-slate-400 px-3 py-2 font-semibold text-slate-800 align-middle w-[34%]"
+            className="border border-slate-400 px-3 py-2 font-semibold text-text-primary align-middle w-[34%]"
           >
             Kết quả kiểm tra
           </td>
-          <td className="border border-slate-400 px-3 py-1.5 w-[66%]">
+          <td data-align="left" className="border border-slate-400 px-3 py-1.5 w-[66%]">
             <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-              <span className="w-36 shrink-0 text-xs font-medium text-slate-800">Từ vựng:</span>
+              <span className="w-36 shrink-0 text-xs font-medium text-text-primary">Từ vựng:</span>
               <input
                 type="text"
                 value={data.vocabulary}
                 onChange={(e) => updateExam(examKey, 'vocabulary', e.target.value)}
                 placeholder="Nhập đánh giá / điểm từ vựng..."
-                className="flex-1 border border-slate-300 rounded px-2.5 py-1 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-primary"
+                className="flex-1 border border-border-strong rounded px-2.5 py-1 text-xs text-text-primary focus:outline-none focus:ring-1 focus:ring-primary"
               />
             </div>
           </td>
         </tr>
         <tr>
-          <td className="border border-slate-400 px-3 py-1.5">
+          <td data-align="left" className="border border-slate-400 px-3 py-1.5">
             <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-              <span className="w-36 shrink-0 text-xs font-medium text-slate-800">Ngữ pháp:</span>
+              <span className="w-36 shrink-0 text-xs font-medium text-text-primary">Ngữ pháp:</span>
               <input
                 type="text"
                 value={data.grammar}
                 onChange={(e) => updateExam(examKey, 'grammar', e.target.value)}
                 placeholder="Nhập đánh giá / điểm ngữ pháp..."
-                className="flex-1 border border-slate-300 rounded px-2.5 py-1 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-primary"
+                className="flex-1 border border-border-strong rounded px-2.5 py-1 text-xs text-text-primary focus:outline-none focus:ring-1 focus:ring-primary"
               />
             </div>
           </td>
         </tr>
         <tr>
-          <td className="border border-slate-400 px-3 py-1.5">
+          <td data-align="left" className="border border-slate-400 px-3 py-1.5">
             <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-              <span className="w-36 shrink-0 text-xs font-medium text-slate-800">Ngữ âm:</span>
+              <span className="w-36 shrink-0 text-xs font-medium text-text-primary">Ngữ âm:</span>
               <input
                 type="text"
                 value={data.intonation}
                 onChange={(e) => updateExam(examKey, 'intonation', e.target.value)}
                 placeholder="Nhập đánh giá / điểm ngữ âm..."
-                className="flex-1 border border-slate-300 rounded px-2.5 py-1 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-primary"
+                className="flex-1 border border-border-strong rounded px-2.5 py-1 text-xs text-text-primary focus:outline-none focus:ring-1 focus:ring-primary"
               />
             </div>
           </td>
         </tr>
         <tr>
-          <td className="border border-slate-400 px-3 py-1.5">
+          <td data-align="left" className="border border-slate-400 px-3 py-1.5">
             <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-              <span className="w-36 shrink-0 text-xs font-medium text-slate-800">
+              <span className="w-36 shrink-0 text-xs font-medium text-text-primary">
                 Độ trôi chảy:
               </span>
               <input
@@ -805,37 +805,37 @@ export const StudentStudyReportPage: React.FC = () => {
                 value={data.fluency}
                 onChange={(e) => updateExam(examKey, 'fluency', e.target.value)}
                 placeholder="Nhập đánh giá / điểm độ trôi chảy..."
-                className="flex-1 border border-slate-300 rounded px-2.5 py-1 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-primary"
+                className="flex-1 border border-border-strong rounded px-2.5 py-1 text-xs text-text-primary focus:outline-none focus:ring-1 focus:ring-primary"
               />
             </div>
           </td>
         </tr>
         <tr>
-          <td colSpan={2} className="border border-slate-400 px-3 py-2 bg-slate-50">
-            <div className="flex items-center gap-2 font-bold text-slate-900 text-xs">
+          <td data-align="center" colSpan={2} className="border border-slate-400 px-3 py-2 bg-surface-subtle">
+            <div className="flex items-center gap-2 font-bold text-text-primary text-xs">
               <span>--&gt; Điểm:</span>
               <input
                 type="text"
                 value={data.score}
                 onChange={(e) => updateExam(examKey, 'score', e.target.value)}
                 placeholder="..."
-                className="w-24 border border-slate-400 bg-white rounded px-2.5 py-1 text-xs font-extrabold text-slate-900 text-right focus:outline-none focus:ring-1 focus:ring-primary"
+                className="w-24 border border-slate-400 bg-surface rounded px-2.5 py-1 text-xs font-extrabold text-text-primary text-right focus:outline-none focus:ring-1 focus:ring-primary"
               />
               <span>/ 100</span>
             </div>
           </td>
         </tr>
         <tr>
-          <td className="border border-slate-400 px-3 py-2 font-medium text-slate-800 align-middle">
+          <td data-align="left" className="border border-slate-400 px-3 py-2 font-medium text-text-primary align-middle">
             Nhận xét bổ sung (nếu có)
           </td>
-          <td className="border border-slate-400 p-1.5">
+          <td data-align="left" className="border border-slate-400 p-1.5">
             <textarea
               rows={2}
               value={data.additional_notes}
               onChange={(e) => updateExam(examKey, 'additional_notes', e.target.value)}
               placeholder="Nhập nhận xét bổ sung..."
-              className="w-full px-2.5 py-1.5 text-xs text-slate-800 bg-transparent rounded focus:bg-amber-50/40 focus:outline-none focus:ring-1 focus:ring-primary resize-y"
+              className="w-full px-2.5 py-1.5 text-xs text-text-primary bg-transparent rounded focus:bg-amber-50/40 focus:outline-none focus:ring-1 focus:ring-primary resize-y"
             />
           </td>
         </tr>
@@ -926,10 +926,10 @@ export const StudentStudyReportPage: React.FC = () => {
           {/* Tổng quan Chuyên cần & Lộ trình Kiểm tra JLPT */}
           <div className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wider">
+              <h2 className="text-sm font-bold text-text-primary uppercase tracking-wider">
                 Tổng quan Chuyên cần &amp; Lộ trình Kiểm tra JLPT
               </h2>
-              <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+              <div className="flex flex-wrap items-center gap-2 text-xs text-text-muted">
                 {fallbackJlptRow.class_code && (
                   <span className="px-2.5 py-0.5 rounded-md bg-blue-50 text-blue-800 border border-blue-200 font-mono font-bold">
                     Lớp: {fallbackJlptRow.class_code}
@@ -969,7 +969,7 @@ export const StudentStudyReportPage: React.FC = () => {
 
                 const badgeColorClass =
                   pct === null
-                    ? 'bg-slate-100 text-slate-600 border-slate-200'
+                    ? 'bg-surface-muted text-text-secondary border-border'
                     : pct >= 85
                     ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
                     : pct >= 70
@@ -977,7 +977,7 @@ export const StudentStudyReportPage: React.FC = () => {
                     : 'bg-rose-50 text-rose-800 border-rose-200';
 
                 return (
-                  <div className="bg-white rounded-2xl border border-slate-200/90 p-4 shadow-xs flex flex-col justify-between gap-3">
+                  <div className="bg-surface rounded-2xl border border-border/90 p-4 shadow-xs flex flex-col justify-between gap-3">
                     <div className="flex items-center justify-between gap-2">
                       <span className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-emerald-700">
                         <CalendarCheck className="w-4 h-4 text-emerald-600" />
@@ -991,25 +991,25 @@ export const StudentStudyReportPage: React.FC = () => {
                     </div>
 
                     <div>
-                      <div className="text-[11px] text-slate-500">
+                      <div className="text-[11px] text-text-muted">
                         Số buổi tham gia / Tổng đã điểm danh
                       </div>
-                      <div className="text-xl font-extrabold text-slate-900 mt-0.5">
+                      <div className="text-xl font-extrabold text-text-primary mt-0.5">
                         {fallbackJlptRow.attended_sessions ?? 0}{' '}
-                        <span className="text-sm font-semibold text-slate-400">
+                        <span className="text-sm font-semibold text-text-muted">
                           / {fallbackJlptRow.total_marked_sessions ?? 0} buổi
                         </span>
                       </div>
                     </div>
 
                     <div className="space-y-1">
-                      <div className="w-full h-2 rounded-full bg-slate-100 overflow-hidden">
+                      <div className="w-full h-2 rounded-full bg-surface-muted overflow-hidden">
                         <div
                           className={`h-full rounded-full transition-all duration-300 ${barColorClass}`}
                           style={{ width: `${clampedPct}%` }}
                         />
                       </div>
-                      <div className="flex items-center justify-between text-[10px] text-slate-400">
+                      <div className="flex items-center justify-between text-[10px] text-text-muted">
                         <span>Mốc chuẩn: ≥ 85%</span>
                         <span>
                           {pct === null
@@ -1027,7 +1027,7 @@ export const StudentStudyReportPage: React.FC = () => {
               })()}
 
               {/* Thẻ 2: B. BÀI TẬP VỀ NHÀ */}
-              <div className="bg-white rounded-2xl border border-slate-200/90 p-4 shadow-xs flex flex-col justify-between gap-3">
+              <div className="bg-surface rounded-2xl border border-border/90 p-4 shadow-xs flex flex-col justify-between gap-3">
                 <div className="flex items-center justify-between gap-2">
                   <span className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-blue-700">
                     <ClipboardList className="w-4 h-4 text-blue-600" />
@@ -1039,8 +1039,8 @@ export const StudentStudyReportPage: React.FC = () => {
                 </div>
 
                 <div className="grid grid-cols-2 gap-3 pt-1">
-                  <div className="rounded-xl bg-slate-50 border border-slate-200/70 p-2.5">
-                    <div className="text-[11px] text-slate-500">
+                  <div className="rounded-xl bg-surface-subtle border border-border/70 p-2.5">
+                    <div className="text-[11px] text-text-muted">
                       Điểm KT trung bình
                     </div>
                     <div className="text-lg font-extrabold text-blue-700 mt-0.5">
@@ -1051,29 +1051,29 @@ export const StudentStudyReportPage: React.FC = () => {
                     </div>
                   </div>
 
-                  <div className="rounded-xl bg-slate-50 border border-slate-200/70 p-2.5">
-                    <div className="text-[11px] text-slate-500">
+                  <div className="rounded-xl bg-surface-subtle border border-border/70 p-2.5">
+                    <div className="text-[11px] text-text-muted">
                       Số buổi đã làm bài
                     </div>
-                    <div className="text-lg font-extrabold text-slate-900 mt-0.5">
+                    <div className="text-lg font-extrabold text-text-primary mt-0.5">
                       {fallbackJlptRow.homework_completed_sessions ?? 0}{' '}
-                      <span className="text-xs font-semibold text-slate-400">
+                      <span className="text-xs font-semibold text-text-muted">
                         buổi
                       </span>
                     </div>
                   </div>
                 </div>
 
-                <div className="text-[11px] text-slate-500">
+                <div className="text-[11px] text-text-muted">
                   Trạng thái học:{' '}
-                  <strong className="text-slate-800">
+                  <strong className="text-text-primary">
                     {fallbackJlptRow.status_label || fallbackJlptRow.status || 'Đang học'}
                   </strong>
                 </div>
               </div>
 
               {/* Thẻ 3: C. CẢNH BÁO LIÊN TIẾP */}
-              <div className="bg-white rounded-2xl border border-slate-200/90 p-4 shadow-xs flex flex-col justify-between gap-3">
+              <div className="bg-surface rounded-2xl border border-border/90 p-4 shadow-xs flex flex-col justify-between gap-3">
                 <div className="flex items-center justify-between gap-2">
                   <span className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-amber-700">
                     <AlertTriangle className="w-4 h-4 text-amber-600" />
@@ -1082,12 +1082,12 @@ export const StudentStudyReportPage: React.FC = () => {
                 </div>
 
                 <div className="space-y-2.5 text-xs">
-                  <div className="rounded-xl bg-slate-50 border border-slate-200/70 p-2.5 space-y-1">
+                  <div className="rounded-xl bg-surface-subtle border border-border/70 p-2.5 space-y-1">
                     <div className="flex items-center justify-between gap-2">
-                      <span className="text-slate-600">
+                      <span className="text-text-secondary">
                         Vắng liên tiếp tối đa:
                       </span>
-                      <strong className="text-sm font-extrabold text-slate-900">
+                      <strong className="text-sm font-extrabold text-text-primary">
                         {fallbackJlptRow.max_consecutive_absent ?? 0} buổi
                       </strong>
                     </div>
@@ -1102,12 +1102,12 @@ export const StudentStudyReportPage: React.FC = () => {
                     )}
                   </div>
 
-                  <div className="rounded-xl bg-slate-50 border border-slate-200/70 p-2.5 space-y-1">
+                  <div className="rounded-xl bg-surface-subtle border border-border/70 p-2.5 space-y-1">
                     <div className="flex items-center justify-between gap-2">
-                      <span className="text-slate-600">
+                      <span className="text-text-secondary">
                         Không BTVN liên tiếp:
                       </span>
-                      <strong className="text-sm font-extrabold text-slate-900">
+                      <strong className="text-sm font-extrabold text-text-primary">
                         {fallbackJlptRow.max_consecutive_no_homework ?? 0} buổi
                       </strong>
                     </div>
@@ -1125,7 +1125,7 @@ export const StudentStudyReportPage: React.FC = () => {
               </div>
 
               {/* Thẻ 4: Lộ trình Kiểm tra (KT gần nhất & KT tiếp theo) */}
-              <div className="bg-white rounded-2xl border border-slate-200/90 p-4 shadow-xs flex flex-col justify-between gap-3">
+              <div className="bg-surface rounded-2xl border border-border/90 p-4 shadow-xs flex flex-col justify-between gap-3">
                 <div className="flex items-center justify-between gap-2">
                   <span className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-violet-700">
                     <Award className="w-4 h-4 text-violet-600" />
@@ -1137,14 +1137,14 @@ export const StudentStudyReportPage: React.FC = () => {
                 </div>
 
                 <div className="space-y-2 text-xs">
-                  <div className="rounded-xl bg-slate-50 border border-slate-200/70 p-2">
-                    <div className="text-[11px] text-slate-500">KT gần nhất</div>
+                  <div className="rounded-xl bg-surface-subtle border border-border/70 p-2">
+                    <div className="text-[11px] text-text-muted">KT gần nhất</div>
                     {fallbackJlptRow.last_exam_name ? (
-                      <div className="font-bold text-slate-900 mt-0.5">
+                      <div className="font-bold text-text-primary mt-0.5">
                         {fallbackJlptRow.last_exam_name}
                         {fallbackJlptRow.last_exam_session !== null &&
                           fallbackJlptRow.last_exam_session !== undefined && (
-                            <span className="font-normal text-slate-600">
+                            <span className="font-normal text-text-secondary">
                               {' '}
                               • Buổi {fallbackJlptRow.last_exam_session}
                             </span>
@@ -1152,24 +1152,24 @@ export const StudentStudyReportPage: React.FC = () => {
                         {fallbackJlptRow.sessions_since_last_exam !== null &&
                           fallbackJlptRow.sessions_since_last_exam !==
                             undefined && (
-                            <span className="block text-[11px] font-normal text-slate-500">
+                            <span className="block text-[11px] font-normal text-text-muted">
                               Cách đây {fallbackJlptRow.sessions_since_last_exam} buổi
                             </span>
                           )}
                       </div>
                     ) : (
-                      <div className="text-slate-400 mt-0.5">Chưa có bài KT</div>
+                      <div className="text-text-muted mt-0.5">Chưa có bài KT</div>
                     )}
                   </div>
 
-                  <div className="rounded-xl bg-slate-50 border border-slate-200/70 p-2">
-                    <div className="text-[11px] text-slate-500">KT tiếp theo</div>
+                  <div className="rounded-xl bg-surface-subtle border border-border/70 p-2">
+                    <div className="text-[11px] text-text-muted">KT tiếp theo</div>
                     {fallbackJlptRow.next_exam_name ? (
-                      <div className="font-bold text-slate-900 mt-0.5">
+                      <div className="font-bold text-text-primary mt-0.5">
                         {fallbackJlptRow.next_exam_name}
                         {fallbackJlptRow.next_exam_session !== null &&
                           fallbackJlptRow.next_exam_session !== undefined && (
-                            <span className="font-normal text-slate-600">
+                            <span className="font-normal text-text-secondary">
                               {' '}
                               • Buổi {fallbackJlptRow.next_exam_session}
                             </span>
@@ -1183,7 +1183,7 @@ export const StudentStudyReportPage: React.FC = () => {
                           )}
                       </div>
                     ) : (
-                      <div className="text-slate-400 mt-0.5">Đã hoàn tất lộ trình KT</div>
+                      <div className="text-text-muted mt-0.5">Đã hoàn tất lộ trình KT</div>
                     )}
                   </div>
                 </div>
@@ -1207,69 +1207,69 @@ export const StudentStudyReportPage: React.FC = () => {
         /* MẪU BÁO CÁO HỌC TẬP KAIWA (Giữ nguyên 100%) */
         <fieldset
           disabled={isReadonlyForCs}
-          className="max-w-5xl mx-auto bg-white rounded-xl border border-slate-400 shadow-soft overflow-hidden mb-10 disabled:opacity-90"
+          className="max-w-5xl mx-auto bg-surface rounded-xl border border-slate-400 shadow-soft overflow-hidden mb-10 disabled:opacity-90"
         >
-          <table className="w-full border-collapse text-xs text-slate-900">
+          <table data-table="report" className="w-full border-collapse text-xs text-text-primary">
             <tbody>
               <tr>
-                <td
+                <td data-align="center"
                   colSpan={2}
-                  className="bg-[#B6D7A8] border border-slate-400 py-4 px-4 text-center font-extrabold text-lg tracking-wide text-slate-900 uppercase"
+                  className="bg-[#B6D7A8] border border-slate-400 py-4 px-4 text-center font-extrabold text-lg tracking-wide text-text-primary uppercase"
                 >
                   BÁO CÁO HỌC TẬP
                 </td>
               </tr>
 
-              <tr className="h-3 bg-white">
+              <tr className="h-3 bg-surface">
                 <td colSpan={2} className="border-x border-slate-400" />
               </tr>
 
               <tr>
-                <td
+                <td data-align="center"
                   colSpan={2}
-                  className="border border-slate-400 px-4 py-2 font-extrabold text-sm text-slate-900 bg-slate-50 uppercase"
+                  className="border border-slate-400 px-4 py-2 font-extrabold text-sm text-text-primary bg-surface-subtle uppercase"
                 >
                   THÔNG TIN HỌC VIÊN
                 </td>
               </tr>
               <tr>
-                <td colSpan={2} className="border border-slate-400 px-4 py-2 text-xs">
-                  <span className="font-semibold text-slate-700 inline-block w-48">
+                <td data-align="left" colSpan={2} className="border border-slate-400 px-4 py-2 text-xs">
+                  <span className="mb-1 block font-semibold text-text-secondary sm:mb-0 sm:inline-block sm:w-48">
                     - Họ tên học viên:
                   </span>
-                  <strong className="text-slate-900 text-sm">{student.full_name}</strong>
+                  <strong className="text-text-primary text-sm">{student.full_name}</strong>
                 </td>
               </tr>
               <tr>
-                <td colSpan={2} className="border border-slate-400 px-4 py-2 text-xs">
-                  <span className="font-semibold text-slate-700 inline-block w-48">
+                <td data-align="left" colSpan={2} className="border border-slate-400 px-4 py-2 text-xs">
+                  <span className="mb-1 block font-semibold text-text-secondary sm:mb-0 sm:inline-block sm:w-48">
                     - Mã học viên:
                   </span>
-                  <strong className="font-mono text-slate-900">{studentCode}</strong>
+                  <strong className="font-mono text-text-primary">{studentCode}</strong>
                 </td>
               </tr>
               <tr>
-                <td colSpan={2} className="border border-slate-400 px-4 py-2 text-xs">
-                  <span className="font-semibold text-slate-700 inline-block w-48">
+                <td data-align="left" colSpan={2} className="border border-slate-400 px-4 py-2 text-xs">
+                  <span className="mb-1 block font-semibold text-text-secondary sm:mb-0 sm:inline-block sm:w-48">
                     - Khóa học:
                   </span>
-                  <strong className="text-slate-900">{courseCode}</strong>
+                  <strong className="text-text-primary">{courseCode}</strong>
                 </td>
               </tr>
               <tr>
-                <td colSpan={2} className="border border-slate-400 px-4 py-2 text-xs">
-                  <span className="font-semibold text-slate-700 inline-block w-48">
+                <td data-align="left" colSpan={2} className="border border-slate-400 px-4 py-2 text-xs">
+                  <span className="mb-1 block font-semibold text-text-secondary sm:mb-0 sm:inline-block sm:w-48">
                     - Giáo viên giảng dạy:
                   </span>
-                  <strong className="text-slate-900">{teacher}</strong>
+                  <strong className="text-text-primary">{teacher}</strong>
                 </td>
               </tr>
 
               <tr>
-                <td className="bg-[#C9DAF8] border border-slate-400 px-3 py-2.5 font-bold text-slate-900 align-middle w-[34%]">
+                <td data-align="left" data-wrap="normal" className="bg-[#C9DAF8] border border-slate-400 px-3 py-2.5 font-bold text-text-primary align-middle w-[34%]">
                   Thông tin trao đổi với HV
                 </td>
-                <td className="border border-slate-400 p-1.5 w-[66%]">
+                <td data-align="left" data-wrap="normal" className="border border-slate-400 p-1.5 w-[66%]">
                   <textarea
                     rows={2}
                     value={report.exchange_with_student}
@@ -1280,48 +1280,48 @@ export const StudentStudyReportPage: React.FC = () => {
                       }))
                     }
                     placeholder="Nhập thông tin trao đổi với học viên..."
-                    className="w-full px-2.5 py-1.5 text-xs text-slate-800 bg-transparent rounded focus:bg-blue-50/40 focus:outline-none focus:ring-1 focus:ring-primary resize-y"
+                    className="w-full px-2.5 py-1.5 text-xs text-text-primary bg-transparent rounded focus:bg-blue-50/40 focus:outline-none focus:ring-1 focus:ring-primary resize-y"
                   />
                 </td>
               </tr>
 
-              <tr className="h-3 bg-white">
+              <tr className="h-3 bg-surface">
                 <td colSpan={2} className="border-x border-slate-400" />
               </tr>
 
               {renderShortSessionSection('Buổi 1', 'session_1')}
 
-              <tr className="h-3 bg-white">
+              <tr className="h-3 bg-surface">
                 <td colSpan={2} className="border-x border-slate-400" />
               </tr>
 
               {renderShortSessionSection('Buổi 3', 'session_3')}
 
-              <tr className="h-3 bg-white">
+              <tr className="h-3 bg-surface">
                 <td colSpan={2} className="border-x border-slate-400" />
               </tr>
 
               {renderTenSessionSection('Buổi 1-10', 'sessions_1_10')}
 
-              <tr className="h-3 bg-white">
+              <tr className="h-3 bg-surface">
                 <td colSpan={2} className="border-x border-slate-400" />
               </tr>
 
               {renderTenSessionSection('Buổi 11-20', 'sessions_11_20')}
 
-              <tr className="h-3 bg-white">
+              <tr className="h-3 bg-surface">
                 <td colSpan={2} className="border-x border-slate-400" />
               </tr>
 
               {renderTenSessionSection('Buổi 21-30', 'sessions_21_30')}
 
-              <tr className="h-3 bg-white">
+              <tr className="h-3 bg-surface">
                 <td colSpan={2} className="border-x border-slate-400" />
               </tr>
 
               {renderExamSection('KẾT QUẢ GIỮA KỲ', 'midterm')}
 
-              <tr className="h-3 bg-white">
+              <tr className="h-3 bg-surface">
                 <td colSpan={2} className="border-x border-slate-400" />
               </tr>
 

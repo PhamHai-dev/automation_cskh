@@ -54,7 +54,7 @@ export const AdminConfigPage: React.FC = () => {
     <PageContainer>
       <PageHeader title="Cấu hình Hệ thống" />
 
-      <p className="text-xs text-slate-600 -mt-2 mb-4">
+      <p className="text-xs text-text-secondary -mt-2 mb-4">
         Chọn một mục bên dưới để mở trang cấu hình tương ứng.
       </p>
 
@@ -73,11 +73,11 @@ export const AdminConfigPage: React.FC = () => {
                 {entry.icon}
               </div>
               <div className="min-w-0 flex-1">
-                <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-1.5">
+                <h3 className="text-sm font-extrabold text-text-primary flex items-center gap-1.5">
                   {entry.title}
-                  <ChevronRight className="w-4 h-4 text-slate-400 transition-transform group-hover:translate-x-0.5 group-hover:text-indigo-600" />
+                  <ChevronRight className="w-4 h-4 text-text-muted transition-transform group-hover:translate-x-0.5 group-hover:text-indigo-600" />
                 </h3>
-                <p className="text-xs text-slate-600 mt-1.5 leading-relaxed">{entry.description}</p>
+                <p className="text-xs text-text-secondary mt-1.5 leading-relaxed">{entry.description}</p>
               </div>
             </div>
           </button>

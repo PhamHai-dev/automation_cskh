@@ -127,7 +127,7 @@ const STATUS_CONFIG: Record<
     label: 'Lỗi kỹ thuật (E)',
     short: 'E',
     bg: 'bg-slate-200 hover:bg-slate-300',
-    text: 'text-slate-800 font-extrabold',
+    text: 'text-text-primary font-extrabold',
     border: 'border-slate-400',
   },
 };
@@ -3023,7 +3023,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
       <div key={caNumber} className="flex min-h-7 items-center gap-1.5">
         {totalCa > 1 && (
           <span
-            className="inline-flex h-6 shrink-0 items-center rounded-md border border-border/70 bg-slate-100 px-1.5 text-[10px] font-bold text-slate-600"
+            className="inline-flex h-6 shrink-0 items-center rounded-md border border-border/70 bg-surface-muted px-1.5 text-[10px] font-bold text-text-secondary"
             title={`Ca ${caNumber}`}
           >
             Ca {caNumber}
@@ -3137,7 +3137,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
     return (
       <div key={caNumber} className="flex min-h-7 items-center gap-1.5">
         {totalCa > 1 && (
-          <span className="inline-flex h-6 shrink-0 items-center rounded-md border border-border/70 bg-slate-100 px-1.5 text-[10px] font-bold text-slate-600">
+          <span className="inline-flex h-6 shrink-0 items-center rounded-md border border-border/70 bg-surface-muted px-1.5 text-[10px] font-bold text-text-secondary">
             Ca {caNumber}
           </span>
         )}
@@ -3181,7 +3181,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
           className={
             field === 'lesson_topic'
               ? 'h-7 w-full min-w-[120px] rounded-lg border border-indigo-300/70 bg-indigo-50/60 px-2.5 text-xs font-semibold text-indigo-900 focus:outline-none focus:ring-2 focus:ring-primary/40'
-              : 'h-7 w-full min-w-[120px] rounded-lg border border-border/80 bg-white px-2.5 text-xs text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/40'
+              : 'h-7 w-full min-w-[120px] rounded-lg border border-border/80 bg-surface px-2.5 text-xs text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/40'
           }
         />
       </div>
@@ -3198,8 +3198,8 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
     if (daySessions.length === 0) {
       return (
         <div className="flex min-h-7 items-center">
-          <div className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-border/70 bg-white px-2.5 py-1 text-[11px] text-text-muted">
-            <span className="font-extrabold text-slate-400">—</span>
+          <div className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-border/70 bg-surface px-2.5 py-1 text-[11px] text-text-muted">
+            <span className="font-extrabold text-text-muted">—</span>
             <span className="text-[10px] italic">GV chưa chấm</span>
           </div>
         </div>
@@ -3218,11 +3218,11 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
           return (
             <div
               key={session.id}
-              className="inline-flex w-fit max-w-[240px] flex-col gap-1 rounded-lg border border-border/80 bg-white px-2.5 py-1.5 shadow-2xs"
+              className="inline-flex w-fit max-w-[240px] flex-col gap-1 rounded-lg border border-border/80 bg-surface px-2.5 py-1.5 shadow-2xs"
             >
               <div className="flex items-center gap-1.5 whitespace-nowrap">
                 {daySessions.length > 1 && (
-                  <span className="shrink-0 whitespace-nowrap rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-600">
+                  <span className="shrink-0 whitespace-nowrap rounded bg-surface-muted px-1.5 py-0.5 text-[10px] font-bold text-text-secondary">
                     Ca {caNo}
                   </span>
                 )}
@@ -3230,7 +3230,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                   className={`inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-md border px-1.5 py-0.5 text-[10px] font-extrabold ${
                     cfg
                       ? `${cfg.bg.replace(/\s*hover:\S+/g, '')} ${cfg.text} ${cfg.border}`
-                      : 'border-border/60 bg-slate-100/80 text-text-muted'
+                      : 'border-border/60 bg-surface-muted/80 text-text-muted'
                   }`}
                   title={`Ca ${caNo} (GV): ${cfg?.label || 'Chưa điểm danh'}`}
                 >
@@ -3247,7 +3247,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                   )}
                   {att?.teacher_note && (
                     <div className="truncate italic text-text-secondary" title={`Ghi chú GV: ${att.teacher_note}`}>
-                      <span className="not-italic font-semibold text-slate-600">Ghi chú:</span> "{att.teacher_note}"
+                      <span className="not-italic font-semibold text-text-secondary">Ghi chú:</span> "{att.teacher_note}"
                     </div>
                   )}
                 </div>
@@ -3269,8 +3269,8 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
     if (daySessions.length === 0) {
       return (
         <div className="flex min-h-7 items-center">
-          <div className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-border/70 bg-white px-2.5 py-1 text-[11px] text-text-muted">
-            <span className="font-extrabold text-slate-400">—</span>
+          <div className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-border/70 bg-surface px-2.5 py-1 text-[11px] text-text-muted">
+            <span className="font-extrabold text-text-muted">—</span>
             <span className="text-[10px] italic">CSKH chưa chấm</span>
           </div>
         </div>
@@ -3287,11 +3287,11 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
           return (
             <div
               key={session.id}
-              className="inline-flex w-fit max-w-[240px] flex-col gap-1 rounded-lg border border-border/80 bg-white px-2.5 py-1.5 shadow-2xs"
+              className="inline-flex w-fit max-w-[240px] flex-col gap-1 rounded-lg border border-border/80 bg-surface px-2.5 py-1.5 shadow-2xs"
             >
               <div className="flex items-center gap-1.5 whitespace-nowrap">
                 {daySessions.length > 1 && (
-                  <span className="shrink-0 whitespace-nowrap rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-600">
+                  <span className="shrink-0 whitespace-nowrap rounded bg-surface-muted px-1.5 py-0.5 text-[10px] font-bold text-text-secondary">
                     Ca {sessionNumber}
                   </span>
                 )}
@@ -3300,7 +3300,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                   className={`inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-md border px-1.5 py-0.5 text-[10px] font-extrabold ${
                     cfg
                       ? `${cfg.bg.replace(/\s*hover:\S+/g, '')} ${cfg.text} ${cfg.border}`
-                      : 'border-border/60 bg-slate-100/80 text-text-muted'
+                      : 'border-border/60 bg-surface-muted/80 text-text-muted'
                   }`}
                 >
                   <span>{cfg ? `${cfg.short} · ${cfg.label}` : '— · Chưa chấm'}</span>
@@ -3366,7 +3366,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
           return (
             <div key={caNo} className="flex min-h-7 items-center gap-1.5">
               {totalCa > 1 && (
-                <span className="inline-flex h-6 shrink-0 items-center whitespace-nowrap rounded-md border border-border/70 bg-slate-100 px-1.5 text-[10px] font-bold text-slate-600">
+                <span className="inline-flex h-6 shrink-0 items-center whitespace-nowrap rounded-md border border-border/70 bg-surface-muted px-1.5 text-[10px] font-bold text-text-secondary">
                   Ca {caNo}
                 </span>
               )}
@@ -3398,7 +3398,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                   }
                 }}
                 placeholder={session ? `Ghi chú CSKH Ca ${caNo}...` : 'Thêm ca để ghi chú'}
-                className="h-7 w-full min-w-[140px] rounded-lg border border-border/80 bg-white px-2.5 text-xs text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/40 disabled:opacity-50"
+                className="h-7 w-full min-w-[140px] rounded-lg border border-border/80 bg-surface px-2.5 text-xs text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/40 disabled:opacity-50"
               />
             </div>
           );
@@ -3417,7 +3417,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
     if (daySessions.length === 0) {
       return (
         <div className="flex flex-col items-start gap-0.5 py-0.5 whitespace-nowrap">
-          <span className="inline-flex h-6 min-w-8 items-center justify-center whitespace-nowrap rounded-md border border-border/60 bg-slate-100/80 px-2 text-xs font-extrabold text-text-muted">
+          <span className="inline-flex h-6 min-w-8 items-center justify-center whitespace-nowrap rounded-md border border-border/60 bg-surface-muted/80 px-2 text-xs font-extrabold text-text-muted">
             —
           </span>
           <span className="pl-0.5 whitespace-nowrap text-[10px] italic text-text-muted">
@@ -3495,7 +3495,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
             <div key={session.id} className="flex flex-col items-start gap-0.5 whitespace-nowrap">
               <span
                 title={`Ca ${sessionNumber}: Chưa có điểm danh chốt`}
-                className="inline-flex h-6 min-w-8 shrink-0 items-center justify-center whitespace-nowrap rounded-md border border-border/60 bg-slate-100/80 px-2 text-xs font-extrabold text-text-muted"
+                className="inline-flex h-6 min-w-8 shrink-0 items-center justify-center whitespace-nowrap rounded-md border border-border/60 bg-surface-muted/80 px-2 text-xs font-extrabold text-text-muted"
               >
                 {daySessions.length > 1 ? `Ca ${sessionNumber}: —` : '—'}
               </span>
@@ -4133,7 +4133,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                       type="button"
                       onClick={() => void handleBulkMatchSelectedInClasses()}
                       disabled={bulkSaving || bulkMatchableCountInClasses === 0}
-                      className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-blue-300 bg-white px-2.5 font-bold text-blue-700 transition hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50"
+                      className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-blue-300 bg-surface px-2.5 font-bold text-blue-700 transition hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50"
                       title="Sao chép / chốt điểm danh theo trạng thái GV đã chấm cho các dòng đang chọn"
                     >
                       <Check className="h-3.5 w-3.5" />
@@ -4154,7 +4154,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                           if (target) openAssignmentModal(target);
                         }}
                         leftIcon={<UserRoundCheck className="w-3.5 h-3.5" />}
-                        className="h-8 px-2.5 text-xs font-bold text-teal-700 border-teal-300 bg-white hover:bg-teal-50"
+                        className="h-8 px-2.5 text-xs font-bold text-teal-700 border-teal-300 bg-surface hover:bg-teal-50"
                       >
                         Phân công GV
                       </Button>
@@ -4168,7 +4168,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                           if (target) openModal(target);
                         }}
                         leftIcon={<Edit className="w-3.5 h-3.5" />}
-                        className="h-8 px-2.5 text-xs font-bold bg-white"
+                        className="h-8 px-2.5 text-xs font-bold bg-surface"
                       >
                         Sửa lớp
                       </Button>
@@ -4185,14 +4185,14 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                     value={bulkLessonTopic}
                     onChange={(e) => setBulkLessonTopic(e.target.value)}
                     placeholder="Bài học chung..."
-                    className="h-8 min-w-[180px] flex-1 max-w-xs rounded-lg border border-indigo-300/80 bg-white px-2.5 text-xs font-semibold text-indigo-950 focus:outline-none focus:ring-2 focus:ring-primary/40"
+                    className="h-8 min-w-[180px] flex-1 max-w-xs rounded-lg border border-indigo-300/80 bg-surface px-2.5 text-xs font-semibold text-indigo-950 focus:outline-none focus:ring-2 focus:ring-primary/40"
                   />
                   <input
                     type="text"
                     value={bulkTeacherNote}
                     onChange={(e) => setBulkTeacherNote(e.target.value)}
                     placeholder="Ghi chú GV chung..."
-                    className="h-8 min-w-[180px] flex-1 max-w-xs rounded-lg border border-border/80 bg-white px-2.5 text-xs text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/40"
+                    className="h-8 min-w-[180px] flex-1 max-w-xs rounded-lg border border-border/80 bg-surface px-2.5 text-xs text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/40"
                   />
                   <Button
                     variant="primary"
@@ -4217,7 +4217,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                     value={bulkCsNote}
                     onChange={(e) => setBulkCsNote(e.target.value)}
                     placeholder="Ghi chú CSKH chung..."
-                    className="h-8 min-w-[220px] flex-1 max-w-sm rounded-lg border border-border/80 bg-white px-2.5 text-xs text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/40"
+                    className="h-8 min-w-[220px] flex-1 max-w-sm rounded-lg border border-border/80 bg-surface px-2.5 text-xs text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/40"
                   />
                   <Button
                     variant="primary"
@@ -4238,7 +4238,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
         {/* Bảng Lớp học & Điểm danh (hoặc Nhật ký bài học khi chọn ở Tab 2) */}
         {activeTab === 'detailed' && detailedViewMode === 'log' ? (
           <div className="w-full overflow-x-auto">
-            <table className="w-full text-xs text-left border-collapse">
+            <table data-table="native" className="w-full text-xs text-left border-collapse">
               <thead>
                 <tr className="bg-surface-muted/90 text-text-secondary border-b border-border/80 text-[11px] font-bold">
                   <th className="px-3 py-3 border-r border-border/60 whitespace-nowrap w-28">Ngày học</th>
@@ -4295,33 +4295,33 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                       return (
                         <tr
                           key={key}
-                          className={`border-b border-border/60 hover:bg-slate-50/80 transition-colors ${
-                            idx % 2 === 1 ? 'bg-slate-50/30' : 'bg-surface'
+                          className={`border-b border-border/60 hover:bg-surface-subtle/80 transition-colors ${
+                            idx % 2 === 1 ? 'bg-surface-subtle/30' : 'bg-surface'
                           }`}
                         >
-                          <td className="px-3 py-2.5 border-r border-border/60 font-bold text-text-primary whitespace-nowrap">
+                          <td data-align="center" data-wrap="nowrap" className="px-3 py-2.5 border-r border-border/60 font-bold text-text-primary whitespace-nowrap">
                             <span>{DAY_OF_WEEK_NAMES[dObj.getDay()]}</span>{' '}
                             <span>{dObj.toLocaleDateString('vi-VN')}</span>
                           </td>
-                          <td className="px-2.5 py-2.5 border-r border-border/60 text-center font-bold text-slate-700 whitespace-nowrap">
+                          <td data-align="center" data-wrap="nowrap" className="px-2.5 py-2.5 border-r border-border/60 text-center font-bold text-text-secondary whitespace-nowrap">
                             Ca {caNumber}
                           </td>
-                          <td className="px-3 py-2.5 border-r border-border/60 whitespace-nowrap">
+                          <td data-align="left" data-wrap="normal" className="px-3 py-2.5 border-r border-border/60 whitespace-nowrap">
                             <div className="font-bold text-text-primary">{student.full_name}</div>
                             <div className="font-mono text-[10px] text-text-muted">
                               {student.external_id}
                             </div>
                           </td>
-                          <td className="px-3 py-2.5 border-r border-border/60 whitespace-nowrap">
+                          <td data-align="left" data-wrap="normal" className="px-3 py-2.5 border-r border-border/60 whitespace-nowrap">
                             <div className="font-bold text-text-primary">{cleanedClsName}</div>
                             <div className="font-mono text-[10px] text-text-muted">
                               {formatClassCode(cls.class_code, cls.id)}
                             </div>
                           </td>
-                          <td className="px-3 py-2.5 border-r border-border/60 whitespace-nowrap text-text-secondary">
+                          <td data-align="left" data-wrap="normal" className="px-3 py-2.5 border-r border-border/60 whitespace-nowrap text-text-secondary">
                             {mainTeacher?.name || '—'}
                           </td>
-                          <td className="px-3 py-2.5 border-r border-border/60 text-center whitespace-nowrap">
+                          <td data-align="center" data-wrap="nowrap" className="px-3 py-2.5 border-r border-border/60 text-center whitespace-nowrap">
                             {tCfg ? (
                               <span
                                 className={`inline-flex h-6 items-center gap-1 rounded-md border px-2 text-[10px] font-extrabold ${tCfg.bg.replace(
@@ -4406,18 +4406,18 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                               <span className="text-text-muted">—</span>
                             )}
                           </td>
-                          <td className="px-3 py-2.5 border-r border-border/60">
+                          <td data-align="left" data-wrap="normal" className="px-3 py-2.5 border-r border-border/60">
                             {att?.cs_note ? (
                               <span className="italic text-text-secondary">"{att.cs_note}"</span>
                             ) : (
                               <span className="text-text-muted">—</span>
                             )}
                           </td>
-                          <td className="px-3 py-2.5 text-center whitespace-nowrap">
+                          <td data-align="center" data-wrap="nowrap" className="px-3 py-2.5 text-center whitespace-nowrap">
                             <button
                               type="button"
                               onClick={() => openDrawer(cls, student, dateStr, caNumber, false)}
-                              className="inline-flex h-7 items-center rounded-lg border border-border bg-white px-2.5 text-xs font-bold text-primary transition hover:border-primary hover:bg-primary-soft"
+                              className="inline-flex h-7 items-center rounded-lg border border-border bg-surface px-2.5 text-xs font-bold text-primary transition hover:border-primary hover:bg-primary-soft"
                             >
                               Chi tiết
                             </button>
@@ -4433,7 +4433,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
         <div>
           {activeTab === 'detailed' && !isTeacher && <AttendanceMatrixLegendBar />}
           <div className="w-full overflow-x-auto">
-          <table className="w-full text-xs text-left border-collapse">
+          <table data-table="native" className="w-full text-xs text-left border-collapse">
             <thead>
               <tr className="bg-surface-muted/90 text-text-secondary border-b border-border/80 text-[11px] font-bold">
                 {showClassSelection && (
@@ -4466,8 +4466,8 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                 >
                   Mã lớp
                 </th>
-                <th
-                  className={`px-3 py-3 border-r-2 border-border/80 whitespace-nowrap w-[155px] min-w-[155px] max-w-[155px] overflow-hidden ${
+                <th scope="col"
+                  className={`px-3 py-3 border-r-2 border-border/80 whitespace-nowrap w-[155px] min-w-[155px] max-w-[155px] ${
                     activeTab === 'detailed'
                       ? `sticky ${showClassSelection ? 'left-[152px]' : 'left-[112px]'} z-30 bg-slate-100 shadow-[4px_0_6px_-2px_rgba(0,0,0,0.08)]`
                       : ''
@@ -4476,34 +4476,34 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                   Tên lớp
                 </th>
                 {isColVisible('level') && (
-                  <th className="px-2.5 py-3 border-r border-border/60 text-center whitespace-nowrap w-24">
+                  <th scope="col" className="px-2.5 py-3 border-r border-border/60 text-center whitespace-nowrap w-24">
                     Trình độ
                   </th>
                 )}
                 {isColVisible('model_type') && (
-                  <th className="px-2.5 py-3 border-r border-border/60 text-center whitespace-nowrap w-20">
+                  <th scope="col" className="px-2.5 py-3 border-r border-border/60 text-center whitespace-nowrap w-20">
                     Mô hình
                   </th>
                 )}
                 {isColVisible('teacher_name') && (
-                  <th className="px-3 py-3 border-r border-border/60 whitespace-nowrap min-w-[130px]">
+                  <th scope="col" className="px-3 py-3 border-r border-border/60 whitespace-nowrap min-w-[130px]">
                     Giáo viên
                   </th>
                 )}
                 {isColVisible('schedule_pattern') && (
-                  <th className="px-3 py-3 border-r border-border/60 whitespace-nowrap min-w-[110px]">
+                  <th scope="col" className="px-3 py-3 border-r border-border/60 whitespace-nowrap min-w-[110px]">
                     Lịch học
                   </th>
                 )}
                 {isColVisible('status') && (
-                  <th className="px-2.5 py-3 border-r border-border/60 text-center whitespace-nowrap w-24">
+                  <th scope="col" className="px-2.5 py-3 border-r border-border/60 text-center whitespace-nowrap w-24">
                     Trạng thái
                   </th>
                 )}
-                <th
+                <th scope="col"
                   className={`px-3 py-3 border-r-2 border-border/80 whitespace-nowrap min-w-[175px] ${
                     activeTab === 'detailed'
-                      ? 'bg-slate-100'
+                      ? 'bg-surface-muted'
                       : ''
                   }`}
                 >
@@ -4522,7 +4522,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                     if (isTeacher) {
                       return (
                         <>
-                          <th className="px-3 py-2 border-r border-border/60 text-center bg-teal-50/70 text-teal-950 min-w-[290px]">
+                          <th scope="col" className="px-3 py-2 border-r border-border/60 text-center bg-teal-50/70 text-teal-950 min-w-[290px]">
                             <div className="text-[12px] font-extrabold text-teal-950">
                               Điểm danh
                             </div>
@@ -4533,10 +4533,10 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                               </span>
                             </div>
                           </th>
-                          <th className="px-3 py-2.5 border-r border-border/60 bg-indigo-50/50 text-indigo-950 min-w-[170px]">
+                          <th scope="col" className="px-3 py-2.5 border-r border-border/60 bg-indigo-50/50 text-indigo-950 min-w-[170px]">
                             <div className="text-[12px] font-extrabold">Bài học</div>
                           </th>
-                          <th className="px-3 py-2.5 border-r border-border/60 bg-indigo-50/50 text-indigo-950 min-w-[200px]">
+                          <th scope="col" className="px-3 py-2.5 border-r border-border/60 bg-indigo-50/50 text-indigo-950 min-w-[200px]">
                             <div className="text-[12px] font-extrabold">Ghi chú GV</div>
                           </th>
                         </>
@@ -4545,7 +4545,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
 
                     return (
                       <>
-                        <th className="px-3 py-2 border-r border-border/60 text-left whitespace-nowrap min-w-[180px] bg-slate-100/90 text-text-secondary">
+                        <th scope="col" className="px-3 py-2 border-r border-border/60 whitespace-nowrap min-w-[180px] bg-surface-muted/90 text-text-secondary">
                           <div className="text-[12px] font-extrabold text-text-primary whitespace-nowrap">
                             Điểm danh GV &amp; Bài học
                           </div>
@@ -4556,7 +4556,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                             </span>
                           </div>
                         </th>
-                        <th className="px-3 py-2 border-r border-border/60 text-left whitespace-nowrap min-w-[175px] bg-blue-50/90 text-primary border-primary/40">
+                        <th scope="col" className="px-3 py-2 border-r border-border/60 whitespace-nowrap min-w-[175px] bg-blue-50/90 text-primary border-primary/40">
                           <div className="text-[12px] font-extrabold text-primary whitespace-nowrap">
                             {isCSOnly ? 'Điểm danh CSKH' : 'Điểm danh & Ghi chú CSKH'}
                           </div>
@@ -4568,7 +4568,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                           </div>
                         </th>
                         {isCSOnly && (
-                          <th className="px-3 py-2 border-r border-border/60 text-left whitespace-nowrap min-w-[170px] bg-indigo-50/70 text-indigo-900">
+                          <th scope="col" className="px-3 py-2 border-r border-border/60 whitespace-nowrap min-w-[170px] bg-indigo-50/70 text-indigo-900">
                             <div className="text-[12px] font-extrabold text-indigo-900 whitespace-nowrap">
                               Ghi chú CSKH
                             </div>
@@ -4580,7 +4580,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                             </div>
                           </th>
                         )}
-                        <th className="px-3 py-2 border-r border-border/60 text-left whitespace-nowrap min-w-[180px] bg-emerald-50/70 text-emerald-900">
+                        <th scope="col" className="px-3 py-2 border-r border-border/60 whitespace-nowrap min-w-[180px] bg-emerald-50/70 text-emerald-900">
                           <div className="text-[12px] font-extrabold text-emerald-900 whitespace-nowrap">
                             {isAdminOrManage ? 'Điểm danh (Chốt)' : 'Điểm danh chốt'}
                           </div>
@@ -4597,10 +4597,10 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                 ) : (
                   <>
                     {/* 2 Cột thống kê nhanh trong Tab Lịch sử & Bảng tháng */}
-                    <th className="px-3 py-2.5 border-r border-border/60 text-center whitespace-nowrap min-w-[95px] bg-emerald-50 text-emerald-900 font-extrabold">
+                    <th scope="col" className="px-3 py-2.5 border-r border-border/60 text-center whitespace-nowrap min-w-[95px] bg-emerald-50 text-emerald-900 font-extrabold">
                       Tổng đã học
                     </th>
-                    <th className="px-3 py-2.5 border-r-2 border-border/80 text-center whitespace-nowrap min-w-[105px] bg-emerald-100/70 text-emerald-950 font-extrabold">
+                    <th scope="col" className="px-3 py-2.5 border-r-2 border-border/80 text-center whitespace-nowrap min-w-[105px] bg-emerald-100/70 text-emerald-950 font-extrabold">
                       <div className="text-[10px] text-emerald-800 uppercase font-semibold">
                         Tháng {currentPeriodDate.getMonth() + 1}
                       </div>
@@ -4614,13 +4614,13 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                       const isWeekend = d.getDay() === 0 || d.getDay() === 6;
                       const dayOfWeek = DAY_OF_WEEK_NAMES[d.getDay()];
                       return (
-                        <th
+                        <th scope="col"
                           key={dStr}
                           className={`px-1.5 py-2 border-r border-border/60 text-center min-w-[58px] transition-colors ${
                             isToday
                               ? 'bg-blue-50/90 text-primary border-primary/40 font-extrabold'
                               : isWeekend
-                              ? 'bg-slate-100/50 text-text-muted'
+                              ? 'bg-surface-muted/50 text-text-muted'
                               : ''
                           }`}
                         >
@@ -4638,7 +4638,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
 
                 {activeTab === 'quick' && showJlptLearningColumns && <JlptLearningHeaders />}
                 {canManageClasses && (
-                  <th className="px-3 py-3 text-right whitespace-nowrap min-w-[110px]">
+                  <th scope="col" className="px-3 py-3 whitespace-nowrap min-w-[110px]">
                     Thao tác
                   </th>
                 )}
@@ -4757,21 +4757,21 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                         )}
 
                         {/* Mã lớp chuẩn class_0001 */}
-                        <td
+                        <td data-align="center" data-wrap="nowrap"
                           className={`px-3 py-2.5 border-r border-border/60 whitespace-nowrap w-28 min-w-[112px] max-w-[112px] overflow-hidden ${
                             activeTab === 'detailed'
                               ? `sticky ${showClassSelection ? 'left-10' : 'left-0'} z-20 bg-slate-100`
                               : ''
                           }`}
                         >
-                          <span className="font-mono text-xs font-extrabold px-2 py-0.5 rounded-md bg-slate-100 text-slate-900 border border-slate-300 shadow-2xs">
+                          <span className="font-mono text-xs font-extrabold px-2 py-0.5 rounded-md bg-surface-muted text-text-primary border border-border-strong shadow-2xs">
                             {formattedCode}
                           </span>
                         </td>
 
                         {/* Tên lớp */}
-                        <td
-                          className={`px-3 py-2.5 border-r-2 border-border/80 font-bold text-slate-900 text-xs whitespace-nowrap w-[155px] min-w-[155px] max-w-[155px] overflow-hidden ${
+                        <td data-align="left" data-wrap="normal"
+                          className={`px-3 py-2.5 border-r-2 border-border/80 font-bold text-text-primary text-xs whitespace-nowrap w-[155px] min-w-[155px] max-w-[155px] overflow-hidden ${
                             activeTab === 'detailed'
                               ? `sticky ${showClassSelection ? 'left-[152px]' : 'left-[112px]'} z-20 shadow-[4px_0_6px_-2px_rgba(0,0,0,0.08)] bg-slate-100`
                               : ''
@@ -4797,7 +4797,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
 
                         {/* Mô hình */}
                         {isColVisible('model_type') && (
-                          <td className="px-2.5 py-2.5 border-r border-border/60 text-center whitespace-nowrap">
+                          <td data-align="center" data-wrap="nowrap" className="px-2.5 py-2.5 border-r border-border/60 text-center whitespace-nowrap">
                             <span
                               className={`inline-flex items-center px-2 py-0.5 rounded-md text-xs border ${conf.className}`}
                             >
@@ -4808,18 +4808,18 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
 
                         {/* Giáo viên */}
                         {isColVisible('teacher_name') && (
-                          <td className="px-3 py-2.5 border-r border-border/60 font-semibold text-slate-800 text-xs whitespace-nowrap">
+                          <td data-align="left" data-wrap="normal" className="px-3 py-2.5 border-r border-border/60 font-semibold text-text-primary text-xs whitespace-nowrap">
                             {mainTeacher ? (
                               mainTeacher.name
                             ) : (
-                              <span className="italic text-slate-400">Chưa phân công</span>
+                              <span className="italic text-text-muted">Chưa phân công</span>
                             )}
                           </td>
                         )}
 
                         {/* Lịch học */}
                         {isColVisible('schedule_pattern') && (
-                          <td className="px-3 py-2.5 border-r border-border/60 text-xs text-text-secondary whitespace-nowrap">
+                          <td data-align="center" data-wrap="nowrap" className="px-3 py-2.5 border-r border-border/60 text-xs text-text-secondary whitespace-nowrap">
                             {schedule ? (
                               <span>
                                 {schedule.schedule_pattern || 'Linh hoạt'}
@@ -4833,7 +4833,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
 
                         {/* Trạng thái (đồng bộ 4 trạng thái chuẩn: Đang học | Bảo lưu | Chờ lớp | Kết thúc) */}
                         {isColVisible('status') && (
-                          <td className="px-2.5 py-2.5 border-r border-border/60 text-center whitespace-nowrap">
+                          <td data-align="center" data-wrap="nowrap" className="px-2.5 py-2.5 border-r border-border/60 text-center whitespace-nowrap">
                             <Badge variant={classStatusInfo.variant} size="sm">
                               {classStatusInfo.label}
                             </Badge>
@@ -4841,7 +4841,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                         )}
 
                         {/* Cột Học viên */}
-                        <td
+                        <td data-align="left" data-wrap="normal"
                           className={`px-3 py-2.5 border-r-2 border-border/80 whitespace-nowrap min-w-[175px] ${
                             activeTab === 'detailed'
                               ? `${
@@ -4895,7 +4895,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                                         );
                                         const progressChipClass =
                                           marked === 0
-                                            ? 'bg-slate-100 text-slate-600 border-slate-200'
+                                            ? 'bg-surface-muted text-text-secondary border-border'
                                             : marked < students.length
                                             ? 'bg-amber-50 text-amber-800 border-amber-200'
                                             : 'bg-emerald-50 text-emerald-800 border-emerald-200';
@@ -4948,8 +4948,8 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                                               }
                                               className={`inline-flex h-7 shrink-0 items-center gap-1 whitespace-nowrap rounded-lg border border-dashed px-2.5 text-[11px] font-bold transition disabled:opacity-50 ${
                                                 marked >= students.length && students.length > 0
-                                                  ? 'border-rose-300 bg-white text-rose-700 hover:border-rose-400 hover:bg-rose-50'
-                                                  : 'border-indigo-300 bg-white text-indigo-700 hover:border-indigo-400 hover:bg-indigo-50'
+                                                  ? 'border-rose-300 bg-surface text-rose-700 hover:border-rose-400 hover:bg-rose-50'
+                                                  : 'border-indigo-300 bg-surface text-indigo-700 hover:border-indigo-400 hover:bg-indigo-50'
                                               }`}
                                             >
                                               <ListChecks
@@ -4974,7 +4974,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                                                   handleAddCaForClass(cls, selectedDate)
                                                 }
                                                 title={`Thêm Ca ${totalCa + 1} cho cả lớp`}
-                                                className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-dashed border-primary/60 bg-white text-xs font-extrabold text-primary transition hover:border-primary hover:bg-primary-soft disabled:opacity-50"
+                                                className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-dashed border-primary/60 bg-surface text-xs font-extrabold text-primary transition hover:border-primary hover:bg-primary-soft disabled:opacity-50"
                                               >
                                                 <Plus className="h-3.5 w-3.5" />
                                               </button>
@@ -4992,7 +4992,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                                                     ? `Gỡ bỏ Ca ${caNo} (chưa chấm điểm danh)`
                                                     : `Xóa Ca ${caNo} của cả lớp`
                                                 }
-                                                className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-transparent text-slate-400 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-50"
+                                                className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-transparent text-text-muted transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-50"
                                               >
                                                 <Trash2 className="h-3.5 w-3.5" />
                                               </button>
@@ -5005,7 +5005,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                                 )}
                               </td>
 
-                              <td className="px-2.5 py-2 border-r border-border/60 bg-indigo-50/15 select-text align-top">
+                              <td data-align="left" data-wrap="normal" className="px-2.5 py-2 border-r border-border/60 bg-indigo-50/15 select-text align-top">
                                 <div className="flex flex-col gap-1.5">
                                   {Array.from(
                                     { length: getVisibleCaCount(cls, selectedDate) },
@@ -5076,7 +5076,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                             {visiblePeriodDates.map((d) => {
                               const dStr = toLocalDateString(d);
                               return (
-                                <td
+                                <td data-align="center" data-wrap="nowrap"
                                   key={dStr}
                                   className="px-1 py-1.5 border-r border-border/60 text-center"
                                 >
@@ -5094,7 +5094,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                         />}
                         {/* Cột Thao tác (chỉ hiển thị cho vai trò quản lý lớp) */}
                         {canManageClasses && (
-                          <td className="px-3 py-2 text-right whitespace-nowrap">
+                          <td data-align="center" data-wrap="nowrap" className="px-3 py-2 text-right whitespace-nowrap">
                             <div className="flex justify-end gap-1">
                               <Button
                                 variant="outline"
@@ -5111,7 +5111,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                                 size="sm"
                                 onClick={() => openModal(cls)}
                                 leftIcon={
-                                  <Edit className="w-3.5 h-3.5 text-slate-500 hover:text-blue-600" />
+                                  <Edit className="w-3.5 h-3.5 text-text-muted hover:text-blue-600" />
                                 }
                                 title="Chỉnh sửa thông tin lớp học"
                                 className="h-7 px-1.5"
@@ -5151,7 +5151,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                                 className={`border-b border-border/50 transition-colors ${
                                   isChildSelected
                                     ? 'bg-primary-soft/35 hover:bg-primary-soft/45'
-                                    : 'bg-white hover:bg-blue-50/30'
+                                    : 'bg-surface hover:bg-blue-50/30'
                                 }`}
                               >
                                 {showClassSelection && (
@@ -5183,33 +5183,33 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                                 >
                                   {formattedCode}.{sIdx + 1}
                                 </td>
-                                <td
-                                  className={`px-3 py-2 border-r-2 border-border/80 text-[11px] text-slate-500 whitespace-nowrap w-[155px] min-w-[155px] max-w-[155px] overflow-hidden ${
+                                <td data-align="left" data-wrap="normal"
+                                  className={`px-3 py-2 border-r-2 border-border/80 text-[11px] text-text-muted whitespace-nowrap w-[155px] min-w-[155px] max-w-[155px] overflow-hidden ${
                                     activeTab === 'detailed'
                                       ? `sticky ${showClassSelection ? 'left-[152px]' : 'left-[112px]'} z-20 bg-white shadow-[4px_0_6px_-2px_rgba(0,0,0,0.08)]`
                                       : ''
                                   }`}
                                   title={cleanedClassName}
                                 >
-                                  <div className="truncate max-w-[150px]">{cleanedClassName}</div>
+                                  <div title={String(cleanedClassName ?? '')} className="truncate max-w-[150px]">{cleanedClassName}</div>
                                 </td>
                                 {isColVisible('level') && (
-                                  <td className="px-2.5 py-2 border-r border-border/50 text-center text-[11px] text-slate-500">
+                                  <td data-align="center" data-wrap="nowrap" className="px-2.5 py-2 border-r border-border/50 text-center text-[11px] text-text-muted">
                                     {st.level || cls.level || '—'}
                                   </td>
                                 )}
                                 {isColVisible('model_type') && (
-                                  <td className="px-2.5 py-2 border-r border-border/50 text-center text-[11px] text-slate-500">
+                                  <td data-align="center" data-wrap="nowrap" className="px-2.5 py-2 border-r border-border/50 text-center text-[11px] text-text-muted">
                                     {conf.label}
                                   </td>
                                 )}
                                 {isColVisible('teacher_name') && (
-                                  <td className="px-3 py-2 border-r border-border/50 text-[11px] text-slate-500 whitespace-nowrap">
+                                  <td data-align="left" data-wrap="normal" className="px-3 py-2 border-r border-border/50 text-[11px] text-text-muted whitespace-nowrap">
                                     {mainTeacher?.name || '—'}
                                   </td>
                                 )}
                                 {isColVisible('schedule_pattern') && (
-                                  <td className="px-3 py-2 border-r border-border/50 text-[11px] text-slate-500 whitespace-nowrap">
+                                  <td data-align="center" data-wrap="nowrap" className="px-3 py-2 border-r border-border/50 text-[11px] text-text-muted whitespace-nowrap">
                                     {schedule ? (
                                       <span>
                                         {schedule.schedule_pattern || 'Linh hoạt'}
@@ -5221,7 +5221,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                                   </td>
                                 )}
                                 {isColVisible('status') && (
-                                  <td className="px-2.5 py-2 border-r border-border/50 text-center whitespace-nowrap">
+                                  <td data-align="center" data-wrap="nowrap" className="px-2.5 py-2 border-r border-border/50 text-center whitespace-nowrap">
                                     {(() => {
                                       const stBadge =
                                         ENROLLMENT_STATUS_BADGE_MAP[st.status || 'STUDYING'] ||
@@ -5234,7 +5234,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                                     })()}
                                   </td>
                                 )}
-                                <td
+                                <td data-align="left" data-wrap="normal"
                                   className={`px-3 py-2 border-r-2 border-border/80 whitespace-nowrap min-w-[175px] ${
                                     activeTab === 'detailed'
                                       ? 'bg-purple-50'
@@ -5251,7 +5251,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                                       </div>
                                     </div>
                                     {st.package_name && (
-                                      <span className="shrink-0 whitespace-nowrap text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-medium">
+                                      <span className="shrink-0 whitespace-nowrap text-[10px] px-1.5 py-0.5 rounded bg-surface-muted text-text-secondary font-medium">
                                         {st.package_name}
                                       </span>
                                     )}
@@ -5261,10 +5261,10 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                                 {activeTab === 'quick' ? (
                                   isTeacher ? (
                                     <>
-                                      <td className="px-2.5 py-2 border-r border-border/60 bg-teal-50/10 align-top">
+                                      <td data-align="center" data-wrap="nowrap" className="px-2.5 py-2 border-r border-border/60 bg-teal-50/10 align-top">
                                         {renderQuickStatusCell(cls, st, selectedDate)}
                                       </td>
-                                      <td className="px-2.5 py-2 border-r border-border/60 bg-indigo-50/10 select-text align-top">
+                                      <td data-align="left" data-wrap="normal" className="px-2.5 py-2 border-r border-border/60 bg-indigo-50/10 select-text align-top">
                                         <div className="flex flex-col gap-1.5">
                                           {Array.from(
                                             { length: getVisibleCaCount(cls, selectedDate) },
@@ -5280,7 +5280,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                                           )}
                                         </div>
                                       </td>
-                                      <td className="px-2.5 py-2 border-r border-border/60 bg-indigo-50/10 select-text align-top">
+                                      <td data-align="left" data-wrap="normal" className="px-2.5 py-2 border-r border-border/60 bg-indigo-50/10 select-text align-top">
                                         <div className="flex flex-col gap-1.5">
                                           {Array.from(
                                             { length: getVisibleCaCount(cls, selectedDate) },
@@ -5298,20 +5298,20 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                                     </>
                                   ) : (
                                     <>
-                                      <td className="px-2.5 py-2 border-r border-border/60 bg-slate-50/40 align-middle whitespace-nowrap">
+                                      <td data-align="left" data-wrap="normal" className="px-2.5 py-2 border-r border-border/60 bg-surface-subtle/40 align-middle whitespace-nowrap">
                                         {renderQuickTeacherStackForClassStudent(cls, st, selectedDate)}
                                       </td>
-                                      <td className="px-2.5 py-2 border-r border-border/60 bg-blue-50/20 align-middle whitespace-nowrap">
+                                      <td data-align="center" data-wrap="nowrap" className="px-2.5 py-2 border-r border-border/60 bg-blue-50/20 align-middle whitespace-nowrap">
                                         {isCSOnly
                                           ? renderQuickStatusCell(cls, st, selectedDate, 'mark')
                                           : renderCSReadonlyCellForClassStudent(cls, st, selectedDate)}
                                       </td>
                                       {isCSOnly && (
-                                        <td className="px-2.5 py-2 border-r border-border/60 bg-indigo-50/15 align-middle whitespace-nowrap">
+                                        <td data-align="left" data-wrap="normal" className="px-2.5 py-2 border-r border-border/60 bg-indigo-50/15 align-middle whitespace-nowrap">
                                           {renderQuickCsNoteStackForClassStudent(cls, st, selectedDate)}
                                         </td>
                                       )}
-                                      <td className="px-2.5 py-2 border-r border-border/60 bg-emerald-50/20 align-middle whitespace-nowrap">
+                                      <td data-align="center" data-wrap="nowrap" className="px-2.5 py-2 border-r border-border/60 bg-emerald-50/20 align-middle whitespace-nowrap">
                                         {isAdminOrManage
                                           ? renderQuickStatusCell(cls, st, selectedDate, 'admin-final')
                                           : renderFinalStatusCellForClassStudent(cls, st, selectedDate)}
@@ -5320,16 +5320,16 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                                   )
                                 ) : (
                                   <>
-                                    <td className="px-3 py-2 border-r border-border/60 text-center font-extrabold text-emerald-800 bg-emerald-50/40">
+                                    <td data-align="right" data-wrap="nowrap" className="px-3 py-2 border-r border-border/60 text-center font-extrabold text-emerald-800 bg-emerald-50/40">
                                       {stTotalAttended}
                                     </td>
-                                    <td className="px-3 py-2 border-r-2 border-border/80 text-center font-extrabold text-emerald-800 bg-emerald-100/30">
+                                    <td data-align="right" data-wrap="nowrap" className="px-3 py-2 border-r-2 border-border/80 text-center font-extrabold text-emerald-800 bg-emerald-100/30">
                                       {stMonthAttended}
                                     </td>
                                     {visiblePeriodDates.map((d) => {
                                       const dStr = toLocalDateString(d);
                                       return (
-                                        <td
+                                        <td data-align="center" data-wrap="nowrap"
                                           key={dStr}
                                           className="px-1 py-1 border-r border-border/60 text-center"
                                         >
@@ -5347,7 +5347,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                                   attendanceForSession={id => attendanceByEcAndSession.get(`${st.enrollment_class_id}_session_${id}`)}
                                 />}
                                 {canManageClasses && (
-                                  <td className="px-3 py-1.5 text-right text-[11px] text-text-muted">
+                                  <td data-align="center" data-wrap="nowrap" className="px-3 py-1.5 text-right text-[11px] text-text-muted">
                                     —
                                   </td>
                                 )}
@@ -5662,7 +5662,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
 
           <div>
             <div className="flex items-center justify-between mb-1">
-              <label className="block text-xs font-semibold text-slate-700">
+              <label className="block text-xs font-semibold text-text-secondary">
                 Mã lớp học
               </label>
               <button
@@ -5721,11 +5721,11 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
               <input
                 id="class-active"
                 type="checkbox"
-                className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                className="h-4 w-4 rounded border-border-strong text-blue-600 focus:ring-blue-500"
                 checked={formData.active}
                 onChange={(e) => setFormData({ ...formData, active: e.target.checked })}
               />
-              <label htmlFor="class-active" className="ml-2 block text-xs font-semibold text-slate-700">
+              <label htmlFor="class-active" className="ml-2 block text-xs font-semibold text-text-secondary">
                 Đang mở lớp hoạt động
               </label>
             </div>
@@ -5766,23 +5766,23 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                 Danh sách phân công hiện tại
               </h4>
               {!assignmentClass.class_teachers || assignmentClass.class_teachers.length === 0 ? (
-                <div className="rounded-xl border border-border/70 bg-slate-50/70 p-4 text-center text-xs text-text-muted italic">
+                <div className="rounded-xl border border-border/70 bg-surface-subtle/70 p-4 text-center text-xs text-text-muted italic">
                   Lớp học chưa có phân công giáo viên nào.
                 </div>
               ) : (
                 <div className="overflow-x-auto rounded-xl border border-border/80">
-                  <table className="w-full text-left text-xs">
-                    <thead className="bg-slate-50 text-text-secondary border-b border-border/80">
+                  <table data-table="native" className="w-full text-left text-xs">
+                    <thead className="bg-surface-subtle text-text-secondary border-b border-border/80">
                       <tr>
-                        <th className="px-3 py-2 font-semibold">Giáo viên</th>
-                        <th className="px-3 py-2 font-semibold">Vai trò</th>
-                        <th className="px-3 py-2 font-semibold">Trạng thái</th>
-                        <th className="px-3 py-2 font-semibold">Từ ngày</th>
-                        <th className="px-3 py-2 font-semibold">Đến ngày</th>
-                        {isAdmin && <th className="px-3 py-2 font-semibold text-right">Thao tác</th>}
+                        <th scope="col" className="px-3 py-2 font-semibold">Giáo viên</th>
+                        <th scope="col" className="px-3 py-2 font-semibold">Vai trò</th>
+                        <th scope="col" className="px-3 py-2 font-semibold">Trạng thái</th>
+                        <th scope="col" className="px-3 py-2 font-semibold">Từ ngày</th>
+                        <th scope="col" className="px-3 py-2 font-semibold">Đến ngày</th>
+                        {isAdmin && <th scope="col" className="px-3 py-2 font-semibold ">Thao tác</th>}
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-border/60 bg-white">
+                    <tbody className="divide-y divide-border/60 bg-surface">
                       {assignmentClass.class_teachers.map((row) => {
                         const roleCfg = TEACHER_ROLE_CONFIG[row.role] || {
                           label: row.role,
@@ -5791,8 +5791,8 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                         const isEndingThisRow = endingAssignmentId === row.id;
 
                         return (
-                          <tr key={row.id} className="hover:bg-slate-50/60">
-                            <td className="px-3 py-2.5">
+                          <tr key={row.id} className="hover:bg-surface-subtle/60">
+                            <td data-align="left" data-wrap="normal" className="px-3 py-2.5">
                               <div className="font-semibold text-text-primary">
                                 {row.teacher?.name || `GV #${row.teacher_id}`}
                               </div>
@@ -5800,12 +5800,12 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                                 {row.teacher?.code || '—'}
                               </div>
                             </td>
-                            <td className="px-3 py-2.5 whitespace-nowrap">
+                            <td data-align="center" data-wrap="nowrap" className="px-3 py-2.5 whitespace-nowrap">
                               <Badge variant={roleCfg.variant} size="sm">
                                 {roleCfg.label}
                               </Badge>
                             </td>
-                            <td className="px-3 py-2.5 whitespace-nowrap">
+                            <td data-align="center" data-wrap="nowrap" className="px-3 py-2.5 whitespace-nowrap">
                               {row.active ? (
                                 <Badge variant="success" size="sm" dot>
                                   Đang phân công
@@ -5816,14 +5816,14 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                                 </Badge>
                               )}
                             </td>
-                            <td className="px-3 py-2.5 whitespace-nowrap text-text-secondary">
+                            <td data-align="center" data-wrap="nowrap" className="px-3 py-2.5 whitespace-nowrap text-text-secondary">
                               {formatAssignmentDate(row.start_date)}
                             </td>
-                            <td className="px-3 py-2.5 whitespace-nowrap text-text-secondary">
+                            <td data-align="center" data-wrap="nowrap" className="px-3 py-2.5 whitespace-nowrap text-text-secondary">
                               {formatAssignmentDate(row.end_date)}
                             </td>
                             {isAdmin && (
-                              <td className="px-3 py-2.5 text-right whitespace-nowrap">
+                              <td data-align="center" data-wrap="nowrap" className="px-3 py-2.5 text-right whitespace-nowrap">
                                 {row.active && !isEndingThisRow && (
                                   <Button
                                     variant="outline"
@@ -5845,7 +5845,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                                       value={endDateDraft}
                                       onChange={(e) => setEndDateDraft(e.target.value)}
                                       disabled={endingAssignment}
-                                      className="h-7 rounded-lg border border-border px-2 text-xs text-text-primary bg-white focus:outline-none focus:ring-2 focus:ring-primary"
+                                      className="h-7 rounded-lg border border-border px-2 text-xs text-text-primary bg-surface focus:outline-none focus:ring-2 focus:ring-primary"
                                     />
                                     <Button
                                       variant="danger"
@@ -5883,7 +5883,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
             {/* Thêm phân công mới */}
             <form
               onSubmit={handleAssignTeacherSubmit}
-              className="rounded-xl border border-border/80 bg-slate-50/60 p-4 space-y-3"
+              className="rounded-xl border border-border/80 bg-surface-subtle/60 p-4 space-y-3"
             >
               <h4 className="text-xs font-bold uppercase tracking-wider text-text-secondary">
                 Thêm phân công

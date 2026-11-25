@@ -9,6 +9,10 @@ export interface Column<T> {
   cell?: (item: T, rowIndex: number) => ReactNode;
   className?: string;
   width?: string;
+  /** Headers always remain centered. Alignment applies only to body values. */
+  align: 'left' | 'center' | 'right';
+  /** Use wrap for names/descriptions; keep codes, dates and numbers together. */
+  wrap: boolean;
 }
 
 export interface DataTableProps<T> {
@@ -28,6 +32,9 @@ export interface DataTableProps<T> {
   pageSizeOptions?: number[];
   /** Omit outer card border/rounding when already wrapped in a parent table card */
   bare?: boolean;
+  /** Fixed column proportions for tables whose structure must stay stable across datasets. */
+  tableLayout?: 'auto' | 'fixed';
+  minTableWidth?: number;
 }
 
 export function DataTable<T>({
@@ -45,6 +52,8 @@ export function DataTable<T>({
   onPageSizeChange,
   pageSizeOptions,
   bare = false,
+  tableLayout = 'auto',
+  minTableWidth,
 }: DataTableProps<T>) {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(initialPageSize);
@@ -100,14 +109,15 @@ export function DataTable<T>({
     >
       {/* Table Scrollable Container */}
       <div className="w-full overflow-x-auto">
-        <table className="w-full text-sm text-left border-separate border-spacing-0">
+        <table data-table="standard" style={{ tableLayout, minWidth: minTableWidth }} className="w-full text-sm text-left border-separate border-spacing-0">
           <thead className="relative z-20">
-            <tr className="bg-slate-100 text-text-secondary">
+            <tr className="bg-surface-muted text-text-secondary">
               {columns.map((col, index) => (
                 <th
                   key={index}
+                  scope="col"
                   style={col.width ? { width: col.width } : undefined}
-                  className={`px-4 py-3.5 text-xs font-bold whitespace-nowrap border-b border-border/80 bg-slate-100 ${col.className || ''} !text-center`}
+                  className={`px-4 py-3.5 text-xs font-bold whitespace-nowrap border-b border-border/80 bg-surface-muted ${col.className || ''} !text-center`}
                 >
                   {col.header}
                 </th>
@@ -142,14 +152,16 @@ export function DataTable<T>({
                 <tr
                   key={rowIndex}
                   onClick={() => onRowClick?.(item)}
-                  className={`group transition-colors hover:bg-slate-50 ${
+                  className={`group transition-colors hover:bg-surface-subtle ${
                     onRowClick ? 'cursor-pointer' : ''
                   }`}
                 >
                   {columns.map((col, colIndex) => (
                     <td
                       key={colIndex}
-                      className={`px-4 py-3.5 text-text-primary border-b border-border/60 bg-white group-hover:bg-slate-50 ${col.className || ''}`}
+                      data-align={col.align}
+                      data-wrap={col.wrap ? 'normal' : 'nowrap'}
+                      className={`px-4 py-3.5 text-text-primary border-b border-border/60 bg-surface group-hover:bg-surface-subtle ${col.className || ''}`}
                     >
                       {col.cell
                         ? col.cell(item, rowIndex)

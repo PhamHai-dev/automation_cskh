@@ -25,7 +25,7 @@ interface CareGroupSyncReportCardProps {
 
 const SYNC_STAGES = [
   'Đang tải danh sách nhóm mới nhất từ các tài khoản Zalo và LINE đang kết nối...',
-  'Đang đối chiếu tên nhóm theo quy tắc: [Số thứ tự CSKH] - [Mã học viên] [Họ và tên]...',
+  'Đang đối chiếu tên nhóm theo cấu hình Kaiwa/JLPT...',
   'Đang tự động gắn Nhóm Chăm sóc vào hồ sơ của từng học viên...',
 ];
 
@@ -138,15 +138,7 @@ export const CareGroupSyncReportCard: React.FC<CareGroupSyncReportCardProps> = (
           <div>
             <h3 className="text-sm font-bold text-text-primary">{title}</h3>
             <p className="text-[11px] text-text-muted">
-              Cách đặt tên nhóm để hệ thống tự động nhận diện:{' '}
-              <code className="font-mono font-semibold text-primary bg-primary/10 px-1.5 py-0.5 rounded">
-                [Số thứ tự CSKH] - [Mã học viên] [Tên học viên]
-              </code>{' '}
-              (Ví dụ:{' '}
-              <span className="font-mono font-semibold text-text-secondary">
-                01 - HV_001 Nguyễn Văn An
-              </span>
-              )
+              Đối chiếu theo cấu hình tên nhóm Kaiwa/JLPT. Nhóm trùng cần chọn thủ công.
             </p>
           </div>
         </div>
@@ -194,10 +186,10 @@ export const CareGroupSyncReportCard: React.FC<CareGroupSyncReportCardProps> = (
                   key={stageText}
                   className={`flex items-start gap-1.5 p-2 rounded-lg border ${
                     isCurrent
-                      ? 'border-blue-300 bg-white text-blue-900 font-semibold shadow-2xs'
+                      ? 'border-blue-300 bg-surface text-blue-900 font-semibold shadow-2xs'
                       : isDone
                         ? 'border-emerald-200 bg-emerald-50/60 text-emerald-800'
-                        : 'border-transparent bg-white/50 text-slate-500'
+                        : 'border-transparent bg-surface/50 text-text-muted'
                   }`}
                 >
                   <span className="font-bold shrink-0">{idx + 1}.</span>
@@ -257,7 +249,7 @@ export const CareGroupSyncReportCard: React.FC<CareGroupSyncReportCardProps> = (
                 <span className="inline-flex items-center px-2.5 py-0.5 rounded-lg bg-blue-600 text-white text-xs font-bold">
                   +{report.newlyLinkedZaloCount ?? 0} Nhóm Zalo
                 </span>
-                <span className="inline-flex items-center px-2.5 py-0.5 rounded-lg bg-[#06C755] text-white text-xs font-bold">
+                <span className="inline-flex items-center px-2.5 py-0.5 rounded-lg bg-line text-white text-xs font-bold">
                   +{report.newlyLinkedLineCount ?? 0} Nhóm LINE
                 </span>
               </div>
@@ -338,7 +330,7 @@ export const CareGroupSyncReportCard: React.FC<CareGroupSyncReportCardProps> = (
                 type="text"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="Tìm theo mã học viên, họ tên, CSKH, tên nhóm..."
+                placeholder="Tìm theo mã học viên, họ tên, CVHT, tên nhóm..."
                 className="w-full pl-8 pr-3 py-1.5 text-xs rounded-xl border border-border bg-surface-muted/60 focus:bg-surface focus:outline-none"
               />
             </div>
@@ -348,41 +340,41 @@ export const CareGroupSyncReportCard: React.FC<CareGroupSyncReportCardProps> = (
           {activeSubTab === 'UNLINKED' && (
             <div className="rounded-xl border border-border overflow-hidden">
               <div className="overflow-x-auto max-h-80">
-                <table className="w-full text-left border-collapse text-xs">
+                <table data-table="native" className="w-full text-left border-collapse text-xs">
                   <thead className="bg-surface-muted sticky top-0 z-10 border-b border-border text-[11px] font-bold text-text-muted uppercase">
                     <tr>
-                      <th className="py-2.5 px-3">Mã học viên</th>
-                      <th className="py-2.5 px-3">Họ và tên</th>
-                      <th className="py-2.5 px-3">CVHT phụ trách</th>
-                      <th className="py-2.5 px-3">Tên nhóm chuẩn (Bấm Sao chép để đặt tên nhóm)</th>
-                      <th className="py-2.5 px-3">Trạng thái</th>
+                      <th scope="col" className="py-2.5 px-3">Mã học viên</th>
+                      <th scope="col" className="py-2.5 px-3">Họ và tên</th>
+                      <th scope="col" className="py-2.5 px-3">CVHT phụ trách</th>
+                      <th scope="col" className="py-2.5 px-3">Tên nhóm chăm sóc gợi ý</th>
+                      <th scope="col" className="py-2.5 px-3">Trạng thái</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border/60">
                     {unlinkedItems.length === 0 ? (
                       <tr>
-                        <td colSpan={5} className="py-8 text-center text-text-muted">
+                        <td data-align="center" colSpan={5} className="py-8 text-center text-text-muted">
                           Tuyệt vời! Tất cả học viên đủ điều kiện đều đã được gắn Nhóm Chăm sóc.
                         </td>
                       </tr>
                     ) : (
                       unlinkedItems.map((item) => {
-                        const copyId = `unlinked-${item.studentId}`;
+                        const copyId = `unlinked-${item.studentId}-${item.programType}-${item.csId}`;
                         const isCopied = copiedKey === copyId;
                         return (
-                          <tr key={item.studentId} className="hover:bg-surface-muted/40">
-                            <td className="py-2.5 px-3 font-mono font-bold text-primary whitespace-nowrap">
+                          <tr key={`${item.studentId}:${item.programType}:${item.csId}`} className="hover:bg-surface-muted/40">
+                            <td data-align="center" data-wrap="nowrap" className="py-2.5 px-3 font-mono font-bold text-primary whitespace-nowrap">
                               {item.studentExternalId || (
                                 <span className="text-danger">Chưa có mã</span>
                               )}
                             </td>
-                            <td className="py-2.5 px-3 font-semibold text-text-primary">
-                              {item.studentName}
+                            <td data-align="left" data-wrap="normal" className="py-2.5 px-3 font-semibold text-text-primary">
+                              {item.studentName} · {item.programType === 'KAIWA' ? 'Kaiwa' : 'JLPT'}
                             </td>
-                            <td className="py-2.5 px-3 text-text-secondary whitespace-nowrap">
+                            <td data-align="left" data-wrap="normal" className="py-2.5 px-3 text-text-secondary whitespace-nowrap">
                               {formatCsLabel(item.csName, item.csCode)}
                             </td>
-                            <td className="py-2.5 px-3">
+                            <td data-align="left" data-wrap="normal" className="py-2.5 px-3">
                               {item.suggestedGroupName ? (
                                 <div className="inline-flex items-center gap-1.5 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1">
                                   <code className="font-mono font-bold text-amber-900 text-xs">
@@ -393,7 +385,7 @@ export const CareGroupSyncReportCard: React.FC<CareGroupSyncReportCardProps> = (
                                     onClick={() =>
                                       handleCopyGroupName(item.suggestedGroupName, copyId)
                                     }
-                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-white border border-amber-300 hover:bg-amber-100 text-amber-900 font-semibold text-[11px] transition-colors"
+                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface border border-amber-300 hover:bg-amber-100 text-amber-900 font-semibold text-[11px] transition-colors"
                                     title="Sao chép tên này để đặt tên nhóm trên Zalo / LINE"
                                   >
                                     {isCopied ? (
@@ -413,7 +405,7 @@ export const CareGroupSyncReportCard: React.FC<CareGroupSyncReportCardProps> = (
                                 <span className="text-text-muted italic">—</span>
                               )}
                             </td>
-                            <td className="py-2.5 px-3 text-amber-700">{item.reason}</td>
+                            <td data-align="left" data-wrap="normal" className="py-2.5 px-3 text-amber-700">{item.reason}</td>
                           </tr>
                         );
                       })
@@ -428,41 +420,41 @@ export const CareGroupSyncReportCard: React.FC<CareGroupSyncReportCardProps> = (
           {activeSubTab === 'LINKED' && (
             <div className="rounded-xl border border-border overflow-hidden">
               <div className="overflow-x-auto max-h-80">
-                <table className="w-full text-left border-collapse text-xs">
+                <table data-table="native" className="w-full text-left border-collapse text-xs">
                   <thead className="bg-surface-muted sticky top-0 z-10 border-b border-border text-[11px] font-bold text-text-muted uppercase">
                     <tr>
-                      <th className="py-2.5 px-3">Mã học viên</th>
-                      <th className="py-2.5 px-3">Họ và tên</th>
-                      <th className="py-2.5 px-3">CVHT phụ trách</th>
-                      <th className="py-2.5 px-3">Tên nhóm chuẩn (Bấm Sao chép để đặt tên nhóm)</th>
-                      <th className="py-2.5 px-3">Trạng thái</th>
+                      <th scope="col" className="py-2.5 px-3">Mã học viên</th>
+                      <th scope="col" className="py-2.5 px-3">Họ và tên</th>
+                      <th scope="col" className="py-2.5 px-3">CVHT phụ trách</th>
+                      <th scope="col" className="py-2.5 px-3">Tên nhóm chăm sóc gợi ý</th>
+                      <th scope="col" className="py-2.5 px-3">Trạng thái</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border/60">
                     {linkedItems.length === 0 ? (
                       <tr>
-                        <td colSpan={5} className="py-8 text-center text-text-muted">
+                        <td data-align="center" colSpan={5} className="py-8 text-center text-text-muted">
                           Chưa có học viên nào được gắn Nhóm Chăm sóc.
                         </td>
                       </tr>
                     ) : (
                       linkedItems.map((item) => {
-                        const copyId = `linked-${item.studentId}`;
+                        const copyId = `linked-${item.studentId}-${item.programType}-${item.csId}`;
                         const isCopied = copiedKey === copyId;
                         const primaryGroupName =
                           item.zaloGroupName || item.lineGroupName || '';
                         return (
-                          <tr key={item.studentId} className="hover:bg-surface-muted/40">
-                            <td className="py-2.5 px-3 font-mono font-bold text-primary whitespace-nowrap">
+                          <tr key={`${item.studentId}:${item.programType}:${item.csId}`} className="hover:bg-surface-muted/40">
+                            <td data-align="center" data-wrap="nowrap" className="py-2.5 px-3 font-mono font-bold text-primary whitespace-nowrap">
                               {item.studentExternalId || `#${item.studentId}`}
                             </td>
-                            <td className="py-2.5 px-3 font-semibold text-text-primary">
+                            <td data-align="left" data-wrap="normal" className="py-2.5 px-3 font-semibold text-text-primary">
                               {item.studentName}
                             </td>
-                            <td className="py-2.5 px-3 text-text-secondary whitespace-nowrap">
+                            <td data-align="left" data-wrap="normal" className="py-2.5 px-3 text-text-secondary whitespace-nowrap">
                               {formatCsLabel(item.csName, item.csCode)}
                             </td>
-                            <td className="py-2.5 px-3">
+                            <td data-align="left" data-wrap="normal" className="py-2.5 px-3">
                               <div className="flex flex-wrap items-center gap-1.5">
                                 {item.zaloGroupName && (
                                   <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-500/10 text-blue-700 font-semibold text-[11px]">
@@ -500,7 +492,7 @@ export const CareGroupSyncReportCard: React.FC<CareGroupSyncReportCardProps> = (
                                 )}
                               </div>
                             </td>
-                            <td className="py-2.5 px-3 whitespace-nowrap">
+                            <td data-align="center" data-wrap="nowrap" className="py-2.5 px-3 whitespace-nowrap">
                               {item.newlyLinked ? (
                                 <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-600 text-white font-bold text-[10px]">
                                   <Sparkles className="w-3 h-3" />

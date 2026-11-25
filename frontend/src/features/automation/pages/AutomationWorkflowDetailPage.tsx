@@ -29,6 +29,7 @@ import { useToast } from '../../../components/ui/Toast';
 import { useAuth } from '../../../contexts/AuthContext';
 import {
   Plus,
+  Mail,
   Trash2,
   Pencil,
   ArrowLeft,
@@ -63,7 +64,7 @@ export const AutomationWorkflowDetailPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<TabType>('steps');
 
-  // CSKH Assignment Modal (Admin / Manage)
+  // CVHT Assignment Modal (Admin / Manage)
   const [csUsers, setCsUsers] = useState<AssignableCsUser[]>([]);
   const [isAssignCsModalOpen, setIsAssignCsModalOpen] = useState(false);
   const [selectedCsIds, setSelectedCsIds] = useState<number[]>([]);
@@ -206,7 +207,7 @@ export const AutomationWorkflowDetailPage: React.FC = () => {
     }
   }, [isAdminOrManage]);
 
-  // ─── CSKH Assignment Modal ─────────────────────────────────────────
+  // ─── CVHT Assignment Modal ─────────────────────────────────────────
 
   const openAssignCsModal = () => {
     setSelectedCsIds(workflow?.assigned_cs_ids ?? []);
@@ -225,9 +226,9 @@ export const AutomationWorkflowDetailPage: React.FC = () => {
       const res = await automationApi.updateWorkflowCsAssignments(workflowId, selectedCsIds);
       setWorkflow(res.workflow);
       setIsAssignCsModalOpen(false);
-      toast.success('Đã lưu phân quyền CSKH cho kịch bản');
+      toast.success('Đã lưu phân quyền CVHT cho kịch bản');
     } catch (err: any) {
-      toast.error(err.response?.data?.message || 'Không thể lưu phân quyền CSKH');
+      toast.error(err.response?.data?.message || 'Không thể lưu phân quyền CVHT');
     } finally {
       setAssignCsSubmitting(false);
     }
@@ -515,14 +516,14 @@ export const AutomationWorkflowDetailPage: React.FC = () => {
                 leftIcon={<ShieldCheck className="w-4 h-4 text-indigo-600" />}
                 onClick={openAssignCsModal}
               >
-                Phân quyền CSKH ({assignedUsers.length})
+                Phân quyền CVHT ({assignedUsers.length})
               </Button>
             )}
             <span
               className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold ${
                 workflow.active
                   ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                  : 'bg-slate-100 text-slate-500 border border-slate-200'
+                  : 'bg-surface-muted text-text-muted border border-border'
               }`}
             >
               <span
@@ -535,17 +536,17 @@ export const AutomationWorkflowDetailPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Assigned CSKH Summary Bar (Admin / Manage only — hidden from CS) */}
+        {/* Assigned CVHT Summary Bar (Admin / Manage only — hidden from CS) */}
         {isAdminOrManage && (
           <div className="mt-3 p-3 rounded-xl bg-surface border border-border/80 flex items-center justify-between flex-wrap gap-2">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="text-xs font-semibold text-text-secondary flex items-center gap-1">
                 <UserCheck className="w-3.5 h-3.5 text-indigo-600" />
-                CSKH tham gia kịch bản:
+                CVHT tham gia kịch bản:
               </span>
               {assignedUsers.length === 0 ? (
                 <span className="text-xs text-amber-600 font-medium">
-                  Chưa có CSKH nào được phân quyền
+                  Chưa có CVHT nào được phân quyền
                 </span>
               ) : (
                 assignedUsers.map((u) => (
@@ -675,7 +676,7 @@ export const AutomationWorkflowDetailPage: React.FC = () => {
                             <span
                               className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
                                 step.channel.startsWith('LINE_')
-                                  ? 'bg-[#06C755]/15 text-[#06C755] border border-[#06C755]/30'
+                                  ? 'bg-line/15 text-line border border-line/30'
                                   : 'bg-blue-50 text-blue-700 border border-blue-200'
                               }`}
                             >
@@ -687,12 +688,12 @@ export const AutomationWorkflowDetailPage: React.FC = () => {
                               </span>
                             )}
                             {isInactive && (
-                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-500 border border-slate-200">
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-surface-muted text-text-muted border border-border">
                                 Đang tắt
                               </span>
                             )}
                           </div>
-                          <p className="mt-1.5 text-xs text-text-secondary line-clamp-2 whitespace-pre-wrap">
+                          <p title={String(step.message_content ?? '')} className="mt-1.5 text-xs text-text-secondary line-clamp-2 whitespace-pre-wrap">
                             {step.message_content}
                           </p>
                         </div>
@@ -709,11 +710,11 @@ export const AutomationWorkflowDetailPage: React.FC = () => {
                               className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full border transition-colors disabled:opacity-50 ${
                                 step.active
                                   ? 'bg-emerald-500 border-emerald-500'
-                                  : 'bg-slate-200 border-slate-300'
+                                  : 'bg-slate-200 border-border-strong'
                               }`}
                             >
                               <span
-                                className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${
+                                className={`inline-block h-3.5 w-3.5 transform rounded-full bg-surface shadow transition-transform ${
                                   step.active ? 'translate-x-[18px]' : 'translate-x-[3px]'
                                 }`}
                               />
@@ -797,9 +798,9 @@ export const AutomationWorkflowDetailPage: React.FC = () => {
                           <div className="text-[11px] text-text-muted flex flex-wrap items-center gap-1.5">
                             <span>SĐT: {en.enrollment?.student?.phone || '—'}</span>
                             {en.enrollment?.student?.email && (
-                              <span>📧 {en.enrollment.student.email}</span>
+                              <span className="inline-flex items-center gap-1.5"><Mail className="w-4 h-4" />{en.enrollment.student.email}</span>
                             )}
-                            {en.enrollment?.cs && <span>• CSKH: {en.enrollment.cs.name}</span>}
+                            {en.enrollment?.cs && <span>• CVHT: {en.enrollment.cs.name}</span>}
                             {en.enrollment && getEnrollmentPackageLabel(en.enrollment) !== '—' && (
                               <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-primary/5 text-primary text-[10px] font-bold">
                                 {getEnrollmentPackageLabel(en.enrollment)}
@@ -882,7 +883,7 @@ export const AutomationWorkflowDetailPage: React.FC = () => {
                           {new Date(d.created_at).toLocaleString('vi-VN')}
                         </span>
                       </div>
-                      <p className="text-xs text-text-secondary line-clamp-2 whitespace-pre-wrap">
+                      <p title={String(d.rendered_content ?? '')} className="text-xs text-text-secondary line-clamp-2 whitespace-pre-wrap">
                         {d.rendered_content}
                       </p>
                       {d.error_message && (
@@ -897,17 +898,17 @@ export const AutomationWorkflowDetailPage: React.FC = () => {
         </div>
       )}
 
-      {/* ─── Assign CSKH Modal (Admin / Manage) ─────────────────────── */}
+      {/* ─── Assign CVHT Modal (Admin / Manage) ─────────────────────── */}
       {isAdminOrManage && (
         <Modal
           isOpen={isAssignCsModalOpen}
           onClose={() => setIsAssignCsModalOpen(false)}
-          title="Phân quyền CSKH tham gia kịch bản"
+          title="Phân quyền CVHT tham gia kịch bản"
         >
           <div className="space-y-4">
             <div className="flex items-center justify-between text-xs">
               <span className="font-semibold text-text-secondary">
-                Đã chọn {selectedCsIds.length}/{csUsers.length} CSKH
+                Đã chọn {selectedCsIds.length}/{csUsers.length} CVHT
               </span>
               <div className="flex items-center gap-2">
                 <button
@@ -982,7 +983,7 @@ export const AutomationWorkflowDetailPage: React.FC = () => {
                 onClick={handleSaveCsAssignments}
                 isLoading={assignCsSubmitting}
               >
-                Lưu phân quyền CSKH
+                Lưu phân quyền CVHT
               </Button>
             </div>
           </div>
@@ -1279,7 +1280,7 @@ export const AutomationWorkflowDetailPage: React.FC = () => {
           </div>
 
           {/* Table */}
-          <div className="border border-border/80 rounded-xl overflow-hidden max-h-[320px] overflow-y-auto">
+          <div className="border border-border/80 rounded-xl max-h-[320px] overflow-auto">
             {availLoading ? (
               <div className="text-center py-10 text-text-muted text-sm">Đang tải...</div>
             ) : available.length === 0 ? (
@@ -1287,13 +1288,13 @@ export const AutomationWorkflowDetailPage: React.FC = () => {
                 Không có học viên nào khả dụng.
               </div>
             ) : (
-              <table className="w-full text-left text-sm">
-                <thead className="bg-slate-100 text-[10px] uppercase tracking-wide text-text-muted sticky top-0 z-20 shadow-2xs">
+              <table data-table="native" className="w-full text-left text-sm">
+                <thead className="bg-surface-muted text-[10px] uppercase tracking-wide text-text-muted sticky top-0 z-20 shadow-2xs">
                   <tr>
-                    <th className="px-3 py-2 w-8"></th>
-                    <th className="px-3 py-2 font-semibold">Học viên</th>
-                    <th className="px-3 py-2 font-semibold">Gói / Lớp / GV</th>
-                    <th className="px-3 py-2 font-semibold">CVHT phụ trách</th>
+                    <th scope="col" className="px-3 py-2 w-8"><span className="sr-only">Chọn học viên</span></th>
+                    <th scope="col" className="px-3 py-2 font-semibold">Học viên</th>
+                    <th scope="col" className="px-3 py-2 font-semibold">Gói / Lớp / GV</th>
+                    <th scope="col" className="px-3 py-2 font-semibold">CVHT phụ trách</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/60">
@@ -1305,7 +1306,7 @@ export const AutomationWorkflowDetailPage: React.FC = () => {
                         isSelected(en.id) ? 'bg-primary/5' : 'hover:bg-surface-muted/60'
                       }`}
                     >
-                      <td className="px-3 py-2.5">
+                      <td data-align="center" data-wrap="nowrap" className="px-3 py-2.5">
                         <input
                           type="checkbox"
                           checked={isSelected(en.id)}
@@ -1313,7 +1314,7 @@ export const AutomationWorkflowDetailPage: React.FC = () => {
                           className="accent-primary w-4 h-4"
                         />
                       </td>
-                      <td className="px-3 py-2.5">
+                      <td data-align="left" data-wrap="normal" className="px-3 py-2.5">
                         <div className="font-semibold text-text-primary">
                           {en.student.full_name}
                           <span className="ml-1.5 text-[10px] font-mono text-text-muted">
@@ -1324,7 +1325,7 @@ export const AutomationWorkflowDetailPage: React.FC = () => {
                           SĐT: {en.student.phone || '—'}
                         </div>
                       </td>
-                      <td className="px-3 py-2.5 text-[10px] text-text-secondary">
+                      <td data-align="left" data-wrap="normal" className="px-3 py-2.5 text-[10px] text-text-secondary">
                         <div>{getEnrollmentPackageLabel(en)}</div>
                         {en.enrollment_classes?.[0]?.class && (
                           <div>
@@ -1341,7 +1342,7 @@ export const AutomationWorkflowDetailPage: React.FC = () => {
                           </div>
                         )}
                       </td>
-                      <td className="px-3 py-2.5 text-xs text-text-secondary">
+                      <td data-align="left" data-wrap="normal" className="px-3 py-2.5 text-xs text-text-secondary">
                         {en.cs?.name || '—'}
                       </td>
                     </tr>

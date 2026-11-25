@@ -83,7 +83,7 @@ export const URGENCY_OPTIONS: Array<{
     value: 0,
     label: 'Bình thường',
     shortLabel: 'Bình thường',
-    badgeClass: 'bg-slate-100 text-slate-700 border-slate-200',
+    badgeClass: 'bg-surface-muted text-text-secondary border-border',
   },
   {
     value: 1,
@@ -1041,7 +1041,7 @@ export const RichChatComposer: React.FC<RichChatComposerProps> = ({
                   onChange={(e) =>
                     setAttachmentTypeInput(e.target.value as any)
                   }
-                  className="h-10 px-3 rounded-xl border border-border bg-white text-xs font-semibold text-text-primary"
+                  className="h-10 px-3 rounded-xl border border-border bg-surface text-xs font-semibold text-text-primary"
                 >
                   <option value="image/png">Hình ảnh (.png, .jpg, .webp)</option>
                   <option value="application/pdf">Tài liệu (.pdf, .docx, .xlsx)</option>
@@ -1158,7 +1158,7 @@ export const RichChatComposer: React.FC<RichChatComposerProps> = ({
                               <img
                                 src={att.url}
                                 alt={att.filename}
-                                className="w-11 h-11 rounded-lg object-cover border border-border shrink-0 bg-white"
+                                className="w-11 h-11 rounded-lg object-cover border border-border shrink-0 bg-surface"
                               />
                             ) : (
                               <div className="w-11 h-11 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
@@ -1259,7 +1259,7 @@ export const RichChatComposer: React.FC<RichChatComposerProps> = ({
                 onClick={() => setPreviewPlatform('ZALO')}
                 className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
                   previewPlatform === 'ZALO'
-                    ? 'bg-[#0068FF] text-white shadow-xs'
+                    ? 'bg-zalo text-white shadow-xs'
                     : 'bg-surface text-text-secondary border border-border hover:bg-surface-muted'
                 }`}
               >
@@ -1272,7 +1272,7 @@ export const RichChatComposer: React.FC<RichChatComposerProps> = ({
                 onClick={() => setPreviewPlatform('LINE')}
                 className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
                   previewPlatform === 'LINE'
-                    ? 'bg-[#06C755] text-white shadow-xs'
+                    ? 'bg-line text-white shadow-xs'
                     : 'bg-surface text-text-secondary border border-border hover:bg-surface-muted'
                 }`}
               >
@@ -1288,11 +1288,11 @@ export const RichChatComposer: React.FC<RichChatComposerProps> = ({
 
           {/* ─── Tab 1: Zalo PC Real Chat Preview ─────────────────────────── */}
           {previewPlatform === 'ZALO' && (
-            <div className="p-4 bg-[#e4e8f0] min-h-[290px] max-h-[420px] overflow-y-auto space-y-2.5">
+            <div className="p-4 bg-zalo-preview min-h-[290px] max-h-[420px] overflow-y-auto space-y-2.5">
               {/* Simulated Zalo Header Bar */}
-              <div className="flex items-center justify-between text-[11px] text-slate-600 pb-1 border-b border-slate-300/80">
-                <span className="font-bold text-[#0068FF] flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-[#0068FF]" />
+              <div className="flex items-center justify-between text-[11px] text-text-secondary pb-1 border-b border-border-strong/80">
+                <span className="font-bold text-zalo flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-zalo" />
                   Khung chat Zalo PC — Nhóm Chăm sóc Học viên
                 </span>
                 <span>Hôm nay</span>
@@ -1304,7 +1304,7 @@ export const RichChatComposer: React.FC<RichChatComposerProps> = ({
                   {imageAttachments.map((img, i) => (
                     <div
                       key={i}
-                      className="rounded-xl overflow-hidden border border-white/80 bg-white shadow-xs"
+                      className="rounded-xl overflow-hidden border border-white/80 bg-surface shadow-xs"
                     >
                       <img
                         src={img.url}
@@ -1317,7 +1317,7 @@ export const RichChatComposer: React.FC<RichChatComposerProps> = ({
               )}
 
               {/* Main Zalo Rich Text Bubble */}
-              <div className="max-w-[92%] rounded-2xl rounded-tl-sm bg-white p-3.5 shadow-xs border border-slate-200/90 space-y-2">
+              <div className="max-w-[92%] rounded-2xl rounded-tl-sm bg-surface p-3.5 shadow-xs border border-border/90 space-y-2">
                 {/* Urgency Badge on Zalo */}
                 {urgency === 2 && (
                   <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-[#db342e] text-white text-[10px] font-extrabold uppercase tracking-wide">
@@ -1332,19 +1332,19 @@ export const RichChatComposer: React.FC<RichChatComposerProps> = ({
                   </div>
                 )}
 
-                <div className="text-[13.5px] text-slate-900 whitespace-pre-wrap leading-relaxed break-words">
+                <div className="text-[13.5px] text-text-primary whitespace-pre-wrap leading-relaxed break-words">
                   {renderedWithVariables.trim() ? (
                     renderFormattedRichText(renderedWithVariables)
                   ) : (
-                    <span className="text-slate-400 italic">
+                    <span className="text-text-muted italic">
                       Nội dung tin nhắn Zalo sẽ hiển thị trực tiếp tại đây...
                     </span>
                   )}
                 </div>
 
-                <div className="flex items-center justify-end gap-1 text-[10px] text-slate-400 pt-0.5">
+                <div className="flex items-center justify-end gap-1 text-[10px] text-text-muted pt-0.5">
                   <span>Vừa xong</span>
-                  <CheckCircle2 className="w-3 h-3 text-[#0068FF]" />
+                  <CheckCircle2 className="w-3 h-3 text-zalo" />
                 </div>
               </div>
 
@@ -1352,22 +1352,22 @@ export const RichChatComposer: React.FC<RichChatComposerProps> = ({
               {fileAttachments.map((att, idx) => (
                 <div
                   key={idx}
-                  className="max-w-[88%] rounded-xl bg-white p-2.5 shadow-xs border border-slate-200 flex items-center justify-between gap-2.5"
+                  className="max-w-[88%] rounded-xl bg-surface p-2.5 shadow-xs border border-border flex items-center justify-between gap-2.5"
                 >
                   <div className="flex items-center gap-2.5 min-w-0">
-                    <div className="w-9 h-9 rounded-lg bg-blue-50 text-[#0068FF] flex items-center justify-center shrink-0">
+                    <div className="w-9 h-9 rounded-lg bg-blue-50 text-zalo flex items-center justify-center shrink-0">
                       <FileText className="w-5 h-5" />
                     </div>
                     <div className="min-w-0">
-                      <div className="text-xs font-bold text-slate-800 truncate">
+                      <div className="text-xs font-bold text-text-primary truncate">
                         {att.filename}
                       </div>
-                      <div className="text-[10px] text-slate-500">
+                      <div className="text-[10px] text-text-muted">
                         {att.size > 0 ? formatBytes(att.size) : 'Tệp đính kèm Zalo'}
                       </div>
                     </div>
                   </div>
-                  <Download className="w-4 h-4 text-slate-400 shrink-0" />
+                  <Download className="w-4 h-4 text-text-muted shrink-0" />
                 </div>
               ))}
 
@@ -1375,27 +1375,27 @@ export const RichChatComposer: React.FC<RichChatComposerProps> = ({
               {links.map((lnk, idx) => (
                 <div
                   key={idx}
-                  className="max-w-[88%] rounded-xl bg-white overflow-hidden shadow-xs border border-slate-200"
+                  className="max-w-[88%] rounded-xl bg-surface overflow-hidden shadow-xs border border-border"
                 >
-                  <div className="p-3 bg-slate-50 border-b border-slate-100 flex items-start gap-2.5">
-                    <div className="w-10 h-10 rounded-lg bg-[#0068FF]/10 text-[#0068FF] flex items-center justify-center shrink-0">
+                  <div className="p-3 bg-surface-subtle border-b border-border-subtle flex items-start gap-2.5">
+                    <div className="w-10 h-10 rounded-lg bg-zalo/10 text-zalo flex items-center justify-center shrink-0">
                       <Globe className="w-5 h-5" />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <div className="text-[10px] font-semibold text-[#0068FF] uppercase tracking-wider truncate">
+                      <div className="text-[10px] font-semibold text-zalo uppercase tracking-wider truncate">
                         {extractHostname(lnk.url)}
                       </div>
-                      <div className="text-xs font-bold text-slate-900 line-clamp-1 mt-0.5">
+                      <div className="text-xs font-bold text-text-primary line-clamp-1 mt-0.5">
                         {lnk.title || lnk.url}
                       </div>
                       {lnk.description && (
-                        <div className="text-[11px] text-slate-600 line-clamp-2 mt-0.5">
+                        <div className="text-[11px] text-text-secondary line-clamp-2 mt-0.5">
                           {lnk.description}
                         </div>
                       )}
                     </div>
                   </div>
-                  <div className="px-3 py-1.5 text-[11px] font-semibold text-[#0068FF] flex items-center justify-between bg-white">
+                  <div className="px-3 py-1.5 text-[11px] font-semibold text-zalo flex items-center justify-between bg-surface">
                     <span className="truncate">{lnk.url}</span>
                     <ExternalLink className="w-3.5 h-3.5 shrink-0 ml-1" />
                   </div>
@@ -1406,18 +1406,18 @@ export const RichChatComposer: React.FC<RichChatComposerProps> = ({
 
           {/* ─── Tab 2: LINE OA / Group Flex Message Card Preview ─────────── */}
           {previewPlatform === 'LINE' && (
-            <div className="p-4 bg-[#8cabd9] min-h-[290px] max-h-[420px] overflow-y-auto space-y-2.5">
+            <div className="p-4 bg-line-preview min-h-[290px] max-h-[420px] overflow-y-auto space-y-2.5">
               {/* Simulated LINE Header Bar */}
               <div className="flex items-center justify-between text-[11px] text-white/95 pb-1 border-b border-white/25">
                 <span className="font-bold flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-[#06C755]" />
+                  <span className="w-2 h-2 rounded-full bg-line" />
                   LINE Official Account / Nhóm LINE (Flex Message)
                 </span>
                 <span>Flex Bubble</span>
               </div>
 
               {/* LINE Flex Message Card Container */}
-              <div className="max-w-[90%] rounded-2xl bg-white overflow-hidden shadow-md border border-white/60">
+              <div className="max-w-[90%] rounded-2xl bg-surface overflow-hidden shadow-md border border-white/60">
                 {/* Optional Urgency Banner Header inside LINE Flex */}
                 {urgency === 2 && (
                   <div className="px-3.5 py-2 bg-[#db342e] text-white text-xs font-extrabold flex items-center gap-1.5">
@@ -1434,7 +1434,7 @@ export const RichChatComposer: React.FC<RichChatComposerProps> = ({
 
                 {/* Hero Image inside LINE Flex (if image attached) */}
                 {imageAttachments.length > 0 && (
-                  <div className="border-b border-slate-100">
+                  <div className="border-b border-border-subtle">
                     <img
                       src={imageAttachments[0].url}
                       alt={imageAttachments[0].filename}
@@ -1450,11 +1450,11 @@ export const RichChatComposer: React.FC<RichChatComposerProps> = ({
 
                 {/* Flex Body with Styled Spans */}
                 <div className="p-3.5 space-y-2">
-                  <div className="text-[13.5px] text-slate-900 whitespace-pre-wrap leading-relaxed break-words">
+                  <div className="text-[13.5px] text-text-primary whitespace-pre-wrap leading-relaxed break-words">
                     {renderedWithVariables.trim() ? (
                       renderFormattedRichText(renderedWithVariables)
                     ) : (
-                      <span className="text-slate-400 italic">
+                      <span className="text-text-muted italic">
                         Nội dung thẻ LINE Flex Message sẽ hiển thị tại đây...
                       </span>
                     )}
@@ -1463,15 +1463,15 @@ export const RichChatComposer: React.FC<RichChatComposerProps> = ({
 
                 {/* Flex Footer CTA Buttons (Links + File Downloads) */}
                 {(links.length > 0 || fileAttachments.length > 0) && (
-                  <div className="px-3.5 pb-3.5 pt-1 space-y-1.5 border-t border-slate-100">
+                  <div className="px-3.5 pb-3.5 pt-1 space-y-1.5 border-t border-border-subtle">
                     {links.map((lnk, idx) => (
                       <div key={`lnk-${idx}`} className="space-y-1">
                         {lnk.title && (
-                          <div className="text-[11px] font-bold text-slate-700 pt-1">
+                          <div className="text-[11px] font-bold text-text-secondary pt-1">
                             {lnk.title}
                           </div>
                         )}
-                        <div className="w-full py-2 px-3 rounded-xl bg-[#06C755] text-white text-xs font-bold text-center flex items-center justify-center gap-1.5 shadow-2xs">
+                        <div className="w-full py-2 px-3 rounded-xl bg-line text-white text-xs font-bold text-center flex items-center justify-center gap-1.5 shadow-2xs">
                           <span>{lnk.buttonLabel || 'Mở xem ngay'}</span>
                           <ExternalLink className="w-3.5 h-3.5" />
                         </div>
@@ -1481,7 +1481,7 @@ export const RichChatComposer: React.FC<RichChatComposerProps> = ({
                     {fileAttachments.map((att, idx) => (
                       <div
                         key={`file-${idx}`}
-                        className="w-full py-2 px-3 rounded-xl bg-emerald-50 text-[#06C755] border border-[#06C755]/30 text-xs font-bold text-center flex items-center justify-center gap-1.5"
+                        className="w-full py-2 px-3 rounded-xl bg-emerald-50 text-line border border-line/30 text-xs font-bold text-center flex items-center justify-center gap-1.5"
                       >
                         <Paperclip className="w-3.5 h-3.5 shrink-0" />
                         <span className="truncate">Tải tệp: {att.filename}</span>

@@ -1,3 +1,4 @@
+import { careGroupLinksRepository } from '../omnichannel/care-group-links.repository';
 /**
  * Student ↔ Zalo Linking Routes.
  *
@@ -73,6 +74,7 @@ router.get('/care-groups/report', async (req: Request, res: Response) => {
     const report = await syncAndMatchCareGroups({
       triggeredBy: 'manual',
       refreshLiveGroups: false,
+      applyMatches: false,
       silent: true,
       csId: effectiveCsId,
     });
@@ -415,6 +417,7 @@ router.post('/links', async (req: Request, res: Response) => {
 
     const schema = z.object({
       student_id: z.number().int(),
+      program_type: z.enum(['ALL', 'KAIWA', 'JLPT']).optional(),
       zalo_account_id: z.number().int().optional(),
       zalo_group_id: z.number().int().nullable().optional(),
       target_type: z.enum(['USER', 'GROUP']).optional(),
@@ -494,21 +497,29 @@ router.post('/links', async (req: Request, res: Response) => {
     }
 
     const isGroupLink = resolvedGroup != null || dto.target_type === 'GROUP';
+    const programType = dto.program_type ?? (isGroupLink ? null : 'ALL');
+    if (!programType || (isGroupLink && (programType === 'ALL' || !resolvedGroup))) return res.status(422).json({ message: 'Chọn chương trình KAIWA/JLPT và nhóm hợp lệ' });
+    if (programType !== 'ALL') {
+      const enrollment = await prisma.enrollment.findFirst({ where: { student_id: dto.student_id, cs_id: userId, program_type: programType }, select: { id: true } });
+      if (!enrollment) return res.status(403).json({ message: 'Học viên không thuộc chương trình do bạn phụ trách' });
+    }
     const targetType = isGroupLink ? 'GROUP' : 'USER';
     const zaloGroupId = resolvedGroup ? resolvedGroup.id : null;
     const friendZaloUid = resolvedGroup ? resolvedGroup.zalo_group_id : dto.friend_zalo_uid;
     const displayName = resolvedGroup ? (dto.display_name || resolvedGroup.name || undefined) : dto.display_name;
     const avatarUrl = resolvedGroup ? (resolvedGroup.avatar_url ?? undefined) : undefined;
 
-    const relation = await prisma.zaloContactRelation.upsert({
+    const relation = await careGroupLinksRepository.selectManualZalo({
       where: {
         student_id_zalo_account_id: {
+          program_type: programType,
           student_id: dto.student_id,
           zalo_account_id: effectiveAccountId,
         },
       },
       create: {
         student_id: dto.student_id,
+        program_type: programType,
         zalo_account_id: effectiveAccountId,
         relation_status: dto.relation_status,
         target_type: targetType,
@@ -537,7 +548,7 @@ router.post('/links', async (req: Request, res: Response) => {
           select: { id: true, zalo_group_id: true, name: true, avatar_url: true, member_count: true },
         },
       },
-    });
+    }, userId);
 
     // ─── Populate avatar + display_name from Friend table (best-effort, USER links only) ────
     if (!isGroupLink) {
@@ -682,6 +693,8 @@ router.patch('/links/:id', async (req: Request, res: Response) => {
       return res.status(403).json({ success: false, message: 'Không có quyền chỉnh sửa liên kết trên tài khoản Zalo của người dùng khác' });
     }
 
+    if (resolvedGroup && relation.program_type === 'ALL') return res.status(422).json({ message: 'Liên kết cũ chưa có chương trình. Hãy tạo liên kết nhóm Kaiwa/JLPT từ danh sách học viên.' });
+    if (resolvedGroup && dto.new_zalo_account_id && resolvedGroup.zalo_account_id !== dto.new_zalo_account_id) return res.status(422).json({ message: 'Nhóm không thuộc tài khoản được chọn' });
     const groupPatchFields = resolvedGroup
       ? {
           target_type: 'GROUP',
@@ -707,12 +720,14 @@ router.patch('/links/:id', async (req: Request, res: Response) => {
             return tx.zaloContactRelation.upsert({
               where: {
                 student_id_zalo_account_id: {
+                  program_type: relation.program_type,
                   student_id: relation.student_id,
                   zalo_account_id: dto.new_zalo_account_id!,
                 },
               },
               create: {
                 student_id: relation.student_id,
+                program_type: relation.program_type,
                 zalo_account_id: dto.new_zalo_account_id!,
                 relation_status: dto.relation_status ?? relation.relation_status,
                 display_name: dto.display_name ?? relation.display_name,

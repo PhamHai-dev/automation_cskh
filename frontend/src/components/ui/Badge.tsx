@@ -15,22 +15,22 @@ export const Badge: React.FC<BadgeProps> = ({
   ...props
 }) => {
   const variants = {
-    success: 'bg-emerald-50 text-emerald-700 border-emerald-200/80',
-    warning: 'bg-amber-50 text-amber-700 border-amber-200/80',
-    danger: 'bg-rose-50 text-rose-700 border-rose-200/80',
-    info: 'bg-blue-50 text-blue-700 border-blue-200/80',
-    neutral: 'bg-slate-100 text-slate-700 border-slate-200/80',
-    accent: 'bg-teal-50 text-teal-700 border-teal-200/80',
+    success: 'bg-success-soft text-success-foreground border-success-border',
+    warning: 'bg-warning-soft text-warning-foreground border-warning-border',
+    danger: 'bg-danger-soft text-danger-foreground border-danger-border',
+    info: 'bg-info-soft text-info-foreground border-info-border',
+    neutral: 'bg-surface-muted text-text-secondary border-border',
+    accent: 'bg-accent-soft text-accent-active border-accent-border',
     debt: 'bg-red-100 text-red-800 border-red-300 font-bold',
   };
 
   const dotColors = {
-    success: 'bg-emerald-500',
-    warning: 'bg-amber-500',
-    danger: 'bg-rose-500',
-    info: 'bg-blue-500',
-    neutral: 'bg-slate-400',
-    accent: 'bg-teal-500',
+    success: 'bg-success',
+    warning: 'bg-warning',
+    danger: 'bg-danger',
+    info: 'bg-info',
+    neutral: 'bg-text-muted',
+    accent: 'bg-accent',
     debt: 'bg-red-600',
   };
 
@@ -41,7 +41,7 @@ export const Badge: React.FC<BadgeProps> = ({
 
   return (
     <span
-      className={`inline-flex items-center font-medium rounded-full border ${variants[variant]} ${sizes[size]} ${className}`}
+      className={`inline-flex shrink-0 items-center whitespace-nowrap font-medium leading-5 rounded-full border ${variants[variant]} ${sizes[size]} ${className}`}
       {...props}
     >
       {dot && <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dotColors[variant]}`} />}

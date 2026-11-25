@@ -181,7 +181,7 @@ export const UsersPage: React.FC = () => {
 
   const columns: Column<User>[] = [
     {
-      header: 'Mã NV / ID',
+      align: 'center' as const, wrap: false, header: 'Mã nhân viên / ID',
       cell: (item) => {
         const displayCode = item.code || item.staff_code;
         return displayCode ? (
@@ -189,20 +189,20 @@ export const UsersPage: React.FC = () => {
             {displayCode}
           </span>
         ) : (
-          <span className="font-mono text-slate-400 text-xs">#{item.id}</span>
+          <span className="font-mono text-text-muted text-xs">#{item.id}</span>
         );
       },
     },
     {
-      header: 'Họ tên & Email',
+      align: 'left' as const, wrap: true, header: 'Họ và tên / Email',
       cell: (item) => (
         <div className="flex items-center space-x-3">
           <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-xs">
             {item.name.charAt(0).toUpperCase()}
           </div>
           <div>
-            <div className="font-bold text-slate-900 text-xs">{item.name}</div>
-            <div className="text-slate-500 text-[11px]">
+            <div className="font-bold text-text-primary text-xs">{item.name}</div>
+            <div className="text-text-muted text-[11px]">
               {item.email}
               {item.phone ? ` · ${item.phone}` : ''}
             </div>
@@ -211,7 +211,7 @@ export const UsersPage: React.FC = () => {
       ),
     },
     {
-      header: 'Vai trò',
+      align: 'center' as const, wrap: false, header: 'Vai trò',
       cell: (item) => (
         <div className="flex flex-wrap gap-1">
           {item.roles.map((role) => (
@@ -223,7 +223,7 @@ export const UsersPage: React.FC = () => {
       ),
     },
     {
-      header: 'Trạng thái',
+      align: 'center' as const, wrap: false, header: 'Trạng thái',
       cell: (item) => (
         <Badge variant={item.active ? 'success' : 'danger'}>
           {item.active ? 'Đang hoạt động' : 'Đã khóa'}
@@ -231,15 +231,15 @@ export const UsersPage: React.FC = () => {
       ),
     },
     {
-      header: 'Lần đăng nhập cuối',
+      align: 'center' as const, wrap: false, header: 'Lần đăng nhập cuối',
       cell: (item) => (
-        <span className="text-xs text-slate-500">
+        <span className="text-xs text-text-muted">
           {item.last_login_at ? new Date(item.last_login_at).toLocaleString('vi-VN') : 'Chưa từng đăng nhập'}
         </span>
       ),
     },
     {
-      header: 'Thao tác',
+      align: 'center' as const, wrap: false, header: 'Thao tác',
       className: 'text-right',
       cell: (item) => (
         <div className="flex justify-end items-center gap-1">
@@ -252,7 +252,7 @@ export const UsersPage: React.FC = () => {
             }}
             title="Chỉnh sửa thông tin"
           >
-            <Edit className="w-4 h-4 text-slate-500 hover:text-blue-600" />
+            <Edit className="w-4 h-4 text-text-muted hover:text-blue-600" />
           </Button>
           <Button
             variant="ghost"
@@ -319,9 +319,9 @@ export const UsersPage: React.FC = () => {
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   placeholder="Nhập tên hoặc email..."
-                  className="w-full h-9 pl-9 pr-3 border border-border rounded-xl text-sm bg-white text-text-primary focus:outline-none focus:ring-2 focus:ring-primary shadow-xs transition"
+                  className="w-full h-9 pl-9 pr-3 border border-border rounded-xl text-sm bg-surface text-text-primary focus:outline-none focus:ring-2 focus:ring-primary shadow-xs transition"
                 />
-                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                <Search className="w-4 h-4 text-text-muted absolute left-3 top-2.5" />
               </div>
             </div>
 
@@ -332,7 +332,7 @@ export const UsersPage: React.FC = () => {
               <select
                 value={roleFilter}
                 onChange={(e) => setRoleFilter(e.target.value)}
-                className="w-full h-9 px-3 border border-border rounded-xl text-sm bg-white text-text-primary focus:outline-none focus:ring-2 focus:ring-primary shadow-xs transition cursor-pointer"
+                className="w-full h-9 px-3 border border-border rounded-xl text-sm bg-surface text-text-primary focus:outline-none focus:ring-2 focus:ring-primary shadow-xs transition cursor-pointer"
               >
                 <option value="">Tất cả vai trò</option>
                 <option value="ADMIN">Quản trị viên (ADMIN)</option>
@@ -430,7 +430,7 @@ export const UsersPage: React.FC = () => {
           )}
 
           <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-2 flex items-center">
+            <label className="block text-xs font-semibold text-text-secondary mb-2 flex items-center">
               <Shield className="w-3.5 h-3.5 mr-1 text-blue-600" />
               Phân quyền vai trò hệ thống *
             </label>
@@ -441,14 +441,14 @@ export const UsersPage: React.FC = () => {
                   className={`flex items-center gap-2 p-2.5 border rounded-xl text-xs cursor-pointer transition ${
                     formData.roles.includes(role)
                       ? 'border-blue-500 bg-blue-50/60 font-semibold text-blue-900'
-                      : 'border-slate-200 hover:bg-slate-50 text-slate-700'
+                      : 'border-border hover:bg-surface-subtle text-text-secondary'
                   }`}
                 >
                   <input
                     type="checkbox"
                     checked={formData.roles.includes(role)}
                     onChange={() => handleRoleToggle(role)}
-                    className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                    className="rounded border-border-strong text-blue-600 focus:ring-blue-500"
                   />
                   <span>{ROLE_LABELS[role] || role}</span>
                 </label>
@@ -479,7 +479,7 @@ export const UsersPage: React.FC = () => {
           </div>
         }
       >
-        <div className="flex items-start space-x-3 text-xs text-slate-700">
+        <div className="flex items-start space-x-3 text-xs text-text-secondary">
           <AlertTriangle className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" />
           <p>
             Bạn có chắc chắn muốn {userToToggleStatus?.active ? 'khóa' : 'mở khóa'} tài khoản{' '}
@@ -505,7 +505,7 @@ export const UsersPage: React.FC = () => {
           </div>
         }
       >
-        <div className="flex items-start space-x-3 text-xs text-slate-700">
+        <div className="flex items-start space-x-3 text-xs text-text-secondary">
           <AlertTriangle className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" />
           <p>
             Bạn có chắc chắn muốn thu hồi toàn bộ phiên đăng nhập hiện tại của{' '}

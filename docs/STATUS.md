@@ -117,7 +117,7 @@
 
 - Đã thống nhất Kaiwa `Gói học` và JLPT `Gói SP` qua `Enrollment.package_id -> Package`; JLPT `Mã khóa học` lưu riêng tại `Enrollment.course_code`.
 - Đã cập nhật API tạo/sửa, import/backup workbook và cột Gói học chung ở cả Hồ sơ Học viên lẫn Báo cáo Học tập & Chăm sóc.
-- Migration dữ liệu đã được viết nhưng **chưa chạy** trên database hiện tại vì lịch sử migration đang không đồng nhất; không reset/migrate DB khi chưa có môi trường test an toàn.
+- Migration dữ liệu đã được áp dụng ngày 2026-11-20 sau snapshot/preflight để xử lý lỗi tải dữ liệu. Đã đối chiếu đầy đủ field gốc/mã khóa học và package mapping; không reset DB, xem mục khôi phục ở đầu tài liệu.
 - Prisma schema format/validate đạt; bước generate từng bị chặn do DLL Prisma đang được process khác sử dụng. Backend/frontend/tests đang được xác minh lại sau chỉnh sửa.
 
 ## Trung tâm Lịch sử hoạt động — 2026-11-13
@@ -164,6 +164,16 @@
 ## Blockers hiện tại
 
 Không có blocker kỹ thuật cho Phase 7.
+
+## Program-scoped care groups — 2026-11-20
+
+- Sau khi ghép commit remote `f1c410b`: giữ thay đổi cột học viên/CVHT và căn chỉnh bảng. Đã backup 2.374 students, 2.390 enrollments, 1.363 class_schedules trước migration remote `20261120032000_align_excel_web_columns` (thêm birth_year; bỏ các trường ngoài contract theo remote). Snapshot `scratch/db-recovery-2026-11-20/before-remote-column-migration.json` được giữ local; DB có 26 migrations.
+
+- Đã tách liên kết nhóm Zalo/LINE theo `student + account + program_type`: Kaiwa và JLPT không ghi đè nhau. Liên kết `ALL` chỉ dùng cho USER cá nhân dùng chung; GROUP legacy được đánh dấu cần xác định chương trình.
+- Matcher đọc mẫu tên từ AppSetting: Kaiwa mặc định `{csNumber} - {studentId} {studentName}`, JLPT thêm hậu tố tự do ở cuối. `VIPN4N5`, `N54Video` và nội dung tương tự đều hợp lệ; hậu tố không so với `Enrollment.level` hay trường học viên nào. Match dùng lõi CSKH + mã + tên học viên đã biết để xác định ranh giới hậu tố. Nhiều nhóm cùng khóa chuyển sang chọn thủ công.
+- Admin/Manage có hộp thoại cấu hình, xem trước và optimistic version; lưu có audit, không tự đổi tên nhóm, gửi tin hoặc chạy đồng bộ. Bảng Liên kết học viên và Danh bạ nhóm có lọc Kaiwa/JLPT, dòng theo chương trình, cảnh báo legacy/trùng và căn chỉnh cố định responsive.
+- Automation trigger/worker/broadcast chỉ dùng liên kết đúng chương trình hoặc USER dùng chung; queued group target được kiểm tra lại trước gửi. Manual selection được bảo vệ trong transaction và không ghi đè bởi matcher.
+- Migration `20261120080000_program_scoped_care_groups` đã backup và áp dụng; giữ nguyên ID/dữ liệu quan hệ cũ. Prisma format/validate/migrate status, backend typecheck/build, frontend build, 105 backend tests, 28 frontend tests và browser QA 1440/768/390 pass. Không bật worker, không gửi tin thật; đã khôi phục phiên local Zalo 5/LINE 13.
 
 ## Phase summary
 

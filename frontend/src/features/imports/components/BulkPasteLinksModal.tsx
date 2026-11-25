@@ -315,9 +315,9 @@ export const BulkPasteLinksModal: React.FC<BulkPasteLinksModalProps> = ({
     >
       <div className="space-y-4 text-xs">
         {/* Top Config Row */}
-        <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 bg-slate-50 rounded-xl border border-slate-200 p-3.5">
+        <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 bg-surface-subtle rounded-xl border border-border p-3.5">
           <div className="sm:col-span-2">
-            <label className="block text-xs font-bold text-slate-700 mb-1">
+            <label className="block text-xs font-bold text-text-secondary mb-1">
               Loại luồng áp dụng
             </label>
             <select
@@ -326,7 +326,7 @@ export const BulkPasteLinksModal: React.FC<BulkPasteLinksModalProps> = ({
                 setFlowType(e.target.value as SyncFlowType);
                 setValidationResult(null);
               }}
-              className="w-full h-9 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-800"
+              className="w-full h-9 rounded-lg border border-border bg-surface px-3 text-xs font-semibold text-text-primary"
             >
               <option value="STUDY_REPORT">
                 4. Báo cáo học tập (JLPT &amp; Kaiwa)
@@ -344,7 +344,7 @@ export const BulkPasteLinksModal: React.FC<BulkPasteLinksModalProps> = ({
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1">
+            <label className="block text-xs font-bold text-text-secondary mb-1">
               Chương trình
             </label>
             <select
@@ -353,7 +353,7 @@ export const BulkPasteLinksModal: React.FC<BulkPasteLinksModalProps> = ({
                 setProgramType(e.target.value as 'KAIWA' | 'JLPT');
                 setValidationResult(null);
               }}
-              className="w-full h-9 rounded-lg border border-slate-200 bg-white px-3 text-xs font-bold text-slate-800"
+              className="w-full h-9 rounded-lg border border-border bg-surface px-3 text-xs font-bold text-text-primary"
             >
               <option value="KAIWA">KAIWA</option>
               <option value="JLPT">JLPT</option>
@@ -361,11 +361,11 @@ export const BulkPasteLinksModal: React.FC<BulkPasteLinksModalProps> = ({
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1">
+            <label className="block text-xs font-bold text-text-secondary mb-1">
               Chế độ tự động
             </label>
-            <div className="h-9 rounded-lg border border-slate-200 bg-white px-3 flex items-center justify-between">
-              <span className="font-semibold text-slate-700">
+            <div className="h-9 rounded-lg border border-border bg-surface px-3 flex items-center justify-between">
+              <span className="font-semibold text-text-secondary">
                 {enabled ? `BẬT (${syncIntervalMinutes}p)` : 'TẮT'}
               </span>
               <button
@@ -378,7 +378,7 @@ export const BulkPasteLinksModal: React.FC<BulkPasteLinksModalProps> = ({
                 }`}
               >
                 <span
-                  className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-xs transition ${
+                  className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-surface shadow-xs transition ${
                     enabled ? 'translate-x-4' : 'translate-x-0'
                   }`}
                 />
@@ -396,7 +396,7 @@ export const BulkPasteLinksModal: React.FC<BulkPasteLinksModalProps> = ({
             <select
               value={syncYear}
               onChange={(e) => setSyncYear(Number(e.target.value))}
-              className="h-8 rounded-lg border border-amber-300 bg-white px-2.5 text-xs font-bold text-slate-800"
+              className="h-8 rounded-lg border border-amber-300 bg-surface px-2.5 text-xs font-bold text-text-primary"
             >
               <option value={2024}>2024</option>
               <option value={2025}>2025</option>
@@ -409,14 +409,14 @@ export const BulkPasteLinksModal: React.FC<BulkPasteLinksModalProps> = ({
         {/* Textarea Bulk Paste */}
         <div>
           <div className="flex items-center justify-between mb-1.5">
-            <label className="font-bold text-slate-800 flex items-center gap-1.5">
+            <label className="font-bold text-text-primary flex items-center gap-1.5">
               <ClipboardPaste className="w-4 h-4 text-blue-600" />
               <span>
                 Dán danh sách link Google Sheet (mỗi dòng 1 file, hỗ trợ copy trực
                 tiếp 2–3 cột từ Excel):
               </span>
             </label>
-            <span className="text-[11px] text-slate-500">
+            <span className="text-[11px] text-text-muted">
               Cú pháp: <code>Link</code> hoặc{' '}
               <code>Mã HV/Lớp [Tab/|/,] Tên HV [Tab/|/,] Link</code>
             </span>
@@ -430,18 +430,18 @@ export const BulkPasteLinksModal: React.FC<BulkPasteLinksModalProps> = ({
               if (validationResult) setValidationResult(null);
             }}
             placeholder={`Ví dụ cách 1 (Chỉ dán link):\nhttps://docs.google.com/spreadsheets/d/1A2B3C4D5E6F7G8H9I0J/edit\nhttps://docs.google.com/spreadsheets/d/9Z8Y7X6W5V4U3T2S1R0Q/edit\n\nVí dụ cách 2 (Copy 3 cột từ Excel: Mã HV | Họ tên | Link):\n427901798\tĐỗ Phú Sĩ\thttps://docs.google.com/spreadsheets/d/1abc123456789/edit\nBS8_3002\tLớp Kaiwa Sơ cấp\thttps://docs.google.com/spreadsheets/d/1xyz987654321/edit`}
-            className="w-full rounded-xl border border-slate-200 p-3 font-mono text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+            className="w-full rounded-xl border border-border p-3 font-mono text-xs text-text-primary focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
           />
         </div>
 
         {/* Validation Result Table */}
         {validationResult && (
           <div className="space-y-3 pt-1">
-            <div className="flex flex-wrap items-center justify-between gap-2 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5">
+            <div className="flex flex-wrap items-center justify-between gap-2 bg-surface-subtle border border-border rounded-xl px-4 py-2.5">
               <div className="flex flex-wrap items-center gap-4 text-xs font-semibold">
-                <span className="text-slate-700">
+                <span className="text-text-secondary">
                   Tổng số dòng:{' '}
-                  <strong className="text-slate-900">
+                  <strong className="text-text-primary">
                     {validationResult.totalLines}
                   </strong>
                 </span>
@@ -461,38 +461,38 @@ export const BulkPasteLinksModal: React.FC<BulkPasteLinksModalProps> = ({
               </div>
             </div>
 
-            <div className="max-h-60 overflow-y-auto rounded-xl border border-slate-200">
-              <table className="w-full text-left border-collapse text-xs">
-                <thead className="bg-slate-50 border-b border-slate-200 sticky top-0">
-                  <tr className="text-[11px] font-semibold text-slate-500 uppercase">
-                    <th className="py-2 px-3 w-14">Dòng</th>
-                    <th className="py-2 px-3">Mã HV / Lớp / GV</th>
-                    <th className="py-2 px-3">Link Google Sheet</th>
-                    <th className="py-2 px-3">Trạng thái kiểm tra</th>
+            <div className="max-h-60 overflow-y-auto rounded-xl border border-border">
+              <table data-table="native" className="w-full text-left border-collapse text-xs">
+                <thead className="bg-surface-subtle border-b border-border sticky top-0">
+                  <tr className="text-[11px] font-semibold text-text-muted uppercase">
+                    <th scope="col" className="py-2 px-3 w-14">Dòng</th>
+                    <th scope="col" className="py-2 px-3">Mã HV / Lớp / GV</th>
+                    <th scope="col" className="py-2 px-3">Link Google Sheet</th>
+                    <th scope="col" className="py-2 px-3">Trạng thái kiểm tra</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {validationResult.items.map((item) => (
-                    <tr key={item.lineNumber} className="hover:bg-slate-50/70">
-                      <td className="py-2 px-3 font-mono text-slate-500">
+                    <tr key={item.lineNumber} className="hover:bg-surface-subtle/70">
+                      <td data-align="center" data-wrap="nowrap" className="py-2 px-3 font-mono text-text-muted">
                         #{item.lineNumber}
                       </td>
-                      <td className="py-2 px-3 font-semibold text-slate-800">
+                      <td data-align="left" data-wrap="normal" className="py-2 px-3 font-semibold text-text-primary">
                         {item.studentExternalId || item.classCode ? (
                           <span>
                             {item.studentExternalId || item.classCode}
                             {item.studentName ? ` - ${item.studentName}` : ''}
                           </span>
                         ) : (
-                          <span className="text-slate-400 italic">
+                          <span className="text-text-muted italic">
                             Tự động đọc từ Sheet
                           </span>
                         )}
                       </td>
-                      <td className="py-2 px-3 font-mono text-[11px] text-slate-600 truncate max-w-[260px]">
+                      <td data-align="left" data-wrap="normal" className="py-2 px-3 font-mono text-[11px] text-text-secondary truncate max-w-[260px]">
                         {item.spreadsheetUrl || item.rawLine}
                       </td>
-                      <td className="py-2 px-3">
+                      <td data-align="center" data-wrap="nowrap" className="py-2 px-3">
                         {item.status === 'VALID' ? (
                           <span className="inline-flex items-center gap-1 text-emerald-700 font-semibold">
                             <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />

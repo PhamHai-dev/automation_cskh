@@ -4,13 +4,15 @@
 
 import { Router, Request, Response, NextFunction } from 'express';
 import { authenticate, requireRoles } from '../../middlewares/auth.middleware';
+import { z } from 'zod';
+import { lineAccountResponse } from './line-account.mapper';
 import { lineService } from './line.service';
 import { lineWebhookHandler } from './line-webhook.handler';
 
 export const lineRouter = Router();
 
 function handleLineError(err: any, res: Response, next: NextFunction): void {
-  const status = err?.statusCode ?? err?.status;
+  const status = err instanceof z.ZodError ? 400 : err?.statusCode ?? err?.status;
   if (typeof status === 'number' && status >= 400 && status < 600) {
     res.status(status).json({
       error: err.message || 'LINE operation error',
@@ -22,6 +24,13 @@ function handleLineError(err: any, res: Response, next: NextFunction): void {
   }
   next(err);
 }
+
+function accountResult<T>(result: T): T {
+  if (result && typeof result === 'object' && 'account' in result && result.account) return { ...result, account: lineAccountResponse(result.account as any) };
+  return result;
+}
+const sendSchema = z.object({ content: z.string().trim().min(1).max(5000).optional(), text: z.string().trim().min(1).max(5000).optional(),
+  contentType: z.literal('text').optional(), to: z.string().trim().min(1).max(128).optional(), threadId: z.string().trim().min(1).max(128).optional() });
 
 // ─── Public Webhook Endpoints (authenticated via LINE HMAC-SHA256 signature) ──
 
@@ -81,6 +90,7 @@ lineRouter.param('id', async (req: Request, res: Response, next: NextFunction, r
     return next();
   }
   try {
+    if (!/^\d+$/.test(rawId) || !Number.isSafeInteger(Number(rawId)) || Number(rawId) <= 0) return res.status(400).json({ message: 'Mã tài khoản LINE không hợp lệ' });
     const accountId = Number(rawId);
     const userId = getCurrentUserId(req);
     await lineService.assertAccountOwner(accountId, userId);
@@ -96,6 +106,7 @@ lineRouter.param('accountId', async (req: Request, res: Response, next: NextFunc
     return next();
   }
   try {
+    if (!/^\d+$/.test(rawId) || !Number.isSafeInteger(Number(rawId)) || Number(rawId) <= 0) return res.status(400).json({ message: 'Mã tài khoản LINE không hợp lệ' });
     const accountId = Number(rawId);
     const userId = getCurrentUserId(req);
     await lineService.assertAccountOwner(accountId, userId);
@@ -110,7 +121,8 @@ lineRouter.get('/accounts', async (req: Request, res: Response, next: NextFuncti
   try {
     const userId = getCurrentUserId(req);
     const accounts = await lineService.listAccounts(userId);
-    res.json({ data: accounts, accounts });
+    const response = accounts.map(a => lineAccountResponse(a));
+    res.json({ data: response, accounts: response });
   } catch (err) {
     handleLineError(err, res, next);
   }
@@ -119,7 +131,8 @@ lineRouter.get('/accounts', async (req: Request, res: Response, next: NextFuncti
 lineRouter.get('/accounts/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const account = await lineService.getAccount(Number(req.params.id));
-    res.json({ data: account, account });
+    const response = lineAccountResponse(account!);
+    res.json({ data: response, account: response });
   } catch (err) {
     handleLineError(err, res, next);
   }
@@ -133,7 +146,8 @@ lineRouter.post('/accounts', async (req: Request, res: Response, next: NextFunct
       cs_id: userId,
       csId: userId,
     });
-    res.status(201).json({ data: account, account });
+    const response = lineAccountResponse(account!);
+    res.status(201).json({ data: response, account: response });
   } catch (err) {
     handleLineError(err, res, next);
   }
@@ -147,7 +161,8 @@ lineRouter.patch('/accounts/:id', async (req: Request, res: Response, next: Next
       accountId,
       body.proxy_url ?? body.proxyUrl,
     );
-    res.json({ data: updated.account, account: updated.account });
+    const response = lineAccountResponse(updated.account);
+    res.json({ data: response, account: response });
   } catch (err) {
     handleLineError(err, res, next);
   }
@@ -163,6 +178,13 @@ lineRouter.delete('/accounts/:id', async (req: Request, res: Response, next: Nex
   }
 });
 
+lineRouter.get('/accounts/:id/status', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const account = lineAccountResponse(await lineService.getAccount(Number(req.params.id)));
+    res.json({ data: { accountId: account.id, status: account.status, liveStatus: account.liveStatus, disconnectReason: account.disconnect_reason } });
+  } catch (err) { handleLineError(err, res, next); }
+});
+
 lineRouter.post('/accounts/:id/disconnect', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const result = await lineService.disconnectAccount(Number(req.params.id));
@@ -174,7 +196,7 @@ lineRouter.post('/accounts/:id/disconnect', async (req: Request, res: Response, 
 
 lineRouter.post('/accounts/:id/reconnect', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const result = await lineService.reconnectAccount(Number(req.params.id));
+    const result = accountResult(await lineService.reconnectAccount(Number(req.params.id)));
     res.json({ data: result, ...result });
   } catch (err) {
     handleLineError(err, res, next);
@@ -193,7 +215,8 @@ lineRouter.post('/accounts/:id/qr-login', async (req: Request, res: Response, ne
 lineRouter.patch('/accounts/:id/oa-credentials', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const account = await lineService.updateOaCredentials(Number(req.params.id), req.body);
-    res.json({ data: account, account });
+    const response = lineAccountResponse(account!);
+    res.json({ data: response, account: response });
   } catch (err) {
     handleLineError(err, res, next);
   }
@@ -202,7 +225,8 @@ lineRouter.patch('/accounts/:id/oa-credentials', async (req: Request, res: Respo
 lineRouter.post('/accounts/:id/oa-credentials', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const account = await lineService.updateOaCredentials(Number(req.params.id), req.body);
-    res.json({ data: account, account });
+    const response = lineAccountResponse(account!);
+    res.json({ data: response, account: response });
   } catch (err) {
     handleLineError(err, res, next);
   }
@@ -255,7 +279,8 @@ lineRouter.patch('/accounts/:id/proxy', async (req: Request, res: Response, next
   try {
     const proxyUrl = req.body?.proxy_url ?? req.body?.proxyUrl ?? null;
     const result = await lineService.updateAccountProxy(Number(req.params.id), proxyUrl);
-    res.json({ data: result, ...result });
+    const response = accountResult(result);
+    res.json({ data: response, ...response });
   } catch (err) {
     handleLineError(err, res, next);
   }
@@ -415,10 +440,12 @@ lineRouter.post(
   '/accounts/:id/conversations/:threadId/messages',
   async (req: Request, res: Response, next: NextFunction) => {
     try {
+      const body = sendSchema.parse(req.body);
+      if (!(body.content ?? body.text)) return res.status(400).json({ message: 'Nội dung tin nhắn không được để trống' });
       const result = await lineService.sendMessage(
         Number(req.params.id),
         String(req.params.threadId),
-        String(req.body.content ?? req.body.text ?? ''),
+        body.content ?? body.text ?? '',
       );
       res.json({ data: result, ...result });
     } catch (err) {
@@ -431,10 +458,12 @@ lineRouter.post(
   '/accounts/:id/messages/send',
   async (req: Request, res: Response, next: NextFunction) => {
     try {
+      const body = sendSchema.parse(req.body);
+      if (!(body.content ?? body.text) || !(body.to ?? body.threadId)) return res.status(400).json({ message: 'Thiếu đích gửi hoặc nội dung tin nhắn' });
       const result = await lineService.sendMessage(
         Number(req.params.id),
-        String(req.body.to ?? req.body.threadId ?? ''),
-        String(req.body.content ?? req.body.text ?? ''),
+        body.to ?? body.threadId ?? '',
+        body.content ?? body.text ?? '',
       );
       res.json({ data: result, ...result });
     } catch (err) {
@@ -546,6 +575,7 @@ lineRouter.post('/links', async (req: Request, res: Response, next: NextFunction
     const rawLineAccountId = req.body.line_account_id ?? req.body.lineAccountId;
     const result = await lineService.createOrUpdateLink({
       student_id: Number(req.body.student_id ?? req.body.studentId),
+      program_type: req.body.program_type,
       line_account_id: rawLineAccountId != null ? Number(rawLineAccountId) : undefined,
       line_group_id:
         rawLineGroupId === null

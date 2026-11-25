@@ -1,6 +1,10 @@
+import { Textarea } from '../../../components/ui/Textarea';
+import { Select } from '../../../components/ui/Select';
+import { Input } from '../../../components/ui/Input';
 import React, { useState } from 'react';
 import { CareLog, CareOutcome, CreateCareLogDTO } from '../types/care.types';
 import { Button } from '../../../components/ui/Button';
+import { Modal } from '../../../components/ui/Modal';
 import { Badge } from '../../../components/ui/Badge';
 import { useToast } from '../../../components/ui/Toast';
 import { MessageSquare, Calendar, User, Plus } from 'lucide-react';
@@ -56,8 +60,8 @@ export const CareLogTimeline: React.FC<CareLogTimelineProps> = ({
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="text-lg font-semibold text-gray-900">Lịch sử Chăm sóc Học viên</h3>
-          <p className="text-sm text-gray-500">Ghi chép liên tục theo mốc buổi học và diễn biến tâm lý học viên</p>
+          <h3 className="text-lg font-semibold text-text-primary">Lịch sử Chăm sóc Học viên</h3>
+          <p className="text-sm text-text-muted">Ghi chép liên tục theo mốc buổi học và diễn biến tâm lý học viên</p>
         </div>
         <Button
           size="sm"
@@ -69,15 +73,15 @@ export const CareLogTimeline: React.FC<CareLogTimelineProps> = ({
       </div>
 
       {loading ? (
-        <div className="py-8 text-center text-gray-500">Đang tải nhật ký...</div>
+        <div className="py-8 text-center text-text-muted">Đang tải nhật ký...</div>
       ) : logs.length === 0 ? (
-        <div className="py-12 border-2 border-dashed border-gray-200 rounded-lg text-center">
+        <div className="py-12 border-2 border-dashed border-border rounded-lg text-center">
           <MessageSquare className="w-10 h-10 mx-auto text-gray-300 mb-2" />
-          <p className="text-gray-500 font-medium">Chưa có nhật ký chăm sóc nào cho ghi danh này</p>
-          <p className="text-sm text-gray-400 mt-1">Hãy tạo ghi chép đầu tiên sau buổi học để theo dõi tiến độ</p>
+          <p className="text-text-muted font-medium">Chưa có nhật ký chăm sóc nào cho ghi danh này</p>
+          <p className="text-sm text-text-muted mt-1">Hãy tạo ghi chép đầu tiên sau buổi học để theo dõi tiến độ</p>
         </div>
       ) : (
-        <div className="relative pl-6 border-l-2 border-gray-200 space-y-6">
+        <div className="relative pl-6 border-l-2 border-border space-y-6">
           {logs.map((log) => {
             const outcomeConfig = OUTCOME_LABELS[log.outcome] || { label: log.outcome, variant: 'neutral' };
             const formattedDate = new Date(log.created_at).toLocaleString('vi-VN', {
@@ -93,7 +97,7 @@ export const CareLogTimeline: React.FC<CareLogTimelineProps> = ({
                 {/* Dot marker */}
                 <div className="absolute -left-[31px] top-1.5 w-4 h-4 rounded-full border-2 border-white bg-blue-600 shadow-sm" />
 
-                <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm hover:shadow transition-shadow">
+                <div className="bg-surface border border-border rounded-lg p-4 shadow-sm hover:shadow transition-shadow">
                   <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
                     <div className="flex items-center gap-2">
                       <span className="inline-flex items-center px-2.5 py-0.5 rounded text-xs font-semibold bg-indigo-50 text-indigo-700 border border-indigo-100">
@@ -101,13 +105,13 @@ export const CareLogTimeline: React.FC<CareLogTimelineProps> = ({
                       </span>
                       <Badge variant={outcomeConfig.variant}>{outcomeConfig.label}</Badge>
                     </div>
-                    <div className="flex items-center gap-3 text-xs text-gray-400">
+                    <div className="flex items-center gap-3 text-xs text-text-muted">
                       <span className="flex items-center gap-1">
                         <Calendar className="w-3.5 h-3.5" />
                         {formattedDate}
                       </span>
                       {log.cs && (
-                        <span className="flex items-center gap-1 font-medium text-gray-600">
+                        <span className="flex items-center gap-1 font-medium text-text-secondary">
                           <User className="w-3.5 h-3.5" />
                           {log.cs.name}
                         </span>
@@ -115,8 +119,8 @@ export const CareLogTimeline: React.FC<CareLogTimelineProps> = ({
                     </div>
                   </div>
 
-                  <div className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
-                    {log.content || <span className="italic text-gray-400">Không có ghi chú chi tiết</span>}
+                  <div className="text-sm text-text-secondary whitespace-pre-wrap leading-relaxed">
+                    {log.content || <span className="italic text-text-muted">Không có ghi chú chi tiết</span>}
                   </div>
                 </div>
               </div>
@@ -127,76 +131,40 @@ export const CareLogTimeline: React.FC<CareLogTimelineProps> = ({
 
       {/* Modal Thêm Nhật Ký */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-            <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
-              <h4 className="font-semibold text-gray-900 text-base">Thêm Nhật ký Chăm sóc Mới</h4>
-              <button
-                onClick={() => setIsModalOpen(false)}
-                className="text-gray-400 hover:text-gray-600 text-lg leading-none"
-              >
-                &times;
-              </button>
+        <Modal isOpen onClose={() => setIsModalOpen(false)} title="Thêm nhật ký chăm sóc" size="sm">
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <Input label={"Mốc buổi học (Sau buổi số)"} type="number"
+              min={1}
+              required
+              value={formData.after_session_number}
+              onChange={(e) =>
+                setFormData({ ...formData, after_session_number: parseInt(e.target.value, 10) || 1 })
+              } />
+
+            <Select label={"Kết quả chăm sóc / Tình trạng"} value={formData.outcome}
+              onChange={(e) => setFormData({ ...formData, outcome: e.target.value as CareOutcome })}>
+              {Object.entries(OUTCOME_LABELS).map(([key, val]) => (
+                <option key={key} value={key}>
+                  {val.label}
+                </option>
+              ))}
+            </Select>
+
+            <Textarea label={"Nội dung chi tiết / Phản hồi của học viên"} rows={4}
+              value={formData.content}
+              onChange={(e) => setFormData({ ...formData, content: e.target.value })}
+              placeholder="Ghi chú chi tiết trao đổi với phụ huynh hoặc học viên..."></Textarea>
+
+            <div className="flex justify-end gap-3 pt-2">
+              <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)}>
+                Hủy
+              </Button>
+              <Button type="submit" disabled={submitting}>
+                {submitting ? 'Đang lưu...' : 'Lưu nhật ký'}
+              </Button>
             </div>
-
-            <form onSubmit={handleSubmit} className="p-6 space-y-4">
-              <div>
-                <label className="block text-xs font-medium text-gray-700 uppercase tracking-wider mb-1">
-                  Mốc buổi học (Sau buổi số)
-                </label>
-                <input
-                  type="number"
-                  min={1}
-                  required
-                  value={formData.after_session_number}
-                  onChange={(e) =>
-                    setFormData({ ...formData, after_session_number: parseInt(e.target.value, 10) || 1 })
-                  }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-gray-700 uppercase tracking-wider mb-1">
-                  Kết quả chăm sóc / Tình trạng
-                </label>
-                <select
-                  value={formData.outcome}
-                  onChange={(e) => setFormData({ ...formData, outcome: e.target.value as CareOutcome })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                >
-                  {Object.entries(OUTCOME_LABELS).map(([key, val]) => (
-                    <option key={key} value={key}>
-                      {val.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-gray-700 uppercase tracking-wider mb-1">
-                  Nội dung chi tiết / Phản hồi của học viên
-                </label>
-                <textarea
-                  rows={4}
-                  value={formData.content}
-                  onChange={(e) => setFormData({ ...formData, content: e.target.value })}
-                  placeholder="Ghi chú chi tiết trao đổi với phụ huynh hoặc học viên..."
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                />
-              </div>
-
-              <div className="flex justify-end gap-3 pt-2">
-                <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)}>
-                  Hủy
-                </Button>
-                <Button type="submit" disabled={submitting}>
-                  {submitting ? 'Đang lưu...' : 'Lưu nhật ký'}
-                </Button>
-              </div>
-            </form>
-          </div>
-        </div>
+          </form>
+        </Modal>
       )}
     </div>
   );

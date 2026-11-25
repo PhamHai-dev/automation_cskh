@@ -811,6 +811,7 @@ enum ZaloContactRelationStatus {
 model ZaloContactRelation {
   id              Int                       @id @default(autoincrement())
   student_id      Int
+  program_type    String                    @default("ALL") @db.VarChar(10)
   zalo_account_id Int
   relation_status ZaloContactRelationStatus @default(UNKNOWN)
   target_type     String                    @default("USER") // "USER" | "GROUP"
@@ -827,7 +828,7 @@ model ZaloContactRelation {
   zalo_account ZaloAccount @relation(fields: [zalo_account_id], references: [id])
   zalo_group   ZaloGroup?  @relation(fields: [zalo_group_id], references: [id], onDelete: SetNull)
 
-  @@unique([student_id, zalo_account_id])
+  @@unique([student_id, zalo_account_id, program_type], name: "student_id_zalo_account_id", map: "zalo_relation_student_account_program_key")
   @@index([student_id])
   @@index([zalo_account_id])
   @@index([zalo_group_id])
@@ -1867,6 +1868,7 @@ model LineAccount {
 model LineContactRelation {
   id              Int                       @id @default(autoincrement())
   student_id      Int
+  program_type    String                    @default("ALL") @db.VarChar(10)
   line_account_id Int
   relation_status ZaloContactRelationStatus @default(UNKNOWN)
   target_type     String                    @default("USER") // "USER" | "GROUP"
@@ -1884,7 +1886,7 @@ model LineContactRelation {
   line_account LineAccount @relation(fields: [line_account_id], references: [id])
   line_group   LineGroup?  @relation(fields: [line_group_id], references: [id], onDelete: SetNull)
 
-  @@unique([student_id, line_account_id])
+  @@unique([student_id, line_account_id, program_type], name: "student_id_line_account_id", map: "line_relation_student_account_program_key")
   @@index([student_id])
   @@index([line_account_id])
   @@index([line_group_id])

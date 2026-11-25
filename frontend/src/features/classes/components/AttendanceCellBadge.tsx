@@ -84,10 +84,10 @@ export const ATTENDANCE_CODE_CONFIG: Record<
     label: 'Lỗi kỹ thuật (E)',
     short: 'E',
     solidBg: 'bg-slate-200 hover:bg-slate-300',
-    solidText: 'text-slate-900 font-extrabold',
+    solidText: 'text-text-primary font-extrabold',
     solidBorder: 'border-slate-400',
-    dashedBg: 'bg-slate-100/80 hover:bg-slate-200/80',
-    dashedText: 'text-slate-700 font-bold',
+    dashedBg: 'bg-surface-muted/80 hover:bg-slate-200/80',
+    dashedText: 'text-text-secondary font-bold',
     dashedBorder: 'border-dashed border-slate-500',
   },
 };
@@ -361,7 +361,7 @@ export const MonthlySessionBadge: React.FC<MonthlySessionBadgeProps> = ({
     styleClasses = `${cfg.dashedBg} ${cfg.dashedText} ${cfg.dashedBorder}`;
   } else {
     styleClasses =
-      'border-dashed border-slate-400 bg-slate-50 hover:bg-slate-100 text-slate-600 font-bold';
+      'border-dashed border-slate-400 bg-surface-subtle hover:bg-surface-muted text-text-secondary font-bold';
   }
 
   return (
@@ -441,7 +441,7 @@ export const AttendanceMatrixLegendBar: React.FC<AttendanceMatrixLegendBarProps>
       label: 'Đã mở ca, chưa chấm',
       count: counts?.sessionUnmarked,
       preview: (
-        <span className="inline-flex h-5 min-w-[22px] items-center justify-center rounded border border-dashed border-slate-400 bg-slate-50 px-1 text-[10px] font-bold text-slate-600">
+        <span className="inline-flex h-5 min-w-[22px] items-center justify-center rounded border border-dashed border-slate-400 bg-surface-subtle px-1 text-[10px] font-bold text-text-secondary">
           ?
         </span>
       ),
@@ -497,20 +497,20 @@ export const AttendanceMatrixLegendBar: React.FC<AttendanceMatrixLegendBarProps>
   ];
 
   return (
-    <div className="px-4 py-2.5 bg-slate-50/90 border-b border-border/80 flex flex-col gap-2 text-xs">
+    <div className="px-4 py-2.5 bg-surface-subtle/90 border-b border-border/80 flex flex-col gap-2 text-xs">
       {/* Row 1: Workflow States + Interactive Filter */}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-1.5">
-          <span className="text-[11px] font-bold text-slate-600 mr-1">
+          <span className="text-[11px] font-bold text-text-secondary mr-1">
             Trạng thái ô điểm danh:
           </span>
 
           {/* Non-filterable static cue for No Session */}
           <span
-            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] text-slate-600"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface px-2 py-1 text-[11px] text-text-secondary"
             title="Ngày chưa có ca học nào được mở. Rê chuột vào ô và bấm (+) để tạo Ca 1 mới."
           >
-            <span className="inline-flex h-4 w-4 items-center justify-center rounded border border-slate-200 text-slate-400 font-bold">
+            <span className="inline-flex h-4 w-4 items-center justify-center rounded border border-border text-text-muted font-bold">
               ·
             </span>
             <span>Chưa tạo ca</span>
@@ -536,7 +536,7 @@ export const AttendanceMatrixLegendBar: React.FC<AttendanceMatrixLegendBarProps>
                 className={`inline-flex items-center gap-1.5 rounded-lg border px-2 py-1 text-[11px] font-semibold transition ${
                   isActive
                     ? 'border-primary bg-primary/10 text-primary shadow-2xs ring-1 ring-primary/30'
-                    : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-100/70'
+                    : 'border-border bg-surface text-text-secondary hover:border-border-strong hover:bg-surface-muted/70'
                 } ${clickable ? 'cursor-pointer' : 'cursor-default'}`}
               >
                 {item.preview}
@@ -550,7 +550,7 @@ export const AttendanceMatrixLegendBar: React.FC<AttendanceMatrixLegendBarProps>
                         ? 'bg-amber-500 text-white'
                         : item.key === 'SESSION_UNMARKED' && item.count > 0
                         ? 'bg-slate-600 text-white'
-                        : 'bg-slate-100 text-slate-600'
+                        : 'bg-surface-muted text-text-secondary'
                     }`}
                   >
                     {item.count}
@@ -562,10 +562,10 @@ export const AttendanceMatrixLegendBar: React.FC<AttendanceMatrixLegendBarProps>
 
           {/* Note dot cue */}
           <span
-            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] text-slate-600"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface px-2 py-1 text-[11px] text-text-secondary"
             title="Ca học có nhập Nội dung bài học hoặc Ghi chú của Giáo viên / CSKH (rê chuột lên ô để xem nhanh)"
           >
-            <span className="relative inline-flex h-4 w-5 items-center justify-center rounded border border-slate-300 bg-slate-100 text-[9px] font-bold text-slate-600">
+            <span className="relative inline-flex h-4 w-5 items-center justify-center rounded border border-border-strong bg-surface-muted text-[9px] font-bold text-text-secondary">
               1
               <span className="absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full border border-white bg-indigo-600" />
             </span>
@@ -576,13 +576,13 @@ export const AttendanceMatrixLegendBar: React.FC<AttendanceMatrixLegendBarProps>
 
         {/* Row 2 / Right side: 6 Attendance Codes */}
         <div className="flex flex-wrap items-center gap-1.5">
-          <span className="text-[11px] font-bold text-slate-500 mr-0.5">Mã kết quả:</span>
+          <span className="text-[11px] font-bold text-text-muted mr-0.5">Mã kết quả:</span>
           {(Object.entries(ATTENDANCE_CODE_CONFIG) as Array<
             [AttendanceStatus, (typeof ATTENDANCE_CODE_CONFIG)[AttendanceStatus]]
           >).map(([key, cfg]) => (
             <span
               key={key}
-              className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-1.5 py-0.5 text-[11px] text-slate-700"
+              className="inline-flex items-center gap-1 rounded-md border border-border bg-surface px-1.5 py-0.5 text-[11px] text-text-secondary"
             >
               <span
                 className={`inline-flex h-4 min-w-4 items-center justify-center rounded border px-1 text-[10px] ${cfg.solidBg.replace(/\s*hover:\S+/g, '')} ${cfg.solidText} ${cfg.solidBorder}`}

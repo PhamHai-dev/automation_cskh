@@ -28,7 +28,7 @@ export const AppLayout: React.FC = () => {
   };
 
   return (
-    <div className="flex h-screen w-full bg-background overflow-hidden text-text-primary antialiased">
+    <div className="flex h-dvh w-full bg-background overflow-hidden text-text-primary antialiased">
       {/* Desktop Sidebar — animate both its footprint and panel movement. */}
       <div
         className={`hidden lg:block shrink-0 h-full overflow-hidden transition-[width] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none ${

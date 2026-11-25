@@ -71,9 +71,9 @@ export const CARE_LOG_PRESET_OPTIONS: CareOption[] = [
   {
     id: 'no_response',
     label: 'Chưa phản hồi',
-    bgClass: 'bg-slate-100 hover:bg-slate-200',
-    textClass: 'text-slate-700',
-    borderClass: 'border-slate-300',
+    bgClass: 'bg-surface-muted hover:bg-slate-200',
+    textClass: 'text-text-secondary',
+    borderClass: 'border-border-strong',
     dotClass: 'bg-slate-400',
   },
 ];
@@ -253,8 +253,8 @@ export const CareSelectCell: React.FC<CareSelectCellProps> = ({
             value
               ? matchedOption
                 ? `${matchedOption.bgClass} ${matchedOption.textClass} ${matchedOption.borderClass} font-medium`
-                : 'bg-slate-50 text-slate-700 border-slate-300 font-medium'
-              : 'bg-slate-100/50 text-slate-400 border-slate-200/60 italic'
+                : 'bg-surface-subtle text-text-secondary border-border-strong font-medium'
+              : 'bg-surface-muted/50 text-text-muted border-border/60 italic'
           }`}
           title={value ? `${value} (Chỉ xem)` : 'Chỉ xem'}
         >
@@ -277,12 +277,12 @@ export const CareSelectCell: React.FC<CareSelectCellProps> = ({
         onClick={handleOpen}
         className={`group relative flex items-center justify-between gap-1.5 px-2.5 py-1 rounded-full text-xs cursor-pointer select-none transition-all border shadow-2xs ${
           isOpen
-            ? 'ring-2 ring-primary border-primary bg-white z-10'
+            ? 'ring-2 ring-primary border-primary bg-surface z-10'
             : value
             ? matchedOption
               ? `${matchedOption.bgClass} ${matchedOption.textClass} ${matchedOption.borderClass} font-medium hover:shadow-xs`
-              : 'bg-slate-50 text-slate-800 border-slate-300 font-medium hover:bg-slate-100 hover:border-slate-400'
-            : 'bg-slate-100/70 hover:bg-slate-200/70 text-slate-400 border-slate-200/80 hover:border-slate-300 italic'
+              : 'bg-surface-subtle text-text-primary border-border-strong font-medium hover:bg-surface-muted hover:border-slate-400'
+            : 'bg-surface-muted/70 hover:bg-slate-200/70 text-text-muted border-border/80 hover:border-border-strong italic'
         }`}
         title={value || placeholder}
       >
@@ -301,7 +301,7 @@ export const CareSelectCell: React.FC<CareSelectCellProps> = ({
           ) : (
             <ChevronDown
               className={`w-3 h-3 transition-transform ${
-                isOpen ? 'rotate-180 text-primary' : 'text-slate-400 group-hover:text-slate-700'
+                isOpen ? 'rotate-180 text-primary' : 'text-text-muted group-hover:text-text-secondary'
               }`}
             />
           )}
@@ -321,7 +321,7 @@ export const CareSelectCell: React.FC<CareSelectCellProps> = ({
               maxWidth: '340px',
               zIndex: 9999,
             }}
-            className="bg-white rounded-xl shadow-2xl border border-slate-200/90 p-2 text-xs flex flex-col gap-2 animate-in fade-in zoom-in-95 duration-100 select-none font-sans"
+            className="bg-surface rounded-xl shadow-2xl border border-border/90 p-2 text-xs flex flex-col gap-2 animate-in fade-in zoom-in-95 duration-100 select-none font-sans"
           >
             {/* Top Search / Custom Text Input */}
             <div className="flex items-center gap-1 p-1 bg-surface-muted rounded-lg border-2 border-primary focus-within:ring-2 focus-within:ring-primary/20">
@@ -339,13 +339,13 @@ export const CareSelectCell: React.FC<CareSelectCellProps> = ({
                   }
                 }}
                 placeholder="Nhập hoặc chọn phản hồi..."
-                className="w-full bg-transparent text-xs font-semibold text-slate-800 outline-none px-1.5 placeholder:text-slate-400 placeholder:font-normal"
+                className="w-full bg-transparent text-xs font-semibold text-text-primary outline-none px-1.5 placeholder:text-text-muted placeholder:font-normal"
               />
               {customText ? (
                 <button
                   type="button"
                   onClick={() => setCustomText('')}
-                  className="p-1 text-slate-400 hover:text-slate-700 rounded-md transition-colors"
+                  className="p-1 text-text-muted hover:text-text-secondary rounded-md transition-colors"
                   title="Xóa trắng ô tìm kiếm"
                 >
                   <X className="w-3 h-3" />
@@ -363,7 +363,7 @@ export const CareSelectCell: React.FC<CareSelectCellProps> = ({
 
             {/* Presets List matching Google Sheets style */}
             <div className="flex flex-col gap-1 max-h-[260px] overflow-y-auto pr-0.5 custom-scrollbar">
-              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-1 pt-1">
+              <div className="text-[10px] font-bold text-text-muted uppercase tracking-wider px-1 pt-1">
                 Danh mục phản hồi gợi ý:
               </div>
 
@@ -393,7 +393,7 @@ export const CareSelectCell: React.FC<CareSelectCellProps> = ({
             </div>
 
             {/* Action Footer */}
-            <div className="border-t border-slate-100 pt-1.5 flex items-center justify-between text-[11px] text-slate-500">
+            <div className="border-t border-border-subtle pt-1.5 flex items-center justify-between text-[11px] text-text-muted">
               {value ? (
                 <button
                   type="button"
@@ -403,9 +403,9 @@ export const CareSelectCell: React.FC<CareSelectCellProps> = ({
                   Xóa phản hồi
                 </button>
               ) : (
-                <span className="text-[10px] text-slate-400 italic">Enter để lưu • Esc để hủy</span>
+                <span className="text-[10px] text-text-muted italic">Enter để lưu • Esc để hủy</span>
               )}
-              <div className="flex items-center gap-1 text-[10px] text-slate-400 ml-auto">
+              <div className="flex items-center gap-1 text-[10px] text-text-muted ml-auto">
                 <Edit3 className="w-2.5 h-2.5" />
                 <span>Hỗ trợ gõ tự do</span>
               </div>

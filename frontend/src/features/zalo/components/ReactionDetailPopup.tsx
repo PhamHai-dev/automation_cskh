@@ -39,17 +39,17 @@ export const ReactionDetailPopup: React.FC<ReactionDetailPopupProps> = ({
       {/* Backdrop */}
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
       {/* Panel */}
-      <div className="relative bg-white rounded-2xl shadow-2xl w-[360px] max-h-[70vh] flex flex-col overflow-hidden">
+      <div className="relative bg-surface rounded-2xl shadow-2xl w-[360px] max-h-[70vh] flex flex-col overflow-hidden">
         {/* Header */}
-        <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between shrink-0">
-          <h3 className="text-sm font-bold text-gray-900">Đã thả cảm xúc</h3>
-          <button onClick={onClose} className="p-1.5 rounded-full hover:bg-gray-100 text-gray-400">
+        <div className="px-4 py-3 border-b border-border-subtle flex items-center justify-between shrink-0">
+          <h3 className="text-sm font-bold text-text-primary">Đã thả cảm xúc</h3>
+          <button onClick={onClose} className="p-1.5 rounded-full hover:bg-surface-muted text-text-muted">
             <X className="w-4 h-4" />
           </button>
         </div>
 
         {/* Tabs */}
-        <div className="flex gap-1 px-3 py-2 border-b border-gray-100 overflow-x-auto shrink-0">
+        <div className="flex gap-1 px-3 py-2 border-b border-border-subtle overflow-x-auto shrink-0">
           {tabs.map((t) => (
             <button
               key={t.key}
@@ -57,7 +57,7 @@ export const ReactionDetailPopup: React.FC<ReactionDetailPopupProps> = ({
               className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors ${
                 activeTab === t.key
                   ? 'bg-blue-500 text-white'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  : 'bg-surface-muted text-text-secondary hover:bg-gray-200'
               }`}
             >
               {t.label}
@@ -68,12 +68,12 @@ export const ReactionDetailPopup: React.FC<ReactionDetailPopupProps> = ({
         {/* User list */}
         <div className="flex-1 overflow-y-auto">
           {displayUsers.length === 0 ? (
-            <div className="py-8 text-center text-sm text-gray-400">Chưa có ai</div>
+            <div className="py-8 text-center text-sm text-text-muted">Chưa có ai</div>
           ) : (
             displayUsers.map((u) => (
-              <div key={u.uid} className="flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50">
+              <div key={u.uid} className="flex items-center gap-3 px-4 py-2.5 hover:bg-surface-subtle">
                 <FriendAvatar url={u.avatarUrl || null} name={u.name || u.uid} size={32} rounded="rounded-full" />
-                <span className="text-sm font-medium text-gray-800 truncate">{u.name || u.uid}</span>
+                <span className="text-sm font-medium text-text-primary truncate">{u.name || u.uid}</span>
                 {activeTab === 'all' && (() => {
                   // Find which emoji this user reacted with
                   const emoji = reactions.find((r) => (userMap[r.emoji] || []).some((x) => x.uid === u.uid))?.emoji;

@@ -1,4 +1,4 @@
-﻿-- Activity-center list, filtering, exact pagination, and 30-day retention access paths.
+-- Activity-center list, filtering, exact pagination, and 30-day retention access paths.
 CREATE INDEX `login_audits_created_at_idx` ON `login_audits`(`created_at`);
 CREATE INDEX `login_audits_user_id_created_at_idx` ON `login_audits`(`user_id`, `created_at`);
 CREATE INDEX `login_audits_status_created_at_idx` ON `login_audits`(`status`, `created_at`);

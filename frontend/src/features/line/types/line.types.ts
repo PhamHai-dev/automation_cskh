@@ -285,6 +285,9 @@ export interface LineSocketStatusEvent {
   reason?: string;
   disconnectReason?: string | null;
   pinCode?: string | null;
+  displayName?: string | null;
+  lineMid?: string | null;
+  avatarUrl?: string | null;
 }
 
 export interface LineSocketMessageEvent {

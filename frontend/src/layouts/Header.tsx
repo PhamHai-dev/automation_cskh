@@ -229,12 +229,12 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar, sidebarOpen }) 
   const showSearchDropdown = searchFocused && searchQuery.trim().length > 0 && canSearch;
 
   return (
-    <header className="h-16 bg-surface/95 backdrop-blur-md border-b border-border/80 sticky top-0 z-30 px-4 sm:px-6 flex items-center justify-between gap-4">
+    <header className="h-16 shrink-0 bg-surface/95 backdrop-blur-md border-b border-border/80 sticky top-0 z-30 px-4 sm:px-6 flex items-center justify-between gap-3">
       {/* ── Left: Sidebar Toggle + Dynamic Breadcrumb ────────────────────────── */}
-      <div className="flex items-center gap-3 min-w-0 shrink-0">
+      <div className="flex flex-1 items-center gap-3 min-w-0">
         <button
           onClick={onToggleSidebar}
-          className={`p-2 rounded-xl text-text-secondary hover:text-text-primary hover:bg-surface-muted transition-colors ${
+          className={`shrink-0 p-2 rounded-xl text-text-secondary hover:text-text-primary hover:bg-surface-muted transition-colors ${
             sidebarOpen ? 'lg:hidden' : 'flex'
           }`}
           aria-label="Mở thanh điều hướng"
@@ -259,7 +259,7 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar, sidebarOpen }) 
                     {seg.label}
                   </span>
                 ) : (
-                  <span className="text-text-primary font-semibold truncate">
+                  <span title={seg.label} className="text-text-primary font-semibold truncate">
                     {seg.label}
                   </span>
                 )}
@@ -274,13 +274,13 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar, sidebarOpen }) 
         {canSearch && (
           <div
             ref={searchContainerRef}
-            className="relative w-64 lg:w-80 xl:w-96 hidden md:block"
+            className="relative w-48 xl:w-72 2xl:w-80 hidden lg:block"
           >
             <div
               className={`flex items-center gap-2.5 h-10 px-4 rounded-full bg-surface-muted/80 border transition-all duration-150 ${
                 searchFocused
                   ? 'bg-surface border-primary ring-2 ring-primary/15 shadow-xs'
-                  : 'border-border/80 hover:border-slate-300'
+                  : 'border-border/80 hover:border-border-strong'
               }`}
             >
               <Search className="w-4 h-4 text-text-muted shrink-0" />
@@ -455,7 +455,7 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar, sidebarOpen }) 
           </button>
 
           {notifOpen && (
-            <div className="absolute right-0 mt-2 w-80 sm:w-96 bg-surface rounded-2xl border border-border shadow-soft-lg overflow-hidden z-50">
+            <div className="fixed inset-x-4 top-[4.5rem] sm:absolute sm:inset-x-auto sm:top-auto sm:right-0 sm:mt-2 sm:w-96 max-w-[calc(100vw-2rem)] bg-surface rounded-2xl border border-border shadow-soft-lg overflow-hidden z-50">
               <div className="flex items-center justify-between px-4 py-3 border-b border-border/80 bg-surface-subtle/60">
                 <div className="flex items-center gap-2">
                   <span className="text-xs font-bold text-text-primary">Thông báo</span>
@@ -542,15 +542,15 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar, sidebarOpen }) 
               <div className="w-8 h-8 rounded-full bg-primary text-white font-bold text-xs flex items-center justify-center shadow-xs shrink-0">
                 {getInitials(user.name)}
               </div>
-              <div className="hidden sm:flex flex-col text-left">
-                <span className="text-xs font-bold text-text-primary leading-tight">
+              <div className="hidden xl:flex min-w-0 max-w-40 flex-col text-left">
+                <span title={user.name || roleConfig.label} className="truncate text-xs font-bold text-text-primary leading-tight">
                   {user.name || roleConfig.label}
                 </span>
-                <span className="text-[10px] text-text-muted leading-tight">
+                <span title={user.email} className="truncate text-[10px] text-text-muted leading-tight">
                   {user.email}
                 </span>
               </div>
-              <ChevronDown className="w-3.5 h-3.5 text-text-muted hidden sm:block" />
+              <ChevronDown className="w-4 h-4 text-text-muted hidden xl:block" />
             </button>
 
             {userMenuOpen && (

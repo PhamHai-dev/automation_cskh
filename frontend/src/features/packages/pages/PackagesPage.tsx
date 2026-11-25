@@ -150,14 +150,14 @@ export const PackagesPage: React.FC = () => {
   };
 
   const columns: Column<Package>[] = [
-    { header: 'Mã gói', accessorKey: 'code', className: 'font-bold text-slate-900 text-xs' },
-    { header: 'Tên gói học', accessorKey: 'name', cell: (item) => <span className="font-semibold text-xs text-slate-800">{item.name || '—'}</span> },
+    { align: 'center' as const, wrap: false, header: 'Mã gói', accessorKey: 'code', className: 'font-bold text-text-primary text-xs' },
+    { align: 'left' as const, wrap: true, header: 'Tên gói học', accessorKey: 'name', cell: (item) => <span className="font-semibold text-xs text-text-primary">{item.name || '—'}</span> },
     {
-      header: 'Số buổi định mức',
+      align: 'right' as const, wrap: false, header: 'Số buổi định mức',
       cell: (item) => (item.default_total_sessions ? `${item.default_total_sessions} buổi` : '—'),
     },
     {
-      header: 'Trạng thái',
+      align: 'center' as const, wrap: false, header: 'Trạng thái',
       cell: (item) => (
         <Badge variant={item.active ? 'success' : 'danger'}>
           {item.active ? 'Đang hoạt động' : 'Ngừng áp dụng'}
@@ -165,7 +165,7 @@ export const PackagesPage: React.FC = () => {
       ),
     },
     {
-      header: 'Thao tác',
+      align: 'center' as const, wrap: false, header: 'Thao tác',
       className: 'text-right',
       cell: (item) => (
         <div className="flex justify-end">
@@ -178,7 +178,7 @@ export const PackagesPage: React.FC = () => {
             }}
             title="Chỉnh sửa"
           >
-            <Edit className="w-4 h-4 text-slate-500 hover:text-blue-600" />
+            <Edit className="w-4 h-4 text-text-muted hover:text-blue-600" />
           </Button>
         </div>
       ),
@@ -217,9 +217,9 @@ export const PackagesPage: React.FC = () => {
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               placeholder="Nhập mã gói hoặc tên gói..."
-              className="w-full h-9 pl-9 pr-3 border border-border rounded-xl text-sm bg-white text-text-primary focus:outline-none focus:ring-2 focus:ring-primary shadow-xs transition"
+              className="w-full h-9 pl-9 pr-3 border border-border rounded-xl text-sm bg-surface text-text-primary focus:outline-none focus:ring-2 focus:ring-primary shadow-xs transition"
             />
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+            <Search className="w-4 h-4 text-text-muted absolute left-3 top-2.5" />
           </div>
         </div>
       </FilterBar>
@@ -293,11 +293,11 @@ export const PackagesPage: React.FC = () => {
               <input
                 id="package-active"
                 type="checkbox"
-                className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                className="h-4 w-4 rounded border-border-strong text-blue-600 focus:ring-blue-500"
                 checked={formData.active}
                 onChange={(e) => setFormData({ ...formData, active: e.target.checked })}
               />
-              <label htmlFor="package-active" className="ml-2 block text-xs font-semibold text-slate-700">
+              <label htmlFor="package-active" className="ml-2 block text-xs font-semibold text-text-secondary">
                 Đang hoạt động (Áp dụng cho ghi danh mới)
               </label>
             </div>

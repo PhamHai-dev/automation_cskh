@@ -167,7 +167,7 @@ export const TeacherDashboardPage: React.FC = () => {
         <div className="absolute -bottom-24 left-1/3 h-48 w-48 rounded-full bg-accent/10 blur-3xl" />
         <div className="relative flex flex-col justify-between gap-5 lg:flex-row lg:items-center">
           <div>
-            <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-primary/15 bg-white/80 px-3 py-1 text-xs font-semibold text-primary shadow-2xs backdrop-blur">
+            <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-primary/15 bg-surface/80 px-3 py-1 text-xs font-semibold text-primary shadow-2xs backdrop-blur">
               <Sparkles className="h-3.5 w-3.5" />
               Tổng quan hôm nay
             </div>
@@ -181,7 +181,7 @@ export const TeacherDashboardPage: React.FC = () => {
             size="sm"
             onClick={loadDashboard}
             leftIcon={<RefreshCw className="h-4 w-4" />}
-            className="self-start bg-white/80 lg:self-auto"
+            className="self-start bg-surface/80 lg:self-auto"
           >
             Làm mới
           </Button>

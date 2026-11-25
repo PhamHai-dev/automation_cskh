@@ -137,14 +137,14 @@ export const ZaloMonitorPage: React.FC = () => {
           )}
           {connected ? 'Socket Connected' : 'Socket Disconnected'}
         </span>
-        <span className="text-xs text-gray-500">{events.length} events captured</span>
+        <span className="text-xs text-text-muted">{events.length} events captured</span>
 
         {/* Account filter */}
         {uniqueAccounts.length > 0 && (
           <select
             value={accountFilter}
             onChange={(e) => setAccountFilter(e.target.value)}
-            className="text-xs border border-gray-200 rounded-lg px-2 py-1 bg-white"
+            className="text-xs border border-border rounded-lg px-2 py-1 bg-surface"
           >
             <option value="all">All accounts</option>
             {uniqueAccounts.map((id) => (
@@ -160,7 +160,7 @@ export const ZaloMonitorPage: React.FC = () => {
       <div className="bg-gray-900 rounded-xl overflow-hidden border border-gray-700">
         <div className="max-h-[600px] overflow-y-auto font-mono text-xs p-4 space-y-1">
           {events.length === 0 && (
-            <div className="text-gray-500 text-center py-8">
+            <div className="text-text-muted text-center py-8">
               Waiting for events... Connect to a Zalo account to see activity.
             </div>
           )}
@@ -169,7 +169,7 @@ export const ZaloMonitorPage: React.FC = () => {
               key={e.id}
               className="flex items-start gap-2 group hover:bg-gray-800 px-2 py-0.5 rounded"
             >
-              <span className="text-gray-500 shrink-0 w-[70px]">
+              <span className="text-text-muted shrink-0 w-[70px]">
                 {e.timestamp.toLocaleTimeString('vi-VN')}
               </span>
               <span

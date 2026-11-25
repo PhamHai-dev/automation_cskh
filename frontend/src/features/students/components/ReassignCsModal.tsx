@@ -208,10 +208,10 @@ export const ReassignCsModal: React.FC<ReassignCsModalProps> = ({
             <ArrowRightLeft className="w-4 h-4" />
           </div>
           <div>
-            <h3 className="font-bold text-slate-900 text-base">
+            <h3 className="font-bold text-text-primary text-base">
               Chuyển CVHT phụ trách học viên
             </h3>
-            <p className="text-xs text-slate-500 font-normal">
+            <p className="text-xs text-text-muted font-normal">
               Bàn giao quyền phụ trách chăm sóc từ CVHT hiện tại sang CVHT mới
             </p>
           </div>
@@ -220,7 +220,7 @@ export const ReassignCsModal: React.FC<ReassignCsModalProps> = ({
     >
       <form onSubmit={handleSubmit} className="space-y-4 text-xs">
         {/* 1. Tóm tắt học viên đang chọn */}
-        <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-3.5">
+        <div className="bg-surface-subtle border border-border/80 rounded-xl p-3.5">
           {singleStudent ? (
             <div className="space-y-2">
               <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -228,7 +228,7 @@ export const ReassignCsModal: React.FC<ReassignCsModalProps> = ({
                   <span className="font-mono font-bold text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded text-[11px]">
                     {singleStudent.external_id || `HV_${singleStudent.id}`}
                   </span>
-                  <strong className="text-sm text-slate-900">
+                  <strong className="text-sm text-text-primary">
                     {singleStudent.full_name}
                   </strong>
                 </div>
@@ -236,15 +236,15 @@ export const ReassignCsModal: React.FC<ReassignCsModalProps> = ({
                   {(singleEnrollment?.program_type || 'KAIWA').toUpperCase()}
                 </Badge>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 text-slate-600 border-t border-slate-200/60">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 text-text-secondary border-t border-border/60">
                 <div>
-                  <span className="text-slate-500">Gói học / Khóa: </span>
-                  <strong className="text-slate-800">
+                  <span className="text-text-muted">Gói học / Khóa: </span>
+                  <strong className="text-text-primary">
                     {getEnrollmentPackageLabel(singleEnrollment)}
                   </strong>
                 </div>
                 <div>
-                  <span className="text-slate-500">CVHT chính hiện tại: </span>
+                  <span className="text-text-muted">CVHT chính hiện tại: </span>
                   <strong className="font-mono text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200">
                     {singleEnrollment?.cs?.staff_code ||
                       (singleEnrollment?.cs as any)?.code ||
@@ -257,7 +257,7 @@ export const ReassignCsModal: React.FC<ReassignCsModalProps> = ({
           ) : (
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1.5 font-bold text-slate-800 text-xs">
+                <div className="flex items-center gap-1.5 font-bold text-text-primary text-xs">
                   <Users className="w-4 h-4 text-blue-600" />
                   <span>
                     Đang chọn chuyển hàng loạt:{' '}
@@ -268,7 +268,7 @@ export const ReassignCsModal: React.FC<ReassignCsModalProps> = ({
                   {validEnrollmentIds.length} gói ghi danh hợp lệ
                 </Badge>
               </div>
-              <div className="max-h-28 overflow-y-auto bg-white border border-slate-200/80 rounded-lg p-2 flex flex-wrap gap-1.5">
+              <div className="max-h-28 overflow-y-auto bg-surface border border-border/80 rounded-lg p-2 flex flex-wrap gap-1.5">
                 {students.map((st) => {
                   const enr = st.enrollments?.[0];
                   const curCs =
@@ -279,13 +279,13 @@ export const ReassignCsModal: React.FC<ReassignCsModalProps> = ({
                   return (
                     <span
                       key={st.id}
-                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200 text-[11px]"
+                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-surface-muted text-text-secondary border border-border text-[11px]"
                     >
                       <strong className="font-mono text-blue-700">
                         {st.external_id || `HV_${st.id}`}
                       </strong>
                       <span className="truncate max-w-[130px]">{st.full_name}</span>
-                      <span className="text-slate-400">({curCs})</span>
+                      <span className="text-text-muted">({curCs})</span>
                     </span>
                   );
                 })}
@@ -296,11 +296,11 @@ export const ReassignCsModal: React.FC<ReassignCsModalProps> = ({
 
         {/* 2. Chọn CVHT mới */}
         <div>
-          <label className="block font-bold text-slate-800 mb-1.5">
+          <label className="block font-bold text-text-primary mb-1.5">
             Chọn CVHT mới phụ trách <span className="text-rose-500">*</span>
           </label>
           {loadingUsers ? (
-            <div className="flex items-center gap-2 text-slate-500 py-2">
+            <div className="flex items-center gap-2 text-text-muted py-2">
               <Loader2 className="w-4 h-4 animate-spin text-primary" />
               <span>Đang tải danh sách CVHT...</span>
             </div>
@@ -311,7 +311,7 @@ export const ReassignCsModal: React.FC<ReassignCsModalProps> = ({
                 setTargetCsId(e.target.value ? Number(e.target.value) : '')
               }
               required
-              className="w-full h-10 px-3 bg-white border border-slate-300 rounded-xl text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary cursor-pointer"
+              className="w-full h-10 px-3 bg-surface border border-border-strong rounded-xl text-xs font-medium text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary cursor-pointer"
             >
               <option value="">-- Chọn tài khoản CVHT nhận bàn giao --</option>
               {csUsers.map((u) => {
@@ -330,7 +330,7 @@ export const ReassignCsModal: React.FC<ReassignCsModalProps> = ({
 
         {/* 3. Chọn Hướng chuyển giao (2 Radio Card trực quan) */}
         <div>
-          <label className="block font-bold text-slate-800 mb-2">
+          <label className="block font-bold text-text-primary mb-2">
             Chọn hướng chuyển giao quyền truy cập <span className="text-rose-500">*</span>
           </label>
           <div className="grid grid-cols-1 gap-2.5">
@@ -340,7 +340,7 @@ export const ReassignCsModal: React.FC<ReassignCsModalProps> = ({
               className={`flex items-start gap-3 p-3.5 rounded-xl border-2 cursor-pointer transition-all ${
                 mode === 'FULL_TRANSFER'
                   ? 'border-primary bg-blue-50/50 shadow-2xs'
-                  : 'border-slate-200 bg-white hover:border-slate-300'
+                  : 'border-border bg-surface hover:border-border-strong'
               }`}
             >
               <input
@@ -353,15 +353,15 @@ export const ReassignCsModal: React.FC<ReassignCsModalProps> = ({
               />
               <div className="flex-1">
                 <div className="flex items-center justify-between gap-2">
-                  <span className="font-bold text-slate-900 text-xs flex items-center gap-1.5">
+                  <span className="font-bold text-text-primary text-xs flex items-center gap-1.5">
                     <EyeOff className="w-3.5 h-3.5 text-rose-600" />
                     Hướng 1: Chuyển hẳn sang CVHT mới
                   </span>
-                  <span className="font-mono text-[10px] font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-700">
+                  <span className="font-mono text-[10px] font-bold px-2 py-0.5 rounded bg-surface-muted text-text-secondary">
                     FULL_TRANSFER
                   </span>
                 </div>
-                <p className="text-slate-600 mt-1 leading-relaxed text-[11px]">
+                <p className="text-text-secondary mt-1 leading-relaxed text-[11px]">
                   CVHT cũ sẽ không còn nhìn thấy dữ liệu của học viên này. Toàn bộ quyền xem và chỉnh sửa chuyển sang CVHT mới.
                 </p>
               </div>
@@ -373,7 +373,7 @@ export const ReassignCsModal: React.FC<ReassignCsModalProps> = ({
               className={`flex items-start gap-3 p-3.5 rounded-xl border-2 cursor-pointer transition-all ${
                 mode === 'KEEP_READONLY'
                   ? 'border-primary bg-blue-50/50 shadow-2xs'
-                  : 'border-slate-200 bg-white hover:border-slate-300'
+                  : 'border-border bg-surface hover:border-border-strong'
               }`}
             >
               <input
@@ -386,7 +386,7 @@ export const ReassignCsModal: React.FC<ReassignCsModalProps> = ({
               />
               <div className="flex-1">
                 <div className="flex items-center justify-between gap-2">
-                  <span className="font-bold text-slate-900 text-xs flex items-center gap-1.5">
+                  <span className="font-bold text-text-primary text-xs flex items-center gap-1.5">
                     <Eye className="w-3.5 h-3.5 text-amber-600" />
                     Hướng 2: Chuyển quyền phụ trách, giữ quyền XEM cho CVHT cũ
                   </span>
@@ -394,7 +394,7 @@ export const ReassignCsModal: React.FC<ReassignCsModalProps> = ({
                     KEEP_READONLY
                   </span>
                 </div>
-                <p className="text-slate-600 mt-1 leading-relaxed text-[11px]">
+                <p className="text-text-secondary mt-1 leading-relaxed text-[11px]">
                   CVHT mới có toàn quyền chỉnh sửa & chăm sóc. CVHT cũ vẫn nhìn thấy học viên trong danh sách nhưng ở chế độ Chỉ xem (không có quyền sửa).
                 </p>
               </div>
@@ -403,21 +403,21 @@ export const ReassignCsModal: React.FC<ReassignCsModalProps> = ({
         </div>
 
         {/* 4. Checkbox chuyển CareTask */}
-        <label className="flex items-center gap-2.5 p-3 rounded-xl bg-slate-50 border border-slate-200/80 cursor-pointer select-none">
+        <label className="flex items-center gap-2.5 p-3 rounded-xl bg-surface-subtle border border-border/80 cursor-pointer select-none">
           <input
             type="checkbox"
             checked={transferPendingTasks}
             onChange={(e) => setTransferPendingTasks(e.target.checked)}
-            className="h-4 w-4 rounded border-slate-300 text-primary focus:ring-primary"
+            className="h-4 w-4 rounded border-border-strong text-primary focus:ring-primary"
           />
-          <span className="font-semibold text-slate-800 text-xs">
+          <span className="font-semibold text-text-primary text-xs">
             Chuyển cả các công việc chăm sóc (CareTask) chưa hoàn thành sang CVHT mới
           </span>
         </label>
 
         {/* 5. Ghi chú bàn giao */}
         <div>
-          <label className="block font-bold text-slate-800 mb-1">
+          <label className="block font-bold text-text-primary mb-1">
             Ghi chú bàn giao (Không bắt buộc)
           </label>
           <textarea
@@ -425,15 +425,15 @@ export const ReassignCsModal: React.FC<ReassignCsModalProps> = ({
             value={note}
             onChange={(e) => setNote(e.target.value)}
             placeholder="Nhập lý do chuyển hoặc lưu ý bàn giao cho CVHT mới..."
-            className="w-full text-xs p-2.5 bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20"
+            className="w-full text-xs p-2.5 bg-surface border border-border-strong rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20"
           />
         </div>
 
         {/* 6. Quản lý danh sách CVHT cũ đang có quyền xem (khi mở modal cho 1 học viên) */}
         {singleStudent && viewers.length > 0 && (
-          <div className="border-t border-slate-200 pt-3.5">
+          <div className="border-t border-border pt-3.5">
             <div className="flex items-center justify-between mb-2">
-              <span className="font-bold text-slate-800 flex items-center gap-1.5">
+              <span className="font-bold text-text-primary flex items-center gap-1.5">
                 <ShieldAlert className="w-4 h-4 text-amber-600" />
                 <span>
                   CVHT cũ đang giữ quyền Chỉ xem ({viewers.length})
@@ -456,18 +456,18 @@ export const ReassignCsModal: React.FC<ReassignCsModalProps> = ({
                           {viewerLabel}
                         </span>
                         {viewerName && (
-                          <span className="font-semibold text-slate-800">
+                          <span className="font-semibold text-text-primary">
                             {viewerName}
                           </span>
                         )}
                         {v.cs?.email && (
-                          <span className="text-slate-500 text-[11px]">
+                          <span className="text-text-muted text-[11px]">
                             ({v.cs.email})
                           </span>
                         )}
                       </div>
                       {v.note && (
-                        <p className="text-[11px] text-slate-600 italic">
+                        <p className="text-[11px] text-text-secondary italic">
                           Ghi chú: {v.note}
                         </p>
                       )}
@@ -491,7 +491,7 @@ export const ReassignCsModal: React.FC<ReassignCsModalProps> = ({
         )}
 
         {/* Footer Buttons */}
-        <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-200">
+        <div className="flex items-center justify-end gap-2 pt-3 border-t border-border">
           <Button type="button" variant="outline" size="sm" onClick={onClose}>
             Hủy bỏ
           </Button>

@@ -39,11 +39,13 @@ test('closed row menu is accessible and does not expose destructive actions', ()
 });
 test('sync keeps preview route, system protection, file replacement and mapping', () => {
   const code = source('GoogleSheetSyncPanel.tsx');
-  for (const token of ['/data-sync/preview/', '!isSystemMaster', 'handleTriggerInlineFileUpload(cfg.code)', 'handleSaveCvhtMapping(cfg.code)', 'renderFilterSummaryCell(cfg)', '<th>Kết nối</th><th>Phạm vi</th>']) assert.ok(code.includes(token), token);
+  for (const token of ['/data-sync/preview/', '!isSystemMaster', 'handleTriggerInlineFileUpload(cfg.code)', 'handleSaveCvhtMapping(cfg.code)', 'renderFilterSummaryCell(cfg)']) assert.ok(code.includes(token), token);
+  assert.match(code, /<th\b[^>]*>Kết nối<\/th><th\b[^>]*>Phạm vi<\/th>/);
 });
 test('backup retains batch scope, per-row run, download and protected deletion', () => {
   const code = source('CsSheetBackupPanel.tsx');
-  for (const token of ['handleRunBatchOrAll', 'handleRunOne(cfg)', 'handleDownloadExcel(cfg)', 'canManage && !isAdminSystem', 'cfg.backup_year', '<th>Nơi lưu</th><th>Phạm vi</th>']) assert.ok(code.includes(token), token);
+  for (const token of ['handleRunBatchOrAll', 'handleRunOne(cfg)', 'handleDownloadExcel(cfg)', 'canManage && !isAdminSystem', 'cfg.backup_year']) assert.ok(code.includes(token), token);
+  assert.match(code, /<th\b[^>]*>Nơi lưu<\/th><th\b[^>]*>Phạm vi<\/th>/);
 });
 test('both forms keep save handlers and advanced controls inside native details', () => {
   for (const file of ['SyncConfigModal.tsx', 'BackupConfigModal.tsx']) {
@@ -75,6 +77,6 @@ test('data source tables are flat columns without per-row dropdown details', () 
   for (const code of [sync, backup]) {
     assert.doesNotMatch(code, /expandedRows|data-row-details|data-expand/);
     assert.match(code, /data-auto-switch/);
-    assert.match(code, /<th>Phạm vi<\/th>/);
+    assert.match(code, /<th\b[^>]*>Phạm vi<\/th>/);
   }
 });

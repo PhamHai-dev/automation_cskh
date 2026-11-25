@@ -11,6 +11,7 @@
  *   POST   /:accountId/conversations/:threadId/restore  — restore soft-deleted conversation
  */
 import { Router, Request, Response } from 'express';
+import { Prisma } from '@prisma/client';
 import { prisma } from '../../prisma/client';
 import { createLogger } from '../../shared/logger/logger';
 import {
@@ -102,15 +103,16 @@ router.get('/accounts/:accountId/conversations', async (req: Request, res: Respo
         INNER JOIN (
           SELECT conversation_id, MAX(timestamp) AS max_ts
           FROM messages
-          WHERE conversation_id IN (${convIds.join(',')})
+          WHERE conversation_id IN (${Prisma.join(convIds)})
           GROUP BY conversation_id
         ) latest ON m.conversation_id = latest.conversation_id AND m.timestamp = latest.max_ts
+        ORDER BY m.timestamp DESC, m.id DESC
       `.catch(() => []);
     }
 
     const lastMsgMap = new Map<number, any>();
     for (const row of lastMsgRows) {
-      lastMsgMap.set(row.conversation_id, row);
+      if (!lastMsgMap.has(row.conversation_id)) lastMsgMap.set(row.conversation_id, row);
     }
 
     // ─── Resolve DM names/avatars from Friend table ────────────────────────

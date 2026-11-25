@@ -505,7 +505,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                             : 'max-h-0 opacity-0 pointer-events-none'
                         }`}
                       >
-                        <div className="ml-5 pl-3 border-l border-slate-200 space-y-0.5 py-0.5">
+                        <div className="ml-5 pl-3 border-l border-border space-y-0.5 py-0.5">
                           {visibleSubItems.map((sub) => {
                             const isSubActive =
                               isParentRouteActive && activeSubTab === sub.tab;
@@ -523,7 +523,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                 className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs transition-colors ${
                                   isSubActive
                                     ? 'bg-blue-50/90 text-blue-600 font-semibold'
-                                    : 'text-slate-600 hover:bg-slate-100/80 hover:text-slate-900 font-medium'
+                                    : 'text-text-secondary hover:bg-surface-muted/80 hover:text-text-primary font-medium'
                                 }`}
                               >
                                 <span

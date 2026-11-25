@@ -22,7 +22,7 @@ export const ReactionPicker: React.FC<ReactionPickerProps> = ({ isSelf, onPick, 
   return (
     <div
       ref={ref}
-      className={`absolute -top-10 z-50 flex items-center gap-0.5 bg-white rounded-full shadow-lg border border-gray-100 px-2 py-1 ${
+      className={`absolute -top-10 z-50 flex items-center gap-0.5 bg-surface rounded-full shadow-lg border border-border-subtle px-2 py-1 ${
         isSelf ? 'right-0' : 'left-0'
       }`}
       style={{ animation: 'rp-pop 0.15s ease-out' }}

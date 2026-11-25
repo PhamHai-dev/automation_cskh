@@ -159,30 +159,30 @@ export const ImportApprovalQueue: React.FC = () => {
           </Button>
         </div>
         <div className="overflow-x-auto">
-          <table className="min-w-full text-sm">
+          <table data-table="native" className="min-w-full text-sm">
             <thead className="bg-surface-muted text-xs">
               <tr>
-                <th className="p-3 text-left">ID / Gói học</th>
-                <th className="p-3 text-left">Học viên</th>
-                <th className="p-3 text-left">Người yêu cầu</th>
-                <th className="p-3 text-left">Thời gian tạo</th>
-                <th className="p-3"></th>
+                <th scope="col" className="p-3 ">ID / Gói học</th>
+                <th scope="col" className="p-3 ">Học viên</th>
+                <th scope="col" className="p-3 ">Người yêu cầu</th>
+                <th scope="col" className="p-3 ">Thời gian tạo</th>
+                <th scope="col" className="p-3">Thao tác</th>
               </tr>
             </thead>
             <tbody>
               {items.map((item) => (
                 <tr key={item.id} className="border-t border-border">
-                  <td className="p-3 font-mono text-xs">
+                  <td data-align="center" data-wrap="nowrap" className="p-3 font-mono text-xs">
                     {item.external_id}
                     <br />
                     <span className="text-primary">{item.package_code}</span>
                   </td>
-                  <td className="p-3">{String(item.snapshot?.full_name || 'Chưa có tên')}</td>
-                  <td className="p-3 text-xs">{item.requested_by.name || item.requested_by.email}</td>
-                  <td className="p-3 text-xs text-text-secondary whitespace-nowrap">
+                  <td data-align="left" data-wrap="normal" className="p-3">{String(item.snapshot?.full_name || 'Chưa có tên')}</td>
+                  <td data-align="left" data-wrap="normal" className="p-3 text-xs">{item.requested_by.name || item.requested_by.email}</td>
+                  <td data-align="center" data-wrap="nowrap" className="p-3 text-xs text-text-secondary whitespace-nowrap">
                     {item.created_at ? new Date(item.created_at).toLocaleString('vi-VN') : '—'}
                   </td>
-                  <td className="p-3 text-right">
+                  <td data-align="center" data-wrap="nowrap" className="p-3 text-right">
                     <Button id={`review-request-${item.id}`} size="sm" variant="outline" onClick={() => setSelected(item)}>
                       Xem & duyệt
                     </Button>
@@ -191,7 +191,7 @@ export const ImportApprovalQueue: React.FC = () => {
               ))}
               {!items.length && (
                 <tr>
-                  <td colSpan={5} className="p-10 text-center text-text-muted">
+                  <td data-align="center" colSpan={5} className="p-10 text-center text-text-muted">
                     Không có yêu cầu đang chờ duyệt.
                   </td>
                 </tr>

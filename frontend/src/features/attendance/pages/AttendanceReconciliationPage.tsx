@@ -512,10 +512,10 @@ export const AttendanceReconciliationPage: React.FC = () => {
   // Columns for Conflicts Table
   const conflictColumns: Column<AttendanceRecord>[] = useMemo(
     () => [
-      { header: 'Học viên & Lớp học', cell: studentCell },
-      { header: 'Buổi học / Ngày', cell: sessionCell },
+      { align: 'left' as const, wrap: true, header: 'Học viên & Lớp học', cell: studentCell },
+      { align: 'center' as const, wrap: false, header: 'Buổi học / Ngày', cell: sessionCell },
       {
-        header: 'Giáo viên báo cáo',
+        align: 'left' as const, wrap: true, header: 'Giáo viên báo cáo',
         cell: (r) => {
           const cfg = r.teacher_status ? statusLabels[r.teacher_status] : null;
           return (
@@ -574,7 +574,7 @@ export const AttendanceReconciliationPage: React.FC = () => {
         },
       },
       {
-        header: 'Thao tác',
+        align: 'center' as const, wrap: false, header: 'Thao tác',
         className: 'text-right',
         cell: (r) =>
           isAdmin ? (
@@ -624,13 +624,13 @@ export const AttendanceReconciliationPage: React.FC = () => {
 
   const pendingColumns: Column<AttendanceRecord>[] = useMemo(() => {
     const commonColumns: Column<AttendanceRecord>[] = [
-      { header: 'Học viên & Lớp học', cell: studentCell },
-      { header: 'Buổi học / Ngày', cell: sessionCell },
-      { header: 'Giáo viên', cell: teacherCell },
+      { align: 'left' as const, wrap: true, header: 'Học viên & Lớp học', cell: studentCell },
+      { align: 'center' as const, wrap: false, header: 'Buổi học / Ngày', cell: sessionCell },
+      { align: 'left' as const, wrap: true, header: 'Giáo viên', cell: teacherCell },
     ];
 
     const teacherReportColumn: Column<AttendanceRecord> = {
-      header: 'Điểm danh GV',
+      align: 'center' as const, wrap: false, header: 'Điểm danh GV',
       cell: (r) => {
         const cfg = r.teacher_status ? statusLabels[r.teacher_status] : null;
         return cfg ? (
@@ -679,7 +679,7 @@ export const AttendanceReconciliationPage: React.FC = () => {
     };
 
     const csActionColumn: Column<AttendanceRecord> = {
-      header: 'Thao tác',
+      align: 'center' as const, wrap: false, header: 'Thao tác',
       className: 'text-right',
       cell: (r) => (
         <div className="flex items-center justify-end gap-2">
@@ -707,10 +707,10 @@ export const AttendanceReconciliationPage: React.FC = () => {
     if (pendingFilter === 'PENDING_CS') {
       return [
         {
-          header: (
+          align: 'center' as const, wrap: false, header: (
             <input
               type="checkbox"
-              className="h-4 w-4 rounded border-slate-300 accent-primary cursor-pointer"
+              className="h-4 w-4 rounded border-border-strong accent-primary cursor-pointer"
               checked={
                 pendingItems.length > 0 && selectedPendingIds.length === pendingItems.length
               }
@@ -722,7 +722,7 @@ export const AttendanceReconciliationPage: React.FC = () => {
           cell: (r) => (
             <input
               type="checkbox"
-              className="h-4 w-4 rounded border-slate-300 accent-primary cursor-pointer"
+              className="h-4 w-4 rounded border-border-strong accent-primary cursor-pointer"
               checked={selectedPendingIds.includes(r.id)}
               onChange={() => toggleSelectPending(r.id)}
               aria-label={`Chọn buổi ${r.class_session?.session_number}`}
@@ -740,7 +740,7 @@ export const AttendanceReconciliationPage: React.FC = () => {
         ...commonColumns,
         csReportColumn,
         {
-          header: 'Trạng thái chờ',
+          align: 'center' as const, wrap: false, header: 'Trạng thái chờ',
           cell: () => (
             <Badge variant="info" size="sm" dot>
               Chờ GV chấm
@@ -755,7 +755,7 @@ export const AttendanceReconciliationPage: React.FC = () => {
       teacherReportColumn,
       csReportColumn,
       {
-        header: 'Trạng thái chờ',
+        align: 'center' as const, wrap: false, header: 'Trạng thái chờ',
         cell: (r) =>
           !r.teacher_status && !r.cs_status ? (
             <Badge variant="neutral" size="sm" dot>
@@ -772,7 +772,7 @@ export const AttendanceReconciliationPage: React.FC = () => {
           ),
       },
       {
-        header: 'Thao tác',
+        align: 'center' as const, wrap: false, header: 'Thao tác',
         className: 'text-right',
         cell: (r) =>
           !r.teacher_status && !r.cs_status ? (
@@ -817,7 +817,7 @@ export const AttendanceReconciliationPage: React.FC = () => {
   const historyColumns: Column<ReconciliationHistoryItem>[] = useMemo(
     () => [
       {
-        header: 'Thời gian',
+        align: 'center' as const, wrap: false, header: 'Thời gian',
         cell: (h) => (
           <span className="text-xs font-medium text-text-primary whitespace-nowrap">
             {formatDateTime(h.created_at)}
@@ -825,7 +825,7 @@ export const AttendanceReconciliationPage: React.FC = () => {
         ),
       },
       {
-        header: 'Học viên & Lớp học',
+        align: 'left' as const, wrap: true, header: 'Học viên & Lớp học',
         cell: (h) => {
           const stCode =
             h.student?.external_id || (h.student?.id ? `HV_${h.student.id}` : '—');
@@ -848,7 +848,7 @@ export const AttendanceReconciliationPage: React.FC = () => {
         },
       },
       {
-        header: 'Buổi học / Ngày',
+        align: 'center' as const, wrap: false, header: 'Buổi học / Ngày',
         cell: (h) =>
           h.session ? (
             <div className="space-y-0.5 whitespace-nowrap">
@@ -865,7 +865,7 @@ export const AttendanceReconciliationPage: React.FC = () => {
           ),
       },
       {
-        header: 'Thao tác đối soát',
+        align: 'center' as const, wrap: false, header: 'Thao tác đối soát',
         cell: (h) => {
           const cfg = historyActionLabels[h.action];
           return cfg ? (
@@ -880,7 +880,7 @@ export const AttendanceReconciliationPage: React.FC = () => {
         },
       },
       {
-        header: 'Thay đổi trạng thái',
+        align: 'center' as const, wrap: false, header: 'Thay đổi trạng thái',
         cell: (h) => {
           const from = h.from_status ? statusLabels[h.from_status as AttendanceStatus] : null;
           const to = h.to_status ? statusLabels[h.to_status as AttendanceStatus] : null;
@@ -906,13 +906,13 @@ export const AttendanceReconciliationPage: React.FC = () => {
         },
       },
       {
-        header: 'Người thực hiện',
+        align: 'left' as const, wrap: true, header: 'Người thực hiện',
         cell: (h) => (
           <span className="text-xs text-text-primary font-semibold">{h.performed_by}</span>
         ),
       },
       {
-        header: 'Lý do / Ghi chú',
+        align: 'left' as const, wrap: true, header: 'Lý do / Ghi chú',
         cell: (h) => (
           <span className="text-xs text-text-secondary italic">
             {h.note ? `"${h.note}"` : '—'}
@@ -1182,7 +1182,7 @@ export const AttendanceReconciliationPage: React.FC = () => {
       {/* Khung Bảng chuẩn Design System kèm Thanh công cụ KPI trên đầu bảng */}
       <div className="bg-surface rounded-2xl border border-border/80 shadow-soft overflow-hidden">
         {/* Table Toolbar */}
-        <div className="flex flex-wrap items-center justify-between gap-2.5 border-b border-border/80 bg-slate-50/60 p-3 sm:px-4 text-xs">
+        <div className="flex flex-wrap items-center justify-between gap-2.5 border-b border-border/80 bg-surface-subtle/60 p-3 sm:px-4 text-xs">
           {/* Bên trái: Các chip KPI lọc nhanh */}
           <div className="flex flex-wrap items-center gap-2">
             <button
@@ -1240,10 +1240,10 @@ export const AttendanceReconciliationPage: React.FC = () => {
           </div>
 
           {/* Bên phải: Bộ chuyển phân loại chờ + Thao tác duyệt hàng loạt + Làm mới */}
-          <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-2">
+          <div className="ml-auto flex min-w-0 max-w-full flex-wrap items-center justify-end gap-2">
             {activeTab === 'pending' && (
               <div
-                className="inline-flex h-9 items-center p-1 bg-slate-100 rounded-xl border border-slate-200/90 gap-1"
+                className="inline-flex max-w-full flex-wrap items-center p-1 bg-surface-muted rounded-xl border border-border/90 gap-1"
                 role="tablist"
                 aria-label="Chọn phân loại chờ đối soát"
               >
@@ -1258,10 +1258,10 @@ export const AttendanceReconciliationPage: React.FC = () => {
                       setPendingFilter(f.value);
                       setPendingPage(1);
                     }}
-                    className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    className={`whitespace-nowrap px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                       pendingFilter === f.value
                         ? 'bg-primary text-white shadow-xs'
-                        : 'bg-white/60 text-slate-600 hover:bg-white hover:text-slate-900'
+                        : 'bg-surface/60 text-text-secondary hover:bg-surface hover:text-text-primary'
                     }`}
                   >
                     {f.label} ({f.count})

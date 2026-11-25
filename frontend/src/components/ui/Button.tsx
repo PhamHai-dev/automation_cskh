@@ -25,7 +25,7 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     ref
   ) => {
     const baseStyles =
-      'inline-flex items-center justify-center font-medium rounded-xl transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none active:scale-[0.98] select-none whitespace-nowrap';
+      'ui-button inline-flex shrink-0 items-center justify-center font-medium rounded-xl transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none active:scale-[0.98] select-none whitespace-nowrap';
 
     const variants = {
       primary:
@@ -35,9 +35,9 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
       secondary:
         'bg-surface-muted text-text-primary hover:bg-slate-200/80 active:bg-slate-300/80 border border-border focus-visible:ring-slate-400',
       outline:
-        'border border-border bg-white text-text-secondary hover:bg-surface-muted hover:text-text-primary active:bg-slate-100 focus-visible:ring-primary',
+        'border border-border bg-surface text-text-secondary hover:bg-surface-muted hover:text-text-primary active:bg-surface-muted focus-visible:ring-primary',
       ghost:
-        'bg-transparent text-text-secondary hover:bg-surface-muted hover:text-text-primary active:bg-slate-100 focus-visible:ring-slate-400',
+        'bg-transparent text-text-secondary hover:bg-surface-muted hover:text-text-primary active:bg-surface-muted focus-visible:ring-slate-400',
       danger:
         'bg-danger text-white hover:bg-red-600 active:bg-red-700 shadow-sm shadow-danger/20 focus-visible:ring-danger',
       soft:
@@ -46,9 +46,9 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
 
     const sizes = {
       sm: 'h-8 px-2.5 text-xs gap-1.5',
-      md: 'h-9 px-3.5 py-1.5 text-sm gap-2',
+      md: 'h-10 px-3.5 py-2 text-sm gap-2',
       lg: 'h-11 px-5 py-2.5 text-base gap-2.5',
-      icon: 'h-9 w-9 p-0 gap-0',
+      icon: 'h-10 w-10 p-0 gap-0',
       'icon-sm': 'h-8 w-8 p-0 gap-0',
       'icon-xs': 'h-7 w-7 p-0 gap-0',
     };
@@ -58,6 +58,7 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     return (
       <button
         ref={ref}
+        data-size={size}
         className={`${baseStyles} ${variants[variant]} ${sizes[size]} ${className}`}
         disabled={disabled || isLoading}
         {...props}

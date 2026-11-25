@@ -69,6 +69,7 @@ jest.mock('../../zalo/zalo-pool', () => ({
   },
 }));
 
+import { lineProgramRelationWhere } from '../../omnichannel/care-group-rules';
 import { prisma } from '../../../prisma/client';
 import { enqueueDelivery } from '../automation-bullmq-adapter';
 import { zaloPool } from '../../zalo/zalo-pool';
@@ -78,6 +79,9 @@ import {
 } from '../../line/line-dispatcher.contract';
 import { handleAttendanceEvent, resolveDeliveryTarget } from '../automation-trigger.service';
 import {
+  checkInvariants,
+  resolvePersonalTargetLine,
+  resolvePersonalTargetZalo,
   processDeliveryJob,
   buildLineRetryKey,
   MAX_DELIVERY_ATTEMPTS,
@@ -86,6 +90,37 @@ import {
   type SendJobData,
 } from '../automation-worker';
 import { automationService } from '../automation.service';
+
+describe('program-aware care-group delivery selection', () => {
+  beforeEach(() => jest.resetAllMocks());
+  test.each(['ZALO_PERSONAL', 'LINE_PERSONAL'])('%s queued care-group jobs recheck exact enrollment program before send', async channel => {
+    const line = channel === 'LINE_PERSONAL';
+    const model = line ? prisma.lineContactRelation : prisma.zaloContactRelation;
+    (model.findFirst as jest.Mock).mockResolvedValue(null);
+    const delivery = { id: 1, automation_step: { channel }, enrollment: { student_id: 42, program_type: 'JLPT' },
+      ...(line ? { line_account_id: 5, line_group_id: 9 } : { zalo_account_id: 5, zalo_group_id: 9 }) };
+    const result = await checkInvariants(delivery);
+    expect(result.shouldSend).toBe(false);
+    expect(model.findFirst).toHaveBeenCalledWith({ where: {
+      student_id: 42, program_type: 'JLPT', relation_status: 'FRIEND',
+      ...(line ? { line_account_id: 5, line_group_id: 9 } : { zalo_account_id: 5, zalo_group_id: 9 }),
+    } });
+  });
+  test('both personal-target resolvers filter relations by the delivery enrollment program', async () => {
+    (prisma.zaloContactRelation.findFirst as jest.Mock).mockResolvedValue(null);
+    (prisma.lineContactRelation.findFirst as jest.Mock).mockResolvedValue(null);
+    const delivery = { enrollment: { student_id: 42, program_type: 'JLPT', student: { phone: null } }, zalo_account_id: 5, line_account_id: 5 };
+    expect(await resolvePersonalTargetZalo(delivery)).toBeNull(); expect(await resolvePersonalTargetLine(delivery)).toBeNull();
+    for (const model of [prisma.zaloContactRelation, prisma.lineContactRelation]) {
+      const args = (model.findFirst as jest.Mock).mock.calls[0][0];
+      expect(args.where.OR[0]).toEqual({ program_type: 'JLPT' }); expect(args.where.OR[1].target_type).toBe('USER');
+    }
+  });
+  test('a legacy LINE group MID in Student.line_uid cannot bypass program routing', async () => {
+    (prisma.lineContactRelation.findFirst as jest.Mock).mockResolvedValue(null);
+    expect(await resolvePersonalTargetLine({ enrollment: { student_id: 42, program_type: 'KAIWA', student: { line_uid: 'C_legacy_group' } }, line_account_id: 5 })).toBeNull();
+  });
+});
 
 describe('Automation Multi-Channel Zalo + LINE Engine & Worker', () => {
   let mockLineDispatcher: jest.Mocked<ILineDeliveryDispatcher>;
@@ -167,7 +202,9 @@ describe('Automation Multi-Channel Zalo + LINE Engine & Worker', () => {
       expect(target).toEqual({ lineAccountId: 77 });
       expect(prisma.lineContactRelation.findFirst).toHaveBeenCalledTimes(1);
       expect(prisma.lineContactRelation.findFirst).toHaveBeenCalledWith({
+        orderBy: { program_type: 'desc' },
         where: {
+          ...lineProgramRelationWhere(undefined),
           student_id: 400,
           relation_status: 'FRIEND',
           line_account: { cs_id: 50, status: 'ACTIVE' },
@@ -192,7 +229,9 @@ describe('Automation Multi-Channel Zalo + LINE Engine & Worker', () => {
       const target = await resolveDeliveryTarget(baseStep, 300, 50);
       expect(target).toEqual({ lineAccountId: 88 });
       expect(prisma.lineContactRelation.findFirst).toHaveBeenNthCalledWith(2, {
+        orderBy: { program_type: 'desc' },
         where: {
+          ...lineProgramRelationWhere(undefined),
           student_id: 400,
           relation_status: 'FRIEND',
           line_account: { account_type: 'OA', status: 'ACTIVE' },
@@ -218,7 +257,9 @@ describe('Automation Multi-Channel Zalo + LINE Engine & Worker', () => {
       const target = await resolveDeliveryTarget(baseStep, 300, 50);
       expect(target).toEqual({ lineAccountId: 99 });
       expect(prisma.lineContactRelation.findFirst).toHaveBeenNthCalledWith(3, {
+        orderBy: { program_type: 'desc' },
         where: {
+          ...lineProgramRelationWhere(undefined),
           student_id: 400,
           relation_status: 'FRIEND',
           line_account: { status: 'ACTIVE' },

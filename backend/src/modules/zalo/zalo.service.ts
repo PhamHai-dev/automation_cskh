@@ -9,6 +9,7 @@ import { zaloPool } from './zalo-pool';
 import { createLogger } from '../../shared/logger/logger';
 import { AppError } from '../../middlewares/error.middleware';
 import { backfillIfEmpty } from './zalo-backfill-service';
+import { maskProxyUrl } from '../../shared/network/proxy-dispatcher';
 
 const log = createLogger('ZaloService');
 
@@ -36,8 +37,8 @@ export class ZaloService {
         last_connected_at: a.last_connected_at,
         last_login_at: a.last_login_at,
         last_active_at: a.last_active_at,
-        proxy_url: a.proxy_url,
-        liveStatus: live?.status ?? null,
+        proxy_url: maskProxyUrl(a.proxy_url),
+        liveStatus: live?.status ?? (a.status === 'ACTIVE' ? 'disconnected' : a.status),
         created_at: a.created_at,
         updated_at: a.updated_at,
       };
@@ -45,6 +46,7 @@ export class ZaloService {
   }
 
   async getAccountById(id: number) {
+    if (!Number.isSafeInteger(id) || id <= 0) throw new AppError(400, 'Mã tài khoản Zalo không hợp lệ');
     const account = await zaloRepository.findById(id);
     if (!account) throw new AppError(404, `ZaloAccount ${id} not found`);
     return account;
@@ -61,7 +63,13 @@ export class ZaloService {
   async getAccountLiveStatus(id: number) {
     const account = await this.getAccountById(id);
     const liveStatus = zaloPool.getStatus(id);
-    return { status: account.status, liveStatus: liveStatus ?? account.status };
+    return { status: account.status, liveStatus: liveStatus ?? (account.status === 'ACTIVE' ? 'disconnected' : account.status) };
+  }
+
+  accountResponse<T extends { id: number; status: string; proxy_url?: string | null }>(account: T) {
+    const { encrypted_session_data: _session, ...safe } = account as T & { encrypted_session_data?: unknown };
+    return { ...safe, proxy_url: maskProxyUrl(account.proxy_url), liveStatus: ['DISABLED', 'BANNED'].includes(account.status) ? account.status
+      : zaloPool.getStatus(account.id) ?? (account.status === 'ACTIVE' ? 'disconnected' : account.status) };
   }
 
   async disconnectAccount(id: number, requesterId: number) {
@@ -292,9 +300,10 @@ export class ZaloService {
   async reconnectAccount(id: number) {
     const account = await prisma.zaloAccount.findUnique({
       where: { id },
-      select: { encrypted_session_data: true, proxy_url: true, disconnect_reason: true },
+      select: { encrypted_session_data: true, proxy_url: true, disconnect_reason: true, archived_at: true, status: true },
     });
     if (!account) throw new AppError(404, `ZaloAccount ${id} not found`);
+    if (account.archived_at || ['DISABLED', 'BANNED'].includes(account.status)) throw new AppError(409, 'Tài khoản đã ẩn hoặc bị vô hiệu hóa; cần khôi phục trước khi kết nối.');
     if (account.disconnect_reason === 'manual')
       throw new AppError(409, 'Nick này đã ngắt thủ công — vui lòng quét QR mới để đăng nhập lại.');
     const session = account.encrypted_session_data as any;
@@ -318,6 +327,7 @@ export class ZaloService {
 
   async generateQr(accountId: number, requesterId: number) {
     const account = await this.getAccountById(accountId);
+    if (account.archived_at || ['DISABLED', 'BANNED'].includes(account.status)) throw new AppError(409, 'Tài khoản đã ẩn hoặc bị vô hiệu hóa; cần khôi phục trước khi đăng nhập.');
     // Strict per-user isolation: only the owner can generate QR for their Zalo account
     if (account.cs_id !== requesterId) {
       throw new AppError(403, `Forbidden: not your Zalo account (account cs_id: ${account.cs_id}, your user id: ${requesterId})`);

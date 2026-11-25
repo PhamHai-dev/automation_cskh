@@ -20,6 +20,7 @@ import { careRouter } from './modules/care/care.routes';
 import { dashboardRouter } from './modules/dashboard/dashboard.routes';
 import { zaloRouter } from './modules/zalo/zalo.routes';
 import { lineRouter } from './modules/line/line.routes';
+import { omnichannelRouter } from './modules/omnichannel/omnichannel.routes';
 
 import { automationRouter } from './modules/automation/automation.routes';
 import { autoAttendanceRouter } from './modules/auto-attendance/auto-attendance.routes';
@@ -32,8 +33,23 @@ const httpLog = createLogger('HTTP');
 
 // Middlewares
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
+const allowedFrontendOrigins = new Set([
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
+  'http://localhost:5174',
+  'http://127.0.0.1:5174',
+  'http://localhost:4173',
+  'http://127.0.0.1:4173',
+]);
+
 app.use(cors({
-  origin: 'http://localhost:5173', // or frontend origin
+  origin: (origin, callback) => {
+    if (!origin || allowedFrontendOrigins.has(origin)) {
+      callback(null, true);
+      return;
+    }
+    callback(null, false);
+  },
   credentials: true,
 }));
 app.use('/uploads', express.static(path.resolve(process.cwd(), 'uploads')));
@@ -85,6 +101,7 @@ app.use('/api/v1/imports', importsRouter);
 app.use('/api/v1/dashboard', dashboardRouter);
 app.use('/api/v1/zalo', zaloRouter);
 app.use('/api/v1/line', lineRouter);
+app.use('/api/v1/omnichannel', omnichannelRouter);
 app.use('/api/v1/automation', automationRouter);
 app.use('/api/v1/settings/auto-attendance', autoAttendanceRouter);
 app.use('/api/v1/me/preferences', preferencesRouter);

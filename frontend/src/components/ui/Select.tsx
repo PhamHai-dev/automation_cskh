@@ -16,16 +16,17 @@ export interface SelectProps extends SelectHTMLAttributes<HTMLSelectElement> {
 
 export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
   ({ className = '', label, error, helperText, leftIcon, options, children, disabled, id, ...props }, ref) => {
-    const selectId = id || (label ? `select-${label.toLowerCase().replace(/\s+/g, '-')}` : undefined);
+    const generatedId = React.useId();
+    const selectId = id || `select-${generatedId}`;
 
     return (
-      <div className="w-full">
+      <div className="ui-field min-w-0 w-full">
         {label && (
           <label htmlFor={selectId} className="block text-xs font-semibold text-text-secondary uppercase tracking-wider mb-1.5">
             {label}
           </label>
         )}
-        <div className="relative flex items-center">
+        <div className="relative min-w-0 flex items-center">
           {leftIcon && (
             <div className="absolute left-3 text-text-muted pointer-events-none flex items-center">
               {leftIcon}
@@ -35,12 +36,14 @@ export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
             id={selectId}
             ref={ref}
             disabled={disabled}
-            className={`flex h-10 w-full appearance-none rounded-xl border bg-surface px-3 py-2 text-sm text-text-primary transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary disabled:cursor-not-allowed disabled:bg-surface-muted disabled:text-text-muted pr-10 ${
+            aria-invalid={error ? true : undefined}
+            aria-describedby={error || helperText ? `${selectId}-feedback` : undefined}
+            className={`flex h-10 min-w-0 w-full appearance-none rounded-xl border bg-surface px-3 py-2 text-sm text-text-primary transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary disabled:cursor-not-allowed disabled:bg-surface-muted disabled:text-text-muted pr-10 ${
               leftIcon ? 'pl-9' : ''
             } ${
               error
                 ? 'border-danger focus:border-danger focus:ring-danger/20 text-danger'
-                : 'border-border hover:border-slate-300'
+                : 'border-border hover:border-border-strong'
             } ${className}`}
             {...props}
           >
@@ -56,8 +59,8 @@ export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
             {error ? <AlertCircle className="w-4 h-4 text-danger" /> : <ChevronDown className="w-4 h-4" />}
           </div>
         </div>
-        {error && <p className="mt-1.5 text-xs text-danger flex items-center gap-1">{error}</p>}
-        {helperText && !error && <p className="mt-1.5 text-xs text-text-muted">{helperText}</p>}
+        {error && <p id={`${selectId}-feedback`} className="mt-1.5 text-xs text-danger flex items-center gap-1">{error}</p>}
+        {helperText && !error && <p id={`${selectId}-feedback`} className="mt-1.5 text-xs text-text-muted">{helperText}</p>}
       </div>
     );
   }

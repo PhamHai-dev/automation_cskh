@@ -19,6 +19,11 @@ export interface ParsedCareGroupName {
 }
 
 export interface LinkedStudentCareGroupItem {
+  studentPhone?: string | null;
+  studentEmail?: string | null;
+  programType: 'KAIWA' | 'JLPT';
+  suggestedGroupName: string | null;
+  warnings: string[];
   studentId: number;
   studentExternalId: string;
   studentName: string;
@@ -37,6 +42,9 @@ export interface LinkedStudentCareGroupItem {
 }
 
 export interface UnlinkedStudentCareGroupItem {
+  studentPhone?: string | null;
+  studentEmail?: string | null;
+  programType: 'KAIWA' | 'JLPT';
   studentId: number;
   studentExternalId: string | null;
   studentName: string;
@@ -67,6 +75,7 @@ export interface CareGroupSyncReport {
 }
 
 export interface SyncCareGroupsOptions {
+  applyMatches?: boolean;
   triggeredBy?: 'login' | 'import' | 'cron' | 'manual' | 'group_event';
   refreshLiveGroups?: boolean;
   silent?: boolean;

@@ -56,7 +56,7 @@ export function HorizontalTabs<T extends string>({
   };
 
   return (
-    <div className={`max-w-full overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${className}`}>
+    <div className={`min-w-0 max-w-full overflow-x-auto ${className}`}>
       <div
         role="tablist"
         aria-label={ariaLabel}
@@ -65,7 +65,6 @@ export function HorizontalTabs<T extends string>({
         {items.map((item, index) => {
           const isActive = item.value === value;
           const tabId = `${generatedId}-${item.value}-tab`;
-          const panelId = item.panelId ?? `${generatedId}-${item.value}-panel`;
           return (
             <button
               key={item.value}
@@ -74,7 +73,7 @@ export function HorizontalTabs<T extends string>({
               type="button"
               role="tab"
               aria-selected={isActive}
-              aria-controls={panelId}
+              aria-controls={item.panelId}
               tabIndex={isActive ? 0 : -1}
               disabled={item.disabled}
               onClick={() => onChange(item.value)}
@@ -86,7 +85,7 @@ export function HorizontalTabs<T extends string>({
               }`}
             >
               {item.icon && <span className="shrink-0 [&>svg]:h-4 [&>svg]:w-4">{item.icon}</span>}
-              <span>{item.label}</span>
+              <span className="whitespace-nowrap">{item.label}</span>
               {item.badge !== undefined && (
                 <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold leading-none ${isActive ? 'bg-primary-soft text-primary' : 'bg-surface text-text-muted'}`}>
                   {item.badge}

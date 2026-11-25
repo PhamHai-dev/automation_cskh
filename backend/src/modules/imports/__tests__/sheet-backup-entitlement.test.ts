@@ -128,6 +128,9 @@ const makeService = (
   // - ensureConfigs stubbed (would touch prisma.user + config creates)
   // - workbook injected in-memory; file write goes to a tmp dir
   (service as any).ensureConfigs = jest.fn().mockResolvedValue(undefined);
+  // Keep this workbook-only test inside its own sandbox. The production guard
+  // intentionally rejects os.tmpdir paths outside the configured backup root.
+  (service as any).getBackupSandboxRoot = jest.fn().mockReturnValue(tmpDir);
   (loadOrExtractProgramWorkbook as jest.Mock).mockResolvedValue({
     workbook: workbooks.ws1.workbook,
     profileWorksheet: workbooks.ws1,
