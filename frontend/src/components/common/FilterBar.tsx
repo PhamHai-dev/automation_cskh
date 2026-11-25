@@ -72,6 +72,25 @@ export const ActiveFilterChips: React.FC<ActiveFilterChipsProps> = ({
   );
 };
 
+export const LearningActiveFilters: React.FC<ActiveFilterChipsProps> = ({ chips, onClear }) => {
+  return (
+    <div className="learning-filter-active" data-filter-row="active">
+      <div className="learning-filter-active-content">
+        <span className="text-xs font-semibold text-text-secondary">Đang áp dụng:</span>
+        {chips.length > 0 ? <ActiveFilterChips chips={chips} /> : (
+          <span className="text-xs text-text-muted">Chưa áp dụng bộ lọc</span>
+        )}
+      </div>
+      {onClear && (
+        <Button id="learning-clear-filters" type="button" variant="ghost" size="sm" onClick={onClear} disabled={chips.length === 0}
+          leftIcon={<RotateCcw className="h-3.5 w-3.5" />} className="shrink-0 text-xs text-text-muted hover:text-danger">
+          Xóa tất cả
+        </Button>
+      )}
+    </div>
+  );
+};
+
 export interface FilterBarProps {
   children: ReactNode;
   className?: string;
@@ -86,7 +105,8 @@ export interface FilterBarProps {
   activeCount?: number;
   collapsibleOnMobile?: boolean;
   defaultMobileExpanded?: boolean;
-  variant?: 'card' | 'toolbar';
+  variant?: 'card' | 'toolbar' | 'learning';
+  viewControls?: ReactNode;
 }
 
 export const FilterBar: React.FC<FilterBarProps> = ({
@@ -104,11 +124,26 @@ export const FilterBar: React.FC<FilterBarProps> = ({
   collapsibleOnMobile = false,
   defaultMobileExpanded = false,
   variant = 'card',
+  viewControls,
 }) => {
   const [mobileExpanded, setMobileExpanded] = useState(defaultMobileExpanded);
   const resetFn = onClear || onReset;
   const semanticActiveCount = chips.length > 0 ? chips.length : activeCount;
   const showReset = Boolean(resetFn && (hasActiveFilters || semanticActiveCount > 0));
+
+  if (variant === 'learning') {
+    return (
+      <section className={`learning-filter-panel shadow-soft ${className}`} aria-label="Tìm kiếm & Bộ lọc">
+        <div className="learning-filter-heading">
+          <h2 className="text-text-primary"><Filter className="h-4 w-4 text-primary" aria-hidden="true" />Tìm kiếm & Bộ lọc</h2>
+          {resultSummary && <span className="text-xs font-semibold text-text-muted">{resultSummary}</span>}
+        </div>
+        <div className="learning-filter-row" data-filter-row="conditions">{children}</div>
+        {viewControls && <div className="learning-filter-row learning-filter-display" data-filter-row="display">{viewControls}</div>}
+        <LearningActiveFilters chips={chips} onClear={resetFn} />
+      </section>
+    );
+  }
 
   if (variant === 'toolbar') {
     return (

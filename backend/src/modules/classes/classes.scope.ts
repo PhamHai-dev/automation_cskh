@@ -8,6 +8,8 @@ export async function getAccessibleClassIds(user: AuthUser): Promise<number[] | 
     return null;
   }
 
+  const classIds = new Set<number>();
+
   if (user.roles.includes('MANAGE') || user.roles.includes('CS')) {
     let allowedCsIds: number[];
 
@@ -39,7 +41,7 @@ export async function getAccessibleClassIds(user: AuthUser): Promise<number[] | 
       distinct: ['class_id'],
     });
 
-    return enrollmentClasses.map((item) => item.class_id);
+    enrollmentClasses.forEach((item) => classIds.add(item.class_id));
   }
 
   if (user.roles.includes('TEACHER')) {
@@ -83,14 +85,11 @@ export async function getAccessibleClassIds(user: AuthUser): Promise<number[] | 
       select: { class_id: true },
     });
 
-    const classIds = new Set<number>();
     classTeacherRecords.forEach((r) => classIds.add(r.class_id));
     sessionRecords.forEach((s) => classIds.add(s.class_id));
-
-    return Array.from(classIds);
   }
 
-  return [];
+  return Array.from(classIds);
 }
 
 /**

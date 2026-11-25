@@ -439,3 +439,31 @@ Mỗi page/data feature phải xử lý khi phù hợp:
 - Không gộp lớp 1:1 và học viên thành một dòng. Mô hình chỉ là dữ liệu/badge, không quyết định hierarchy.
 - Điểm danh, ghi chú và tiêu chí JLPT của từng học viên nhập tại dòng con. Dòng lớp giữ tổng hợp, bài học chung và thao tác cả lớp; không gắn tiêu chí JLPT của riêng một học viên.
 - Thu gọn/mở rộng tất cả áp dụng mọi mô hình; không đổi mô hình hay dữ liệu xếp lớp. Giữ horizontal scroll cho màn hình hẹp.
+
+## Attendance status selector — 2026-11-25
+
+- Dropdown điểm danh dùng palette `ATTENDANCE_CODE_CONFIG` chung cho trigger và option; không có icon.
+- Trigger rộng theo nhãn, cao tối thiểu 28px; menu tối thiểu 164px, giới hạn viewport, hỗ trợ bàn phím và focus-visible.
+- Ô chưa chấm là `+`; menu gồm sáu trạng thái hiện hành và `-` để gỡ ca của học viên/phía hiện tại. Không hiển thị nhãn Xóa trong menu.
+
+### Chốt hiển thị mặc định — 2026-11-25
+
+Theo yêu cầu mới nhất, ô chưa điểm danh mặc định hiển thị `-` thay cho `+`. Bấm `-` mở dropdown; chọn trạng thái để lưu, chọn `-` để gỡ ca của học viên/phía hiện tại. Quy tắc này thay thế mô tả dấu + ở cập nhật trước, không đổi logic tạo/xóa hoặc phạm vi dữ liệu.
+
+### Cập nhật hiển thị trạng thái — 2026-11-25
+
+- Khi chưa điểm danh: chỉ hiển thị `-`.
+- Khi đã chọn trạng thái: hiển thị trạng thái đã chọn và thêm một `+` ngay bên cạnh để mở dropdown thêm ca tiếp theo.
+
+## Shared learning filter panel — 2026-11-25
+
+Các trang Học viên, Báo cáo học tập/JLPT, Học viên của tôi và Lớp học/Điểm danh dùng `FilterBar` với `variant="learning"`:
+
+- Chỉ có một tiêu đề in đậm `Tìm kiếm & Bộ lọc`; không subtitle, giữ PageHeader.
+- Hàng 1: tìm kiếm và điều kiện có độ rộng co giãn (search ưu tiên rộng hơn), gap cố định 0.75rem; không dùng space-between giữa các ô gây khoảng trống lớn. Drawer không chịu sizing ô lọc.
+- Hàng 2: `Hiển thị` và `Cột hiển thị` luôn đứng đầu hàng, kế đến chế độ xem/checkbox/tuần-tháng; ngày hoặc kỳ ở cuối hàng, căn phải. Nhóm cột không bị đẩy sang cuối hàng.
+- Không có nút khớp theo giáo viên tại hàng 2 của Lớp học/Điểm danh (cả Theo học viên và Theo lớp học). Bulk action theo dòng đã chọn trong bảng vẫn giữ nguyên.
+- Hàng 3 luôn hiển thị `Đang áp dụng`; rỗng ghi `Chưa áp dụng bộ lọc` và reset disabled.
+- Mobile cho phép wrap, ô lọc full width; dùng semantic tokens, không đổi filter variant ngoài nhóm learning.
+- Matrix dùng điều khiển từ page nên không render toolbar riêng; nơi sử dụng độc lập vẫn giữ toolbar hiện có.
+- Teacher thuần không có teacher name/code filters; backend vẫn là authority cho scope, counts và options.

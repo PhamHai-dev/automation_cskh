@@ -64,3 +64,7 @@ Khi người dùng xác nhận:
 2. ghi câu trả lời ngắn trong bảng hoặc mục chi tiết;
 3. cập nhật `decisions/summary.md`/ADR nếu đó là decision lâu dài;
 4. cập nhật phase/spec bị ảnh hưởng.
+
+## Attendance dropdown — RESOLVED (2026-11-25)
+
+User xác nhận: bấm + chỉ mở dropdown rồi chọn trạng thái; gỡ ca chỉ theo học viên/phía đang thao tác, giữ phía khác và học viên khác. Phản hồi tiếp theo đổi nhãn Xóa thành `-`, thu gọn, thêm màu và bỏ icon. Không có câu hỏi chờ xác nhận cho UI này.

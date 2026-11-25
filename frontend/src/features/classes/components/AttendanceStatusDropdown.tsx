@@ -1,21 +1,29 @@
 import React, { useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, ChevronDown } from 'lucide-react';
 import { AttendanceStatus } from '../types/classes.types';
+import { ATTENDANCE_CODE_CONFIG } from './AttendanceCellBadge';
+import './attendance-status.css';
 
 export interface AttendanceStatusDropdownOption {
   status: AttendanceStatus;
   label: string;
 }
 
+export const ATTENDANCE_DROPDOWN_OPTIONS: AttendanceStatusDropdownOption[] =
+  Object.entries(ATTENDANCE_CODE_CONFIG).map(([status, config]) => ({
+    status: status as AttendanceStatus,
+    label: `${config.short} · ${config.label}`,
+  }));
+
 interface AttendanceStatusDropdownProps {
   id: string;
   value?: AttendanceStatus | null;
-  options: AttendanceStatusDropdownOption[];
+  options?: AttendanceStatusDropdownOption[];
   disabled?: boolean;
   ariaLabel: string;
   title?: string;
-  triggerClassName: string;
+  emptyLabel?: '-' | '+';
+  triggerClassName?: string;
   onChange: (value: AttendanceStatus | null) => void | Promise<void>;
 }
 
@@ -28,10 +36,11 @@ interface MenuPosition {
 export const AttendanceStatusDropdown: React.FC<AttendanceStatusDropdownProps> = ({
   id,
   value,
-  options,
+  options = ATTENDANCE_DROPDOWN_OPTIONS,
   disabled = false,
   ariaLabel,
   title,
+  emptyLabel = '-',
   triggerClassName,
   onChange,
 }) => {
@@ -47,9 +56,13 @@ export const AttendanceStatusDropdown: React.FC<AttendanceStatusDropdownProps> =
     if (disabled) return;
     const rect = triggerRef.current?.getBoundingClientRect();
     if (!rect) return;
-    const width = rect.width;
+    const width = Math.min(Math.max(rect.width, 164), window.innerWidth - 16);
     const left = Math.min(Math.max(8, rect.left), Math.max(8, window.innerWidth - width - 8));
-    setMenuPosition({ top: rect.bottom + 6, left, width });
+    const height = Math.min(288, window.innerHeight - 16);
+    const top = rect.bottom + 6 + height <= window.innerHeight - 8
+      ? rect.bottom + 6
+      : Math.max(8, rect.top - height - 6);
+    setMenuPosition({ top, left, width });
     setIsOpen(true);
   };
 
@@ -67,6 +80,14 @@ export const AttendanceStatusDropdown: React.FC<AttendanceStatusDropdownProps> =
         closeMenu();
         triggerRef.current?.focus();
       }
+      if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
+        event.preventDefault();
+        const buttons = Array.from(menuRef.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') || []);
+        const current = buttons.indexOf(document.activeElement as HTMLButtonElement);
+        const next = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1
+          : (current + (event.key === 'ArrowUp' ? -1 : 1) + buttons.length) % buttons.length;
+        buttons[next]?.focus();
+      }
     };
     const handleViewportChange = () => closeMenu();
     document.addEventListener('mousedown', handlePointerDown);
@@ -83,7 +104,8 @@ export const AttendanceStatusDropdown: React.FC<AttendanceStatusDropdownProps> =
 
   const chooseValue = (nextValue: AttendanceStatus | null) => {
     closeMenu();
-    if (nextValue === (value ?? null)) return;
+    if (disabled || nextValue === (value ?? null)) return;
+    triggerRef.current?.focus();
     void onChange(nextValue);
   };
 
@@ -100,10 +122,18 @@ export const AttendanceStatusDropdown: React.FC<AttendanceStatusDropdownProps> =
         aria-controls={isOpen ? menuId : undefined}
         title={title}
         onClick={() => (isOpen ? closeMenu() : openMenu())}
-        className={`${triggerClassName} inline-flex items-center justify-between gap-2`}
+        onKeyDown={(event) => {
+          if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+            event.preventDefault();
+            openMenu();
+            requestAnimationFrame(() => menuRef.current?.querySelector<HTMLButtonElement>('button')?.focus());
+          }
+        }}
+        className={triggerClassName || `attendance-status-trigger ${value
+          ? `${ATTENDANCE_CODE_CONFIG[value].solidBg} ${ATTENDANCE_CODE_CONFIG[value].solidText} ${ATTENDANCE_CODE_CONFIG[value].solidBorder}`
+          : 'attendance-status-trigger--empty'}`}
       >
-        <span className="truncate">{selectedOption?.label ?? '–'}</span>
-        <ChevronDown aria-hidden="true" className={`h-4 w-4 shrink-0 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+        <span>{selectedOption?.label ?? emptyLabel}</span>
       </button>
 
       {isOpen && menuPosition &&
@@ -114,10 +144,11 @@ export const AttendanceStatusDropdown: React.FC<AttendanceStatusDropdownProps> =
             role="listbox"
             aria-label={ariaLabel}
             style={{ position: 'fixed', top: menuPosition.top, left: menuPosition.left, width: menuPosition.width, zIndex: 9999 }}
-            className="overflow-hidden rounded-xl border border-slate-200 bg-white p-1.5 text-xs shadow-xl"
+            className="attendance-status-menu rounded-xl border border-border bg-surface p-1.5 text-xs shadow-xl"
           >
             {options.map((option) => {
               const isSelected = option.status === value;
+              const config = ATTENDANCE_CODE_CONFIG[option.status];
               return (
                 <button
                   key={option.status}
@@ -125,10 +156,9 @@ export const AttendanceStatusDropdown: React.FC<AttendanceStatusDropdownProps> =
                   role="option"
                   aria-selected={isSelected}
                   onClick={() => chooseValue(option.status)}
-                  className={`flex w-full items-center justify-between gap-2 rounded-lg bg-white px-3 py-2 text-left font-medium text-slate-700 transition hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 ${isSelected ? 'bg-slate-100 font-bold text-slate-900' : ''}`}
+                  className={`attendance-status-option ${config.solidBg} ${config.solidText} ${config.solidBorder} ${isSelected ? 'attendance-status-option--selected' : ''}`}
                 >
                   <span>{option.label}</span>
-                  {isSelected && <Check className="h-3.5 w-3.5 shrink-0 text-primary" />}
                 </button>
               );
             })}
@@ -137,11 +167,12 @@ export const AttendanceStatusDropdown: React.FC<AttendanceStatusDropdownProps> =
               type="button"
               role="option"
               aria-selected={!value}
+              title="Chưa điểm danh / chưa tạo ca — chọn để xóa ca điểm danh của bạn"
+              aria-label="- · Chưa điểm danh / chưa tạo ca"
               onClick={() => chooseValue(null)}
-              className={`flex w-full items-center justify-between gap-2 rounded-lg bg-white px-3 py-2 text-left font-medium text-slate-700 transition hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 ${!value ? 'bg-slate-100 font-bold text-slate-900' : ''}`}
+              className={`attendance-status-option attendance-status-option--unmarked ${!value ? 'attendance-status-option--selected' : ''}`}
             >
-              <span>–</span>
-              {!value && <Check className="h-3.5 w-3.5 shrink-0 text-primary" />}
+              <span>-</span>
             </button>
           </div>,
           document.body

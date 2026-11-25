@@ -1,5 +1,20 @@
 # Project Status
 
+## Thứ tự và khoảng cách bộ lọc — 2026-11-25
+
+- Hàng 2 ưu tiên Hiển thị + Cột hiển thị ở đầu, ngày/kỳ ở cuối và căn phải; bỏ nút khớp GV khỏi hàng 2 của hai chế độ điểm danh.
+- Hàng 1 dùng gap cố định và độ rộng co giãn, search rộng hơn điều kiện; không giãn khoảng trắng bằng space-between giữa từng ô.
+- Frontend regression 42/42 và production build (gồm TypeScript) đạt; menu cột trong learning panel mở từ đầu nhóm, có giới hạn chiều rộng. Lint vẫn bị chặn bởi ESLint config còn thiếu. Browser responsive chưa trực tiếp xác minh do lỗi navigation timeout ở lượt trước, không tự retry.
+- Không đổi backend/API/phân quyền hoặc dữ liệu nghiệp vụ trong lượt chỉnh layout này.
+
+## Bộ lọc học tập — cập nhật 2026-11-25
+
+- Một tiêu đề `Tìm kiếm & Bộ lọc`; công cụ ngay trên bảng đã chuyển vào hàng 2 chung với chế độ xem/thời gian, bao gồm tùy chọn cột theo yêu cầu bổ sung.
+- Hai điều kiện lịch/ngày học dùng checkbox có nhãn; hàng 3 luôn hiển thị cả khi chưa lọc. Điều kiện checkbox/chuyên cần có chip và reset chung.
+- Phạm vi: Học viên, Báo cáo học tập/JLPT, Học viên của tôi, Lớp học/Điểm danh. Các toolbar/filter ngoài nhóm không đổi.
+- Kiểm tra đạt: 39/39 frontend regression tests, 5/5 backend class-scope unit tests, backend typecheck, frontend production build và `git diff --check`. Browser desktop/tablet/mobile chưa thể mở do navigation timeout; lint chưa chạy được vì frontend thiếu ESLint config và backend thiếu executable `eslint` trong dependency hiện tại.
+- Không migration, không thay dữ liệu nghiệp vụ; tác vụ độc lập không bắt đầu/chuyển phase Zalo.
+
 ## Điểm danh Theo lớp học — đồng nhất lớp 1:1 — 2026-11-24
 
 - Theo yêu cầu user, lớp 1:1 không còn gộp lớp/học viên vào một dòng: mọi mô hình có dòng lớp với số học viên + mở/thu gọn và dòng học viên bên dưới.
@@ -177,3 +192,21 @@ Không có blocker kỹ thuật cho Phase 7.
 
 - API contract documentation: READY (`docs/api/openapi.yaml`, `docs/api/care.md`, `docs/api/dashboard.md`, `docs/api/imports.md`).
 - Sẵn sàng chuyển tiếp sang Phase 7 (Zalo technical spike).
+
+## 2026-11-25 — Dropdown nhập điểm danh đồng nhất
+
+- Theo học viên và Theo lớp dùng chung dropdown sáu trạng thái + `-`; không icon, màu theo trạng thái, trigger gọn theo nội dung.
+- Ô chưa chấm là `+`; bấm chỉ mở menu. Chọn trạng thái mới tạo/tái sử dụng ca và ghi điểm danh. Chọn `-` gỡ ca của học viên/phía hiện tại, giữ dữ liệu phía khác và học viên khác.
+- Typecheck pass; 38/38 frontend regression tests pass, gồm 5 test dropdown mới; git diff --check pass.
+- Lint bị chặn vì repository chưa có ESLint config. Browser desktop/tablet/mobile chưa nghiệm thu do navigation/CDP timeout. Không thay API/schema, không chạy migration hoặc thao tác dữ liệu thật.
+
+- Bổ sung kết quả: frontend production build PASS (cảnh báo bundle >500kB hiện hữu).
+
+### Chốt hiển thị mặc định — 2026-11-25
+
+Theo yêu cầu mới nhất, ô chưa điểm danh mặc định hiển thị `-` thay cho `+`. Bấm `-` mở dropdown; chọn trạng thái để lưu, chọn `-` để gỡ ca của học viên/phía hiện tại. Quy tắc này thay thế mô tả dấu + ở cập nhật trước, không đổi logic tạo/xóa hoặc phạm vi dữ liệu.
+
+### Cập nhật hiển thị trạng thái — 2026-11-25
+
+- Khi chưa điểm danh: chỉ hiển thị `-`.
+- Khi đã chọn trạng thái: hiển thị trạng thái đã chọn và thêm một `+` ngay bên cạnh để mở dropdown thêm ca tiếp theo.

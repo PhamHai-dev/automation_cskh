@@ -27,7 +27,7 @@ import {
   MatrixCellFilter,
   AttendanceLegendCounts,
 } from './AttendanceCellBadge';
-import { AttendanceStatusDropdown } from './AttendanceStatusDropdown';
+import { AttendanceStatusStack } from './AttendanceStatusStack';
 import {
   ChevronLeft,
   ChevronRight,
@@ -38,7 +38,6 @@ import {
   Clock,
   Users,
   BarChart3,
-  Plus,
   Trash2,
   UserRoundCheck,
   Edit,
@@ -102,6 +101,7 @@ export interface AttendanceMatrixProps {
   ) => Promise<void>;
   activeTab?: AttendanceTab;
   titleHeader?: React.ReactNode;
+  externalViewControls?: boolean;
   visibleColumns?: Record<string, boolean>;
   onAssignTeacherForClass?: (classId: number) => void;
   onEditClassById?: (classId: number) => void;
@@ -226,6 +226,7 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
   onSaveCustom,
   activeTab: controlledActiveTab,
   titleHeader,
+  externalViewControls = false,
   visibleColumns,
   onAssignTeacherForClass,
   onEditClassById,
@@ -413,7 +414,7 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
   const [bulkCsNote, setBulkCsNote] = useState('');
 
   const [savingSessionId, setSavingSessionId] = useState<number | 'draft' | null>(null);
-  const [savingActionKey, setSavingActionKey] = useState<string | null>(null);
+  const [, setSavingActionKey] = useState<string | null>(null);
   const [createdSessions, setCreatedSessions] = useState<ClassSession[]>([]);
   const [deletedSessionIds, setDeletedSessionIds] = useState<Set<number>>(new Set());
   const [attendanceOverrides, setAttendanceOverrides] = useState<Map<string, Attendance>>(new Map());
@@ -1644,35 +1645,28 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
       setAttendanceOverrides((current) => {
         const next = new Map(current);
         const existing = rawAtt || attendance;
-        if (activeSide === 'ADMIN') {
-          next.set(key, {
-            ...existing,
-            teacher_status: null,
-            cs_status: null,
-            deleted_at: new Date().toISOString(),
-          } as any);
-        } else {
-          const nextTeacherStatus = activeSide === 'TEACHER' ? null : (existing.teacher_status ?? null);
-          const nextCsStatus = activeSide === 'CS' ? null : (existing.cs_status ?? null);
-          if (!nextTeacherStatus && !nextCsStatus) {
-            next.set(key, {
-              ...existing,
-              teacher_status: null,
-              cs_status: null,
-              deleted_at: new Date().toISOString(),
-            } as any);
-          } else {
-            next.set(key, {
-              ...existing,
-              teacher_status: nextTeacherStatus,
-              cs_status: nextCsStatus,
-              reconciliation_state: nextTeacherStatus ? 'PENDING_CS' : 'PENDING_TEACHER',
-            });
-          }
-        }
+        const teacherStatus = activeSide === 'TEACHER' ? null : existing.teacher_status;
+        const csStatus = activeSide === 'CS' ? null : existing.cs_status;
+        const hasOpinion = Boolean(teacherStatus || csStatus);
+        next.set(key, {
+          ...existing,
+          teacher_status: teacherStatus,
+          cs_status: csStatus,
+          ...(activeSide === 'TEACHER' ? { lesson_topic: null, teacher_note: null } : {}),
+          ...(activeSide === 'CS' ? { cs_note: null } : {}),
+          resolved_by_id: null,
+          resolved_at: null,
+          resolution_note: null,
+          status: teacherStatus || csStatus || existing.status,
+          reconciliation_state: teacherStatus && csStatus
+            ? teacherStatus === csStatus ? 'MATCHED' : 'CONFLICT'
+            : teacherStatus ? 'PENDING_CS' : 'PENDING_TEACHER',
+          deleted_at: hasOpinion ? null : new Date().toISOString(),
+        } as Attendance);
         return next;
       });
-      toast.info('Đã chuyển sang Chưa điểm danh');
+      toast.info('Đã xóa ca điểm danh của bạn cho học viên này');
+      window.dispatchEvent(new Event('teacher-attendance-updated'));
       onRefresh();
     } catch (err: any) {
       toast.error(err.response?.data?.message || err.message || 'Không thể xóa điểm danh');
@@ -1750,8 +1744,9 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
     const records = getSessionAttendanceRecords(session);
     const myRecords = records.filter((r) => hasCurrentSideDataOnRecord(r));
     const otherSidesExist = records.some((r) => hasOtherSidesDataOnRecord(r));
+    const hasMarkedRecords = countMarkedInCa(session) > 0;
 
-    if (myRecords.length === 0 && !otherSidesExist) {
+    if (!hasMarkedRecords) {
       void performDeleteCa(classId, className, dateStr, caNumber, session, false);
       return;
     }
@@ -1924,31 +1919,6 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
     }
   };
 
-  // "+ thêm ca" từ 1 dòng học viên: tạo Ca n+1 cho cả lớp trong ngày và mở luôn
-  // thanh chọn trạng thái inline của đúng Ca mới trên dòng học viên đó (giống bên GV).
-  const handleAddCaForStudent = async (st: StudentRow, dateStr: string) => {
-    const classId = cls?.id || st.class_id;
-    if (!classId) return toast.error('Không xác định được lớp học');
-    const key = `addca_${classId}_${dateStr}`;
-    setSavingActionKey(key);
-    try {
-      const created = await classSessionsApi.create(classId, { session_date: dateStr });
-      setCreatedSessions((current) => [...current, created]);
-      const allDay = [...(sessionsByClassAndDate.get(`${classId}_${dateStr}`) || []), created].sort(
-        compareSessionsInDay
-      );
-      const newCaNumber = allDay.findIndex((s) => s.id === created.id) + 1 || allDay.length;
-      setActiveInlinePickerKey(`${st.enrollment_class_id}_${dateStr}_s${newCaNumber}`);
-      toast.success(`Đã thêm Ca ${newCaNumber} cho ngày ${formatSessionDate(dateStr)}`);
-      onRefresh();
-      window.dispatchEvent(new Event('teacher-attendance-updated'));
-    } catch (err: any) {
-      toast.error(err.response?.data?.message || 'Không thể thêm ca học');
-    } finally {
-      setSavingActionKey((prev) => (prev === key ? null : prev));
-    }
-  };
-
   // Bộ lọc nhanh theo trạng thái ô trên Bảng tháng
   const [matrixCellFilter, setMatrixCellFilter] = useState<MatrixCellFilter>('ALL');
 
@@ -2111,18 +2081,7 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
     );
   };
 
-  // ===== Tab 1 (Nhập điểm danh) =====
-  const QUICK_INLINE_BUTTONS: Array<{ status: AttendanceStatus; code: string; shortLabel: string }> = [
-    { status: 'ATTENDED', code: '1', shortLabel: 'Có mặt' },
-    { status: 'ABSENT_APPROVED_A', code: 'A', shortLabel: 'Có phép' },
-    { status: 'LEAVE_B', code: 'B', shortLabel: 'Bảo lưu' },
-    { status: 'ABSENT_UNAPPROVED_C', code: 'C', shortLabel: 'Không phép' },
-    { status: 'TEACHER_ABSENT_D', code: 'D', shortLabel: 'GV nghỉ' },
-    { status: 'TECH_ERROR_E', code: 'E', shortLabel: 'Lỗi KT' },
-  ];
-
-  // Giáo viên chọn trạng thái qua dropdown, gồm cả “Chưa điểm danh” để gỡ trạng thái đã chấm.
-  // Các vai trò còn lại giữ picker hiện tại vì cột Admin còn hiển thị thông tin đối soát bổ sung.
+  // Cùng một dropdown cho mọi tài khoản; + chỉ mở menu, chọn trạng thái mới lưu ca.
   const renderQuickInlineStatusStack = (
     st: StudentRow,
     dateStr: string,
@@ -2130,266 +2089,22 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
     variant: 'mark' | 'admin-final' = 'mark'
   ) => {
     if (st.enrollment_class_id <= 0) {
-      return <span className="whitespace-nowrap rounded bg-slate-100/80 px-2 py-0.5 text-[10px] italic text-text-muted">Chưa xếp lớp</span>;
+      return <span className="text-xs italic text-text-muted">Chưa xếp lớp</span>;
     }
-    const daySessions = getSessionsForCell(st.enrollment_class_id, dateStr);
-    const totalCa = Math.max(1, daySessions.length);
-    const classId = resolveClassId(st.enrollment_class_id);
-
     return (
-      <div className="flex flex-col items-start gap-1.5">
-        {Array.from({ length: totalCa }, (_, idx) => {
-          const caNo = idx + 1;
-          const sess = daySessions[caNo - 1];
-          const att = sess ? rawAttendanceMap.get(`${st.enrollment_class_id}_session_${sess.id}`) : undefined;
-          const curStatus = readStatus(att);
-          const cfg = curStatus ? STATUS_CONFIG[curStatus] : null;
-          const pickerKey = `${st.enrollment_class_id}_${dateStr}_s${caNo}`;
-          const isOpen = activeInlinePickerKey === pickerKey;
-          const isDeletingThisCa = Boolean(sess && savingActionKey === `delca_${sess.id}`);
-          const isAddingCa = savingActionKey === `addca_${classId}_${dateStr}`;
-
-          let reconcileBadge: React.ReactNode = null;
-          if (variant === 'admin-final' && curStatus) {
-            // Đã có kết quả chốt: gắn nhãn nguồn kết quả để Admin phân biệt tự khớp / phân xử
-            reconcileBadge =
-              att?.reconciliation_state === 'RESOLVED' ? (
-                <span className="shrink-0 whitespace-nowrap rounded bg-violet-100 px-1.5 py-0.5 text-[10px] font-bold text-violet-700">
-                  Đã phân xử
-                </span>
-              ) : (
-                <span className="shrink-0 whitespace-nowrap rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700">
-                  Đã khớp
-                </span>
-              );
-          }
-
-          // Dòng note trạng thái khi Ca chưa được chốt (chỉ dùng cho cột Chốt của Admin)
-          let pendingNote: React.ReactNode = null;
-          if (variant === 'admin-final' && !curStatus) {
-            const tStatus = att?.teacher_status as AttendanceStatus | null | undefined;
-            const csStatus = att?.cs_status as AttendanceStatus | null | undefined;
-            if (!tStatus && !csStatus) {
-              pendingNote = (
-                <span className="whitespace-nowrap text-[10px] italic text-text-muted">
-                  Chưa bên nào chấm
-                </span>
-              );
-            } else if (tStatus && csStatus && tStatus !== csStatus) {
-              pendingNote = (
-                <span className="whitespace-nowrap text-[10px] font-semibold text-rose-600">
-                  Lệch (GV: {STATUS_CONFIG[tStatus].short} · CSKH: {STATUS_CONFIG[csStatus].short}) — cần chốt
-                </span>
-              );
-            } else if (tStatus && !csStatus) {
-              pendingNote = (
-                <span className="whitespace-nowrap text-[10px] font-semibold text-amber-600">
-                  Chờ CSKH chấm (GV: {STATUS_CONFIG[tStatus].short})
-                </span>
-              );
-            } else {
-              pendingNote = (
-                <span className="whitespace-nowrap text-[10px] font-semibold text-amber-600">
-                  Chờ GV chấm (CSKH: {STATUS_CONFIG[(csStatus ?? 'ATTENDED') as AttendanceStatus].short})
-                </span>
-              );
-            }
-          }
-
-          return (
-            <div key={caNo} className="flex flex-col items-start gap-0.5">
-              <div className="flex min-h-7 flex-nowrap items-center gap-1 whitespace-nowrap">
-                {isTeacherOnly ? (
-                  <>
-                    <AttendanceStatusDropdown
-                      id={`teacher-attendance-status-${pickerKey}`}
-                      value={curStatus}
-                      options={QUICK_INLINE_BUTTONS.map(({ status, code, shortLabel }) => ({
-                        status,
-                        label: `${code} · ${shortLabel}`,
-                      }))}
-                      disabled={savingSessionId !== null || isDeletingThisCa || Boolean(st.is_readonly_for_cs)}
-                      ariaLabel={`Trạng thái điểm danh Ca ${caNo} của ${st.full_name}`}
-                      title={
-                        st.is_readonly_for_cs
-                          ? 'Chế độ Chỉ xem (không được điểm danh)'
-                          : `Chọn trạng thái điểm danh Ca ${caNo} cho ${st.full_name}`
-                      }
-                      triggerClassName={`h-8 w-[132px] rounded-lg border px-2.5 text-xs font-bold shadow-2xs outline-none focus:ring-2 focus:ring-primary/25 disabled:cursor-not-allowed disabled:opacity-60 ${
-                        cfg
-                          ? `${cfg.bg.replace(/\s*hover:\S+/g, '')} ${cfg.text} ${cfg.border}`
-                          : 'border-slate-300 bg-white text-slate-600'
-                      }`}
-                      onChange={(nextStatus) => {
-                        if (!nextStatus) {
-                          if (sess && curStatus) return handleClearCell(st.enrollment_class_id, sess);
-                          return;
-                        }
-                        return handleStatusSelect(
-                          st.enrollment_class_id,
-                          dateStr,
-                          sess,
-                          nextStatus,
-                          caNo
-                        );
-                      }}
-                    />
-
-                    {caNo === totalCa && classId && (
-                      <button
-                        type="button"
-                        disabled={isAddingCa || Boolean(st.is_readonly_for_cs)}
-                        onClick={() => {
-                          if (st.is_readonly_for_cs) return;
-                          handleAddCaForStudent(st, dateStr);
-                        }}
-                        title={
-                          st.is_readonly_for_cs
-                            ? 'Chế độ Chỉ xem (không được thêm ca)'
-                            : `Thêm Ca ${totalCa + 1} trong ngày này`
-                        }
-                        className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-dashed border-primary/50 bg-white text-primary transition hover:border-primary hover:bg-primary-soft disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        <Plus className="h-3.5 w-3.5" />
-                      </button>
-                    )}
-                  </>
-                ) : !isOpen ? (
-                  <>
-                    <button
-                      type="button"
-                      disabled={savingSessionId !== null || isDeletingThisCa || Boolean(st.is_readonly_for_cs)}
-                      onClick={() => {
-                        if (st.is_readonly_for_cs) return;
-                        setActiveInlinePickerKey(pickerKey);
-                      }}
-                      title={
-                        st.is_readonly_for_cs
-                          ? 'Chế độ Chỉ xem (không được điểm danh)'
-                          : cfg
-                          ? `Ca ${caNo}: ${cfg.label} — bấm để đổi trạng thái`
-                          : `Bấm để chọn trạng thái điểm danh Ca ${caNo} cho ${st.full_name}`
-                      }
-                      className={`inline-flex h-7 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border px-2.5 text-xs font-bold transition ${
-                        cfg
-                          ? `${cfg.bg} ${cfg.text} ${cfg.border} shadow-2xs hover:ring-2 hover:ring-primary/40`
-                          : 'min-w-9 border-border/80 bg-white text-slate-600 hover:border-primary/60 hover:bg-primary-soft/30 hover:text-primary'
-                      } disabled:opacity-50 disabled:cursor-not-allowed`}
-                    >
-                      {cfg ? (
-                        <>
-                          {totalCa > 1 && <span className="text-[11px] font-extrabold opacity-80">Ca {caNo}:</span>}
-                          <span className="font-extrabold">{cfg.short}</span>
-                          <span>·</span>
-                          <span>{cfg.label}</span>
-                        </>
-                      ) : totalCa > 1 ? (
-                        <>
-                          <span className="text-[11px] font-bold text-slate-500">Ca {caNo}:</span>
-                          <span className="font-extrabold text-slate-400">—</span>
-                        </>
-                      ) : (
-                        <span className="font-extrabold text-slate-500">—</span>
-                      )}
-                    </button>
-
-                    {reconcileBadge}
-
-                    {caNo === totalCa && classId && (
-                      <button
-                        type="button"
-                        disabled={isAddingCa || Boolean(st.is_readonly_for_cs)}
-                        onClick={() => {
-                          if (st.is_readonly_for_cs) return;
-                          handleAddCaForStudent(st, dateStr);
-                        }}
-                        title={
-                          st.is_readonly_for_cs
-                            ? 'Chế độ Chỉ xem (không được thêm ca)'
-                            : `Thêm Ca ${totalCa + 1} trong ngày này`
-                        }
-                        className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-dashed border-primary/50 bg-white text-xs font-extrabold text-primary transition hover:border-primary hover:bg-primary-soft disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        <Plus className="h-3.5 w-3.5" />
-                      </button>
-                    )}
-
-                    {sess && classId && (
-                      <button
-                        type="button"
-                        disabled={isDeletingThisCa || Boolean(st.is_readonly_for_cs)}
-                        onClick={() => {
-                          if (st.is_readonly_for_cs) return;
-                          requestDeleteCa(classId, st.class_name, dateStr, caNo);
-                        }}
-                        title={
-                          st.is_readonly_for_cs
-                            ? 'Chế độ Chỉ xem (không được xóa ca)'
-                            : countMarkedInCa(sess) === 0
-                            ? `Gỡ bỏ Ca ${caNo} (chưa chấm điểm danh)`
-                            : `Xóa Ca ${caNo} của lớp`
-                        }
-                        className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-transparent text-slate-400 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    )}
-                  </>
-                ) : (
-                  <div className="inline-flex flex-nowrap items-center gap-1 whitespace-nowrap rounded-xl border border-primary/40 bg-white p-1 shadow-xs">
-                    <span className="shrink-0 whitespace-nowrap px-1.5 text-[11px] font-extrabold text-primary">
-                      Ca {caNo}:
-                    </span>
-                    {QUICK_INLINE_BUTTONS.map(({ status, code, shortLabel }) => {
-                      const bCfg = STATUS_CONFIG[status];
-                      const isSelected = curStatus === status;
-                      return (
-                        <button
-                          key={status}
-                          type="button"
-                          disabled={savingSessionId !== null}
-                          onClick={() => {
-                            setActiveInlinePickerKey(null);
-                            void handleStatusSelect(st.enrollment_class_id, dateStr, sess, status, caNo);
-                          }}
-                          title={`${bCfg.label} (Ca ${caNo})`}
-                          className={`inline-flex h-6 shrink-0 items-center gap-1 whitespace-nowrap rounded-md border px-2 text-[11px] font-bold transition ${
-                            isSelected
-                              ? `${bCfg.bg} ${bCfg.text} ${bCfg.border} ring-2 ring-primary ring-offset-1`
-                              : 'border-border/80 bg-slate-50 text-slate-700 hover:bg-slate-100 hover:text-slate-900'
-                          } disabled:opacity-50`}
-                        >
-                          <span className="font-extrabold">{code}</span>
-                          <span>{shortLabel}</span>
-                        </button>
-                      );
-                    })}
-                    <button
-                      type="button"
-                      onClick={() => setActiveInlinePickerKey(null)}
-                      title="Đóng (Esc)"
-                      className="ml-0.5 inline-flex h-6 shrink-0 items-center rounded-md px-1.5 text-[11px] font-bold text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              {pendingNote && <div className="pl-0.5 whitespace-nowrap">{pendingNote}</div>}
-
-              {variant === 'admin-final' && isOpen && att && (att.teacher_status || att.cs_status) && (
-                <div className="pl-0.5 whitespace-nowrap text-[10px] text-text-secondary">
-                  Tham chiếu — GV:{' '}
-                  <strong>{att.teacher_status ? `${STATUS_CONFIG[att.teacher_status as AttendanceStatus].short} · ${STATUS_CONFIG[att.teacher_status as AttendanceStatus].label}` : 'chưa chấm'}</strong>
-                  {' · CSKH: '}
-                  <strong>{att.cs_status ? `${STATUS_CONFIG[att.cs_status as AttendanceStatus].short} · ${STATUS_CONFIG[att.cs_status as AttendanceStatus].label}` : 'chưa chấm'}</strong>
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
+      <AttendanceStatusStack
+        id={`attendance-status-${st.enrollment_class_id}-${dateStr}`}
+        studentName={st.full_name}
+        sessions={getSessionsForCell(st.enrollment_class_id, dateStr)}
+        readStatus={(session) => readStatus(rawAttendanceMap.get(`${st.enrollment_class_id}_session_${session.id}`))}
+        disabled={savingSessionId !== null || Boolean(st.is_readonly_for_cs)}
+        onSelect={(session, caNo, status) => handleStatusSelect(st.enrollment_class_id, dateStr, session, status, caNo)}
+        onDelete={(session) => handleClearCell(st.enrollment_class_id, session)}
+        renderMeta={variant === 'admin-final' ? (session) => {
+          const att = rawAttendanceMap.get(`${st.enrollment_class_id}_session_${session.id}`);
+          return <span className="text-[10px] text-text-secondary">{att?.reconciliation_state === 'RESOLVED' ? 'Đã phân xử' : 'Đã khớp'}</span>;
+        } : undefined}
+      />
     );
   };
 
@@ -2914,16 +2629,12 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
     );
   };
 
-  return (
-    <JlptLearningProvider key={`students-${quickDate}`}>
-    <div className="bg-surface rounded-2xl border border-border/80 shadow-soft overflow-hidden">
-      {/* Unified Table Toolbar for all tabs */}
-      <div className="flex flex-wrap items-center gap-2.5 border-b border-border/80 bg-slate-50/60 p-3 sm:px-4 text-xs">
+  const tableToolbar = (<div className={externalViewControls ? "contents" : "flex flex-wrap items-center gap-2.5 border-b border-border/80 bg-slate-50/60 p-3 sm:px-4 text-xs"}>
         {titleHeader}
         <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-2">
           {activeTab === 'quick' && (
             <>
-              <div className="flex h-10 items-center gap-1 rounded-xl border border-border/60 bg-surface p-1">
+              {!externalViewControls && <div className="flex h-10 items-center gap-1 rounded-xl border border-border/60 bg-surface p-1">
                 <button
                   type="button"
                   onClick={handleQuickDatePrev}
@@ -2949,7 +2660,7 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
                 >
                   <ChevronRight className="h-4 w-4" />
                 </button>
-              </div>
+              </div>}
 
               {/* CSKH: 1 chạm khớp toàn bộ ca GV đã chấm trong ngày */}
               {activeSide === 'CS' && (
@@ -2968,7 +2679,7 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
             </>
           )}
 
-          {activeTab === 'detailed' && (
+          {!externalViewControls && activeTab === 'detailed' && (
             <div className="flex flex-wrap items-center gap-2">
               {/* Bộ chọn kiểu xem Tab 2: Bảng tháng | Nhật ký bài học */}
               <div
@@ -3075,7 +2786,7 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
             </div>
           )}
 
-          {activeTab === 'stats' && (
+          {!externalViewControls && activeTab === 'stats' && (
             <div className="flex items-center gap-1 bg-surface-muted p-1 rounded-xl border border-border/60">
               <button
                 type="button"
@@ -3120,7 +2831,13 @@ export const AttendanceMatrix: React.FC<AttendanceMatrixProps> = ({
             </div>
           )}
         </div>
-      </div>
+      </div>);
+
+  return (
+    <JlptLearningProvider key={`students-${quickDate}`}>
+    <div className="bg-surface rounded-2xl border border-border/80 shadow-soft overflow-hidden">
+      {/* The parent owns display controls; only standalone matrices keep their own toolbar. */}
+      {!externalViewControls && tableToolbar}
 
       {/* Unified Bulk Action Bar for Tab 1 (quick) & Tab 2 (detailed) */}
       {selectedStudents.size > 0 &&

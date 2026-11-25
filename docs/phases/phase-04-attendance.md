@@ -103,3 +103,26 @@
 ## Agent notes
 
 Đọc `docs/product/business-rules.md` trước. Khi sửa Prisma dùng `prisma-schema-guard`; khi tạo/sửa API dùng `api-module-scaffold`.
+
+## UI follow-up — 2026-11-25
+
+- [x] Nhập điểm danh Theo học viên/Theo lớp dùng chung dropdown, không tách UI theo vai trò.
+- [x] + chỉ mở menu; chọn trạng thái mới tạo/tái sử dụng ca và lưu điểm danh.
+- [x] `-` gỡ ca điểm danh của học viên/phía hiện tại; giữ các nguồn/học viên khác.
+- [x] Trigger/menu gọn, có màu trạng thái, không icon; thêm regression tests cho deferred create, reset và tái sử dụng session.
+- [ ] Browser desktop/tablet/mobile chưa nghiệm thu do CDP navigation timeout; không tự thử lại khi chưa có xác nhận.
+
+## Shared learning filters và permission audit — 2026-11-25
+
+- [x] Dùng một `FilterBar` ba hàng cho Học viên, Báo cáo học tập/JLPT, Học viên của tôi và Lớp học/Điểm danh; toolbar trước tên cột chuyển vào hàng 2, hàng 3 luôn hiển thị.
+- [x] Checkbox lịch/ca và ngày có buổi học có nhãn; pure TEACHER không thấy teacher name/code filter; CVHT options lấy từ metadata/data đã scope, không thêm mã mẫu.
+- [x] Sửa scope lớp multi-role theo union; thêm 5 unit tests DB-independent cho ADMIN, CS/MANAGE, TEACHER, union và empty scope.
+- [x] 39 frontend regression tests, backend typecheck, frontend build và diff check đạt.
+- [ ] Browser responsive QA còn chặn bởi navigation timeout; lint còn chặn bởi cấu hình/executable ESLint của workspace.
+
+## Filter ordering follow-up — 2026-11-25
+
+- [x] Hiển thị/Cột hiển thị đầu hàng 2, ngày/kỳ cuối hàng; bỏ daily match GV khỏi hàng 2 cả hai chế độ xem.
+- [x] Hàng 1 co giãn theo không gian và gap cố định; responsive wrap, giữ nguyên drawer và bulk action theo selection.
+- [x] 42/42 frontend regression tests và production build (gồm TypeScript) đạt, gồm 3 test bổ sung cho thứ tự/sizing; menu cột giới hạn theo nhóm/viewport.
+- [ ] Browser desktop/tablet/mobile chưa trực tiếp nghiệm thu do blocker navigation timeout trước đó; lint thiếu ESLint config.

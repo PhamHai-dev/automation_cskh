@@ -1,5 +1,23 @@
 # Project Changelog
 
+## 2026-11-25 — Tinh chỉnh thứ tự và độ rộng hàng lọc
+
+- Hiển thị + Cột hiển thị đứng đầu hàng 2; ngày/kỳ đứng cuối, căn phải ở Lớp học/Điểm danh và không gian giáo viên.
+- Cột hiển thị của Học viên/Học viên của tôi đứng ngay sau count, trước thông báo tải hoặc chú thích.
+- Bỏ nút khớp GV khỏi hàng 2 ở Theo học viên/Theo lớp học; giữ bulk match các dòng đã chọn tại bảng, không đổi rule ghi dữ liệu.
+- Hàng 1 dùng sizing co giãn và gap 0.75rem; không để ô tìm kiếm bị giới hạn max-width gây khoảng cách rời rạc.
+- 42/42 frontend tests và production build (gồm TypeScript) đạt; menu cột đầu hàng giới hạn chiều rộng theo nhóm/viewport. Lint bị chặn vì thiếu ESLint config; browser responsive chưa nghiệm thu trực tiếp.
+
+## 2026-11-25 — Bộ lọc học tập và thanh công cụ bảng
+
+- Áp dụng một khối `Tìm kiếm & Bộ lọc` cho Hồ sơ/Báo cáo học viên, báo cáo JLPT, Học viên của tôi và Lớp học/Điểm danh; không đổi PageHeader.
+- Hàng 1 tìm kiếm/điều kiện; hàng 2 chế độ xem, tuần/tháng, bảng tháng/nhật ký, thời gian và toàn bộ công cụ trước hàng tên cột (số lượng, tùy chọn cột, mở/thu gọn, làm mới/khớp GV theo quyền). Không lặp toolbar tại bảng; bulk action khi chọn dòng vẫn giữ nguyên.
+- Checkbox `Chỉ có lịch/ca ngày đang chọn` và `Chỉ ngày có buổi học` có nhãn trực tiếp. Hàng 3 luôn hiển thị `Đang áp dụng`; khi trống ghi `Chưa áp dụng bộ lọc`, nút xóa bị vô hiệu hóa. Checkbox/chuyên cần có chip để xóa/reset đúng trạng thái.
+- Công cụ ma trận học viên render qua portal vào hàng 2 để giữ nguyên state/handler nghiệp vụ. Các biến thể FilterBar ngoài phạm vi không đổi.
+- Ẩn tên/mã GV và làm sạch URL đối với giáo viên thuần; sửa scope lớp đa role theo union hiện hành, chưa nghiệm thu lại backend trong lượt UI bổ sung này.
+- 39/39 frontend regression tests, 5/5 backend class-scope unit tests, backend typecheck, frontend production build và `git diff --check` đều đạt. Frontend lint bị chặn vì thiếu ESLint config; backend lint bị chặn vì thiếu executable `eslint`.
+- Browser/responsive QA chưa thực hiện được vì mở `http://localhost:5173` bị navigation timeout; không coi đây là UI acceptance pass. Không migration hoặc thay dữ liệu nghiệp vụ.
+
 ## 2026-11-24 — Đồng nhất hiển thị lớp 1:1 trong bảng điểm danh
 
 - Bỏ nhánh gộp lớp 1:1/học viên: chế độ Theo lớp học luôn có dòng lớp và học viên con, cả khi lớp chỉ có một học viên; hỗ trợ mở/thu gọn từng lớp và tất cả lớp.
@@ -353,3 +371,21 @@
 - Tổ chức lại `docs/` theo nhóm `product/`, `architecture/`, `ui/`, `api/`, `delivery/`, `phases/`, `decisions/`, `templates/`, `data/` để giảm file rải ở root.
 - Bỏ `CLAUDE.md`; `Agent.md` + `.antigravityrules` là entrypoint cho AI coding trong project này.
 - Gộp checklist chuẩn bị và pre-code vào `docs/delivery/checklists.md`.
+
+## 2026-11-25 — Dropdown nhập điểm danh đồng nhất
+
+- Theo học viên và Theo lớp dùng chung dropdown sáu trạng thái + `-`; không icon, màu theo trạng thái, trigger gọn theo nội dung.
+- Ô chưa chấm là `+`; bấm chỉ mở menu. Chọn trạng thái mới tạo/tái sử dụng ca và ghi điểm danh. Chọn `-` gỡ ca của học viên/phía hiện tại, giữ dữ liệu phía khác và học viên khác.
+- Typecheck pass; 38/38 frontend regression tests pass, gồm 5 test dropdown mới; git diff --check pass.
+- Lint bị chặn vì repository chưa có ESLint config. Browser desktop/tablet/mobile chưa nghiệm thu do navigation/CDP timeout. Không thay API/schema, không chạy migration hoặc thao tác dữ liệu thật.
+
+- Bổ sung kết quả: frontend production build PASS (cảnh báo bundle >500kB hiện hữu).
+
+### Chốt hiển thị mặc định — 2026-11-25
+
+Theo yêu cầu mới nhất, ô chưa điểm danh mặc định hiển thị `-` thay cho `+`. Bấm `-` mở dropdown; chọn trạng thái để lưu, chọn `-` để gỡ ca của học viên/phía hiện tại. Quy tắc này thay thế mô tả dấu + ở cập nhật trước, không đổi logic tạo/xóa hoặc phạm vi dữ liệu.
+
+### Cập nhật hiển thị trạng thái — 2026-11-25
+
+- Khi chưa điểm danh: chỉ hiển thị `-`.
+- Khi đã chọn trạng thái: hiển thị trạng thái đã chọn và thêm một `+` ngay bên cạnh để mở dropdown thêm ca tiếp theo.

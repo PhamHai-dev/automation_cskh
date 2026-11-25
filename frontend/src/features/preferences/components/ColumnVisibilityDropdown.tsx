@@ -39,7 +39,7 @@ export const ColumnVisibilityDropdown: React.FC<ColumnVisibilityDropdownProps> =
   const visibleCount = columns.filter((c) => (c.locked ? true : Boolean(draft[c.key]))).length;
 
   return (
-    <div ref={containerRef} className="relative inline-block">
+    <div ref={containerRef} className="column-visibility-control relative inline-block">
       <button
         type="button"
         onClick={() => setOpen((prev) => !prev)}
@@ -54,7 +54,7 @@ export const ColumnVisibilityDropdown: React.FC<ColumnVisibilityDropdownProps> =
       </button>
 
       {open && (
-        <div className="absolute right-0 z-50 mt-2 w-80 sm:w-96 rounded-2xl border border-border bg-surface p-3.5 shadow-xl">
+        <div className="column-visibility-menu absolute right-0 z-50 mt-2 w-80 sm:w-96 rounded-2xl border border-border bg-surface p-3.5 shadow-xl">
           <div className="flex items-center justify-between border-b border-border/70 pb-2.5 mb-2.5">
             <div>
               <div className="text-xs font-extrabold text-text-primary">Tùy chỉnh cột hiển thị</div>

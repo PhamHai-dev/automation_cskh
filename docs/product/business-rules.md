@@ -265,3 +265,20 @@ Khi user chốt hoặc thay đổi business rule:
 4. Cập nhật data model/API contract nếu bị ảnh hưởng.
 5. Cập nhật phase hiện tại và test cases.
 6. Ghi `CHANGELOG.md`.
+
+## Attendance dropdown — chốt bổ sung 2026-11-25
+
+- Tab Nhập điểm danh dùng chung dropdown ở Theo học viên/Theo lớp cho GV, CSKH và Admin theo quyền hiện hành.
+- Ô chưa điểm danh mặc định là `+`. Bấm chỉ mở menu; chọn một trong sáu trạng thái mới lưu điểm danh và tạo/tái sử dụng ca. Không tạo ca rỗng từ nút + ở dòng học viên.
+- Mục `-` nghĩa là chưa điểm danh/chưa tạo ca. Chọn mục này gỡ ca điểm danh của đúng học viên ở phía đang thao tác, giữ phía còn lại và các học viên khác; không xóa ClassSession dùng chung của lớp.
+- Dropdown gọn theo nội dung, từng trạng thái có màu từ palette chung và không có icon; `-` là thao tác reset, không thêm enum DB.
+- Không đổi quy tắc final MATCHED/RESOLVED, trừ buổi, scope hoặc privacy/lịch sử giáo viên.
+
+### Chốt hiển thị mặc định — 2026-11-25
+
+Theo yêu cầu mới nhất, ô chưa điểm danh mặc định hiển thị `-` thay cho `+`. Bấm `-` mở dropdown; chọn trạng thái để lưu, chọn `-` để gỡ ca của học viên/phía hiện tại. Quy tắc này thay thế mô tả dấu + ở cập nhật trước, không đổi logic tạo/xóa hoặc phạm vi dữ liệu.
+
+### Cập nhật hiển thị trạng thái — 2026-11-25
+
+- Khi chưa điểm danh: chỉ hiển thị `-`.
+- Khi đã chọn trạng thái: hiển thị trạng thái đã chọn và thêm một `+` ngay bên cạnh để mở dropdown thêm ca tiếp theo.

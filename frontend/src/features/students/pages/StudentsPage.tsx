@@ -939,12 +939,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
 
   // Danh sách mã CVHT phụ trách để bấm lọc nhanh 1-click (từ test_diem_danh)
   const cvhtList = useMemo(() => {
-    const set = new Set<string>([
-      'CVHT01',
-      'CVHT02',
-      'CVHT03',
-      ...(studentsMeta?.filterOptions?.cvhtList || []),
-    ]);
+    const set = new Set<string>(studentsMeta?.filterOptions?.cvhtList || []);
     allRows.forEach((s) => {
       s.enrollments?.forEach((enr) => {
         const code = (
@@ -2635,17 +2630,37 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
         }
       />
 
-      {/* Bộ lọc một hàng: điều kiện thường dùng ở ngoài, phần còn lại trong drawer */}
+      {/* Bộ lọc chung: tìm kiếm, điều kiện và các điều kiện đang áp dụng. */}
       <FilterBar
-        variant="toolbar"
-        title="Tìm kiếm & Lọc học viên"
+        viewControls={<>
+        <div className="learning-filter-display-start">
+          <div className="text-xs font-semibold text-text-secondary inline-flex items-center gap-1.5 rounded-lg border border-border/80 bg-surface px-2.5 py-1.5 shadow-2xs">
+            <span>Hiển thị:</span>
+            <strong className="text-primary font-extrabold">{paginatedStudents.length}</strong>
+            <span className="text-text-muted">/ {totalStudents} học viên</span>
+          </div>
+          <ColumnVisibilityDropdown
+            scope={activeTab === 'students' ? 'students.tab1' : 'students.tab2'}
+            programFilter={programFilter}
+          />
+          {isFetching && !loading && (
+            <span className="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50/80 px-2.5 py-1 text-[11px] font-bold text-primary">
+              <span className="h-2 w-2 rounded-full bg-primary animate-ping" />
+              <span>Đang đồng bộ...</span>
+            </span>
+          )}
+        </div>
+
+      </>}
+        variant="learning"
+        title="Tìm kiếm & Bộ lọc"
         activeCount={activeFiltersCount}
         chips={studentFilterChips}
         resultSummary={`${totalStudents.toLocaleString('vi-VN')} học viên`}
         onClear={handleResetFilters}
       >
         {/* 1. Tìm kiếm */}
-        <div className="relative min-w-[220px] flex-[1_1_320px] xl:max-w-[460px]">
+        <div className="learning-filter-search relative">
           <input
             type="text"
             value={searchTerm}
@@ -2734,7 +2749,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
           activeCount={draftAdvancedFiltersCount}
           onReset={clearAdvancedStudentDraft}
           title="Bộ lọc học viên nâng cao"
-          description="Lọc theo mô hình, học phí, Sale, giới tính và mã CVHT."
         >
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
 
@@ -2947,27 +2961,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ mode }) => {
           </div>
         </AdvancedFilterDrawer>
       </FilterBar>
-
-      {/* Thanh trạng thái hiển thị & tùy chọn cột */}
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="text-xs font-semibold text-text-secondary inline-flex items-center gap-1.5 rounded-lg border border-border/80 bg-surface px-2.5 py-1.5 shadow-2xs">
-            <span>Hiển thị:</span>
-            <strong className="text-primary font-extrabold">{paginatedStudents.length}</strong>
-            <span className="text-text-muted">/ {totalStudents} học viên</span>
-          </div>
-          {isFetching && !loading && (
-            <span className="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50/80 px-2.5 py-1 text-[11px] font-bold text-primary">
-              <span className="h-2 w-2 rounded-full bg-primary animate-ping" />
-              <span>Đang đồng bộ...</span>
-            </span>
-          )}
-        </div>
-        <ColumnVisibilityDropdown
-          scope={activeTab === 'students' ? 'students.tab1' : 'students.tab2'}
-          programFilter={programFilter}
-        />
-      </div>
 
       {/* Bulk Action Bar khi chọn học viên (dành cho Admin / Manage) */}
       {isAdminOrManage && selectedStudentIds.length > 0 && (

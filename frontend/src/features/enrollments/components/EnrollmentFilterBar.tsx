@@ -6,12 +6,11 @@ import {
   KAIWA_LEVEL_OPTIONS,
 } from '../types/enrollmentFilter.types';
 import { Button } from '../../../components/ui/Button';
-import { ActiveFilterChip, ActiveFilterChips } from '../../../components/common/FilterBar';
+import { ActiveFilterChip, FilterBar } from '../../../components/common/FilterBar';
 import { AdvancedFilterDrawer } from '../../../components/common/AdvancedFilterDrawer';
 import {
   Search,
   SlidersHorizontal,
-  RotateCcw,
   Users,
   Calendar,
   Layers,
@@ -32,7 +31,9 @@ export interface EnrollmentFilterBarProps {
   onProgramChange?: (program: 'ALL' | 'KAIWA' | 'JLPT') => void;
   resultCount?: number;
   isCS?: boolean;
+  isTeacher?: boolean;
   contextControls?: React.ReactNode;
+  contextChips?: ActiveFilterChip[];
 }
 
 const countAdvancedFilters = (state: EnrollmentFilterState): number => {
@@ -82,7 +83,9 @@ export const EnrollmentFilterBar: React.FC<EnrollmentFilterBarProps> = ({
   onProgramChange,
   resultCount,
   isCS = false,
+  isTeacher = false,
   contextControls,
+  contextChips = [],
 }) => {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [draftFilters, setDraftFilters] = useState<EnrollmentFilterState>(filters);
@@ -120,12 +123,6 @@ export const EnrollmentFilterBar: React.FC<EnrollmentFilterBarProps> = ({
     () => countAdvancedFilters(draftFilters),
     [draftFilters],
   );
-  const totalActiveCount =
-    advancedActiveCount +
-    (filters.searchQuery ? 1 : 0) +
-    (filters.packageName ? 1 : 0) +
-    (filters.statusFilter ? 1 : 0) +
-    (filters.modelFilter ? 1 : 0);
 
   const clearAdvancedDraft = () => {
     setDraftFilters((previous) => ({
@@ -160,7 +157,6 @@ export const EnrollmentFilterBar: React.FC<EnrollmentFilterBarProps> = ({
     }));
   };
 
-  const hasAnyFilter = totalActiveCount > 0 || programFilter !== 'ALL';
 
   const levelOptions = programFilter === 'KAIWA' ? KAIWA_LEVEL_OPTIONS : [];
 
@@ -243,21 +239,12 @@ export const EnrollmentFilterBar: React.FC<EnrollmentFilterBarProps> = ({
   }, [filters, onChange, onProgramChange, programFilter]);
 
   return (
-    <section className="mb-3 rounded-2xl border border-border/80 bg-surface p-3 shadow-soft transition-all" aria-label="Tìm kiếm và lọc dữ liệu học tập">
-      <div className="mb-2 flex flex-wrap items-center justify-between gap-2 border-b border-border/60 pb-2">
-        <div>
-          <p className="text-xs font-bold uppercase tracking-wider text-text-secondary">Tìm kiếm & bộ lọc học tập</p>
-          <p className="mt-0.5 text-[11px] text-text-muted">Trường riêng Kaiwa/JLPT tự thay đổi theo chương trình đang chọn.</p>
-        </div>
-        {typeof resultCount === 'number' && <span className="text-xs font-semibold text-text-muted">{resultCount.toLocaleString('vi-VN')} kết quả</span>}
-      </div>
-
-      {/* ------------------------------------------------------------- */}
-      {/* TẦNG 1: ONE-LINE CONTEXT, SEARCH & BASIC FILTERS              */}
-      {/* ------------------------------------------------------------- */}
-      <div className="flex flex-wrap items-center gap-2 xl:flex-nowrap">
+    <FilterBar variant="learning" chips={[...activeChips, ...contextChips]} onClear={onReset}
+      resultSummary={typeof resultCount === 'number' ? `${resultCount.toLocaleString('vi-VN')} kết quả` : undefined}
+      viewControls={contextControls}>
+      {/* TẦNG 1: TÌM KIẾM & ĐIỀU KIỆN LỌC */}
         {/* Search input: ID, Name, Phone, Email */}
-        <div className="relative min-w-[220px] flex-[1_1_260px] xl:max-w-[360px]">
+        <div className="learning-filter-search relative">
           <input
             type="text"
             placeholder="Mã HV, họ tên, SĐT, email..."
@@ -283,11 +270,6 @@ export const EnrollmentFilterBar: React.FC<EnrollmentFilterBarProps> = ({
           </select>
         </div>
 
-        {contextControls && (
-          <div className="flex shrink-0 flex-wrap items-center gap-2 xl:flex-nowrap">
-            {contextControls}
-          </div>
-        )}
 
         {/* Tìm kiếm / Lọc Gói học */}
         <div className="min-w-[138px] flex-initial">
@@ -358,20 +340,7 @@ export const EnrollmentFilterBar: React.FC<EnrollmentFilterBarProps> = ({
           )}
         </Button>
 
-        {/* Nút Xóa bộ lọc */}
-        {hasAnyFilter && (
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={onReset}
-            className="h-9 shrink-0 px-2.5 text-xs text-text-muted hover:text-danger"
-            leftIcon={<RotateCcw className="h-3.5 w-3.5" />}
-          >
-            Xóa lọc ({totalActiveCount + (programFilter !== 'ALL' ? 1 : 0)})
-          </Button>
-        )}
-      </div>
+
 
       {/* ------------------------------------------------------------- */}
       {/* TẦNG 2: RESPONSIVE ADVANCED FILTER DRAWER                     */}
@@ -384,7 +353,6 @@ export const EnrollmentFilterBar: React.FC<EnrollmentFilterBarProps> = ({
         activeCount={draftAdvancedActiveCount}
         onReset={clearAdvancedDraft}
         title="Bộ lọc học tập nâng cao"
-        description="Lọc theo khóa học, tiến độ, giáo viên, lớp và thời gian học."
       >
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
           {/* ========================================================= */}
@@ -573,6 +541,7 @@ export const EnrollmentFilterBar: React.FC<EnrollmentFilterBarProps> = ({
             </div>
 
             <div className="space-y-2.5">
+              {!isTeacher && <>
               {/* Lọc Giáo viên */}
               <div>
                 <label className="mb-1 block text-[11px] font-semibold text-text-secondary">
@@ -610,6 +579,7 @@ export const EnrollmentFilterBar: React.FC<EnrollmentFilterBarProps> = ({
                   ))}
                 </select>
               </div>
+              </>}
 
               {/* Lọc Tên lớp */}
               <div>
@@ -786,7 +756,6 @@ export const EnrollmentFilterBar: React.FC<EnrollmentFilterBarProps> = ({
           </div>
         </div>
       </AdvancedFilterDrawer>
-      <ActiveFilterChips chips={activeChips} onClear={onReset} className="mt-3 border-t border-border/60 pt-3" />
-    </section>
+    </FilterBar>
   );
 };

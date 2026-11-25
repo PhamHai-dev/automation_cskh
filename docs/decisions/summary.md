@@ -59,3 +59,7 @@
 43. **Backfill Class JLPT legacy (2026-11-23):** Course code chỉ xét EnrollmentClass JLPT `ACTIVE`, bỏ qua lịch sử; zero/multiple active course code chuyển ADMIN xử lý. Level chỉ tự đề xuất khi class code và mọi active course code cùng chỉ về đúng một N2–N5; Combo/thiếu/xung đột xử lý thủ công. Dry-run không ghi DB và phải được ADMIN duyệt trước backfill.
 
 44. **Nhật ký JLPT inline và học viên chuyển lớp (2026-11-24, user duyệt):** Nhập bốn tiêu chí ngay trong bảng điểm danh, không form riêng. EnrollmentClass TRANSFERRED được đọc/ghi tại đúng ca có Attendance chưa xóa của chính record đó; giữ trạng thái chuyển lớp, class/CS scope và phân công giáo viên theo ngày ca. Không mở rộng cho ca khác hoặc các trạng thái không ACTIVE/TRANSFERRED.
+
+## 2026-11-25 — Dropdown nhập điểm danh
+
+Dùng cùng dropdown sáu trạng thái và `-` cho các vai trò trong hai chế độ nhập. `+` mở menu, chọn trạng thái mới tạo/tái sử dụng ca và ghi điểm danh; `-` gỡ điểm danh của học viên/phía hiện tại, không xóa ca dùng chung hay dữ liệu phía khác. Giao diện gọn, có màu, không icon. Không đổi enum/API/schema hoặc quy tắc final.

@@ -5,7 +5,7 @@ import {
   JlptAttendanceReportRow,
   UpdateJlptAttendanceReportDTO,
 } from '../types/students.types';
-import { FilterBar } from '../../../components/common/FilterBar';
+import { FilterBar, ActiveFilterChip } from '../../../components/common/FilterBar';
 import { PaginationFooter } from '../../../components/common/Pagination';
 import { Button } from '../../../components/ui/Button';
 import { useToast } from '../../../components/ui/Toast';
@@ -880,9 +880,6 @@ export const JlptAttendanceReportTabPanel: React.FC = () => {
 
   const cvhtOptions = useMemo(() => {
     const set = new Set<string>([
-      'CVHT01',
-      'CVHT02',
-      'CVHT03',
       ...(meta?.filterOptions?.cvhtList || []),
     ]);
     rows.forEach((r) => {
@@ -892,13 +889,14 @@ export const JlptAttendanceReportTabPanel: React.FC = () => {
     return Array.from(set).sort();
   }, [meta, rows, cvhtFilter]);
 
-  const activeFiltersCount =
-    (searchTerm.trim() ? 1 : 0) +
-    (classCodeFilter ? 1 : 0) +
-    (courseTrackFilter ? 1 : 0) +
-    (statusFilter ? 1 : 0) +
-    (warningFilter !== 'ALL' ? 1 : 0) +
-    (isAdminOrManage && cvhtFilter ? 1 : 0);
+  const reportChips: ActiveFilterChip[] = [];
+  if (searchTerm.trim()) reportChips.push({ id: 'search', label: 'Tìm kiếm', value: searchTerm.trim(), onRemove: () => setSearchTerm('') });
+  if (classCodeFilter) reportChips.push({ id: 'class', label: 'Lớp', value: classCodeFilter, onRemove: () => setClassCodeFilter('') });
+  if (courseTrackFilter) reportChips.push({ id: 'course', label: 'Khóa', value: COURSE_TRACK_OPTIONS.find(option => option.value === courseTrackFilter)?.label || courseTrackFilter, onRemove: () => setCourseTrackFilter('') });
+  if (statusFilter) reportChips.push({ id: 'status', label: 'Trạng thái', value: STATUS_OPTIONS.find(option => option.value === statusFilter)?.label || statusFilter, onRemove: () => setStatusFilter('') });
+  if (warningFilter !== 'ALL') reportChips.push({ id: 'warning', label: 'Cảnh báo', value: WARNING_FILTER_OPTIONS.find(option => option.value === warningFilter)?.label || warningFilter, onRemove: () => setWarningFilter('ALL') });
+  if (isAdminOrManage && cvhtFilter) reportChips.push({ id: 'cvht', label: 'CVHT', value: cvhtFilter, onRemove: () => setCvhtFilter('') });
+  const activeFiltersCount = reportChips.length;
 
   const handleResetFilters = () => {
     setSearchTerm('');
@@ -946,14 +944,37 @@ export const JlptAttendanceReportTabPanel: React.FC = () => {
   return (
     <div className="space-y-4">
       <FilterBar
-        title="Tìm kiếm & Lọc nhanh"
+        viewControls={<>
+          <div className="flex flex-wrap items-center gap-2 font-semibold text-text-secondary">
+            <span className="inline-flex items-center gap-1.5 rounded-lg border border-border/80 bg-surface px-2.5 py-1.5 shadow-2xs">
+              <span>Hiển thị:</span>
+              <span className="font-extrabold text-primary">{rows.length}</span>
+              <span className="text-text-muted">/ {total} học viên JLPT</span>
+            </span>
+          </div>
+
+          <div className="ml-auto flex items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => refetch()}
+              title="Làm mới dữ liệu"
+              className="px-2.5"
+            >
+              <RefreshCw
+                className={`w-3.5 h-3.5 ${isFetching ? 'animate-spin text-primary' : ''}`}
+              />
+            </Button>
+          </div>
+        </>}
+        variant="learning"
+        title="Tìm kiếm & Bộ lọc"
+        chips={reportChips}
         activeCount={activeFiltersCount}
         onClear={handleResetFilters}
-        gridClassName={`grid grid-cols-1 sm:grid-cols-2 ${
-          isAdminOrManage ? 'lg:grid-cols-6' : 'lg:grid-cols-5'
-        } gap-3.5 items-end`}
       >
-        <div>
+        <div className="learning-filter-search">
           <label className="block text-[11px] font-semibold text-text-secondary uppercase tracking-wider mb-1.5">
             Tìm học viên
           </label>
@@ -1061,32 +1082,6 @@ export const JlptAttendanceReportTabPanel: React.FC = () => {
 
       {/* Main Table Card (Chuẩn cấu trúc bảng chung của web) */}
       <div className="bg-surface rounded-2xl border border-border/80 shadow-soft overflow-hidden">
-        {/* Table Toolbar */}
-        <div className="flex flex-wrap items-center justify-between gap-2.5 border-b border-border/80 bg-slate-50/60 p-3 sm:px-4 text-xs">
-          <div className="flex flex-wrap items-center gap-2 font-semibold text-text-secondary">
-            <span className="inline-flex items-center gap-1.5 rounded-lg border border-border/80 bg-surface px-2.5 py-1.5 shadow-2xs">
-              <span>Hiển thị:</span>
-              <span className="font-extrabold text-primary">{rows.length}</span>
-              <span className="text-text-muted">/ {total} học viên JLPT</span>
-            </span>
-          </div>
-
-          <div className="ml-auto flex items-center gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => refetch()}
-              title="Làm mới dữ liệu"
-              className="px-2.5"
-            >
-              <RefreshCw
-                className={`w-3.5 h-3.5 ${isFetching ? 'animate-spin text-primary' : ''}`}
-              />
-            </Button>
-          </div>
-        </div>
-
         <JlptChuyenCanTable
           rows={rows}
           isLoading={isLoading}

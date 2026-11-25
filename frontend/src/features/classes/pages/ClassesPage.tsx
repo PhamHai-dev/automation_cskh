@@ -36,7 +36,7 @@ import {
 } from '../components/AttendanceMatrix';
 import { AttendanceSessionDrawer } from '../components/AttendanceSessionDrawer';
 import { JlptLearningColumns, JlptLearningHeaders, JlptLearningProvider } from '../components/JlptLearningColumns';
-import { AttendanceStatusDropdown } from '../components/AttendanceStatusDropdown';
+import { AttendanceStatusStack } from '../components/AttendanceStatusStack';
 import {
   MonthlyEmptyDateCell,
   MonthlySessionBadge,
@@ -48,6 +48,8 @@ import { PreferenceScope } from '../../preferences/columns';
 import { ColumnVisibilityDropdown } from '../../preferences/components/ColumnVisibilityDropdown';
 import { PageContainer } from '../../../components/common/PageContainer';
 import { PageHeader } from '../../../components/common/PageHeader';
+import { ActiveFilterChip } from '../../../components/common/FilterBar';
+import { AttendanceViewControls } from '../components/AttendanceViewControls';
 import { EnrollmentFilterBar } from '../../enrollments/components/EnrollmentFilterBar';
 import {
   EnrollmentFilterState,
@@ -163,20 +165,20 @@ const readProgramFilter = (params: URLSearchParams): ProgramFilter => {
   return 'ALL';
 };
 
-const readLearningFilters = (params: URLSearchParams): EnrollmentFilterState => {
+const readLearningFilters = (params: URLSearchParams, isTeacher = false, isCS = false): EnrollmentFilterState => {
   const program = readProgramFilter(params);
   return {
     ...INITIAL_ENROLLMENT_FILTERS,
     searchQuery: params.get('search') || '',
     statusFilter: params.get('status') || '',
     modelFilter: params.get('model') || '',
-    teacherName: params.get('teacher') || '',
-    teacherCode: params.get('teacherCode') || '',
+    teacherName: !isTeacher ? params.get('teacher') || '' : '',
+    teacherCode: !isTeacher ? params.get('teacherCode') || '' : '',
     packageName: params.get('package') || '',
     courseCategory: program === 'ALL' ? 'ALL' : program,
     courseLevel: program === 'KAIWA' ? params.get('level') || '' : '',
     className: params.get('className') || '',
-    selectedSale: params.get('sale') || '',
+    selectedSale: !isTeacher && !isCS ? params.get('sale') || '' : '',
     schedulePattern: params.get('schedule') || '',
     startTime: params.get('startTime') || '',
     totalSessionsOp: params.get('totalOp') === 'EXACT' ? 'EXACT' : 'RANGE',
@@ -308,7 +310,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
 
   // Filters dùng chung cho cả 2 chế độ (đồng bộ với URL + EnrollmentFilterBar)
   const [programFilter, setProgramFilter] = useState<ProgramFilter>(() => readProgramFilter(searchParams));
-  const [filters, setFilters] = useState<EnrollmentFilterState>(() => readLearningFilters(searchParams));
+  const [filters, setFilters] = useState<EnrollmentFilterState>(() => readLearningFilters(searchParams, isTeacher, isCSOnly));
   const isApplyingFilterUrlRef = useRef(false);
 
   const [onlyScheduledOnDate, setOnlyScheduledOnDate] = useState<boolean>(
@@ -326,14 +328,14 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
   // Khôi phục toàn bộ filter khi dùng Back/Forward hoặc mở link được chia sẻ.
   useEffect(() => {
     const nextProgram = readProgramFilter(searchParams);
-    const nextFilters = readLearningFilters(searchParams);
+    const nextFilters = readLearningFilters(searchParams, isTeacher, isCSOnly);
     if (nextProgram !== programFilter || JSON.stringify(nextFilters) !== JSON.stringify(filters)) {
       isApplyingFilterUrlRef.current = true;
       setProgramFilter(nextProgram);
       setFilters(nextFilters);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchParams]);
+  }, [searchParams, isTeacher, isCSOnly]);
 
   // State chọn học viên & lớp học đồng bộ 100% giữa 2 chế độ và Thanh Nghiệp Vụ Hàng Loạt
   const [selectedEnrollmentIds, setSelectedEnrollmentIds] = useState<Set<number>>(new Set());
@@ -1626,21 +1628,7 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
   }, [filteredClasses, periodDates, sessionsByClassAndDate, attendanceByEcAndSession]);
 
   // Stepper handlers for Tab 1 (Quick Day) and Tab 2 (Detailed Period)
-  const handleStepDay = (delta: number) => {
-    const [y, m, d] = selectedDate.split('-').map(Number);
-    const next = new Date(y, m - 1, d + delta);
-    setSelectedDate(toLocalDateString(next));
-  };
 
-  const handleStepPeriod = (delta: number) => {
-    const next = new Date(currentPeriodDate);
-    if (detailedFilterMode === 'week') {
-      next.setDate(next.getDate() + delta * 7);
-    } else {
-      next.setMonth(next.getMonth() + delta);
-    }
-    setCurrentPeriodDate(next);
-  };
 
   const toggleClassExpand = (classId: number) => {
     setCollapsedClassIds((prev) => {
@@ -2911,76 +2899,11 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
     try {
       await attendanceApi.remove(classId, session.id, existingAtt.id, activeSide);
       setDrawerState(null);
-      toast.info('Đã xóa trạng thái điểm danh');
+      toast.info('Đã xóa ca điểm danh của bạn cho học viên này');
+      window.dispatchEvent(new Event('teacher-attendance-updated'));
       await fetchClasses(true);
     } catch (err: any) {
       toast.error(err.response?.data?.message || 'Không thể xóa điểm danh');
-    } finally {
-      setSavingKey(null);
-    }
-  };
-
-  // CSKH: 1 chạm "Khớp theo GV" ở chế độ Theo Lớp học — sao chép điểm danh GV sang cs_status
-  // cho mọi ca trong ngày đang chọn mà GV đã chấm nhưng CSKH chưa chấm (bỏ qua học viên chỉ xem).
-  const pendingMatchTeacherCountInClasses = useMemo(() => {
-    if (!isCSOnly) return 0;
-    let count = 0;
-    tableClasses.forEach((cls) => {
-      const daySessions = getDaySessions(cls.id, selectedDate);
-      const students = getStudentsOfClass(cls);
-      daySessions.forEach((sess) => {
-        students.forEach((st) => {
-          if (st.is_readonly_for_cs) return;
-          const att = attendanceByEcAndSession.get(`${st.enrollment_class_id}_session_${sess.id}`);
-          if (att?.teacher_status && !att.cs_status) count++;
-        });
-      });
-    });
-    return count;
-  }, [isCSOnly, tableClasses, selectedDate, sessionsByClassAndDate, attendanceByEcAndSession]);
-
-  const handleMatchTeacherForDayInClasses = async () => {
-    if (pendingMatchTeacherCountInClasses === 0) {
-      toast.info('Mọi ca GV đã chấm trong ngày đều có CSKH xác nhận');
-      return;
-    }
-    const groups = new Map<
-      string,
-      { classId: number; sessionId: number; items: { enrollment_class_id: number; status: AttendanceStatus }[] }
-    >();
-    tableClasses.forEach((cls) => {
-      const daySessions = getDaySessions(cls.id, selectedDate);
-      const students = getStudentsOfClass(cls);
-      daySessions.forEach((sess) => {
-        students.forEach((st) => {
-          if (st.is_readonly_for_cs) return;
-          const att = attendanceByEcAndSession.get(`${st.enrollment_class_id}_session_${sess.id}`);
-          const tStatus = att?.teacher_status as AttendanceStatus | null | undefined;
-          if (!tStatus || att?.cs_status) return;
-          const gKey = `${cls.id}_${sess.id}`;
-          const group = groups.get(gKey) || { classId: cls.id, sessionId: sess.id, items: [] };
-          group.items.push({ enrollment_class_id: st.enrollment_class_id, status: tStatus });
-          groups.set(gKey, group);
-        });
-      });
-    });
-
-    setSavingKey('match_teacher_day');
-    try {
-      await Promise.all(
-        Array.from(groups.values()).map((g) =>
-          attendanceApi.bulkMark(g.classId, g.sessionId, { items: g.items, side: 'CS' })
-        )
-      );
-      toast.success(
-        `Đã khớp ${pendingMatchTeacherCountInClasses} ca theo điểm danh GV ngày ${new Date(
-          `${selectedDate}T00:00:00`
-        ).toLocaleDateString('vi-VN')}`
-      );
-      await fetchClasses(true);
-    } catch (err: any) {
-      toast.error('Lỗi khi khớp theo GV: ' + (err.response?.data?.error?.message || err.message));
-      await fetchClasses(true);
     } finally {
       setSavingKey(null);
     }
@@ -3584,298 +3507,33 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
     );
   };
 
-  // Ô điểm danh nhanh ở Tab 1 (Nhập điểm danh — chế độ Theo Lớp học).
-  // Giáo viên dùng dropdown có “Chưa điểm danh”; CS/Admin giữ picker để hiển thị đối soát.
+  // Dropdown thống nhất GV/CSKH/Admin. Xóa chỉ tác động học viên và phía hiện tại.
   const renderQuickStatusCell = (
     cls: Class,
     st: EnrolledStudentItem,
     dateStr: string,
     variant: 'mark' | 'admin-final' = 'mark'
-  ) => {
-    const daySessions = getDaySessions(cls.id, dateStr);
-    const totalCa = isTeacher ? getVisibleCaCount(cls, dateStr) : Math.max(1, daySessions.length);
-
-    const QUICK_BUTTONS: Array<{ status: AttendanceStatus; code: string; shortLabel: string }> = [
-      { status: 'ATTENDED', code: '1', shortLabel: 'Có mặt' },
-      { status: 'ABSENT_APPROVED_A', code: 'A', shortLabel: 'Có phép' },
-      { status: 'LEAVE_B', code: 'B', shortLabel: 'Bảo lưu' },
-      { status: 'ABSENT_UNAPPROVED_C', code: 'C', shortLabel: 'Không phép' },
-      { status: 'TEACHER_ABSENT_D', code: 'D', shortLabel: 'GV nghỉ' },
-      { status: 'TECH_ERROR_E', code: 'E', shortLabel: 'Lỗi KT' },
-    ];
-
-    const isAddingCa = savingKey === `addca_${cls.id}_${dateStr}`;
-    const isSavingRow = savingKey === `${st.enrollment_class_id}_${dateStr}`;
-
-    return (
-      <div className="flex flex-col items-start gap-1.5">
-        {Array.from({ length: totalCa }, (_, idx) => {
-          const caNo = idx + 1;
-          const sess = daySessions[caNo - 1];
-          const att = sess
-            ? attendanceByEcAndSession.get(`${st.enrollment_class_id}_session_${sess.id}`)
-            : undefined;
-          const curStatus = (
-            variant === 'admin-final'
-              ? getFinalizedStatus(att)
-              : isCSOnly
-              ? att?.cs_status
-              : att?.teacher_status
-          ) as AttendanceStatus | undefined;
-          const cfg = curStatus ? STATUS_CONFIG[curStatus] : null;
-          const pickerKey = `${st.enrollment_class_id}_${dateStr}_s${caNo}`;
-          const isOpen = activeQuickPickerKey === pickerKey;
-          const isLastCa = caNo === totalCa;
-          const isDeletingThisCa = Boolean(sess && savingKey === `delca_${sess.id}`);
-
-          let reconcileBadge: React.ReactNode = null;
-          if (variant === 'admin-final' && curStatus) {
-            reconcileBadge =
-              att?.reconciliation_state === 'RESOLVED' ? (
-                <span className="shrink-0 whitespace-nowrap rounded bg-violet-100 px-1.5 py-0.5 text-[10px] font-bold text-violet-700">
-                  Đã phân xử
-                </span>
-              ) : (
-                <span className="shrink-0 whitespace-nowrap rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700">
-                  Đã khớp
-                </span>
-              );
-          }
-
-          let pendingNote: React.ReactNode = null;
-          if (variant === 'admin-final' && !curStatus) {
-            const tStatus = att?.teacher_status as AttendanceStatus | null | undefined;
-            const csStatus = att?.cs_status as AttendanceStatus | null | undefined;
-            if (!tStatus && !csStatus) {
-              pendingNote = (
-                <span className="whitespace-nowrap text-[10px] italic text-text-muted">
-                  Chưa bên nào chấm
-                </span>
-              );
-            } else if (tStatus && csStatus && tStatus !== csStatus) {
-              pendingNote = (
-                <span className="whitespace-nowrap text-[10px] font-semibold text-rose-600">
-                  Lệch (GV: {STATUS_CONFIG[tStatus].short} · CSKH: {STATUS_CONFIG[csStatus].short}) — cần chốt
-                </span>
-              );
-            } else if (tStatus && !csStatus) {
-              pendingNote = (
-                <span className="whitespace-nowrap text-[10px] font-semibold text-amber-600">
-                  Chờ CSKH chấm (GV: {STATUS_CONFIG[tStatus].short})
-                </span>
-              );
-            } else {
-              pendingNote = (
-                <span className="whitespace-nowrap text-[10px] font-semibold text-amber-600">
-                  Chờ GV chấm (CSKH: {STATUS_CONFIG[(csStatus ?? 'ATTENDED') as AttendanceStatus].short})
-                </span>
-              );
-            }
-          }
-
-          return (
-            <div key={caNo} className="flex flex-col items-start gap-0.5">
-              <div className="flex min-h-7 flex-nowrap items-center gap-1 whitespace-nowrap">
-                {isTeacher ? (
-                  <>
-                    <AttendanceStatusDropdown
-                      id={`class-teacher-attendance-status-${pickerKey}`}
-                      value={curStatus}
-                      options={QUICK_BUTTONS.map(({ status, code, shortLabel }) => ({
-                        status,
-                        label: `${code} · ${shortLabel}`,
-                      }))}
-                      disabled={isSavingRow || isDeletingThisCa || Boolean(st.is_readonly_for_cs)}
-                      ariaLabel={`Trạng thái điểm danh Ca ${caNo} của ${st.full_name}`}
-                      title={
-                        st.is_readonly_for_cs
-                          ? 'Chế độ Chỉ xem (không được điểm danh)'
-                          : `Chọn trạng thái điểm danh Ca ${caNo} cho ${st.full_name}`
-                      }
-                      triggerClassName={`h-8 w-[132px] rounded-lg border px-2.5 text-xs font-bold shadow-2xs outline-none focus:ring-2 focus:ring-primary/25 disabled:cursor-not-allowed disabled:opacity-60 ${
-                        cfg
-                          ? `${cfg.bg.replace(/\s*hover:\S+/g, '')} ${cfg.text} ${cfg.border}`
-                          : 'border-slate-300 bg-white text-slate-600'
-                      }`}
-                      onChange={async (nextStatus) => {
-                        setSelectedCa(cls.id, dateStr, caNo);
-                        if (!nextStatus) {
-                          if (sess && curStatus) {
-                            await handleClearAttendance(cls.id, st.enrollment_class_id, sess);
-                          }
-                          return;
-                        }
-                        await handleQuickMark(cls, st, dateStr, caNo, nextStatus);
-                      }}
-                    />
-
-                    {isLastCa && (
-                      <button
-                        type="button"
-                        disabled={isAddingCa || Boolean(st.is_readonly_for_cs)}
-                        onClick={() => {
-                          if (st.is_readonly_for_cs) return;
-                          handleAddCaForClass(cls, dateStr, st);
-                        }}
-                        title={
-                          st.is_readonly_for_cs
-                            ? 'Chế độ Chỉ xem (không được thêm ca)'
-                            : `Thêm Ca ${totalCa + 1} trong ngày này`
-                        }
-                        className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-dashed border-primary/50 bg-white text-primary transition hover:border-primary hover:bg-primary-soft disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        <Plus className="h-3.5 w-3.5" />
-                      </button>
-                    )}
-                  </>
-                ) : !isOpen ? (
-                  <>
-                    <button
-                      type="button"
-                      disabled={isSavingRow || isDeletingThisCa || Boolean(st.is_readonly_for_cs)}
-                      onClick={() => {
-                        if (st.is_readonly_for_cs) return;
-                        setSelectedCa(cls.id, dateStr, caNo);
-                        setActiveQuickPickerKey(pickerKey);
-                      }}
-                      title={
-                        st.is_readonly_for_cs
-                          ? 'Chế độ Chỉ xem (không được điểm danh)'
-                          : cfg
-                          ? `Ca ${caNo}: ${cfg.label} — bấm để đổi trạng thái`
-                          : `Bấm để chọn trạng thái điểm danh Ca ${caNo} cho ${st.full_name}`
-                      }
-                      className={`inline-flex h-7 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border px-2.5 text-xs font-bold transition ${
-                        cfg
-                          ? `${cfg.bg} ${cfg.text} ${cfg.border} shadow-2xs hover:ring-2 hover:ring-primary/40`
-                          : 'min-w-9 border-border/80 bg-white text-slate-600 hover:border-primary/60 hover:bg-primary-soft/30 hover:text-primary'
-                      } disabled:opacity-50 disabled:cursor-not-allowed`}
-                    >
-                      {cfg ? (
-                        <>
-                          {totalCa > 1 && <span className="text-[11px] font-extrabold opacity-80">Ca {caNo}:</span>}
-                          <span className="font-extrabold">{cfg.short}</span>
-                          <span>·</span>
-                          <span>{cfg.label}</span>
-                        </>
-                      ) : totalCa > 1 ? (
-                        <>
-                          <span className="text-[11px] font-bold text-slate-500">Ca {caNo}:</span>
-                          <span className="font-extrabold text-slate-400">—</span>
-                        </>
-                      ) : (
-                        <span className="font-extrabold text-slate-500">—</span>
-                      )}
-                    </button>
-
-                    {reconcileBadge}
-
-                    {isLastCa && (
-                      <button
-                        type="button"
-                        disabled={isAddingCa || Boolean(st.is_readonly_for_cs)}
-                        onClick={() => {
-                          if (st.is_readonly_for_cs) return;
-                          handleAddCaForClass(cls, dateStr, st);
-                        }}
-                        title={
-                          st.is_readonly_for_cs
-                            ? 'Chế độ Chỉ xem (không được thêm ca)'
-                            : `Thêm Ca ${totalCa + 1} trong ngày này`
-                        }
-                        className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-dashed border-primary/50 bg-white text-xs font-extrabold text-primary transition hover:border-primary hover:bg-primary-soft disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        <Plus className="h-3.5 w-3.5" />
-                      </button>
-                    )}
-
-                    {sess && (
-                      <button
-                        type="button"
-                        disabled={isDeletingThisCa || Boolean(st.is_readonly_for_cs)}
-                        onClick={() => {
-                          if (st.is_readonly_for_cs) return;
-                          requestDeleteCa(cls, dateStr, caNo);
-                        }}
-                        title={
-                          st.is_readonly_for_cs
-                            ? 'Chế độ Chỉ xem (không được xóa ca)'
-                            : countMarkedInCa(cls, dateStr, caNo) === 0
-                            ? `Gỡ bỏ Ca ${caNo} (chưa chấm điểm danh)`
-                            : `Xóa Ca ${caNo} của lớp`
-                        }
-                        className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-transparent text-slate-400 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    )}
-                  </>
-                ) : (
-                  <div className="inline-flex flex-nowrap items-center gap-1 whitespace-nowrap rounded-xl border border-primary/40 bg-white p-1 shadow-xs">
-                    <span className="shrink-0 whitespace-nowrap px-1.5 text-[11px] font-extrabold text-primary">
-                      Ca {caNo}:
-                    </span>
-                    {QUICK_BUTTONS.map(({ status, code, shortLabel }) => {
-                      const bCfg = STATUS_CONFIG[status];
-                      const isSelected = curStatus === status;
-                      return (
-                        <button
-                          key={status}
-                          type="button"
-                          disabled={isSavingRow}
-                          onClick={async () => {
-                            setActiveQuickPickerKey(null);
-                            setSelectedCa(cls.id, dateStr, caNo);
-                            await handleQuickMark(cls, st, dateStr, caNo, status);
-                          }}
-                          title={`${bCfg.label} (Ca ${caNo})`}
-                          className={`inline-flex h-6 shrink-0 items-center gap-1 whitespace-nowrap rounded-md border px-2 text-[11px] font-bold transition ${
-                            isSelected
-                              ? `${bCfg.bg} ${bCfg.text} ${bCfg.border} ring-2 ring-primary ring-offset-1`
-                              : 'border-border/80 bg-slate-50 text-slate-700 hover:bg-slate-100 hover:text-slate-900'
-                          } disabled:opacity-50`}
-                        >
-                          <span className="font-extrabold">{code}</span>
-                          <span>{shortLabel}</span>
-                        </button>
-                      );
-                    })}
-                    <button
-                      type="button"
-                      onClick={() => setActiveQuickPickerKey(null)}
-                      title="Đóng (Esc)"
-                      className="ml-0.5 inline-flex h-6 shrink-0 items-center rounded-md px-1.5 text-[11px] font-bold text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              {pendingNote && <div className="pl-0.5 whitespace-nowrap">{pendingNote}</div>}
-
-              {variant === 'admin-final' && isOpen && att && (att.teacher_status || att.cs_status) && (
-                <div className="pl-0.5 whitespace-nowrap text-[10px] text-text-secondary">
-                  Tham chiếu — GV:{' '}
-                  <strong>
-                    {att.teacher_status
-                      ? `${STATUS_CONFIG[att.teacher_status as AttendanceStatus].short} · ${STATUS_CONFIG[att.teacher_status as AttendanceStatus].label}`
-                      : 'chưa chấm'}
-                  </strong>
-                  {' · CSKH: '}
-                  <strong>
-                    {att.cs_status
-                      ? `${STATUS_CONFIG[att.cs_status as AttendanceStatus].short} · ${STATUS_CONFIG[att.cs_status as AttendanceStatus].label}`
-                      : 'chưa chấm'}
-                  </strong>
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    );
-  };
+  ) => (
+    <AttendanceStatusStack
+      id={`class-attendance-status-${st.enrollment_class_id}-${dateStr}`}
+      studentName={st.full_name}
+      sessions={getDaySessions(cls.id, dateStr)}
+      readStatus={(session) => {
+        const att = attendanceByEcAndSession.get(`${st.enrollment_class_id}_session_${session.id}`);
+        return variant === 'admin-final' ? getFinalizedStatus(att) : isCSOnly ? att?.cs_status : att?.teacher_status;
+      }}
+      disabled={savingKey !== null || Boolean(st.is_readonly_for_cs)}
+      onSelect={async (_session, caNo, status) => {
+        setSelectedCa(cls.id, dateStr, caNo);
+        await handleQuickMark(cls, st, dateStr, caNo, status);
+      }}
+      onDelete={(session) => handleClearAttendance(cls.id, st.enrollment_class_id, session)}
+      renderMeta={variant === 'admin-final' ? (session) => {
+        const att = attendanceByEcAndSession.get(`${st.enrollment_class_id}_session_${session.id}`);
+        return <span className="text-[10px] text-text-secondary">{att?.reconciliation_state === 'RESOLVED' ? 'Đã phân xử' : 'Đã khớp'}</span>;
+      } : undefined}
+    />
+  );
 
   // Render Attendance Cell cho Bảng tháng (Tab 2) — dùng chung MonthlyEmptyDateCell & MonthlySessionBadge với Theo Học viên
   const renderMatrixDateCell = (cls: Class, st: EnrolledStudentItem, dateStr: string) => {
@@ -4109,6 +3767,45 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
     (activeTab === 'quick' ? (isCSOnly ? 4 : 3) : 2 + visiblePeriodDates.length) +
     (canManageClasses ? 1 : 0) + (activeTab === 'quick' && showJlptLearningColumns ? 4 : 0);
 
+  const contextFilterChips: ActiveFilterChip[] = [];
+  if (activeTab === 'quick' && onlyScheduledOnDate) contextFilterChips.push({ id: 'scheduled-day', label: 'Lịch/ca', value: 'Ngày đang chọn', onRemove: () => setOnlyScheduledOnDate(false) });
+  if (activeTab === 'detailed' && onlyDaysWithSessions) contextFilterChips.push({ id: 'session-days', label: 'Ngày học', value: 'Chỉ ngày có buổi học', onRemove: () => setOnlyDaysWithSessions(false) });
+  if (activeTab === 'stats' && statsAttendanceFilter) contextFilterChips.push({ id: 'attendance-level', label: 'Chuyên cần', value: statsAttendanceFilter === 'GOOD' ? 'Đạt yêu cầu' : 'Cần chú ý', onRemove: () => setStatsAttendanceFilter('') });
+
+  // Table tools now share the display row; business actions keep their existing handlers.
+  const classTableTools = (
+    <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-text-secondary">
+      <span className="inline-flex items-center gap-1.5 rounded-lg border border-border/80 bg-surface px-2.5 py-1.5 shadow-2xs">
+        <span>Hiển thị:</span>
+        <span className="font-extrabold text-primary">{tableClasses.length}</span>
+        <span className="text-text-muted">/ {totalClassesCount} lớp học</span>
+        <span className="text-border">•</span>
+        <span className="font-bold text-text-primary">{tableStudentsCount}</span>
+        <span className="text-text-muted">học viên</span>
+      </span>
+
+      <ColumnVisibilityDropdown scope={prefScope} />
+
+      {filteredClasses.length > 0 && (
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleToggleExpandAll}
+          leftIcon={
+            allExpanded ? (
+              <ChevronUp className="w-3.5 h-3.5" />
+            ) : (
+              <ChevronDown className="w-3.5 h-3.5" />
+            )
+          }
+          className="h-8 text-xs font-semibold"
+        >
+          {allExpanded ? 'Thu gọn tất cả lớp' : 'Mở rộng tất cả lớp'}
+        </Button>
+      )}
+    </div>
+  );
+
   return (
     <JlptLearningProvider key={`classes-${selectedDate}-${programFilter}-${displayMode}-${page}`}>
     <PageContainer>
@@ -4158,55 +3855,33 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
         onProgramChange={handleProgramChange}
         resultCount={displayMode === 'students' ? totalStudentsCount : totalClassesCount}
         isCS={isCSOnly || isTeacher}
+        isTeacher={isTeacher}
+        contextChips={contextFilterChips}
         contextControls={
           <>
+            <div className="learning-filter-display-start" data-table-tools="attendance">
+              {displayMode === 'students' || activeTab === 'stats' ? (
+                <>
+                  <span className="text-xs font-semibold text-text-secondary">Hiển thị: <strong className="text-primary">{matrixStudents.length}</strong> / {totalStudentsCount} học viên</span>
+                  <ColumnVisibilityDropdown scope={prefScope} />
+                </>
+              ) : classTableTools}
+            </div>
             {activeTab === 'quick' && (
-              <label
-                className={`group relative inline-flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-lg border transition focus-within:ring-2 focus-within:ring-primary/30 ${
-                  onlyScheduledOnDate
-                    ? 'border-primary bg-primary text-white shadow-xs'
-                    : 'border-border/80 bg-surface text-text-secondary hover:bg-surface-muted'
-                }`}
-              >
-                <input
-                  type="checkbox"
-                  checked={onlyScheduledOnDate}
+              <label className="inline-flex min-h-9 cursor-pointer items-center gap-2 text-xs font-semibold text-text-secondary">
+                <input id="attendance-only-scheduled" type="checkbox" checked={onlyScheduledOnDate}
                   onChange={(event) => setOnlyScheduledOnDate(event.target.checked)}
-                  className="sr-only"
-                  aria-label="Chỉ có lịch hoặc ca trong ngày đang chọn"
-                />
-                <CalendarDays className="h-4 w-4" aria-hidden="true" />
-                {onlyScheduledOnDate && (
-                  <Check className="absolute -bottom-0.5 -right-0.5 h-3.5 w-3.5 rounded-full bg-white p-0.5 text-primary" aria-hidden="true" />
-                )}
-                <span role="tooltip" className="pointer-events-none absolute left-1/2 top-full z-30 mt-2 hidden w-max max-w-[220px] -translate-x-1/2 rounded-lg bg-slate-900 px-2.5 py-1.5 text-[11px] font-semibold text-white shadow-lg group-hover:block group-focus-within:block">
-                  Chỉ có lịch / ca ngày đang chọn
-                </span>
+                  className="h-4 w-4 shrink-0 accent-primary focus-visible:ring-2 focus-visible:ring-primary/30" />
+                Chỉ có lịch/ca ngày đang chọn
               </label>
             )}
 
             {activeTab === 'detailed' && (
-              <label
-                className={`group relative inline-flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-lg border transition focus-within:ring-2 focus-within:ring-primary/30 ${
-                  onlyDaysWithSessions
-                    ? 'border-primary bg-primary text-white shadow-xs'
-                    : 'border-border/80 bg-surface text-text-secondary hover:bg-surface-muted'
-                }`}
-              >
-                <input
-                  type="checkbox"
-                  checked={onlyDaysWithSessions}
+              <label className="inline-flex min-h-9 cursor-pointer items-center gap-2 text-xs font-semibold text-text-secondary">
+                <input id="attendance-only-session-days" type="checkbox" checked={onlyDaysWithSessions}
                   onChange={(event) => setOnlyDaysWithSessions(event.target.checked)}
-                  className="sr-only"
-                  aria-label="Chỉ hiển thị ngày có buổi học"
-                />
-                <CalendarDays className="h-4 w-4" aria-hidden="true" />
-                {onlyDaysWithSessions && (
-                  <Check className="absolute -bottom-0.5 -right-0.5 h-3.5 w-3.5 rounded-full bg-white p-0.5 text-primary" aria-hidden="true" />
-                )}
-                <span role="tooltip" className="pointer-events-none absolute left-1/2 top-full z-30 mt-2 hidden w-max max-w-[220px] -translate-x-1/2 rounded-lg bg-slate-900 px-2.5 py-1.5 text-[11px] font-semibold text-white shadow-lg group-hover:block group-focus-within:block">
-                  Chỉ ngày có buổi học
-                </span>
+                  className="h-4 w-4 shrink-0 accent-primary focus-visible:ring-2 focus-visible:ring-primary/30" />
+                Chỉ ngày có buổi học
               </label>
             )}
 
@@ -4260,6 +3935,12 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
                 Đang đồng bộ...
               </span>
             )}
+            <AttendanceViewControls
+              activeTab={activeTab} selectedDate={selectedDate} onDateChange={setSelectedDate}
+              periodDate={currentPeriodDate} onPeriodChange={setCurrentPeriodDate}
+              periodMode={detailedFilterMode} onPeriodModeChange={setDetailedFilterMode}
+              viewMode={detailedViewMode} onViewModeChange={setDetailedViewMode}
+            />
           </>
         }
       />
@@ -4273,18 +3954,9 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
           </div>
         ) : (
           <AttendanceMatrix
+            externalViewControls
             showJlptLearningColumns={showJlptLearningColumns}
             activeTab={activeTab}
-            titleHeader={
-              <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-text-secondary">
-                <span className="inline-flex items-center gap-1.5 rounded-lg border border-border/80 bg-surface px-2.5 py-1.5 shadow-2xs">
-                  <span>Hiển thị:</span>
-                  <span className="font-extrabold text-primary">{matrixStudents.length}</span>
-                  <span className="text-text-muted">/ {totalStudentsCount} học viên</span>
-                </span>
-                <ColumnVisibilityDropdown scope={prefScope} />
-              </div>
-            }
             students={matrixStudents}
             sessions={allSessions}
             attendances={allAttendances}
@@ -4343,194 +4015,6 @@ export const ClassesPage: React.FC<ClassesPageProps> = ({ initialDisplayMode }) 
         )
       ) : (
       <div className="bg-surface rounded-2xl border border-border/80 shadow-soft overflow-hidden">
-        {/* Thanh điều khiển trên đầu bảng tùy theo Tab đang chọn */}
-        <div className="flex flex-wrap items-center justify-between gap-2.5 border-b border-border/80 bg-slate-50/60 p-3 sm:px-4 text-xs">
-          <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-text-secondary">
-            <span className="inline-flex items-center gap-1.5 rounded-lg border border-border/80 bg-surface px-2.5 py-1.5 shadow-2xs">
-              <span>Hiển thị:</span>
-              <span className="font-extrabold text-primary">{tableClasses.length}</span>
-              <span className="text-text-muted">/ {totalClassesCount} lớp học</span>
-              <span className="text-border">•</span>
-              <span className="font-bold text-text-primary">{tableStudentsCount}</span>
-              <span className="text-text-muted">học viên</span>
-            </span>
-
-            <ColumnVisibilityDropdown scope={prefScope} />
-
-            {filteredClasses.length > 0 && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleToggleExpandAll}
-                leftIcon={
-                  allExpanded ? (
-                    <ChevronUp className="w-3.5 h-3.5" />
-                  ) : (
-                    <ChevronDown className="w-3.5 h-3.5" />
-                  )
-                }
-                className="h-8 text-xs font-semibold"
-              >
-                {allExpanded ? 'Thu gọn tất cả lớp' : 'Mở rộng tất cả lớp'}
-              </Button>
-            )}
-          </div>
-
-          {/* Điều khiển ngày / kỳ bên phải giống bên CSKH */}
-          <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-2">
-            {activeTab === 'quick' ? (
-              <>
-                <div className="flex h-10 items-center gap-1 rounded-xl border border-border/60 bg-surface p-1">
-                  <button
-                    type="button"
-                    onClick={() => handleStepDay(-1)}
-                    className="rounded-lg p-1 text-text-muted transition-colors hover:bg-surface-muted hover:text-text-primary"
-                    title="Ngày hôm trước"
-                    aria-label="Chuyển đến ngày hôm trước"
-                  >
-                    <ChevronLeft className="h-4 w-4" />
-                  </button>
-                  <input
-                    type="date"
-                    value={selectedDate}
-                    onChange={(e) => e.target.value && setSelectedDate(e.target.value)}
-                    className="w-[132px] rounded-lg border-0 bg-transparent px-1 py-1 text-xs font-bold text-text-primary outline-none focus:ring-1 focus:ring-primary"
-                    aria-label="Ngày điểm danh"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => handleStepDay(1)}
-                    className="rounded-lg p-1 text-text-muted transition-colors hover:bg-surface-muted hover:text-text-primary"
-                    title="Ngày hôm sau"
-                    aria-label="Chuyển đến ngày hôm sau"
-                  >
-                    <ChevronRight className="h-4 w-4" />
-                  </button>
-                </div>
-
-                {isCSOnly && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleMatchTeacherForDayInClasses}
-                    disabled={savingKey === 'match_teacher_day' || pendingMatchTeacherCountInClasses === 0}
-                    className="h-10 whitespace-nowrap px-3 text-xs font-bold border-blue-300 text-blue-700 hover:bg-blue-50"
-                    leftIcon={<Check className="h-3.5 w-3.5" />}
-                    title="Sao chép điểm danh GV sang cột CSKH cho mọi ca GV đã chấm mà CSKH chưa chấm"
-                  >
-                    Khớp theo GV ({pendingMatchTeacherCountInClasses})
-                  </Button>
-                )}
-              </>
-            ) : (
-              <div className="flex flex-wrap items-center gap-2">
-                {/* Bộ chọn kiểu xem Tab 2: Bảng tháng | Nhật ký bài học */}
-                <div
-                  className="inline-flex h-9 items-center p-1 bg-slate-100 rounded-xl border border-slate-200/90 gap-1 text-xs font-semibold"
-                  role="tablist"
-                  aria-label="Chọn kiểu hiển thị Lịch sử & Bảng tháng"
-                >
-                  <button
-                    type="button"
-                    onClick={() => setDetailedViewMode('matrix')}
-                    className={`px-3 py-1 rounded-lg transition-all cursor-pointer ${
-                      detailedViewMode === 'matrix'
-                        ? 'bg-primary text-white shadow-xs font-bold'
-                        : 'bg-white/60 text-slate-600 hover:bg-white hover:text-slate-900'
-                    }`}
-                  >
-                    Bảng tháng
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setDetailedViewMode('log')}
-                    className={`px-3 py-1 rounded-lg transition-all cursor-pointer ${
-                      detailedViewMode === 'log'
-                        ? 'bg-primary text-white shadow-xs font-bold'
-                        : 'bg-white/60 text-slate-600 hover:bg-white hover:text-slate-900'
-                    }`}
-                  >
-                    Nhật ký buổi học
-                  </button>
-                </div>
-
-                {/* Bộ chọn chế độ kỳ: Theo tuần | Theo tháng */}
-                <div
-                  className="inline-flex h-9 items-center p-1 bg-slate-100 rounded-xl border border-slate-200/90 gap-1 text-xs font-semibold"
-                  role="tablist"
-                  aria-label="Chọn phạm vi kỳ hiển thị"
-                >
-                  <button
-                    type="button"
-                    onClick={() => setDetailedFilterMode('week')}
-                    className={`px-3 py-1 rounded-lg transition-all cursor-pointer ${
-                      detailedFilterMode === 'week'
-                        ? 'bg-primary text-white shadow-xs font-bold'
-                        : 'bg-white/60 text-slate-600 hover:bg-white hover:text-slate-900'
-                    }`}
-                  >
-                    Theo tuần
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setDetailedFilterMode('month')}
-                    className={`px-3 py-1 rounded-lg transition-all cursor-pointer ${
-                      detailedFilterMode === 'month'
-                        ? 'bg-primary text-white shadow-xs font-bold'
-                        : 'bg-white/60 text-slate-600 hover:bg-white hover:text-slate-900'
-                    }`}
-                  >
-                    Theo tháng
-                  </button>
-                </div>
-
-                {/* Bộ điều hướng kỳ (cho phép bấm chọn ngày/tháng trực tiếp) */}
-                <div className="flex items-center gap-1 bg-surface-muted p-1 rounded-xl border border-border/60">
-                  <button
-                    type="button"
-                    onClick={() => handleStepPeriod(-1)}
-                    className="p-1 rounded-lg text-text-muted hover:text-text-primary hover:bg-surface transition-colors"
-                    title="Kỳ trước"
-                  >
-                    <ChevronLeft className="w-4 h-4" />
-                  </button>
-                  <label className="relative inline-flex cursor-pointer items-center px-2.5 text-xs font-bold text-text-primary select-none hover:text-primary transition-colors" title="Bấm để chọn kỳ">
-                    <span>{detailedPeriodTitle}</span>
-                    <input
-                      type={detailedFilterMode === 'week' ? 'date' : 'month'}
-                      value={
-                        detailedFilterMode === 'week'
-                          ? toLocalDateString(currentPeriodDate)
-                          : `${currentPeriodDate.getFullYear()}-${String(currentPeriodDate.getMonth() + 1).padStart(2, '0')}`
-                      }
-                      onChange={(e) => {
-                        if (!e.target.value) return;
-                        if (detailedFilterMode === 'week') {
-                          const [y, m, d] = e.target.value.split('-').map(Number);
-                          if (y && m && d) setCurrentPeriodDate(new Date(y, m - 1, d));
-                        } else {
-                          const [y, m] = e.target.value.split('-').map(Number);
-                          if (y && m) setCurrentPeriodDate(new Date(y, m - 1, 1));
-                        }
-                      }}
-                      className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
-                      aria-label="Chọn kỳ xem lịch sử"
-                    />
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => handleStepPeriod(1)}
-                    className="p-1 rounded-lg text-text-muted hover:text-text-primary hover:bg-surface transition-colors"
-                    title="Kỳ sau"
-                  >
-                    <ChevronRight className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-
         {/* Thanh Nghiệp Vụ Hàng Loạt (Bulk Action Bar) dùng chung cho cả 3 Role ở chế độ Theo Lớp học */}
         {(selectedEnrollmentIds.size > 0 || selectedClassIds.size > 0) &&
           (activeTab === 'quick' || (activeTab === 'detailed' && !isTeacher)) && (
